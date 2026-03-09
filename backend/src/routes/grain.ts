@@ -5,8 +5,8 @@ import { authenticate, AuthRequest } from '../middleware/auth';
 const router = Router();
 const GRAIN_PERCENT = 0.31;
 const DEFAULT_SILO = 1500;
-const DEFAULT_CUM_UNLOADED = 12000;
-const DEFAULT_CUM_CONSUMED = 10500;
+const DEFAULT_CUM_UNLOADED = 13594;
+const DEFAULT_CUM_CONSUMED = 12094;
 
 function getCurrentYearStart(): number {
   return new Date().getFullYear();
