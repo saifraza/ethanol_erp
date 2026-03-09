@@ -161,6 +161,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
         fermentationVolumeAt: fermentationVolumeAt ? new Date(fermentationVolumeAt) : null,
         f1Level: inputData.f1Level, f2Level: inputData.f2Level,
         f3Level: inputData.f3Level, f4Level: inputData.f4Level,
+        beerWellLevel: inputData.beerWellLevel,
         pf1Level: inputData.pf1Level, pf2Level: inputData.pf2Level,
         ...calc,
         moisture: moisture ?? null, starchPercent: starchPercent ?? null,
