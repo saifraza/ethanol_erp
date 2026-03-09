@@ -1,0 +1,57 @@
+import React, { useEffect, useState } from 'react';
+import api from '../services/api';
+import { Save } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+
+export default function SettingsPage() {
+  const [settings, setSettings] = useState<any>({});
+  const [msg, setMsg] = useState('');
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
+
+  useEffect(() => { api.get('/settings').then(r => setSettings(r.data)); }, []);
+
+  const update = (k: string, v: string) => setSettings((s: any) => ({ ...s, [k]: v === '' ? null : parseFloat(v) }));
+
+  const save = async () => {
+    await api.put('/settings', settings);
+    setMsg('Saved!'); setTimeout(() => setMsg(''), 2000);
+  };
+
+  const fields = [
+    { key: 'grainPercent', label: 'Grain % of Slurry', unit: '%' },
+    { key: 'fermenter1Cap', label: 'Fermenter 1 Capacity', unit: 'M3' },
+    { key: 'fermenter2Cap', label: 'Fermenter 2 Capacity', unit: 'M3' },
+    { key: 'fermenter3Cap', label: 'Fermenter 3 Capacity', unit: 'M3' },
+    { key: 'fermenter4Cap', label: 'Fermenter 4 Capacity', unit: 'M3' },
+    { key: 'beerWellCap', label: 'Beer Well Capacity', unit: 'M3' },
+    { key: 'pfCap', label: 'PF Capacity', unit: 'M3' },
+    { key: 'pfGrainPercent', label: 'PF Grain %', unit: '%' },
+    { key: 'rsTankCap', label: 'RS Tank Capacity', unit: 'M3' },
+    { key: 'hfoTankCap', label: 'HFO Tank Capacity', unit: 'M3' },
+    { key: 'lfoTankCap', label: 'LFO Tank Capacity', unit: 'M3' },
+  ];
+
+  return (
+    <div className="max-w-2xl">
+      <h1 className="text-2xl font-bold mb-6">Plant Settings</h1>
+      <div className="card">
+        <div className="space-y-3">
+          {fields.map(f => (
+            <div key={f.key} className="flex items-center gap-2">
+              <label className="text-sm text-gray-600 w-52">{f.label} <span className="text-xs text-gray-400">({f.unit})</span></label>
+              <input type="number" value={settings[f.key] ?? ''} onChange={e => update(f.key, e.target.value)} className="input-field flex-1" disabled={!isAdmin} step="any" />
+            </div>
+          ))}
+        </div>
+        {isAdmin && (
+          <div className="flex items-center gap-3 mt-6">
+            <button onClick={save} className="btn-primary flex items-center gap-2"><Save size={16} />Save Settings</button>
+            {msg && <span className="text-sm text-green-600">{msg}</span>}
+          </div>
+        )}
+        {!isAdmin && <p className="text-sm text-gray-400 mt-4">Only admins can change settings.</p>}
+      </div>
+    </div>
+  );
+}

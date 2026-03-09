@@ -1,0 +1,397 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      String   @default("OPERATOR")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  grainEntries GrainEntry[]
+}
+
+model DailyEntry {
+  id                      String   @id @default(cuid())
+  date                    DateTime
+  yearStart               Int
+  syrup1Flow              Float    @default(0)
+  syrup2Flow              Float    @default(0)
+  syrup3Flow              Float    @default(0)
+  fltFlow                 Float    @default(0)
+  washFlow                Float    @default(0)
+  fermenter1Level         Float    @default(0)
+  fermenter2Level         Float    @default(0)
+  fermenter3Level         Float    @default(0)
+  fermenter4Level         Float    @default(0)
+  beerWellLevel           Float    @default(0)
+  pfLevel                 Float    @default(0)
+  grainOpeningStock       Float    @default(0)
+  grainUnloadedToday      Float    @default(0)
+  grainConsumed           Float    @default(0)
+  grainDistilled          Float    @default(0)
+  grainClosingStock       Float    @default(0)
+  grainInFermenters       Float    @default(0)
+  steamTotal              Float    @default(0)
+  steamAvgTph             Float    @default(0)
+  steamPerTon             Float    @default(0)
+  distillationEfficiency  Float    @default(0)
+  recoveryPercentage      Float    @default(0)
+  status                  String   @default("DRAFT")
+  notes                   String   @default("")
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+  @@unique([date, yearStart])
+}
+
+model TankDip {
+  id          String   @id @default(cuid())
+  date        DateTime
+  yearStart   Int
+  rsLevel     Float    @default(0)
+  hfoLevel    Float    @default(0)
+  lfoLevel    Float    @default(0)
+  production  Float    @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  @@unique([date, yearStart])
+}
+
+model Settings {
+  id                    String   @id @default(cuid())
+  grainPercent          Float    @default(31)
+  fermenter1Cap         Float    @default(2300)
+  fermenter2Cap         Float    @default(2300)
+  fermenter3Cap         Float    @default(2300)
+  fermenter4Cap         Float    @default(2300)
+  beerWellCap           Float    @default(430)
+  pfCap                 Float    @default(430)
+  pfGrainPercent        Float    @default(15)
+  rsCap                 Float    @default(15000)
+  hfoCap                Float    @default(15000)
+  lfoCap                Float    @default(15000)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model GrainEntry {
+  id                 String   @id @default(uuid())
+  date               DateTime
+  yearStart          Int
+  grainUnloaded      Float    @default(0)
+  washConsumed       Float    @default(0)
+  fermentationVolume Float    @default(0)
+  grainConsumed      Float    @default(0)
+  grainInProcess     Float    @default(0)
+  siloOpeningStock   Float    @default(0)
+  siloClosingStock   Float    @default(0)
+  totalGrainAtPlant  Float    @default(0)
+  cumulativeUnloaded Float    @default(0)
+  cumulativeConsumed Float    @default(0)
+  moisture           Float?
+  starchPercent      Float?
+  damagedPercent     Float?
+  foreignMatter      Float?
+  trucks             Int?
+  avgTruckWeight     Float?
+  supplier           String?
+  remarks            String?
+  userId             String
+  user               User     @relation(fields: [userId], references: [id])
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model MillingEntry {
+  id              String   @id @default(uuid())
+  date            DateTime
+  yearStart       Int
+  analysisTime    String   @default("")
+  sieve_1mm      Float    @default(0)
+  sieve_850      Float    @default(0)
+  sieve_600      Float    @default(0)
+  sieve_300      Float    @default(0)
+  totalFine      Float    @default(0)
+  millA_rpm       Float    @default(0)
+  millA_load      Float    @default(0)
+  millB_rpm       Float    @default(0)
+  millB_load      Float    @default(0)
+  millC_rpm       Float    @default(0)
+  millC_load      Float    @default(0)
+  remarks         String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ═══════════════════════════════════════════════
+// RAW MATERIAL ANALYSIS
+// ═══════════════════════════════════════════════
+model RawMaterialEntry {
+  id            String   @id @default(uuid())
+  date          DateTime
+  vehicleCode   String   @default("")
+  vehicleNo     String   @default("")
+  moisture      Float    @default(0)
+  starch        Float    @default(0)
+  fungus        Float    @default(0)
+  immature      Float    @default(0)
+  damaged       Float    @default(0)
+  waterDamaged  Float    @default(0)
+  tfm           Float    @default(0)
+  remark        String?
+  userId        String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// ═══════════════════════════════════════════════
+// LIQUEFACTION
+// ═══════════════════════════════════════════════
+model LiquefactionEntry {
+  id              String   @id @default(uuid())
+  date            DateTime
+  analysisTime    String   @default("")
+  jetCookerTemp   Float?
+  jetCookerFlow   Float?
+  iltTemp         Float?
+  iltSpGravity    Float?
+  iltPh           Float?
+  iltRs           Float?
+  fltTemp         Float?
+  fltSpGravity    Float?
+  fltPh           Float?
+  fltRs           Float?
+  fltRst          Float?
+  // Extra test fields
+  iltDs           Float?   // Dissolved Solids ILT
+  iltTs           Float?   // Total Solids ILT
+  fltDs           Float?   // Dissolved Solids FLT
+  fltTs           Float?   // Total Solids FLT
+  iltBrix         Float?   // Brix ILT
+  fltBrix         Float?   // Brix FLT
+  iltViscosity    Float?   // Viscosity ILT
+  fltViscosity    Float?   // Viscosity FLT
+  iltAcidity      Float?   // Acidity ILT
+  fltAcidity      Float?   // Acidity FLT
+  slurryFlow      Float?   // ILT to Jet Cooker Slurry Flow
+  steamFlow       Float?   // Liquefaction Steam Flow
+  remark          String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ═══════════════════════════════════════════════
+// PRE-FERMENTATION
+// ═══════════════════════════════════════════════
+
+// Chemical master list (persists across batches)
+model PFChemical {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  rate      Float?   // Rs per unit
+  unit      String   @default("kg")  // kg, ltr, gm
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+// PF Batch — one cycle of pre-fermentation
+model PFBatch {
+  id              String   @id @default(uuid())
+  batchNo         Int
+  fermenterNo     Int      @default(1)
+  phase           String   @default("SETUP") // SETUP, DOSING, LAB, TRANSFER, CIP, DONE
+  setupTime       DateTime?
+  dosingEndTime   DateTime?
+  slurryVolume    Float?    // litres from liquefaction
+  slurryGravity   Float?
+  slurryTemp      Float?
+  transferTime    DateTime?
+  transferVolume  Float?
+  cipStartTime    DateTime?
+  cipEndTime      DateTime?
+  remarks         String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  dosings         PFDosing[]
+  labReadings     PFLabReading[]
+}
+
+// Dosing per batch — which chemicals added
+model PFDosing {
+  id          String   @id @default(uuid())
+  batchId     String
+  batch       PFBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  chemicalName String  // denormalized for easy display
+  quantity    Float    // amount in unit
+  unit        String   @default("kg")
+  rate        Float?   // Rs per unit at time of dosing
+  addedAt     DateTime @default(now())
+}
+
+// Lab readings during PF (replaces old PreFermentationEntry)
+model PFLabReading {
+  id           String   @id @default(uuid())
+  batchId      String
+  batch        PFBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  analysisTime String   @default("")
+  spGravity    Float?
+  ph           Float?
+  rs           Float?
+  rst          Float?
+  alcohol      Float?
+  ds           Float?
+  vfaPpa       Float?
+  temp         Float?
+  remarks      String?
+  userId       String
+  createdAt    DateTime @default(now())
+}
+
+// Keep old model for backward compat
+model PreFermentationEntry {
+  id              String   @id @default(uuid())
+  date            DateTime
+  analysisTime    String   @default("")
+  batchNo         Int      @default(0)
+  fermenterNo     Int      @default(1)
+  spGravity       Float?
+  ph              Float?
+  rs              Float?
+  rst             Float?
+  alcohol         Float?
+  ds              Float?
+  vfaPpa          Float?
+  temp            Float?
+  remarks         String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ═══════════════════════════════════════════════
+// FERMENTATION — the big one
+// Each row = one reading for one fermenter in one batch
+// ═══════════════════════════════════════════════
+model FermentationEntry {
+  id              String   @id @default(uuid())
+  date            DateTime
+  analysisTime    String   @default("")
+  batchNo         Int      @default(0)
+  fermenterNo     Int      @default(1)
+  level           Float?   // fermenter level % at time of reading
+  spGravity       Float?
+  ph              Float?
+  rs              Float?
+  rst             Float?
+  alcohol         Float?
+  ds              Float?
+  vfaPpa          Float?
+  temp            Float?
+  status          String   @default("U/F")
+  remarks         String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// Fermentation batch metadata
+model FermentationBatch {
+  id                  String   @id @default(uuid())
+  batchNo             Int
+  fermenterNo         Int      @default(1)
+  phase               String   @default("FILLING") // FILLING, SETUP, REACTION, RETENTION, TRANSFER, CIP, DONE
+  fillingStartTime    DateTime?
+  fillingEndTime      DateTime?
+  setupEndTime        DateTime?
+  reactionStartTime   DateTime?
+  retentionStartTime  DateTime?
+  transferTime        DateTime?
+  cipStartTime        DateTime?
+  cipEndTime          DateTime?
+  setupTime           String?
+  setupDate           DateTime?
+  setupGravity        Float?
+  setupRs             Float?
+  setupRst            Float?
+  fermLevel           Float?    // level % of 2300 M³
+  volume              Float?    // calculated litres
+  transferVolume    Float?
+  beerWellNo        Int?
+  finalDate         DateTime?
+  finalRsGravity    Float?
+  totalHours        Float?
+  yeast             String?
+  enzyme            String?
+  formolin          String?
+  booster           String?
+  urea              String?
+  finalAlcohol      Float?
+  remarks           String?
+  userId            String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  dosings           FermDosing[]
+  @@unique([batchNo, fermenterNo])
+}
+
+// Fermentation chemicals (reusable list)
+model FermChemical {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  unit      String   @default("kg")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+// Dosing per fermentation batch
+model FermDosing {
+  id           String            @id @default(uuid())
+  batchId      String
+  batch        FermentationBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  chemicalName String
+  quantity     Float
+  unit         String            @default("kg")
+  level        Float?            // fermenter level % at time of dosing
+  addedAt      DateTime          @default(now())
+}
+
+// ═══════════════════════════════════════════════
+// DISTILLATION
+// ═══════════════════════════════════════════════
+model DistillationEntry {
+  id                  String   @id @default(uuid())
+  date                DateTime
+  analysisTime        String   @default("")
+  batchNo             Int?
+  spentWashLoss       Float?
+  rcLessLoss          Float?
+  ethanolStrength     Float?
+  rcReflexStrength    Float?
+  regenerationStrength Float?
+  evaporationSpgr     Float?
+  remark              String?
+  userId              String
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String
+  entity    String
+  entityId  String
+  changes   String
+  userId    String
+  createdAt DateTime @default(now())
+}
