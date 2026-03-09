@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Fuel, Plus, Trash2, Save, ChevronDown, ChevronUp } from 'lucide-react';
+import { Fuel, Plus, Trash2, Save, ChevronDown, ChevronUp, Eye, X, Share2, Loader2 } from 'lucide-react';
 import api from '../../services/api';
 
 const TANKS = [
@@ -28,6 +28,7 @@ export default function EthanolProduct() {
   const [showHistory, setShowHistory] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [remarks, setRemarks] = useState('');
+  const [showPreview, setShowPreview] = useState(false);
 
   const u = (key: string, val: any) => setForm((f: any) => ({ ...f, [key]: val }));
   const numU = (key: string, raw: string) => u(key, raw === '' ? null : parseFloat(raw));
@@ -327,12 +328,67 @@ export default function EthanolProduct() {
             <button onClick={() => { setEditId(null); setForm({}); setTrucks([emptyTruck()]); setRemarks(''); }}
               className="px-4 py-2 text-sm border rounded-lg text-gray-600 hover:bg-gray-50">Cancel</button>
           )}
-          <button onClick={handleSave} disabled={saving}
-            className="px-6 py-2.5 bg-purple-600 text-white rounded-lg font-medium text-sm hover:bg-purple-700 disabled:opacity-50 flex items-center gap-2">
-            <Save size={16} />{saving ? 'Saving...' : editId ? 'Update Entry' : 'Save Entry'}
+          <button onClick={() => setShowPreview(true)}
+            className="px-6 py-2.5 bg-purple-600 text-white rounded-lg font-medium text-sm hover:bg-purple-700 flex items-center gap-2">
+            <Eye size={16} /> Preview & Save
           </button>
         </div>
       </div>
+
+      {/* Preview Modal */}
+      {showPreview && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowPreview(false)}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="bg-purple-600 text-white p-4 rounded-t-xl flex items-center justify-between">
+              <h3 className="font-bold text-lg">Ethanol Product Report</h3>
+              <button onClick={() => setShowPreview(false)}><X size={20} /></button>
+            </div>
+            <div className="p-4 space-y-3 text-sm">
+              <div className="flex justify-between"><span className="text-gray-500">Date</span><span className="font-medium">{date}</span></div>
+              <div className="border-t pt-2">
+                <h4 className="font-semibold text-purple-700 mb-1">Stock Summary</h4>
+                <div className="grid grid-cols-2 gap-1">
+                  <div>Prev Stock: <b>{prevStock.toFixed(1)} BL</b></div>
+                  <div>Current Stock: <b>{totalStock.toFixed(1)} BL</b></div>
+                  <div>Avg Strength: <b>{avgStrength.toFixed(2)}%</b></div>
+                  <div>Dispatch: <b>{totalDispatch.toFixed(1)} BL</b></div>
+                </div>
+              </div>
+              <div className="border-t pt-2">
+                <h4 className="font-semibold text-green-700 mb-1">Production</h4>
+                <div className="grid grid-cols-2 gap-1">
+                  <div>Production BL: <b>{productionBL.toFixed(2)}</b></div>
+                  <div>Production AL: <b>{productionAL.toFixed(2)}</b></div>
+                </div>
+              </div>
+              {trucks.some(t => t.vehicleNo || parseFloat(t.quantityBL)) && (
+                <div className="border-t pt-2">
+                  <h4 className="font-semibold text-red-600 mb-1">Dispatch ({trucks.filter(t => t.vehicleNo || parseFloat(t.quantityBL)).length} trucks)</h4>
+                  {trucks.filter(t => t.vehicleNo || parseFloat(t.quantityBL)).map((t, i) => (
+                    <div key={i} className="text-xs bg-gray-50 rounded p-1.5 mb-1">
+                      {t.vehicleNo} → {t.destination || '—'} | {t.quantityBL} BL @ {t.strength || '—'}% | {t.partyName}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {remarks && <div className="border-t pt-2"><span className="text-gray-500">Remarks:</span> {remarks}</div>}
+            </div>
+            <div className="p-4 border-t flex gap-2">
+              <button onClick={() => {
+                const truckLines = trucks.filter(t => t.vehicleNo || parseFloat(t.quantityBL)).map((t, i) => `${i+1}. ${t.vehicleNo} → ${t.destination || '-'} | ${t.quantityBL} BL @ ${t.strength || '-'}%25`).join('%0A');
+                const text = `*Ethanol Product Report*%0A📅 ${date}%0A%0AStock: ${totalStock.toFixed(1)} BL (${avgStrength.toFixed(2)}%25)%0ADispatch: ${totalDispatch.toFixed(1)} BL%0AProd BL: ${productionBL.toFixed(2)}%0AProd AL: ${productionAL.toFixed(2)}${truckLines ? '%0A%0A*Trucks*%0A' + truckLines : ''}${remarks ? '%0A%0ARemarks: ' + remarks : ''}`;
+                window.open(`https://wa.me/?text=${text}`, '_blank');
+              }} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
+                <Share2 size={16} /> WhatsApp
+              </button>
+              <button onClick={() => { handleSave(); setShowPreview(false); }} disabled={saving}
+                className="flex-1 flex items-center justify-center gap-2 bg-purple-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50">
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} {editId ? 'Update' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* History */}
       <div className="border-t pt-4">

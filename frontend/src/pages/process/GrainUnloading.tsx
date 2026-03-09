@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Wheat, Save, Loader2, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
+import { Wheat, Save, Loader2, ChevronDown, ChevronUp, Trash2, Eye, X, Share2 } from 'lucide-react';
 import ProcessPage, { InputCard, Field } from './ProcessPage';
 import api from '../../services/api';
 
@@ -80,6 +80,7 @@ export default function GrainUnloading() {
   const [entries, setEntries] = useState<any[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
 
   const u = (n: string, v: any) => setForm(f => ({ ...f, [n]: v }));
 
@@ -505,11 +506,64 @@ export default function GrainUnloading() {
 
       <div className="flex flex-col md:flex-row md:justify-end gap-2 md:gap-3 mt-4 mb-6">
         {editId && <button onClick={() => { setEditId(null); setForm({ ...emptyForm }); loadLatest(); }} className="btn-secondary w-full md:w-auto">Cancel Edit</button>}
-        <button onClick={handleSave} disabled={saving} className="btn-primary w-full md:w-auto flex items-center justify-center gap-2">
-          {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-          {editId ? 'Update Entry' : 'Save Entry'}
+        <button onClick={() => setShowPreview(true)} className="flex items-center justify-center gap-2 bg-gray-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-800 transition w-full md:w-auto">
+          <Eye size={16} /> Preview & Save
         </button>
+        {msg && <span className={`text-sm font-medium self-center ${msg.type === 'ok' ? 'text-green-600' : 'text-red-600'}`}>{msg.text}</span>}
       </div>
+
+      {showPreview && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowPreview(false)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="sticky top-0 bg-amber-600 text-white p-4 rounded-t-xl flex items-center justify-between">
+              <h3 className="font-bold text-lg">Grain Unloading Report</h3>
+              <button onClick={() => setShowPreview(false)} className="p-1 hover:bg-amber-700 rounded"><X size={20} /></button>
+            </div>
+            <div className="p-4 space-y-3 text-sm">
+              <div className="flex justify-between text-gray-600 border-b pb-2">
+                <span>Date: <strong>{form.date}</strong></span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-amber-50 rounded p-2 text-center"><div className="text-xs text-gray-500">Grain Unloaded</div><div className="font-bold text-lg">{form.grainUnloaded ?? '—'} MT</div></div>
+                <div className="bg-amber-50 rounded p-2 text-center"><div className="text-xs text-gray-500">Wash Consumed</div><div className="font-bold text-lg">{form.washConsumed ?? '—'} KL</div></div>
+              </div>
+              <div>
+                <h4 className="font-semibold text-gray-700 mb-1">Fermenter Levels (%)</h4>
+                <div className="grid grid-cols-5 gap-2">
+                  {[{l:'F1',v:form.f1Pct},{l:'F2',v:form.f2Pct},{l:'F3',v:form.f3Pct},{l:'F4',v:form.f4Pct},{l:'BW',v:form.beerWellPct}].map(f=>
+                    <div key={f.l} className="bg-blue-50 rounded p-2 text-center"><div className="text-xs text-gray-500">{f.l}</div><div className="font-semibold">{f.v ?? '—'}%</div></div>
+                  )}
+                </div>
+              </div>
+              <div>
+                <h4 className="font-semibold text-gray-700 mb-1">PF Levels (%)</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  {[{l:'PF1',v:form.pf1Pct},{l:'PF2',v:form.pf2Pct}].map(f=>
+                    <div key={f.l} className="bg-green-50 rounded p-2 text-center"><div className="text-xs text-gray-500">{f.l}</div><div className="font-semibold">{f.v ?? '—'}%</div></div>
+                  )}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-gray-50 rounded p-2 text-center"><div className="text-xs text-gray-500">Moisture</div><div className="font-semibold">{form.moisture ?? '—'}%</div></div>
+                <div className="bg-gray-50 rounded p-2 text-center"><div className="text-xs text-gray-500">Starch</div><div className="font-semibold">{form.starchPercent ?? '—'}%</div></div>
+              </div>
+              {form.supplier && <div className="text-gray-600">Supplier: <strong>{form.supplier}</strong></div>}
+              {form.remarks && <div className="text-gray-600 italic">Remarks: {form.remarks}</div>}
+            </div>
+            <div className="sticky bottom-0 bg-gray-50 p-4 rounded-b-xl flex gap-3 border-t">
+              <button onClick={() => { handleSave(); setShowPreview(false); }} disabled={saving} className="flex-1 flex items-center justify-center gap-2 bg-amber-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-amber-700 disabled:opacity-50 transition">
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} {editId ? 'Update' : 'Save'} Entry
+              </button>
+              <button onClick={() => {
+                const t = `*GRAIN UNLOADING REPORT*\nDate: ${form.date}\nGrain Unloaded: ${form.grainUnloaded ?? '—'} MT\nWash Consumed: ${form.washConsumed ?? '—'} KL\nF1: ${form.f1Pct ?? '—'}% | F2: ${form.f2Pct ?? '—'}% | F3: ${form.f3Pct ?? '—'}% | F4: ${form.f4Pct ?? '—'}%\nBeer Well: ${form.beerWellPct ?? '—'}%\nPF1: ${form.pf1Pct ?? '—'}% | PF2: ${form.pf2Pct ?? '—'}%\nMoisture: ${form.moisture ?? '—'}% | Starch: ${form.starchPercent ?? '—'}%${form.remarks ? '\nRemarks: ' + form.remarks : ''}`;
+                window.open(`https://wa.me/?text=${encodeURIComponent(t)}`, '_blank');
+              }} className="flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 transition">
+                <Share2 size={16} /> WhatsApp
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Entry History */}
       <div className="card mb-8">

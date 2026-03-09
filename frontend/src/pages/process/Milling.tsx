@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CogIcon, Save, Loader2, ChevronDown, ChevronUp, Trash2, TrendingUp } from 'lucide-react';
+import { CogIcon, Save, Loader2, ChevronDown, ChevronUp, Trash2, TrendingUp, Eye, X, Share2 } from 'lucide-react';
 import ProcessPage, { InputCard, Field } from './ProcessPage';
 import api from '../../services/api';
 import {
@@ -180,6 +180,7 @@ export default function Milling() {
   const [showHistory, setShowHistory] = useState(false);
   const [showChart, setShowChart] = useState(true);
   const [editId, setEditId] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
 
   const update = (n: string, v: any) => setForm(f => ({ ...f, [n]: v }));
 
@@ -312,11 +313,57 @@ export default function Milling() {
 
       <div className="flex flex-col md:flex-row md:justify-end gap-3 mt-4 mb-6">
         {editId && <button onClick={() => { setEditId(null); setForm({ ...emptyForm }); }} className="btn-secondary w-full md:w-auto text-center">Cancel Edit</button>}
-        <button onClick={handleSave} disabled={saving} className="btn-primary w-full md:w-auto flex items-center justify-center gap-2">
-          {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-          {editId ? 'Update Entry' : 'Save Entry'}
+        <button onClick={() => setShowPreview(true)} className="btn-primary w-full md:w-auto flex items-center justify-center gap-2">
+          <Eye size={16} /> Preview & Save
         </button>
       </div>
+
+      {/* Preview Modal */}
+      {showPreview && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowPreview(false)}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="bg-stone-600 text-white p-4 rounded-t-xl flex items-center justify-between">
+              <h3 className="font-bold text-lg">Milling Report Preview</h3>
+              <button onClick={() => setShowPreview(false)}><X size={20} /></button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="flex justify-between text-sm"><span className="text-gray-500">Date</span><span className="font-medium">{form.date}</span></div>
+              {form.analysisTime && <div className="flex justify-between text-sm"><span className="text-gray-500">Time</span><span className="font-medium">{form.analysisTime}</span></div>}
+              <div className="border-t pt-3">
+                <h4 className="text-sm font-semibold text-stone-700 mb-2">Sieve Analysis</h4>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  {form.sieve_1mm != null && <div className="flex justify-between"><span className="text-gray-500">1.00mm</span><span>{form.sieve_1mm}%</span></div>}
+                  {form.sieve_850 != null && <div className="flex justify-between"><span className="text-gray-500">0.850mm</span><span>{form.sieve_850}%</span></div>}
+                  {form.sieve_600 != null && <div className="flex justify-between"><span className="text-gray-500">0.600mm</span><span>{form.sieve_600}%</span></div>}
+                  {form.sieve_300 != null && <div className="flex justify-between"><span className="text-gray-500">0.300mm</span><span>{form.sieve_300}%</span></div>}
+                  <div className="flex justify-between font-semibold text-purple-700 col-span-2 border-t pt-1"><span>Total Fine</span><span>{totalFine}%</span></div>
+                </div>
+              </div>
+              <div className="border-t pt-3">
+                <h4 className="text-sm font-semibold text-stone-700 mb-2">Mill RPM & Load</h4>
+                <div className="grid grid-cols-3 gap-2 text-sm text-center">
+                  <div className="font-semibold text-blue-600">Mill A</div><div className="font-semibold text-green-600">Mill B</div><div className="font-semibold text-amber-600">Mill C</div>
+                  <div>{form.millA_rpm ?? '—'} rpm</div><div>{form.millB_rpm ?? '—'} rpm</div><div>{form.millC_rpm ?? '—'} rpm</div>
+                  <div>{form.millA_load ?? '—'} A</div><div>{form.millB_load ?? '—'} A</div><div>{form.millC_load ?? '—'} A</div>
+                </div>
+              </div>
+              {form.remarks && <div className="border-t pt-3 text-sm"><span className="text-gray-500">Remarks:</span> {form.remarks}</div>}
+            </div>
+            <div className="p-4 border-t flex gap-2">
+              <button onClick={() => {
+                const text = `*Milling Report*%0A📅 ${form.date} ${form.analysisTime || ''}%0A%0A*Sieve Analysis*%0A1.00mm: ${form.sieve_1mm ?? '-'}%25%0A0.850mm: ${form.sieve_850 ?? '-'}%25%0A0.600mm: ${form.sieve_600 ?? '-'}%25%0A0.300mm: ${form.sieve_300 ?? '-'}%25%0ATotal Fine: ${totalFine}%25%0A%0A*Mill RPM/Load*%0AMill A: ${form.millA_rpm ?? '-'} rpm / ${form.millA_load ?? '-'} A%0AMill B: ${form.millB_rpm ?? '-'} rpm / ${form.millB_load ?? '-'} A%0AMill C: ${form.millC_rpm ?? '-'} rpm / ${form.millC_load ?? '-'} A${form.remarks ? '%0A%0ARemarks: ' + form.remarks : ''}`;
+                window.open(`https://wa.me/?text=${text}`, '_blank');
+              }} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
+                <Share2 size={16} /> WhatsApp
+              </button>
+              <button onClick={() => { handleSave(); setShowPreview(false); }} disabled={saving}
+                className="flex-1 flex items-center justify-center gap-2 bg-stone-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-stone-700 disabled:opacity-50">
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} {editId ? 'Update' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Entry History */}
       <div className="card mb-8">

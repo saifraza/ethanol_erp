@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Droplets, Save, Loader2, Trash2, Clock, TrendingUp, Database, AlertTriangle, ChevronDown, ChevronUp, FlaskConical } from 'lucide-react';
+import { Droplets, Save, Loader2, Trash2, Clock, TrendingUp, Database, AlertTriangle, ChevronDown, ChevronUp, FlaskConical, Eye, X, Share2 } from 'lucide-react';
 import api from '../../services/api';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -82,6 +82,7 @@ export default function Liquefaction() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [showExtra, setShowExtra] = useState(false);
   const [lastSavedId, setLastSavedId] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
 
   const load = () => api.get('/liquefaction').then(r => setEntries(r.data)).catch(() => {});
   useEffect(() => { load(); }, []);
@@ -325,9 +326,9 @@ export default function Liquefaction() {
             <input type="text" value={form.remark} onChange={e => upd('remark', e.target.value)}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" />
           </div>
-          <button onClick={handleSave} disabled={saving}
-            className="flex items-center justify-center gap-2 bg-blue-600 text-white px-6 py-2.5 min-h-[44px] rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition shadow-sm w-full sm:w-auto">
-            {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save Entry
+          <button onClick={() => setShowPreview(true)}
+            className="flex items-center justify-center gap-2 bg-blue-600 text-white px-6 py-2.5 min-h-[44px] rounded-lg text-sm font-semibold hover:bg-blue-700 transition shadow-sm w-full sm:w-auto">
+            <Eye size={16} /> Preview & Save
           </button>
         </div>
         {msg && (
@@ -336,6 +337,66 @@ export default function Liquefaction() {
           </div>
         )}
       </div>
+
+      {/* Preview Modal */}
+      {showPreview && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowPreview(false)}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="bg-blue-600 text-white p-4 rounded-t-xl flex items-center justify-between">
+              <h3 className="font-bold text-lg">Liquefaction Report Preview</h3>
+              <button onClick={() => setShowPreview(false)}><X size={20} /></button>
+            </div>
+            <div className="p-4 space-y-3 text-sm">
+              <div className="flex justify-between"><span className="text-gray-500">Date</span><span className="font-medium">{form.date}</span></div>
+              {form.analysisTime && <div className="flex justify-between"><span className="text-gray-500">Time</span><span className="font-medium">{form.analysisTime}</span></div>}
+              {(form.jetCookerTemp || form.jetCookerFlow) && (
+                <div className="border-t pt-2">
+                  <h4 className="font-semibold text-gray-700 mb-1">Jet Cooker</h4>
+                  <div className="grid grid-cols-2 gap-1">
+                    {form.jetCookerTemp && <div>Temp: <b>{form.jetCookerTemp}°C</b></div>}
+                    {form.jetCookerFlow && <div>Flow: <b>{form.jetCookerFlow}</b></div>}
+                  </div>
+                </div>
+              )}
+              <div className="border-t pt-2">
+                <h4 className="font-semibold text-blue-700 mb-1">ILT</h4>
+                <div className="grid grid-cols-2 gap-1">
+                  {form.iltLevel && <div>Level: <b>{form.iltLevel}</b></div>}
+                  {form.iltTemp && <div>Temp: <b>{form.iltTemp}°C</b></div>}
+                  {form.iltSpGravity && <div>Sp.Gravity: <b>{form.iltSpGravity}</b></div>}
+                  {form.iltPh && <div>pH: <b>{form.iltPh}</b></div>}
+                  {form.iltRs && <div>RS%: <b>{form.iltRs}</b></div>}
+                </div>
+              </div>
+              <div className="border-t pt-2">
+                <h4 className="font-semibold text-green-700 mb-1">FLT</h4>
+                <div className="grid grid-cols-2 gap-1">
+                  {form.fltLevel && <div>Level: <b>{form.fltLevel}</b></div>}
+                  {form.fltFlowRate && <div>Flow Rate: <b>{form.fltFlowRate}</b></div>}
+                  {form.fltTemp && <div>Temp: <b>{form.fltTemp}°C</b></div>}
+                  {form.fltSpGravity && <div>Sp.Gravity: <b>{form.fltSpGravity}</b></div>}
+                  {form.fltPh && <div>pH: <b>{form.fltPh}</b></div>}
+                  {form.fltRs && <div>RS%: <b>{form.fltRs}</b></div>}
+                  {form.fltRst && <div>RST%: <b>{form.fltRst}</b></div>}
+                </div>
+              </div>
+              {form.remark && <div className="border-t pt-2"><span className="text-gray-500">Remark:</span> {form.remark}</div>}
+            </div>
+            <div className="p-4 border-t flex gap-2">
+              <button onClick={() => {
+                const text = `*Liquefaction Report*%0A📅 ${form.date} ${form.analysisTime || ''}%0A%0A*ILT*: Grav ${form.iltSpGravity || '-'} | pH ${form.iltPh || '-'} | RS ${form.iltRs || '-'}%25 | Temp ${form.iltTemp || '-'}°C%0A*FLT*: Grav ${form.fltSpGravity || '-'} | pH ${form.fltPh || '-'} | RS ${form.fltRs || '-'}%25 | RST ${form.fltRst || '-'}%25 | Temp ${form.fltTemp || '-'}°C${form.remark ? '%0A%0ARemarks: ' + form.remark : ''}`;
+                window.open(`https://wa.me/?text=${text}`, '_blank');
+              }} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
+                <Share2 size={16} /> WhatsApp
+              </button>
+              <button onClick={() => { handleSave(); setShowPreview(false); }} disabled={saving}
+                className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Trends Chart */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
