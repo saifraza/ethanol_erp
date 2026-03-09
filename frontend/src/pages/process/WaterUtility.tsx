@@ -38,7 +38,7 @@ export default function WaterUtility() {
         <Field label="DG Diesel Consumed" name="dgDiesel" value={form.dgDiesel} onChange={update} unit="L" />
       </InputCard>
 
-      <div className="flex justify-end mt-4 mb-8"><button className="btn-primary">Save</button></div>
+      <div className="mt-4 mb-8"><button className="btn-primary w-full md:w-auto">Save</button></div>
     </ProcessPage>
   );
 }

@@ -19,14 +19,14 @@ interface ProcessPageProps {
 export default function ProcessPage({ title, icon, description, flow, color, children }: ProcessPageProps) {
   return (
     <div className="max-w-4xl mx-auto">
-      <div className={`rounded-lg p-5 mb-6 text-white ${color}`}>
-        <div className="flex items-center gap-3 mb-2">
+      <div className={`rounded-lg p-4 md:p-5 mb-4 md:mb-6 text-white ${color}`}>
+        <div className="flex items-center gap-3 mb-1.5">
           {icon}
-          <h1 className="text-2xl font-bold">{title}</h1>
+          <h1 className="text-xl md:text-2xl font-bold">{title}</h1>
         </div>
-        <p className="text-sm opacity-90">{description}</p>
+        <p className="text-xs md:text-sm opacity-90">{description}</p>
         {flow && (
-          <div className="flex items-center gap-2 mt-3 text-sm opacity-80">
+          <div className="flex items-center gap-2 mt-2 text-xs md:text-sm opacity-80">
             <span className="bg-white/20 px-2 py-0.5 rounded">{flow.from}</span>
             <ArrowRight size={14} />
             <span className="bg-white/20 px-2 py-0.5 rounded">{flow.to}</span>
@@ -50,10 +50,10 @@ export function InputCard({ title, children }: { title: string; children: React.
 export function Field({ label, name, value, onChange, auto, unit, placeholder, type }: any) {
   const inputType = type || (name === 'date' ? 'date' : 'number');
   return (
-    <div className="flex items-center gap-2">
-      <label className="text-sm text-gray-600 w-52 shrink-0">{label}{unit && <span className="text-xs text-gray-400 ml-1">({unit})</span>}</label>
+    <div className="flex flex-col md:flex-row md:items-center gap-1 md:gap-2">
+      <label className="text-sm text-gray-600 w-full md:w-52 md:shrink-0">{label}{unit && <span className="text-xs text-gray-400 ml-1">({unit})</span>}</label>
       {auto ? (
-        <div className="input-auto flex-1">{value != null && value !== '' ? (typeof value === 'number' ? value.toFixed(2) : value) : '—'}</div>
+        <div className="input-auto w-full md:flex-1">{value != null && value !== '' ? (typeof value === 'number' ? value.toFixed(2) : value) : '—'}</div>
       ) : (
         <input
           type={inputType}
@@ -65,7 +65,7 @@ export function Field({ label, name, value, onChange, auto, unit, placeholder, t
               onChange(name, e.target.value);
             }
           }}
-          className="input-field flex-1"
+          className="input-field w-full md:flex-1"
           step="any"
           placeholder={placeholder}
         />

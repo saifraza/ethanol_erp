@@ -35,7 +35,7 @@ export default function Dryer() {
         <Field label="Decanter Centrate" name="centrate" value={form.centrate} onChange={update} unit="M3" />
       </InputCard>
 
-      <div className="flex justify-end mt-4 mb-8"><button className="btn-primary">Save</button></div>
+      <div className="mt-4 mb-8"><button className="btn-primary w-full md:w-auto">Save</button></div>
     </ProcessPage>
   );
 }

@@ -5,7 +5,7 @@ import api from '../services/api';
 import {
   LayoutDashboard, Wheat, CogIcon, Droplets, Beaker, Flame, Wind,
   Fuel, Waves, Settings, Users, LogOut, ChevronDown, ChevronRight,
-  ClipboardList, BarChart3, FileText, WifiOff, Wifi
+  ClipboardList, BarChart3, FileText, WifiOff, Menu, X
 } from 'lucide-react';
 
 const processNav = [
@@ -30,9 +30,9 @@ const adminNav = [
   { to: '/users', label: 'Users', icon: Users, adminOnly: true },
 ];
 
-function NavLink({ to, label, icon: Icon, active }: any) {
+function NavLink({ to, label, icon: Icon, active, onClick }: any) {
   return (
-    <Link to={to} className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm transition ${active ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-800'}`}>
+    <Link to={to} onClick={onClick} className={`flex items-center gap-3 px-3 py-2.5 md:py-2 rounded-md text-sm transition ${active ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-800'}`}>
       <Icon size={17} />{label}
     </Link>
   );
@@ -45,8 +45,12 @@ export default function Layout() {
   const [adminOpen, setAdminOpen] = useState(false);
   const [serverUp, setServerUp] = useState(true);
   const [reconnecting, setReconnecting] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Health check every 15s — shows banner if server goes down, auto-recovers
+  // Close sidebar on navigation (mobile)
+  useEffect(() => { setSidebarOpen(false); }, [location.pathname]);
+
+  // Health check every 15s
   useEffect(() => {
     let timer: ReturnType<typeof setInterval>;
     const check = async () => {
@@ -63,26 +67,39 @@ export default function Layout() {
     return () => clearInterval(timer);
   }, [serverUp]);
 
+  const closeSidebar = () => setSidebarOpen(false);
+
   return (
-    <div className="flex h-screen">
+    <div className="flex h-screen overflow-hidden">
       {/* Server-down banner */}
       {!serverUp && (
         <div className="fixed top-0 left-0 right-0 z-50 bg-amber-500 text-white text-center py-2 text-sm font-medium flex items-center justify-center gap-2 shadow-lg">
           <WifiOff size={16} />
-          Server connection lost — reconnecting automatically...
+          Server connection lost — reconnecting...
           <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
         </div>
       )}
-      <aside className="w-60 bg-gray-900 text-white flex flex-col overflow-y-auto">
-        <div className="p-4 border-b border-gray-700">
-          <h1 className="text-base font-bold tracking-wide">DISTILLERY ERP</h1>
-          <p className="text-[11px] text-gray-400 mt-0.5">Mahakaushal Sugar & Power</p>
+
+      {/* Mobile backdrop */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 bg-black/50 z-30 md:hidden" onClick={closeSidebar} />
+      )}
+
+      {/* Sidebar */}
+      <aside className={`fixed md:static inset-y-0 left-0 z-40 w-64 md:w-60 bg-gray-900 text-white flex flex-col overflow-y-auto transform transition-transform duration-200 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}>
+        <div className="p-4 border-b border-gray-700 flex items-center justify-between">
+          <div>
+            <h1 className="text-base font-bold tracking-wide">DISTILLERY ERP</h1>
+            <p className="text-[11px] text-gray-400 mt-0.5">Mahakaushal Sugar & Power</p>
+          </div>
+          <button onClick={closeSidebar} className="md:hidden text-gray-400 hover:text-white p-1">
+            <X size={20} />
+          </button>
         </div>
 
         <nav className="flex-1 p-2 space-y-1">
-          <NavLink to="/" label="Dashboard" icon={LayoutDashboard} active={location.pathname === '/'} />
+          <NavLink to="/" label="Dashboard" icon={LayoutDashboard} active={location.pathname === '/'} onClick={closeSidebar} />
 
-          {/* Process Sections */}
           <button onClick={() => setProcessOpen(!processOpen)} className="flex items-center justify-between w-full px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mt-3 hover:text-gray-200">
             <span>Plant Process</span>
             {processOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -90,12 +107,11 @@ export default function Layout() {
           {processOpen && (
             <div className="space-y-0.5 ml-1 border-l border-gray-700 pl-2">
               {processNav.map(n => (
-                <NavLink key={n.to} {...n} active={location.pathname === n.to} />
+                <NavLink key={n.to} {...n} active={location.pathname === n.to} onClick={closeSidebar} />
               ))}
             </div>
           )}
 
-          {/* Admin / Data */}
           <button onClick={() => setAdminOpen(!adminOpen)} className="flex items-center justify-between w-full px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mt-3 hover:text-gray-200">
             <span>Data & Admin</span>
             {adminOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -103,7 +119,7 @@ export default function Layout() {
           {adminOpen && (
             <div className="space-y-0.5 ml-1 border-l border-gray-700 pl-2">
               {adminNav.filter(n => !n.adminOnly || user?.role === 'ADMIN').map(n => (
-                <NavLink key={n.to} {...n} active={location.pathname === n.to} />
+                <NavLink key={n.to} {...n} active={location.pathname === n.to} onClick={closeSidebar} />
               ))}
             </div>
           )}
@@ -115,7 +131,20 @@ export default function Layout() {
           <button onClick={logout} className="flex items-center gap-2 text-gray-400 hover:text-white text-xs mt-1"><LogOut size={13} />Logout</button>
         </div>
       </aside>
-      <main className="flex-1 overflow-auto bg-gray-50 p-6"><Outlet /></main>
+
+      {/* Main content */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Mobile top bar */}
+        <div className="md:hidden bg-gray-900 text-white flex items-center gap-3 px-3 py-2.5 shrink-0">
+          <button onClick={() => setSidebarOpen(true)} className="p-1">
+            <Menu size={22} />
+          </button>
+          <span className="text-sm font-bold tracking-wide">DISTILLERY ERP</span>
+        </div>
+        <main className="flex-1 overflow-auto bg-gray-50 p-3 md:p-6">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }

@@ -3,7 +3,8 @@ import prisma from '../config/prisma';
 import { authenticate, AuthRequest } from '../middleware/auth';
 
 const router = Router();
-const GRAIN_PERCENT = 0.31;
+const FERMENTER_GRAIN_PCT = 0.31;
+const PF_GRAIN_PCT = 0.15;
 const DEFAULT_SILO = 1500;
 const DEFAULT_CUM_UNLOADED = 13594;
 const DEFAULT_CUM_CONSUMED = 12094;
@@ -12,15 +13,26 @@ function getCurrentYearStart(): number {
   return new Date().getFullYear();
 }
 
-function calcGrain(data: any, opening: number, prevCumUnloaded: number, prevCumConsumed: number) {
-  const grainConsumed = (data.washConsumed || 0) * GRAIN_PERCENT;
-  const grainInProcess = (data.fermentationVolume || 0) * GRAIN_PERCENT;
+function calcGrain(data: any, opening: number, prevCumUnloaded: number, prevCumConsumed: number, prevWashConsumed: number) {
+  // washConsumed is a CUMULATIVE flow meter reading — grain consumed = diff from prev × 31%
+  const washDiff = Math.max(0, (data.washConsumed || 0) - prevWashConsumed);
+  const grainConsumed = washDiff * FERMENTER_GRAIN_PCT;
+
+  // Grain in process: fermenters at 31%, PF at 15%
+  const fermVol = (data.f1Level || 0) + (data.f2Level || 0) + (data.f3Level || 0) + (data.f4Level || 0);
+  const pfVol = (data.pf1Level || 0) + (data.pf2Level || 0);
+  const grainInFermenters = fermVol * FERMENTER_GRAIN_PCT;
+  const grainInPF = pfVol * PF_GRAIN_PCT;
+  const grainInProcess = grainInFermenters + grainInPF;
+
+  const totalFermVol = fermVol + pfVol;
   const siloClosingStock = opening + (data.grainUnloaded || 0) - grainConsumed;
   const totalGrainAtPlant = siloClosingStock + grainInProcess;
   const cumulativeUnloaded = prevCumUnloaded + (data.grainUnloaded || 0);
   const cumulativeConsumed = prevCumConsumed + grainConsumed;
 
   return {
+    fermentationVolume: Math.round(totalFermVol * 100) / 100,
     grainConsumed: Math.round(grainConsumed * 100) / 100,
     grainInProcess: Math.round(grainInProcess * 100) / 100,
     siloOpeningStock: Math.round(opening * 100) / 100,
@@ -29,13 +41,6 @@ function calcGrain(data: any, opening: number, prevCumUnloaded: number, prevCumC
     cumulativeUnloaded: Math.round(cumulativeUnloaded * 100) / 100,
     cumulativeConsumed: Math.round(cumulativeConsumed * 100) / 100,
   };
-}
-
-async function getPreviousEntry(date: Date, yearStart: number) {
-  return prisma.grainEntry.findFirst({
-    where: { yearStart },
-    orderBy: { createdAt: 'desc' },
-  });
 }
 
 async function getLastEntry(yearStart: number) {
@@ -71,11 +76,25 @@ router.get('/latest', authenticate, async (req: AuthRequest, res: Response) => {
       latest,
       defaults: {
         siloOpeningStock: latest?.siloClosingStock ?? DEFAULT_SILO,
+        totalGrainAtPlant: latest?.totalGrainAtPlant ?? DEFAULT_SILO,
         cumulativeUnloaded: latest?.cumulativeUnloaded ?? DEFAULT_CUM_UNLOADED,
         cumulativeConsumed: latest?.cumulativeConsumed ?? DEFAULT_CUM_CONSUMED,
         lastUnloaded: latest?.grainUnloaded ?? 0,
         yearStart,
       },
+      previous: latest ? {
+        washConsumed: latest.washConsumed,
+        washConsumedAt: latest.washConsumedAt,
+        fermentationVolume: latest.fermentationVolume,
+        fermentationVolumeAt: latest.fermentationVolumeAt,
+        f1Level: latest.f1Level, f2Level: latest.f2Level,
+        f3Level: latest.f3Level, f4Level: latest.f4Level,
+        pf1Level: latest.pf1Level, pf2Level: latest.pf2Level,
+        grainConsumed: latest.grainConsumed,
+        grainInProcess: latest.grainInProcess,
+        date: latest.date,
+        createdAt: latest.createdAt,
+      } : null,
     });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
@@ -105,10 +124,12 @@ router.get('/summary', authenticate, async (req: AuthRequest, res: Response) => 
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-// POST /api/grain - always creates new entry (multiple per day OK)
+// POST /api/grain
 router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const { date, grainUnloaded, washConsumed, fermentationVolume, moisture, starchPercent, damagedPercent, foreignMatter, trucks, avgTruckWeight, supplier, remarks } = req.body;
+    const { date, grainUnloaded, washConsumed, washConsumedAt, fermentationVolumeAt,
+      f1Level, f2Level, f3Level, f4Level, pf1Level, pf2Level,
+      moisture, starchPercent, damagedPercent, foreignMatter, trucks, avgTruckWeight, supplier, remarks } = req.body;
     const entryDate = new Date(date);
     entryDate.setHours(0, 0, 0, 0);
     const yearStart = entryDate.getFullYear();
@@ -118,8 +139,15 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     const prevCumUnloaded = prev?.cumulativeUnloaded ?? DEFAULT_CUM_UNLOADED;
     const prevCumConsumed = prev?.cumulativeConsumed ?? DEFAULT_CUM_CONSUMED;
 
-    const inputData = { grainUnloaded: grainUnloaded || 0, washConsumed: washConsumed || 0, fermentationVolume: fermentationVolume || 0 };
-    const calc = calcGrain(inputData, opening, prevCumUnloaded, prevCumConsumed);
+    const inputData = {
+      grainUnloaded: grainUnloaded || 0,
+      washConsumed: washConsumed || 0,
+      f1Level: f1Level || 0, f2Level: f2Level || 0,
+      f3Level: f3Level || 0, f4Level: f4Level || 0,
+      pf1Level: pf1Level || 0, pf2Level: pf2Level || 0,
+    };
+    const prevWash = prev?.washConsumed ?? 0;
+    const calc = calcGrain(inputData, opening, prevCumUnloaded, prevCumConsumed, prevWash);
 
     const entry = await prisma.grainEntry.create({
       data: {
@@ -127,7 +155,11 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
         yearStart,
         grainUnloaded: inputData.grainUnloaded,
         washConsumed: inputData.washConsumed,
-        fermentationVolume: inputData.fermentationVolume,
+        washConsumedAt: washConsumedAt ? new Date(washConsumedAt) : null,
+        fermentationVolumeAt: fermentationVolumeAt ? new Date(fermentationVolumeAt) : null,
+        f1Level: inputData.f1Level, f2Level: inputData.f2Level,
+        f3Level: inputData.f3Level, f4Level: inputData.f4Level,
+        pf1Level: inputData.pf1Level, pf2Level: inputData.pf2Level,
         ...calc,
         moisture: moisture ?? null, starchPercent: starchPercent ?? null,
         damagedPercent: damagedPercent ?? null, foreignMatter: foreignMatter ?? null,
@@ -144,7 +176,9 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
 // PUT /api/grain/:id
 router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const { grainUnloaded, washConsumed, fermentationVolume, moisture, starchPercent, damagedPercent, foreignMatter, trucks, avgTruckWeight, supplier, remarks } = req.body;
+    const { grainUnloaded, washConsumed, washConsumedAt, fermentationVolumeAt,
+      f1Level, f2Level, f3Level, f4Level, pf1Level, pf2Level,
+      moisture, starchPercent, damagedPercent, foreignMatter, trucks, avgTruckWeight, supplier, remarks } = req.body;
     const existing = await prisma.grainEntry.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: 'Entry not found' });
 
@@ -159,13 +193,24 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
     const inputData = {
       grainUnloaded: grainUnloaded ?? existing.grainUnloaded,
       washConsumed: washConsumed ?? existing.washConsumed,
-      fermentationVolume: fermentationVolume ?? existing.fermentationVolume,
+      f1Level: f1Level ?? existing.f1Level ?? 0,
+      f2Level: f2Level ?? existing.f2Level ?? 0,
+      f3Level: f3Level ?? existing.f3Level ?? 0,
+      f4Level: f4Level ?? existing.f4Level ?? 0,
+      pf1Level: pf1Level ?? existing.pf1Level ?? 0,
+      pf2Level: pf2Level ?? existing.pf2Level ?? 0,
     };
-    const calc = calcGrain(inputData, opening, prevCumUnloaded, prevCumConsumed);
+    const prevWash = prev?.washConsumed ?? 0;
+    const calc = calcGrain(inputData, opening, prevCumUnloaded, prevCumConsumed, prevWash);
 
     const entry = await prisma.grainEntry.update({
       where: { id: req.params.id },
-      data: { ...inputData, ...calc, moisture, starchPercent, damagedPercent, foreignMatter, trucks, avgTruckWeight, supplier, remarks },
+      data: {
+        ...inputData, ...calc,
+        washConsumedAt: washConsumedAt ? new Date(washConsumedAt) : undefined,
+        fermentationVolumeAt: fermentationVolumeAt ? new Date(fermentationVolumeAt) : undefined,
+        moisture, starchPercent, damagedPercent, foreignMatter, trucks, avgTruckWeight, supplier, remarks,
+      },
     });
 
     res.json(entry);

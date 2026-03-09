@@ -40,6 +40,9 @@ router.post('/', async (req: Request, res: Response) => {
         fltViscosity: b.fltViscosity ? parseFloat(b.fltViscosity) : null,
         iltAcidity: b.iltAcidity ? parseFloat(b.iltAcidity) : null,
         fltAcidity: b.fltAcidity ? parseFloat(b.fltAcidity) : null,
+        flourRate: b.flourRate ? parseFloat(b.flourRate) : null,
+        hotWaterFlowRate: b.hotWaterFlowRate ? parseFloat(b.hotWaterFlowRate) : null,
+        thinSlopRecycleFlowRate: b.thinSlopRecycleFlowRate ? parseFloat(b.thinSlopRecycleFlowRate) : null,
         slurryFlow: b.slurryFlow ? parseFloat(b.slurryFlow) : null,
         steamFlow: b.steamFlow ? parseFloat(b.steamFlow) : null,
         remark: b.remark || null, userId

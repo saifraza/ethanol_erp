@@ -21,13 +21,13 @@ export default function Reports() {
   const s = data?.summary;
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">Reports</h1>
+      <h1 className="text-xl md:text-2xl font-bold mb-4 md:mb-6">Reports</h1>
       <div className="card mb-6">
-        <div className="flex items-end gap-4">
+        <div className="grid grid-cols-2 md:flex md:items-end gap-3 md:gap-4">
           <div><label className="block text-sm font-medium mb-1">Start Date</label><input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="input-field" /></div>
           <div><label className="block text-sm font-medium mb-1">End Date</label><input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="input-field" /></div>
-          <button onClick={generate} className="btn-primary flex items-center gap-2" disabled={loading}><BarChart3 size={16} />{loading ? 'Loading...' : 'Generate'}</button>
-          {data && <button onClick={exportCSV} className="btn-secondary flex items-center gap-2"><Download size={16} />Export CSV</button>}
+          <button onClick={generate} className="btn-primary flex items-center justify-center gap-2 w-full md:w-auto col-span-2 md:col-span-1" disabled={loading}><BarChart3 size={16} />{loading ? 'Loading...' : 'Generate'}</button>
+          {data && <button onClick={exportCSV} className="btn-secondary flex items-center justify-center gap-2 w-full md:w-auto col-span-2 md:col-span-1"><Download size={16} />Export CSV</button>}
         </div>
       </div>
 

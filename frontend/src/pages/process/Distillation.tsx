@@ -68,8 +68,8 @@ export default function Distillation() {
           <Field label="Evaporation SPGR"><input type="number" step="0.01" value={form.evaporationSpgr} onChange={e=>upd('evaporationSpgr',e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" /></Field>
           <Field label="Remark"><input type="text" value={form.remark} onChange={e=>upd('remark',e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" /></Field>
         </div>
-        <div className="flex items-center gap-3 mt-4">
-          <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 bg-red-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50 transition">
+        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 mt-4">
+          <button onClick={handleSave} disabled={saving} className="flex items-center justify-center gap-2 bg-red-600 text-white px-5 py-2.5 min-h-[44px] rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50 transition w-full md:w-auto">
             {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save Entry
           </button>
           {msg && <span className={`text-sm font-medium ${msg.type === 'ok' ? 'text-green-600' : 'text-red-600'}`}>{msg.text}</span>}

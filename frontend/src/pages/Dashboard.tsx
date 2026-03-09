@@ -5,12 +5,12 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 
 function KPI({ label, value, unit, icon: Icon, color, sub }: any) {
   return (
-    <div className="bg-white rounded-lg shadow p-4 flex items-center gap-4">
-      <div className={`p-3 rounded-lg ${color}`}><Icon size={22} className="text-white" /></div>
-      <div>
-        <p className="text-xs text-gray-500">{label}</p>
-        <p className="text-xl font-bold">{value ?? '—'} <span className="text-sm font-normal text-gray-400">{unit}</span></p>
-        {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+    <div className="bg-white rounded-lg shadow p-3 md:p-4 flex items-center gap-3 md:gap-4">
+      <div className={`p-2 md:p-3 rounded-lg ${color}`}><Icon size={20} className="text-white" /></div>
+      <div className="min-w-0">
+        <p className="text-[11px] md:text-xs text-gray-500 truncate">{label}</p>
+        <p className="text-lg md:text-xl font-bold">{value ?? '—'} <span className="text-xs md:text-sm font-normal text-gray-400">{unit}</span></p>
+        {sub && <p className="text-[10px] md:text-xs text-gray-400 mt-0.5 truncate">{sub}</p>}
       </div>
     </div>
   );
@@ -83,7 +83,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Dashboard</h1>
+      <h1 className="text-xl md:text-2xl font-bold">Dashboard</h1>
 
       {/* Anomaly Alerts */}
       {criticalAnomalies.length > 0 && (

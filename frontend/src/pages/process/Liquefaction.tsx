@@ -16,6 +16,9 @@ interface LiqEntry {
   iltBrix: number | null; fltBrix: number | null;
   iltViscosity: number | null; fltViscosity: number | null;
   iltAcidity: number | null; fltAcidity: number | null;
+  flourRate: number | null;
+  hotWaterFlowRate: number | null;
+  thinSlopRecycleFlowRate: number | null;
   slurryFlow: number | null;
   steamFlow: number | null;
   remark: string | null;
@@ -29,6 +32,7 @@ interface FormState {
   iltBrix: string; fltBrix: string;
   iltViscosity: string; fltViscosity: string;
   iltAcidity: string; fltAcidity: string;
+  flourRate: string; hotWaterFlowRate: string; thinSlopRecycleFlowRate: string;
   slurryFlow: string; steamFlow: string;
   remark: string;
 }
@@ -39,7 +43,9 @@ const emptyForm = (): FormState => ({
   fltTemp: '', fltSpGravity: '', fltPh: '', fltRs: '', fltRst: '',
   iltDs: '', iltTs: '', fltDs: '', fltTs: '',
   iltBrix: '', fltBrix: '', iltViscosity: '', fltViscosity: '',
-  iltAcidity: '', fltAcidity: '', slurryFlow: '', steamFlow: '',
+  iltAcidity: '', fltAcidity: '',
+  flourRate: '', hotWaterFlowRate: '', thinSlopRecycleFlowRate: '',
+  slurryFlow: '', steamFlow: '',
   remark: ''
 });
 
@@ -234,6 +240,13 @@ export default function Liquefaction() {
           {numInput("Jet Cooker Flow", "jetCookerFlow", "0.1")}
         </div>
 
+        {/* Flow Rates */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-5">
+          {numInput("Flour Rate", "flourRate", "0.1")}
+          {numInput("Hot Water Flow Rate", "hotWaterFlowRate", "0.1")}
+          {numInput("Thin Slop Recycle Flow Rate", "thinSlopRecycleFlowRate", "0.1")}
+        </div>
+
         {/* ILT Section */}
         <div className="mb-4">
           <div className="text-sm font-semibold text-blue-700 mb-2 border-b border-blue-100 pb-1">
@@ -303,7 +316,7 @@ export default function Liquefaction() {
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" />
           </div>
           <button onClick={handleSave} disabled={saving}
-            className="flex items-center gap-2 bg-blue-600 text-white px-6 py-2.5 rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition shadow-sm">
+            className="flex items-center justify-center gap-2 bg-blue-600 text-white px-6 py-2.5 min-h-[44px] rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition shadow-sm w-full sm:w-auto">
             {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save Entry
           </button>
         </div>

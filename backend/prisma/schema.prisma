@@ -87,8 +87,16 @@ model GrainEntry {
   date               DateTime
   yearStart          Int
   grainUnloaded      Float    @default(0)
-  washConsumed       Float    @default(0)
-  fermentationVolume Float    @default(0)
+  washConsumed         Float    @default(0)
+  washConsumedAt       DateTime?
+  fermentationVolume   Float    @default(0)
+  fermentationVolumeAt DateTime?
+  f1Level            Float?
+  f2Level            Float?
+  f3Level            Float?
+  f4Level            Float?
+  pf1Level           Float?
+  pf2Level           Float?
   grainConsumed      Float    @default(0)
   grainInProcess     Float    @default(0)
   siloOpeningStock   Float    @default(0)
@@ -182,8 +190,11 @@ model LiquefactionEntry {
   fltViscosity    Float?   // Viscosity FLT
   iltAcidity      Float?   // Acidity ILT
   fltAcidity      Float?   // Acidity FLT
-  slurryFlow      Float?   // ILT to Jet Cooker Slurry Flow
-  steamFlow       Float?   // Liquefaction Steam Flow
+  flourRate               Float?   // Flour Rate
+  hotWaterFlowRate        Float?   // Hot Water Flow Rate
+  thinSlopRecycleFlowRate Float?   // Thin Slop Recycle Flow Rate
+  slurryFlow              Float?   // ILT to Jet Cooker Slurry Flow
+  steamFlow               Float?   // Liquefaction Steam Flow
   remark          String?
   userId          String
   createdAt       DateTime @default(now())
