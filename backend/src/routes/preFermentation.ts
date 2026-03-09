@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { authenticate } from '../middleware/auth';
+import { authenticate, authorize } from '../middleware/auth';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -92,7 +92,7 @@ router.patch('/batches/:id', async (req: Request, res: Response) => {
   }
 });
 
-router.delete('/batches/:id', async (req: Request, res: Response) => {
+router.delete('/batches/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
   await prisma.pFBatch.delete({ where: { id: req.params.id } });
   res.json({ ok: true });
 });
@@ -121,7 +121,7 @@ router.post('/batches/:id/dosing', async (req: Request, res: Response) => {
   }
 });
 
-router.delete('/dosing/:id', async (req: Request, res: Response) => {
+router.delete('/dosing/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
   await prisma.pFDosing.delete({ where: { id: req.params.id } });
   res.json({ ok: true });
 });
@@ -158,7 +158,7 @@ router.post('/batches/:id/lab', async (req: Request, res: Response) => {
   }
 });
 
-router.delete('/lab/:id', async (req: Request, res: Response) => {
+router.delete('/lab/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
   await prisma.pFLabReading.delete({ where: { id: req.params.id } });
   res.json({ ok: true });
 });

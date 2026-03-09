@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { authenticate } from '../middleware/auth';
+import { authenticate, authorize } from '../middleware/auth';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -74,7 +74,7 @@ router.patch('/batches/:id', async (req: Request, res: Response) => {
   } catch (err: any) { res.status(400).json({ error: err.message }); }
 });
 
-router.delete('/batches/:id', async (req: Request, res: Response) => {
+router.delete('/batches/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
   await prisma.fermentationBatch.delete({ where: { id: req.params.id } });
   res.json({ ok: true });
 });
@@ -91,7 +91,7 @@ router.post('/batches/:id/dosing', async (req: Request, res: Response) => {
   } catch (err: any) { res.status(400).json({ error: err.message }); }
 });
 
-router.delete('/dosing/:id', async (req: Request, res: Response) => {
+router.delete('/dosing/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
   await prisma.fermDosing.delete({ where: { id: req.params.id } });
   res.json({ ok: true });
 });
@@ -140,7 +140,7 @@ router.post('/', async (req: Request, res: Response) => {
   res.status(201).json(entry);
 });
 
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
   await prisma.fermentationEntry.delete({ where: { id: req.params.id } });
   res.json({ ok: true });
 });
