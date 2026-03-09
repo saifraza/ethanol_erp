@@ -95,6 +95,7 @@ model GrainEntry {
   f2Level            Float?
   f3Level            Float?
   f4Level            Float?
+  beerWellLevel      Float?
   pf1Level           Float?
   pf2Level           Float?
   grainConsumed      Float    @default(0)
@@ -190,6 +191,9 @@ model LiquefactionEntry {
   fltViscosity    Float?   // Viscosity FLT
   iltAcidity      Float?   // Acidity ILT
   fltAcidity      Float?   // Acidity FLT
+  iltLevel        Float?   // ILT Tank Level
+  fltLevel        Float?   // FLT Tank Level
+  fltFlowRate     Float?   // FLT Flow Rate
   flourRate               Float?   // Flour Rate
   hotWaterFlowRate        Float?   // Hot Water Flow Rate
   thinSlopRecycleFlowRate Float?   // Thin Slop Recycle Flow Rate

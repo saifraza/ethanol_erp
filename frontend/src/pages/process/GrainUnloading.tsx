@@ -18,6 +18,7 @@ interface GrainForm {
   f2Pct: number | null;
   f3Pct: number | null;
   f4Pct: number | null;
+  beerWellPct: number | null;
   pf1Pct: number | null;
   pf2Pct: number | null;
   fermentationVolumeAt: string;
@@ -40,7 +41,7 @@ function nowLocal() {
 const emptyForm: GrainForm = {
   date: new Date().toISOString().split('T')[0],
   grainUnloaded: null, washConsumed: null, washConsumedAt: nowLocal(),
-  f1Pct: null, f2Pct: null, f3Pct: null, f4Pct: null,
+  f1Pct: null, f2Pct: null, f3Pct: null, f4Pct: null, beerWellPct: null,
   pf1Pct: null, pf2Pct: null, fermentationVolumeAt: nowLocal(),
   moisture: null, starchPercent: null, damagedPercent: null, foreignMatter: null,
   trucks: null, avgTruckWeight: null, supplier: '', remarks: '',
@@ -87,10 +88,11 @@ export default function GrainUnloading() {
   const f2KL = pctToKl(form.f2Pct, FERM_CAPACITY);
   const f3KL = pctToKl(form.f3Pct, FERM_CAPACITY);
   const f4KL = pctToKl(form.f4Pct, FERM_CAPACITY);
+  const beerWellKL = pctToKl(form.beerWellPct, FERM_CAPACITY);
   const pf1KL = pctToKl(form.pf1Pct, PF_CAPACITY);
   const pf2KL = pctToKl(form.pf2Pct, PF_CAPACITY);
 
-  const fermVol = f1KL + f2KL + f3KL + f4KL;
+  const fermVol = f1KL + f2KL + f3KL + f4KL + beerWellKL;
   const pfVol = pf1KL + pf2KL;
   const totalFermVol = fermVol + pfVol;
   // Wash is cumulative flow meter — grain consumed = diff from prev × 31%
@@ -141,6 +143,7 @@ export default function GrainUnloading() {
         washConsumed: form.washConsumed,
         washConsumedAt: form.washConsumedAt,
         f1Level: f1KL, f2Level: f2KL, f3Level: f3KL, f4Level: f4KL,
+        beerWellLevel: beerWellKL,
         pf1Level: pf1KL, pf2Level: pf2KL,
         fermentationVolumeAt: form.fermentationVolumeAt,
         moisture: form.moisture, starchPercent: form.starchPercent,
@@ -170,6 +173,7 @@ export default function GrainUnloading() {
       f2Pct: klToPct(e.f2Level, FERM_CAPACITY),
       f3Pct: klToPct(e.f3Level, FERM_CAPACITY),
       f4Pct: klToPct(e.f4Level, FERM_CAPACITY),
+      beerWellPct: klToPct(e.beerWellLevel, FERM_CAPACITY),
       pf1Pct: klToPct(e.pf1Level, PF_CAPACITY),
       pf2Pct: klToPct(e.pf2Level, PF_CAPACITY),
       fermentationVolumeAt: e.fermentationVolumeAt ? e.fermentationVolumeAt.slice(0, 16) : nowLocal(),
@@ -322,8 +326,37 @@ export default function GrainUnloading() {
             );
           })}
         </div>
+        {/* Beer Well - same capacity as fermenter */}
+        <div className="grid grid-cols-2 gap-3 mt-3">
+          {(() => {
+            const curPct = form.beerWellPct || 0;
+            const curKL = beerWellKL;
+            const prvPctVal = prevPct('beerWellLevel', FERM_CAPACITY);
+            return (
+              <div className="border rounded-lg p-3 bg-white border-purple-200">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-semibold text-purple-700">Beer Well</span>
+                  <span className="text-xs text-gray-500">{curKL.toFixed(0)} KL</span>
+                </div>
+                <div className="flex items-center gap-2 mb-2">
+                  <input type="number" value={form.beerWellPct ?? ''} onChange={e => u('beerWellPct', e.target.value ? parseFloat(e.target.value) : null)}
+                    placeholder="%" className="input-field w-full text-sm" min={0} max={100} step={1} />
+                  <span className="text-sm text-gray-400 shrink-0">%</span>
+                </div>
+                <Bar p={curPct} />
+                {prev && (
+                  <div className="flex justify-between text-xs text-gray-400 mt-1.5">
+                    <span>Prev: {prvPctVal}%</span>
+                    {(curPct - prvPctVal) !== 0 && <DiffCell val={curPct - prvPctVal} unit="%" />}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+
         <div className="text-right text-sm text-gray-600 mt-2">
-          Total: <span className="font-semibold">{fermVol.toFixed(0)} KL</span>
+          Total (F1-F4 + BW): <span className="font-semibold">{fermVol.toFixed(0)} KL</span>
           <span className="mx-1">→</span>
           Grain: <span className="font-semibold text-amber-600">{grainInFerm.toFixed(1)} T</span>
         </div>
@@ -377,7 +410,7 @@ export default function GrainUnloading() {
       {/* === 4. AUTO-CALCULATED === */}
       <InputCard title="Summary (Auto)">
         {(() => {
-          const prevFermGrain = prev ? ((prev.f1Level||0)+(prev.f2Level||0)+(prev.f3Level||0)+(prev.f4Level||0)) * FERM_GRAIN_PCT : 0;
+          const prevFermGrain = prev ? ((prev.f1Level||0)+(prev.f2Level||0)+(prev.f3Level||0)+(prev.f4Level||0)+(prev.beerWellLevel||0)) * FERM_GRAIN_PCT : 0;
           const fermDiff = grainInFerm - prevFermGrain;
           const prevPFGrain = prev ? ((prev.pf1Level||0)+(prev.pf2Level||0)) * PF_GRAIN_PCT : 0;
           const pfDiff = grainInPF - prevPFGrain;

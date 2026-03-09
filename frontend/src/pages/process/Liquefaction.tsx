@@ -16,6 +16,9 @@ interface LiqEntry {
   iltBrix: number | null; fltBrix: number | null;
   iltViscosity: number | null; fltViscosity: number | null;
   iltAcidity: number | null; fltAcidity: number | null;
+  iltLevel: number | null;
+  fltLevel: number | null;
+  fltFlowRate: number | null;
   flourRate: number | null;
   hotWaterFlowRate: number | null;
   thinSlopRecycleFlowRate: number | null;
@@ -32,6 +35,7 @@ interface FormState {
   iltBrix: string; fltBrix: string;
   iltViscosity: string; fltViscosity: string;
   iltAcidity: string; fltAcidity: string;
+  iltLevel: string; fltLevel: string; fltFlowRate: string;
   flourRate: string; hotWaterFlowRate: string; thinSlopRecycleFlowRate: string;
   slurryFlow: string; steamFlow: string;
   remark: string;
@@ -44,6 +48,7 @@ const emptyForm = (): FormState => ({
   iltDs: '', iltTs: '', fltDs: '', fltTs: '',
   iltBrix: '', fltBrix: '', iltViscosity: '', fltViscosity: '',
   iltAcidity: '', fltAcidity: '',
+  iltLevel: '', fltLevel: '', fltFlowRate: '',
   flourRate: '', hotWaterFlowRate: '', thinSlopRecycleFlowRate: '',
   slurryFlow: '', steamFlow: '',
   remark: ''
@@ -252,7 +257,8 @@ export default function Liquefaction() {
           <div className="text-sm font-semibold text-blue-700 mb-2 border-b border-blue-100 pb-1">
             ILT (Initial Liquefaction Tank)
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+            {numInput("Level", "iltLevel", "0.1")}
             {numInput("Temp °C", "iltTemp", "0.1")}
             {numInput("Sp. Gravity", "iltSpGravity")}
             {numInput("pH", "iltPh")}
@@ -265,9 +271,13 @@ export default function Liquefaction() {
           <div className="text-sm font-semibold text-green-700 mb-2 border-b border-green-100 pb-1">
             FLT (Final Liquefaction Tank)
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-2">
+            {numInput("Level", "fltLevel", "0.1")}
+            {numInput("Flow Rate", "fltFlowRate", "0.1")}
             {numInput("Temp °C", "fltTemp", "0.1")}
             {numInput("Sp. Gravity", "fltSpGravity")}
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             {numInput("pH", "fltPh")}
             {numInput("RS %", "fltRs")}
             {numInput("RST %", "fltRst")}

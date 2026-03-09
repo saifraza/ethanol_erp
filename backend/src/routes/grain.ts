@@ -19,7 +19,7 @@ function calcGrain(data: any, opening: number, prevCumUnloaded: number, prevCumC
   const grainConsumed = washDiff * FERMENTER_GRAIN_PCT;
 
   // Grain in process: fermenters at 31%, PF at 15%
-  const fermVol = (data.f1Level || 0) + (data.f2Level || 0) + (data.f3Level || 0) + (data.f4Level || 0);
+  const fermVol = (data.f1Level || 0) + (data.f2Level || 0) + (data.f3Level || 0) + (data.f4Level || 0) + (data.beerWellLevel || 0);
   const pfVol = (data.pf1Level || 0) + (data.pf2Level || 0);
   const grainInFermenters = fermVol * FERMENTER_GRAIN_PCT;
   const grainInPF = pfVol * PF_GRAIN_PCT;
@@ -89,6 +89,7 @@ router.get('/latest', authenticate, async (req: AuthRequest, res: Response) => {
         fermentationVolumeAt: latest.fermentationVolumeAt,
         f1Level: latest.f1Level, f2Level: latest.f2Level,
         f3Level: latest.f3Level, f4Level: latest.f4Level,
+        beerWellLevel: latest.beerWellLevel,
         pf1Level: latest.pf1Level, pf2Level: latest.pf2Level,
         grainConsumed: latest.grainConsumed,
         grainInProcess: latest.grainInProcess,
@@ -128,7 +129,7 @@ router.get('/summary', authenticate, async (req: AuthRequest, res: Response) => 
 router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { date, grainUnloaded, washConsumed, washConsumedAt, fermentationVolumeAt,
-      f1Level, f2Level, f3Level, f4Level, pf1Level, pf2Level,
+      f1Level, f2Level, f3Level, f4Level, beerWellLevel, pf1Level, pf2Level,
       moisture, starchPercent, damagedPercent, foreignMatter, trucks, avgTruckWeight, supplier, remarks } = req.body;
     const entryDate = new Date(date);
     entryDate.setHours(0, 0, 0, 0);
@@ -144,6 +145,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
       washConsumed: washConsumed || 0,
       f1Level: f1Level || 0, f2Level: f2Level || 0,
       f3Level: f3Level || 0, f4Level: f4Level || 0,
+      beerWellLevel: beerWellLevel || 0,
       pf1Level: pf1Level || 0, pf2Level: pf2Level || 0,
     };
     const prevWash = prev?.washConsumed ?? 0;
@@ -177,7 +179,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
 router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { grainUnloaded, washConsumed, washConsumedAt, fermentationVolumeAt,
-      f1Level, f2Level, f3Level, f4Level, pf1Level, pf2Level,
+      f1Level, f2Level, f3Level, f4Level, beerWellLevel, pf1Level, pf2Level,
       moisture, starchPercent, damagedPercent, foreignMatter, trucks, avgTruckWeight, supplier, remarks } = req.body;
     const existing = await prisma.grainEntry.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: 'Entry not found' });
@@ -197,6 +199,7 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
       f2Level: f2Level ?? existing.f2Level ?? 0,
       f3Level: f3Level ?? existing.f3Level ?? 0,
       f4Level: f4Level ?? existing.f4Level ?? 0,
+      beerWellLevel: beerWellLevel ?? existing.beerWellLevel ?? 0,
       pf1Level: pf1Level ?? existing.pf1Level ?? 0,
       pf2Level: pf2Level ?? existing.pf2Level ?? 0,
     };
