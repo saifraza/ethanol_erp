@@ -16,6 +16,7 @@ import liquefactionRoutes from './routes/liquefaction';
 import preFermentationRoutes from './routes/preFermentation';
 import fermentationRoutes from './routes/fermentation';
 import distillationRoutes from './routes/distillation';
+import ethanolProductRoutes from './routes/ethanolProduct';
 
 const app = express();
 
@@ -37,6 +38,7 @@ app.use('/api/liquefaction', liquefactionRoutes);
 app.use('/api/pre-fermentation', preFermentationRoutes);
 app.use('/api/fermentation', fermentationRoutes);
 app.use('/api/distillation', distillationRoutes);
+app.use('/api/ethanol-product', ethanolProductRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

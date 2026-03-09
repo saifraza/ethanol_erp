@@ -401,6 +401,80 @@ model DistillationEntry {
   updatedAt           DateTime @updatedAt
 }
 
+// ═══════════════════════════════════════════════
+// ETHANOL PRODUCT & DISPATCH
+// ═══════════════════════════════════════════════
+model EthanolProductEntry {
+  id              String   @id @default(uuid())
+  date            DateTime
+  yearStart       Int
+  // 9 tanks: current DIP, LT%, Strength%, Volume (BL)
+  recADip         Float?
+  recALt          Float?
+  recAStrength    Float?
+  recAVolume      Float?
+  recBDip         Float?
+  recBLt          Float?
+  recBStrength    Float?
+  recBVolume      Float?
+  recCDip         Float?
+  recCLt          Float?
+  recCStrength    Float?
+  recCVolume      Float?
+  issADip         Float?
+  issALt          Float?
+  issAStrength    Float?
+  issAVolume      Float?
+  issBDip         Float?
+  issBLt          Float?
+  issBStrength    Float?
+  issBVolume      Float?
+  issCDip         Float?
+  issCLt          Float?
+  issCStrength    Float?
+  issCVolume      Float?
+  bulkADip        Float?
+  bulkALt         Float?
+  bulkAStrength   Float?
+  bulkAVolume     Float?
+  bulkBDip        Float?
+  bulkBLt         Float?
+  bulkBStrength   Float?
+  bulkBVolume     Float?
+  bulkCDip        Float?
+  bulkCLt         Float?
+  bulkCStrength   Float?
+  bulkCVolume     Float?
+  // RS / HFO / LFO tanks (15 M3 each) — current levels as %
+  rsLevel         Float?
+  hfoLevel        Float?
+  lfoLevel        Float?
+  // Computed / summary fields
+  totalStock      Float    @default(0)   // sum of all 9 tank volumes
+  avgStrength     Float    @default(0)   // weighted average strength
+  totalDispatch   Float    @default(0)   // sum of all truck dispatch BL
+  productionBL    Float    @default(0)   // currentStock - prevStock + dispatch
+  productionAL    Float    @default(0)   // productionBL × avgStrength / 100
+  remarks         String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  trucks          DispatchTruck[]
+}
+
+model DispatchTruck {
+  id              String   @id @default(uuid())
+  entryId         String
+  entry           EthanolProductEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  vehicleNo       String   @default("")
+  partyName       String   @default("")
+  destination     String   @default("")
+  quantityBL      Float    @default(0)
+  strength        Float?
+  remarks         String?
+  createdAt       DateTime @default(now())
+}
+
 model AuditLog {
   id        String   @id @default(cuid())
   action    String
