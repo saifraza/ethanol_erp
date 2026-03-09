@@ -1,5 +1,7 @@
 import app from './app';
 import { config } from './config';
+import prisma from './config/prisma';
+import bcrypt from 'bcryptjs';
 
 // Prevent crashes from killing the server
 process.on('uncaughtException', (err) => {
@@ -9,11 +11,27 @@ process.on('unhandledRejection', (err) => {
   console.error('Unhandled Rejection:', err);
 });
 
+// Auto-seed admin user if DB is empty
+async function autoSeed() {
+  try {
+    const count = await prisma.user.count();
+    if (count === 0) {
+      console.log('No users found — seeding default accounts...');
+      const adminHash = await bcrypt.hash('admin123', 10);
+      const opHash = await bcrypt.hash('operator123', 10);
+      await prisma.user.create({ data: { email: 'admin@distillery.com', password: adminHash, name: 'Admin User', role: 'ADMIN' } });
+      await prisma.user.create({ data: { email: 'operator@distillery.com', password: opHash, name: 'Operator User', role: 'OPERATOR' } });
+      console.log('Seed complete.');
+    }
+  } catch (e) { console.error('Auto-seed error:', e); }
+}
+
 const PORT = config.port;
 const HOST = '0.0.0.0';
 
-const server = app.listen(PORT, HOST, () => {
+const server = app.listen(PORT, HOST, async () => {
   console.log(`Server running on http://${HOST}:${PORT}`);
+  await autoSeed();
 });
 
 // Keep the event loop alive
