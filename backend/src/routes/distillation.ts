@@ -24,7 +24,10 @@ router.post('/', async (req: Request, res: Response) => {
       rcReflexStrength: b.rcReflexStrength ? parseFloat(b.rcReflexStrength) : null,
       regenerationStrength: b.regenerationStrength ? parseFloat(b.regenerationStrength) : null,
       evaporationSpgr: b.evaporationSpgr ? parseFloat(b.evaporationSpgr) : null,
-      remark: b.remark || null, userId: (req as any).userId
+      rcStrength: b.rcStrength ? parseFloat(b.rcStrength) : null,
+      actStrength: b.actStrength ? parseFloat(b.actStrength) : null,
+      spentLossLevel: b.spentLossLevel || null,
+      remark: b.remark || null, userId: (req as any).user.id
     }
   });
   res.status(201).json(entry);

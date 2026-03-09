@@ -18,6 +18,7 @@ import Distillation from './pages/process/Distillation';
 import RawMaterial from './pages/process/RawMaterial';
 import PreFermentation from './pages/process/PreFermentation';
 import Dryer from './pages/process/Dryer';
+import Evaporation from './pages/process/Evaporation';
 import EthanolProduct from './pages/process/EthanolProduct';
 import WaterUtility from './pages/process/WaterUtility';
 
@@ -44,6 +45,7 @@ export default function App() {
         <Route path="process/pre-fermentation" element={<PreFermentation />} />
         <Route path="process/fermentation" element={<Fermentation />} />
         <Route path="process/distillation" element={<Distillation />} />
+        <Route path="process/evaporation" element={<Evaporation />} />
         <Route path="process/dryer" element={<Dryer />} />
         <Route path="process/ethanol-product" element={<EthanolProduct />} />
         <Route path="process/water-utility" element={<WaterUtility />} />

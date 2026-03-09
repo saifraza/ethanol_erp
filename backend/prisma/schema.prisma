@@ -395,10 +395,54 @@ model DistillationEntry {
   rcReflexStrength    Float?
   regenerationStrength Float?
   evaporationSpgr     Float?
+  // New fields
+  rcStrength          Float?
+  actStrength         Float?
+  spentLossLevel      String?  // NIL, SLIGHT, HIGH
   remark              String?
   userId              String
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
+}
+
+// ═══════════════════════════════════════════════
+// EVAPORATION
+// ═══════════════════════════════════════════════
+model EvaporationEntry {
+  id              String   @id @default(uuid())
+  date            DateTime
+  analysisTime    String   @default("")
+  // FF1-FF5 specific gravity & temp
+  ff1SpGravity    Float?
+  ff1Temp         Float?
+  ff2SpGravity    Float?
+  ff2Temp         Float?
+  ff3SpGravity    Float?
+  ff3Temp         Float?
+  ff4SpGravity    Float?
+  ff4Temp         Float?
+  ff5SpGravity    Float?
+  ff5Temp         Float?
+  // FC1, FC2 specific gravity & temp
+  fc1SpGravity    Float?
+  fc1Temp         Float?
+  fc2SpGravity    Float?
+  fc2Temp         Float?
+  // Concentration of each FFE (%)
+  ff1Concentration Float?
+  ff2Concentration Float?
+  ff3Concentration Float?
+  ff4Concentration Float?
+  ff5Concentration Float?
+  // Vacuum & flow
+  vacuum          Float?
+  thinSlopFlowRate Float?
+  // Last syrup gravity
+  lastSyrupGravity Float?
+  remark          String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 // ═══════════════════════════════════════════════
