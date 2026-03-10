@@ -586,6 +586,11 @@ model EthanolProductEntry {
   bulkCLt         Float?
   bulkCStrength   Float?
   bulkCVolume     Float?
+  // Dispatch Tank
+  dispDip         Float?
+  dispLt          Float?
+  dispStrength    Float?
+  dispVolume      Float?
   // RS / HFO / LFO tanks (15 M3 each) — current levels as %
   rsLevel         Float?
   hfoLevel        Float?

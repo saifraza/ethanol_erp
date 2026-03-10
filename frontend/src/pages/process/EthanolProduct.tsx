@@ -12,6 +12,7 @@ const TANKS = [
   { key: 'bulkA', label: 'Bulk A', group: 'Bulk Storage', color: 'orange' },
   { key: 'bulkB', label: 'Bulk B', group: 'Bulk Storage', color: 'orange' },
   { key: 'bulkC', label: 'Bulk C', group: 'Bulk Storage', color: 'orange' },
+  { key: 'disp', label: 'Dispatch Tank', group: 'Dispatch', color: 'red' },
 ];
 
 interface TruckForm { vehicleNo: string; partyName: string; destination: string; quantityBL: string; strength: string; remarks: string; }
@@ -115,6 +116,7 @@ export default function EthanolProduct() {
     { label: 'Receivers', tanks: TANKS.filter(t => t.group === 'Receivers'), color: 'blue' },
     { label: 'Issue Tanks', tanks: TANKS.filter(t => t.group === 'Issue Tanks'), color: 'green' },
     { label: 'Bulk Storage', tanks: TANKS.filter(t => t.group === 'Bulk Storage'), color: 'orange' },
+    { label: 'Dispatch', tanks: TANKS.filter(t => t.group === 'Dispatch'), color: 'red' },
   ];
 
   return (

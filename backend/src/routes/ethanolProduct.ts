@@ -4,7 +4,7 @@ import { authenticate, AuthRequest, authorize } from '../middleware/auth';
 
 const router = Router();
 
-const TANK_KEYS = ['recA','recB','recC','issA','issB','issC','bulkA','bulkB','bulkC'];
+const TANK_KEYS = ['recA','recB','recC','issA','issB','issC','bulkA','bulkB','bulkC','disp'];
 const TANK_FIELDS = TANK_KEYS.flatMap(k => [`${k}Dip`,`${k}Lt`,`${k}Strength`,`${k}Volume`]);
 
 function parseTankData(body: any) {
