@@ -101,7 +101,7 @@ export default function GrainUnloading() {
   const grainInFerm = fermVol * FERM_GRAIN_PCT;
   const grainInPF = pfVol * PF_GRAIN_PCT;
   const grainInProcess = grainInFerm + grainInPF;
-  const opening = defaults.siloOpeningStock || 1500;
+  const opening = defaults.siloOpeningStock || 0;
   const siloClosing = opening + (form.grainUnloaded || 0) - grainConsumed;
   const totalAtPlant = siloClosing + grainInProcess;
 
@@ -224,10 +224,10 @@ export default function GrainUnloading() {
       {/* Stat Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 md:gap-3 mb-4 md:mb-5">
         {[
-          { label: 'Silo Stock', value: defaults.siloOpeningStock ?? 1500, unit: 'Ton', color: 'bg-amber-50 border-amber-200' },
-          { label: 'Grain@Plant', value: defaults.totalGrainAtPlant ?? 1500, unit: 'Ton', color: 'bg-green-50 border-green-200' },
+          { label: 'Silo Stock', value: defaults.siloOpeningStock ?? 0, unit: 'Ton', color: 'bg-amber-50 border-amber-200' },
+          { label: 'Grain@Plant', value: defaults.totalGrainAtPlant ?? 0, unit: 'Ton', color: 'bg-green-50 border-green-200' },
           { label: 'Last Unloaded', value: defaults.lastUnloaded ?? 0, unit: 'Ton', color: 'bg-blue-50 border-blue-200' },
-          { label: 'Year Consumed', value: defaults.cumulativeConsumed ?? 10500, unit: 'Ton', color: 'bg-red-50 border-red-200' },
+          { label: 'Year Consumed', value: defaults.cumulativeConsumed ?? 0, unit: 'Ton', color: 'bg-red-50 border-red-200' },
           { label: 'Year', value: defaults.yearStart ?? new Date().getFullYear(), unit: '', color: 'bg-gray-50 border-gray-200' },
         ].map(k => (
           <div key={k.label} className={`rounded-lg border p-2 md:p-3 ${k.color}`}>
@@ -264,7 +264,10 @@ export default function GrainUnloading() {
             </div>
           </div>
         </div>
-        <Field label="Grain to Silo" name="grainUnloaded" value={form.grainUnloaded} onChange={u} unit="Ton" placeholder="Auto from trucks (editable)" />
+        <div className="flex justify-between items-center py-2 px-1">
+          <span className="text-xs text-gray-500">Grain to Silo (from trucks)</span>
+          <span className="font-bold text-amber-700">{(form.grainUnloaded || 0).toFixed(1)} Ton</span>
+        </div>
       </InputCard>
 
       {/* === 2. WASH CONSUMED === */}
