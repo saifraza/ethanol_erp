@@ -469,6 +469,42 @@ model DDGSProductionEntry {
 }
 
 // ═══════════════════════════════════════════════
+// DRYER (3 dryers — moisture, steam, syrup, load)
+// ═══════════════════════════════════════════════
+model DryerEntry {
+  id              String   @id @default(uuid())
+  date            DateTime
+  entryTime       String   @default("")
+  // Dryer 1
+  dr1Moisture     Float?
+  dr1SteamFlow    Float?
+  dr1SteamTempIn  Float?
+  dr1SteamTempOut Float?
+  dr1SyrupConsumption Float?
+  dr1LoadAmps     Float?
+  // Dryer 2
+  dr2Moisture     Float?
+  dr2SteamFlow    Float?
+  dr2SteamTempIn  Float?
+  dr2SteamTempOut Float?
+  dr2SyrupConsumption Float?
+  dr2LoadAmps     Float?
+  // Dryer 3
+  dr3Moisture     Float?
+  dr3SteamFlow    Float?
+  dr3SteamTempIn  Float?
+  dr3SteamTempOut Float?
+  dr3SyrupConsumption Float?
+  dr3LoadAmps     Float?
+  // Final
+  finalMoisture   Float?
+  remark          String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ═══════════════════════════════════════════════
 // DECANTER
 // ═══════════════════════════════════════════════
 model DecanterEntry {

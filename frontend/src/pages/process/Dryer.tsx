@@ -5,7 +5,6 @@ import api from '../../services/api';
 interface DDGSForm {
   date: string; entryTime: string;
   bags: string; weightPerBag: string;
-  dryerInletTemp: string; dryerOutletTemp: string;
   ddgsMoisture: string; ddgsProtein: string;
   remark: string;
 }
@@ -13,12 +12,11 @@ interface DDGSForm {
 const empty = (): DDGSForm => ({
   date: new Date().toISOString().split('T')[0], entryTime: '',
   bags: '', weightPerBag: '',
-  dryerInletTemp: '', dryerOutletTemp: '',
   ddgsMoisture: '', ddgsProtein: '',
   remark: ''
 });
 
-export default function Dryer() {
+export default function DDGSProduction() {
   const [form, setForm] = useState<DDGSForm>(empty());
   const [entries, setEntries] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
@@ -62,9 +60,7 @@ export default function Dryer() {
       `  Weight/Bag: ${form.weightPerBag || '—'} kg`,
       `  Total: ${totalProduction.toFixed(2)} Ton`,
       ``,
-      `*Dryer Parameters:*`,
-      `  Inlet Temp: ${form.dryerInletTemp || '—'}°C`,
-      `  Outlet Temp: ${form.dryerOutletTemp || '—'}°C`,
+      `*Quality:*`,
       `  Moisture: ${form.ddgsMoisture || '—'}%`,
       `  Protein: ${form.ddgsProtein || '—'}%`,
       form.remark ? `Remark: ${form.remark}` : '',
@@ -85,7 +81,7 @@ export default function Dryer() {
           <Wind size={24} />
           <h1 className="text-xl md:text-2xl font-bold">DDGS Production</h1>
         </div>
-        <p className="text-xs md:text-sm opacity-90">Bags, weight, dryer parameters & quality</p>
+        <p className="text-xs md:text-sm opacity-90">Bags, weight & quality</p>
       </div>
 
       {/* Last Log Card */}
@@ -109,19 +105,14 @@ export default function Dryer() {
               <div className="font-semibold text-orange-700">{lastEntry.bags ?? '—'}</div>
             </div>
             <div>
-              <div className="text-xs text-gray-500">Weight/Bag</div>
-              <div className="font-semibold text-orange-700">{lastEntry.weightPerBag ?? '—'} kg</div>
+              <div className="text-xs text-gray-500">Total (Ton)</div>
+              <div className="font-semibold text-orange-700">{lastEntry.totalProduction?.toFixed(2) ?? '—'}</div>
             </div>
           </div>
-          {lastEntry.totalProduction != null && (
-            <div className="mt-2 text-sm text-orange-800 font-medium">
-              Total Production: {lastEntry.totalProduction?.toFixed(2)} Ton
-            </div>
-          )}
         </div>
       )}
 
-      {/* DDGS Production */}
+      {/* Production Form */}
       <div className="bg-white rounded-lg shadow-sm border p-4 mb-4">
         <h3 className="text-sm font-semibold text-orange-700 mb-3 uppercase tracking-wide">Production</h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
@@ -140,14 +131,12 @@ export default function Dryer() {
         </div>
       </div>
 
-      {/* Dryer Parameters */}
+      {/* Quality */}
       <div className="bg-white rounded-lg shadow-sm border p-4 mb-4">
-        <h3 className="text-sm font-semibold text-red-700 mb-3 uppercase tracking-wide">Dryer Parameters</h3>
+        <h3 className="text-sm font-semibold text-orange-700 mb-3 uppercase tracking-wide">DDGS Quality</h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div><label className="text-xs text-gray-500">Inlet Temp (°C)</label><input type="number" step="0.1" value={form.dryerInletTemp} onChange={e => upd('dryerInletTemp', e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
-          <div><label className="text-xs text-gray-500">Outlet Temp (°C)</label><input type="number" step="0.1" value={form.dryerOutletTemp} onChange={e => upd('dryerOutletTemp', e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
-          <div><label className="text-xs text-gray-500">DDGS Moisture (%)</label><input type="number" step="0.01" value={form.ddgsMoisture} onChange={e => upd('ddgsMoisture', e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
-          <div><label className="text-xs text-gray-500">DDGS Protein (%)</label><input type="number" step="0.01" value={form.ddgsProtein} onChange={e => upd('ddgsProtein', e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+          <div><label className="text-xs text-gray-500">Moisture (%)</label><input type="number" step="0.01" value={form.ddgsMoisture} onChange={e => upd('ddgsMoisture', e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+          <div><label className="text-xs text-gray-500">Protein (%)</label><input type="number" step="0.01" value={form.ddgsProtein} onChange={e => upd('ddgsProtein', e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
         </div>
         <div className="mt-3">
           <label className="text-xs text-gray-500">Remark</label>
@@ -176,7 +165,6 @@ export default function Dryer() {
                 <span>Date: <strong>{form.date}</strong></span>
                 <span>Time: <strong>{form.entryTime || '—'}</strong></span>
               </div>
-
               <div>
                 <h4 className="font-semibold text-orange-700 mb-1">Production</h4>
                 <div className="grid grid-cols-3 gap-2">
@@ -194,27 +182,21 @@ export default function Dryer() {
                   </div>
                 </div>
               </div>
-
               <div>
-                <h4 className="font-semibold text-red-700 mb-1">Dryer Parameters</h4>
+                <h4 className="font-semibold text-orange-700 mb-1">Quality</h4>
                 <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { label: 'Inlet Temp', val: form.dryerInletTemp, unit: '°C' },
-                    { label: 'Outlet Temp', val: form.dryerOutletTemp, unit: '°C' },
-                    { label: 'Moisture', val: form.ddgsMoisture, unit: '%' },
-                    { label: 'Protein', val: form.ddgsProtein, unit: '%' },
-                  ].map(p => (
-                    <div key={p.label} className="bg-red-50 rounded p-2 text-center">
-                      <div className="text-xs text-gray-500">{p.label}</div>
-                      <div className="font-semibold">{p.val || '—'}{p.unit}</div>
-                    </div>
-                  ))}
+                  <div className="bg-orange-50 rounded p-2 text-center">
+                    <div className="text-xs text-gray-500">Moisture</div>
+                    <div className="font-semibold">{form.ddgsMoisture || '—'}%</div>
+                  </div>
+                  <div className="bg-orange-50 rounded p-2 text-center">
+                    <div className="text-xs text-gray-500">Protein</div>
+                    <div className="font-semibold">{form.ddgsProtein || '—'}%</div>
+                  </div>
                 </div>
               </div>
-
               {form.remark && <div className="text-gray-600 italic">Remark: {form.remark}</div>}
             </div>
-
             <div className="sticky bottom-0 bg-gray-50 p-4 rounded-b-xl flex gap-3 border-t">
               <button onClick={handleSave} disabled={saving} className="flex-1 flex items-center justify-center gap-2 bg-orange-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-orange-700 disabled:opacity-50 transition">
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save Entry

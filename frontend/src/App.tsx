@@ -17,7 +17,8 @@ import Fermentation from './pages/process/Fermentation';
 import Distillation from './pages/process/Distillation';
 import RawMaterial from './pages/process/RawMaterial';
 import PreFermentation from './pages/process/PreFermentation';
-import Dryer from './pages/process/Dryer';
+import DDGSProduction from './pages/process/Dryer';
+import DryerMonitor from './pages/process/DryerMonitor';
 import Decanter from './pages/process/Decanter';
 import Evaporation from './pages/process/Evaporation';
 import EthanolProduct from './pages/process/EthanolProduct';
@@ -47,7 +48,8 @@ export default function App() {
         <Route path="process/fermentation" element={<Fermentation />} />
         <Route path="process/distillation" element={<Distillation />} />
         <Route path="process/evaporation" element={<Evaporation />} />
-        <Route path="process/dryer" element={<Dryer />} />
+        <Route path="process/ddgs" element={<DDGSProduction />} />
+        <Route path="process/dryer" element={<DryerMonitor />} />
         <Route path="process/decanter" element={<Decanter />} />
         <Route path="process/ethanol-product" element={<EthanolProduct />} />
         <Route path="process/water-utility" element={<WaterUtility />} />

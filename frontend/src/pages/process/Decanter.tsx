@@ -22,6 +22,7 @@ export default function Decanter() {
   const [msg, setMsg] = useState<{ type: string; text: string } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [showExtras, setShowExtras] = useState(false);
 
   const load = () => api.get('/decanter').then(r => setEntries(r.data)).catch(() => {});
   useEffect(() => { load(); }, []);
@@ -46,7 +47,7 @@ export default function Decanter() {
     try {
       await api.post('/decanter', form);
       setMsg({ type: 'ok', text: `Saved at ${new Date().toLocaleTimeString()}` });
-      setForm(empty()); setShowPreview(false); load();
+      setForm(empty()); setShowPreview(false); setShowExtras(false); load();
     } catch (err: any) {
       setMsg({ type: 'err', text: err.response?.data?.error || 'Save failed' });
     }
@@ -58,26 +59,38 @@ export default function Decanter() {
       `*DECANTER REPORT*`,
       `Date: ${form.date} | Time: ${form.entryTime || '—'}`,
       ``,
-      `*Decanter Readings:*`,
-      ...DECANTERS.map(d => {
-        const feed = form[d.key + 'Feed'] || '—';
-        const wc = form[d.key + 'WetCake'] || '—';
-        const ts = form[d.key + 'ThinSlopGr'] || '—';
-        return `  ${d.label}: Feed ${feed} | WC ${wc} | TS Gr ${ts}`;
-      }),
-      ``,
-      `*Totals:*`,
-      `  Total Feed: ${totalFeed.toFixed(2)}`,
-      `  Total Wet Cake: ${totalWetCake.toFixed(2)}`,
-      `  Avg Thin Slop Gravity: ${avgThinSlopGr.toFixed(3)}`,
-      form.remark ? `Remark: ${form.remark}` : '',
+      `*Feed (D1–D8):*`,
+      ...DECANTERS.map(d => `  ${d.label}: ${form[d.key + 'Feed'] || '—'}`),
+      `  Total: ${totalFeed.toFixed(2)}`,
     ];
+    // Only include wet cake / thin slop if any values entered
+    const hasWC = DECANTERS.some(d => form[d.key + 'WetCake']);
+    const hasTS = DECANTERS.some(d => form[d.key + 'ThinSlopGr']);
+    if (hasWC) {
+      lines.push('', `*Wet Cake Solid:*`);
+      DECANTERS.forEach(d => { if (form[d.key + 'WetCake']) lines.push(`  ${d.label}: ${form[d.key + 'WetCake']}`); });
+      lines.push(`  Total: ${totalWetCake.toFixed(2)}`);
+    }
+    if (hasTS) {
+      lines.push('', `*Thin Slop Gravity:*`);
+      DECANTERS.forEach(d => { if (form[d.key + 'ThinSlopGr']) lines.push(`  ${d.label}: ${form[d.key + 'ThinSlopGr']}`); });
+      lines.push(`  Avg: ${avgThinSlopGr.toFixed(3)}`);
+    }
+    if (form.remark) lines.push('', `Remark: ${form.remark}`);
     return lines.filter(Boolean).join('\n');
   };
 
   const shareWhatsApp = () => {
     const text = encodeURIComponent(buildPreviewText());
     window.open(`https://wa.me/?text=${text}`, '_blank');
+  };
+
+  // History helpers
+  const entryTotalFeed = (e: any) => DECANTERS.reduce((s, d) => s + (e[d.key + 'Feed'] || 0), 0);
+  const entryTotalWC = (e: any) => DECANTERS.reduce((s, d) => s + (e[d.key + 'WetCake'] || 0), 0);
+  const entryAvgTS = (e: any) => {
+    const vals = DECANTERS.map(d => e[d.key + 'ThinSlopGr']).filter(v => v && v > 0);
+    return vals.length > 0 ? vals.reduce((a: number, b: number) => a + b, 0) / vals.length : 0;
   };
 
   return (
@@ -88,7 +101,7 @@ export default function Decanter() {
           <Filter size={24} />
           <h1 className="text-xl md:text-2xl font-bold">Decanter</h1>
         </div>
-        <p className="text-xs md:text-sm opacity-90">8 Decanters — Feed, Wet Cake Solid, Thin Slop Gravity</p>
+        <p className="text-xs md:text-sm opacity-90">D1–D8 Feed with optional Wet Cake & Thin Slop</p>
       </div>
 
       {/* Date/Time */}
@@ -104,36 +117,73 @@ export default function Decanter() {
         </div>
       </div>
 
-      {/* Decanter Table */}
+      {/* Feed — always visible, compact 2-col grid */}
       <div className="bg-white rounded-lg shadow-sm border p-4 mb-4">
-        <h3 className="text-sm font-semibold text-cyan-700 mb-3 uppercase tracking-wide">Decanter Readings (D1–D8)</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead><tr className="bg-cyan-50">
-              <th className="px-2 py-1.5 text-left text-xs font-medium text-cyan-700">Unit</th>
-              <th className="px-2 py-1.5 text-left text-xs font-medium text-cyan-700">Total Feed</th>
-              <th className="px-2 py-1.5 text-left text-xs font-medium text-cyan-700">Wet Cake Solid</th>
-              <th className="px-2 py-1.5 text-left text-xs font-medium text-cyan-700">Thin Slop Gravity</th>
-            </tr></thead>
-            <tbody>
-              {DECANTERS.map(d => (
-                <tr key={d.key} className="border-t">
-                  <td className="px-2 py-1.5 font-medium text-gray-700">{d.label}</td>
-                  <td className="px-2 py-1"><input type="number" step="0.01" value={form[d.key + 'Feed']} onChange={e => upd(d.key + 'Feed', e.target.value)} className="w-full border rounded px-2 py-1 text-sm" /></td>
-                  <td className="px-2 py-1"><input type="number" step="0.01" value={form[d.key + 'WetCake']} onChange={e => upd(d.key + 'WetCake', e.target.value)} className="w-full border rounded px-2 py-1 text-sm" /></td>
-                  <td className="px-2 py-1"><input type="number" step="0.001" value={form[d.key + 'ThinSlopGr']} onChange={e => upd(d.key + 'ThinSlopGr', e.target.value)} className="w-full border rounded px-2 py-1 text-sm" /></td>
-                </tr>
-              ))}
-              {/* Totals row */}
-              <tr className="border-t-2 border-cyan-300 bg-cyan-50 font-semibold">
-                <td className="px-2 py-1.5 text-cyan-800">Total</td>
-                <td className="px-2 py-1.5 text-cyan-800">{totalFeed.toFixed(2)}</td>
-                <td className="px-2 py-1.5 text-cyan-800">{totalWetCake.toFixed(2)}</td>
-                <td className="px-2 py-1.5 text-cyan-800">{avgThinSlopGr.toFixed(3)} (avg)</td>
-              </tr>
-            </tbody>
-          </table>
+        <h3 className="text-sm font-semibold text-cyan-700 mb-3 uppercase tracking-wide">Total Feed (D1–D8)</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {DECANTERS.map(d => (
+            <div key={d.key}>
+              <label className="text-xs text-gray-500">{d.label}</label>
+              <input type="number" step="0.01" value={form[d.key + 'Feed']} onChange={e => upd(d.key + 'Feed', e.target.value)} placeholder="0" className="w-full border rounded px-2 py-1.5 text-sm" />
+            </div>
+          ))}
         </div>
+        <div className="mt-3 pt-2 border-t flex items-center gap-2">
+          <span className="text-xs text-gray-500">Total Feed:</span>
+          <span className="text-sm font-bold text-cyan-700">{totalFeed.toFixed(2)}</span>
+        </div>
+      </div>
+
+      {/* Wet Cake + Thin Slop — collapsible */}
+      <div className="bg-white rounded-lg shadow-sm border mb-4">
+        <button
+          onClick={() => setShowExtras(!showExtras)}
+          className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition"
+        >
+          <div>
+            <span className="text-sm font-semibold text-gray-700">Wet Cake Solid & Thin Slop Gravity</span>
+            <span className="text-xs text-gray-400 ml-2">(optional)</span>
+          </div>
+          {showExtras ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
+        </button>
+
+        {showExtras && (
+          <div className="px-4 pb-4 space-y-4">
+            {/* Wet Cake */}
+            <div>
+              <h4 className="text-xs font-semibold text-cyan-600 mb-2 uppercase tracking-wide">Wet Cake Solid</h4>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {DECANTERS.map(d => (
+                  <div key={d.key + 'wc'}>
+                    <label className="text-xs text-gray-500">{d.label}</label>
+                    <input type="number" step="0.01" value={form[d.key + 'WetCake']} onChange={e => upd(d.key + 'WetCake', e.target.value)} placeholder="0" className="w-full border rounded px-2 py-1.5 text-sm" />
+                  </div>
+                ))}
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-xs text-gray-500">Total:</span>
+                <span className="text-sm font-bold text-cyan-700">{totalWetCake.toFixed(2)}</span>
+              </div>
+            </div>
+
+            {/* Thin Slop Gravity */}
+            <div>
+              <h4 className="text-xs font-semibold text-cyan-600 mb-2 uppercase tracking-wide">Thin Slop Gravity</h4>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {DECANTERS.map(d => (
+                  <div key={d.key + 'ts'}>
+                    <label className="text-xs text-gray-500">{d.label}</label>
+                    <input type="number" step="0.001" value={form[d.key + 'ThinSlopGr']} onChange={e => upd(d.key + 'ThinSlopGr', e.target.value)} placeholder="0.000" className="w-full border rounded px-2 py-1.5 text-sm" />
+                  </div>
+                ))}
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-xs text-gray-500">Avg:</span>
+                <span className="text-sm font-bold text-cyan-700">{avgThinSlopGr.toFixed(3)}</span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Remark */}
@@ -164,35 +214,51 @@ export default function Decanter() {
                 <span>Time: <strong>{form.entryTime || '—'}</strong></span>
               </div>
 
+              {/* Feed summary */}
               <div>
-                <h4 className="font-semibold text-cyan-700 mb-1">Decanter Readings</h4>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead><tr className="bg-cyan-50">
-                      <th className="px-1.5 py-1 text-left">Unit</th>
-                      <th className="px-1.5 py-1 text-right">Feed</th>
-                      <th className="px-1.5 py-1 text-right">Wet Cake</th>
-                      <th className="px-1.5 py-1 text-right">TS Gravity</th>
-                    </tr></thead>
-                    <tbody>
-                      {DECANTERS.map(d => (
-                        <tr key={d.key} className="border-t">
-                          <td className="px-1.5 py-1 font-medium">{d.label}</td>
-                          <td className="px-1.5 py-1 text-right">{form[d.key + 'Feed'] || '—'}</td>
-                          <td className="px-1.5 py-1 text-right">{form[d.key + 'WetCake'] || '—'}</td>
-                          <td className="px-1.5 py-1 text-right">{form[d.key + 'ThinSlopGr'] || '—'}</td>
-                        </tr>
-                      ))}
-                      <tr className="border-t-2 border-cyan-300 bg-cyan-50 font-bold">
-                        <td className="px-1.5 py-1">Total</td>
-                        <td className="px-1.5 py-1 text-right">{totalFeed.toFixed(2)}</td>
-                        <td className="px-1.5 py-1 text-right">{totalWetCake.toFixed(2)}</td>
-                        <td className="px-1.5 py-1 text-right">{avgThinSlopGr.toFixed(3)}</td>
-                      </tr>
-                    </tbody>
-                  </table>
+                <h4 className="font-semibold text-cyan-700 mb-1">Feed (D1–D8)</h4>
+                <div className="grid grid-cols-4 gap-x-4 gap-y-0.5 text-xs">
+                  {DECANTERS.map(d => (
+                    <div key={d.key} className="flex justify-between">
+                      <span className="text-gray-500">{d.label}:</span>
+                      <span className="font-medium">{form[d.key + 'Feed'] || '—'}</span>
+                    </div>
+                  ))}
                 </div>
+                <div className="mt-1 text-xs font-bold text-cyan-700">Total: {totalFeed.toFixed(2)}</div>
               </div>
+
+              {/* Wet Cake if any */}
+              {DECANTERS.some(d => form[d.key + 'WetCake']) && (
+                <div>
+                  <h4 className="font-semibold text-cyan-700 mb-1">Wet Cake Solid</h4>
+                  <div className="grid grid-cols-4 gap-x-4 gap-y-0.5 text-xs">
+                    {DECANTERS.filter(d => form[d.key + 'WetCake']).map(d => (
+                      <div key={d.key} className="flex justify-between">
+                        <span className="text-gray-500">{d.label}:</span>
+                        <span className="font-medium">{form[d.key + 'WetCake']}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-1 text-xs font-bold text-cyan-700">Total: {totalWetCake.toFixed(2)}</div>
+                </div>
+              )}
+
+              {/* Thin Slop if any */}
+              {DECANTERS.some(d => form[d.key + 'ThinSlopGr']) && (
+                <div>
+                  <h4 className="font-semibold text-cyan-700 mb-1">Thin Slop Gravity</h4>
+                  <div className="grid grid-cols-4 gap-x-4 gap-y-0.5 text-xs">
+                    {DECANTERS.filter(d => form[d.key + 'ThinSlopGr']).map(d => (
+                      <div key={d.key} className="flex justify-between">
+                        <span className="text-gray-500">{d.label}:</span>
+                        <span className="font-medium">{form[d.key + 'ThinSlopGr']}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-1 text-xs font-bold text-cyan-700">Avg: {avgThinSlopGr.toFixed(3)}</div>
+                </div>
+              )}
 
               {form.remark && <div className="text-gray-600 italic">Remark: {form.remark}</div>}
             </div>
@@ -217,17 +283,16 @@ export default function Decanter() {
         {showHistory && (
           <div className="overflow-x-auto max-h-64 overflow-y-auto">
             <table className="w-full text-xs"><thead className="bg-gray-50 sticky top-0"><tr>
-              {['Date', 'Time', 'D1 Feed', 'D2 Feed', 'D3 Feed', 'D4 Feed', ''].map(h =>
-                <th key={h} className="px-2 py-1 text-left font-medium text-gray-600">{h}</th>)}
+              {['Date', 'Time', 'Total Feed', 'Total WC', 'Avg TS Gr', ''].map(h =>
+                <th key={h} className="px-2 py-1.5 text-left font-medium text-gray-600">{h}</th>)}
             </tr></thead><tbody>
               {entries.slice(0, 50).map(e => (
                 <tr key={e.id} className="border-t hover:bg-gray-50">
                   <td className="px-2 py-1">{e.date?.split('T')[0]}</td>
                   <td className="px-2 py-1">{e.entryTime}</td>
-                  <td className="px-2 py-1">{e.d1Feed ?? '—'}</td>
-                  <td className="px-2 py-1">{e.d2Feed ?? '—'}</td>
-                  <td className="px-2 py-1">{e.d3Feed ?? '—'}</td>
-                  <td className="px-2 py-1">{e.d4Feed ?? '—'}</td>
+                  <td className="px-2 py-1 font-medium text-cyan-700">{entryTotalFeed(e).toFixed(1)}</td>
+                  <td className="px-2 py-1">{entryTotalWC(e) > 0 ? entryTotalWC(e).toFixed(1) : '—'}</td>
+                  <td className="px-2 py-1">{entryAvgTS(e) > 0 ? entryAvgTS(e).toFixed(3) : '—'}</td>
                   <td className="px-2 py-1"><button onClick={() => api.delete(`/decanter/${e.id}`).then(load)} className="text-red-400 hover:text-red-600"><Trash2 size={12} /></button></td>
                 </tr>
               ))}

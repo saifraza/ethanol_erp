@@ -19,6 +19,7 @@ import distillationRoutes from './routes/distillation';
 import evaporationRoutes from './routes/evaporation';
 import ethanolProductRoutes from './routes/ethanolProduct';
 import ddgsRoutes from './routes/ddgs';
+import dryerRoutes from './routes/dryer';
 import decanterRoutes from './routes/decanter';
 
 const app = express();
@@ -44,6 +45,7 @@ app.use('/api/distillation', distillationRoutes);
 app.use('/api/evaporation', evaporationRoutes);
 app.use('/api/ethanol-product', ethanolProductRoutes);
 app.use('/api/ddgs', ddgsRoutes);
+app.use('/api/dryer', dryerRoutes);
 app.use('/api/decanter', decanterRoutes);
 
 app.get('/api/health', (req, res) => {
