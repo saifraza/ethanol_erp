@@ -20,38 +20,64 @@ async function getGrainPcts() {
   };
 }
 
-function calcGrain(data: any, opening: number, prevCumUnloaded: number, prevCumConsumed: number, prevWashConsumed: number, fermPct: number, pfPct: number, millingLossPct: number = 0) {
-  const washDiff = Math.max(0, (data.washConsumed || 0) - prevWashConsumed);
-  const grainConsumed = washDiff * fermPct;
+function r2(n: number) { return Math.round(n * 100) / 100; }
 
-  const fermVol = (data.f1Level || 0) + (data.f2Level || 0) + (data.f3Level || 0) + (data.f4Level || 0) + (data.beerWellLevel || 0);
-  const pfVol = (data.pf1Level || 0) + (data.pf2Level || 0);
-  const iltFltVol = (data.iltLevel || 0) + (data.fltLevel || 0);
-  const grainInFermenters = fermVol * fermPct;
+// Mass-balance grain calculation
+// Flow: Silo → Milling → Flour Silo → ILT/FLT → PF → Fermenters/BW → Distillation
+// Grain consumed from silo = Δflour + Δ(grain in process) + grain distilled
+// If nothing changed between readings, grain consumed = 0
+function calcGrain(data: any, opening: number, prevCumUnloaded: number, prevCumConsumed: number, prevWashConsumed: number, fermPct: number, pfPct: number, millingLossPct: number = 0, prevEntry: any = null) {
+  // Current volumes
+  const fermVol = (data.f1Level||0)+(data.f2Level||0)+(data.f3Level||0)+(data.f4Level||0)+(data.beerWellLevel||0);
+  const pfVol = (data.pf1Level||0)+(data.pf2Level||0);
+  const iltFltVol = (data.iltLevel||0)+(data.fltLevel||0);
+  const totalFermVol = fermVol + pfVol + iltFltVol;
+
+  // Current grain in each stage
+  const grainInFerm = fermVol * fermPct;
   const grainInPF = pfVol * pfPct;
   const grainInIltFlt = iltFltVol * fermPct;
-  const grainInProcess = grainInFermenters + grainInPF + grainInIltFlt;
+  const grainInProcess = grainInFerm + grainInPF + grainInIltFlt;
+  const flourTotal = (data.flourSilo1Level||0) + (data.flourSilo2Level||0);
 
-  // Milling loss: grain received to silo loses this % (dust, bag weight, cleaning)
+  // Previous grain in each stage
+  const prevFermVol = prevEntry ? ((prevEntry.f1Level||0)+(prevEntry.f2Level||0)+(prevEntry.f3Level||0)+(prevEntry.f4Level||0)+(prevEntry.beerWellLevel||0)) : 0;
+  const prevPfVol = prevEntry ? ((prevEntry.pf1Level||0)+(prevEntry.pf2Level||0)) : 0;
+  const prevIltFltVol = prevEntry ? ((prevEntry.iltLevel||0)+(prevEntry.fltLevel||0)) : 0;
+  const prevGrainInProcess = prevEntry ? (prevFermVol * fermPct + prevPfVol * pfPct + prevIltFltVol * fermPct) : 0;
+  const prevFlourTotal = prevEntry ? ((prevEntry.flourSilo1Level||0)+(prevEntry.flourSilo2Level||0)) : 0;
+
+  // Wash distilled (flow meter diff)
+  const washDiff = Math.max(0, (data.washConsumed||0) - prevWashConsumed);
+  const grainDistilled = washDiff * fermPct;
+
+  // Mass balance: grain consumed from silo
+  // = grain distilled out + net change in all downstream inventory
+  // Clamped to 0: silo can never go UP from processing
+  // Internal transfers (flour→process) cancel out naturally
+  const deltaGrainInProcess = grainInProcess - prevGrainInProcess;
+  const deltaFlour = flourTotal - prevFlourTotal;
+  const grainConsumed = Math.max(0, grainDistilled + deltaGrainInProcess + deltaFlour);
+
+  // Milling loss on received grain
   const grainReceived = data.grainUnloaded || 0;
   const millingLoss = grainReceived * millingLossPct;
   const effectiveGrain = grainReceived - millingLoss;
 
-  const totalFermVol = fermVol + pfVol + iltFltVol;
   const siloClosingStock = opening + effectiveGrain - grainConsumed;
-  const totalGrainAtPlant = siloClosingStock + grainInProcess;
+  const totalGrainAtPlant = grainInProcess + flourTotal;
   const cumulativeUnloaded = prevCumUnloaded + grainReceived;
-  const cumulativeConsumed = prevCumConsumed + grainConsumed;
+  const cumulativeConsumed = prevCumConsumed + Math.max(0, grainConsumed);
 
   return {
-    fermentationVolume: Math.round(totalFermVol * 100) / 100,
-    grainConsumed: Math.round(grainConsumed * 100) / 100,
-    grainInProcess: Math.round(grainInProcess * 100) / 100,
-    siloOpeningStock: Math.round(opening * 100) / 100,
-    siloClosingStock: Math.round(siloClosingStock * 100) / 100,
-    totalGrainAtPlant: Math.round(totalGrainAtPlant * 100) / 100,
-    cumulativeUnloaded: Math.round(cumulativeUnloaded * 100) / 100,
-    cumulativeConsumed: Math.round(cumulativeConsumed * 100) / 100,
+    fermentationVolume: r2(totalFermVol),
+    grainConsumed: r2(grainConsumed),
+    grainInProcess: r2(grainInProcess),
+    siloOpeningStock: r2(opening),
+    siloClosingStock: r2(siloClosingStock),
+    totalGrainAtPlant: r2(totalGrainAtPlant),
+    cumulativeUnloaded: r2(cumulativeUnloaded),
+    cumulativeConsumed: r2(cumulativeConsumed),
   };
 }
 
@@ -102,6 +128,8 @@ router.get('/latest', authenticate, async (req: AuthRequest, res: Response) => {
         cumulativeConsumed: latest?.cumulativeConsumed ?? DEFAULT_CUM_CONSUMED,
         lastUnloaded: latest?.grainUnloaded ?? 0,
         quarantineStock: latest?.quarantineStock ?? 0,
+        flourSilo1Level: (latest as any)?.flourSilo1Level ?? 0,
+        flourSilo2Level: (latest as any)?.flourSilo2Level ?? 0,
         yearStart,
       },
       previous: latest ? {
@@ -116,6 +144,8 @@ router.get('/latest', authenticate, async (req: AuthRequest, res: Response) => {
         iltLevel: latest.iltLevel, fltLevel: latest.fltLevel,
         grainConsumed: latest.grainConsumed,
         grainInProcess: latest.grainInProcess,
+        flourSilo1Level: (latest as any).flourSilo1Level ?? 0,
+        flourSilo2Level: (latest as any).flourSilo2Level ?? 0,
         date: latest.date,
         createdAt: latest.createdAt,
       } : null,
@@ -153,7 +183,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { date, grainUnloaded, washConsumed, washConsumedAt, fermentationVolumeAt,
       f1Level, f2Level, f3Level, f4Level, beerWellLevel, pf1Level, pf2Level, iltLevel, fltLevel,
-      quarantineStock,
+      quarantineStock, flourSilo1Level, flourSilo2Level,
       moisture, starchPercent, damagedPercent, foreignMatter, trucks, avgTruckWeight, supplier, remarks } = req.body;
     const entryDate = new Date(date);
     const yearStart = entryDate.getFullYear();
@@ -172,9 +202,11 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
       beerWellLevel: beerWellLevel || 0,
       pf1Level: pf1Level || 0, pf2Level: pf2Level || 0,
       iltLevel: iltLevel || 0, fltLevel: fltLevel || 0,
+      flourSilo1Level: flourSilo1Level || 0,
+      flourSilo2Level: flourSilo2Level || 0,
     };
     const prevWash = prev?.washConsumed ?? 0;
-    const calc = calcGrain(inputData, opening, prevCumUnloaded, prevCumConsumed, prevWash, fermPct, pfPct, millingLossPct);
+    const calc = calcGrain(inputData, opening, prevCumUnloaded, prevCumConsumed, prevWash, fermPct, pfPct, millingLossPct, prev);
 
     const entry = await prisma.grainEntry.create({
       data: {
@@ -190,6 +222,8 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
         pf1Level: inputData.pf1Level, pf2Level: inputData.pf2Level,
         iltLevel: inputData.iltLevel, fltLevel: inputData.fltLevel,
         quarantineStock: quarantineStock || 0,
+        flourSilo1Level: flourSilo1Level || 0,
+        flourSilo2Level: flourSilo2Level || 0,
         ...calc,
         moisture: moisture ?? null, starchPercent: starchPercent ?? null,
         damagedPercent: damagedPercent ?? null, foreignMatter: foreignMatter ?? null,
@@ -208,7 +242,7 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { grainUnloaded, washConsumed, washConsumedAt, fermentationVolumeAt,
       f1Level, f2Level, f3Level, f4Level, beerWellLevel, pf1Level, pf2Level, iltLevel, fltLevel,
-      quarantineStock,
+      quarantineStock, flourSilo1Level, flourSilo2Level,
       moisture, starchPercent, damagedPercent, foreignMatter, trucks, avgTruckWeight, supplier, remarks } = req.body;
     const existing = await prisma.grainEntry.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: 'Entry not found' });
@@ -234,15 +268,19 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
       pf2Level: pf2Level ?? existing.pf2Level ?? 0,
       iltLevel: iltLevel ?? (existing as any).iltLevel ?? 0,
       fltLevel: fltLevel ?? (existing as any).fltLevel ?? 0,
+      flourSilo1Level: flourSilo1Level ?? (existing as any).flourSilo1Level ?? 0,
+      flourSilo2Level: flourSilo2Level ?? (existing as any).flourSilo2Level ?? 0,
     };
     const prevWash = prev?.washConsumed ?? 0;
-    const calc = calcGrain(inputData, opening, prevCumUnloaded, prevCumConsumed, prevWash, fermPct, pfPct, millingLossPct);
+    const calc = calcGrain(inputData, opening, prevCumUnloaded, prevCumConsumed, prevWash, fermPct, pfPct, millingLossPct, prev);
 
     const entry = await prisma.grainEntry.update({
       where: { id: req.params.id },
       data: {
         ...inputData, ...calc,
         quarantineStock: quarantineStock ?? undefined,
+        flourSilo1Level: flourSilo1Level ?? undefined,
+        flourSilo2Level: flourSilo2Level ?? undefined,
         washConsumedAt: washConsumedAt ? new Date(washConsumedAt) : undefined,
         fermentationVolumeAt: fermentationVolumeAt ? new Date(fermentationVolumeAt) : undefined,
         moisture, starchPercent, damagedPercent, foreignMatter, trucks, avgTruckWeight, supplier, remarks,
@@ -277,13 +315,12 @@ router.post('/seed-baseline', authenticate, authorize('ADMIN'), async (req: Auth
     const grainInFerm = fermVol * 0.32;                                 // 2325.76
     const grainInIltFlt = iltFltVol * 0.32;                             // 169.28
     const grainInProcess = grainInFerm + grainInIltFlt;                 // 2495.04
-    const siloStock = 1500;
+    const siloStock = 2000;
     const quarantine = 1000;
-    const totalAtPlant = siloStock + grainInProcess;                    // 3995.04
-    const cumUnloaded = 14750;
-    // cumConsumed = effectiveUnloaded − silo − quarantine − grainInProcess
-    const effectiveUnloaded = cumUnloaded * (1 - 0.025);               // 14381.25
-    const cumConsumed = effectiveUnloaded - siloStock - quarantine - grainInProcess; // 9386.21
+    const totalAtPlant = grainInProcess;                                // grain in fermenters + ILT/FLT + flour silos (0 at baseline)
+    const cumConsumed = 13000;                                          // direct from plant records
+    // Back-calculate cumUnloaded from known consumed + current stock
+    const cumUnloaded = Math.round((siloStock + quarantine + grainInProcess + cumConsumed) / (1 - 0.025) * 100) / 100;
 
     // 4. Create baseline entry
     const entry = await prisma.grainEntry.create({
@@ -304,9 +341,11 @@ router.post('/seed-baseline', authenticate, authorize('ADMIN'), async (req: Auth
         siloOpeningStock: siloStock,
         siloClosingStock: siloStock,
         quarantineStock: quarantine,
+        flourSilo1Level: 0,
+        flourSilo2Level: 0,
         totalGrainAtPlant: Math.round(totalAtPlant * 100) / 100,
         cumulativeUnloaded: cumUnloaded,
-        cumulativeConsumed: Math.round(cumConsumed * 100) / 100,
+        cumulativeConsumed: cumConsumed,
         userId: req.user!.id,
         remarks: 'Baseline — real plant data seeded',
       },

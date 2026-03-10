@@ -17,14 +17,27 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 
-// GET /api/grain-truck — today's trucks (or by date query)
+// Helper: get shift window (9AM on date to 9AM next day)
+function shiftWindow(dateStr: string) {
+  const start = new Date(dateStr);
+  start.setHours(9, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  return { start, end };
+}
+
+// Helper: get current shift date — if before 9AM, it's yesterday's shift
+function currentShiftDate(): string {
+  const now = new Date();
+  if (now.getHours() < 9) now.setDate(now.getDate() - 1);
+  return now.toISOString().split('T')[0];
+}
+
+// GET /api/grain-truck — shift trucks (9AM to 9AM)
 router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const dateStr = req.query.date as string || new Date().toISOString().split('T')[0];
-    const start = new Date(dateStr);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(dateStr);
-    end.setHours(23, 59, 59, 999);
+    const dateStr = req.query.date as string || currentShiftDate();
+    const { start, end } = shiftWindow(dateStr);
 
     const trucks = await prisma.grainTruck.findMany({
       where: { date: { gte: start, lte: end } },
@@ -39,14 +52,11 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-// GET /api/grain-truck/summary — today's totals for grain stock page
+// GET /api/grain-truck/summary — shift totals (9AM to 9AM) for grain stock page
 router.get('/summary', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const dateStr = req.query.date as string || new Date().toISOString().split('T')[0];
-    const start = new Date(dateStr);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(dateStr);
-    end.setHours(23, 59, 59, 999);
+    const dateStr = req.query.date as string || currentShiftDate();
+    const { start, end } = shiftWindow(dateStr);
 
     const trucks = await prisma.grainTruck.findMany({
       where: { date: { gte: start, lte: end } },

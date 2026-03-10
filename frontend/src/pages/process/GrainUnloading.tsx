@@ -28,6 +28,8 @@ interface GrainForm {
   fltPct: number | null;
   fermentationVolumeAt: string;
   quarantineStock: number | null;
+  flourSilo1Pct: number | null;
+  flourSilo2Pct: number | null;
   moisture: number | null;
   starchPercent: number | null;
   damagedPercent: number | null;
@@ -41,12 +43,20 @@ function nowLocal() {
   return d.toISOString().slice(0, 16);
 }
 
+// Shift date: if before 9AM, it's yesterday's shift
+function shiftDate() {
+  const now = new Date();
+  if (now.getHours() < 9) now.setDate(now.getDate() - 1);
+  return now.toISOString().split('T')[0];
+}
+
 const emptyForm: GrainForm = {
-  date: new Date().toISOString().split('T')[0],
+  date: shiftDate(),
   grainUnloaded: null, washConsumed: null, washConsumedAt: nowLocal(),
   f1Pct: null, f2Pct: null, f3Pct: null, f4Pct: null, beerWellPct: null,
   pf1Pct: null, pf2Pct: null, iltPct: null, fltPct: null, fermentationVolumeAt: nowLocal(),
   quarantineStock: null,
+  flourSilo1Pct: null, flourSilo2Pct: null,
   moisture: null, starchPercent: null, damagedPercent: null, foreignMatter: null,
   remarks: '',
 };
@@ -67,6 +77,11 @@ function elapsed(ms: number): string {
 function fmtDt(iso: string | null) {
   if (!iso) return '—';
   return new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+function fmtHrs(ms: number) {
+  if (ms <= 0) return '';
+  const h = ms / 3600000;
+  return h < 1 ? `${Math.round(h * 60)} min` : `${h.toFixed(1)} hrs`;
 }
 
 // Convert KL to percentage
@@ -104,6 +119,7 @@ export default function GrainUnloading() {
   const FERM_GRAIN_PCT = (plantSettings?.grainPercent ?? DEF_GRAIN_PCT * 100) / 100;
   const PF_GRAIN_PCT = (plantSettings?.pfGrainPercent ?? DEF_PF_PCT * 100) / 100;
   const MILLING_LOSS_PCT = (plantSettings?.millingLossPercent ?? 2.5) / 100;
+  const FLOUR_SILO_CAP = 140; // 140 T each
 
   // Convert percentages to KL for calculations
   const f1KL = pctToKl(form.f1Pct, FERM_CAPACITY);
@@ -120,20 +136,43 @@ export default function GrainUnloading() {
   const pfVol = pf1KL + pf2KL;
   const iltFltVol = iltKL + fltKL;
   const totalFermVol = fermVol + pfVol + iltFltVol;
-  // Wash is cumulative flow meter — grain consumed = diff from prev × grain%
-  const pW = prev?.washConsumed ?? 0;
-  const washDiff = Math.max(0, (form.washConsumed || 0) - pW);
-  const grainConsumed = washDiff * FERM_GRAIN_PCT;
+  // Current grain in each stage
   const grainInFerm = fermVol * FERM_GRAIN_PCT;
   const grainInPF = pfVol * PF_GRAIN_PCT;
   const grainInIltFlt = iltFltVol * FERM_GRAIN_PCT;
   const grainInProcess = grainInFerm + grainInPF + grainInIltFlt;
+  const flourSilo1T = pctToKl(form.flourSilo1Pct, FLOUR_SILO_CAP);
+  const flourSilo2T = pctToKl(form.flourSilo2Pct, FLOUR_SILO_CAP);
+  const flourSiloTotal = flourSilo1T + flourSilo2T;
+
+  // Previous grain in each stage
+  const prevFermVol = prev ? ((prev.f1Level||0)+(prev.f2Level||0)+(prev.f3Level||0)+(prev.f4Level||0)+(prev.beerWellLevel||0)) : 0;
+  const prevPfVol = prev ? ((prev.pf1Level||0)+(prev.pf2Level||0)) : 0;
+  const prevIltFltVol = prev ? ((prev.iltLevel||0)+(prev.fltLevel||0)) : 0;
+  const prevGrainInProcess = prev ? (prevFermVol * FERM_GRAIN_PCT + prevPfVol * PF_GRAIN_PCT + prevIltFltVol * FERM_GRAIN_PCT) : 0;
+  const prevFlourTotal = prev ? ((prev.flourSilo1Level||0)+(prev.flourSilo2Level||0)) : 0;
+
+  // Wash distilled (flow meter diff)
+  const pW = prev?.washConsumed ?? 0;
+  const washDiff = Math.max(0, (form.washConsumed || 0) - pW);
+  const grainDistilled = washDiff * FERM_GRAIN_PCT;
+
+  // Wash Made = new wash produced = level change + what was distilled
+  const washMade = (fermVol - prevFermVol) + washDiff;
+
+  // Mass balance: grain consumed from silo
+  // = distilled + Δprocess + Δflour, clamped ≥ 0
+  // Internal transfers (flour→process) cancel out naturally
+  const deltaGrainInProcess = grainInProcess - prevGrainInProcess;
+  const deltaFlour = flourSiloTotal - prevFlourTotal;
+  const grainConsumed = Math.max(0, grainDistilled + deltaGrainInProcess + deltaFlour);
+
   const opening = defaults.siloOpeningStock || 0;
   const grainReceived = form.grainUnloaded || 0;
   const millingLoss = grainReceived * MILLING_LOSS_PCT;
   const effectiveGrain = grainReceived - millingLoss;
   const siloClosing = opening + effectiveGrain - grainConsumed;
-  const totalAtPlant = siloClosing + grainInProcess;
+  const totalAtPlant = grainInProcess + flourSiloTotal;
 
   const pGIP = prev?.grainInProcess ?? 0;
 
@@ -141,6 +180,7 @@ export default function GrainUnloading() {
     ? new Date(form.washConsumedAt).getTime() - new Date(prev.washConsumedAt).getTime() : 0;
   const fermElapsed = (prev?.fermentationVolumeAt && form.fermentationVolumeAt)
     ? new Date(form.fermentationVolumeAt).getTime() - new Date(prev.fermentationVolumeAt).getTime() : 0;
+  const prevElapsed = prev?.createdAt ? Date.now() - new Date(prev.createdAt).getTime() : 0;
 
   useEffect(() => { loadLatest(); loadEntries(); api.get('/settings').then(r => setPlantSettings(r.data)).catch(() => {}); }, []);
   useEffect(() => { loadTruckSummary(); }, [form.date]);
@@ -185,6 +225,8 @@ export default function GrainUnloading() {
         pf1Level: pf1KL, pf2Level: pf2KL,
         iltLevel: iltKL, fltLevel: fltKL,
         quarantineStock: form.quarantineStock ?? 0,
+        flourSilo1Level: flourSilo1T,
+        flourSilo2Level: flourSilo2T,
         fermentationVolumeAt: form.fermentationVolumeAt ? new Date(form.fermentationVolumeAt).toISOString() : null,
         moisture: form.moisture, starchPercent: form.starchPercent,
         damagedPercent: form.damagedPercent, foreignMatter: form.foreignMatter,
@@ -220,6 +262,8 @@ export default function GrainUnloading() {
       fltPct: klToPct(e.fltLevel, FLT_CAPACITY),
       fermentationVolumeAt: e.fermentationVolumeAt ? e.fermentationVolumeAt.slice(0, 16) : nowLocal(),
       quarantineStock: e.quarantineStock ?? null,
+      flourSilo1Pct: klToPct(e.flourSilo1Level, FLOUR_SILO_CAP),
+      flourSilo2Pct: klToPct(e.flourSilo2Level, FLOUR_SILO_CAP),
       moisture: e.moisture, starchPercent: e.starchPercent,
       damagedPercent: e.damagedPercent, foreignMatter: e.foreignMatter,
       remarks: e.remarks || '',
@@ -320,6 +364,33 @@ export default function GrainUnloading() {
             <span className="text-sm text-gray-500 shrink-0">Ton</span>
           </div>
           <p className="text-[10px] text-gray-400 mt-1">Grain held separately — not counted in silo stock or plant total</p>
+        </div>
+
+        {/* Flour Silos */}
+        <div className="mt-3 p-3 rounded-lg bg-yellow-50 border border-yellow-200">
+          <label className="text-xs text-yellow-700 font-medium mb-2 block">Flour Silos ({FLOUR_SILO_CAP} T each) — enter level %</label>
+          <div className="grid grid-cols-2 gap-3">
+            {([{ key: 'flourSilo1Pct' as const, label: 'Flour Silo 1', t: flourSilo1T },
+              { key: 'flourSilo2Pct' as const, label: 'Flour Silo 2', t: flourSilo2T }]).map(s => (
+              <div key={s.key} className="border rounded-lg p-3 bg-white border-yellow-200">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-semibold text-yellow-700">{s.label}</span>
+                  <span className="text-xs text-gray-500">{s.t.toFixed(1)} T</span>
+                </div>
+                <div className="flex items-center gap-2 mb-2">
+                  <input type="number" value={form[s.key] ?? ''} onChange={e => u(s.key, e.target.value ? parseFloat(e.target.value) : null)}
+                    placeholder="%" className="input-field w-full text-sm" min={0} max={100} step={1} />
+                  <span className="text-sm text-gray-400 shrink-0">%</span>
+                </div>
+                <Bar p={form[s.key] || 0} />
+              </div>
+            ))}
+          </div>
+          {flourSiloTotal > 0 && (
+            <div className="text-right text-xs text-yellow-700 mt-1.5">
+              Total Flour: <span className="font-semibold">{flourSiloTotal.toFixed(1)} T</span>
+            </div>
+          )}
         </div>
       </InputCard>
 
@@ -529,13 +600,16 @@ export default function GrainUnloading() {
           <div className="text-sm divide-y divide-gray-100">
             {/* Row helper */}
             {[
-              { label: 'Wash Made', value: `${fermVol.toFixed(0)} KL`, sub: 'F1-F4 + BW' },
-              { label: 'Wash Distilled', value: `${(form.washConsumed ?? 0).toFixed(1)} KL`, sub: `diff: ${washDiff.toFixed(1)} KL` },
-              { label: 'Grain Consumed', value: `${grainConsumed.toFixed(2)} T`, sub: `wash diff × ${(FERM_GRAIN_PCT * 100).toFixed(0)}%` },
+              { label: 'Wash Made', value: `${washMade.toFixed(1)} KL`, sub: 'Δ ferm vol + distilled' },
+              { label: 'Wash Distilled', value: `${washDiff.toFixed(1)} KL`, sub: `meter: ${(form.washConsumed ?? 0).toFixed(1)} KL` },
+              { label: 'Grain Distilled', value: `${grainDistilled.toFixed(2)} T`, sub: `wash × ${(FERM_GRAIN_PCT * 100).toFixed(0)}%` },
+              { label: 'Δ Grain in Process', value: `${deltaGrainInProcess >= 0 ? '+' : ''}${deltaGrainInProcess.toFixed(2)} T`, sub: 'ferm+PF+ILT/FLT' },
+              { label: 'Δ Flour Silos', value: `${deltaFlour >= 0 ? '+' : ''}${deltaFlour.toFixed(2)} T`, sub: 'after milling' },
+              { label: 'Grain Consumed (Silo)', value: `${grainConsumed.toFixed(2)} T`, sub: 'max(0, distilled+Δprocess+Δflour)', highlight: true },
             ].map((r, i) => (
-              <div key={i} className="flex justify-between items-center py-2 px-1">
+              <div key={i} className={`flex justify-between items-center py-2 px-1 ${(r as any).highlight ? 'bg-red-50 rounded px-2' : ''}`}>
                 <span className="text-gray-600 text-xs">{r.label}{r.sub && <span className="hidden md:inline text-gray-400 ml-1">({r.sub})</span>}</span>
-                <span className="font-semibold">{r.value}</span>
+                <span className={`font-semibold ${(r as any).highlight ? 'text-red-700 font-bold' : ''}`}>{r.value}</span>
               </div>
             ))}
 
@@ -608,6 +682,12 @@ export default function GrainUnloading() {
                 <span className="font-bold text-orange-700">{(form.quarantineStock ?? 0).toFixed(2)} T</span>
               </div>
             )}
+            {flourSiloTotal > 0 && (
+              <div className="flex justify-between items-center py-2 px-2 bg-yellow-50 rounded">
+                <span className="text-yellow-800 font-medium text-xs">Flour Silos (S1: {flourSilo1T.toFixed(1)}T + S2: {flourSilo2T.toFixed(1)}T)</span>
+                <span className="font-bold text-yellow-700">{flourSiloTotal.toFixed(2)} T</span>
+              </div>
+            )}
           </div>
           );
         })()}
@@ -657,11 +737,39 @@ export default function GrainUnloading() {
             <div className="p-4 space-y-3 text-sm">
               <div className="flex justify-between text-gray-600 border-b pb-2">
                 <span>Date: <strong>{form.date}</strong></span>
+                {prev && prevElapsed > 0 && <span className="text-xs text-gray-400">last entry {fmtHrs(prevElapsed)} ago</span>}
               </div>
+              {/* Wash diffs */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-blue-50 rounded p-2 text-center">
+                  <div className="text-xs text-gray-500">Wash Made</div>
+                  <div className="font-bold text-lg">{washMade.toFixed(1)} KL</div>
+                  {prev && <div className="text-[10px] text-gray-400">Δ ferm {(fermVol - prevFermVol) >= 0 ? '+' : ''}{(fermVol - prevFermVol).toFixed(1)} + distilled {washDiff.toFixed(1)}</div>}
+                  {fermElapsed > 0 && <div className="text-[10px] text-blue-500">in {fmtHrs(fermElapsed)}</div>}
+                </div>
+                <div className="bg-purple-50 rounded p-2 text-center">
+                  <div className="text-xs text-gray-500">Wash Distilled</div>
+                  <div className="font-bold text-lg">{washDiff.toFixed(1)} KL</div>
+                  {prev && <div className="text-[10px] text-gray-400">meter: {(form.washConsumed ?? 0).toFixed(1)} (prev {pW.toFixed(1)})</div>}
+                  {washElapsed > 0 && <div className="text-[10px] text-purple-500">in {fmtHrs(washElapsed)}</div>}
+                </div>
+              </div>
+              {/* Grain + Trucks */}
               <div className="grid grid-cols-3 gap-2">
-                <div className="bg-amber-50 rounded p-2 text-center"><div className="text-xs text-gray-500">Grain Unloaded</div><div className="font-bold text-lg">{form.grainUnloaded ?? '—'} MT</div></div>
-                <div className="bg-blue-50 rounded p-2 text-center"><div className="text-xs text-gray-500">Wash Made</div><div className="font-bold text-lg">{fermVol.toFixed(0)} KL</div></div>
-                <div className="bg-amber-50 rounded p-2 text-center"><div className="text-xs text-gray-500">Wash Distilled</div><div className="font-bold text-lg">{form.washConsumed ?? '—'} KL</div></div>
+                <div className="bg-amber-50 rounded p-2 text-center">
+                  <div className="text-xs text-gray-500">Grain Unloaded</div>
+                  <div className="font-bold text-lg">{form.grainUnloaded ?? '—'} MT</div>
+                </div>
+                <div className="bg-red-50 rounded p-2 text-center">
+                  <div className="text-xs text-gray-500">Grain Consumed</div>
+                  <div className="font-bold text-lg">{grainConsumed.toFixed(2)} T</div>
+                  <div className="text-[10px] text-gray-400">silo mass balance</div>
+                </div>
+                <div className="bg-green-50 rounded p-2 text-center">
+                  <div className="text-xs text-gray-500">Trucks</div>
+                  <div className="font-bold text-lg">{truckSummary.truckCount}</div>
+                  {truckSummary.truckCount > 0 && <div className="text-[10px] text-gray-400">net {truckSummary.totalNet.toFixed(1)} T{prevElapsed > 0 ? ` in ${fmtHrs(prevElapsed)}` : ''}</div>}
+                </div>
               </div>
               <div>
                 <h4 className="font-semibold text-gray-700 mb-1">Fermenter Levels (%)</h4>
@@ -691,8 +799,11 @@ export default function GrainUnloading() {
                 <div className="bg-gray-50 rounded p-2 text-center"><div className="text-xs text-gray-500">Moisture</div><div className="font-semibold">{form.moisture ?? '—'}%</div></div>
                 <div className="bg-gray-50 rounded p-2 text-center"><div className="text-xs text-gray-500">Starch</div><div className="font-semibold">{form.starchPercent ?? '—'}%</div></div>
               </div>
-              {truckSummary.truckCount > 0 && <div className="text-gray-600">Trucks: <strong>{truckSummary.truckCount}</strong></div>}
+              {/* truck count already shown above */}
               {(form.quarantineStock ?? 0) > 0 && <div className="text-orange-600 font-medium">Quarantine Stock: <strong>{(form.quarantineStock ?? 0).toFixed(1)} T</strong> (not in silo)</div>}
+              {flourSiloTotal > 0 && (
+                <div className="text-yellow-700 font-medium">Flour Silos: <strong>S1: {flourSilo1T.toFixed(1)} T ({form.flourSilo1Pct ?? 0}%) | S2: {flourSilo2T.toFixed(1)} T ({form.flourSilo2Pct ?? 0}%)</strong></div>
+              )}
               {form.remarks && <div className="text-gray-600 italic">Remarks: {form.remarks}</div>}
             </div>
             <div className="sticky bottom-0 bg-gray-50 p-4 rounded-b-xl flex gap-3 border-t">
@@ -700,7 +811,7 @@ export default function GrainUnloading() {
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} {editId ? 'Update' : 'Save'} Entry
               </button>
               <button onClick={() => {
-                const t = `*GRAIN STOCK REPORT*\nDate: ${form.date}\nGrain to Silo: ${form.grainUnloaded ?? '—'} T (${truckSummary.truckCount} trucks)${(form.quarantineStock ?? 0) > 0 ? `\nQuarantine: ${(form.quarantineStock ?? 0).toFixed(1)} T (not in silo)` : ''}\nWash Made: ${fermVol.toFixed(0)} KL\nWash Distilled: ${form.washConsumed ?? '—'} KL\nF1: ${form.f1Pct ?? '—'}% | F2: ${form.f2Pct ?? '—'}% | F3: ${form.f3Pct ?? '—'}% | F4: ${form.f4Pct ?? '—'}%\nBeer Well: ${form.beerWellPct ?? '—'}%\nPF1: ${form.pf1Pct ?? '—'}% | PF2: ${form.pf2Pct ?? '—'}%\nILT: ${form.iltPct ?? '—'}% | FLT: ${form.fltPct ?? '—'}%\nSilo Closing: ${siloClosing.toFixed(1)} T | Total@Plant: ${totalAtPlant.toFixed(1)} T${form.remarks ? '\nRemarks: ' + form.remarks : ''}`;
+                const t = `*GRAIN STOCK REPORT*\nDate: ${form.date}${prevElapsed > 0 ? ` (last entry ${fmtHrs(prevElapsed)} ago)` : ''}\nGrain to Silo: ${form.grainUnloaded ?? '—'} T (${truckSummary.truckCount} trucks, net ${truckSummary.totalNet.toFixed(1)} T)${(form.quarantineStock ?? 0) > 0 ? `\nQuarantine: ${(form.quarantineStock ?? 0).toFixed(1)} T (not in silo)` : ''}${flourSiloTotal > 0 ? `\nFlour Silos: S1: ${flourSilo1T.toFixed(1)} T (${form.flourSilo1Pct ?? 0}%) | S2: ${flourSilo2T.toFixed(1)} T (${form.flourSilo2Pct ?? 0}%)` : ''}\nWash Made: ${washMade.toFixed(1)} KL (Δferm ${(fermVol - prevFermVol).toFixed(1)} + distilled ${washDiff.toFixed(1)})${fermElapsed > 0 ? ' in ' + fmtHrs(fermElapsed) : ''}\nWash Distilled: ${washDiff.toFixed(1)} KL${washElapsed > 0 ? ' in ' + fmtHrs(washElapsed) : ''}\nGrain Consumed: ${grainConsumed.toFixed(2)} T (distilled ${grainDistilled.toFixed(2)} + Δprocess ${deltaGrainInProcess.toFixed(2)} + Δflour ${deltaFlour.toFixed(2)})\nF1: ${form.f1Pct ?? '—'}% | F2: ${form.f2Pct ?? '—'}% | F3: ${form.f3Pct ?? '—'}% | F4: ${form.f4Pct ?? '—'}%\nBeer Well: ${form.beerWellPct ?? '—'}%\nPF1: ${form.pf1Pct ?? '—'}% | PF2: ${form.pf2Pct ?? '—'}%\nILT: ${form.iltPct ?? '—'}% | FLT: ${form.fltPct ?? '—'}%\nSilo Closing: ${siloClosing.toFixed(1)} T | Total@Plant: ${totalAtPlant.toFixed(1)} T${form.remarks ? '\nRemarks: ' + form.remarks : ''}`;
                 window.open(`https://wa.me/?text=${encodeURIComponent(t)}`, '_blank');
               }} className="flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 transition">
                 <Share2 size={16} /> WhatsApp
@@ -729,6 +840,7 @@ export default function GrainUnloading() {
                   <th className="py-2 pr-3">Silo Close</th>
                   <th className="py-2 pr-3">Total@Plant</th>
                   <th className="py-2 pr-3">Quarantine</th>
+                  <th className="py-2 pr-3">Flour</th>
                   <th className="py-2"></th>
                 </tr>
               </thead>
@@ -743,12 +855,13 @@ export default function GrainUnloading() {
                     <td className="py-2 pr-3 font-semibold">{e.siloClosingStock?.toFixed(1)}</td>
                     <td className="py-2 pr-3 font-semibold">{e.totalGrainAtPlant?.toFixed(1)}</td>
                     <td className="py-2 pr-3 text-orange-600">{e.quarantineStock > 0 ? e.quarantineStock?.toFixed(1) : '—'}</td>
+                    <td className="py-2 pr-3 text-yellow-700">{((e.flourSilo1Level || 0) + (e.flourSilo2Level || 0)) > 0 ? ((e.flourSilo1Level || 0) + (e.flourSilo2Level || 0)).toFixed(1) : '—'}</td>
                     <td className="py-2">
                       <button onClick={(ev) => { ev.stopPropagation(); deleteEntry(e.id); }} className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
                     </td>
                   </tr>
                 ))}
-                {entries.length === 0 && <tr><td colSpan={9} className="py-4 text-center text-gray-400">No entries yet.</td></tr>}
+                {entries.length === 0 && <tr><td colSpan={10} className="py-4 text-center text-gray-400">No entries yet.</td></tr>}
               </tbody>
             </table>
           </div>

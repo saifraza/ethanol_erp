@@ -4,9 +4,16 @@ import api from '../../services/api';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
+// Shift date: if before 9AM, it's yesterday's shift
+function shiftDate() {
+  const now = new Date();
+  if (now.getHours() < 9) now.setDate(now.getDate() - 1);
+  return now.toISOString().split('T')[0];
+}
+
 export default function GrainUnloadingTrucks() {
   const [trucks, setTrucks] = useState<any[]>([]);
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(shiftDate());
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);

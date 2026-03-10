@@ -109,6 +109,8 @@ model GrainEntry {
   siloOpeningStock   Float    @default(0)
   siloClosingStock   Float    @default(0)
   quarantineStock    Float    @default(0)
+  flourSilo1Level    Float    @default(0)
+  flourSilo2Level    Float    @default(0)
   totalGrainAtPlant  Float    @default(0)
   cumulativeUnloaded Float    @default(0)
   cumulativeConsumed Float    @default(0)
