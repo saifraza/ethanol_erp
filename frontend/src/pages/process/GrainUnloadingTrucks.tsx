@@ -323,6 +323,12 @@ export default function GrainUnloadingTrucks() {
                 {t.remarks && <div className="text-[11px] text-gray-400 mt-0.5">{t.remarks}</div>}
               </div>
               <div className="flex items-center gap-2">
+                <button onClick={() => {
+                  const tSilo = t.weightNet - (t.quarantineWeight || 0);
+                  const text = `*Grain Truck*\n${t.uidRst ? `UID/RST: ${t.uidRst}\n` : ''}Vehicle: ${t.vehicleNo}\n${t.supplier ? `Supplier: ${t.supplier}\n` : ''}Gross: ${t.weightGross}T | Tare: ${t.weightTare}T | Net: ${t.weightNet.toFixed(1)}T\nTo Silo: ${tSilo.toFixed(1)}T${t.quarantineWeight > 0 ? ` | Quarantine: ${t.quarantineWeight.toFixed(1)}T` : ''}${t.moisture != null ? `\nMoisture: ${t.moisture}%` : ''}${t.remarks ? `\nRemarks: ${t.remarks}` : ''}`;
+                  if (navigator.share) { navigator.share({ text }).catch(() => { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank'); }); }
+                  else { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank'); }
+                }} className="text-green-500 hover:text-green-700"><Share2 size={14} /></button>
                 {t.photoUrl && (
                   <button onClick={() => setPhotoPreview(`${API_BASE}${t.photoUrl}`)}
                     className="text-blue-500 hover:text-blue-700"><Image size={16} /></button>
