@@ -3,10 +3,13 @@ import { Wheat, Save, Loader2, ChevronDown, ChevronUp, Trash2, Eye, X, Share2, A
 import ProcessPage, { InputCard, Field } from './ProcessPage';
 import api from '../../services/api';
 
-const FERM_CAPACITY = 2300;
-const PF_CAPACITY = 450;
-const FERM_GRAIN_PCT = 0.31;
-const PF_GRAIN_PCT = 0.15;
+// Defaults — overridden by settings API
+const DEF_FERM_CAP = 2300;
+const DEF_PF_CAP = 450;
+const DEF_ILT_CAP = 190;
+const DEF_FLT_CAP = 440;
+const DEF_GRAIN_PCT = 0.31;
+const DEF_PF_PCT = 0.15;
 
 interface GrainForm {
   date: string;
@@ -21,6 +24,8 @@ interface GrainForm {
   beerWellPct: number | null;
   pf1Pct: number | null;
   pf2Pct: number | null;
+  iltPct: number | null;
+  fltPct: number | null;
   fermentationVolumeAt: string;
   moisture: number | null;
   starchPercent: number | null;
@@ -39,7 +44,7 @@ const emptyForm: GrainForm = {
   date: new Date().toISOString().split('T')[0],
   grainUnloaded: null, washConsumed: null, washConsumedAt: nowLocal(),
   f1Pct: null, f2Pct: null, f3Pct: null, f4Pct: null, beerWellPct: null,
-  pf1Pct: null, pf2Pct: null, fermentationVolumeAt: nowLocal(),
+  pf1Pct: null, pf2Pct: null, iltPct: null, fltPct: null, fermentationVolumeAt: nowLocal(),
   moisture: null, starchPercent: null, damagedPercent: null, foreignMatter: null,
   remarks: '',
 };
@@ -85,8 +90,17 @@ export default function GrainUnloading() {
   const [editId, setEditId] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [truckSummary, setTruckSummary] = useState<{ totalNet: number; quarantineNet: number; truckCount: number }>({ totalNet: 0, quarantineNet: 0, truckCount: 0 });
+  const [plantSettings, setPlantSettings] = useState<any>(null);
 
   const u = (n: string, v: any) => setForm(f => ({ ...f, [n]: v }));
+
+  // Capacities from settings or defaults
+  const FERM_CAPACITY = plantSettings?.fermenter1Cap ?? DEF_FERM_CAP;
+  const PF_CAPACITY = plantSettings?.pfCap ?? DEF_PF_CAP;
+  const ILT_CAPACITY = plantSettings?.iltCap ?? DEF_ILT_CAP;
+  const FLT_CAPACITY = plantSettings?.fltCap ?? DEF_FLT_CAP;
+  const FERM_GRAIN_PCT = (plantSettings?.grainPercent ?? DEF_GRAIN_PCT * 100) / 100;
+  const PF_GRAIN_PCT = (plantSettings?.pfGrainPercent ?? DEF_PF_PCT * 100) / 100;
 
   // Convert percentages to KL for calculations
   const f1KL = pctToKl(form.f1Pct, FERM_CAPACITY);
@@ -96,17 +110,21 @@ export default function GrainUnloading() {
   const beerWellKL = pctToKl(form.beerWellPct, FERM_CAPACITY);
   const pf1KL = pctToKl(form.pf1Pct, PF_CAPACITY);
   const pf2KL = pctToKl(form.pf2Pct, PF_CAPACITY);
+  const iltKL = pctToKl(form.iltPct, ILT_CAPACITY);
+  const fltKL = pctToKl(form.fltPct, FLT_CAPACITY);
 
   const fermVol = f1KL + f2KL + f3KL + f4KL + beerWellKL;
   const pfVol = pf1KL + pf2KL;
-  const totalFermVol = fermVol + pfVol;
-  // Wash is cumulative flow meter — grain consumed = diff from prev × 31%
+  const iltFltVol = iltKL + fltKL;
+  const totalFermVol = fermVol + pfVol + iltFltVol;
+  // Wash is cumulative flow meter — grain consumed = diff from prev × grain%
   const pW = prev?.washConsumed ?? 0;
   const washDiff = Math.max(0, (form.washConsumed || 0) - pW);
   const grainConsumed = washDiff * FERM_GRAIN_PCT;
   const grainInFerm = fermVol * FERM_GRAIN_PCT;
   const grainInPF = pfVol * PF_GRAIN_PCT;
-  const grainInProcess = grainInFerm + grainInPF;
+  const grainInIltFlt = iltFltVol * FERM_GRAIN_PCT;
+  const grainInProcess = grainInFerm + grainInPF + grainInIltFlt;
   const opening = defaults.siloOpeningStock || 0;
   const siloClosing = opening + (form.grainUnloaded || 0) - grainConsumed;
   const totalAtPlant = siloClosing + grainInProcess;
@@ -118,7 +136,7 @@ export default function GrainUnloading() {
   const fermElapsed = (prev?.fermentationVolumeAt && form.fermentationVolumeAt)
     ? new Date(form.fermentationVolumeAt).getTime() - new Date(prev.fermentationVolumeAt).getTime() : 0;
 
-  useEffect(() => { loadLatest(); loadEntries(); }, []);
+  useEffect(() => { loadLatest(); loadEntries(); api.get('/settings').then(r => setPlantSettings(r.data)).catch(() => {}); }, []);
   useEffect(() => { loadTruckSummary(); }, [form.date]);
 
   async function loadLatest(beforeId?: string) {
@@ -159,6 +177,7 @@ export default function GrainUnloading() {
         f1Level: f1KL, f2Level: f2KL, f3Level: f3KL, f4Level: f4KL,
         beerWellLevel: beerWellKL,
         pf1Level: pf1KL, pf2Level: pf2KL,
+        iltLevel: iltKL, fltLevel: fltKL,
         fermentationVolumeAt: form.fermentationVolumeAt,
         moisture: form.moisture, starchPercent: form.starchPercent,
         damagedPercent: form.damagedPercent, foreignMatter: form.foreignMatter,
@@ -190,6 +209,8 @@ export default function GrainUnloading() {
       beerWellPct: klToPct(e.beerWellLevel, FERM_CAPACITY),
       pf1Pct: klToPct(e.pf1Level, PF_CAPACITY),
       pf2Pct: klToPct(e.pf2Level, PF_CAPACITY),
+      iltPct: klToPct(e.iltLevel, ILT_CAPACITY),
+      fltPct: klToPct(e.fltLevel, FLT_CAPACITY),
       fermentationVolumeAt: e.fermentationVolumeAt ? e.fermentationVolumeAt.slice(0, 16) : nowLocal(),
       moisture: e.moisture, starchPercent: e.starchPercent,
       damagedPercent: e.damagedPercent, foreignMatter: e.foreignMatter,
@@ -233,9 +254,9 @@ export default function GrainUnloading() {
       {/* Stat Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 md:gap-3 mb-4 md:mb-5">
         {[
-          { label: 'Silo Stock', value: defaults.siloOpeningStock ?? 0, unit: 'Ton', color: 'bg-amber-50 border-amber-200' },
-          { label: 'Grain@Plant', value: defaults.totalGrainAtPlant ?? 0, unit: 'Ton', color: 'bg-green-50 border-green-200' },
-          { label: 'Last Unloaded', value: defaults.lastUnloaded ?? 0, unit: 'Ton', color: 'bg-blue-50 border-blue-200' },
+          { label: 'Silo Stock', value: siloClosing || (defaults.siloOpeningStock ?? 0), unit: 'Ton', color: 'bg-amber-50 border-amber-200' },
+          { label: 'Grain@Plant', value: totalAtPlant || (defaults.totalGrainAtPlant ?? 0), unit: 'Ton', color: 'bg-green-50 border-green-200' },
+          { label: 'Last Unloaded', value: form.grainUnloaded || (defaults.lastUnloaded ?? 0), unit: 'Ton', color: 'bg-blue-50 border-blue-200' },
           { label: 'Year Consumed', value: defaults.cumulativeConsumed ?? 0, unit: 'Ton', color: 'bg-red-50 border-red-200' },
           { label: 'Year', value: defaults.yearStart ?? new Date().getFullYear(), unit: '', color: 'bg-gray-50 border-gray-200' },
         ].map(k => (
@@ -329,7 +350,7 @@ export default function GrainUnloading() {
           {fermElapsed > 0 && <span className="text-xs text-gray-400">Since last: {elapsed(fermElapsed)}</span>}
         </div>
 
-        <div className="text-xs text-gray-400 font-medium mb-2 mt-1">FERMENTERS — 2300 KL each, grain = vol × 31%</div>
+        <div className="text-xs text-gray-400 font-medium mb-2 mt-1">FERMENTERS — {FERM_CAPACITY} KL each, grain = vol × {(FERM_GRAIN_PCT * 100).toFixed(0)}%</div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {(['f1Pct', 'f2Pct', 'f3Pct', 'f4Pct'] as const).map((key, i) => {
             const curPct = form[key] || 0;
@@ -392,7 +413,7 @@ export default function GrainUnloading() {
           Grain: <span className="font-semibold text-amber-600">{grainInFerm.toFixed(1)} T</span>
         </div>
 
-        <div className="text-xs text-gray-400 font-medium mb-2 mt-4">PRE-FERMENTERS — 450 KL each, grain = vol × 15%</div>
+        <div className="text-xs text-gray-400 font-medium mb-2 mt-4">PRE-FERMENTERS — {PF_CAPACITY} KL each, grain = vol × {(PF_GRAIN_PCT * 100).toFixed(0)}%</div>
         <div className="grid grid-cols-2 gap-3">
           {(['pf1Pct', 'pf2Pct'] as const).map((key, i) => {
             const curPct = form[key] || 0;
@@ -426,6 +447,40 @@ export default function GrainUnloading() {
           Grain: <span className="font-semibold text-amber-600">{grainInPF.toFixed(1)} T</span>
         </div>
 
+        <div className="text-xs text-gray-400 font-medium mb-2 mt-4">ILT & FLT — grain = vol × {(FERM_GRAIN_PCT * 100).toFixed(0)}%</div>
+        <div className="grid grid-cols-2 gap-3">
+          {([{ key: 'iltPct' as const, label: 'ILT', cap: ILT_CAPACITY, kl: iltKL, prevKey: 'iltLevel' },
+            { key: 'fltPct' as const, label: 'FLT', cap: FLT_CAPACITY, kl: fltKL, prevKey: 'fltLevel' }]).map(t => {
+            const curPct = form[t.key] || 0;
+            const prvPctVal = prev ? Math.round(((prev[t.prevKey] || 0) / t.cap) * 10000) / 100 : 0;
+            return (
+              <div key={t.key} className="border rounded-lg p-3 bg-white border-teal-200">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-semibold text-teal-700">{t.label}</span>
+                  <span className="text-xs text-gray-500">{t.kl.toFixed(0)} KL <span className="text-gray-400">/ {t.cap}</span></span>
+                </div>
+                <div className="flex items-center gap-2 mb-2">
+                  <input type="number" value={form[t.key] ?? ''} onChange={e => u(t.key, e.target.value ? parseFloat(e.target.value) : null)}
+                    placeholder="%" className="input-field w-full text-sm" min={0} max={100} step={1} />
+                  <span className="text-sm text-gray-400 shrink-0">%</span>
+                </div>
+                <Bar p={curPct} />
+                {prev && (
+                  <div className="flex justify-between text-xs text-gray-400 mt-1.5">
+                    <span>Prev: {prvPctVal}%</span>
+                    {(curPct - prvPctVal) !== 0 && <DiffCell val={curPct - prvPctVal} unit="%" />}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <div className="text-right text-sm text-gray-600 mt-2">
+          Total: <span className="font-semibold">{iltFltVol.toFixed(0)} KL</span>
+          <span className="mx-1">→</span>
+          Grain: <span className="font-semibold text-amber-600">{grainInIltFlt.toFixed(1)} T</span>
+        </div>
+
         {prev && (
           <div className="mt-4 p-2.5 rounded bg-amber-50 border border-amber-200 flex items-center justify-between text-sm">
             <span className="text-amber-800">Total grain in process:</span>
@@ -445,13 +500,15 @@ export default function GrainUnloading() {
           const fermDiff = grainInFerm - prevFermGrain;
           const prevPFGrain = prev ? ((prev.pf1Level||0)+(prev.pf2Level||0)) * PF_GRAIN_PCT : 0;
           const pfDiff = grainInPF - prevPFGrain;
+          const prevIltFltGrain = prev ? ((prev.iltLevel||0)+(prev.fltLevel||0)) * FERM_GRAIN_PCT : 0;
+          const iltFltDiff = grainInIltFlt - prevIltFltGrain;
           return (
           <div className="text-sm divide-y divide-gray-100">
             {/* Row helper */}
             {[
               { label: 'Wash Made', value: `${fermVol.toFixed(0)} KL`, sub: 'F1-F4 + BW' },
               { label: 'Wash Distilled', value: `${(form.washConsumed ?? 0).toFixed(1)} KL`, sub: `diff: ${washDiff.toFixed(1)} KL` },
-              { label: 'Grain Consumed', value: `${grainConsumed.toFixed(2)} T`, sub: 'wash diff × 31%' },
+              { label: 'Grain Consumed', value: `${grainConsumed.toFixed(2)} T`, sub: `wash diff × ${(FERM_GRAIN_PCT * 100).toFixed(0)}%` },
             ].map((r, i) => (
               <div key={i} className="flex justify-between items-center py-2 px-1">
                 <span className="text-gray-600 text-xs">{r.label}{r.sub && <span className="hidden md:inline text-gray-400 ml-1">({r.sub})</span>}</span>
@@ -480,6 +537,18 @@ export default function GrainUnloading() {
               {prev && <div className="flex justify-end gap-2 mt-0.5">
                 <span className="text-[11px] text-gray-400">prev: {prevPFGrain.toFixed(1)} T</span>
                 <span className={`text-[11px] font-semibold ${pfDiff < 0 ? 'text-red-500' : 'text-green-600'}`}>{pfDiff >= 0 ? '+' : ''}{pfDiff.toFixed(1)} T</span>
+              </div>}
+            </div>
+
+            {/* ILT/FLT grain with diff */}
+            <div className="py-2 px-1">
+              <div className="flex justify-between items-center">
+                <span className="text-gray-600 text-xs">Grain in ILT + FLT</span>
+                <span className="font-semibold">{grainInIltFlt.toFixed(2)} T</span>
+              </div>
+              {prev && <div className="flex justify-end gap-2 mt-0.5">
+                <span className="text-[11px] text-gray-400">prev: {prevIltFltGrain.toFixed(1)} T</span>
+                <span className={`text-[11px] font-semibold ${iltFltDiff < 0 ? 'text-red-500' : 'text-green-600'}`}>{iltFltDiff >= 0 ? '+' : ''}{iltFltDiff.toFixed(1)} T</span>
               </div>}
             </div>
 

@@ -76,6 +76,8 @@ model Settings {
   beerWellCap           Float    @default(430)
   pfCap                 Float    @default(430)
   pfGrainPercent        Float    @default(15)
+  iltCap                Float    @default(190)
+  fltCap                Float    @default(440)
   rsCap                 Float    @default(15000)
   hfoCap                Float    @default(15000)
   lfoCap                Float    @default(15000)
@@ -99,6 +101,8 @@ model GrainEntry {
   beerWellLevel      Float?
   pf1Level           Float?
   pf2Level           Float?
+  iltLevel           Float?
+  fltLevel           Float?
   grainConsumed      Float    @default(0)
   grainInProcess     Float    @default(0)
   siloOpeningStock   Float    @default(0)

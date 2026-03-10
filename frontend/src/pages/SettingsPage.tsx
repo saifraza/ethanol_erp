@@ -14,7 +14,7 @@ export default function SettingsPage() {
   const update = (k: string, v: string) => setSettings((s: any) => ({ ...s, [k]: v === '' ? null : parseFloat(v) }));
 
   const save = async () => {
-    await api.put('/settings', settings);
+    await api.patch('/settings', settings);
     setMsg('Saved!'); setTimeout(() => setMsg(''), 2000);
   };
 
@@ -27,6 +27,8 @@ export default function SettingsPage() {
     { key: 'beerWellCap', label: 'Beer Well Capacity', unit: 'M3' },
     { key: 'pfCap', label: 'PF Capacity', unit: 'M3' },
     { key: 'pfGrainPercent', label: 'PF Grain %', unit: '%' },
+    { key: 'iltCap', label: 'ILT Capacity', unit: 'M3' },
+    { key: 'fltCap', label: 'FLT Capacity', unit: 'M3' },
     { key: 'rsTankCap', label: 'RS Tank Capacity', unit: 'M3' },
     { key: 'hfoTankCap', label: 'HFO Tank Capacity', unit: 'M3' },
     { key: 'lfoTankCap', label: 'LFO Tank Capacity', unit: 'M3' },

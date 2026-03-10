@@ -267,7 +267,8 @@ export default function EthanolProduct() {
             const dispInfo = lastEntry.totalDispatch > 0 ? `\nDispatch (in prod): ${lastEntry.totalDispatch?.toFixed(0)} BL` : '';
             const newDispInfo = newDispatch > 0 ? `\nNew Dispatch: ${newDispatch.toFixed(0)} BL (${newDispatchList.length} trucks)` : '';
             const newTruckLines = newDispatchList.length > 0 ? '\n' + newDispatchList.map((d: any) => `  ${d.vehicleNo} → ${d.destination || '-'} | ${d.quantityBL?.toFixed(0)} BL | ${d.partyName}`).join('\n') : '';
-            const text = `*Ethanol Stock Status*\n📅 ${fmtDtTime(lastEntry.date)}\n\nStock: ${lastEntry.totalStock?.toFixed(0)} BL\nStrength: ${lastEntry.avgStrength?.toFixed(1)}%\nProd: ${lastEntry.productionBL?.toFixed(0)} BL${lastPrevDate ? ` (${fmtDtTime(lastPrevDate)} → ${fmtDtTime(lastEntry.date)})` : ''}\nKLPD: ${lastEntry.klpd?.toFixed(1)}${dispInfo}${newDispInfo}${newTruckLines}\n\n📦 *Current Stock: ${curStock.toFixed(0)} BL*`;
+            const prevLine = lastPrevStock != null && lastPrevDate ? `\nPrev Stock: ${lastPrevStock.toFixed(0)} BL (${fmtDtTime(lastPrevDate)})` : '';
+            const text = `*Ethanol Stock Status*\n📅 ${fmtDtTime(lastEntry.date)}\n${prevLine}\nStock: ${lastEntry.totalStock?.toFixed(0)} BL\nStrength: ${lastEntry.avgStrength?.toFixed(1)}%\nProd: ${lastEntry.productionBL?.toFixed(0)} BL${lastPrevDate ? ` (${fmtDtTime(lastPrevDate)} → ${fmtDtTime(lastEntry.date)})` : ''}\nKLPD: ${lastEntry.klpd?.toFixed(1)}${dispInfo}${newDispInfo}${newTruckLines}\n\n📦 *Current Stock: ${curStock.toFixed(0)} BL*`;
             if (navigator.share) {
               navigator.share({ text }).catch(() => {
                 window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
