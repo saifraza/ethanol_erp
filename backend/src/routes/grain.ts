@@ -253,6 +253,69 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
+// POST /api/grain/seed-baseline — ONE-TIME: wipe test data, create real baseline
+router.post('/seed-baseline', authenticate, authorize('ADMIN'), async (req: AuthRequest, res: Response) => {
+  try {
+    // 1. Delete ALL grain entries
+    const deleted = await prisma.grainEntry.deleteMany();
+
+    // 2. Update settings to correct values
+    const settings = await prisma.settings.findFirst();
+    if (settings) {
+      await prisma.settings.update({
+        where: { id: settings.id },
+        data: { grainPercent: 32, millingLossPercent: 2.5 } as any,
+      });
+    }
+
+    // 3. Calculated values (32% grain, 2300 KL fermenters, 190 ILT, 440 FLT)
+    const f1 = 1725, f2 = 0, f3 = 1932, f4 = 2093, bw = 1518;       // KL
+    const ilt = 133, flt = 396;                                         // KL
+    const fermVol = f1 + f2 + f3 + f4 + bw;                            // 7268
+    const iltFltVol = ilt + flt;                                        // 529
+    const totalVol = fermVol + iltFltVol;                               // 7797
+    const grainInFerm = fermVol * 0.32;                                 // 2325.76
+    const grainInIltFlt = iltFltVol * 0.32;                             // 169.28
+    const grainInProcess = grainInFerm + grainInIltFlt;                 // 2495.04
+    const siloStock = 1500;
+    const quarantine = 1000;
+    const totalAtPlant = siloStock + grainInProcess;                    // 3995.04
+    const cumUnloaded = 14750;
+    // cumConsumed = effectiveUnloaded − silo − quarantine − grainInProcess
+    const effectiveUnloaded = cumUnloaded * (1 - 0.025);               // 14381.25
+    const cumConsumed = effectiveUnloaded - siloStock - quarantine - grainInProcess; // 9386.21
+
+    // 4. Create baseline entry
+    const entry = await prisma.grainEntry.create({
+      data: {
+        date: new Date('2026-03-10T15:27:00.000Z'),  // 8:57 PM IST
+        yearStart: 2026,
+        grainUnloaded: 0,
+        washConsumed: 24458,
+        washConsumedAt: new Date('2026-03-10T15:27:00.000Z'),  // 8:57 PM IST
+        f1Level: f1, f2Level: f2, f3Level: f3, f4Level: f4,
+        beerWellLevel: bw,
+        pf1Level: 0, pf2Level: 0,
+        iltLevel: ilt, fltLevel: flt,
+        fermentationVolume: Math.round(totalVol * 100) / 100,
+        fermentationVolumeAt: new Date('2026-03-10T15:47:00.000Z'),  // 9:17 PM IST
+        grainConsumed: 0,
+        grainInProcess: Math.round(grainInProcess * 100) / 100,
+        siloOpeningStock: siloStock,
+        siloClosingStock: siloStock,
+        quarantineStock: quarantine,
+        totalGrainAtPlant: Math.round(totalAtPlant * 100) / 100,
+        cumulativeUnloaded: cumUnloaded,
+        cumulativeConsumed: Math.round(cumConsumed * 100) / 100,
+        userId: req.user!.id,
+        remarks: 'Baseline — real plant data seeded',
+      },
+    });
+
+    res.json({ message: `Deleted ${deleted.count} test entries. Baseline created.`, entry });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
 // DELETE /api/grain/:id
 router.delete('/:id', authenticate, authorize('ADMIN'), async (req: AuthRequest, res: Response) => {
   try {
