@@ -13,6 +13,7 @@ router.get('/', authenticate, authorize('ADMIN'), async (req: AuthRequest, res: 
         email: true,
         name: true,
         role: true,
+        allowedModules: true,
         isActive: true,
         createdAt: true,
       },
@@ -25,7 +26,7 @@ router.get('/', authenticate, authorize('ADMIN'), async (req: AuthRequest, res: 
 
 router.post('/', authenticate, authorize('ADMIN'), async (req: AuthRequest, res: Response) => {
   try {
-    const { email, password, name, role } = req.body;
+    const { email, password, name, role, allowedModules } = req.body;
 
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
@@ -40,6 +41,7 @@ router.post('/', authenticate, authorize('ADMIN'), async (req: AuthRequest, res:
         password: hash,
         name,
         role: role || 'OPERATOR',
+        allowedModules: allowedModules || null,
       },
     });
 
@@ -48,6 +50,33 @@ router.post('/', authenticate, authorize('ADMIN'), async (req: AuthRequest, res:
       email: user.email,
       name: user.name,
       role: user.role,
+      allowedModules: user.allowedModules,
+      isActive: user.isActive,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/users/:id — update role, allowedModules, isActive
+router.put('/:id', authenticate, authorize('ADMIN'), async (req: AuthRequest, res: Response) => {
+  try {
+    const data: any = {};
+    if (req.body.role !== undefined) data.role = req.body.role;
+    if (req.body.allowedModules !== undefined) data.allowedModules = req.body.allowedModules || null;
+    if (req.body.isActive !== undefined) data.isActive = req.body.isActive;
+    if (req.body.name !== undefined) data.name = req.body.name;
+
+    const user = await prisma.user.update({
+      where: { id: req.params.id },
+      data,
+    });
+    res.json({
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      allowedModules: user.allowedModules,
       isActive: user.isActive,
     });
   } catch (err: any) {

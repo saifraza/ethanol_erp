@@ -9,29 +9,36 @@ import {
 } from 'lucide-react';
 
 const processNav = [
-  { to: '/process/raw-material', label: 'Raw Material', icon: Wheat },
-  { to: '/process/grain-unloading', label: 'Grain Unloading', icon: Wheat },
-  { to: '/process/milling', label: 'Milling', icon: CogIcon },
-  { to: '/process/liquefaction', label: 'Liquefaction', icon: Droplets },
-  { to: '/process/pre-fermentation', label: 'Pre-Fermentation', icon: Beaker },
-  { to: '/process/fermentation', label: 'Fermentation', icon: Beaker },
-  { to: '/process/distillation', label: 'Distillation', icon: Flame },
-  { to: '/process/evaporation', label: 'Evaporation', icon: Wind },
-  { to: '/process/ddgs', label: 'DDGS Production', icon: Wind },
-  { to: '/process/dryer', label: 'Dryer', icon: Flame },
-  { to: '/process/decanter', label: 'Decanter', icon: Droplets },
-  { to: '/process/ethanol-product', label: 'Ethanol Product', icon: Fuel },
-  { to: '/process/water-utility', label: 'Water Utility', icon: Waves },
+  { to: '/process/raw-material', label: 'Raw Material', icon: Wheat, moduleKey: 'raw-material' },
+  { to: '/process/grain-unloading', label: 'Grain Unloading', icon: Wheat, moduleKey: 'grain-unloading' },
+  { to: '/process/milling', label: 'Milling', icon: CogIcon, moduleKey: 'milling' },
+  { to: '/process/liquefaction', label: 'Liquefaction', icon: Droplets, moduleKey: 'liquefaction' },
+  { to: '/process/pre-fermentation', label: 'Pre-Fermentation', icon: Beaker, moduleKey: 'pre-fermentation' },
+  { to: '/process/fermentation', label: 'Fermentation', icon: Beaker, moduleKey: 'fermentation' },
+  { to: '/process/distillation', label: 'Distillation', icon: Flame, moduleKey: 'distillation' },
+  { to: '/process/evaporation', label: 'Evaporation', icon: Wind, moduleKey: 'evaporation' },
+  { to: '/process/ddgs', label: 'DDGS Production', icon: Wind, moduleKey: 'ddgs' },
+  { to: '/process/dryer', label: 'Dryer', icon: Flame, moduleKey: 'dryer' },
+  { to: '/process/decanter', label: 'Decanter', icon: Droplets, moduleKey: 'decanter' },
+  { to: '/process/ethanol-product', label: 'Ethanol Product', icon: Fuel, moduleKey: 'ethanol-product' },
+  { to: '/process/water-utility', label: 'Water Utility', icon: Waves, moduleKey: 'water-utility' },
 ];
 
 const adminNav = [
-  { to: '/daily-entry', label: 'Full Daily Entry', icon: FileText },
-  { to: '/tank-dip', label: 'Tank DIP', icon: Beaker },
-  { to: '/log', label: 'Daily Log', icon: ClipboardList },
-  { to: '/reports', label: 'Reports', icon: BarChart3 },
-  { to: '/settings', label: 'Settings', icon: Settings },
-  { to: '/users', label: 'Users', icon: Users, adminOnly: true },
+  { to: '/daily-entry', label: 'Full Daily Entry', icon: FileText, moduleKey: 'daily-entry' },
+  { to: '/tank-dip', label: 'Tank DIP', icon: Beaker, moduleKey: 'tank-dip' },
+  { to: '/log', label: 'Daily Log', icon: ClipboardList, moduleKey: 'log' },
+  { to: '/reports', label: 'Reports', icon: BarChart3, moduleKey: 'reports' },
+  { to: '/settings', label: 'Settings', icon: Settings, moduleKey: 'settings', adminOnly: true },
+  { to: '/users', label: 'Users', icon: Users, moduleKey: 'users', adminOnly: true },
 ];
+
+function hasModuleAccess(user: any, moduleKey: string): boolean {
+  if (!user) return false;
+  if (user.role === 'ADMIN') return true;
+  if (!user.allowedModules) return false; // no modules assigned
+  return user.allowedModules.split(',').includes(moduleKey);
+}
 
 function NavLink({ to, label, icon: Icon, active, onClick }: any) {
   return (
@@ -109,7 +116,7 @@ export default function Layout() {
           </button>
           {processOpen && (
             <div className="space-y-0.5 ml-1 border-l border-gray-700 pl-2">
-              {processNav.map(n => (
+              {processNav.filter(n => hasModuleAccess(user, n.moduleKey)).map(n => (
                 <NavLink key={n.to} {...n} active={location.pathname === n.to} onClick={closeSidebar} />
               ))}
             </div>
@@ -121,7 +128,7 @@ export default function Layout() {
           </button>
           {adminOpen && (
             <div className="space-y-0.5 ml-1 border-l border-gray-700 pl-2">
-              {adminNav.filter(n => !n.adminOnly || user?.role === 'ADMIN').map(n => (
+              {adminNav.filter(n => (!n.adminOnly || user?.role === 'ADMIN') && hasModuleAccess(user, n.moduleKey)).map(n => (
                 <NavLink key={n.to} {...n} active={location.pathname === n.to} onClick={closeSidebar} />
               ))}
             </div>

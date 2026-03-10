@@ -1,20 +1,71 @@
 import React, { useEffect, useState } from 'react';
 import api from '../services/api';
-import { UserPlus } from 'lucide-react';
+import { UserPlus, Shield, ChevronDown, ChevronUp, X, Save } from 'lucide-react';
+
+const ALL_MODULES = [
+  { key: 'raw-material', label: 'Raw Material' },
+  { key: 'grain-unloading', label: 'Grain Unloading' },
+  { key: 'milling', label: 'Milling' },
+  { key: 'liquefaction', label: 'Liquefaction' },
+  { key: 'pre-fermentation', label: 'Pre-Fermentation' },
+  { key: 'fermentation', label: 'Fermentation' },
+  { key: 'distillation', label: 'Distillation' },
+  { key: 'evaporation', label: 'Evaporation' },
+  { key: 'ddgs', label: 'DDGS Production' },
+  { key: 'dryer', label: 'Dryer' },
+  { key: 'decanter', label: 'Decanter' },
+  { key: 'ethanol-product', label: 'Ethanol Product' },
+  { key: 'water-utility', label: 'Water Utility' },
+  { key: 'daily-entry', label: 'Full Daily Entry' },
+  { key: 'tank-dip', label: 'Tank DIP' },
+  { key: 'log', label: 'Daily Log' },
+  { key: 'reports', label: 'Reports' },
+];
+
+function parseModules(str: string | null | undefined): string[] {
+  if (!str) return [];
+  return str.split(',').filter(Boolean);
+}
+
+function modulesToString(arr: string[]): string | null {
+  return arr.length > 0 ? arr.join(',') : null;
+}
 
 export default function UsersPage() {
   const [users, setUsers] = useState<any[]>([]);
   const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'OPERATOR' });
+  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'OPERATOR', modules: [] as string[] });
   const [msg, setMsg] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editModules, setEditModules] = useState<string[]>([]);
 
   const load = () => api.get('/users').then(r => setUsers(r.data));
   useEffect(() => { load(); }, []);
 
+  const toggleFormModule = (key: string) => {
+    setForm(f => ({
+      ...f,
+      modules: f.modules.includes(key) ? f.modules.filter(m => m !== key) : [...f.modules, key],
+    }));
+  };
+
+  const selectAllForm = () => setForm(f => ({ ...f, modules: ALL_MODULES.map(m => m.key) }));
+  const clearAllForm = () => setForm(f => ({ ...f, modules: [] }));
+
   const addUser = async () => {
+    if (!form.name || !form.email || !form.password) { setMsg('Fill all fields'); return; }
     try {
-      await api.post('/auth/register', form);
-      setMsg('User created!'); setShowAdd(false); setForm({ name: '', email: '', password: '', role: 'OPERATOR' }); load();
+      await api.post('/users', {
+        name: form.name,
+        email: form.email,
+        password: form.password,
+        role: form.role,
+        allowedModules: form.role === 'ADMIN' ? null : modulesToString(form.modules),
+      });
+      setMsg('User created!');
+      setShowAdd(false);
+      setForm({ name: '', email: '', password: '', role: 'OPERATOR', modules: [] });
+      load();
     } catch (err: any) { setMsg(err.response?.data?.error || 'Error'); }
   };
 
@@ -23,45 +74,154 @@ export default function UsersPage() {
   };
 
   const changeRole = async (id: string, role: string) => {
-    await api.put(`/users/${id}`, { role }); load();
+    await api.put(`/users/${id}`, { role, allowedModules: role === 'ADMIN' ? null : undefined }); load();
+  };
+
+  const startEditModules = (u: any) => {
+    setEditingId(u.id);
+    setEditModules(parseModules(u.allowedModules));
+  };
+
+  const toggleEditModule = (key: string) => {
+    setEditModules(m => m.includes(key) ? m.filter(x => x !== key) : [...m, key]);
+  };
+
+  const saveModules = async (id: string) => {
+    await api.put(`/users/${id}`, { allowedModules: modulesToString(editModules) });
+    setEditingId(null);
+    load();
   };
 
   return (
-    <div>
+    <div className="max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">User Management</h1>
-        <button onClick={() => setShowAdd(!showAdd)} className="btn-primary flex items-center gap-2"><UserPlus size={16} />Add User</button>
+        <button onClick={() => setShowAdd(!showAdd)} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">
+          <UserPlus size={16} />{showAdd ? 'Cancel' : 'Add User'}
+        </button>
       </div>
 
-      {showAdd && (
-        <div className="card mb-4">
-          <div className="grid grid-cols-2 gap-3">
-            <input placeholder="Name" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className="input-field" />
-            <input placeholder="Email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} className="input-field" />
-            <input placeholder="Password" type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} className="input-field" />
-            <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))} className="input-field">
-              <option value="OPERATOR">Operator</option><option value="SUPERVISOR">Supervisor</option><option value="ADMIN">Admin</option>
-            </select>
-          </div>
-          <button onClick={addUser} className="btn-primary mt-3">Create User</button>
-          {msg && <span className="text-sm text-green-600 ml-3">{msg}</span>}
+      {msg && (
+        <div className="mb-4 p-3 rounded-lg bg-green-50 text-green-700 border border-green-200 text-sm flex items-center justify-between">
+          {msg}
+          <button onClick={() => setMsg('')}><X size={14} /></button>
         </div>
       )}
 
-      <div className="card">
-        <table className="w-full text-sm">
-          <thead><tr className="border-b text-left text-gray-500"><th className="pb-2">Name</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
-          <tbody>{users.map(u => (
-            <tr key={u.id} className="border-b">
-              <td className="py-2 font-medium">{u.name}</td><td>{u.email}</td>
-              <td><select value={u.role} onChange={e => changeRole(u.id, e.target.value)} className="text-xs border rounded px-1 py-0.5">
-                <option value="OPERATOR">Operator</option><option value="SUPERVISOR">Supervisor</option><option value="ADMIN">Admin</option>
-              </select></td>
-              <td><span className={`px-2 py-0.5 text-xs rounded ${u.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>{u.isActive ? 'Active' : 'Inactive'}</span></td>
-              <td><button onClick={() => toggleActive(u.id, u.isActive)} className="text-xs text-blue-500 hover:underline">{u.isActive ? 'Deactivate' : 'Activate'}</button></td>
-            </tr>
-          ))}</tbody>
-        </table>
+      {showAdd && (
+        <div className="bg-white border rounded-xl p-5 mb-5 shadow-sm">
+          <h3 className="font-semibold text-gray-700 mb-3">New User</h3>
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <input placeholder="Name" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm" />
+            <input placeholder="Email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm" />
+            <input placeholder="Password" type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm" />
+            <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm">
+              <option value="OPERATOR">Operator</option>
+              <option value="SUPERVISOR">Supervisor</option>
+              <option value="ADMIN">Admin</option>
+            </select>
+          </div>
+
+          {form.role !== 'ADMIN' && (
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-gray-600 flex items-center gap-1"><Shield size={14} /> Module Access</span>
+                <div className="flex gap-2">
+                  <button onClick={selectAllForm} className="text-xs text-blue-600 hover:underline">Select All</button>
+                  <button onClick={clearAllForm} className="text-xs text-red-500 hover:underline">Clear</button>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                {ALL_MODULES.map(m => (
+                  <label key={m.key} className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-sm cursor-pointer transition ${form.modules.includes(m.key) ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                    <input type="checkbox" checked={form.modules.includes(m.key)} onChange={() => toggleFormModule(m.key)} className="rounded" />
+                    {m.label}
+                  </label>
+                ))}
+              </div>
+              {form.modules.length === 0 && <p className="text-xs text-amber-600 mt-1">⚠ No modules selected — user won't see any pages</p>}
+            </div>
+          )}
+          {form.role === 'ADMIN' && <p className="text-xs text-gray-500 mb-3">Admins have access to all modules</p>}
+
+          <button onClick={addUser} className="bg-blue-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">Create User</button>
+        </div>
+      )}
+
+      <div className="space-y-3">
+        {users.map(u => (
+          <div key={u.id} className={`bg-white border rounded-xl p-4 shadow-sm ${!u.isActive ? 'opacity-60' : ''}`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-semibold text-gray-800">{u.name}</div>
+                <div className="text-xs text-gray-500">{u.email}</div>
+              </div>
+              <div className="flex items-center gap-3">
+                <select value={u.role} onChange={e => changeRole(u.id, e.target.value)} className="text-xs border rounded px-2 py-1">
+                  <option value="OPERATOR">Operator</option>
+                  <option value="SUPERVISOR">Supervisor</option>
+                  <option value="ADMIN">Admin</option>
+                </select>
+                <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${u.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                  {u.isActive ? 'Active' : 'Inactive'}
+                </span>
+                <button onClick={() => toggleActive(u.id, u.isActive)} className="text-xs text-blue-600 hover:underline">
+                  {u.isActive ? 'Deactivate' : 'Activate'}
+                </button>
+              </div>
+            </div>
+
+            {/* Module permissions */}
+            {u.role !== 'ADMIN' && (
+              <div className="mt-3 pt-3 border-t">
+                {editingId === u.id ? (
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-medium text-gray-500">Edit Module Access</span>
+                      <div className="flex gap-2">
+                        <button onClick={() => setEditModules(ALL_MODULES.map(m => m.key))} className="text-xs text-blue-600 hover:underline">All</button>
+                        <button onClick={() => setEditModules([])} className="text-xs text-red-500 hover:underline">None</button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 mb-3">
+                      {ALL_MODULES.map(m => (
+                        <label key={m.key} className={`flex items-center gap-2 px-2 py-1 rounded border text-xs cursor-pointer ${editModules.includes(m.key) ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-gray-200 text-gray-500'}`}>
+                          <input type="checkbox" checked={editModules.includes(m.key)} onChange={() => toggleEditModule(m.key)} className="rounded" />
+                          {m.label}
+                        </label>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => saveModules(u.id)} className="flex items-center gap-1 bg-blue-600 text-white px-3 py-1.5 rounded text-xs font-medium hover:bg-blue-700">
+                        <Save size={12} /> Save
+                      </button>
+                      <button onClick={() => setEditingId(null)} className="px-3 py-1.5 border rounded text-xs text-gray-600 hover:bg-gray-50">Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap gap-1">
+                      {parseModules(u.allowedModules).length > 0 ? (
+                        parseModules(u.allowedModules).map(key => {
+                          const mod = ALL_MODULES.find(m => m.key === key);
+                          return <span key={key} className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs">{mod?.label || key}</span>;
+                        })
+                      ) : (
+                        <span className="text-xs text-amber-600">No modules assigned</span>
+                      )}
+                    </div>
+                    <button onClick={() => startEditModules(u)} className="flex items-center gap-1 text-xs text-blue-600 hover:underline">
+                      <Shield size={12} /> Edit Access
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+            {u.role === 'ADMIN' && (
+              <div className="mt-2 text-xs text-gray-400">Admin — full access to all modules</div>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );

@@ -28,7 +28,7 @@ router.post('/register', async (req: AuthRequest, res: Response) => {
     });
 
     const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role, name: user.name },
+      { id: user.id, email: user.email, role: user.role, name: user.name, allowedModules: user.allowedModules },
       config.jwtSecret,
       { expiresIn: '7d' }
     );
@@ -40,6 +40,7 @@ router.post('/register', async (req: AuthRequest, res: Response) => {
         email: user.email,
         name: user.name,
         role: user.role,
+        allowedModules: user.allowedModules,
       },
     });
   } catch (err: any) {
@@ -64,7 +65,7 @@ router.post('/login', async (req: AuthRequest, res: Response) => {
     }
 
     const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role, name: user.name },
+      { id: user.id, email: user.email, role: user.role, name: user.name, allowedModules: user.allowedModules },
       config.jwtSecret,
       { expiresIn: '7d' }
     );
@@ -76,6 +77,7 @@ router.post('/login', async (req: AuthRequest, res: Response) => {
         email: user.email,
         name: user.name,
         role: user.role,
+        allowedModules: user.allowedModules,
       },
     });
   } catch (err: any) {

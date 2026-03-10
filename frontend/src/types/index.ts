@@ -1,5 +1,5 @@
 export interface User {
-  id: string; email: string; name: string; role: 'OPERATOR' | 'SUPERVISOR' | 'ADMIN'; isActive?: boolean;
+  id: string; email: string; name: string; role: 'OPERATOR' | 'SUPERVISOR' | 'ADMIN'; allowedModules?: string | null; isActive?: boolean;
 }
 
 export interface DailyEntry {
