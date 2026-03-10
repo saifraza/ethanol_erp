@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "build": "cd backend && npm install && npx prisma generate && npx tsc --outDir dist && cd ../frontend && npm install && npx vite build --outDir ../backend/public --emptyOutDir",
-    "start": "cd backend && npx prisma migrate deploy && node dist/server.js",
+    "start": "cd backend && npx prisma db push --skip-generate && node dist/server.js",
     "postinstall": "npm run build"
   },
   "engines": {
