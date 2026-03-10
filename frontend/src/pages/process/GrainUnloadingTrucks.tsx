@@ -58,7 +58,10 @@ export default function GrainUnloadingTrucks() {
     setSaving(true); setMsg(null);
     try {
       const fd = new FormData();
-      fd.append('date', date);
+      // Send full ISO datetime from browser's local timezone
+      const [y, m, d] = date.split('-').map(Number);
+      const localDate = new Date(y, m - 1, d, new Date().getHours(), new Date().getMinutes());
+      fd.append('date', localDate.toISOString());
       fd.append('uidRst', uidRst);
       fd.append('vehicleNo', vehicleNo);
       fd.append('supplier', supplier);

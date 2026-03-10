@@ -57,19 +57,19 @@ router.get('/latest', authenticate, async (req: AuthRequest, res: Response) => {
     let latest: any = null;
 
     if (beforeId) {
-      // Edit mode: find the entry being edited, then get the one before it
+      // Edit mode: find the entry being edited, then get the one before it by date
       const editing = await prisma.ethanolProductEntry.findUnique({ where: { id: beforeId } });
       if (editing) {
         latest = await prisma.ethanolProductEntry.findFirst({
-          where: { yearStart: editing.yearStart, createdAt: { lt: editing.createdAt } },
-          orderBy: { createdAt: 'desc' },
+          where: { yearStart: editing.yearStart, date: { lt: editing.date } },
+          orderBy: { date: 'desc' },
         });
       }
     } else {
-      // New entry mode: get the most recent
+      // New entry mode: get the most recent by date
       latest = await prisma.ethanolProductEntry.findFirst({
         where: { yearStart },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { date: 'desc' },
       });
     }
 
@@ -97,7 +97,7 @@ router.get('/latest', authenticate, async (req: AuthRequest, res: Response) => {
 router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const entries = await prisma.ethanolProductEntry.findMany({
-      orderBy: { createdAt: 'desc' },
+      orderBy: { date: 'desc' },
       take: 30,
       include: { trucks: true },
     });
@@ -106,12 +106,13 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
 });
 
 // Helper: get standalone dispatch total for a date range (between prev entry and current)
+// Uses gt (exclusive) for start and lte (inclusive) for end — no +24h padding
 async function getStandaloneDispatch(afterDate: Date | null, upToDate: Date): Promise<number> {
   const start = afterDate || new Date('2000-01-01');
   const dispatches = await prisma.dispatchTruck.findMany({
     where: {
       entryId: null, // standalone only
-      date: { gt: start, lte: new Date(upToDate.getTime() + 86400000) },
+      date: { gt: start, lte: upToDate },
     },
   });
   return dispatches.reduce((s, d) => s + (d.quantityBL || 0), 0);
@@ -120,20 +121,17 @@ async function getStandaloneDispatch(afterDate: Date | null, upToDate: Date): Pr
 // POST /api/ethanol-product
 router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const { date, time, trucks, remarks } = req.body;
+    const { date, trucks, remarks } = req.body;
+    // Frontend sends full ISO datetime (already timezone-correct)
     const entryDate = new Date(date);
-    if (time) {
-      const [h, m] = time.split(':').map(Number);
-      entryDate.setHours(h || 0, m || 0, 0, 0);
-    }
     const yearStart = entryDate.getFullYear();
 
     const tankData = parseTankData(req.body);
 
-    // Get previous entry for production calculation
+    // Get previous entry for production calculation (by date, not createdAt)
     const prevEntry = await prisma.ethanolProductEntry.findFirst({
       where: { yearStart },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { date: 'desc' },
     });
 
     // Sum dispatch from trucks array + standalone dispatches since prev entry
@@ -180,27 +178,22 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
     const existing = await prisma.ethanolProductEntry.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: 'Entry not found' });
 
-    const { trucks, remarks, time } = req.body;
+    const { trucks, remarks, date: newDate } = req.body;
     const tankData = parseTankData(req.body);
 
-    // Update time on existing date if provided
-    let entryDate = existing.date;
-    if (time) {
-      const [h, m] = time.split(':').map(Number);
-      entryDate = new Date(existing.date);
-      entryDate.setHours(h || 0, m || 0, 0, 0);
-    }
+    // Frontend sends full ISO datetime (already timezone-correct)
+    const entryDate = newDate ? new Date(newDate) : existing.date;
 
-    // Get previous entry (before this one)
+    // Get previous entry (before this one by date, not createdAt)
     const prevEntry = await prisma.ethanolProductEntry.findFirst({
-      where: { yearStart: existing.yearStart, createdAt: { lt: existing.createdAt } },
-      orderBy: { createdAt: 'desc' },
+      where: { yearStart: existing.yearStart, date: { lt: existing.date } },
+      orderBy: { date: 'desc' },
     });
 
     const truckList: any[] = trucks || [];
     const linkedDispatch = truckList.reduce((s: number, t: any) => s + (parseFloat(t.quantityBL) || 0), 0);
     const standaloneDispatch = await getStandaloneDispatch(
-      prevEntry?.date || null, existing.date
+      prevEntry?.date || null, entryDate
     );
     const totalDispatch = linkedDispatch + standaloneDispatch;
     const summary = calcSummary(tankData, prevEntry, totalDispatch);

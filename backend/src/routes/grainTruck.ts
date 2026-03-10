@@ -91,8 +91,8 @@ router.post('/', authenticate, upload.single('photo'), async (req: AuthRequest, 
       damagedPercent, foreignMatter, quarantine, quarantineWeight, quarantineReason,
       remarks, date, uidRst } = req.body;
 
+    // Frontend sends full ISO datetime from browser's local timezone
     const truckDate = date ? new Date(date) : new Date();
-    truckDate.setHours(new Date().getHours(), new Date().getMinutes());
 
     const gross = parseFloat(weightGross) || 0;
     const tare = parseFloat(weightTare) || 0;

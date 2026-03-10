@@ -44,6 +44,12 @@ const emptyForm: GrainForm = {
   remarks: '',
 };
 
+// Build a proper local-timezone Date from form.date
+function buildEntryDate(dateStr: string): Date {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day, 0, 0, 0, 0); // midnight local time
+}
+
 function elapsed(ms: number): string {
   if (ms <= 0) return '—';
   const hrs = Math.floor(ms / 3600000);
@@ -112,11 +118,13 @@ export default function GrainUnloading() {
   const fermElapsed = (prev?.fermentationVolumeAt && form.fermentationVolumeAt)
     ? new Date(form.fermentationVolumeAt).getTime() - new Date(prev.fermentationVolumeAt).getTime() : 0;
 
-  useEffect(() => { loadLatest(); loadEntries(); loadTruckSummary(); }, []);
+  useEffect(() => { loadLatest(); loadEntries(); }, []);
+  useEffect(() => { loadTruckSummary(); }, [form.date]);
 
-  async function loadLatest() {
+  async function loadLatest(beforeId?: string) {
     try {
-      const res = await api.get('/grain/latest');
+      const url = beforeId ? `/grain/latest?beforeId=${beforeId}` : '/grain/latest';
+      const res = await api.get(url);
       setDefaults(res.data.defaults);
       setPrev(res.data.previous);
     } catch (e) { console.error(e); }
@@ -144,7 +152,7 @@ export default function GrainUnloading() {
     try {
       // Convert percentages to KL for backend
       const payload = {
-        date: form.date,
+        date: buildEntryDate(form.date).toISOString(),
         grainUnloaded: form.grainUnloaded,
         washConsumed: form.washConsumed,
         washConsumedAt: form.washConsumedAt,
@@ -187,7 +195,8 @@ export default function GrainUnloading() {
       damagedPercent: e.damagedPercent, foreignMatter: e.foreignMatter,
       remarks: e.remarks || '',
     });
-    setDefaults((d: any) => ({ ...d, siloOpeningStock: e.siloOpeningStock }));
+    // Load the correct previous entry (before the one being edited)
+    loadLatest(e.id);
     window.scrollTo(0, 0);
   }
 

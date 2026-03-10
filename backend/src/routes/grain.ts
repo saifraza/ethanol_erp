@@ -5,9 +5,9 @@ import { authenticate, AuthRequest, authorize } from '../middleware/auth';
 const router = Router();
 const FERMENTER_GRAIN_PCT = 0.31;
 const PF_GRAIN_PCT = 0.15;
-const DEFAULT_SILO = 1500;
-const DEFAULT_CUM_UNLOADED = 13594;
-const DEFAULT_CUM_CONSUMED = 12094;
+const DEFAULT_SILO = 0;
+const DEFAULT_CUM_UNLOADED = 0;
+const DEFAULT_CUM_CONSUMED = 0;
 
 function getCurrentYearStart(): number {
   return new Date().getFullYear();
@@ -43,10 +43,13 @@ function calcGrain(data: any, opening: number, prevCumUnloaded: number, prevCumC
   };
 }
 
-async function getLastEntry(yearStart: number) {
+async function getLastEntry(yearStart: number, beforeDate?: Date) {
   return prisma.grainEntry.findFirst({
-    where: { yearStart },
-    orderBy: { createdAt: 'desc' },
+    where: {
+      yearStart,
+      ...(beforeDate ? { date: { lt: beforeDate } } : {}),
+    },
+    orderBy: { date: 'desc' },
   });
 }
 
@@ -57,7 +60,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
     const yearStart = year ? parseInt(year) : getCurrentYearStart();
     const entries = await prisma.grainEntry.findMany({
       where: { yearStart },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { date: 'desc' },
       take: parseInt(limit),
       skip: parseInt(offset),
       include: { user: { select: { name: true } } },
@@ -71,7 +74,13 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
 router.get('/latest', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const yearStart = getCurrentYearStart();
-    const latest = await getLastEntry(yearStart);
+    const beforeId = req.query.beforeId as string | undefined;
+    let beforeDate: Date | undefined;
+    if (beforeId) {
+      const editEntry = await prisma.grainEntry.findUnique({ where: { id: beforeId } });
+      if (editEntry) beforeDate = editEntry.date;
+    }
+    const latest = await getLastEntry(yearStart, beforeDate);
     res.json({
       latest,
       defaults: {
@@ -107,7 +116,7 @@ router.get('/summary', authenticate, async (req: AuthRequest, res: Response) => 
     const latest = await getLastEntry(yearStart);
     const recentEntries = await prisma.grainEntry.findMany({
       where: { yearStart },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { date: 'desc' },
       take: 7,
       select: { date: true, siloClosingStock: true, grainConsumed: true, grainUnloaded: true, totalGrainAtPlant: true },
     });
@@ -132,7 +141,6 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
       f1Level, f2Level, f3Level, f4Level, beerWellLevel, pf1Level, pf2Level,
       moisture, starchPercent, damagedPercent, foreignMatter, trucks, avgTruckWeight, supplier, remarks } = req.body;
     const entryDate = new Date(date);
-    entryDate.setHours(0, 0, 0, 0);
     const yearStart = entryDate.getFullYear();
 
     const prev = await getLastEntry(yearStart);
@@ -186,8 +194,8 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
     if (!existing) return res.status(404).json({ error: 'Entry not found' });
 
     const prev = await prisma.grainEntry.findFirst({
-      where: { yearStart: existing.yearStart, createdAt: { lt: existing.createdAt } },
-      orderBy: { createdAt: 'desc' },
+      where: { yearStart: existing.yearStart, date: { lt: existing.date } },
+      orderBy: { date: 'desc' },
     });
     const opening = prev?.siloClosingStock ?? DEFAULT_SILO;
     const prevCumUnloaded = prev?.cumulativeUnloaded ?? DEFAULT_CUM_UNLOADED;

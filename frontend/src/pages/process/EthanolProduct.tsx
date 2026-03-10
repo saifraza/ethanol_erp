@@ -30,16 +30,25 @@ export default function EthanolProduct() {
   const [fuelOpen, setFuelOpen] = useState(false);
   const [lastEntry, setLastEntry] = useState<any>(null);
   const [lastPrevDate, setLastPrevDate] = useState<string | null>(null);
+  const [lastPrevStock, setLastPrevStock] = useState<number | null>(null);
 
   useEffect(() => {
     api.get('/calibration').then(r => setCalData(r.data)).catch(e => console.error('Cal load error:', e));
   }, []);
 
-  // Load standalone dispatches since prev entry (matches backend production calc for new entry form)
+  // Build proper local datetime from date + time inputs
+  const buildEntryDate = (): Date => {
+    const [year, month, day] = date.split('-').map(Number);
+    const [h, m] = (time || '00:00').split(':').map(Number);
+    return new Date(year, month - 1, day, h, m, 0, 0); // local timezone
+  };
+
+  // Load standalone dispatches since prev entry (matches backend production calc)
   useEffect(() => {
     const fromDate = prev?.date ? new Date(prev.date).toISOString() : null;
+    const entryDt = buildEntryDate().toISOString();
     const url = fromDate
-      ? `/dispatch?from=${fromDate}&to=${new Date(date + 'T23:59:59').toISOString()}`
+      ? `/dispatch?from=${fromDate}&to=${entryDt}`
       : `/dispatch?date=${date}`;
     api.get(url).then(r => {
       const dispatches = r.data.dispatches || [];
@@ -47,14 +56,17 @@ export default function EthanolProduct() {
       setTodayDispatch(total);
       setDispatchList(dispatches);
     }).catch(() => {});
-  }, [date, prev]);
+  }, [date, time, prev]);
 
-  // Load NEW dispatches since last saved entry (for dashboard current stock)
+  // Load NEW dispatches AFTER last saved entry (for dashboard current stock)
+  // Add 1ms to fromDate to make it exclusive (gt behavior), avoiding double-count
+  // with dispatches already included in the saved entry's totalDispatch
   const [newDispatch, setNewDispatch] = useState(0);
   const [newDispatchList, setNewDispatchList] = useState<any[]>([]);
   useEffect(() => {
     if (!lastEntry?.date) return;
-    const fromDate = new Date(lastEntry.date).toISOString();
+    // +1ms to exclude dispatches at exactly lastEntry.date (already counted in production)
+    const fromDate = new Date(new Date(lastEntry.date).getTime() + 1).toISOString();
     api.get(`/dispatch?from=${fromDate}&to=${new Date().toISOString()}`).then(r => {
       const dispatches = r.data.dispatches || [];
       const total = dispatches.reduce((s: number, d: any) => s + (d.quantityBL || 0), 0);
@@ -105,7 +117,7 @@ export default function EthanolProduct() {
   const productionAL = productionBL * avgStrength / 100;
   // KLPD: production per day in kilolitres
   const prevDate = prev?.date ? new Date(prev.date) : null;
-  const curDate = (() => { const d = new Date(date); if (time) { const [h, m] = time.split(':').map(Number); d.setHours(h || 0, m || 0); } return d; })();
+  const curDate = buildEntryDate();
   const hoursBetween = prevDate ? (curDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60) : 0;
   const klpd = hoursBetween > 0 ? (productionBL / hoursBetween) * 24 / 1000 : 0;
 
@@ -126,6 +138,7 @@ export default function EthanolProduct() {
       if (res.data.entries?.length > 0) {
         setLastEntry(res.data.entries[0]);
         setLastPrevDate(res.data.entries[1]?.date || null);
+        setLastPrevStock(res.data.entries[1]?.totalStock ?? null);
       }
     } catch (e) { console.error(e); }
   }
@@ -134,7 +147,7 @@ export default function EthanolProduct() {
     if (!date) { setMsg({ type: 'err', text: 'Date is required' }); return; }
     setSaving(true); setMsg(null);
     try {
-      const payload = { date, time, ...form, remarks, trucks: [] };
+      const payload = { date: buildEntryDate().toISOString(), ...form, remarks, trucks: [] };
       if (editId) await api.put(`/ethanol-product/${editId}`, payload);
       else await api.post('/ethanol-product', payload);
       const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -199,9 +212,10 @@ export default function EthanolProduct() {
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
             <div className="bg-white/80 rounded-lg p-2.5 text-center">
-              <Droplets size={16} className="mx-auto text-blue-500 mb-1" />
-              <div className="text-lg font-bold text-blue-700">{lastEntry.totalStock?.toFixed(0) ?? '—'}</div>
-              <div className="text-[10px] text-gray-400">Stock (BL)</div>
+              <Droplets size={16} className="mx-auto text-gray-400 mb-1" />
+              <div className="text-lg font-bold text-gray-600">{lastPrevStock?.toFixed(0) ?? '—'}</div>
+              <div className="text-[10px] text-gray-400">Prev Stock</div>
+              {lastPrevDate && <div className="text-[9px] text-gray-400">{fmtDtTime(lastPrevDate)}</div>}
             </div>
             <div className="bg-white/80 rounded-lg p-2.5 text-center">
               <Gauge size={16} className="mx-auto text-purple-500 mb-1" />
@@ -227,9 +241,9 @@ export default function EthanolProduct() {
           </div>
           {/* Current stock = last reading minus any new dispatches since */}
           <div className="mt-2 bg-white/60 rounded-lg p-2 text-center border border-blue-100">
-            <div className="text-[10px] text-gray-400 uppercase">Current Stock</div>
+            <div className="text-[10px] text-gray-400 uppercase">Current Stock{newDispatch > 0 ? ' (after dispatch)' : ''}</div>
             <div className="text-xl font-bold text-blue-800">{((lastEntry.totalStock || 0) - newDispatch).toFixed(0)} BL</div>
-            {newDispatch > 0 && <div className="text-[10px] text-gray-400">({lastEntry.totalStock?.toFixed(0)} − {newDispatch.toFixed(0)} dispatched since)</div>}
+            {newDispatch > 0 && <div className="text-[10px] text-gray-400">Stock at reading: {lastEntry.totalStock?.toFixed(0)} − {newDispatch.toFixed(0)} dispatched since</div>}
           </div>
           {/* New dispatches since last entry */}
           {newDispatchList.length > 0 && (
