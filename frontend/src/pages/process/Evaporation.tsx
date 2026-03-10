@@ -11,9 +11,7 @@ interface EvapForm {
   ff5SpGravity: string; ff5Temp: string;
   fc1SpGravity: string; fc1Temp: string;
   fc2SpGravity: string; fc2Temp: string;
-  ff1Concentration: string; ff2Concentration: string;
-  ff3Concentration: string; ff4Concentration: string;
-  ff5Concentration: string;
+  syrupConcentration: string;
   vacuum: string; thinSlopFlowRate: string;
   lastSyrupGravity: string; remark: string;
 }
@@ -24,8 +22,7 @@ const empty = (): EvapForm => ({
   ff3SpGravity: '', ff3Temp: '', ff4SpGravity: '', ff4Temp: '',
   ff5SpGravity: '', ff5Temp: '', fc1SpGravity: '', fc1Temp: '',
   fc2SpGravity: '', fc2Temp: '',
-  ff1Concentration: '', ff2Concentration: '', ff3Concentration: '',
-  ff4Concentration: '', ff5Concentration: '',
+  syrupConcentration: '',
   vacuum: '', thinSlopFlowRate: '', lastSyrupGravity: '', remark: ''
 });
 
@@ -79,12 +76,12 @@ export default function Evaporation() {
       `*FC Sp.Gravity / Temp:*`,
       ...FC_UNITS.map(u => `  ${u.label}: ${(form as any)[u.key + 'SpGravity'] || '—'} / ${(form as any)[u.key + 'Temp'] || '—'}°C`),
       ``,
-      `*FFE Concentration (%):*`,
-      ...FFE_UNITS.map(u => `  ${u.label}: ${(form as any)[u.key + 'Concentration'] || '—'}%`),
+      `*Syrup:*`,
+      `  Gravity: ${form.lastSyrupGravity || '—'}`,
+      `  Concentration: ${form.syrupConcentration || '—'}%`,
       ``,
       `Vacuum: ${form.vacuum || '—'}`,
       `Thin Slop Flow Rate: ${form.thinSlopFlowRate || '—'}`,
-      `Last Syrup Gravity: ${form.lastSyrupGravity || '—'}`,
       form.remark ? `Remark: ${form.remark}` : '',
     ];
     return lines.filter(Boolean).join('\n');
@@ -161,26 +158,21 @@ export default function Evaporation() {
         </div>
       </div>
 
-      {/* FFE Concentration */}
+      {/* Syrup Gravity & Concentration */}
       <div className="bg-white rounded-lg shadow-sm border p-4 mb-4">
-        <h3 className="text-sm font-semibold text-purple-700 mb-3 uppercase tracking-wide">FFE Concentration (%)</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-          {FFE_UNITS.map(u => (
-            <div key={u.key}>
-              <label className="text-xs text-gray-500">{u.label}</label>
-              <input type="number" step="0.01" value={(form as any)[u.key + 'Concentration']} onChange={e => upd((u.key + 'Concentration') as any, e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" placeholder="%" />
-            </div>
-          ))}
+        <h3 className="text-sm font-semibold text-purple-700 mb-3 uppercase tracking-wide">Syrup Gravity & Concentration</h3>
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className="text-xs text-gray-500">Syrup Gravity</label><input type="number" step="0.001" value={form.lastSyrupGravity} onChange={e => upd('lastSyrupGravity', e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+          <div><label className="text-xs text-gray-500">Concentration (%)</label><input type="number" step="0.01" value={form.syrupConcentration} onChange={e => upd('syrupConcentration', e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" placeholder="%" /></div>
         </div>
       </div>
 
       {/* Vacuum, Thin Slop, Last Syrup */}
       <div className="bg-white rounded-lg shadow-sm border p-4 mb-4">
         <h3 className="text-sm font-semibold text-orange-700 mb-3 uppercase tracking-wide">Process Parameters</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <div><label className="text-xs text-gray-500">Vacuum</label><input type="number" step="0.01" value={form.vacuum} onChange={e => upd('vacuum', e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
           <div><label className="text-xs text-gray-500">Thin Slop Flow Rate</label><input type="number" step="0.01" value={form.thinSlopFlowRate} onChange={e => upd('thinSlopFlowRate', e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
-          <div><label className="text-xs text-gray-500">Last Syrup Gravity</label><input type="number" step="0.001" value={form.lastSyrupGravity} onChange={e => upd('lastSyrupGravity', e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
         </div>
         <div className="mt-3">
           <label className="text-xs text-gray-500">Remark</label>
@@ -237,18 +229,20 @@ export default function Evaporation() {
               </div>
 
               <div>
-                <h4 className="font-semibold text-purple-700 mb-1">FFE Concentration</h4>
-                <div className="grid grid-cols-5 gap-2">
-                  {FFE_UNITS.map(u => (
-                    <div key={u.key} className="bg-purple-50 rounded p-2 text-center">
-                      <div className="text-xs text-gray-500">{u.label}</div>
-                      <div className="font-semibold">{(form as any)[u.key + 'Concentration'] || '—'}%</div>
-                    </div>
-                  ))}
+                <h4 className="font-semibold text-purple-700 mb-1">Syrup</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="bg-purple-50 rounded p-2 text-center">
+                    <div className="text-xs text-gray-500">Gravity</div>
+                    <div className="font-semibold">{form.lastSyrupGravity || '—'}</div>
+                  </div>
+                  <div className="bg-purple-50 rounded p-2 text-center">
+                    <div className="text-xs text-gray-500">Concentration</div>
+                    <div className="font-semibold">{form.syrupConcentration || '—'}%</div>
+                  </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 <div className="bg-orange-50 rounded p-2 text-center">
                   <div className="text-xs text-gray-500">Vacuum</div>
                   <div className="font-semibold">{form.vacuum || '—'}</div>
@@ -256,10 +250,6 @@ export default function Evaporation() {
                 <div className="bg-orange-50 rounded p-2 text-center">
                   <div className="text-xs text-gray-500">Thin Slop Flow</div>
                   <div className="font-semibold">{form.thinSlopFlowRate || '—'}</div>
-                </div>
-                <div className="bg-orange-50 rounded p-2 text-center">
-                  <div className="text-xs text-gray-500">Last Syrup Gravity</div>
-                  <div className="font-semibold">{form.lastSyrupGravity || '—'}</div>
                 </div>
               </div>
 

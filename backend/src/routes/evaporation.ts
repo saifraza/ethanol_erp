@@ -12,7 +12,7 @@ const FLOAT_FIELDS = [
   'ff4SpGravity','ff4Temp','ff5SpGravity','ff5Temp',
   'fc1SpGravity','fc1Temp','fc2SpGravity','fc2Temp',
   'ff1Concentration','ff2Concentration','ff3Concentration','ff4Concentration','ff5Concentration',
-  'vacuum','thinSlopFlowRate','lastSyrupGravity'
+  'syrupConcentration','vacuum','thinSlopFlowRate','lastSyrupGravity'
 ];
 
 function parseBody(b: any) {

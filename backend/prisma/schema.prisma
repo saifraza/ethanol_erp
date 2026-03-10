@@ -428,12 +428,14 @@ model EvaporationEntry {
   fc1Temp         Float?
   fc2SpGravity    Float?
   fc2Temp         Float?
-  // Concentration of each FFE (%)
+  // Concentration of each FFE (%) — legacy, kept for old data
   ff1Concentration Float?
   ff2Concentration Float?
   ff3Concentration Float?
   ff4Concentration Float?
   ff5Concentration Float?
+  // Syrup
+  syrupConcentration Float?
   // Vacuum & flow
   vacuum          Float?
   thinSlopFlowRate Float?
