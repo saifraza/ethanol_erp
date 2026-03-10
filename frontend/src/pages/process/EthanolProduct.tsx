@@ -27,9 +27,39 @@ export default function EthanolProduct() {
   const [editId, setEditId] = useState<string | null>(null);
   const [remarks, setRemarks] = useState('');
   const [showPreview, setShowPreview] = useState(false);
+  const [calData, setCalData] = useState<Record<string, Record<string, number>>>({});
+
+  // Load calibration data once
+  useEffect(() => {
+    api.get('/calibration').then(r => setCalData(r.data)).catch(e => console.error('Cal load error:', e));
+  }, []);
+
+  // Lookup volume from calibration: dip in cm (e.g. 45.7) -> litres
+  const calLookup = (tankKey: string, dipCm: number | null): number | null => {
+    if (dipCm === null || dipCm === undefined || isNaN(dipCm)) return null;
+    const tankCal = calData[tankKey];
+    if (!tankCal) return null;
+    const key = String(Math.round(dipCm * 10));
+    const litres = tankCal[key];
+    return litres !== undefined ? litres : null;
+  };
 
   const u = (key: string, val: any) => setForm((f: any) => ({ ...f, [key]: val }));
   const numU = (key: string, raw: string) => u(key, raw === '' ? null : parseFloat(raw));
+
+  // When DIP changes, auto-set volume from calibration
+  const handleDipChange = (tankKey: string, raw: string) => {
+    const dipVal = raw === '' ? null : parseFloat(raw);
+    setForm((f: any) => {
+      const updated = { ...f, [`${tankKey}Dip`]: dipVal };
+      // Auto-lookup volume
+      const litres = calLookup(tankKey, dipVal);
+      if (litres !== null) {
+        updated[`${tankKey}Volume`] = litres;
+      }
+      return updated;
+    });
+  };
 
   // Truck helpers
   const updateTruck = (idx: number, field: string, val: string) => {
@@ -152,15 +182,15 @@ export default function EthanolProduct() {
                   <div className="grid grid-cols-2 gap-2 mb-2">
                     <div>
                       <label className="text-[10px] text-gray-400">DIP (cm)</label>
-                      <input type="number" step="any" value={form[`${tank.key}Dip`] ?? ''}
-                        onChange={e => numU(`${tank.key}Dip`, e.target.value)}
+                      <input type="number" step="0.1" value={form[`${tank.key}Dip`] ?? ''}
+                        onChange={e => handleDipChange(tank.key, e.target.value)}
                         className="border rounded px-2 py-1.5 w-full text-sm" />
                     </div>
                     <div>
-                      <label className="text-[10px] text-gray-400">LT %</label>
-                      <input type="number" step="any" value={form[`${tank.key}Lt`] ?? ''}
-                        onChange={e => numU(`${tank.key}Lt`, e.target.value)}
-                        className="border rounded px-2 py-1.5 w-full text-sm" />
+                      <label className="text-[10px] text-gray-400">Volume (Litres)</label>
+                      <input type="number" step="any" value={form[`${tank.key}Volume`] ?? ''}
+                        readOnly
+                        className="border rounded px-2 py-1.5 w-full text-sm bg-gray-50 font-medium text-blue-700" />
                     </div>
                     <div>
                       <label className="text-[10px] text-gray-400">Strength %</label>
@@ -169,9 +199,9 @@ export default function EthanolProduct() {
                         className="border rounded px-2 py-1.5 w-full text-sm" />
                     </div>
                     <div>
-                      <label className="text-[10px] text-gray-400">Volume (BL)</label>
-                      <input type="number" step="any" value={form[`${tank.key}Volume`] ?? ''}
-                        onChange={e => numU(`${tank.key}Volume`, e.target.value)}
+                      <label className="text-[10px] text-gray-400">LT %</label>
+                      <input type="number" step="any" value={form[`${tank.key}Lt`] ?? ''}
+                        onChange={e => numU(`${tank.key}Lt`, e.target.value)}
                         className="border rounded px-2 py-1.5 w-full text-sm" />
                     </div>
                   </div>

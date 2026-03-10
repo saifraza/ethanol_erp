@@ -21,6 +21,7 @@ import ethanolProductRoutes from './routes/ethanolProduct';
 import ddgsRoutes from './routes/ddgs';
 import dryerRoutes from './routes/dryer';
 import decanterRoutes from './routes/decanter';
+import calibrationRoutes from './routes/calibration';
 
 const app = express();
 
@@ -47,6 +48,7 @@ app.use('/api/ethanol-product', ethanolProductRoutes);
 app.use('/api/ddgs', ddgsRoutes);
 app.use('/api/dryer', dryerRoutes);
 app.use('/api/decanter', decanterRoutes);
+app.use('/api/calibration', calibrationRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && rm -rf ../backend/public/* && cp -r dist/* ../backend/public/",
+    "build": "vite build",
     "preview": "vite preview"
   },
   "keywords": [],
