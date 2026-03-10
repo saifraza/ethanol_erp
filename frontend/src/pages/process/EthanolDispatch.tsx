@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Truck, Plus, Trash2, Camera, X, Share2, ChevronDown, ChevronUp, Image } from 'lucide-react';
+import { Truck, Plus, Trash2, Camera, X, Share2, ChevronDown, ChevronUp, Image, Clock } from 'lucide-react';
 import api from '../../services/api';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -11,9 +11,11 @@ export default function EthanolDispatch() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [history, setHistory] = useState<Record<string, any[]>>({});
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
 
   // Form state
+  const [batchNo, setBatchNo] = useState('');
   const [vehicleNo, setVehicleNo] = useState('');
   const [partyName, setPartyName] = useState('');
   const [destination, setDestination] = useState('');
@@ -32,8 +34,15 @@ export default function EthanolDispatch() {
     } catch (e) { console.error(e); }
   }
 
+  async function loadHistory() {
+    try {
+      const res = await api.get('/dispatch/history');
+      setHistory(res.data.history || {});
+    } catch (e) { console.error(e); }
+  }
+
   function resetForm() {
-    setVehicleNo(''); setPartyName(''); setDestination('');
+    setBatchNo(''); setVehicleNo(''); setPartyName(''); setDestination('');
     setQuantityBL(''); setStrength(''); setRemarks('');
     setPhoto(null); setShowForm(false);
   }
@@ -44,6 +53,7 @@ export default function EthanolDispatch() {
     try {
       const fd = new FormData();
       fd.append('date', date);
+      fd.append('batchNo', batchNo);
       fd.append('vehicleNo', vehicleNo);
       fd.append('partyName', partyName);
       fd.append('destination', destination);
@@ -75,6 +85,25 @@ export default function EthanolDispatch() {
   }
 
   const totalBL = dispatches.reduce((s, d) => s + (d.quantityBL || 0), 0);
+
+  function shareWhatsApp() {
+    const lines = dispatches.map((d, i) =>
+      `${i+1}. ${d.batchNo ? `[${d.batchNo}] ` : ''}${d.vehicleNo} → ${d.destination || '-'} | ${d.quantityBL} BL${d.strength ? ` @ ${d.strength}%` : ''} | ${d.partyName}`
+    ).join('\n');
+    const text = `*Ethanol Dispatch Report*\n📅 ${date}\n\n${lines}\n\n*Total: ${totalBL.toFixed(1)} BL (${dispatches.length} trucks)*`;
+
+    // Use Web Share API on mobile for better experience
+    if (navigator.share) {
+      navigator.share({ text }).catch(() => {
+        // Fallback to wa.me
+        window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+      });
+    } else {
+      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+    }
+  }
+
+  const fmtDt = (d: string) => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
   return (
     <div className="max-w-5xl mx-auto px-3 py-4">
@@ -118,6 +147,11 @@ export default function EthanolDispatch() {
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
             <div>
+              <label className="text-[10px] text-gray-400">Batch No</label>
+              <input type="text" value={batchNo} onChange={e => setBatchNo(e.target.value)}
+                className="border rounded px-2 py-2 w-full text-sm" placeholder="B-001" />
+            </div>
+            <div>
               <label className="text-[10px] text-gray-400">Vehicle No</label>
               <input type="text" value={vehicleNo} onChange={e => setVehicleNo(e.target.value)}
                 className="border rounded px-2 py-2 w-full text-sm" placeholder="MH 12 AB 1234" />
@@ -142,11 +176,11 @@ export default function EthanolDispatch() {
               <input type="number" step="any" value={strength} onChange={e => setStrength(e.target.value)}
                 className="border rounded px-2 py-2 w-full text-sm" />
             </div>
-            <div>
-              <label className="text-[10px] text-gray-400">Remarks</label>
-              <input type="text" value={remarks} onChange={e => setRemarks(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" />
-            </div>
+          </div>
+          <div className="mb-3">
+            <label className="text-[10px] text-gray-400">Remarks</label>
+            <input type="text" value={remarks} onChange={e => setRemarks(e.target.value)}
+              className="border rounded px-2 py-2 w-full text-sm" />
           </div>
 
           {/* Photo */}
@@ -187,8 +221,9 @@ export default function EthanolDispatch() {
           <div key={d.id} className="border rounded-lg p-3 bg-white">
             <div className="flex items-start justify-between">
               <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className="text-xs font-bold text-gray-400">#{dispatches.length - i}</span>
+                  {d.batchNo && <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">{d.batchNo}</span>}
                   <span className="font-semibold text-sm">{d.vehicleNo}</span>
                   <span className="text-xs text-gray-400">
                     {new Date(d.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
@@ -220,14 +255,44 @@ export default function EthanolDispatch() {
 
       {/* WhatsApp share */}
       {dispatches.length > 0 && (
-        <button onClick={() => {
-          const lines = dispatches.map((d, i) => `${i+1}. ${d.vehicleNo} → ${d.destination || '-'} | ${d.quantityBL} BL @ ${d.strength || '-'}%25 | ${d.partyName}`).join('%0A');
-          const text = `*Ethanol Dispatch*%0A📅 ${date}%0A%0A${lines}%0A%0ATotal: ${totalBL.toFixed(1)} BL (${dispatches.length} trucks)`;
-          window.open(`https://wa.me/?text=${text}`, '_blank');
-        }} className="w-full flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 mb-5">
+        <button onClick={shareWhatsApp}
+          className="w-full flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 mb-5">
           <Share2 size={16} /> Share on WhatsApp
         </button>
       )}
+
+      {/* Dispatch History */}
+      <div className="border-t pt-4">
+        <button onClick={() => { setShowHistory(!showHistory); if (!showHistory) loadHistory(); }}
+          className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-800">
+          {showHistory ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          <Clock size={14} /> Dispatch History
+        </button>
+        {showHistory && (
+          <div className="mt-3 space-y-4">
+            {Object.keys(history).length === 0 && <p className="text-sm text-gray-400">No past dispatches</p>}
+            {Object.entries(history).map(([dateKey, items]) => {
+              const dayTotal = items.reduce((s: number, d: any) => s + (d.quantityBL || 0), 0);
+              return (
+                <div key={dateKey} className="border rounded-lg p-3 bg-gray-50">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-semibold text-gray-700">{fmtDt(dateKey)}</span>
+                    <span className="text-xs font-bold text-red-600">{dayTotal.toFixed(1)} BL — {items.length} trucks</span>
+                  </div>
+                  <div className="space-y-1">
+                    {items.map((d: any) => (
+                      <div key={d.id} className="text-xs text-gray-600 flex justify-between">
+                        <span>{d.batchNo ? `[${d.batchNo}] ` : ''}{d.vehicleNo} → {d.partyName}</span>
+                        <span className="font-medium">{d.quantityBL} BL</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Photo Preview Modal */}
       {photoPreview && (

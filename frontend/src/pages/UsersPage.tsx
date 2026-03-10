@@ -2,25 +2,7 @@ import React, { useEffect, useState } from 'react';
 import api from '../services/api';
 import { UserPlus, Shield, Trash2, Pencil, Key, Save, X, Check } from 'lucide-react';
 
-const ALL_MODULES = [
-  { key: 'raw-material', label: 'Raw Material' },
-  { key: 'grain-unloading', label: 'Grain Unloading' },
-  { key: 'milling', label: 'Milling' },
-  { key: 'liquefaction', label: 'Liquefaction' },
-  { key: 'pre-fermentation', label: 'Pre-Fermentation' },
-  { key: 'fermentation', label: 'Fermentation' },
-  { key: 'distillation', label: 'Distillation' },
-  { key: 'evaporation', label: 'Evaporation' },
-  { key: 'ddgs', label: 'DDGS Production' },
-  { key: 'dryer', label: 'Dryer' },
-  { key: 'decanter', label: 'Decanter' },
-  { key: 'ethanol-product', label: 'Ethanol Product' },
-  { key: 'water-utility', label: 'Water Utility' },
-  { key: 'daily-entry', label: 'Full Daily Entry' },
-  { key: 'tank-dip', label: 'Tank DIP' },
-  { key: 'log', label: 'Daily Log' },
-  { key: 'reports', label: 'Reports' },
-];
+import { ALL_MODULES } from '../config/modules';
 
 function parseModules(str: string | null | undefined): string[] {
   if (!str) return [];

@@ -617,6 +617,7 @@ model DispatchTruck {
   vehicleNo       String   @default("")
   partyName       String   @default("")
   destination     String   @default("")
+  batchNo         String   @default("")
   quantityBL      Float    @default(0)
   strength        Float?
   photoUrl        String?

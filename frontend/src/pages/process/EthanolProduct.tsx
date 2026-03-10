@@ -153,7 +153,7 @@ export default function EthanolProduct() {
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-semibold text-purple-600 uppercase">Last Saved — {fmtDt(lastEntry.date)}</span>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div className="bg-white/80 rounded-lg p-2.5 text-center">
               <Droplets size={16} className="mx-auto text-blue-500 mb-1" />
               <div className="text-lg font-bold text-blue-700">{lastEntry.totalStock?.toFixed(0) ?? '—'}</div>
@@ -168,11 +168,6 @@ export default function EthanolProduct() {
               <TrendingUp size={16} className="mx-auto text-green-500 mb-1" />
               <div className="text-lg font-bold text-green-700">{lastEntry.productionBL?.toFixed(0) ?? '—'}</div>
               <div className="text-[10px] text-gray-400">Prod BL</div>
-            </div>
-            <div className="bg-white/80 rounded-lg p-2.5 text-center">
-              <TrendingUp size={16} className="mx-auto text-orange-500 mb-1" />
-              <div className="text-lg font-bold text-orange-600">{lastEntry.productionAL?.toFixed(0) ?? '—'}</div>
-              <div className="text-[10px] text-gray-400">Prod AL</div>
             </div>
           </div>
         </div>
@@ -269,15 +264,9 @@ export default function EthanolProduct() {
             <div className="text-lg font-bold text-red-600">{todayDispatch.toFixed(1)}</div>
           </div>
         </div>
-        <div className="border-t mt-3 pt-3 grid grid-cols-2 gap-3 text-center">
-          <div>
-            <div className="text-[10px] text-gray-400 uppercase">Production BL</div>
-            <div className="text-xl font-bold text-green-700">{productionBL.toFixed(2)}</div>
-          </div>
-          <div>
-            <div className="text-[10px] text-gray-400 uppercase">Production AL</div>
-            <div className="text-xl font-bold text-orange-600">{productionAL.toFixed(2)}</div>
-          </div>
+        <div className="border-t mt-3 pt-3 text-center">
+          <div className="text-[10px] text-gray-400 uppercase">Production BL</div>
+          <div className="text-xl font-bold text-green-700">{productionBL.toFixed(2)}</div>
         </div>
       </div>
 
@@ -381,10 +370,7 @@ export default function EthanolProduct() {
               </div>
               <div className="border-t pt-2">
                 <h4 className="font-semibold text-green-700 mb-1">Production</h4>
-                <div className="grid grid-cols-2 gap-1">
-                  <div>Production BL: <b>{productionBL.toFixed(2)}</b></div>
-                  <div>Production AL: <b>{productionAL.toFixed(2)}</b></div>
-                </div>
+                <div>Production BL: <b>{productionBL.toFixed(2)}</b></div>
               </div>
               {remarks && <div className="border-t pt-2"><span className="text-gray-500">Remarks:</span> {remarks}</div>}
             </div>
@@ -394,7 +380,7 @@ export default function EthanolProduct() {
                   if (form[`${t.key}Empty`]) return `${t.label}: Empty`;
                   return `${t.label}: ${(form[`${t.key}Volume`] || 0).toFixed(0)}L @ ${(form[`${t.key}Strength`] || 0).toFixed(1)}%25`;
                 }).join('%0A');
-                const text = `*Ethanol Stock Report*%0A📅 ${date}%0A%0A${tankLines}%0A%0AStock: ${totalStock.toFixed(1)} BL (${avgStrength.toFixed(2)}%25)%0ADispatch: ${todayDispatch.toFixed(1)} BL%0AProd BL: ${productionBL.toFixed(2)}%0AProd AL: ${productionAL.toFixed(2)}${remarks ? '%0A%0ARemarks: ' + remarks : ''}`;
+                const text = `*Ethanol Stock Report*%0A📅 ${date}%0A%0A${tankLines}%0A%0AStock: ${totalStock.toFixed(1)} BL (${avgStrength.toFixed(2)}%25)%0ADispatch: ${todayDispatch.toFixed(1)} BL%0AProd BL: ${productionBL.toFixed(2)}${remarks ? '%0A%0ARemarks: ' + remarks : ''}`;
                 window.open(`https://wa.me/?text=${text}`, '_blank');
               }} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
                 <Share2 size={16} /> WhatsApp

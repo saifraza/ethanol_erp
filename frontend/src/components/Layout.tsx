@@ -3,36 +3,10 @@ import { Link, useLocation, Outlet } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import {
-  LayoutDashboard, Wheat, CogIcon, Droplets, Beaker, Flame, Wind,
-  Fuel, Waves, Settings, Users, LogOut, ChevronDown, ChevronRight,
-  ClipboardList, BarChart3, FileText, WifiOff, Menu, X, Truck
+  LayoutDashboard, LogOut, ChevronDown, ChevronRight,
+  WifiOff, Menu, X
 } from 'lucide-react';
-
-const processNav = [
-  { to: '/process/raw-material', label: 'Raw Material', icon: Wheat, moduleKey: 'raw-material' },
-  { to: '/process/grain-unloading', label: 'Grain Unloading', icon: Wheat, moduleKey: 'grain-unloading' },
-  { to: '/process/milling', label: 'Milling', icon: CogIcon, moduleKey: 'milling' },
-  { to: '/process/liquefaction', label: 'Liquefaction', icon: Droplets, moduleKey: 'liquefaction' },
-  { to: '/process/pre-fermentation', label: 'Pre-Fermentation', icon: Beaker, moduleKey: 'pre-fermentation' },
-  { to: '/process/fermentation', label: 'Fermentation', icon: Beaker, moduleKey: 'fermentation' },
-  { to: '/process/distillation', label: 'Distillation', icon: Flame, moduleKey: 'distillation' },
-  { to: '/process/evaporation', label: 'Evaporation', icon: Wind, moduleKey: 'evaporation' },
-  { to: '/process/ddgs', label: 'DDGS Production', icon: Wind, moduleKey: 'ddgs' },
-  { to: '/process/dryer', label: 'Dryer', icon: Flame, moduleKey: 'dryer' },
-  { to: '/process/decanter', label: 'Decanter', icon: Droplets, moduleKey: 'decanter' },
-  { to: '/process/ethanol-stock', label: 'Ethanol Stock', icon: Fuel, moduleKey: 'ethanol-product' },
-  { to: '/process/ethanol-dispatch', label: 'Ethanol Dispatch', icon: Truck, moduleKey: 'ethanol-product' },
-  { to: '/process/water-utility', label: 'Water Utility', icon: Waves, moduleKey: 'water-utility' },
-];
-
-const adminNav = [
-  { to: '/daily-entry', label: 'Full Daily Entry', icon: FileText, moduleKey: 'daily-entry' },
-  { to: '/tank-dip', label: 'Tank DIP', icon: Beaker, moduleKey: 'tank-dip' },
-  { to: '/log', label: 'Daily Log', icon: ClipboardList, moduleKey: 'log' },
-  { to: '/reports', label: 'Reports', icon: BarChart3, moduleKey: 'reports' },
-  { to: '/settings', label: 'Settings', icon: Settings, moduleKey: 'settings', adminOnly: true },
-  { to: '/users', label: 'Users', icon: Users, moduleKey: 'users', adminOnly: true },
-];
+import { processNav, adminNav } from '../config/modules';
 
 function hasModuleAccess(user: any, moduleKey: string): boolean {
   if (!user) return false;
