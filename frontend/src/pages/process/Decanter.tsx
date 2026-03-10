@@ -10,6 +10,12 @@ interface DecForm {
 
 const DECANTERS = Array.from({ length: 8 }, (_, i) => ({ key: `d${i + 1}`, label: `D${i + 1}` }));
 
+const DRYER_GROUPS = [
+  { label: 'Dryer 1', color: 'blue', decanters: ['d1', 'd2', 'd3'] },
+  { label: 'Dryer 2', color: 'amber', decanters: ['d4', 'd5'] },
+  { label: 'Dryer 3', color: 'purple', decanters: ['d6', 'd7', 'd8'] },
+];
+
 const empty = (): DecForm => {
   const f: any = { date: new Date().toISOString().split('T')[0], entryTime: '', remark: '' };
   DECANTERS.forEach(d => { f[d.key + 'Feed'] = ''; f[d.key + 'WetCake'] = ''; f[d.key + 'ThinSlopGr'] = ''; });
@@ -62,10 +68,16 @@ export default function Decanter() {
       `*DECANTER REPORT*`,
       `Date: ${form.date} | Time: ${form.entryTime || '—'}`,
       ``,
-      `*Feed (D1–D8):*`,
-      ...DECANTERS.map(d => `  ${d.label}: ${form[d.key + 'Feed'] || '—'}`),
-      `  Total: ${totalFeed.toFixed(2)}`,
     ];
+    DRYER_GROUPS.forEach(g => {
+      const gFeed = g.decanters.reduce((s, k) => s + (parseFloat(form[k + 'Feed']) || 0), 0);
+      lines.push(`*${g.label} Feed:* ${gFeed.toFixed(2)}`);
+      g.decanters.forEach(k => {
+        const d = DECANTERS.find(x => x.key === k)!;
+        lines.push(`  ${d.label}: ${form[d.key + 'Feed'] || '—'}`);
+      });
+    });
+    lines.push(`*Total Feed: ${totalFeed.toFixed(2)}*`);
     // Only include wet cake / thin slop if any values entered
     const hasWC = DECANTERS.some(d => form[d.key + 'WetCake']);
     const hasTS = DECANTERS.some(d => form[d.key + 'ThinSlopGr']);
@@ -120,16 +132,33 @@ export default function Decanter() {
         </div>
       </div>
 
-      {/* Feed — always visible, compact 2-col grid */}
+      {/* Feed — grouped by dryer */}
       <div className="bg-white rounded-lg shadow-sm border p-4 mb-4">
         <h3 className="text-sm font-semibold text-cyan-700 mb-3 uppercase tracking-wide">Total Feed (D1–D8)</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {DECANTERS.map(d => (
-            <div key={d.key}>
-              <label className="text-xs text-gray-500">{d.label}</label>
-              <input type="number" step="0.01" value={form[d.key + 'Feed']} onChange={e => upd(d.key + 'Feed', e.target.value)} placeholder="0" className="w-full border rounded px-2 py-1.5 text-sm" />
-            </div>
-          ))}
+        <div className="space-y-4">
+          {DRYER_GROUPS.map(g => {
+            const groupFeed = g.decanters.reduce((s, k) => s + (parseFloat(form[k + 'Feed']) || 0), 0);
+            return (
+              <div key={g.label}>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded bg-${g.color}-100 text-${g.color}-700`}>{g.label}</span>
+                  <span className="text-xs text-gray-400">({g.decanters.map(k => k.toUpperCase()).join(', ')})</span>
+                  <span className="text-xs font-bold ml-auto">{groupFeed.toFixed(2)}</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {g.decanters.map(k => {
+                    const d = DECANTERS.find(x => x.key === k)!;
+                    return (
+                      <div key={d.key}>
+                        <label className="text-xs text-gray-500">{d.label}</label>
+                        <input type="number" step="0.01" value={form[d.key + 'Feed']} onChange={e => upd(d.key + 'Feed', e.target.value)} placeholder="0" className="w-full border rounded px-2 py-1.5 text-sm" />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
         </div>
         <div className="mt-3 pt-2 border-t flex items-center gap-2">
           <span className="text-xs text-gray-500">Total Feed:</span>
@@ -217,18 +246,32 @@ export default function Decanter() {
                 <span>Time: <strong>{form.entryTime || '—'}</strong></span>
               </div>
 
-              {/* Feed summary */}
+              {/* Feed summary grouped by dryer */}
               <div>
-                <h4 className="font-semibold text-cyan-700 mb-1">Feed (D1–D8)</h4>
-                <div className="grid grid-cols-4 gap-x-4 gap-y-0.5 text-xs">
-                  {DECANTERS.map(d => (
-                    <div key={d.key} className="flex justify-between">
-                      <span className="text-gray-500">{d.label}:</span>
-                      <span className="font-medium">{form[d.key + 'Feed'] || '—'}</span>
+                <h4 className="font-semibold text-cyan-700 mb-2">Feed (D1–D8)</h4>
+                {DRYER_GROUPS.map(g => {
+                  const gFeed = g.decanters.reduce((s, k) => s + (parseFloat(form[k + 'Feed']) || 0), 0);
+                  return (
+                    <div key={g.label} className="mb-2">
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className={`text-xs font-semibold text-${g.color}-700`}>{g.label}</span>
+                        <span className="text-xs font-bold">{gFeed.toFixed(2)}</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-x-4 gap-y-0.5 text-xs pl-2">
+                        {g.decanters.map(k => {
+                          const d = DECANTERS.find(x => x.key === k)!;
+                          return (
+                            <div key={d.key} className="flex justify-between">
+                              <span className="text-gray-500">{d.label}:</span>
+                              <span className="font-medium">{form[d.key + 'Feed'] || '—'}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                  ))}
-                </div>
-                <div className="mt-1 text-xs font-bold text-cyan-700">Total: {totalFeed.toFixed(2)}</div>
+                  );
+                })}
+                <div className="mt-1 pt-1 border-t text-xs font-bold text-cyan-700">Total: {totalFeed.toFixed(2)}</div>
               </div>
 
               {/* Wet Cake if any */}
