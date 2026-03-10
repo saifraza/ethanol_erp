@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Fuel, Save, ChevronDown, ChevronUp, Eye, X, Share2, Loader2, TrendingUp, Droplets, Gauge } from 'lucide-react';
+import { Fuel, Save, ChevronDown, ChevronUp, Eye, X, Share2, Loader2, TrendingUp, Droplets, Gauge, Truck } from 'lucide-react';
 import api from '../../services/api';
 
 const TANKS = [
@@ -25,6 +25,7 @@ export default function EthanolProduct() {
   const [showPreview, setShowPreview] = useState(false);
   const [calData, setCalData] = useState<Record<string, Record<string, number>>>({});
   const [todayDispatch, setTodayDispatch] = useState(0);
+  const [dispatchList, setDispatchList] = useState<any[]>([]);
   const [fuelOpen, setFuelOpen] = useState(false);
   const [lastEntry, setLastEntry] = useState<any>(null);
 
@@ -32,11 +33,13 @@ export default function EthanolProduct() {
     api.get('/calibration').then(r => setCalData(r.data)).catch(e => console.error('Cal load error:', e));
   }, []);
 
-  // Load today's standalone dispatch total
+  // Load today's standalone dispatch total + list
   useEffect(() => {
     api.get(`/dispatch?date=${date}`).then(r => {
-      const total = (r.data.dispatches || []).reduce((s: number, d: any) => s + (d.quantityBL || 0), 0);
+      const dispatches = r.data.dispatches || [];
+      const total = dispatches.reduce((s: number, d: any) => s + (d.quantityBL || 0), 0);
       setTodayDispatch(total);
+      setDispatchList(dispatches);
     }).catch(() => {});
   }, [date]);
 
@@ -169,6 +172,29 @@ export default function EthanolProduct() {
               <div className="text-lg font-bold text-green-700">{lastEntry.productionBL?.toFixed(0) ?? '—'}</div>
               <div className="text-[10px] text-gray-400">Prod BL</div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Today's Dispatch Summary */}
+      {dispatchList.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-5">
+          <div className="flex items-center gap-2 mb-2">
+            <Truck size={16} className="text-red-500" />
+            <span className="text-xs font-semibold text-red-600 uppercase">Today's Dispatch — {dispatchList.length} truck{dispatchList.length !== 1 ? 's' : ''}</span>
+            <span className="ml-auto text-sm font-bold text-red-700">{todayDispatch.toFixed(0)} BL</span>
+          </div>
+          <div className="space-y-1">
+            {dispatchList.map((d: any, i: number) => (
+              <div key={d.id} className="flex items-center justify-between text-xs bg-white/70 rounded px-2 py-1.5">
+                <span className="text-gray-600">
+                  <span className="font-medium text-gray-800">{d.vehicleNo || `Truck ${i+1}`}</span>
+                  {d.partyName && <span className="ml-1.5 text-gray-400">• {d.partyName}</span>}
+                  {d.destination && <span className="ml-1.5 text-gray-400">→ {d.destination}</span>}
+                </span>
+                <span className="font-semibold text-red-600">{d.quantityBL?.toFixed(0)} BL{d.strength ? ` @ ${d.strength}%` : ''}</span>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -378,10 +404,17 @@ export default function EthanolProduct() {
               <button onClick={() => {
                 const tankLines = TANKS.map(t => {
                   if (form[`${t.key}Empty`]) return `${t.label}: Empty`;
-                  return `${t.label}: ${(form[`${t.key}Volume`] || 0).toFixed(0)}L @ ${(form[`${t.key}Strength`] || 0).toFixed(1)}%25`;
-                }).join('%0A');
-                const text = `*Ethanol Stock Report*%0A📅 ${date}%0A%0A${tankLines}%0A%0AStock: ${totalStock.toFixed(1)} BL (${avgStrength.toFixed(2)}%25)%0ADispatch: ${todayDispatch.toFixed(1)} BL%0AProd BL: ${productionBL.toFixed(2)}${remarks ? '%0A%0ARemarks: ' + remarks : ''}`;
-                window.open(`https://wa.me/?text=${text}`, '_blank');
+                  return `${t.label}: ${(form[`${t.key}Volume`] || 0).toFixed(0)}L @ ${(form[`${t.key}Strength`] || 0).toFixed(1)}%`;
+                }).join('\n');
+                const dispLines = dispatchList.length > 0 ? '\n\n*Dispatch:*\n' + dispatchList.map((d: any) => `${d.vehicleNo} → ${d.destination || '-'} | ${d.quantityBL?.toFixed(0)} BL${d.strength ? ` @ ${d.strength}%` : ''} | ${d.partyName}`).join('\n') : '';
+                const text = `*Ethanol Stock Report*\n📅 ${date}\n\n${tankLines}\n\nStock: ${totalStock.toFixed(1)} BL (${avgStrength.toFixed(2)}%)\nDispatch: ${todayDispatch.toFixed(1)} BL\nProd BL: ${productionBL.toFixed(2)}${dispLines}${remarks ? '\n\nRemarks: ' + remarks : ''}`;
+                if (navigator.share) {
+                  navigator.share({ text }).catch(() => {
+                    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+                  });
+                } else {
+                  window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+                }
               }} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
                 <Share2 size={16} /> WhatsApp
               </button>
