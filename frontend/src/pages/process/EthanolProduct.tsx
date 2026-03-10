@@ -6,9 +6,6 @@ const TANKS = [
   { key: 'recA', label: 'Receiver A', group: 'Receivers', color: 'blue' },
   { key: 'recB', label: 'Receiver B', group: 'Receivers', color: 'blue' },
   { key: 'recC', label: 'Receiver C', group: 'Receivers', color: 'blue' },
-  { key: 'issA', label: 'Issue A', group: 'Issue Tanks', color: 'green' },
-  { key: 'issB', label: 'Issue B', group: 'Issue Tanks', color: 'green' },
-  { key: 'issC', label: 'Issue C', group: 'Issue Tanks', color: 'green' },
   { key: 'bulkA', label: 'Bulk A', group: 'Bulk Storage', color: 'orange' },
   { key: 'bulkB', label: 'Bulk B', group: 'Bulk Storage', color: 'orange' },
   { key: 'bulkC', label: 'Bulk C', group: 'Bulk Storage', color: 'orange' },
@@ -114,7 +111,6 @@ export default function EthanolProduct() {
   // Group tanks
   const groups = [
     { label: 'Receivers', tanks: TANKS.filter(t => t.group === 'Receivers'), color: 'blue' },
-    { label: 'Issue Tanks', tanks: TANKS.filter(t => t.group === 'Issue Tanks'), color: 'green' },
     { label: 'Bulk Storage', tanks: TANKS.filter(t => t.group === 'Bulk Storage'), color: 'orange' },
     { label: 'Issue Tank (Dispatch)', tanks: TANKS.filter(t => t.group === 'Issue Tank (Dispatch)'), color: 'red' },
   ];
