@@ -626,6 +626,27 @@ model DispatchTruck {
   createdAt       DateTime @default(now())
 }
 
+// Per-truck grain unloading (real-time)
+model GrainTruck {
+  id              String   @id @default(uuid())
+  date            DateTime @default(now())
+  vehicleNo       String   @default("")
+  supplier        String   @default("")
+  weightGross     Float    @default(0)
+  weightTare      Float    @default(0)
+  weightNet       Float    @default(0)   // gross - tare
+  moisture        Float?
+  starchPercent   Float?
+  damagedPercent  Float?
+  foreignMatter   Float?
+  quarantine      Boolean  @default(false) // true = in quarantine, not in silo
+  quarantineReason String?
+  remarks         String?
+  photoUrl        String?
+  userId          String?
+  createdAt       DateTime @default(now())
+}
+
 model AuditLog {
   id        String   @id @default(cuid())
   action    String

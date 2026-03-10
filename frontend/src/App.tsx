@@ -11,6 +11,7 @@ import Reports from './pages/Reports';
 import SettingsPage from './pages/SettingsPage';
 import UsersPage from './pages/UsersPage';
 import GrainUnloading from './pages/process/GrainUnloading';
+import GrainUnloadingTrucks from './pages/process/GrainUnloadingTrucks';
 import Milling from './pages/process/Milling';
 import Liquefaction from './pages/process/Liquefaction';
 import Fermentation from './pages/process/Fermentation';
@@ -42,7 +43,8 @@ export default function App() {
       <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route index element={<Dashboard />} />
         <Route path="process/raw-material" element={<RawMaterial />} />
-        <Route path="process/grain-unloading" element={<GrainUnloading />} />
+        <Route path="process/grain-stock" element={<GrainUnloading />} />
+        <Route path="process/grain-unloading" element={<GrainUnloadingTrucks />} />
         <Route path="process/milling" element={<Milling />} />
         <Route path="process/liquefaction" element={<Liquefaction />} />
         <Route path="process/pre-fermentation" element={<PreFermentation />} />

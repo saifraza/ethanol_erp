@@ -1,0 +1,391 @@
+import { useState, useEffect, useRef } from 'react';
+import { Wheat, Plus, Trash2, Camera, X, Share2, ChevronDown, ChevronUp, Image, Clock, AlertTriangle } from 'lucide-react';
+import api from '../../services/api';
+
+const API_BASE = import.meta.env.VITE_API_URL || '';
+
+export default function GrainUnloadingTrucks() {
+  const [trucks, setTrucks] = useState<any[]>([]);
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [history, setHistory] = useState<Record<string, any[]>>({});
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+
+  // Form state
+  const [vehicleNo, setVehicleNo] = useState('');
+  const [supplier, setSupplier] = useState('');
+  const [weightGross, setWeightGross] = useState('');
+  const [weightTare, setWeightTare] = useState('');
+  const [moisture, setMoisture] = useState('');
+  const [starchPercent, setStarchPercent] = useState('');
+  const [damagedPercent, setDamagedPercent] = useState('');
+  const [foreignMatter, setForeignMatter] = useState('');
+  const [quarantine, setQuarantine] = useState(false);
+  const [quarantineReason, setQuarantineReason] = useState('');
+  const [remarks, setRemarks] = useState('');
+  const [photo, setPhoto] = useState<File | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { loadTrucks(); }, [date]);
+
+  async function loadTrucks() {
+    try {
+      const res = await api.get(`/grain-truck?date=${date}`);
+      setTrucks(res.data.trucks || []);
+    } catch (e) { console.error(e); }
+  }
+
+  async function loadHistory() {
+    try {
+      const res = await api.get('/grain-truck/history');
+      setHistory(res.data.history || {});
+    } catch (e) { console.error(e); }
+  }
+
+  function resetForm() {
+    setVehicleNo(''); setSupplier(''); setWeightGross(''); setWeightTare('');
+    setMoisture(''); setStarchPercent(''); setDamagedPercent(''); setForeignMatter('');
+    setQuarantine(false); setQuarantineReason(''); setRemarks('');
+    setPhoto(null); setShowForm(false);
+  }
+
+  async function handleSave() {
+    if (!vehicleNo && !weightGross) { setMsg({ type: 'err', text: 'Vehicle No or Gross Weight required' }); return; }
+    setSaving(true); setMsg(null);
+    try {
+      const fd = new FormData();
+      fd.append('date', date);
+      fd.append('vehicleNo', vehicleNo);
+      fd.append('supplier', supplier);
+      fd.append('weightGross', weightGross);
+      fd.append('weightTare', weightTare);
+      fd.append('moisture', moisture);
+      fd.append('starchPercent', starchPercent);
+      fd.append('damagedPercent', damagedPercent);
+      fd.append('foreignMatter', foreignMatter);
+      fd.append('quarantine', String(quarantine));
+      fd.append('quarantineReason', quarantineReason);
+      fd.append('remarks', remarks);
+      if (photo) fd.append('photo', photo);
+
+      await api.post('/grain-truck', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+      setMsg({ type: 'ok', text: `Truck saved at ${now}` });
+      resetForm();
+      await loadTrucks();
+    } catch (err: any) { setMsg({ type: 'err', text: err.response?.data?.error || 'Save failed' }); }
+    setSaving(false);
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm('Delete this truck entry?')) return;
+    try {
+      await api.delete(`/grain-truck/${id}`);
+      await loadTrucks();
+    } catch (e) { console.error(e); }
+  }
+
+  async function toggleQuarantine(id: string, current: boolean) {
+    try {
+      await api.put(`/grain-truck/${id}`, { quarantine: !current });
+      await loadTrucks();
+    } catch (e) { console.error(e); }
+  }
+
+  function handlePhotoSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) setPhoto(file);
+  }
+
+  const net = (parseFloat(weightGross) || 0) - (parseFloat(weightTare) || 0);
+  const totalNet = trucks.filter(t => !t.quarantine).reduce((s, t) => s + t.weightNet, 0);
+  const quarantineTotal = trucks.filter(t => t.quarantine).reduce((s, t) => s + t.weightNet, 0);
+  const truckCount = trucks.length;
+
+  function shareWhatsApp() {
+    const lines = trucks.map((t, i) =>
+      `${i+1}. ${t.vehicleNo} | ${t.supplier || '-'} | Net: ${t.weightNet.toFixed(1)} T${t.quarantine ? ' ⚠️ QUARANTINE' : ''}`
+    ).join('\n');
+    const text = `*Grain Unloading Report*\n📅 ${date}\n\n${lines}\n\n*Total: ${totalNet.toFixed(1)} T (${truckCount} trucks)*${quarantineTotal > 0 ? `\n⚠️ Quarantine: ${quarantineTotal.toFixed(1)} T` : ''}`;
+
+    if (navigator.share) {
+      navigator.share({ text }).catch(() => {
+        window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+      });
+    } else {
+      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+    }
+  }
+
+  const fmtDt = (d: string) => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+  return (
+    <div className="max-w-5xl mx-auto px-3 py-4">
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-5">
+        <div className="p-2 bg-amber-100 rounded-lg"><Wheat size={24} className="text-amber-600" /></div>
+        <div>
+          <h1 className="text-xl font-bold text-gray-900">Grain Unloading</h1>
+          <p className="text-xs text-gray-500">Log each truck as it arrives — real time</p>
+        </div>
+      </div>
+
+      {/* Date + Summary */}
+      <div className="flex items-end gap-3 mb-5 flex-wrap">
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
+          <input type="date" value={date} onChange={e => setDate(e.target.value)}
+            className="border rounded-lg px-3 py-2.5 text-sm" />
+        </div>
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2">
+          <div className="text-[10px] text-amber-400 uppercase">To Silo</div>
+          <div className="text-lg font-bold text-amber-700">{totalNet.toFixed(1)} T</div>
+          <div className="text-[10px] text-gray-500">{truckCount} truck{truckCount !== 1 ? 's' : ''}</div>
+        </div>
+        {quarantineTotal > 0 && (
+          <div className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-2">
+            <div className="text-[10px] text-orange-400 uppercase flex items-center gap-1"><AlertTriangle size={10} /> Quarantine</div>
+            <div className="text-lg font-bold text-orange-700">{quarantineTotal.toFixed(1)} T</div>
+          </div>
+        )}
+      </div>
+
+      {/* Add Truck Button */}
+      {!showForm && (
+        <button onClick={() => setShowForm(true)}
+          className="w-full border-2 border-dashed border-amber-300 rounded-lg py-4 text-amber-600 hover:bg-amber-50 flex items-center justify-center gap-2 mb-5 font-medium">
+          <Plus size={20} /> Add Truck
+        </button>
+      )}
+
+      {/* New Truck Form */}
+      {showForm && (
+        <div className="border-2 border-amber-300 rounded-lg p-4 bg-white mb-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-amber-700">New Truck</h3>
+            <button onClick={resetForm} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
+            <div>
+              <label className="text-[10px] text-gray-400">Vehicle No</label>
+              <input type="text" value={vehicleNo} onChange={e => setVehicleNo(e.target.value)}
+                className="border rounded px-2 py-2 w-full text-sm" placeholder="MH 12 AB 1234" />
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-400">Supplier</label>
+              <input type="text" value={supplier} onChange={e => setSupplier(e.target.value)}
+                className="border rounded px-2 py-2 w-full text-sm" />
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-400">Gross Weight (T)</label>
+              <input type="number" step="any" value={weightGross} onChange={e => setWeightGross(e.target.value)}
+                className="border rounded px-2 py-2 w-full text-sm" />
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-400">Tare Weight (T)</label>
+              <input type="number" step="any" value={weightTare} onChange={e => setWeightTare(e.target.value)}
+                className="border rounded px-2 py-2 w-full text-sm" />
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-400">Net Weight (T)</label>
+              <div className="border rounded px-2 py-2 w-full text-sm bg-gray-50 font-semibold text-amber-700">
+                {net > 0 ? net.toFixed(2) : '—'}
+              </div>
+            </div>
+          </div>
+
+          {/* Quality */}
+          <div className="text-[10px] text-gray-400 font-medium mb-1 mt-2">QUALITY (optional)</div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+            <div>
+              <label className="text-[10px] text-gray-400">Moisture %</label>
+              <input type="number" step="any" value={moisture} onChange={e => setMoisture(e.target.value)}
+                className="border rounded px-2 py-2 w-full text-sm" />
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-400">Starch %</label>
+              <input type="number" step="any" value={starchPercent} onChange={e => setStarchPercent(e.target.value)}
+                className="border rounded px-2 py-2 w-full text-sm" />
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-400">Damaged %</label>
+              <input type="number" step="any" value={damagedPercent} onChange={e => setDamagedPercent(e.target.value)}
+                className="border rounded px-2 py-2 w-full text-sm" />
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-400">Foreign Matter %</label>
+              <input type="number" step="any" value={foreignMatter} onChange={e => setForeignMatter(e.target.value)}
+                className="border rounded px-2 py-2 w-full text-sm" />
+            </div>
+          </div>
+
+          {/* Quarantine */}
+          <div className="flex items-center gap-3 mb-3 p-2 rounded bg-orange-50 border border-orange-200">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={quarantine} onChange={e => setQuarantine(e.target.checked)}
+                className="w-4 h-4 rounded border-orange-300 text-orange-600 focus:ring-orange-500" />
+              <span className="text-sm font-medium text-orange-700 flex items-center gap-1">
+                <AlertTriangle size={14} /> Quarantine
+              </span>
+            </label>
+            <span className="text-xs text-gray-500">At factory but not in silo</span>
+          </div>
+          {quarantine && (
+            <div className="mb-3">
+              <label className="text-[10px] text-gray-400">Quarantine Reason</label>
+              <input type="text" value={quarantineReason} onChange={e => setQuarantineReason(e.target.value)}
+                className="border rounded px-2 py-2 w-full text-sm" placeholder="e.g. High moisture, pending lab test" />
+            </div>
+          )}
+
+          {/* Remarks */}
+          <div className="mb-3">
+            <label className="text-[10px] text-gray-400">Remarks</label>
+            <input type="text" value={remarks} onChange={e => setRemarks(e.target.value)}
+              className="border rounded px-2 py-2 w-full text-sm" />
+          </div>
+
+          {/* Photo */}
+          <div className="mb-3">
+            <input type="file" accept="image/*" capture="environment" ref={fileRef}
+              onChange={handlePhotoSelect} className="hidden" />
+            {photo ? (
+              <div className="flex items-center gap-3">
+                <img src={URL.createObjectURL(photo)} alt="Preview"
+                  className="w-20 h-20 object-cover rounded-lg border" />
+                <div>
+                  <p className="text-xs text-gray-500">{photo.name}</p>
+                  <button onClick={() => setPhoto(null)} className="text-xs text-red-500 hover:underline">Remove</button>
+                </div>
+              </div>
+            ) : (
+              <button onClick={() => fileRef.current?.click()}
+                className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 border border-blue-200 rounded-lg px-3 py-2">
+                <Camera size={16} /> Take / Upload Photo
+              </button>
+            )}
+          </div>
+
+          {/* Save */}
+          <div className="flex items-center gap-3">
+            <button onClick={handleSave} disabled={saving}
+              className="px-6 py-2.5 bg-amber-600 text-white rounded-lg font-medium text-sm hover:bg-amber-700 disabled:opacity-50">
+              {saving ? 'Saving...' : 'Save Truck'}
+            </button>
+            {msg && <span className={`text-sm ${msg.type === 'ok' ? 'text-green-600' : 'text-red-600'}`}>{msg.text}</span>}
+          </div>
+        </div>
+      )}
+
+      {/* Today's Trucks */}
+      <div className="space-y-3 mb-5">
+        {trucks.map((t, i) => (
+          <div key={t.id} className={`border rounded-lg p-3 bg-white ${t.quarantine ? 'border-orange-300 bg-orange-50' : ''}`}>
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <span className="text-xs font-bold text-gray-400">#{trucks.length - i}</span>
+                  <span className="font-semibold text-sm">{t.vehicleNo}</span>
+                  {t.quarantine && (
+                    <span className="text-[10px] bg-orange-200 text-orange-700 px-1.5 py-0.5 rounded font-medium flex items-center gap-0.5">
+                      <AlertTriangle size={10} /> QUARANTINE
+                    </span>
+                  )}
+                  <span className="text-xs text-gray-400">
+                    {new Date(t.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+                <div className="text-xs text-gray-600">
+                  {t.supplier && <span>{t.supplier} • </span>}
+                  <span>Gross: {t.weightGross}T • Tare: {t.weightTare}T • </span>
+                  <span className="font-semibold text-amber-600">Net: {t.weightNet.toFixed(1)} T</span>
+                </div>
+                {t.moisture != null && (
+                  <div className="text-[11px] text-gray-400 mt-0.5">
+                    M: {t.moisture}% {t.starchPercent != null && `| S: ${t.starchPercent}%`} {t.damagedPercent != null && `| D: ${t.damagedPercent}%`}
+                  </div>
+                )}
+                {t.quarantineReason && <div className="text-[11px] text-orange-600 mt-0.5">Reason: {t.quarantineReason}</div>}
+                {t.remarks && <div className="text-[11px] text-gray-400 mt-0.5">{t.remarks}</div>}
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => toggleQuarantine(t.id, t.quarantine)}
+                  className={`text-xs px-2 py-1 rounded ${t.quarantine ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-orange-100 text-orange-700 hover:bg-orange-200'}`}>
+                  {t.quarantine ? 'Release' : 'Quarantine'}
+                </button>
+                {t.photoUrl && (
+                  <button onClick={() => setPhotoPreview(`${API_BASE}${t.photoUrl}`)}
+                    className="text-blue-500 hover:text-blue-700"><Image size={16} /></button>
+                )}
+                <button onClick={() => handleDelete(t.id)}
+                  className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
+              </div>
+            </div>
+          </div>
+        ))}
+        {trucks.length === 0 && !showForm && (
+          <p className="text-center text-sm text-gray-400 py-8">No trucks for {date}</p>
+        )}
+      </div>
+
+      {/* WhatsApp share */}
+      {trucks.length > 0 && (
+        <button onClick={shareWhatsApp}
+          className="w-full flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 mb-5">
+          <Share2 size={16} /> Share on WhatsApp
+        </button>
+      )}
+
+      {/* History */}
+      <div className="border-t pt-4">
+        <button onClick={() => { setShowHistory(!showHistory); if (!showHistory) loadHistory(); }}
+          className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-800">
+          {showHistory ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          <Clock size={14} /> Unloading History
+        </button>
+        {showHistory && (
+          <div className="mt-3 space-y-4">
+            {Object.keys(history).length === 0 && <p className="text-sm text-gray-400">No past records</p>}
+            {Object.entries(history).map(([dateKey, items]) => {
+              const dayTotal = items.filter((t: any) => !t.quarantine).reduce((s: number, t: any) => s + t.weightNet, 0);
+              const dayQ = items.filter((t: any) => t.quarantine).reduce((s: number, t: any) => s + t.weightNet, 0);
+              return (
+                <div key={dateKey} className="border rounded-lg p-3 bg-gray-50">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-semibold text-gray-700">{fmtDt(dateKey)}</span>
+                    <span className="text-xs font-bold text-amber-600">
+                      {dayTotal.toFixed(1)} T — {items.length} trucks
+                      {dayQ > 0 && <span className="text-orange-500 ml-2">Q: {dayQ.toFixed(1)} T</span>}
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    {items.map((t: any) => (
+                      <div key={t.id} className="text-xs text-gray-600 flex justify-between">
+                        <span>{t.vehicleNo} → {t.supplier || '-'}{t.quarantine ? ' ⚠️' : ''}</span>
+                        <span className="font-medium">{t.weightNet.toFixed(1)} T</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Photo Preview Modal */}
+      {photoPreview && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={() => setPhotoPreview(null)}>
+          <div className="relative max-w-2xl w-full">
+            <button onClick={() => setPhotoPreview(null)}
+              className="absolute -top-10 right-0 text-white"><X size={24} /></button>
+            <img src={photoPreview} alt="Truck photo" className="w-full rounded-lg" />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

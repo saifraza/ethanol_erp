@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Wheat, Save, Loader2, ChevronDown, ChevronUp, Trash2, Eye, X, Share2 } from 'lucide-react';
+import { Wheat, Save, Loader2, ChevronDown, ChevronUp, Trash2, Eye, X, Share2, AlertTriangle } from 'lucide-react';
 import ProcessPage, { InputCard, Field } from './ProcessPage';
 import api from '../../services/api';
 
@@ -26,9 +26,6 @@ interface GrainForm {
   starchPercent: number | null;
   damagedPercent: number | null;
   foreignMatter: number | null;
-  trucks: number | null;
-  avgTruckWeight: number | null;
-  supplier: string;
   remarks: string;
 }
 
@@ -44,7 +41,7 @@ const emptyForm: GrainForm = {
   f1Pct: null, f2Pct: null, f3Pct: null, f4Pct: null, beerWellPct: null,
   pf1Pct: null, pf2Pct: null, fermentationVolumeAt: nowLocal(),
   moisture: null, starchPercent: null, damagedPercent: null, foreignMatter: null,
-  trucks: null, avgTruckWeight: null, supplier: '', remarks: '',
+  remarks: '',
 };
 
 function elapsed(ms: number): string {
@@ -81,6 +78,7 @@ export default function GrainUnloading() {
   const [showHistory, setShowHistory] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [truckSummary, setTruckSummary] = useState<{ totalNet: number; quarantineNet: number; truckCount: number }>({ totalNet: 0, quarantineNet: 0, truckCount: 0 });
 
   const u = (n: string, v: any) => setForm(f => ({ ...f, [n]: v }));
 
@@ -100,8 +98,6 @@ export default function GrainUnloading() {
   const pW = prev?.washConsumed ?? 0;
   const washDiff = Math.max(0, (form.washConsumed || 0) - pW);
   const grainConsumed = washDiff * FERM_GRAIN_PCT;
-  // Auto avg truck weight
-  const autoAvgTruck = (form.grainUnloaded && form.trucks && form.trucks > 0) ? form.grainUnloaded / form.trucks : null;
   const grainInFerm = fermVol * FERM_GRAIN_PCT;
   const grainInPF = pfVol * PF_GRAIN_PCT;
   const grainInProcess = grainInFerm + grainInPF;
@@ -116,13 +112,22 @@ export default function GrainUnloading() {
   const fermElapsed = (prev?.fermentationVolumeAt && form.fermentationVolumeAt)
     ? new Date(form.fermentationVolumeAt).getTime() - new Date(prev.fermentationVolumeAt).getTime() : 0;
 
-  useEffect(() => { loadLatest(); loadEntries(); }, []);
+  useEffect(() => { loadLatest(); loadEntries(); loadTruckSummary(); }, []);
 
   async function loadLatest() {
     try {
       const res = await api.get('/grain/latest');
       setDefaults(res.data.defaults);
       setPrev(res.data.previous);
+    } catch (e) { console.error(e); }
+  }
+
+  async function loadTruckSummary() {
+    try {
+      const res = await api.get(`/grain-truck/summary?date=${form.date}`);
+      setTruckSummary(res.data);
+      // Auto-set grainUnloaded from truck totals (non-quarantine)
+      setForm(f => ({ ...f, grainUnloaded: res.data.totalNet || null }));
     } catch (e) { console.error(e); }
   }
 
@@ -149,8 +154,8 @@ export default function GrainUnloading() {
         fermentationVolumeAt: form.fermentationVolumeAt,
         moisture: form.moisture, starchPercent: form.starchPercent,
         damagedPercent: form.damagedPercent, foreignMatter: form.foreignMatter,
-        trucks: form.trucks, avgTruckWeight: autoAvgTruck,
-        supplier: form.supplier, remarks: form.remarks,
+        trucks: truckSummary.truckCount, avgTruckWeight: truckSummary.truckCount > 0 ? (truckSummary.totalNet / truckSummary.truckCount) : null,
+        supplier: null, remarks: form.remarks,
       };
       if (editId) await api.put(`/grain/${editId}`, payload);
       else await api.post('/grain', payload);
@@ -180,8 +185,7 @@ export default function GrainUnloading() {
       fermentationVolumeAt: e.fermentationVolumeAt ? e.fermentationVolumeAt.slice(0, 16) : nowLocal(),
       moisture: e.moisture, starchPercent: e.starchPercent,
       damagedPercent: e.damagedPercent, foreignMatter: e.foreignMatter,
-      trucks: e.trucks, avgTruckWeight: e.avgTruckWeight,
-      supplier: e.supplier || '', remarks: e.remarks || '',
+      remarks: e.remarks || '',
     });
     setDefaults((d: any) => ({ ...d, siloOpeningStock: e.siloOpeningStock }));
     window.scrollTo(0, 0);
@@ -216,7 +220,7 @@ export default function GrainUnloading() {
   };
 
   return (
-    <ProcessPage title="Grain Unloading & Silo" icon={<Wheat size={28} />} description="Track grain inventory — every save updates your running silo balance" flow={{ from: 'Truck / Process', to: 'Grain Silo' }} color="bg-amber-600">
+    <ProcessPage title="Grain Stock" icon={<Wheat size={28} />} description="Track silo balance, fermenter levels & wash — grain received auto-pulled from truck unloading" flow={{ from: 'Truck / Process', to: 'Grain Silo' }} color="bg-amber-600">
       {/* Stat Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 md:gap-3 mb-4 md:mb-5">
         {[
@@ -237,16 +241,30 @@ export default function GrainUnloading() {
         <div className={`rounded-lg p-3 mb-4 text-sm ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>{msg.text}</div>
       )}
 
-      {/* === 1. GRAIN UNLOADING (FIRST) === */}
-      <InputCard title={editId ? '✏️ Edit — Grain Unloading' : 'Grain Unloading'}>
-        <Field label="Date" name="date" value={form.date} onChange={(_n: string, v: any) => u('date', v)} unit="" />
-        <Field label="Grain Unloaded" name="grainUnloaded" value={form.grainUnloaded} onChange={u} unit="Ton" placeholder="Tons received from trucks" />
-        <Field label="No. of Trucks" name="trucks" value={form.trucks} onChange={u} />
-        <Field label="Avg Weight/Truck" value={autoAvgTruck != null ? Math.round(autoAvgTruck * 100) / 100 : 0} auto unit="Ton" />
-        <div className="flex items-center gap-2 mt-1">
-          <label className="text-sm text-gray-600 w-52 shrink-0">Supplier</label>
-          <input type="text" value={form.supplier} onChange={e => u('supplier', e.target.value)} className="input-field flex-1" placeholder="Optional" />
+      {/* === 1. GRAIN RECEIVED (from Grain Unloading page) === */}
+      <InputCard title={editId ? '✏️ Edit — Grain Stock' : 'Grain Received (from trucks)'}>
+        <Field label="Date" name="date" value={form.date} onChange={(_n: string, v: any) => { u('date', v); }} unit="" />
+        <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 mb-2">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs text-amber-600 font-medium">Auto-fetched from Grain Unloading page</span>
+            <button onClick={loadTruckSummary} className="text-xs text-blue-600 hover:underline">Refresh</button>
+          </div>
+          <div className="grid grid-cols-3 gap-3 text-center">
+            <div>
+              <div className="text-[10px] text-gray-500">Trucks</div>
+              <div className="font-bold text-lg">{truckSummary.truckCount}</div>
+            </div>
+            <div>
+              <div className="text-[10px] text-gray-500">To Silo</div>
+              <div className="font-bold text-lg text-amber-700">{truckSummary.totalNet.toFixed(1)} T</div>
+            </div>
+            <div>
+              <div className="text-[10px] text-gray-500 flex items-center justify-center gap-0.5"><AlertTriangle size={10} /> Quarantine</div>
+              <div className="font-bold text-lg text-orange-600">{truckSummary.quarantineNet.toFixed(1)} T</div>
+            </div>
+          </div>
         </div>
+        <Field label="Grain to Silo" name="grainUnloaded" value={form.grainUnloaded} onChange={u} unit="Ton" placeholder="Auto from trucks (editable)" />
       </InputCard>
 
       {/* === 2. WASH CONSUMED === */}
@@ -517,7 +535,7 @@ export default function GrainUnloading() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowPreview(false)}>
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="sticky top-0 bg-amber-600 text-white p-4 rounded-t-xl flex items-center justify-between">
-              <h3 className="font-bold text-lg">Grain Unloading Report</h3>
+              <h3 className="font-bold text-lg">Grain Stock Report</h3>
               <button onClick={() => setShowPreview(false)} className="p-1 hover:bg-amber-700 rounded"><X size={20} /></button>
             </div>
             <div className="p-4 space-y-3 text-sm">
@@ -549,7 +567,7 @@ export default function GrainUnloading() {
                 <div className="bg-gray-50 rounded p-2 text-center"><div className="text-xs text-gray-500">Moisture</div><div className="font-semibold">{form.moisture ?? '—'}%</div></div>
                 <div className="bg-gray-50 rounded p-2 text-center"><div className="text-xs text-gray-500">Starch</div><div className="font-semibold">{form.starchPercent ?? '—'}%</div></div>
               </div>
-              {form.supplier && <div className="text-gray-600">Supplier: <strong>{form.supplier}</strong></div>}
+              {truckSummary.truckCount > 0 && <div className="text-gray-600">Trucks: <strong>{truckSummary.truckCount}</strong> | Quarantine: <strong>{truckSummary.quarantineNet.toFixed(1)} T</strong></div>}
               {form.remarks && <div className="text-gray-600 italic">Remarks: {form.remarks}</div>}
             </div>
             <div className="sticky bottom-0 bg-gray-50 p-4 rounded-b-xl flex gap-3 border-t">
@@ -557,7 +575,7 @@ export default function GrainUnloading() {
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} {editId ? 'Update' : 'Save'} Entry
               </button>
               <button onClick={() => {
-                const t = `*GRAIN UNLOADING REPORT*\nDate: ${form.date}\nGrain Unloaded: ${form.grainUnloaded ?? '—'} MT\nWash Made: ${fermVol.toFixed(0)} KL\nWash Distilled: ${form.washConsumed ?? '—'} KL\nF1: ${form.f1Pct ?? '—'}% | F2: ${form.f2Pct ?? '—'}% | F3: ${form.f3Pct ?? '—'}% | F4: ${form.f4Pct ?? '—'}%\nBeer Well: ${form.beerWellPct ?? '—'}%\nPF1: ${form.pf1Pct ?? '—'}% | PF2: ${form.pf2Pct ?? '—'}%\nMoisture: ${form.moisture ?? '—'}% | Starch: ${form.starchPercent ?? '—'}%${form.remarks ? '\nRemarks: ' + form.remarks : ''}`;
+                const t = `*GRAIN STOCK REPORT*\nDate: ${form.date}\nGrain to Silo: ${form.grainUnloaded ?? '—'} T (${truckSummary.truckCount} trucks)${truckSummary.quarantineNet > 0 ? `\nQuarantine: ${truckSummary.quarantineNet.toFixed(1)} T` : ''}\nWash Made: ${fermVol.toFixed(0)} KL\nWash Distilled: ${form.washConsumed ?? '—'} KL\nF1: ${form.f1Pct ?? '—'}% | F2: ${form.f2Pct ?? '—'}% | F3: ${form.f3Pct ?? '—'}% | F4: ${form.f4Pct ?? '—'}%\nBeer Well: ${form.beerWellPct ?? '—'}%\nPF1: ${form.pf1Pct ?? '—'}% | PF2: ${form.pf2Pct ?? '—'}%\nSilo Closing: ${siloClosing.toFixed(1)} T | Total@Plant: ${totalAtPlant.toFixed(1)} T${form.remarks ? '\nRemarks: ' + form.remarks : ''}`;
                 window.open(`https://wa.me/?text=${encodeURIComponent(t)}`, '_blank');
               }} className="flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 transition">
                 <Share2 size={16} /> WhatsApp

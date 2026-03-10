@@ -19,6 +19,7 @@ export interface ModuleDef {
 export const MODULE_DEFS: ModuleDef[] = [
   // Process modules
   { key: 'raw-material', label: 'Raw Material', to: '/process/raw-material', icon: Wheat, group: 'process' },
+  { key: 'grain-stock', label: 'Grain Stock', to: '/process/grain-stock', icon: Wheat, group: 'process' },
   { key: 'grain-unloading', label: 'Grain Unloading', to: '/process/grain-unloading', icon: Wheat, group: 'process' },
   { key: 'milling', label: 'Milling', to: '/process/milling', icon: CogIcon, group: 'process' },
   { key: 'liquefaction', label: 'Liquefaction', to: '/process/liquefaction', icon: Droplets, group: 'process' },
