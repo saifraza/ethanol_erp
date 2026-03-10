@@ -21,7 +21,7 @@ export default function Login() {
         <p className="text-sm text-gray-500 text-center mb-6">Mahakaushal Sugar & Power Industries Ltd.</p>
         {error && <div className="bg-red-50 text-red-600 text-sm p-3 rounded mb-4">{error}</div>}
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div><label className="block text-sm font-medium mb-1">Email</label><input type="email" value={email} onChange={e => setEmail(e.target.value)} className="input-field" required /></div>
+          <div><label className="block text-sm font-medium mb-1">Email / Username</label><input type="text" value={email} onChange={e => setEmail(e.target.value)} className="input-field" required /></div>
           <div><label className="block text-sm font-medium mb-1">Password</label><input type="password" value={password} onChange={e => setPassword(e.target.value)} className="input-field" required /></div>
           <button type="submit" className="btn-primary w-full">Sign In</button>
         </form>
