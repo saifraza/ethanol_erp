@@ -630,16 +630,18 @@ model DispatchTruck {
 model GrainTruck {
   id              String   @id @default(uuid())
   date            DateTime @default(now())
+  uidRst          String   @default("")     // UID/RST tracking number for lab analysis
   vehicleNo       String   @default("")
   supplier        String   @default("")
   weightGross     Float    @default(0)
   weightTare      Float    @default(0)
-  weightNet       Float    @default(0)   // gross - tare
+  weightNet       Float    @default(0)      // gross - tare
+  quarantineWeight Float   @default(0)      // partial reject weight (T) — in quarantine, not silo
   moisture        Float?
   starchPercent   Float?
   damagedPercent  Float?
   foreignMatter   Float?
-  quarantine      Boolean  @default(false) // true = in quarantine, not in silo
+  quarantine      Boolean  @default(false)  // true = has quarantine portion
   quarantineReason String?
   remarks         String?
   photoUrl        String?

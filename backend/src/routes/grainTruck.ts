@@ -31,9 +31,9 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
       orderBy: { createdAt: 'desc' },
     });
 
-    // Summaries
-    const totalNet = trucks.filter(t => !t.quarantine).reduce((s, t) => s + t.weightNet, 0);
-    const quarantineNet = trucks.filter(t => t.quarantine).reduce((s, t) => s + t.weightNet, 0);
+    // Summaries — partial quarantine: to silo = net - quarantineWeight per truck
+    const totalNet = trucks.reduce((s, t) => s + (t.weightNet - (t.quarantineWeight || 0)), 0);
+    const quarantineNet = trucks.reduce((s, t) => s + (t.quarantineWeight || 0), 0);
 
     res.json({ trucks, totalNet, quarantineNet, count: trucks.length });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
@@ -52,8 +52,9 @@ router.get('/summary', authenticate, async (req: AuthRequest, res: Response) => 
       where: { date: { gte: start, lte: end } },
     });
 
-    const totalNet = trucks.filter(t => !t.quarantine).reduce((s, t) => s + t.weightNet, 0);
-    const quarantineNet = trucks.filter(t => t.quarantine).reduce((s, t) => s + t.weightNet, 0);
+    // Partial quarantine: to silo = net - quarantineWeight
+    const totalNet = trucks.reduce((s, t) => s + (t.weightNet - (t.quarantineWeight || 0)), 0);
+    const quarantineNet = trucks.reduce((s, t) => s + (t.quarantineWeight || 0), 0);
     const truckCount = trucks.length;
 
     res.json({ totalNet, quarantineNet, truckCount });
@@ -87,28 +88,32 @@ router.get('/history', authenticate, async (req: AuthRequest, res: Response) => 
 router.post('/', authenticate, upload.single('photo'), async (req: AuthRequest, res: Response) => {
   try {
     const { vehicleNo, supplier, weightGross, weightTare, moisture, starchPercent,
-      damagedPercent, foreignMatter, quarantine, quarantineReason, remarks, date } = req.body;
+      damagedPercent, foreignMatter, quarantine, quarantineWeight, quarantineReason,
+      remarks, date, uidRst } = req.body;
 
     const truckDate = date ? new Date(date) : new Date();
     truckDate.setHours(new Date().getHours(), new Date().getMinutes());
 
     const gross = parseFloat(weightGross) || 0;
     const tare = parseFloat(weightTare) || 0;
+    const qWeight = parseFloat(quarantineWeight) || 0;
     const photoUrl = req.file ? `/uploads/grain-truck/${req.file.filename}` : null;
 
     const truck = await prisma.grainTruck.create({
       data: {
         date: truckDate,
+        uidRst: uidRst || '',
         vehicleNo: vehicleNo || '',
         supplier: supplier || '',
         weightGross: gross,
         weightTare: tare,
         weightNet: gross - tare,
+        quarantineWeight: qWeight,
         moisture: moisture ? parseFloat(moisture) : null,
         starchPercent: starchPercent ? parseFloat(starchPercent) : null,
         damagedPercent: damagedPercent ? parseFloat(damagedPercent) : null,
         foreignMatter: foreignMatter ? parseFloat(foreignMatter) : null,
-        quarantine: quarantine === 'true' || quarantine === true,
+        quarantine: (quarantine === 'true' || quarantine === true) || qWeight > 0,
         quarantineReason: quarantineReason || null,
         photoUrl,
         remarks: remarks || null,
@@ -119,17 +124,19 @@ router.post('/', authenticate, upload.single('photo'), async (req: AuthRequest, 
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-// PUT /api/grain-truck/:id — update quarantine status or other fields
+// PUT /api/grain-truck/:id — update quarantine, weight, uidRst
 router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const { quarantine, quarantineReason } = req.body;
-    const truck = await prisma.grainTruck.update({
-      where: { id: req.params.id },
-      data: {
-        quarantine: quarantine === 'true' || quarantine === true,
-        quarantineReason: quarantineReason || null,
-      },
-    });
+    const { quarantine, quarantineReason, quarantineWeight, uidRst } = req.body;
+    const data: any = {};
+    if (quarantine !== undefined) data.quarantine = quarantine === 'true' || quarantine === true;
+    if (quarantineReason !== undefined) data.quarantineReason = quarantineReason || null;
+    if (quarantineWeight !== undefined) {
+      data.quarantineWeight = parseFloat(quarantineWeight) || 0;
+      data.quarantine = data.quarantineWeight > 0;
+    }
+    if (uidRst !== undefined) data.uidRst = uidRst || '';
+    const truck = await prisma.grainTruck.update({ where: { id: req.params.id }, data });
     res.json(truck);
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });

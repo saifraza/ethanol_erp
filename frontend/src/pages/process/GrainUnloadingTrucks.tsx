@@ -15,15 +15,16 @@ export default function GrainUnloadingTrucks() {
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
 
   // Form state
+  const [uidRst, setUidRst] = useState('');
   const [vehicleNo, setVehicleNo] = useState('');
   const [supplier, setSupplier] = useState('');
   const [weightGross, setWeightGross] = useState('');
   const [weightTare, setWeightTare] = useState('');
+  const [quarantineWeight, setQuarantineWeight] = useState('');
   const [moisture, setMoisture] = useState('');
   const [starchPercent, setStarchPercent] = useState('');
   const [damagedPercent, setDamagedPercent] = useState('');
   const [foreignMatter, setForeignMatter] = useState('');
-  const [quarantine, setQuarantine] = useState(false);
   const [quarantineReason, setQuarantineReason] = useState('');
   const [remarks, setRemarks] = useState('');
   const [photo, setPhoto] = useState<File | null>(null);
@@ -46,9 +47,9 @@ export default function GrainUnloadingTrucks() {
   }
 
   function resetForm() {
-    setVehicleNo(''); setSupplier(''); setWeightGross(''); setWeightTare('');
-    setMoisture(''); setStarchPercent(''); setDamagedPercent(''); setForeignMatter('');
-    setQuarantine(false); setQuarantineReason(''); setRemarks('');
+    setUidRst(''); setVehicleNo(''); setSupplier(''); setWeightGross(''); setWeightTare('');
+    setQuarantineWeight(''); setMoisture(''); setStarchPercent(''); setDamagedPercent('');
+    setForeignMatter(''); setQuarantineReason(''); setRemarks('');
     setPhoto(null); setShowForm(false);
   }
 
@@ -58,15 +59,17 @@ export default function GrainUnloadingTrucks() {
     try {
       const fd = new FormData();
       fd.append('date', date);
+      fd.append('uidRst', uidRst);
       fd.append('vehicleNo', vehicleNo);
       fd.append('supplier', supplier);
       fd.append('weightGross', weightGross);
       fd.append('weightTare', weightTare);
+      fd.append('quarantineWeight', quarantineWeight);
       fd.append('moisture', moisture);
       fd.append('starchPercent', starchPercent);
       fd.append('damagedPercent', damagedPercent);
       fd.append('foreignMatter', foreignMatter);
-      fd.append('quarantine', String(quarantine));
+      fd.append('quarantine', String(parseFloat(quarantineWeight) > 0));
       fd.append('quarantineReason', quarantineReason);
       fd.append('remarks', remarks);
       if (photo) fd.append('photo', photo);
@@ -88,28 +91,24 @@ export default function GrainUnloadingTrucks() {
     } catch (e) { console.error(e); }
   }
 
-  async function toggleQuarantine(id: string, current: boolean) {
-    try {
-      await api.put(`/grain-truck/${id}`, { quarantine: !current });
-      await loadTrucks();
-    } catch (e) { console.error(e); }
-  }
-
   function handlePhotoSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (file) setPhoto(file);
   }
 
   const net = (parseFloat(weightGross) || 0) - (parseFloat(weightTare) || 0);
-  const totalNet = trucks.filter(t => !t.quarantine).reduce((s, t) => s + t.weightNet, 0);
-  const quarantineTotal = trucks.filter(t => t.quarantine).reduce((s, t) => s + t.weightNet, 0);
+  const qw = parseFloat(quarantineWeight) || 0;
+  const toSilo = net - qw;
+  const totalNet = trucks.reduce((s, t) => s + (t.weightNet - (t.quarantineWeight || 0)), 0);
+  const quarantineTotal = trucks.reduce((s, t) => s + (t.quarantineWeight || 0), 0);
   const truckCount = trucks.length;
 
   function shareWhatsApp() {
-    const lines = trucks.map((t, i) =>
-      `${i+1}. ${t.vehicleNo} | ${t.supplier || '-'} | Net: ${t.weightNet.toFixed(1)} T${t.quarantine ? ' ⚠️ QUARANTINE' : ''}`
-    ).join('\n');
-    const text = `*Grain Unloading Report*\n📅 ${date}\n\n${lines}\n\n*Total: ${totalNet.toFixed(1)} T (${truckCount} trucks)*${quarantineTotal > 0 ? `\n⚠️ Quarantine: ${quarantineTotal.toFixed(1)} T` : ''}`;
+    const lines = trucks.map((t, i) => {
+      const tSilo = t.weightNet - (t.quarantineWeight || 0);
+      return `${i+1}. ${t.uidRst ? `[${t.uidRst}] ` : ''}${t.vehicleNo} | ${t.supplier || '-'} | Net: ${t.weightNet.toFixed(1)}T → Silo: ${tSilo.toFixed(1)}T${t.quarantineWeight > 0 ? ` | Q: ${t.quarantineWeight.toFixed(1)}T` : ''}`;
+    }).join('\n');
+    const text = `*Grain Unloading Report*\n📅 ${date}\n\n${lines}\n\n*To Silo: ${totalNet.toFixed(1)} T (${truckCount} trucks)*${quarantineTotal > 0 ? `\n⚠️ Quarantine: ${quarantineTotal.toFixed(1)} T` : ''}`;
 
     if (navigator.share) {
       navigator.share({ text }).catch(() => {
@@ -170,6 +169,11 @@ export default function GrainUnloadingTrucks() {
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
             <div>
+              <label className="text-[10px] text-gray-400">UID/RST No</label>
+              <input type="text" value={uidRst} onChange={e => setUidRst(e.target.value)}
+                className="border rounded px-2 py-2 w-full text-sm" placeholder="Tracking number" />
+            </div>
+            <div>
               <label className="text-[10px] text-gray-400">Vehicle No</label>
               <input type="text" value={vehicleNo} onChange={e => setVehicleNo(e.target.value)}
                 className="border rounded px-2 py-2 w-full text-sm" placeholder="MH 12 AB 1234" />
@@ -197,6 +201,28 @@ export default function GrainUnloadingTrucks() {
             </div>
           </div>
 
+          {/* Quarantine (partial) */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
+            <div>
+              <label className="text-[10px] text-orange-500 font-medium flex items-center gap-1"><AlertTriangle size={10} /> Rejected/Quarantine (T)</label>
+              <input type="number" step="any" value={quarantineWeight} onChange={e => setQuarantineWeight(e.target.value)}
+                className="border border-orange-200 rounded px-2 py-2 w-full text-sm bg-orange-50" placeholder="0 = none" />
+            </div>
+            <div>
+              <label className="text-[10px] text-green-600 font-medium">To Silo (T)</label>
+              <div className="border rounded px-2 py-2 w-full text-sm bg-green-50 font-semibold text-green-700">
+                {toSilo > 0 ? toSilo.toFixed(2) : '—'}
+              </div>
+            </div>
+            {qw > 0 && (
+              <div>
+                <label className="text-[10px] text-gray-400">Quarantine Reason</label>
+                <input type="text" value={quarantineReason} onChange={e => setQuarantineReason(e.target.value)}
+                  className="border rounded px-2 py-2 w-full text-sm" placeholder="e.g. High moisture" />
+              </div>
+            )}
+          </div>
+
           {/* Quality */}
           <div className="text-[10px] text-gray-400 font-medium mb-1 mt-2">QUALITY (optional)</div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
@@ -221,25 +247,6 @@ export default function GrainUnloadingTrucks() {
                 className="border rounded px-2 py-2 w-full text-sm" />
             </div>
           </div>
-
-          {/* Quarantine */}
-          <div className="flex items-center gap-3 mb-3 p-2 rounded bg-orange-50 border border-orange-200">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={quarantine} onChange={e => setQuarantine(e.target.checked)}
-                className="w-4 h-4 rounded border-orange-300 text-orange-600 focus:ring-orange-500" />
-              <span className="text-sm font-medium text-orange-700 flex items-center gap-1">
-                <AlertTriangle size={14} /> Quarantine
-              </span>
-            </label>
-            <span className="text-xs text-gray-500">At factory but not in silo</span>
-          </div>
-          {quarantine && (
-            <div className="mb-3">
-              <label className="text-[10px] text-gray-400">Quarantine Reason</label>
-              <input type="text" value={quarantineReason} onChange={e => setQuarantineReason(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" placeholder="e.g. High moisture, pending lab test" />
-            </div>
-          )}
 
           {/* Remarks */}
           <div className="mb-3">
@@ -282,16 +289,19 @@ export default function GrainUnloadingTrucks() {
 
       {/* Today's Trucks */}
       <div className="space-y-3 mb-5">
-        {trucks.map((t, i) => (
-          <div key={t.id} className={`border rounded-lg p-3 bg-white ${t.quarantine ? 'border-orange-300 bg-orange-50' : ''}`}>
+        {trucks.map((t, i) => {
+          const tToSilo = t.weightNet - (t.quarantineWeight || 0);
+          return (
+          <div key={t.id} className={`border rounded-lg p-3 bg-white ${t.quarantineWeight > 0 ? 'border-orange-300 bg-orange-50/50' : ''}`}>
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className="text-xs font-bold text-gray-400">#{trucks.length - i}</span>
+                  {t.uidRst && <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">{t.uidRst}</span>}
                   <span className="font-semibold text-sm">{t.vehicleNo}</span>
-                  {t.quarantine && (
+                  {t.quarantineWeight > 0 && (
                     <span className="text-[10px] bg-orange-200 text-orange-700 px-1.5 py-0.5 rounded font-medium flex items-center gap-0.5">
-                      <AlertTriangle size={10} /> QUARANTINE
+                      <AlertTriangle size={10} /> Q: {t.quarantineWeight.toFixed(1)}T
                     </span>
                   )}
                   <span className="text-xs text-gray-400">
@@ -300,8 +310,9 @@ export default function GrainUnloadingTrucks() {
                 </div>
                 <div className="text-xs text-gray-600">
                   {t.supplier && <span>{t.supplier} • </span>}
-                  <span>Gross: {t.weightGross}T • Tare: {t.weightTare}T • </span>
-                  <span className="font-semibold text-amber-600">Net: {t.weightNet.toFixed(1)} T</span>
+                  <span>Gross: {t.weightGross}T • Tare: {t.weightTare}T • Net: {t.weightNet.toFixed(1)}T</span>
+                  {t.quarantineWeight > 0 && <span className="text-orange-600"> • Q: {t.quarantineWeight.toFixed(1)}T</span>}
+                  <span className="font-semibold text-green-700"> → Silo: {tToSilo.toFixed(1)}T</span>
                 </div>
                 {t.moisture != null && (
                   <div className="text-[11px] text-gray-400 mt-0.5">
@@ -312,10 +323,6 @@ export default function GrainUnloadingTrucks() {
                 {t.remarks && <div className="text-[11px] text-gray-400 mt-0.5">{t.remarks}</div>}
               </div>
               <div className="flex items-center gap-2">
-                <button onClick={() => toggleQuarantine(t.id, t.quarantine)}
-                  className={`text-xs px-2 py-1 rounded ${t.quarantine ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-orange-100 text-orange-700 hover:bg-orange-200'}`}>
-                  {t.quarantine ? 'Release' : 'Quarantine'}
-                </button>
                 {t.photoUrl && (
                   <button onClick={() => setPhotoPreview(`${API_BASE}${t.photoUrl}`)}
                     className="text-blue-500 hover:text-blue-700"><Image size={16} /></button>
@@ -325,7 +332,8 @@ export default function GrainUnloadingTrucks() {
               </div>
             </div>
           </div>
-        ))}
+          );
+        })}
         {trucks.length === 0 && !showForm && (
           <p className="text-center text-sm text-gray-400 py-8">No trucks for {date}</p>
         )}
@@ -350,8 +358,8 @@ export default function GrainUnloadingTrucks() {
           <div className="mt-3 space-y-4">
             {Object.keys(history).length === 0 && <p className="text-sm text-gray-400">No past records</p>}
             {Object.entries(history).map(([dateKey, items]) => {
-              const dayTotal = items.filter((t: any) => !t.quarantine).reduce((s: number, t: any) => s + t.weightNet, 0);
-              const dayQ = items.filter((t: any) => t.quarantine).reduce((s: number, t: any) => s + t.weightNet, 0);
+              const dayTotal = items.reduce((s: number, t: any) => s + (t.weightNet - (t.quarantineWeight || 0)), 0);
+              const dayQ = items.reduce((s: number, t: any) => s + (t.quarantineWeight || 0), 0);
               return (
                 <div key={dateKey} className="border rounded-lg p-3 bg-gray-50">
                   <div className="flex items-center justify-between mb-2">
