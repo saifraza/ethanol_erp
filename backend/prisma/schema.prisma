@@ -448,6 +448,65 @@ model EvaporationEntry {
 }
 
 // ═══════════════════════════════════════════════
+// DDGS PRODUCTION
+// ═══════════════════════════════════════════════
+model DDGSProductionEntry {
+  id              String   @id @default(uuid())
+  date            DateTime
+  entryTime       String   @default("")
+  bags            Float?
+  weightPerBag    Float?
+  totalProduction Float?
+  // Dryer params
+  dryerInletTemp  Float?
+  dryerOutletTemp Float?
+  ddgsMoisture    Float?
+  ddgsProtein     Float?
+  remark          String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ═══════════════════════════════════════════════
+// DECANTER
+// ═══════════════════════════════════════════════
+model DecanterEntry {
+  id              String   @id @default(uuid())
+  date            DateTime
+  entryTime       String   @default("")
+  // Decanter 1-8: feed, wetCakeSolid, thinSlopGravity
+  d1Feed          Float?
+  d1WetCake       Float?
+  d1ThinSlopGr    Float?
+  d2Feed          Float?
+  d2WetCake       Float?
+  d2ThinSlopGr    Float?
+  d3Feed          Float?
+  d3WetCake       Float?
+  d3ThinSlopGr    Float?
+  d4Feed          Float?
+  d4WetCake       Float?
+  d4ThinSlopGr    Float?
+  d5Feed          Float?
+  d5WetCake       Float?
+  d5ThinSlopGr    Float?
+  d6Feed          Float?
+  d6WetCake       Float?
+  d6ThinSlopGr    Float?
+  d7Feed          Float?
+  d7WetCake       Float?
+  d7ThinSlopGr    Float?
+  d8Feed          Float?
+  d8WetCake       Float?
+  d8ThinSlopGr    Float?
+  remark          String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ═══════════════════════════════════════════════
 // ETHANOL PRODUCT & DISPATCH
 // ═══════════════════════════════════════════════
 model EthanolProductEntry {

@@ -17,7 +17,8 @@ const processNav = [
   { to: '/process/fermentation', label: 'Fermentation', icon: Beaker },
   { to: '/process/distillation', label: 'Distillation', icon: Flame },
   { to: '/process/evaporation', label: 'Evaporation', icon: Wind },
-  { to: '/process/dryer', label: 'Dryer (DDGS)', icon: Wind },
+  { to: '/process/dryer', label: 'DDGS Production', icon: Wind },
+  { to: '/process/decanter', label: 'Decanter', icon: Droplets },
   { to: '/process/ethanol-product', label: 'Ethanol Product', icon: Fuel },
   { to: '/process/water-utility', label: 'Water Utility', icon: Waves },
 ];
