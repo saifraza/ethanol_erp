@@ -156,7 +156,7 @@ export default function EthanolProduct() {
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-semibold text-purple-600 uppercase">Last Saved — {fmtDt(lastEntry.date)}</span>
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <div className="bg-white/80 rounded-lg p-2.5 text-center">
               <Droplets size={16} className="mx-auto text-blue-500 mb-1" />
               <div className="text-lg font-bold text-blue-700">{lastEntry.totalStock?.toFixed(0) ?? '—'}</div>
@@ -172,30 +172,34 @@ export default function EthanolProduct() {
               <div className="text-lg font-bold text-green-700">{lastEntry.productionBL?.toFixed(0) ?? '—'}</div>
               <div className="text-[10px] text-gray-400">Prod BL</div>
             </div>
+            <div className="bg-white/80 rounded-lg p-2.5 text-center">
+              <Truck size={16} className="mx-auto text-red-500 mb-1" />
+              <div className="text-lg font-bold text-red-600">{todayDispatch > 0 ? todayDispatch.toFixed(0) : '0'}</div>
+              <div className="text-[10px] text-gray-400">Dispatch ({dispatchList.length})</div>
+            </div>
           </div>
-        </div>
-      )}
-
-      {/* Today's Dispatch Summary */}
-      {dispatchList.length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-5">
-          <div className="flex items-center gap-2 mb-2">
-            <Truck size={16} className="text-red-500" />
-            <span className="text-xs font-semibold text-red-600 uppercase">Today's Dispatch — {dispatchList.length} truck{dispatchList.length !== 1 ? 's' : ''}</span>
-            <span className="ml-auto text-sm font-bold text-red-700">{todayDispatch.toFixed(0)} BL</span>
-          </div>
-          <div className="space-y-1">
-            {dispatchList.map((d: any, i: number) => (
-              <div key={d.id} className="flex items-center justify-between text-xs bg-white/70 rounded px-2 py-1.5">
-                <span className="text-gray-600">
-                  <span className="font-medium text-gray-800">{d.vehicleNo || `Truck ${i+1}`}</span>
-                  {d.partyName && <span className="ml-1.5 text-gray-400">• {d.partyName}</span>}
-                  {d.destination && <span className="ml-1.5 text-gray-400">→ {d.destination}</span>}
-                </span>
-                <span className="font-semibold text-red-600">{d.quantityBL?.toFixed(0)} BL{d.strength ? ` @ ${d.strength}%` : ''}</span>
-              </div>
-            ))}
-          </div>
+          {/* Current stock after dispatch */}
+          {todayDispatch > 0 && (
+            <div className="mt-2 bg-white/60 rounded-lg p-2 text-center border border-blue-100">
+              <div className="text-[10px] text-gray-400 uppercase">Current Stock (After Dispatch)</div>
+              <div className="text-xl font-bold text-blue-800">{((lastEntry.totalStock || 0) - todayDispatch).toFixed(0)} BL</div>
+            </div>
+          )}
+          {/* Dispatch truck details */}
+          {dispatchList.length > 0 && (
+            <div className="mt-2 space-y-1">
+              {dispatchList.map((d: any, i: number) => (
+                <div key={d.id} className="flex items-center justify-between text-xs bg-white/60 rounded px-2 py-1">
+                  <span className="text-gray-600">
+                    <span className="font-medium text-gray-800">{d.vehicleNo || `Truck ${i+1}`}</span>
+                    {d.partyName && <span className="ml-1 text-gray-400">• {d.partyName}</span>}
+                    {d.destination && <span className="ml-1 text-gray-400">→ {d.destination}</span>}
+                  </span>
+                  <span className="font-semibold text-red-600">{d.quantityBL?.toFixed(0)} BL</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
