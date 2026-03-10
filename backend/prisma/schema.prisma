@@ -602,6 +602,7 @@ model EthanolProductEntry {
   totalDispatch   Float    @default(0)   // sum of all truck dispatch BL
   productionBL    Float    @default(0)   // currentStock - prevStock + dispatch
   productionAL    Float    @default(0)   // productionBL × avgStrength / 100
+  klpd            Float    @default(0)   // kilolitres per day flow rate
   remarks         String?
   userId          String
   createdAt       DateTime @default(now())

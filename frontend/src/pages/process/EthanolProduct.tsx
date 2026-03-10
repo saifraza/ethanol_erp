@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Fuel, Save, ChevronDown, ChevronUp, Eye, X, Share2, Loader2, TrendingUp, Droplets, Gauge, Truck } from 'lucide-react';
+import { Fuel, Save, ChevronDown, ChevronUp, Eye, X, Share2, Loader2, TrendingUp, Droplets, Gauge, Truck, Clock, Activity } from 'lucide-react';
 import api from '../../services/api';
 
 const TANKS = [
@@ -15,6 +15,7 @@ const TANKS = [
 export default function EthanolProduct() {
   const [form, setForm] = useState<any>({});
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [time, setTime] = useState(new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
   const [prev, setPrev] = useState<any>(null);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
@@ -83,12 +84,18 @@ export default function EthanolProduct() {
   const prevStock = prev ? TANKS.reduce((s, t) => s + (prev[`${t.key}Volume`] || 0), 0) : 0;
   const productionBL = totalStock - prevStock + todayDispatch;
   const productionAL = productionBL * avgStrength / 100;
+  // KLPD: production per day in kilolitres
+  const prevDate = prev?.date ? new Date(prev.date) : null;
+  const curDate = (() => { const d = new Date(date); if (time) { const [h, m] = time.split(':').map(Number); d.setHours(h || 0, m || 0); } return d; })();
+  const hoursBetween = prevDate ? (curDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60) : 0;
+  const klpd = hoursBetween > 0 ? (productionBL / hoursBetween) * 24 / 1000 : 0;
 
   useEffect(() => { loadLatest(); loadEntries(); }, []);
 
-  async function loadLatest() {
+  async function loadLatest(beforeId?: string) {
     try {
-      const res = await api.get('/ethanol-product/latest');
+      const url = beforeId ? `/ethanol-product/latest?beforeId=${beforeId}` : '/ethanol-product/latest';
+      const res = await api.get(url);
       setPrev(res.data.previous);
     } catch (e) { console.error(e); }
   }
@@ -105,7 +112,7 @@ export default function EthanolProduct() {
     if (!date) { setMsg({ type: 'err', text: 'Date is required' }); return; }
     setSaving(true); setMsg(null);
     try {
-      const payload = { date, ...form, remarks, trucks: [] };
+      const payload = { date, time, ...form, remarks, trucks: [] };
       if (editId) await api.put(`/ethanol-product/${editId}`, payload);
       else await api.post('/ethanol-product', payload);
       const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -128,10 +135,22 @@ export default function EthanolProduct() {
     setForm(f);
     setRemarks(e.remarks || '');
     setDate(e.date.split('T')[0]);
+    // Parse time from stored date
+    const d = new Date(e.date);
+    setTime(d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
+    // Load prev entry BEFORE this one for correct production calc
+    loadLatest(e.id);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   const fmtDt = (d: string) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '';
+  const fmtDtTime = (d: string) => {
+    if (!d) return '';
+    const dt = new Date(d);
+    const date = dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' });
+    const time = dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+    return `${date} ${time}`;
+  };
 
   const groups = [
     { label: 'Receivers', tanks: TANKS.filter(t => t.group === 'Receivers'), color: 'blue' },
@@ -154,9 +173,9 @@ export default function EthanolProduct() {
       {lastEntry && (
         <div className="bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-xl p-4 mb-5">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-semibold text-purple-600 uppercase">Last Saved — {fmtDt(lastEntry.date)}</span>
+            <span className="text-xs font-semibold text-purple-600 uppercase">Last — {fmtDtTime(lastEntry.date)}</span>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
             <div className="bg-white/80 rounded-lg p-2.5 text-center">
               <Droplets size={16} className="mx-auto text-blue-500 mb-1" />
               <div className="text-lg font-bold text-blue-700">{lastEntry.totalStock?.toFixed(0) ?? '—'}</div>
@@ -171,6 +190,11 @@ export default function EthanolProduct() {
               <TrendingUp size={16} className="mx-auto text-green-500 mb-1" />
               <div className="text-lg font-bold text-green-700">{lastEntry.productionBL?.toFixed(0) ?? '—'}</div>
               <div className="text-[10px] text-gray-400">Prod BL</div>
+            </div>
+            <div className="bg-white/80 rounded-lg p-2.5 text-center">
+              <Activity size={16} className="mx-auto text-indigo-500 mb-1" />
+              <div className="text-lg font-bold text-indigo-700">{lastEntry.klpd?.toFixed(1) ?? '—'}</div>
+              <div className="text-[10px] text-gray-400">KLPD</div>
             </div>
             <div className="bg-white/80 rounded-lg p-2.5 text-center">
               <Truck size={16} className="mx-auto text-red-500 mb-1" />
@@ -203,11 +227,18 @@ export default function EthanolProduct() {
         </div>
       )}
 
-      {/* Date */}
-      <div className="mb-5">
-        <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
-        <input type="date" value={date} onChange={e => setDate(e.target.value)}
-          className="border rounded-lg px-3 py-2.5 w-full sm:w-72 text-sm" />
+      {/* Date & Time */}
+      <div className="mb-5 flex gap-3">
+        <div className="flex-1 sm:flex-initial sm:w-48">
+          <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
+          <input type="date" value={date} onChange={e => setDate(e.target.value)}
+            className="border rounded-lg px-3 py-2.5 w-full text-sm" />
+        </div>
+        <div className="w-28">
+          <label className="block text-xs font-medium text-gray-600 mb-1">Time</label>
+          <input type="time" value={time} onChange={e => setTime(e.target.value)}
+            className="border rounded-lg px-3 py-2.5 w-full text-sm" />
+        </div>
       </div>
 
       {/* Tank Readings */}
@@ -294,9 +325,16 @@ export default function EthanolProduct() {
             <div className="text-lg font-bold text-red-600">{todayDispatch.toFixed(1)}</div>
           </div>
         </div>
-        <div className="border-t mt-3 pt-3 text-center">
-          <div className="text-[10px] text-gray-400 uppercase">Production BL</div>
-          <div className="text-xl font-bold text-green-700">{productionBL.toFixed(2)}</div>
+        <div className="border-t mt-3 pt-3 grid grid-cols-2 gap-3 text-center">
+          <div>
+            <div className="text-[10px] text-gray-400 uppercase">Production BL</div>
+            <div className="text-xl font-bold text-green-700">{productionBL.toFixed(2)}</div>
+          </div>
+          <div>
+            <div className="text-[10px] text-gray-400 uppercase">Flow Rate (KLPD)</div>
+            <div className="text-xl font-bold text-indigo-700">{klpd.toFixed(2)}</div>
+            {hoursBetween > 0 && <div className="text-[10px] text-gray-400">{hoursBetween.toFixed(1)} hrs</div>}
+          </div>
         </div>
       </div>
 
@@ -354,7 +392,7 @@ export default function EthanolProduct() {
         </div>
         <div className="flex gap-2">
           {editId && (
-            <button onClick={() => { setEditId(null); setForm({}); setRemarks(''); }}
+            <button onClick={() => { setEditId(null); setForm({}); setRemarks(''); loadLatest(); }}
               className="px-4 py-2 text-sm border rounded-lg text-gray-600 hover:bg-gray-50">Cancel</button>
           )}
           <button onClick={() => setShowPreview(true)}
@@ -373,7 +411,7 @@ export default function EthanolProduct() {
               <button onClick={() => setShowPreview(false)}><X size={20} /></button>
             </div>
             <div className="p-4 space-y-3 text-sm">
-              <div className="flex justify-between"><span className="text-gray-500">Date</span><span className="font-medium">{date}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Date & Time</span><span className="font-medium">{date} {time}</span></div>
               <div className="border-t pt-2">
                 <h4 className="font-semibold text-purple-700 mb-1">Tank Readings</h4>
                 {TANKS.map(t => {
@@ -401,6 +439,7 @@ export default function EthanolProduct() {
               <div className="border-t pt-2">
                 <h4 className="font-semibold text-green-700 mb-1">Production</h4>
                 <div>Production BL: <b>{productionBL.toFixed(2)}</b></div>
+                <div>Flow: <b>{klpd.toFixed(2)} KLPD</b>{hoursBetween > 0 && <span className="text-gray-400 ml-1">({hoursBetween.toFixed(1)} hrs)</span>}</div>
               </div>
               {remarks && <div className="border-t pt-2"><span className="text-gray-500">Remarks:</span> {remarks}</div>}
             </div>
@@ -411,7 +450,7 @@ export default function EthanolProduct() {
                   return `${t.label}: ${(form[`${t.key}Volume`] || 0).toFixed(0)}L @ ${(form[`${t.key}Strength`] || 0).toFixed(1)}%`;
                 }).join('\n');
                 const dispLines = dispatchList.length > 0 ? '\n\n*Dispatch:*\n' + dispatchList.map((d: any) => `${d.vehicleNo} → ${d.destination || '-'} | ${d.quantityBL?.toFixed(0)} BL${d.strength ? ` @ ${d.strength}%` : ''} | ${d.partyName}`).join('\n') : '';
-                const text = `*Ethanol Stock Report*\n📅 ${date}\n\n${tankLines}\n\nStock: ${totalStock.toFixed(1)} BL (${avgStrength.toFixed(2)}%)\nDispatch: ${todayDispatch.toFixed(1)} BL\nProd BL: ${productionBL.toFixed(2)}${dispLines}${remarks ? '\n\nRemarks: ' + remarks : ''}`;
+                const text = `*Ethanol Stock Report*\n📅 ${date} ${time}\n\n${tankLines}\n\nStock: ${totalStock.toFixed(1)} BL (${avgStrength.toFixed(2)}%)\nDispatch: ${todayDispatch.toFixed(1)} BL\nProd BL: ${productionBL.toFixed(2)}\nFlow: ${klpd.toFixed(2)} KLPD${dispLines}${remarks ? '\n\nRemarks: ' + remarks : ''}`;
                 if (navigator.share) {
                   navigator.share({ text }).catch(() => {
                     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
@@ -443,9 +482,9 @@ export default function EthanolProduct() {
             {entries.map(e => (
               <div key={e.id} className="border rounded-lg p-3 bg-white flex items-center justify-between">
                 <div className="flex-1">
-                  <div className="text-sm font-medium">{fmtDt(e.date)}</div>
+                  <div className="text-sm font-medium">{fmtDtTime(e.date)}</div>
                   <div className="text-xs text-gray-500">
-                    Stock: {e.totalStock?.toFixed(1)} BL | Prod: {e.productionBL?.toFixed(1)} BL ({e.productionAL?.toFixed(1)} AL)
+                    Stock: {e.totalStock?.toFixed(1)} BL | Prod: {e.productionBL?.toFixed(1)} BL | {e.klpd?.toFixed(1) ?? '—'} KLPD
                   </div>
                 </div>
                 <button onClick={() => editEntry(e)} className="text-xs text-blue-600 hover:underline">Edit</button>
