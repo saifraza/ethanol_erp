@@ -247,6 +247,23 @@ export default function EthanolProduct() {
               ))}
             </div>
           )}
+          {/* Share dashboard status */}
+          <button onClick={() => {
+            const curStock = (lastEntry.totalStock || 0) - newDispatch;
+            const dispInfo = lastEntry.totalDispatch > 0 ? `\nDispatch (in prod): ${lastEntry.totalDispatch?.toFixed(0)} BL` : '';
+            const newDispInfo = newDispatch > 0 ? `\nNew Dispatch: ${newDispatch.toFixed(0)} BL (${newDispatchList.length} trucks)` : '';
+            const newTruckLines = newDispatchList.length > 0 ? '\n' + newDispatchList.map((d: any) => `  ${d.vehicleNo} → ${d.destination || '-'} | ${d.quantityBL?.toFixed(0)} BL | ${d.partyName}`).join('\n') : '';
+            const text = `*Ethanol Stock Status*\n📅 ${fmtDtTime(lastEntry.date)}\n\nStock: ${lastEntry.totalStock?.toFixed(0)} BL\nStrength: ${lastEntry.avgStrength?.toFixed(1)}%\nProd: ${lastEntry.productionBL?.toFixed(0)} BL${lastPrevDate ? ` (${fmtDtTime(lastPrevDate)} → ${fmtDtTime(lastEntry.date)})` : ''}\nKLPD: ${lastEntry.klpd?.toFixed(1)}${dispInfo}${newDispInfo}${newTruckLines}\n\n📦 *Current Stock: ${curStock.toFixed(0)} BL*`;
+            if (navigator.share) {
+              navigator.share({ text }).catch(() => {
+                window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+              });
+            } else {
+              window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+            }
+          }} className="mt-3 w-full flex items-center justify-center gap-2 bg-green-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-green-700">
+            <Share2 size={16} /> Share Status
+          </button>
         </div>
       )}
 
