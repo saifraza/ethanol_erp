@@ -16,10 +16,11 @@ async function getGrainPcts() {
   return {
     fermPct: (s?.grainPercent ?? 31) / 100,
     pfPct: (s?.pfGrainPercent ?? 15) / 100,
+    millingLossPct: ((s as any)?.millingLossPercent ?? 2.5) / 100,
   };
 }
 
-function calcGrain(data: any, opening: number, prevCumUnloaded: number, prevCumConsumed: number, prevWashConsumed: number, fermPct: number, pfPct: number) {
+function calcGrain(data: any, opening: number, prevCumUnloaded: number, prevCumConsumed: number, prevWashConsumed: number, fermPct: number, pfPct: number, millingLossPct: number = 0) {
   const washDiff = Math.max(0, (data.washConsumed || 0) - prevWashConsumed);
   const grainConsumed = washDiff * fermPct;
 
@@ -31,10 +32,15 @@ function calcGrain(data: any, opening: number, prevCumUnloaded: number, prevCumC
   const grainInIltFlt = iltFltVol * fermPct;
   const grainInProcess = grainInFermenters + grainInPF + grainInIltFlt;
 
+  // Milling loss: grain received to silo loses this % (dust, bag weight, cleaning)
+  const grainReceived = data.grainUnloaded || 0;
+  const millingLoss = grainReceived * millingLossPct;
+  const effectiveGrain = grainReceived - millingLoss;
+
   const totalFermVol = fermVol + pfVol + iltFltVol;
-  const siloClosingStock = opening + (data.grainUnloaded || 0) - grainConsumed;
+  const siloClosingStock = opening + effectiveGrain - grainConsumed;
   const totalGrainAtPlant = siloClosingStock + grainInProcess;
-  const cumulativeUnloaded = prevCumUnloaded + (data.grainUnloaded || 0);
+  const cumulativeUnloaded = prevCumUnloaded + grainReceived;
   const cumulativeConsumed = prevCumConsumed + grainConsumed;
 
   return {
@@ -95,6 +101,7 @@ router.get('/latest', authenticate, async (req: AuthRequest, res: Response) => {
         cumulativeUnloaded: latest?.cumulativeUnloaded ?? DEFAULT_CUM_UNLOADED,
         cumulativeConsumed: latest?.cumulativeConsumed ?? DEFAULT_CUM_CONSUMED,
         lastUnloaded: latest?.grainUnloaded ?? 0,
+        quarantineStock: latest?.quarantineStock ?? 0,
         yearStart,
       },
       previous: latest ? {
@@ -146,6 +153,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { date, grainUnloaded, washConsumed, washConsumedAt, fermentationVolumeAt,
       f1Level, f2Level, f3Level, f4Level, beerWellLevel, pf1Level, pf2Level, iltLevel, fltLevel,
+      quarantineStock,
       moisture, starchPercent, damagedPercent, foreignMatter, trucks, avgTruckWeight, supplier, remarks } = req.body;
     const entryDate = new Date(date);
     const yearStart = entryDate.getFullYear();
@@ -154,7 +162,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     const opening = prev?.siloClosingStock ?? DEFAULT_SILO;
     const prevCumUnloaded = prev?.cumulativeUnloaded ?? DEFAULT_CUM_UNLOADED;
     const prevCumConsumed = prev?.cumulativeConsumed ?? DEFAULT_CUM_CONSUMED;
-    const { fermPct, pfPct } = await getGrainPcts();
+    const { fermPct, pfPct, millingLossPct } = await getGrainPcts();
 
     const inputData = {
       grainUnloaded: grainUnloaded || 0,
@@ -166,7 +174,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
       iltLevel: iltLevel || 0, fltLevel: fltLevel || 0,
     };
     const prevWash = prev?.washConsumed ?? 0;
-    const calc = calcGrain(inputData, opening, prevCumUnloaded, prevCumConsumed, prevWash, fermPct, pfPct);
+    const calc = calcGrain(inputData, opening, prevCumUnloaded, prevCumConsumed, prevWash, fermPct, pfPct, millingLossPct);
 
     const entry = await prisma.grainEntry.create({
       data: {
@@ -181,6 +189,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
         beerWellLevel: inputData.beerWellLevel,
         pf1Level: inputData.pf1Level, pf2Level: inputData.pf2Level,
         iltLevel: inputData.iltLevel, fltLevel: inputData.fltLevel,
+        quarantineStock: quarantineStock || 0,
         ...calc,
         moisture: moisture ?? null, starchPercent: starchPercent ?? null,
         damagedPercent: damagedPercent ?? null, foreignMatter: foreignMatter ?? null,
@@ -199,6 +208,7 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { grainUnloaded, washConsumed, washConsumedAt, fermentationVolumeAt,
       f1Level, f2Level, f3Level, f4Level, beerWellLevel, pf1Level, pf2Level, iltLevel, fltLevel,
+      quarantineStock,
       moisture, starchPercent, damagedPercent, foreignMatter, trucks, avgTruckWeight, supplier, remarks } = req.body;
     const existing = await prisma.grainEntry.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: 'Entry not found' });
@@ -210,7 +220,7 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
     const opening = prev?.siloClosingStock ?? DEFAULT_SILO;
     const prevCumUnloaded = prev?.cumulativeUnloaded ?? DEFAULT_CUM_UNLOADED;
     const prevCumConsumed = prev?.cumulativeConsumed ?? DEFAULT_CUM_CONSUMED;
-    const { fermPct, pfPct } = await getGrainPcts();
+    const { fermPct, pfPct, millingLossPct } = await getGrainPcts();
 
     const inputData = {
       grainUnloaded: grainUnloaded ?? existing.grainUnloaded,
@@ -226,12 +236,13 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
       fltLevel: fltLevel ?? (existing as any).fltLevel ?? 0,
     };
     const prevWash = prev?.washConsumed ?? 0;
-    const calc = calcGrain(inputData, opening, prevCumUnloaded, prevCumConsumed, prevWash, fermPct, pfPct);
+    const calc = calcGrain(inputData, opening, prevCumUnloaded, prevCumConsumed, prevWash, fermPct, pfPct, millingLossPct);
 
     const entry = await prisma.grainEntry.update({
       where: { id: req.params.id },
       data: {
         ...inputData, ...calc,
+        quarantineStock: quarantineStock ?? undefined,
         washConsumedAt: washConsumedAt ? new Date(washConsumedAt) : undefined,
         fermentationVolumeAt: fermentationVolumeAt ? new Date(fermentationVolumeAt) : undefined,
         moisture, starchPercent, damagedPercent, foreignMatter, trucks, avgTruckWeight, supplier, remarks,

@@ -29,6 +29,7 @@ export default function SettingsPage() {
     { key: 'pfGrainPercent', label: 'PF Grain %', unit: '%' },
     { key: 'iltCap', label: 'ILT Capacity', unit: 'M3' },
     { key: 'fltCap', label: 'FLT Capacity', unit: 'M3' },
+    { key: 'millingLossPercent', label: 'Milling Loss', unit: '%' },
     { key: 'rsTankCap', label: 'RS Tank Capacity', unit: 'M3' },
     { key: 'hfoTankCap', label: 'HFO Tank Capacity', unit: 'M3' },
     { key: 'lfoTankCap', label: 'LFO Tank Capacity', unit: 'M3' },

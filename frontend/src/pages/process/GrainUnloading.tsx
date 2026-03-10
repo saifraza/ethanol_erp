@@ -27,6 +27,7 @@ interface GrainForm {
   iltPct: number | null;
   fltPct: number | null;
   fermentationVolumeAt: string;
+  quarantineStock: number | null;
   moisture: number | null;
   starchPercent: number | null;
   damagedPercent: number | null;
@@ -45,6 +46,7 @@ const emptyForm: GrainForm = {
   grainUnloaded: null, washConsumed: null, washConsumedAt: nowLocal(),
   f1Pct: null, f2Pct: null, f3Pct: null, f4Pct: null, beerWellPct: null,
   pf1Pct: null, pf2Pct: null, iltPct: null, fltPct: null, fermentationVolumeAt: nowLocal(),
+  quarantineStock: null,
   moisture: null, starchPercent: null, damagedPercent: null, foreignMatter: null,
   remarks: '',
 };
@@ -101,6 +103,7 @@ export default function GrainUnloading() {
   const FLT_CAPACITY = plantSettings?.fltCap ?? DEF_FLT_CAP;
   const FERM_GRAIN_PCT = (plantSettings?.grainPercent ?? DEF_GRAIN_PCT * 100) / 100;
   const PF_GRAIN_PCT = (plantSettings?.pfGrainPercent ?? DEF_PF_PCT * 100) / 100;
+  const MILLING_LOSS_PCT = (plantSettings?.millingLossPercent ?? 2.5) / 100;
 
   // Convert percentages to KL for calculations
   const f1KL = pctToKl(form.f1Pct, FERM_CAPACITY);
@@ -126,7 +129,10 @@ export default function GrainUnloading() {
   const grainInIltFlt = iltFltVol * FERM_GRAIN_PCT;
   const grainInProcess = grainInFerm + grainInPF + grainInIltFlt;
   const opening = defaults.siloOpeningStock || 0;
-  const siloClosing = opening + (form.grainUnloaded || 0) - grainConsumed;
+  const grainReceived = form.grainUnloaded || 0;
+  const millingLoss = grainReceived * MILLING_LOSS_PCT;
+  const effectiveGrain = grainReceived - millingLoss;
+  const siloClosing = opening + effectiveGrain - grainConsumed;
   const totalAtPlant = siloClosing + grainInProcess;
 
   const pGIP = prev?.grainInProcess ?? 0;
@@ -178,6 +184,7 @@ export default function GrainUnloading() {
         beerWellLevel: beerWellKL,
         pf1Level: pf1KL, pf2Level: pf2KL,
         iltLevel: iltKL, fltLevel: fltKL,
+        quarantineStock: form.quarantineStock ?? 0,
         fermentationVolumeAt: form.fermentationVolumeAt ? new Date(form.fermentationVolumeAt).toISOString() : null,
         moisture: form.moisture, starchPercent: form.starchPercent,
         damagedPercent: form.damagedPercent, foreignMatter: form.foreignMatter,
@@ -212,6 +219,7 @@ export default function GrainUnloading() {
       iltPct: klToPct(e.iltLevel, ILT_CAPACITY),
       fltPct: klToPct(e.fltLevel, FLT_CAPACITY),
       fermentationVolumeAt: e.fermentationVolumeAt ? e.fermentationVolumeAt.slice(0, 16) : nowLocal(),
+      quarantineStock: e.quarantineStock ?? null,
       moisture: e.moisture, starchPercent: e.starchPercent,
       damagedPercent: e.damagedPercent, foreignMatter: e.foreignMatter,
       remarks: e.remarks || '',
@@ -252,13 +260,13 @@ export default function GrainUnloading() {
   return (
     <ProcessPage title="Grain Stock" icon={<Wheat size={28} />} description="Track silo balance, fermenter levels & wash — grain received auto-pulled from truck unloading" flow={{ from: 'Truck / Process', to: 'Grain Silo' }} color="bg-amber-600">
       {/* Stat Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 md:gap-3 mb-4 md:mb-5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 md:gap-3 mb-4 md:mb-5">
         {[
           { label: 'Silo Stock', value: (form.grainUnloaded != null || form.washConsumed != null) ? siloClosing : (defaults.siloOpeningStock ?? 0), unit: 'Ton', color: 'bg-amber-50 border-amber-200' },
           { label: 'Grain@Plant', value: (form.grainUnloaded != null || form.f1Pct != null) ? totalAtPlant : (defaults.totalGrainAtPlant ?? 0), unit: 'Ton', color: 'bg-green-50 border-green-200' },
           { label: 'Last Unloaded', value: form.grainUnloaded ?? (defaults.lastUnloaded ?? 0), unit: 'Ton', color: 'bg-blue-50 border-blue-200' },
+          { label: 'Quarantine', value: form.quarantineStock ?? (defaults.quarantineStock ?? 0), unit: 'Ton', color: 'bg-orange-50 border-orange-200' },
           { label: 'Year Consumed', value: defaults.cumulativeConsumed ?? 0, unit: 'Ton', color: 'bg-red-50 border-red-200' },
-          { label: 'Year', value: defaults.yearStart ?? new Date().getFullYear(), unit: '', color: 'bg-gray-50 border-gray-200' },
         ].map(k => (
           <div key={k.label} className={`rounded-lg border p-2 md:p-3 ${k.color}`}>
             <div className="text-[10px] md:text-xs text-gray-500">{k.label}</div>
@@ -296,7 +304,22 @@ export default function GrainUnloading() {
         </div>
         <div className="flex justify-between items-center py-2 px-1">
           <span className="text-xs text-gray-500">Grain to Silo (from trucks)</span>
-          <span className="font-bold text-amber-700">{(form.grainUnloaded || 0).toFixed(1)} Ton</span>
+          <span className="font-bold text-amber-700">{grainReceived.toFixed(1)} Ton</span>
+        </div>
+        {grainReceived > 0 && (
+          <div className="flex justify-between items-center py-1 px-1 text-xs">
+            <span className="text-red-400">Milling Loss ({(MILLING_LOSS_PCT * 100).toFixed(1)}%)</span>
+            <span className="text-red-500 font-medium">−{millingLoss.toFixed(1)} T → Effective: {effectiveGrain.toFixed(1)} T</span>
+          </div>
+        )}
+        <div className="mt-2 p-3 rounded-lg bg-orange-50 border border-orange-200">
+          <label className="text-xs text-orange-600 font-medium mb-1 block">Quarantine Stock (not in silo)</label>
+          <div className="flex items-center gap-2">
+            <input type="number" value={form.quarantineStock ?? ''} onChange={e => u('quarantineStock', e.target.value ? parseFloat(e.target.value) : null)}
+              placeholder="Total quarantine tonnage" className="input-field flex-1 text-sm" step="any" />
+            <span className="text-sm text-gray-500 shrink-0">Ton</span>
+          </div>
+          <p className="text-[10px] text-gray-400 mt-1">Grain held separately — not counted in silo stock or plant total</p>
         </div>
       </InputCard>
 
@@ -565,6 +588,12 @@ export default function GrainUnloading() {
               <span className="text-gray-600 text-xs">Silo Opening</span>
               <span className="font-semibold">{opening.toFixed(2)} T</span>
             </div>
+            {millingLoss > 0 && (
+              <div className="flex justify-between items-center py-2 px-1">
+                <span className="text-red-400 text-xs">Milling Loss ({(MILLING_LOSS_PCT * 100).toFixed(1)}%)</span>
+                <span className="font-semibold text-red-500">−{millingLoss.toFixed(2)} T</span>
+              </div>
+            )}
             <div className="flex justify-between items-center py-2 px-1">
               <span className="text-gray-600 text-xs">Silo Closing</span>
               <span className="font-bold">{siloClosing.toFixed(2)} T</span>
@@ -573,6 +602,12 @@ export default function GrainUnloading() {
               <span className="text-green-800 font-medium text-xs">Total Grain at Plant</span>
               <span className="font-bold text-green-700">{totalAtPlant.toFixed(2)} T</span>
             </div>
+            {(form.quarantineStock ?? 0) > 0 && (
+              <div className="flex justify-between items-center py-2 px-2 bg-orange-50 rounded">
+                <span className="text-orange-800 font-medium text-xs">Quarantine (separate)</span>
+                <span className="font-bold text-orange-700">{(form.quarantineStock ?? 0).toFixed(2)} T</span>
+              </div>
+            )}
           </div>
           );
         })()}
@@ -644,11 +679,20 @@ export default function GrainUnloading() {
                   )}
                 </div>
               </div>
+              <div>
+                <h4 className="font-semibold text-gray-700 mb-1">ILT & FLT (%)</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  {[{l:'ILT',v:form.iltPct},{l:'FLT',v:form.fltPct}].map(f=>
+                    <div key={f.l} className="bg-teal-50 rounded p-2 text-center"><div className="text-xs text-gray-500">{f.l}</div><div className="font-semibold">{f.v ?? '—'}%</div></div>
+                  )}
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <div className="bg-gray-50 rounded p-2 text-center"><div className="text-xs text-gray-500">Moisture</div><div className="font-semibold">{form.moisture ?? '—'}%</div></div>
                 <div className="bg-gray-50 rounded p-2 text-center"><div className="text-xs text-gray-500">Starch</div><div className="font-semibold">{form.starchPercent ?? '—'}%</div></div>
               </div>
-              {truckSummary.truckCount > 0 && <div className="text-gray-600">Trucks: <strong>{truckSummary.truckCount}</strong> | Quarantine: <strong>{truckSummary.quarantineNet.toFixed(1)} T</strong></div>}
+              {truckSummary.truckCount > 0 && <div className="text-gray-600">Trucks: <strong>{truckSummary.truckCount}</strong></div>}
+              {(form.quarantineStock ?? 0) > 0 && <div className="text-orange-600 font-medium">Quarantine Stock: <strong>{(form.quarantineStock ?? 0).toFixed(1)} T</strong> (not in silo)</div>}
               {form.remarks && <div className="text-gray-600 italic">Remarks: {form.remarks}</div>}
             </div>
             <div className="sticky bottom-0 bg-gray-50 p-4 rounded-b-xl flex gap-3 border-t">
@@ -656,7 +700,7 @@ export default function GrainUnloading() {
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} {editId ? 'Update' : 'Save'} Entry
               </button>
               <button onClick={() => {
-                const t = `*GRAIN STOCK REPORT*\nDate: ${form.date}\nGrain to Silo: ${form.grainUnloaded ?? '—'} T (${truckSummary.truckCount} trucks)${truckSummary.quarantineNet > 0 ? `\nQuarantine: ${truckSummary.quarantineNet.toFixed(1)} T` : ''}\nWash Made: ${fermVol.toFixed(0)} KL\nWash Distilled: ${form.washConsumed ?? '—'} KL\nF1: ${form.f1Pct ?? '—'}% | F2: ${form.f2Pct ?? '—'}% | F3: ${form.f3Pct ?? '—'}% | F4: ${form.f4Pct ?? '—'}%\nBeer Well: ${form.beerWellPct ?? '—'}%\nPF1: ${form.pf1Pct ?? '—'}% | PF2: ${form.pf2Pct ?? '—'}%\nSilo Closing: ${siloClosing.toFixed(1)} T | Total@Plant: ${totalAtPlant.toFixed(1)} T${form.remarks ? '\nRemarks: ' + form.remarks : ''}`;
+                const t = `*GRAIN STOCK REPORT*\nDate: ${form.date}\nGrain to Silo: ${form.grainUnloaded ?? '—'} T (${truckSummary.truckCount} trucks)${(form.quarantineStock ?? 0) > 0 ? `\nQuarantine: ${(form.quarantineStock ?? 0).toFixed(1)} T (not in silo)` : ''}\nWash Made: ${fermVol.toFixed(0)} KL\nWash Distilled: ${form.washConsumed ?? '—'} KL\nF1: ${form.f1Pct ?? '—'}% | F2: ${form.f2Pct ?? '—'}% | F3: ${form.f3Pct ?? '—'}% | F4: ${form.f4Pct ?? '—'}%\nBeer Well: ${form.beerWellPct ?? '—'}%\nPF1: ${form.pf1Pct ?? '—'}% | PF2: ${form.pf2Pct ?? '—'}%\nILT: ${form.iltPct ?? '—'}% | FLT: ${form.fltPct ?? '—'}%\nSilo Closing: ${siloClosing.toFixed(1)} T | Total@Plant: ${totalAtPlant.toFixed(1)} T${form.remarks ? '\nRemarks: ' + form.remarks : ''}`;
                 window.open(`https://wa.me/?text=${encodeURIComponent(t)}`, '_blank');
               }} className="flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 transition">
                 <Share2 size={16} /> WhatsApp
@@ -684,6 +728,7 @@ export default function GrainUnloading() {
                   <th className="py-2 pr-3">Grain@Process</th>
                   <th className="py-2 pr-3">Silo Close</th>
                   <th className="py-2 pr-3">Total@Plant</th>
+                  <th className="py-2 pr-3">Quarantine</th>
                   <th className="py-2"></th>
                 </tr>
               </thead>
@@ -697,12 +742,13 @@ export default function GrainUnloading() {
                     <td className="py-2 pr-3">{e.grainInProcess?.toFixed(1)}</td>
                     <td className="py-2 pr-3 font-semibold">{e.siloClosingStock?.toFixed(1)}</td>
                     <td className="py-2 pr-3 font-semibold">{e.totalGrainAtPlant?.toFixed(1)}</td>
+                    <td className="py-2 pr-3 text-orange-600">{e.quarantineStock > 0 ? e.quarantineStock?.toFixed(1) : '—'}</td>
                     <td className="py-2">
                       <button onClick={(ev) => { ev.stopPropagation(); deleteEntry(e.id); }} className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
                     </td>
                   </tr>
                 ))}
-                {entries.length === 0 && <tr><td colSpan={8} className="py-4 text-center text-gray-400">No entries yet.</td></tr>}
+                {entries.length === 0 && <tr><td colSpan={9} className="py-4 text-center text-gray-400">No entries yet.</td></tr>}
               </tbody>
             </table>
           </div>
