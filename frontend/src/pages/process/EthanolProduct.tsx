@@ -29,6 +29,7 @@ export default function EthanolProduct() {
   const [dispatchList, setDispatchList] = useState<any[]>([]);
   const [fuelOpen, setFuelOpen] = useState(false);
   const [lastEntry, setLastEntry] = useState<any>(null);
+  const [lastPrevDate, setLastPrevDate] = useState<string | null>(null);
 
   useEffect(() => {
     api.get('/calibration').then(r => setCalData(r.data)).catch(e => console.error('Cal load error:', e));
@@ -108,7 +109,10 @@ export default function EthanolProduct() {
     try {
       const res = await api.get('/ethanol-product');
       setEntries(res.data.entries);
-      if (res.data.entries?.length > 0) setLastEntry(res.data.entries[0]);
+      if (res.data.entries?.length > 0) {
+        setLastEntry(res.data.entries[0]);
+        setLastPrevDate(res.data.entries[1]?.date || null);
+      }
     } catch (e) { console.error(e); }
   }
 
@@ -194,6 +198,7 @@ export default function EthanolProduct() {
               <TrendingUp size={16} className="mx-auto text-green-500 mb-1" />
               <div className="text-lg font-bold text-green-700">{lastEntry.productionBL?.toFixed(0) ?? '—'}</div>
               <div className="text-[10px] text-gray-400">Prod BL</div>
+              {lastPrevDate && <div className="text-[9px] text-gray-400">{fmtDtTime(lastPrevDate)} → {fmtDtTime(lastEntry.date)}</div>}
             </div>
             <div className="bg-white/80 rounded-lg p-2.5 text-center">
               <Activity size={16} className="mx-auto text-indigo-500 mb-1" />
@@ -333,6 +338,7 @@ export default function EthanolProduct() {
           <div>
             <div className="text-[10px] text-gray-400 uppercase">Production BL</div>
             <div className="text-xl font-bold text-green-700">{productionBL.toFixed(2)}</div>
+            {prev?.date && <div className="text-[9px] text-gray-400">{fmtDtTime(prev.date)} → {date} {time}</div>}
           </div>
           <div>
             <div className="text-[10px] text-gray-400 uppercase">Flow Rate (KLPD)</div>
