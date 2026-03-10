@@ -51,13 +51,22 @@ export default function EthanolProduct() {
   const handleDipChange = (tankKey: string, raw: string) => {
     const dipVal = raw === '' ? null : parseFloat(raw);
     setForm((f: any) => {
-      const updated = { ...f, [`${tankKey}Dip`]: dipVal };
-      // Auto-lookup volume
-      const litres = calLookup(tankKey, dipVal);
-      if (litres !== null) {
-        updated[`${tankKey}Volume`] = litres;
+      const updated = { ...f, [`${tankKey}Dip`]: dipVal, [`${tankKey}Empty`]: false };
+      if (dipVal !== null && !isNaN(dipVal)) {
+        const litres = calLookup(tankKey, dipVal);
+        if (litres !== null) updated[`${tankKey}Volume`] = litres;
+      } else {
+        updated[`${tankKey}Volume`] = null;
       }
       return updated;
+    });
+  };
+
+  // Toggle empty tank — sets volume to 0, clears DIP
+  const toggleEmpty = (tankKey: string) => {
+    setForm((f: any) => {
+      const isEmpty = !f[`${tankKey}Empty`];
+      return { ...f, [`${tankKey}Empty`]: isEmpty, [`${tankKey}Dip`]: isEmpty ? null : f[`${tankKey}Dip`], [`${tankKey}Volume`]: isEmpty ? 0 : null };
     });
   };
 
@@ -177,8 +186,16 @@ export default function EthanolProduct() {
                 <div key={tank.key} className={`border rounded-lg p-3 bg-white border-${g.color}-200`}>
                   <div className="flex items-center justify-between mb-2">
                     <span className={`font-semibold text-${g.color}-700`}>{tank.label}</span>
-                    <span className="text-xs text-gray-500">{curVol.toFixed(1)} BL</span>
+                    <label className="flex items-center gap-1 cursor-pointer">
+                      <input type="checkbox" checked={!!form[`${tank.key}Empty`]}
+                        onChange={() => toggleEmpty(tank.key)}
+                        className="rounded border-gray-300" />
+                      <span className="text-[10px] text-gray-400">Empty</span>
+                    </label>
                   </div>
+                  {form[`${tank.key}Empty`] ? (
+                    <div className="text-center py-3 text-sm text-gray-400 italic">Tank empty — 0 BL</div>
+                  ) : (
                   <div className="grid grid-cols-2 gap-2 mb-2">
                     <div>
                       <label className="text-[10px] text-gray-400">DIP (cm)</label>
@@ -205,6 +222,7 @@ export default function EthanolProduct() {
                         className="border rounded px-2 py-1.5 w-full text-sm" />
                     </div>
                   </div>
+                  )}
                   <div className="flex justify-between text-[11px]">
                     <span className="text-gray-400">Prev: {prevVol.toFixed(1)} BL ({prevStr.toFixed(1)}%)</span>
                     <span className={diff >= 0 ? 'text-green-600' : 'text-red-500'}>
