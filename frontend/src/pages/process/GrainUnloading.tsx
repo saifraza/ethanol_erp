@@ -250,7 +250,7 @@ export default function GrainUnloading() {
       </InputCard>
 
       {/* === 2. WASH CONSUMED === */}
-      <InputCard title={`Wash Consumed${prev ? ` — prev: ${pW.toFixed(1)} KL on ${fmtDt(prev.washConsumedAt)}` : ''}`}>
+      <InputCard title={`Wash Distilled${prev ? ` — prev: ${pW.toFixed(1)} KL on ${fmtDt(prev.washConsumedAt)}` : ''}`}>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="text-xs text-gray-500 mb-1 block">Volume (KL)</label>
@@ -357,7 +357,7 @@ export default function GrainUnloading() {
         </div>
 
         <div className="text-right text-sm text-gray-600 mt-2">
-          Total (F1-F4 + BW): <span className="font-semibold">{fermVol.toFixed(0)} KL</span>
+          Wash Made (F1-F4 + BW): <span className="font-semibold text-blue-700">{fermVol.toFixed(0)} KL</span>
           <span className="mx-1">→</span>
           Grain: <span className="font-semibold text-amber-600">{grainInFerm.toFixed(1)} T</span>
         </div>
@@ -419,7 +419,8 @@ export default function GrainUnloading() {
           <div className="text-sm divide-y divide-gray-100">
             {/* Row helper */}
             {[
-              { label: 'Wash Flow Diff', value: `${washDiff.toFixed(1)} KL` },
+              { label: 'Wash Made', value: `${fermVol.toFixed(0)} KL`, sub: 'F1-F4 + BW' },
+              { label: 'Wash Distilled', value: `${(form.washConsumed ?? 0).toFixed(1)} KL`, sub: `diff: ${washDiff.toFixed(1)} KL` },
               { label: 'Grain Consumed', value: `${grainConsumed.toFixed(2)} T`, sub: 'wash diff × 31%' },
             ].map((r, i) => (
               <div key={i} className="flex justify-between items-center py-2 px-1">
@@ -523,9 +524,10 @@ export default function GrainUnloading() {
               <div className="flex justify-between text-gray-600 border-b pb-2">
                 <span>Date: <strong>{form.date}</strong></span>
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <div className="bg-amber-50 rounded p-2 text-center"><div className="text-xs text-gray-500">Grain Unloaded</div><div className="font-bold text-lg">{form.grainUnloaded ?? '—'} MT</div></div>
-                <div className="bg-amber-50 rounded p-2 text-center"><div className="text-xs text-gray-500">Wash Consumed</div><div className="font-bold text-lg">{form.washConsumed ?? '—'} KL</div></div>
+                <div className="bg-blue-50 rounded p-2 text-center"><div className="text-xs text-gray-500">Wash Made</div><div className="font-bold text-lg">{fermVol.toFixed(0)} KL</div></div>
+                <div className="bg-amber-50 rounded p-2 text-center"><div className="text-xs text-gray-500">Wash Distilled</div><div className="font-bold text-lg">{form.washConsumed ?? '—'} KL</div></div>
               </div>
               <div>
                 <h4 className="font-semibold text-gray-700 mb-1">Fermenter Levels (%)</h4>
@@ -555,7 +557,7 @@ export default function GrainUnloading() {
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} {editId ? 'Update' : 'Save'} Entry
               </button>
               <button onClick={() => {
-                const t = `*GRAIN UNLOADING REPORT*\nDate: ${form.date}\nGrain Unloaded: ${form.grainUnloaded ?? '—'} MT\nWash Consumed: ${form.washConsumed ?? '—'} KL\nF1: ${form.f1Pct ?? '—'}% | F2: ${form.f2Pct ?? '—'}% | F3: ${form.f3Pct ?? '—'}% | F4: ${form.f4Pct ?? '—'}%\nBeer Well: ${form.beerWellPct ?? '—'}%\nPF1: ${form.pf1Pct ?? '—'}% | PF2: ${form.pf2Pct ?? '—'}%\nMoisture: ${form.moisture ?? '—'}% | Starch: ${form.starchPercent ?? '—'}%${form.remarks ? '\nRemarks: ' + form.remarks : ''}`;
+                const t = `*GRAIN UNLOADING REPORT*\nDate: ${form.date}\nGrain Unloaded: ${form.grainUnloaded ?? '—'} MT\nWash Made: ${fermVol.toFixed(0)} KL\nWash Distilled: ${form.washConsumed ?? '—'} KL\nF1: ${form.f1Pct ?? '—'}% | F2: ${form.f2Pct ?? '—'}% | F3: ${form.f3Pct ?? '—'}% | F4: ${form.f4Pct ?? '—'}%\nBeer Well: ${form.beerWellPct ?? '—'}%\nPF1: ${form.pf1Pct ?? '—'}% | PF2: ${form.pf2Pct ?? '—'}%\nMoisture: ${form.moisture ?? '—'}% | Starch: ${form.starchPercent ?? '—'}%${form.remarks ? '\nRemarks: ' + form.remarks : ''}`;
                 window.open(`https://wa.me/?text=${encodeURIComponent(t)}`, '_blank');
               }} className="flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 transition">
                 <Share2 size={16} /> WhatsApp
