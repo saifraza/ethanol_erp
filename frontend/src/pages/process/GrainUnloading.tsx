@@ -173,12 +173,12 @@ export default function GrainUnloading() {
         date: buildEntryDate(form.date).toISOString(),
         grainUnloaded: form.grainUnloaded,
         washConsumed: form.washConsumed,
-        washConsumedAt: form.washConsumedAt,
+        washConsumedAt: form.washConsumedAt ? new Date(form.washConsumedAt).toISOString() : null,
         f1Level: f1KL, f2Level: f2KL, f3Level: f3KL, f4Level: f4KL,
         beerWellLevel: beerWellKL,
         pf1Level: pf1KL, pf2Level: pf2KL,
         iltLevel: iltKL, fltLevel: fltKL,
-        fermentationVolumeAt: form.fermentationVolumeAt,
+        fermentationVolumeAt: form.fermentationVolumeAt ? new Date(form.fermentationVolumeAt).toISOString() : null,
         moisture: form.moisture, starchPercent: form.starchPercent,
         damagedPercent: form.damagedPercent, foreignMatter: form.foreignMatter,
         trucks: truckSummary.truckCount, avgTruckWeight: truckSummary.truckCount > 0 ? (truckSummary.totalNet / truckSummary.truckCount) : null,
@@ -254,9 +254,9 @@ export default function GrainUnloading() {
       {/* Stat Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 md:gap-3 mb-4 md:mb-5">
         {[
-          { label: 'Silo Stock', value: siloClosing || (defaults.siloOpeningStock ?? 0), unit: 'Ton', color: 'bg-amber-50 border-amber-200' },
-          { label: 'Grain@Plant', value: totalAtPlant || (defaults.totalGrainAtPlant ?? 0), unit: 'Ton', color: 'bg-green-50 border-green-200' },
-          { label: 'Last Unloaded', value: form.grainUnloaded || (defaults.lastUnloaded ?? 0), unit: 'Ton', color: 'bg-blue-50 border-blue-200' },
+          { label: 'Silo Stock', value: (form.grainUnloaded != null || form.washConsumed != null) ? siloClosing : (defaults.siloOpeningStock ?? 0), unit: 'Ton', color: 'bg-amber-50 border-amber-200' },
+          { label: 'Grain@Plant', value: (form.grainUnloaded != null || form.f1Pct != null) ? totalAtPlant : (defaults.totalGrainAtPlant ?? 0), unit: 'Ton', color: 'bg-green-50 border-green-200' },
+          { label: 'Last Unloaded', value: form.grainUnloaded ?? (defaults.lastUnloaded ?? 0), unit: 'Ton', color: 'bg-blue-50 border-blue-200' },
           { label: 'Year Consumed', value: defaults.cumulativeConsumed ?? 0, unit: 'Ton', color: 'bg-red-50 border-red-200' },
           { label: 'Year', value: defaults.yearStart ?? new Date().getFullYear(), unit: '', color: 'bg-gray-50 border-gray-200' },
         ].map(k => (
