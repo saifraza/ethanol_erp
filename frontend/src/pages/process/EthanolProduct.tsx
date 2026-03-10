@@ -288,10 +288,14 @@ export default function EthanolProduct() {
           <input type="date" value={date} onChange={e => setDate(e.target.value)}
             className="border rounded-lg px-3 py-2.5 w-full text-sm" />
         </div>
-        <div className="w-28">
+        <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Time</label>
-          <input type="time" value={time} onChange={e => setTime(e.target.value)}
-            className="border rounded-lg px-3 py-2.5 w-full text-sm" />
+          <div className="flex gap-1 items-center">
+            <input type="time" value={time} onChange={e => setTime(e.target.value)}
+              className="border rounded-lg px-3 py-2.5 w-28 text-sm" />
+            <button type="button" onClick={() => { setDate(new Date().toISOString().split('T')[0]); setTime(new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })); }}
+              className="px-2 py-2.5 bg-blue-500 text-white text-xs rounded-lg whitespace-nowrap font-medium hover:bg-blue-600">Now</button>
+          </div>
         </div>
       </div>
 
