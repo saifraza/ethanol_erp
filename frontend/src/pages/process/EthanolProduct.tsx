@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Fuel, Plus, Trash2, Save, ChevronDown, ChevronUp, Eye, X, Share2, Loader2 } from 'lucide-react';
+import { Fuel, Save, ChevronDown, ChevronUp, Eye, X, Share2, Loader2, TrendingUp, Droplets, Gauge } from 'lucide-react';
 import api from '../../services/api';
 
 const TANKS = [
@@ -12,12 +12,8 @@ const TANKS = [
   { key: 'disp', label: 'Issue Tank', group: 'Issue Tank (Dispatch)', color: 'red' },
 ];
 
-interface TruckForm { vehicleNo: string; partyName: string; destination: string; quantityBL: string; strength: string; remarks: string; }
-const emptyTruck = (): TruckForm => ({ vehicleNo: '', partyName: '', destination: '', quantityBL: '', strength: '', remarks: '' });
-
 export default function EthanolProduct() {
   const [form, setForm] = useState<any>({});
-  const [trucks, setTrucks] = useState<TruckForm[]>([emptyTruck()]);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [prev, setPrev] = useState<any>(null);
   const [saving, setSaving] = useState(false);
@@ -28,13 +24,22 @@ export default function EthanolProduct() {
   const [remarks, setRemarks] = useState('');
   const [showPreview, setShowPreview] = useState(false);
   const [calData, setCalData] = useState<Record<string, Record<string, number>>>({});
+  const [todayDispatch, setTodayDispatch] = useState(0);
+  const [fuelOpen, setFuelOpen] = useState(false);
+  const [lastEntry, setLastEntry] = useState<any>(null);
 
-  // Load calibration data once
   useEffect(() => {
     api.get('/calibration').then(r => setCalData(r.data)).catch(e => console.error('Cal load error:', e));
   }, []);
 
-  // Lookup volume from calibration: dip in cm (e.g. 45.7) -> litres
+  // Load today's standalone dispatch total
+  useEffect(() => {
+    api.get(`/dispatch?date=${date}`).then(r => {
+      const total = (r.data.dispatches || []).reduce((s: number, d: any) => s + (d.quantityBL || 0), 0);
+      setTodayDispatch(total);
+    }).catch(() => {});
+  }, [date]);
+
   const calLookup = (tankKey: string, dipCm: number | null): number | null => {
     if (dipCm === null || dipCm === undefined || isNaN(dipCm)) return null;
     const tankCal = calData[tankKey];
@@ -47,7 +52,6 @@ export default function EthanolProduct() {
   const u = (key: string, val: any) => setForm((f: any) => ({ ...f, [key]: val }));
   const numU = (key: string, raw: string) => u(key, raw === '' ? null : parseFloat(raw));
 
-  // When DIP changes, auto-set volume from calibration
   const handleDipChange = (tankKey: string, raw: string) => {
     const dipVal = raw === '' ? null : parseFloat(raw);
     setForm((f: any) => {
@@ -62,7 +66,6 @@ export default function EthanolProduct() {
     });
   };
 
-  // Toggle empty tank — sets volume to 0, clears DIP
   const toggleEmpty = (tankKey: string) => {
     setForm((f: any) => {
       const isEmpty = !f[`${tankKey}Empty`];
@@ -70,20 +73,12 @@ export default function EthanolProduct() {
     });
   };
 
-  // Truck helpers
-  const updateTruck = (idx: number, field: string, val: string) => {
-    setTrucks(ts => ts.map((t, i) => i === idx ? { ...t, [field]: val } : t));
-  };
-  const addTruck = () => setTrucks(ts => [...ts, emptyTruck()]);
-  const removeTruck = (idx: number) => setTrucks(ts => ts.length > 1 ? ts.filter((_, i) => i !== idx) : ts);
-
   // Calculations
   const totalStock = TANKS.reduce((s, t) => s + (form[`${t.key}Volume`] || 0), 0);
   const wSum = TANKS.reduce((s, t) => s + (form[`${t.key}Volume`] || 0) * (form[`${t.key}Strength`] || 0), 0);
   const avgStrength = totalStock > 0 ? wSum / totalStock : 0;
-  const totalDispatch = trucks.reduce((s, t) => s + (parseFloat(t.quantityBL) || 0), 0);
   const prevStock = prev ? TANKS.reduce((s, t) => s + (prev[`${t.key}Volume`] || 0), 0) : 0;
-  const productionBL = totalStock - prevStock + totalDispatch;
+  const productionBL = totalStock - prevStock + todayDispatch;
   const productionAL = productionBL * avgStrength / 100;
 
   useEffect(() => { loadLatest(); loadEntries(); }, []);
@@ -99,6 +94,7 @@ export default function EthanolProduct() {
     try {
       const res = await api.get('/ethanol-product');
       setEntries(res.data.entries);
+      if (res.data.entries?.length > 0) setLastEntry(res.data.entries[0]);
     } catch (e) { console.error(e); }
   }
 
@@ -106,17 +102,12 @@ export default function EthanolProduct() {
     if (!date) { setMsg({ type: 'err', text: 'Date is required' }); return; }
     setSaving(true); setMsg(null);
     try {
-      const payload = {
-        date,
-        ...form,
-        remarks,
-        trucks: trucks.filter(t => t.vehicleNo || parseFloat(t.quantityBL)),
-      };
+      const payload = { date, ...form, remarks, trucks: [] };
       if (editId) await api.put(`/ethanol-product/${editId}`, payload);
       else await api.post('/ethanol-product', payload);
       const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       setMsg({ type: 'ok', text: `Saved at ${now}` });
-      setForm({}); setTrucks([emptyTruck()]); setRemarks(''); setEditId(null);
+      setForm({}); setRemarks(''); setEditId(null);
       await loadLatest(); await loadEntries();
     } catch (err: any) { setMsg({ type: 'err', text: err.response?.data?.error || 'Save failed' }); }
     setSaving(false);
@@ -133,21 +124,12 @@ export default function EthanolProduct() {
     f.rsLevel = e.rsLevel; f.hfoLevel = e.hfoLevel; f.lfoLevel = e.lfoLevel;
     setForm(f);
     setRemarks(e.remarks || '');
-    setTrucks(e.trucks?.length > 0
-      ? e.trucks.map((t: any) => ({
-          vehicleNo: t.vehicleNo || '', partyName: t.partyName || '',
-          destination: t.destination || '', quantityBL: String(t.quantityBL || ''),
-          strength: t.strength != null ? String(t.strength) : '', remarks: t.remarks || '',
-        }))
-      : [emptyTruck()]
-    );
     setDate(e.date.split('T')[0]);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   const fmtDt = (d: string) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '';
 
-  // Group tanks
   const groups = [
     { label: 'Receivers', tanks: TANKS.filter(t => t.group === 'Receivers'), color: 'blue' },
     { label: 'Bulk Storage', tanks: TANKS.filter(t => t.group === 'Bulk Storage'), color: 'orange' },
@@ -160,10 +142,41 @@ export default function EthanolProduct() {
       <div className="flex items-center gap-3 mb-5">
         <div className="p-2 bg-purple-100 rounded-lg"><Fuel size={24} className="text-purple-600" /></div>
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Ethanol Product & Dispatch</h1>
-          <p className="text-xs text-gray-500">Tank levels, truck dispatch, production calculation</p>
+          <h1 className="text-xl font-bold text-gray-900">Ethanol Stock</h1>
+          <p className="text-xs text-gray-500">Daily tank readings & production calculation (9:00 – 11:30 AM)</p>
         </div>
       </div>
+
+      {/* Dashboard Summary */}
+      {lastEntry && (
+        <div className="bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-xl p-4 mb-5">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-semibold text-purple-600 uppercase">Last Saved — {fmtDt(lastEntry.date)}</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-white/80 rounded-lg p-2.5 text-center">
+              <Droplets size={16} className="mx-auto text-blue-500 mb-1" />
+              <div className="text-lg font-bold text-blue-700">{lastEntry.totalStock?.toFixed(0) ?? '—'}</div>
+              <div className="text-[10px] text-gray-400">Stock (BL)</div>
+            </div>
+            <div className="bg-white/80 rounded-lg p-2.5 text-center">
+              <Gauge size={16} className="mx-auto text-purple-500 mb-1" />
+              <div className="text-lg font-bold text-purple-700">{lastEntry.avgStrength?.toFixed(1) ?? '—'}%</div>
+              <div className="text-[10px] text-gray-400">Strength</div>
+            </div>
+            <div className="bg-white/80 rounded-lg p-2.5 text-center">
+              <TrendingUp size={16} className="mx-auto text-green-500 mb-1" />
+              <div className="text-lg font-bold text-green-700">{lastEntry.productionBL?.toFixed(0) ?? '—'}</div>
+              <div className="text-[10px] text-gray-400">Prod BL</div>
+            </div>
+            <div className="bg-white/80 rounded-lg p-2.5 text-center">
+              <TrendingUp size={16} className="mx-auto text-orange-500 mb-1" />
+              <div className="text-lg font-bold text-orange-600">{lastEntry.productionAL?.toFixed(0) ?? '—'}</div>
+              <div className="text-[10px] text-gray-400">Prod AL</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Date */}
       <div className="mb-5">
@@ -252,8 +265,8 @@ export default function EthanolProduct() {
             <div className="text-lg font-bold text-purple-700">{avgStrength.toFixed(2)}%</div>
           </div>
           <div>
-            <div className="text-[10px] text-gray-400 uppercase">Dispatch</div>
-            <div className="text-lg font-bold text-red-600">{totalDispatch.toFixed(1)}</div>
+            <div className="text-[10px] text-gray-400 uppercase">Today's Dispatch</div>
+            <div className="text-lg font-bold text-red-600">{todayDispatch.toFixed(1)}</div>
           </div>
         </div>
         <div className="border-t mt-3 pt-3 grid grid-cols-2 gap-3 text-center">
@@ -268,10 +281,14 @@ export default function EthanolProduct() {
         </div>
       </div>
 
-      {/* RS / HFO / LFO */}
+      {/* RS / HFO / LFO — collapsible, minimized by default */}
       <div className="mb-5">
-        <h3 className="text-sm font-semibold text-gray-600 mb-2 uppercase tracking-wide">RS / HFO / LFO Tanks (15 M3 each)</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <button onClick={() => setFuelOpen(!fuelOpen)}
+          className="flex items-center justify-between w-full text-sm font-semibold text-gray-600 uppercase tracking-wide mb-2 hover:text-gray-800">
+          <span>RS / HFO / LFO Tanks (15 M3 each)</span>
+          {fuelOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </button>
+        {fuelOpen && <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {[
             { key: 'rsLevel', label: 'RS Tank', color: 'indigo' },
             { key: 'hfoLevel', label: 'HFO Tank', color: 'amber' },
@@ -301,60 +318,7 @@ export default function EthanolProduct() {
               </div>
             );
           })}
-        </div>
-      </div>
-
-      {/* Truck Dispatch */}
-      <div className="mb-5">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide">Truck Dispatch</h3>
-          <button onClick={addTruck} className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800">
-            <Plus size={14} /> Add Truck
-          </button>
-        </div>
-        <div className="space-y-3">
-          {trucks.map((t, idx) => (
-            <div key={idx} className="border rounded-lg p-3 bg-white relative">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold text-gray-500">Truck #{idx + 1}</span>
-                {trucks.length > 1 && (
-                  <button onClick={() => removeTruck(idx)} className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
-                )}
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                <input type="text" placeholder="Vehicle No" value={t.vehicleNo}
-                  onChange={e => updateTruck(idx, 'vehicleNo', e.target.value)}
-                  className="border rounded px-2 py-1.5 text-sm" />
-                <input type="text" placeholder="Party Name" value={t.partyName}
-                  onChange={e => updateTruck(idx, 'partyName', e.target.value)}
-                  className="border rounded px-2 py-1.5 text-sm" />
-                <input type="text" placeholder="Destination" value={t.destination}
-                  onChange={e => updateTruck(idx, 'destination', e.target.value)}
-                  className="border rounded px-2 py-1.5 text-sm" />
-                <div className="flex items-center gap-1">
-                  <input type="number" step="any" placeholder="Qty (BL)" value={t.quantityBL}
-                    onChange={e => updateTruck(idx, 'quantityBL', e.target.value)}
-                    className="border rounded px-2 py-1.5 text-sm flex-1" />
-                  <span className="text-xs text-gray-400">BL</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <input type="number" step="any" placeholder="Strength %" value={t.strength}
-                    onChange={e => updateTruck(idx, 'strength', e.target.value)}
-                    className="border rounded px-2 py-1.5 text-sm flex-1" />
-                  <span className="text-xs text-gray-400">%</span>
-                </div>
-                <input type="text" placeholder="Remarks" value={t.remarks}
-                  onChange={e => updateTruck(idx, 'remarks', e.target.value)}
-                  className="border rounded px-2 py-1.5 text-sm" />
-              </div>
-            </div>
-          ))}
-        </div>
-        {totalDispatch > 0 && (
-          <div className="text-right mt-2 text-sm font-semibold text-red-600">
-            Total Dispatch: {totalDispatch.toFixed(2)} BL ({trucks.filter(t => parseFloat(t.quantityBL)).length} trucks)
-          </div>
-        )}
+        </div>}
       </div>
 
       {/* Remarks */}
@@ -371,7 +335,7 @@ export default function EthanolProduct() {
         </div>
         <div className="flex gap-2">
           {editId && (
-            <button onClick={() => { setEditId(null); setForm({}); setTrucks([emptyTruck()]); setRemarks(''); }}
+            <button onClick={() => { setEditId(null); setForm({}); setRemarks(''); }}
               className="px-4 py-2 text-sm border rounded-lg text-gray-600 hover:bg-gray-50">Cancel</button>
           )}
           <button onClick={() => setShowPreview(true)}
@@ -386,18 +350,33 @@ export default function EthanolProduct() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowPreview(false)}>
           <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="bg-purple-600 text-white p-4 rounded-t-xl flex items-center justify-between">
-              <h3 className="font-bold text-lg">Ethanol Product Report</h3>
+              <h3 className="font-bold text-lg">Ethanol Stock Report</h3>
               <button onClick={() => setShowPreview(false)}><X size={20} /></button>
             </div>
             <div className="p-4 space-y-3 text-sm">
               <div className="flex justify-between"><span className="text-gray-500">Date</span><span className="font-medium">{date}</span></div>
+              <div className="border-t pt-2">
+                <h4 className="font-semibold text-purple-700 mb-1">Tank Readings</h4>
+                {TANKS.map(t => {
+                  const vol = form[`${t.key}Volume`] || 0;
+                  const str = form[`${t.key}Strength`] || 0;
+                  const dip = form[`${t.key}Dip`];
+                  const empty = form[`${t.key}Empty`];
+                  return (
+                    <div key={t.key} className="flex justify-between text-xs py-0.5">
+                      <span>{t.label}</span>
+                      <span className="font-medium">{empty ? 'Empty' : `DIP ${dip ?? '-'} → ${vol.toFixed(0)} L @ ${str.toFixed(1)}%`}</span>
+                    </div>
+                  );
+                })}
+              </div>
               <div className="border-t pt-2">
                 <h4 className="font-semibold text-purple-700 mb-1">Stock Summary</h4>
                 <div className="grid grid-cols-2 gap-1">
                   <div>Prev Stock: <b>{prevStock.toFixed(1)} BL</b></div>
                   <div>Current Stock: <b>{totalStock.toFixed(1)} BL</b></div>
                   <div>Avg Strength: <b>{avgStrength.toFixed(2)}%</b></div>
-                  <div>Dispatch: <b>{totalDispatch.toFixed(1)} BL</b></div>
+                  <div>Today Dispatch: <b>{todayDispatch.toFixed(1)} BL</b></div>
                 </div>
               </div>
               <div className="border-t pt-2">
@@ -407,22 +386,15 @@ export default function EthanolProduct() {
                   <div>Production AL: <b>{productionAL.toFixed(2)}</b></div>
                 </div>
               </div>
-              {trucks.some(t => t.vehicleNo || parseFloat(t.quantityBL)) && (
-                <div className="border-t pt-2">
-                  <h4 className="font-semibold text-red-600 mb-1">Dispatch ({trucks.filter(t => t.vehicleNo || parseFloat(t.quantityBL)).length} trucks)</h4>
-                  {trucks.filter(t => t.vehicleNo || parseFloat(t.quantityBL)).map((t, i) => (
-                    <div key={i} className="text-xs bg-gray-50 rounded p-1.5 mb-1">
-                      {t.vehicleNo} → {t.destination || '—'} | {t.quantityBL} BL @ {t.strength || '—'}% | {t.partyName}
-                    </div>
-                  ))}
-                </div>
-              )}
               {remarks && <div className="border-t pt-2"><span className="text-gray-500">Remarks:</span> {remarks}</div>}
             </div>
             <div className="p-4 border-t flex gap-2">
               <button onClick={() => {
-                const truckLines = trucks.filter(t => t.vehicleNo || parseFloat(t.quantityBL)).map((t, i) => `${i+1}. ${t.vehicleNo} → ${t.destination || '-'} | ${t.quantityBL} BL @ ${t.strength || '-'}%25`).join('%0A');
-                const text = `*Ethanol Product Report*%0A📅 ${date}%0A%0AStock: ${totalStock.toFixed(1)} BL (${avgStrength.toFixed(2)}%25)%0ADispatch: ${totalDispatch.toFixed(1)} BL%0AProd BL: ${productionBL.toFixed(2)}%0AProd AL: ${productionAL.toFixed(2)}${truckLines ? '%0A%0A*Trucks*%0A' + truckLines : ''}${remarks ? '%0A%0ARemarks: ' + remarks : ''}`;
+                const tankLines = TANKS.map(t => {
+                  if (form[`${t.key}Empty`]) return `${t.label}: Empty`;
+                  return `${t.label}: ${(form[`${t.key}Volume`] || 0).toFixed(0)}L @ ${(form[`${t.key}Strength`] || 0).toFixed(1)}%25`;
+                }).join('%0A');
+                const text = `*Ethanol Stock Report*%0A📅 ${date}%0A%0A${tankLines}%0A%0AStock: ${totalStock.toFixed(1)} BL (${avgStrength.toFixed(2)}%25)%0ADispatch: ${todayDispatch.toFixed(1)} BL%0AProd BL: ${productionBL.toFixed(2)}%0AProd AL: ${productionAL.toFixed(2)}${remarks ? '%0A%0ARemarks: ' + remarks : ''}`;
                 window.open(`https://wa.me/?text=${text}`, '_blank');
               }} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
                 <Share2 size={16} /> WhatsApp
@@ -450,9 +422,7 @@ export default function EthanolProduct() {
                 <div className="flex-1">
                   <div className="text-sm font-medium">{fmtDt(e.date)}</div>
                   <div className="text-xs text-gray-500">
-                    Stock: {e.totalStock?.toFixed(1)} BL | Dispatch: {e.totalDispatch?.toFixed(1)} BL |
-                    Prod: {e.productionBL?.toFixed(1)} BL ({e.productionAL?.toFixed(1)} AL) |
-                    Trucks: {e.trucks?.length || 0}
+                    Stock: {e.totalStock?.toFixed(1)} BL | Prod: {e.productionBL?.toFixed(1)} BL ({e.productionAL?.toFixed(1)} AL)
                   </div>
                 </div>
                 <button onClick={() => editEntry(e)} className="text-xs text-blue-600 hover:underline">Edit</button>

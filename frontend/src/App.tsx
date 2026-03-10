@@ -22,6 +22,7 @@ import DryerMonitor from './pages/process/DryerMonitor';
 import Decanter from './pages/process/Decanter';
 import Evaporation from './pages/process/Evaporation';
 import EthanolProduct from './pages/process/EthanolProduct';
+import EthanolDispatch from './pages/process/EthanolDispatch';
 import WaterUtility from './pages/process/WaterUtility';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -52,6 +53,8 @@ export default function App() {
         <Route path="process/dryer" element={<DryerMonitor />} />
         <Route path="process/decanter" element={<Decanter />} />
         <Route path="process/ethanol-product" element={<EthanolProduct />} />
+        <Route path="process/ethanol-stock" element={<EthanolProduct />} />
+        <Route path="process/ethanol-dispatch" element={<EthanolDispatch />} />
         <Route path="process/water-utility" element={<WaterUtility />} />
         <Route path="daily-entry" element={<DailyEntry />} />
         <Route path="tank-dip" element={<TankDip />} />

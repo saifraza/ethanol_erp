@@ -5,7 +5,7 @@ import api from '../services/api';
 import {
   LayoutDashboard, Wheat, CogIcon, Droplets, Beaker, Flame, Wind,
   Fuel, Waves, Settings, Users, LogOut, ChevronDown, ChevronRight,
-  ClipboardList, BarChart3, FileText, WifiOff, Menu, X
+  ClipboardList, BarChart3, FileText, WifiOff, Menu, X, Truck
 } from 'lucide-react';
 
 const processNav = [
@@ -20,7 +20,8 @@ const processNav = [
   { to: '/process/ddgs', label: 'DDGS Production', icon: Wind, moduleKey: 'ddgs' },
   { to: '/process/dryer', label: 'Dryer', icon: Flame, moduleKey: 'dryer' },
   { to: '/process/decanter', label: 'Decanter', icon: Droplets, moduleKey: 'decanter' },
-  { to: '/process/ethanol-product', label: 'Ethanol Product', icon: Fuel, moduleKey: 'ethanol-product' },
+  { to: '/process/ethanol-stock', label: 'Ethanol Stock', icon: Fuel, moduleKey: 'ethanol-product' },
+  { to: '/process/ethanol-dispatch', label: 'Ethanol Dispatch', icon: Truck, moduleKey: 'ethanol-product' },
   { to: '/process/water-utility', label: 'Water Utility', icon: Waves, moduleKey: 'water-utility' },
 ];
 

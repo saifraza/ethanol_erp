@@ -22,6 +22,7 @@ import ddgsRoutes from './routes/ddgs';
 import dryerRoutes from './routes/dryer';
 import decanterRoutes from './routes/decanter';
 import calibrationRoutes from './routes/calibration';
+import dispatchRoutes from './routes/dispatch';
 
 const app = express();
 
@@ -49,6 +50,10 @@ app.use('/api/ddgs', ddgsRoutes);
 app.use('/api/dryer', dryerRoutes);
 app.use('/api/decanter', decanterRoutes);
 app.use('/api/calibration', calibrationRoutes);
+app.use('/api/dispatch', dispatchRoutes);
+
+// Serve uploaded files
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
