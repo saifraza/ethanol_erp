@@ -17,14 +17,23 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB max
 
-// GET /api/dispatch — list today's dispatches (or by date query)
+// GET /api/dispatch — list standalone dispatches
+// ?date=YYYY-MM-DD  — single date (default: today)
+// ?from=ISO&to=ISO   — date range (for production calc: dispatches since last entry)
 router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const dateStr = req.query.date as string || new Date().toISOString().split('T')[0];
-    const start = new Date(dateStr);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(dateStr);
-    end.setHours(23, 59, 59, 999);
+    let start: Date, end: Date;
+    if (req.query.from) {
+      start = new Date(req.query.from as string);
+      end = req.query.to ? new Date(req.query.to as string) : new Date();
+      end.setHours(23, 59, 59, 999);
+    } else {
+      const dateStr = req.query.date as string || new Date().toISOString().split('T')[0];
+      start = new Date(dateStr);
+      start.setHours(0, 0, 0, 0);
+      end = new Date(dateStr);
+      end.setHours(23, 59, 59, 999);
+    }
 
     const dispatches = await prisma.dispatchTruck.findMany({
       where: { date: { gte: start, lte: end }, entryId: null },

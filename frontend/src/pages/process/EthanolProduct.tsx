@@ -34,15 +34,19 @@ export default function EthanolProduct() {
     api.get('/calibration').then(r => setCalData(r.data)).catch(e => console.error('Cal load error:', e));
   }, []);
 
-  // Load today's standalone dispatch total + list
+  // Load standalone dispatches since prev entry (matches backend production calc)
   useEffect(() => {
-    api.get(`/dispatch?date=${date}`).then(r => {
+    const fromDate = prev?.date ? new Date(prev.date).toISOString() : null;
+    const url = fromDate
+      ? `/dispatch?from=${fromDate}&to=${new Date(date + 'T23:59:59').toISOString()}`
+      : `/dispatch?date=${date}`;
+    api.get(url).then(r => {
       const dispatches = r.data.dispatches || [];
       const total = dispatches.reduce((s: number, d: any) => s + (d.quantityBL || 0), 0);
       setTodayDispatch(total);
       setDispatchList(dispatches);
     }).catch(() => {});
-  }, [date]);
+  }, [date, prev]);
 
   const calLookup = (tankKey: string, dipCm: number | null): number | null => {
     if (dipCm === null || dipCm === undefined || isNaN(dipCm)) return null;
