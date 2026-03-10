@@ -35,7 +35,7 @@ export default function EthanolProduct() {
     api.get('/calibration').then(r => setCalData(r.data)).catch(e => console.error('Cal load error:', e));
   }, []);
 
-  // Load standalone dispatches since prev entry (matches backend production calc)
+  // Load standalone dispatches since prev entry (matches backend production calc for new entry form)
   useEffect(() => {
     const fromDate = prev?.date ? new Date(prev.date).toISOString() : null;
     const url = fromDate
@@ -48,6 +48,20 @@ export default function EthanolProduct() {
       setDispatchList(dispatches);
     }).catch(() => {});
   }, [date, prev]);
+
+  // Load NEW dispatches since last saved entry (for dashboard current stock)
+  const [newDispatch, setNewDispatch] = useState(0);
+  const [newDispatchList, setNewDispatchList] = useState<any[]>([]);
+  useEffect(() => {
+    if (!lastEntry?.date) return;
+    const fromDate = new Date(lastEntry.date).toISOString();
+    api.get(`/dispatch?from=${fromDate}&to=${new Date().toISOString()}`).then(r => {
+      const dispatches = r.data.dispatches || [];
+      const total = dispatches.reduce((s: number, d: any) => s + (d.quantityBL || 0), 0);
+      setNewDispatch(total);
+      setNewDispatchList(dispatches);
+    }).catch(() => {});
+  }, [lastEntry]);
 
   const calLookup = (tankKey: string, dipCm: number | null): number | null => {
     if (dipCm === null || dipCm === undefined || isNaN(dipCm)) return null;
@@ -207,21 +221,21 @@ export default function EthanolProduct() {
             </div>
             <div className="bg-white/80 rounded-lg p-2.5 text-center">
               <Truck size={16} className="mx-auto text-red-500 mb-1" />
-              <div className="text-lg font-bold text-red-600">{todayDispatch > 0 ? todayDispatch.toFixed(0) : '0'}</div>
-              <div className="text-[10px] text-gray-400">Dispatch ({dispatchList.length})</div>
+              <div className="text-lg font-bold text-red-600">{lastEntry.totalDispatch?.toFixed(0) ?? '0'}</div>
+              <div className="text-[10px] text-gray-400">Dispatch (in Prod)</div>
             </div>
           </div>
-          {/* Current stock after dispatch */}
-          {todayDispatch > 0 && (
-            <div className="mt-2 bg-white/60 rounded-lg p-2 text-center border border-blue-100">
-              <div className="text-[10px] text-gray-400 uppercase">Current Stock (After Dispatch)</div>
-              <div className="text-xl font-bold text-blue-800">{((lastEntry.totalStock || 0) - todayDispatch).toFixed(0)} BL</div>
-            </div>
-          )}
-          {/* Dispatch truck details */}
-          {dispatchList.length > 0 && (
+          {/* Current stock = last reading minus any new dispatches since */}
+          <div className="mt-2 bg-white/60 rounded-lg p-2 text-center border border-blue-100">
+            <div className="text-[10px] text-gray-400 uppercase">Current Stock</div>
+            <div className="text-xl font-bold text-blue-800">{((lastEntry.totalStock || 0) - newDispatch).toFixed(0)} BL</div>
+            {newDispatch > 0 && <div className="text-[10px] text-gray-400">({lastEntry.totalStock?.toFixed(0)} − {newDispatch.toFixed(0)} dispatched since)</div>}
+          </div>
+          {/* New dispatches since last entry */}
+          {newDispatchList.length > 0 && (
             <div className="mt-2 space-y-1">
-              {dispatchList.map((d: any, i: number) => (
+              <div className="text-[10px] text-gray-400 uppercase px-1">Dispatched since last reading</div>
+              {newDispatchList.map((d: any, i: number) => (
                 <div key={d.id} className="flex items-center justify-between text-xs bg-white/60 rounded px-2 py-1">
                   <span className="text-gray-600">
                     <span className="font-medium text-gray-800">{d.vehicleNo || `Truck ${i+1}`}</span>
