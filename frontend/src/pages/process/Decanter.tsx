@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Filter, Save, Loader2, ChevronDown, ChevronUp, Trash2, Eye, X, Share2 } from 'lucide-react';
 import api from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 interface DecForm {
   date: string; entryTime: string;
@@ -16,6 +17,8 @@ const empty = (): DecForm => {
 };
 
 export default function Decanter() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
   const [form, setForm] = useState<DecForm>(empty());
   const [entries, setEntries] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
@@ -283,7 +286,7 @@ export default function Decanter() {
         {showHistory && (
           <div className="overflow-x-auto max-h-64 overflow-y-auto">
             <table className="w-full text-xs"><thead className="bg-gray-50 sticky top-0"><tr>
-              {['Date', 'Time', 'Total Feed', 'Total WC', 'Avg TS Gr', ''].map(h =>
+              {['Date', 'Time', 'Total Feed', 'Total WC', 'Avg TS Gr', ...(isAdmin ? [''] : [])].map(h =>
                 <th key={h} className="px-2 py-1.5 text-left font-medium text-gray-600">{h}</th>)}
             </tr></thead><tbody>
               {entries.slice(0, 50).map(e => (
@@ -293,7 +296,7 @@ export default function Decanter() {
                   <td className="px-2 py-1 font-medium text-cyan-700">{entryTotalFeed(e).toFixed(1)}</td>
                   <td className="px-2 py-1">{entryTotalWC(e) > 0 ? entryTotalWC(e).toFixed(1) : '—'}</td>
                   <td className="px-2 py-1">{entryAvgTS(e) > 0 ? entryAvgTS(e).toFixed(3) : '—'}</td>
-                  <td className="px-2 py-1"><button onClick={() => api.delete(`/decanter/${e.id}`).then(load)} className="text-red-400 hover:text-red-600"><Trash2 size={12} /></button></td>
+                  {isAdmin && <td className="px-2 py-1"><button onClick={() => api.delete(`/decanter/${e.id}`).then(load)} className="text-red-400 hover:text-red-600"><Trash2 size={12} /></button></td>}
                 </tr>
               ))}
             </tbody></table>
