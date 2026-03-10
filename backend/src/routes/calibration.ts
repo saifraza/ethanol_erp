@@ -1,18 +1,9 @@
 import { Router, Request, Response } from 'express';
-import fs from 'fs';
-import path from 'path';
+import calibrationData from '../data/calibrations.json';
 
 const router = Router();
 
-// Load calibration data once at startup
-let calibrationData: Record<string, Record<string, number>> = {};
-try {
-  const dataPath = path.join(__dirname, '..', 'data', 'calibrations.json');
-  calibrationData = JSON.parse(fs.readFileSync(dataPath, 'utf-8'));
-  console.log(`Calibration data loaded: ${Object.keys(calibrationData).length} tanks`);
-} catch (err) {
-  console.error('Failed to load calibration data:', err);
-}
+console.log(`Calibration data loaded: ${Object.keys(calibrationData).length} tanks`);
 
 // GET /api/calibration — returns all calibration data
 router.get('/', (req: Request, res: Response) => {
@@ -23,7 +14,7 @@ router.get('/', (req: Request, res: Response) => {
 // dip is in cm with decimal, e.g. 45.7
 router.get('/:tank/:dip', (req: Request, res: Response) => {
   const { tank, dip } = req.params;
-  const tankData = calibrationData[tank];
+  const tankData = (calibrationData as any)[tank];
   if (!tankData) {
     res.status(404).json({ error: `Tank ${tank} not found` });
     return;
