@@ -119,4 +119,35 @@ router.patch('/:id/deactivate', authenticate, authorize('ADMIN'), async (req: Au
   }
 });
 
+// DELETE /api/users/:id
+router.delete('/:id', authenticate, authorize('ADMIN'), async (req: AuthRequest, res: Response) => {
+  try {
+    // Don't allow deleting yourself
+    if (req.params.id === req.user?.id) {
+      res.status(400).json({ error: 'Cannot delete yourself' });
+      return;
+    }
+    await prisma.user.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/users/:id/password — change password
+router.put('/:id/password', authenticate, authorize('ADMIN'), async (req: AuthRequest, res: Response) => {
+  try {
+    const { password } = req.body;
+    if (!password || password.length < 4) {
+      res.status(400).json({ error: 'Password must be at least 4 characters' });
+      return;
+    }
+    const hash = await bcrypt.hash(password, 10);
+    await prisma.user.update({ where: { id: req.params.id }, data: { password: hash } });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;
