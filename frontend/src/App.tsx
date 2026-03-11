@@ -4,6 +4,7 @@ import { useAuth } from './context/AuthContext';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import { MODULE_DEFS } from './config/modules';
 import DailyEntry from './pages/DailyEntry';
 import TankDip from './pages/TankDip';
 import DailyLog from './pages/DailyLog';
@@ -32,6 +33,16 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return user ? <>{children}</> : <Navigate to="/login" />;
 }
 
+function HomeRedirect() {
+  const { user } = useAuth();
+  if (user?.role === 'ADMIN') return <Dashboard />;
+  // Non-admin: redirect to first allowed module
+  const allowed = user?.allowedModules?.split(',') || [];
+  const firstModule = MODULE_DEFS.find(m => allowed.includes(m.key));
+  if (firstModule) return <Navigate to={firstModule.to} replace />;
+  return <div className="p-8 text-center text-gray-500">No modules assigned. Contact admin.</div>;
+}
+
 export default function App() {
   const { user, loading } = useAuth();
 
@@ -41,7 +52,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={user ? <Navigate to="/" /> : <Login />} />
       <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-        <Route index element={<Dashboard />} />
+        <Route index element={<HomeRedirect />} />
         <Route path="process/raw-material" element={<RawMaterial />} />
         <Route path="process/grain-stock" element={<GrainUnloading />} />
         <Route path="process/grain-unloading" element={<GrainUnloadingTrucks />} />

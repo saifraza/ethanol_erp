@@ -342,7 +342,7 @@ export default function GrainUnloadingTrucks() {
                 </div>
                 {t.moisture != null && (
                   <div className="text-[11px] text-gray-400 mt-0.5">
-                    M: {t.moisture}% {t.starchPercent != null && `| S: ${t.starchPercent}%`} {t.damagedPercent != null && `| D: ${t.damagedPercent}%`}
+                    M: {t.moisture}% {t.starchPercent != null && `| S: ${t.starchPercent}%`} {t.damagedPercent != null && `| D: ${t.damagedPercent}%`} {t.foreignMatter != null && `| FM: ${t.foreignMatter}%`}
                   </div>
                 )}
                 {t.quarantineReason && <div className="text-[11px] text-orange-600 mt-0.5">Reason: {t.quarantineReason}</div>}
@@ -351,7 +351,7 @@ export default function GrainUnloadingTrucks() {
               <div className="flex items-center gap-2">
                 <button onClick={() => {
                   const tSilo = t.weightNet - (t.quarantineWeight || 0);
-                  const text = `*Grain Truck*\n${t.uidRst ? `UID/RST: ${t.uidRst}\n` : ''}Vehicle: ${t.vehicleNo}\n${t.supplier ? `Supplier: ${t.supplier}\n` : ''}Gross: ${t.weightGross}T | Tare: ${t.weightTare}T | Net: ${t.weightNet.toFixed(1)}T${t.bags > 0 ? ` | Bags: ${t.bags}` : ''}\nTo Silo: ${tSilo.toFixed(1)}T${t.quarantineWeight > 0 ? ` | Quarantine: ${t.quarantineWeight.toFixed(1)}T` : ''}${t.moisture != null ? `\nMoisture: ${t.moisture}%` : ''}${t.remarks ? `\nRemarks: ${t.remarks}` : ''}`;
+                  const text = `*Grain Truck*\n${t.uidRst ? `UID/RST: ${t.uidRst}\n` : ''}Vehicle: ${t.vehicleNo}\n${t.supplier ? `Supplier: ${t.supplier}\n` : ''}Gross: ${t.weightGross}T | Tare: ${t.weightTare}T | Net: ${t.weightNet.toFixed(1)}T${t.bags > 0 ? ` | Bags: ${t.bags}` : ''}\nTo Silo: ${tSilo.toFixed(1)}T${t.quarantineWeight > 0 ? ` | Quarantine: ${t.quarantineWeight.toFixed(1)}T` : ''}${t.moisture != null ? `\nM: ${t.moisture}%` : ''}${t.starchPercent != null ? ` | S: ${t.starchPercent}%` : ''}${t.damagedPercent != null ? ` | D: ${t.damagedPercent}%` : ''}${t.foreignMatter != null ? ` | FM: ${t.foreignMatter}%` : ''}${t.quarantineReason ? `\nReason: ${t.quarantineReason}` : ''}${t.remarks ? `\nRemarks: ${t.remarks}` : ''}`;
                   if (navigator.share) { navigator.share({ text }).catch(() => { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank'); }); }
                   else { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank'); }
                 }} className="text-green-500 hover:text-green-700"><Share2 size={14} /></button>
