@@ -24,6 +24,7 @@ import decanterRoutes from './routes/decanter';
 import calibrationRoutes from './routes/calibration';
 import dispatchRoutes from './routes/dispatch';
 import grainTruckRoutes from './routes/grainTruck';
+import labSampleRoutes from './routes/labSample';
 
 const app = express();
 
@@ -53,6 +54,7 @@ app.use('/api/decanter', decanterRoutes);
 app.use('/api/calibration', calibrationRoutes);
 app.use('/api/dispatch', dispatchRoutes);
 app.use('/api/grain-truck', grainTruckRoutes);
+app.use('/api/lab-sample', labSampleRoutes);
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));

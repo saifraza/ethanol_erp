@@ -26,6 +26,7 @@ import Evaporation from './pages/process/Evaporation';
 import EthanolProduct from './pages/process/EthanolProduct';
 import EthanolDispatch from './pages/process/EthanolDispatch';
 import WaterUtility from './pages/process/WaterUtility';
+import LabSampling from './pages/process/LabSampling';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -69,6 +70,7 @@ export default function App() {
         <Route path="process/ethanol-stock" element={<EthanolProduct />} />
         <Route path="process/ethanol-dispatch" element={<EthanolDispatch />} />
         <Route path="process/water-utility" element={<WaterUtility />} />
+        <Route path="process/lab-sampling" element={<LabSampling />} />
         <Route path="daily-entry" element={<DailyEntry />} />
         <Route path="tank-dip" element={<TankDip />} />
         <Route path="log" element={<DailyLog />} />

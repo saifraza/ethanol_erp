@@ -659,6 +659,28 @@ model GrainTruck {
   createdAt       DateTime @default(now())
 }
 
+// ═══════════════════════════════════════════════
+// LAB SAMPLES — linked to trucks via RST number
+// ═══════════════════════════════════════════════
+model LabSample {
+  id              String   @id @default(uuid())
+  rstNumber       String   @unique          // links to GrainTruck.uidRst
+  date            DateTime @default(now())
+  moisture        Float?
+  starchPercent   Float?
+  damagedPercent  Float?
+  foreignMatter   Float?
+  fungus          Float?
+  immature        Float?
+  waterDamaged    Float?
+  tfm             Float?                   // total foreign matter
+  remarks         String?
+  result          String   @default("PENDING")  // PENDING, ACCEPTED, REJECTED
+  userId          String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
 model AuditLog {
   id        String   @id @default(cuid())
   action    String

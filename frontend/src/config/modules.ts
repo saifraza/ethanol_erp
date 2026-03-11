@@ -4,7 +4,7 @@
 import {
   Wheat, CogIcon, Droplets, Beaker, Flame, Wind,
   Fuel, Waves, FileText, ClipboardList, BarChart3,
-  Settings, Users, Truck
+  Settings, Users, Truck, FlaskConical
 } from 'lucide-react';
 
 export interface ModuleDef {

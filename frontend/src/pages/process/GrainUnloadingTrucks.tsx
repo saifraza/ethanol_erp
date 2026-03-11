@@ -39,6 +39,7 @@ export default function GrainUnloadingTrucks() {
   const [bags, setBags] = useState('');
   const [remarks, setRemarks] = useState('');
   const [photo, setPhoto] = useState<File | null>(null);
+  const [labData, setLabData] = useState<any>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { loadTrucks(); }, [date]);
@@ -61,7 +62,23 @@ export default function GrainUnloadingTrucks() {
     setUidRst(''); setVehicleNo(''); setSupplier(''); setWeightGross(''); setWeightTare('');
     setQuarantineWeight(''); setMoisture(''); setStarchPercent(''); setDamagedPercent('');
     setForeignMatter(''); setQuarantineReason(''); setBags(''); setRemarks('');
-    setPhoto(null); setShowForm(false);
+    setPhoto(null); setLabData(null); setShowForm(false);
+  }
+
+  async function fetchLabData(rst: string) {
+    if (!rst.trim()) { setLabData(null); return; }
+    try {
+      const res = await api.get(`/raw-material/by-code/${rst.trim()}`);
+      const d = res.data;
+      setLabData(d);
+      // Auto-fill quality fields from raw material analysis
+      if (d.moisture) setMoisture(String(d.moisture));
+      if (d.starch) setStarchPercent(String(d.starch));
+      if (d.damaged) setDamagedPercent(String(d.damaged));
+      if (d.tfm) setForeignMatter(String(d.tfm));
+    } catch {
+      setLabData(null);
+    }
   }
 
   async function handleSave() {
@@ -187,7 +204,13 @@ export default function GrainUnloadingTrucks() {
             <div>
               <label className="text-[10px] text-gray-400">UID/RST No</label>
               <input type="text" value={uidRst} onChange={e => setUidRst(e.target.value)}
+                onBlur={() => fetchLabData(uidRst)}
                 className="border rounded px-2 py-2 w-full text-sm" placeholder="Tracking number" />
+              {labData && (
+                <div className="text-[10px] text-indigo-600 mt-0.5 flex items-center gap-1">
+                  ✓ Lab data loaded
+                </div>
+              )}
             </div>
             <div>
               <label className="text-[10px] text-gray-400">Vehicle No</label>
@@ -249,27 +272,29 @@ export default function GrainUnloadingTrucks() {
           </div>
 
           {/* Quality */}
-          <div className="text-[10px] text-gray-400 font-medium mb-1 mt-2">QUALITY (optional)</div>
+          <div className="text-[10px] text-gray-400 font-medium mb-1 mt-2">
+            QUALITY {labData ? <span className="text-indigo-500">(auto-filled from lab)</span> : '(optional)'}
+          </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
             <div>
               <label className="text-[10px] text-gray-400">Moisture %</label>
               <input type="number" step="any" value={moisture} onChange={e => setMoisture(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" />
+                className={`border rounded px-2 py-2 w-full text-sm ${labData?.moisture ? 'bg-indigo-50 border-indigo-200' : ''}`} />
             </div>
             <div>
               <label className="text-[10px] text-gray-400">Starch %</label>
               <input type="number" step="any" value={starchPercent} onChange={e => setStarchPercent(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" />
+                className={`border rounded px-2 py-2 w-full text-sm ${labData?.starch ? 'bg-indigo-50 border-indigo-200' : ''}`} />
             </div>
             <div>
               <label className="text-[10px] text-gray-400">Damaged %</label>
               <input type="number" step="any" value={damagedPercent} onChange={e => setDamagedPercent(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" />
+                className={`border rounded px-2 py-2 w-full text-sm ${labData?.damaged ? 'bg-indigo-50 border-indigo-200' : ''}`} />
             </div>
             <div>
               <label className="text-[10px] text-gray-400">Foreign Matter %</label>
               <input type="number" step="any" value={foreignMatter} onChange={e => setForeignMatter(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" />
+                className={`border rounded px-2 py-2 w-full text-sm ${labData?.tfm ? 'bg-indigo-50 border-indigo-200' : ''}`} />
             </div>
           </div>
 
