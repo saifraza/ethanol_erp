@@ -98,6 +98,7 @@ export default function GrainUnloadingTrucks() {
     try {
       await api.delete(`/grain-truck/${id}`);
       await loadTrucks();
+      if (showHistory) loadHistory();
     } catch (e) { console.error(e); }
   }
 
@@ -387,9 +388,13 @@ export default function GrainUnloadingTrucks() {
                   </div>
                   <div className="space-y-1">
                     {items.map((t: any) => (
-                      <div key={t.id} className="text-xs text-gray-600 flex justify-between">
+                      <div key={t.id} className="text-xs text-gray-600 flex justify-between items-center">
                         <span>{t.vehicleNo} → {t.supplier || '-'}{t.quarantine ? ' ⚠️' : ''}</span>
-                        <span className="font-medium">{t.weightNet.toFixed(1)} T</span>
+                        <span className="flex items-center gap-2">
+                          <span className="font-medium">{t.weightNet.toFixed(1)} T</span>
+                          <button onClick={() => handleDelete(t.id)}
+                            className="text-red-300 hover:text-red-600"><Trash2 size={12} /></button>
+                        </span>
                       </div>
                     ))}
                   </div>
