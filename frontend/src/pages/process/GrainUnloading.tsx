@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Wheat, Save, Loader2, ChevronDown, ChevronUp, Trash2, Eye, X, Share2, AlertTriangle } from 'lucide-react';
 import ProcessPage, { InputCard, Field } from './ProcessPage';
 import api from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 // Defaults — overridden by settings API
 const DEF_FERM_CAP = 2300;
@@ -97,6 +98,8 @@ function pctToKl(pct: number | null, cap: number): number {
 }
 
 export default function GrainUnloading() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
   const [form, setForm] = useState<GrainForm>({ ...emptyForm });
   const [defaults, setDefaults] = useState<any>({});
   const [prev, setPrev] = useState<any>(null);
@@ -107,6 +110,8 @@ export default function GrainUnloading() {
   const [editId, setEditId] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [truckSummary, setTruckSummary] = useState<{ totalNet: number; quarantineNet: number; truckCount: number }>({ totalNet: 0, quarantineNet: 0, truckCount: 0 });
+  const [truckList, setTruckList] = useState<any[]>([]);
+  const [showTruckList, setShowTruckList] = useState(false);
   const [plantSettings, setPlantSettings] = useState<any>(null);
 
   const u = (n: string, v: any) => setForm(f => ({ ...f, [n]: v }));
@@ -196,10 +201,14 @@ export default function GrainUnloading() {
 
   async function loadTruckSummary() {
     try {
-      const res = await api.get(`/grain-truck/summary?date=${form.date}`);
-      setTruckSummary(res.data);
+      const [sumRes, listRes] = await Promise.all([
+        api.get(`/grain-truck/summary?date=${form.date}`),
+        api.get(`/grain-truck?date=${form.date}`),
+      ]);
+      setTruckSummary(sumRes.data);
+      setTruckList(listRes.data.trucks || []);
       // Auto-set grainUnloaded from truck totals (non-quarantine)
-      setForm(f => ({ ...f, grainUnloaded: res.data.totalNet || null }));
+      setForm(f => ({ ...f, grainUnloaded: sumRes.data.totalNet || null }));
     } catch (e) { console.error(e); }
   }
 
@@ -345,6 +354,25 @@ export default function GrainUnloading() {
               <div className="font-bold text-lg text-orange-600">{truckSummary.quarantineNet.toFixed(1)} T</div>
             </div>
           </div>
+          {truckSummary.truckCount > 0 && (
+            <button onClick={() => setShowTruckList(v => !v)} className="text-xs text-blue-600 hover:underline mt-2 flex items-center gap-1">
+              {showTruckList ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+              {showTruckList ? 'Hide' : 'Show'} truck details
+            </button>
+          )}
+          {showTruckList && truckList.length > 0 && (
+            <div className="mt-2 space-y-1 border-t pt-2">
+              {truckList.map((t: any) => (
+                <div key={t.id} className="flex justify-between items-center text-xs text-gray-600">
+                  <span>{t.vehicleNo}{t.supplier ? ` — ${t.supplier}` : ''}{t.bags > 0 ? ` (${t.bags} bags)` : ''}</span>
+                  <span className="font-medium">
+                    Net: {t.weightNet.toFixed(1)}T
+                    {t.quarantineWeight > 0 && <span className="text-orange-500 ml-1">Q: {t.quarantineWeight.toFixed(1)}T</span>}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <div className="flex justify-between items-center py-2 px-1">
           <span className="text-xs text-gray-500">Grain to Silo (from trucks)</span>
@@ -841,12 +869,12 @@ export default function GrainUnloading() {
                   <th className="py-2 pr-3">Total@Plant</th>
                   <th className="py-2 pr-3">Quarantine</th>
                   <th className="py-2 pr-3">Flour</th>
-                  <th className="py-2"></th>
+                  {isAdmin && <th className="py-2"></th>}
                 </tr>
               </thead>
               <tbody>
                 {entries.map(e => (
-                  <tr key={e.id} className="border-b hover:bg-gray-50 cursor-pointer" onClick={() => editEntry(e)}>
+                  <tr key={e.id} className={`border-b ${isAdmin ? 'hover:bg-gray-50 cursor-pointer' : ''}`} onClick={() => isAdmin && editEntry(e)}>
                     <td className="py-2 pr-3 font-medium">{e.date.split('T')[0]}</td>
                     <td className="py-2 pr-3">{e.grainUnloaded?.toFixed(1)}</td>
                     <td className="py-2 pr-3">{e.washConsumed?.toFixed(1)}</td>
@@ -856,9 +884,9 @@ export default function GrainUnloading() {
                     <td className="py-2 pr-3 font-semibold">{e.totalGrainAtPlant?.toFixed(1)}</td>
                     <td className="py-2 pr-3 text-orange-600">{e.quarantineStock > 0 ? e.quarantineStock?.toFixed(1) : '—'}</td>
                     <td className="py-2 pr-3 text-yellow-700">{((e.flourSilo1Level || 0) + (e.flourSilo2Level || 0)) > 0 ? ((e.flourSilo1Level || 0) + (e.flourSilo2Level || 0)).toFixed(1) : '—'}</td>
-                    <td className="py-2">
+                    {isAdmin && <td className="py-2">
                       <button onClick={(ev) => { ev.stopPropagation(); deleteEntry(e.id); }} className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
-                    </td>
+                    </td>}
                   </tr>
                 ))}
                 {entries.length === 0 && <tr><td colSpan={10} className="py-4 text-center text-gray-400">No entries yet.</td></tr>}

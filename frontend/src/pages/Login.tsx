@@ -25,7 +25,6 @@ export default function Login() {
           <div><label className="block text-sm font-medium mb-1">Password</label><input type="password" value={password} onChange={e => setPassword(e.target.value)} className="input-field" required /></div>
           <button type="submit" className="btn-primary w-full">Sign In</button>
         </form>
-        <p className="text-xs text-gray-400 text-center mt-4">Default: admin@distillery.com / admin123</p>
       </div>
     </div>
   );

@@ -237,8 +237,8 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-// PUT /api/grain/:id
-router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
+// PUT /api/grain/:id — ADMIN only
+router.put('/:id', authenticate, authorize('ADMIN'), async (req: AuthRequest, res: Response) => {
   try {
     const { grainUnloaded, washConsumed, washConsumedAt, fermentationVolumeAt,
       f1Level, f2Level, f3Level, f4Level, beerWellLevel, pf1Level, pf2Level, iltLevel, fltLevel,

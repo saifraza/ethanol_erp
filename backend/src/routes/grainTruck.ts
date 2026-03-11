@@ -3,7 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
@@ -108,10 +108,10 @@ router.post('/', authenticate, upload.single('photo'), async (req: AuthRequest, 
   try {
     const { vehicleNo, supplier, weightGross, weightTare, moisture, starchPercent,
       damagedPercent, foreignMatter, quarantine, quarantineWeight, quarantineReason,
-      remarks, date, uidRst } = req.body;
+      remarks, date, uidRst, bags } = req.body;
 
-    // Frontend sends full ISO datetime from browser's local timezone
-    const truckDate = date ? new Date(date) : new Date();
+    // Always use server's current time — ensures truck falls in the correct shift window
+    const truckDate = new Date();
 
     const gross = parseFloat(weightGross) || 0;
     const tare = parseFloat(weightTare) || 0;
@@ -135,6 +135,7 @@ router.post('/', authenticate, upload.single('photo'), async (req: AuthRequest, 
         quarantine: (quarantine === 'true' || quarantine === true) || qWeight > 0,
         quarantineReason: quarantineReason || null,
         photoUrl,
+        bags: bags ? parseFloat(bags) : null,
         remarks: remarks || null,
         userId: req.user!.id,
       },
@@ -143,8 +144,8 @@ router.post('/', authenticate, upload.single('photo'), async (req: AuthRequest, 
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-// PUT /api/grain-truck/:id — update quarantine, weight, uidRst
-router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
+// PUT /api/grain-truck/:id — ADMIN only
+router.put('/:id', authenticate, authorize('ADMIN'), async (req: AuthRequest, res: Response) => {
   try {
     const { quarantine, quarantineReason, quarantineWeight, uidRst } = req.body;
     const data: any = {};
@@ -160,8 +161,8 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-// DELETE /api/grain-truck/:id
-router.delete('/:id', authenticate, async (req: AuthRequest, res: Response) => {
+// DELETE /api/grain-truck/:id — ADMIN only
+router.delete('/:id', authenticate, authorize('ADMIN'), async (req: AuthRequest, res: Response) => {
   try {
     const t = await prisma.grainTruck.findUnique({ where: { id: req.params.id } });
     if (t?.photoUrl) {

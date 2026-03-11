@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Wheat, Plus, Trash2, Camera, X, Share2, ChevronDown, ChevronUp, Image, Clock, AlertTriangle } from 'lucide-react';
 import api from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -12,6 +13,8 @@ function shiftDate() {
 }
 
 export default function GrainUnloadingTrucks() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
   const [trucks, setTrucks] = useState<any[]>([]);
   const [date, setDate] = useState(shiftDate());
   const [showForm, setShowForm] = useState(false);
@@ -33,6 +36,7 @@ export default function GrainUnloadingTrucks() {
   const [damagedPercent, setDamagedPercent] = useState('');
   const [foreignMatter, setForeignMatter] = useState('');
   const [quarantineReason, setQuarantineReason] = useState('');
+  const [bags, setBags] = useState('');
   const [remarks, setRemarks] = useState('');
   const [photo, setPhoto] = useState<File | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -56,7 +60,7 @@ export default function GrainUnloadingTrucks() {
   function resetForm() {
     setUidRst(''); setVehicleNo(''); setSupplier(''); setWeightGross(''); setWeightTare('');
     setQuarantineWeight(''); setMoisture(''); setStarchPercent(''); setDamagedPercent('');
-    setForeignMatter(''); setQuarantineReason(''); setRemarks('');
+    setForeignMatter(''); setQuarantineReason(''); setBags(''); setRemarks('');
     setPhoto(null); setShowForm(false);
   }
 
@@ -81,6 +85,7 @@ export default function GrainUnloadingTrucks() {
       fd.append('foreignMatter', foreignMatter);
       fd.append('quarantine', String(parseFloat(quarantineWeight) > 0));
       fd.append('quarantineReason', quarantineReason);
+      fd.append('bags', bags);
       fd.append('remarks', remarks);
       if (photo) fd.append('photo', photo);
 
@@ -212,6 +217,15 @@ export default function GrainUnloadingTrucks() {
             </div>
           </div>
 
+          {/* Bags */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
+            <div>
+              <label className="text-[10px] text-gray-400">No. of Bags</label>
+              <input type="number" step="1" value={bags} onChange={e => setBags(e.target.value)}
+                className="border rounded px-2 py-2 w-full text-sm" placeholder="0" />
+            </div>
+          </div>
+
           {/* Quarantine (partial) */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
             <div>
@@ -322,6 +336,7 @@ export default function GrainUnloadingTrucks() {
                 <div className="text-xs text-gray-600">
                   {t.supplier && <span>{t.supplier} • </span>}
                   <span>Gross: {t.weightGross}T • Tare: {t.weightTare}T • Net: {t.weightNet.toFixed(1)}T</span>
+                  {t.bags > 0 && <span> • {t.bags} bags</span>}
                   {t.quarantineWeight > 0 && <span className="text-orange-600"> • Q: {t.quarantineWeight.toFixed(1)}T</span>}
                   <span className="font-semibold text-green-700"> → Silo: {tToSilo.toFixed(1)}T</span>
                 </div>
@@ -336,7 +351,7 @@ export default function GrainUnloadingTrucks() {
               <div className="flex items-center gap-2">
                 <button onClick={() => {
                   const tSilo = t.weightNet - (t.quarantineWeight || 0);
-                  const text = `*Grain Truck*\n${t.uidRst ? `UID/RST: ${t.uidRst}\n` : ''}Vehicle: ${t.vehicleNo}\n${t.supplier ? `Supplier: ${t.supplier}\n` : ''}Gross: ${t.weightGross}T | Tare: ${t.weightTare}T | Net: ${t.weightNet.toFixed(1)}T\nTo Silo: ${tSilo.toFixed(1)}T${t.quarantineWeight > 0 ? ` | Quarantine: ${t.quarantineWeight.toFixed(1)}T` : ''}${t.moisture != null ? `\nMoisture: ${t.moisture}%` : ''}${t.remarks ? `\nRemarks: ${t.remarks}` : ''}`;
+                  const text = `*Grain Truck*\n${t.uidRst ? `UID/RST: ${t.uidRst}\n` : ''}Vehicle: ${t.vehicleNo}\n${t.supplier ? `Supplier: ${t.supplier}\n` : ''}Gross: ${t.weightGross}T | Tare: ${t.weightTare}T | Net: ${t.weightNet.toFixed(1)}T${t.bags > 0 ? ` | Bags: ${t.bags}` : ''}\nTo Silo: ${tSilo.toFixed(1)}T${t.quarantineWeight > 0 ? ` | Quarantine: ${t.quarantineWeight.toFixed(1)}T` : ''}${t.moisture != null ? `\nMoisture: ${t.moisture}%` : ''}${t.remarks ? `\nRemarks: ${t.remarks}` : ''}`;
                   if (navigator.share) { navigator.share({ text }).catch(() => { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank'); }); }
                   else { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank'); }
                 }} className="text-green-500 hover:text-green-700"><Share2 size={14} /></button>
@@ -344,8 +359,8 @@ export default function GrainUnloadingTrucks() {
                   <button onClick={() => setPhotoPreview(`${API_BASE}${t.photoUrl}`)}
                     className="text-blue-500 hover:text-blue-700"><Image size={16} /></button>
                 )}
-                <button onClick={() => handleDelete(t.id)}
-                  className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
+                {isAdmin && <button onClick={() => handleDelete(t.id)}
+                  className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button>}
               </div>
             </div>
           </div>
@@ -392,8 +407,8 @@ export default function GrainUnloadingTrucks() {
                         <span>{t.vehicleNo} → {t.supplier || '-'}{t.quarantine ? ' ⚠️' : ''}</span>
                         <span className="flex items-center gap-2">
                           <span className="font-medium">{t.weightNet.toFixed(1)} T</span>
-                          <button onClick={() => handleDelete(t.id)}
-                            className="text-red-300 hover:text-red-600"><Trash2 size={12} /></button>
+                          {isAdmin && <button onClick={() => handleDelete(t.id)}
+                            className="text-red-300 hover:text-red-600"><Trash2 size={12} /></button>}
                         </span>
                       </div>
                     ))}
