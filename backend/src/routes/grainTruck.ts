@@ -111,6 +111,15 @@ router.post('/', authenticate, upload.single('photo'), async (req: AuthRequest, 
       damagedPercent, foreignMatter, quarantine, quarantineWeight, quarantineReason,
       remarks, date, uidRst, bags } = req.body;
 
+    // Check for duplicate UID/RST
+    if (uidRst && uidRst.trim()) {
+      const existing = await prisma.grainTruck.findFirst({ where: { uidRst: uidRst.trim() } });
+      if (existing) {
+        res.status(409).json({ error: `Truck with UID/RST "${uidRst.trim()}" already exists (${existing.vehicleNo}, ${existing.date.toISOString().split('T')[0]})` });
+        return;
+      }
+    }
+
     // Always use server's current time — ensures truck falls in the correct shift window
     const truckDate = new Date();
 
