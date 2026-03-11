@@ -17,20 +17,27 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 
-// Helper: get shift window (9AM on date to 9AM next day)
+// IST offset: UTC+5:30 = 5.5 hours = 330 minutes
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+// Helper: get current time in IST
+function nowIST(): Date {
+  return new Date(Date.now() + IST_OFFSET_MS);
+}
+
+// Helper: get shift window (9AM IST on date to 9AM IST next day) — returned as UTC
 function shiftWindow(dateStr: string) {
-  const start = new Date(dateStr);
-  start.setHours(9, 0, 0, 0);
-  const end = new Date(start);
-  end.setDate(end.getDate() + 1);
+  // dateStr is YYYY-MM-DD; 9AM IST = 3:30 AM UTC
+  const start = new Date(dateStr + 'T03:30:00.000Z');
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
   return { start, end };
 }
 
-// Helper: get current shift date — if before 9AM, it's yesterday's shift
+// Helper: get current shift date — if before 9AM IST, it's yesterday's shift
 function currentShiftDate(): string {
-  const now = new Date();
-  if (now.getHours() < 9) now.setDate(now.getDate() - 1);
-  return now.toISOString().split('T')[0];
+  const ist = nowIST();
+  if (ist.getUTCHours() < 9) ist.setUTCDate(ist.getUTCDate() - 1);
+  return ist.toISOString().split('T')[0];
 }
 
 // GET /api/grain-truck — shift trucks (9AM to 9AM)
@@ -74,8 +81,10 @@ router.get('/summary', authenticate, async (req: AuthRequest, res: Response) => 
 // GET /api/grain-truck/history — past trucks grouped by date
 router.get('/history', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Use IST midnight (= previous day 18:30 UTC)
+    const ist = nowIST();
+    const todayStr = ist.toISOString().split('T')[0];
+    const today = new Date(todayStr + 'T00:00:00.000+05:30');
 
     const trucks = await prisma.grainTruck.findMany({
       where: { date: { lt: today } },

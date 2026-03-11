@@ -10,6 +10,8 @@
 - **DB**: `postgresql://postgres:DrENyRNbBLtcdBMKzgIbIhHSMDiiXvBu@shuttle.proxy.rlwy.net:15470/railway`
 - **Auto-deploys** from GitHub `main` branch
 - **GitHub**: https://github.com/saifraza/ethanol_erp.git
+- **Seeding Railway DB**: Use `node -e` with `pg` Client and the DB URL above (psql not available in VM). Example: `const { Client } = require('pg'); const c = new Client({ connectionString: '<DB_URL>' });`
+- **Admin userId on Railway**: `cmmipu76p0000hvsh1h2a21y0` (name: "Admin")
 
 ## CRITICAL: Build & Deploy Notes
 1. **Railway uses ROOT `package.json`** for build, NOT `backend/package.json`
@@ -31,3 +33,14 @@
 - Calibration loaded from `backend/src/data/calibrations.json`
 - DIP (cm) → Volume (litres) auto-lookup, Empty checkbox for 0 volume
 - Decanter grouped by dryer: D1-D3→Dryer1, D4-D5→Dryer2, D6-D8→Dryer3
+
+## Grain Stock — Mass Balance
+- **Formula**: `grainConsumed = max(0, grainDistilled + deltaGrainInProcess + deltaFlour)`
+- **grainDistilled** = washDiff × fermPct (grain equivalent of wash through flow meter)
+- **deltaGrainInProcess** = current (fermVol×fermPct + pfVol×pfPct + iltFltVol×fermPct) − prev same
+- **deltaFlour** = current flour silo tonnage − prev flour silo tonnage
+- Single `max(0,...)` wrapping allows internal transfers to cancel out naturally
+- Flour silos: 140 T each, user enters level %, stored as tonnage
+- 9AM-9AM shift cycle for trucks (if before 9AM, shift date = yesterday)
+- Preview modal shows diffs from last entry, elapsed time, truck count
+- WhatsApp share includes full mass-balance breakdown
