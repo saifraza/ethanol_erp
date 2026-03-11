@@ -60,13 +60,14 @@ function calcGrain(data: any, opening: number, prevCumUnloaded: number, prevCumC
   const grainConsumed = Math.max(0, grainDistilled + deltaGrainInProcess + deltaFlour);
 
   // Milling loss on received grain
-  const grainReceived = data.grainUnloaded || 0;
+  const grainReceived = data.grainUnloaded || 0;  // to silo (excluding quarantine)
+  const totalReceived = data.totalReceived || grainReceived;  // all truck net weight (incl quarantine)
   const millingLoss = grainReceived * millingLossPct;
   const effectiveGrain = grainReceived - millingLoss;
 
   const siloClosingStock = opening + effectiveGrain - grainConsumed;
   const totalGrainAtPlant = grainInProcess + flourTotal;
-  const cumulativeUnloaded = prevCumUnloaded + grainReceived;
+  const cumulativeUnloaded = prevCumUnloaded + totalReceived;  // total grain received at factory (incl quarantine)
   const cumulativeConsumed = prevCumConsumed + Math.max(0, grainConsumed);
 
   return {
@@ -181,7 +182,7 @@ router.get('/summary', authenticate, async (req: AuthRequest, res: Response) => 
 // POST /api/grain
 router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const { date, grainUnloaded, washConsumed, washConsumedAt, fermentationVolumeAt,
+    const { date, grainUnloaded, totalReceived, washConsumed, washConsumedAt, fermentationVolumeAt,
       f1Level, f2Level, f3Level, f4Level, beerWellLevel, pf1Level, pf2Level, iltLevel, fltLevel,
       quarantineStock, flourSilo1Level, flourSilo2Level,
       moisture, starchPercent, damagedPercent, foreignMatter, trucks, avgTruckWeight, supplier, remarks } = req.body;
@@ -196,6 +197,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
 
     const inputData = {
       grainUnloaded: grainUnloaded || 0,
+      totalReceived: totalReceived || 0,
       washConsumed: washConsumed || 0,
       f1Level: f1Level || 0, f2Level: f2Level || 0,
       f3Level: f3Level || 0, f4Level: f4Level || 0,
@@ -240,7 +242,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
 // PUT /api/grain/:id — ADMIN only
 router.put('/:id', authenticate, authorize('ADMIN'), async (req: AuthRequest, res: Response) => {
   try {
-    const { grainUnloaded, washConsumed, washConsumedAt, fermentationVolumeAt,
+    const { grainUnloaded, totalReceived, washConsumed, washConsumedAt, fermentationVolumeAt,
       f1Level, f2Level, f3Level, f4Level, beerWellLevel, pf1Level, pf2Level, iltLevel, fltLevel,
       quarantineStock, flourSilo1Level, flourSilo2Level,
       moisture, starchPercent, damagedPercent, foreignMatter, trucks, avgTruckWeight, supplier, remarks } = req.body;
@@ -258,6 +260,7 @@ router.put('/:id', authenticate, authorize('ADMIN'), async (req: AuthRequest, re
 
     const inputData = {
       grainUnloaded: grainUnloaded ?? existing.grainUnloaded,
+      totalReceived: totalReceived ?? (existing as any).totalReceived ?? 0,
       washConsumed: washConsumed ?? existing.washConsumed,
       f1Level: f1Level ?? existing.f1Level ?? 0,
       f2Level: f2Level ?? existing.f2Level ?? 0,

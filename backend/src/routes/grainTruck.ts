@@ -72,9 +72,10 @@ router.get('/summary', authenticate, async (req: AuthRequest, res: Response) => 
     // Partial quarantine: to silo = net - quarantineWeight
     const totalNet = trucks.reduce((s, t) => s + (t.weightNet - (t.quarantineWeight || 0)), 0);
     const quarantineNet = trucks.reduce((s, t) => s + (t.quarantineWeight || 0), 0);
+    const totalReceived = trucks.reduce((s, t) => s + t.weightNet, 0); // all net weight incl quarantine
     const truckCount = trucks.length;
 
-    res.json({ totalNet, quarantineNet, truckCount });
+    res.json({ totalNet, quarantineNet, totalReceived, truckCount });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 

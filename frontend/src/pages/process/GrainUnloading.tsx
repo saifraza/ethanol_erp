@@ -109,7 +109,7 @@ export default function GrainUnloading() {
   const [showHistory, setShowHistory] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
-  const [truckSummary, setTruckSummary] = useState<{ totalNet: number; quarantineNet: number; truckCount: number }>({ totalNet: 0, quarantineNet: 0, truckCount: 0 });
+  const [truckSummary, setTruckSummary] = useState<{ totalNet: number; quarantineNet: number; totalReceived: number; truckCount: number }>({ totalNet: 0, quarantineNet: 0, totalReceived: 0, truckCount: 0 });
   const [truckList, setTruckList] = useState<any[]>([]);
   const [showTruckList, setShowTruckList] = useState(false);
   const [plantSettings, setPlantSettings] = useState<any>(null);
@@ -239,6 +239,7 @@ export default function GrainUnloading() {
         fermentationVolumeAt: form.fermentationVolumeAt ? new Date(form.fermentationVolumeAt).toISOString() : null,
         moisture: form.moisture, starchPercent: form.starchPercent,
         damagedPercent: form.damagedPercent, foreignMatter: form.foreignMatter,
+        totalReceived: truckSummary.totalReceived || 0,
         trucks: truckSummary.truckCount, avgTruckWeight: truckSummary.truckCount > 0 ? (truckSummary.totalNet / truckSummary.truckCount) : null,
         supplier: null, remarks: form.remarks,
       };
