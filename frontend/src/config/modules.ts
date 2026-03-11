@@ -4,7 +4,7 @@
 import {
   Wheat, CogIcon, Droplets, Beaker, Flame, Wind,
   Fuel, Waves, FileText, ClipboardList, BarChart3,
-  Settings, Users, Truck, FlaskConical
+  Settings, Users, Truck, FlaskConical, Package
 } from 'lucide-react';
 
 export interface ModuleDef {
@@ -27,7 +27,8 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'fermentation', label: 'Fermentation', to: '/process/fermentation', icon: Beaker, group: 'process' },
   { key: 'distillation', label: 'Distillation', to: '/process/distillation', icon: Flame, group: 'process' },
   { key: 'evaporation', label: 'Evaporation', to: '/process/evaporation', icon: Wind, group: 'process' },
-  { key: 'ddgs', label: 'DDGS Production', to: '/process/ddgs', icon: Wind, group: 'process' },
+  { key: 'ddgs-stock', label: 'DDGS Stock', to: '/process/ddgs-stock', icon: Package, group: 'process' },
+  { key: 'ddgs-dispatch', label: 'DDGS Dispatch', to: '/process/ddgs-dispatch', icon: Truck, group: 'process' },
   { key: 'dryer', label: 'Dryer', to: '/process/dryer', icon: Flame, group: 'process' },
   { key: 'decanter', label: 'Decanter', to: '/process/decanter', icon: Droplets, group: 'process' },
   { key: 'ethanol-stock', label: 'Ethanol Stock', to: '/process/ethanol-stock', icon: Fuel, group: 'process' },

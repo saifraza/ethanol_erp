@@ -19,7 +19,7 @@ import Fermentation from './pages/process/Fermentation';
 import Distillation from './pages/process/Distillation';
 import RawMaterial from './pages/process/RawMaterial';
 import PreFermentation from './pages/process/PreFermentation';
-import DDGSProduction from './pages/process/Dryer';
+
 import DryerMonitor from './pages/process/DryerMonitor';
 import Decanter from './pages/process/Decanter';
 import Evaporation from './pages/process/Evaporation';
@@ -27,6 +27,8 @@ import EthanolProduct from './pages/process/EthanolProduct';
 import EthanolDispatch from './pages/process/EthanolDispatch';
 import WaterUtility from './pages/process/WaterUtility';
 import LabSampling from './pages/process/LabSampling';
+import DDGSStock from './pages/process/DDGSStock';
+import DDGSDispatch from './pages/process/DDGSDispatch';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -63,7 +65,8 @@ export default function App() {
         <Route path="process/fermentation" element={<Fermentation />} />
         <Route path="process/distillation" element={<Distillation />} />
         <Route path="process/evaporation" element={<Evaporation />} />
-        <Route path="process/ddgs" element={<DDGSProduction />} />
+        <Route path="process/ddgs-stock" element={<DDGSStock />} />
+        <Route path="process/ddgs-dispatch" element={<DDGSDispatch />} />
         <Route path="process/dryer" element={<DryerMonitor />} />
         <Route path="process/decanter" element={<Decanter />} />
         <Route path="process/ethanol-product" element={<EthanolProduct />} />

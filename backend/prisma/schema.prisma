@@ -479,6 +479,46 @@ model DDGSProductionEntry {
 }
 
 // ═══════════════════════════════════════════════
+// DDGS STOCK (daily stock tracking)
+// ═══════════════════════════════════════════════
+model DDGSStockEntry {
+  id                String   @id @default(uuid())
+  date              DateTime
+  yearStart         Int
+  openingStock      Float    @default(0)      // auto from prev closing
+  productionToday   Float    @default(0)      // bags * weightPerBag from DDGS production
+  dispatchToday     Float    @default(0)      // sum of dispatch trucks
+  closingStock      Float    @default(0)      // opening + production - dispatch
+  bags              Int      @default(0)
+  weightPerBag      Float    @default(50)     // kg per bag default 50
+  remarks           String?
+  userId            String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([date, yearStart])
+}
+
+// ═══════════════════════════════════════════════
+// DDGS DISPATCH TRUCKS (per-truck outgoing)
+// ═══════════════════════════════════════════════
+model DDGSDispatchTruck {
+  id              String   @id @default(uuid())
+  date            DateTime @default(now())
+  vehicleNo       String   @default("")
+  partyName       String   @default("")
+  destination     String   @default("")
+  bags            Int      @default(0)
+  weightPerBag    Float    @default(50)
+  weightGross     Float    @default(0)
+  weightTare      Float    @default(0)
+  weightNet       Float    @default(0)
+  remarks         String?
+  userId          String?
+  createdAt       DateTime @default(now())
+}
+
+// ═══════════════════════════════════════════════
 // DRYER (3 dryers — moisture, steam, syrup, load)
 // ═══════════════════════════════════════════════
 model DryerEntry {
