@@ -207,8 +207,12 @@ export default function GrainUnloading() {
       ]);
       setTruckSummary(sumRes.data);
       setTruckList(listRes.data.trucks || []);
-      // Auto-set grainUnloaded from truck totals (non-quarantine)
-      setForm(f => ({ ...f, grainUnloaded: sumRes.data.totalNet || null }));
+      // Auto-set grainUnloaded and quarantine from truck totals
+      setForm(f => ({
+        ...f,
+        grainUnloaded: sumRes.data.totalNet || null,
+        quarantineStock: sumRes.data.quarantineNet || null,
+      }));
     } catch (e) { console.error(e); }
   }
 
@@ -320,6 +324,7 @@ export default function GrainUnloading() {
           { label: 'Grain@Plant', value: form.f1Pct != null ? totalAtPlant : (defaults.totalGrainAtPlant ?? 0), unit: 'Ton', color: 'bg-green-50 border-green-200' },
           { label: 'Last Unloaded', value: form.grainUnloaded ?? (defaults.lastUnloaded ?? 0), unit: 'Ton', color: 'bg-blue-50 border-blue-200' },
           { label: 'Quarantine', value: form.quarantineStock ?? (defaults.quarantineStock ?? 0), unit: 'Ton', color: 'bg-orange-50 border-orange-200' },
+          { label: 'Year Received', value: defaults.cumulativeUnloaded ?? 0, unit: 'Ton', color: 'bg-purple-50 border-purple-200' },
           { label: 'Year Consumed', value: defaults.cumulativeConsumed ?? 0, unit: 'Ton', color: 'bg-red-50 border-red-200' },
         ].map(k => (
           <div key={k.label} className={`rounded-lg border p-2 md:p-3 ${k.color}`}>
