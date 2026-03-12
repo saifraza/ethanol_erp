@@ -43,6 +43,19 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
+// GET /api/dispatch/totals — all-time dispatch sum
+router.get('/totals', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const all = await prisma.dispatchTruck.findMany({
+      where: { entryId: null },
+      select: { quantityBL: true },
+    });
+    const totalDispatched = all.reduce((s, d) => s + (d.quantityBL || 0), 0);
+    const count = all.length;
+    res.json({ totalDispatched, count });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
 // GET /api/dispatch/history — past dispatches grouped by date (before today 9AM cutoff)
 router.get('/history', authenticate, async (req: AuthRequest, res: Response) => {
   try {

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Fuel, Save, ChevronDown, ChevronUp, Eye, X, Share2, Loader2, TrendingUp, Droplets, Gauge, Truck, Clock, Activity } from 'lucide-react';
+import { Fuel, Save, ChevronDown, ChevronUp, Eye, X, Share2, Loader2, TrendingUp, Droplets, Gauge, Truck, Clock, Activity, Package, Factory } from 'lucide-react';
 import api from '../../services/api';
 
 const TANKS = [
@@ -31,10 +31,22 @@ export default function EthanolProduct() {
   const [lastEntry, setLastEntry] = useState<any>(null);
   const [lastPrevDate, setLastPrevDate] = useState<string | null>(null);
   const [lastPrevStock, setLastPrevStock] = useState<number | null>(null);
+  const [allTimeDispatched, setAllTimeDispatched] = useState(0);
+  const [allTimeDispatchCount, setAllTimeDispatchCount] = useState(0);
+  const MASH_GIVEN = 2040000; // historical ethanol given to mash
 
   useEffect(() => {
     api.get('/calibration').then(r => setCalData(r.data)).catch(e => console.error('Cal load error:', e));
+    loadTotals();
   }, []);
+
+  async function loadTotals() {
+    try {
+      const res = await api.get('/dispatch/totals');
+      setAllTimeDispatched(res.data.totalDispatched || 0);
+      setAllTimeDispatchCount(res.data.count || 0);
+    } catch (e) { console.error(e); }
+  }
 
   // Build proper local datetime from date + time inputs
   const buildEntryDate = (): Date => {
@@ -153,7 +165,7 @@ export default function EthanolProduct() {
       const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       setMsg({ type: 'ok', text: `Saved at ${now}` });
       setForm({}); setRemarks(''); setEditId(null);
-      await loadLatest(); await loadEntries();
+      await loadLatest(); await loadEntries(); await loadTotals();
     } catch (err: any) { setMsg({ type: 'err', text: err.response?.data?.error || 'Save failed' }); }
     setSaving(false);
   }
@@ -245,6 +257,22 @@ export default function EthanolProduct() {
             <div className="text-xl font-bold text-blue-800">{((lastEntry.totalStock || 0) - newDispatch).toFixed(0)} BL</div>
             {newDispatch > 0 && <div className="text-[10px] text-gray-400">Stock at reading: {lastEntry.totalStock?.toFixed(0)} − {newDispatch.toFixed(0)} dispatched since</div>}
           </div>
+          {/* All-time Totals: Dispatched & Produced */}
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <div className="bg-white/60 rounded-lg p-2 text-center border border-red-100">
+              <Package size={16} className="mx-auto text-red-500 mb-1" />
+              <div className="text-[10px] text-gray-400 uppercase">Total Dispatched</div>
+              <div className="text-lg font-bold text-red-700">{(allTimeDispatched / 100000).toFixed(2)} L</div>
+              <div className="text-[9px] text-gray-400">{allTimeDispatchCount} trucks</div>
+            </div>
+            <div className="bg-white/60 rounded-lg p-2 text-center border border-green-100">
+              <Factory size={16} className="mx-auto text-green-600 mb-1" />
+              <div className="text-[10px] text-gray-400 uppercase">Total Produced</div>
+              <div className="text-lg font-bold text-green-700">{(((lastEntry?.totalStock || 0) - newDispatch + allTimeDispatched + MASH_GIVEN) / 100000).toFixed(2)} L</div>
+              <div className="text-[9px] text-gray-400">Stock + Dispatched + {(MASH_GIVEN/100000).toFixed(1)}L mash</div>
+            </div>
+          </div>
+
           {/* New dispatches since last entry */}
           {newDispatchList.length > 0 && (
             <div className="mt-2 space-y-1">
@@ -268,7 +296,8 @@ export default function EthanolProduct() {
             const newDispInfo = newDispatch > 0 ? `\nNew Dispatch: ${newDispatch.toFixed(0)} BL (${newDispatchList.length} trucks)` : '';
             const newTruckLines = newDispatchList.length > 0 ? '\n' + newDispatchList.map((d: any) => `  ${d.vehicleNo} → ${d.destination || '-'} | ${d.quantityBL?.toFixed(0)} BL | ${d.partyName}`).join('\n') : '';
             const prevLine = lastPrevStock != null && lastPrevDate ? `\nPrev Stock: ${lastPrevStock.toFixed(0)} BL (${fmtDtTime(lastPrevDate)})` : '';
-            const text = `*Ethanol Stock Status*\n📅 ${fmtDtTime(lastEntry.date)}\n${prevLine}\nStock: ${lastEntry.totalStock?.toFixed(0)} BL\nStrength: ${lastEntry.avgStrength?.toFixed(1)}%\nProd: ${lastEntry.productionBL?.toFixed(0)} BL${lastPrevDate ? ` (${fmtDtTime(lastPrevDate)} → ${fmtDtTime(lastEntry.date)})` : ''}\nKLPD: ${lastEntry.klpd?.toFixed(1)}${dispInfo}${newDispInfo}${newTruckLines}\n\n📦 *Current Stock: ${curStock.toFixed(0)} BL*`;
+            const totalProduced = curStock + allTimeDispatched + MASH_GIVEN;
+            const text = `*Ethanol Stock Status*\n📅 ${fmtDtTime(lastEntry.date)}\n${prevLine}\nStock: ${lastEntry.totalStock?.toFixed(0)} BL\nStrength: ${lastEntry.avgStrength?.toFixed(1)}%\nProd: ${lastEntry.productionBL?.toFixed(0)} BL${lastPrevDate ? ` (${fmtDtTime(lastPrevDate)} → ${fmtDtTime(lastEntry.date)})` : ''}\nKLPD: ${lastEntry.klpd?.toFixed(1)}${dispInfo}${newDispInfo}${newTruckLines}\n\n📦 *Current Stock: ${curStock.toFixed(0)} BL*\n🚛 Total Dispatched: ${(allTimeDispatched/100000).toFixed(2)} L BL (${allTimeDispatchCount} trucks)\n🏭 Total Produced: ${(totalProduced/100000).toFixed(2)} L BL`;
             if (navigator.share) {
               navigator.share({ text }).catch(() => {
                 window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
