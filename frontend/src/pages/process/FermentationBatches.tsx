@@ -403,8 +403,8 @@ function BeerWellPanel() {
               </div>
               {/* Info */}
               <div className="flex-1">
-                <div className="text-3xl font-bold text-purple-700">{bwLevel != null ? `${bwLevel.toFixed(0)} KL` : 'Empty'}</div>
-                <div className="text-sm text-gray-500 mt-1">of {FERM_CAP} KL capacity</div>
+                <div className="text-3xl font-bold text-purple-700">{bwLevel != null && bwLevel > 0 ? `${bwPct.toFixed(1)}%` : 'Empty'}</div>
+                <div className="text-sm text-gray-500 mt-1">{bwLevel != null && bwLevel > 0 ? `${bwLevel.toFixed(0)} KL of ${FERM_CAP} KL` : `Capacity: ${FERM_CAP} KL`}</div>
                 {bwLabEntries.length > 0 && (
                   <div className="flex gap-3 mt-3 flex-wrap text-sm">
                     {(() => { const last = bwLabEntries[bwLabEntries.length - 1]; return (<>
