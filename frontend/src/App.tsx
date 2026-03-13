@@ -38,9 +38,10 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 function HomeRedirect() {
   const { user } = useAuth();
-  if (user?.role === 'ADMIN') return <Dashboard />;
-  // Non-admin: redirect to first allowed module
+  // If user has dashboard access, go there
   const allowed = user?.allowedModules?.split(',') || [];
+  if (user?.role === 'ADMIN' || allowed.includes('dashboard')) return <Navigate to="/dashboard" replace />;
+  // Otherwise redirect to first allowed module
   const firstModule = MODULE_DEFS.find(m => allowed.includes(m.key));
   if (firstModule) return <Navigate to={firstModule.to} replace />;
   return <div className="p-8 text-center text-gray-500">No modules assigned. Contact admin.</div>;
@@ -56,6 +57,7 @@ export default function App() {
       <Route path="/login" element={user ? <Navigate to="/" /> : <Login />} />
       <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route index element={<HomeRedirect />} />
+        <Route path="dashboard" element={<Dashboard />} />
         <Route path="process/raw-material" element={<RawMaterial />} />
         <Route path="process/grain-stock" element={<GrainUnloading />} />
         <Route path="process/grain-unloading" element={<GrainUnloadingTrucks />} />
