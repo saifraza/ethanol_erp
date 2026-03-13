@@ -385,9 +385,9 @@ export default function Liquefaction() {
             <div className="p-4 border-t flex gap-2">
               <button onClick={() => {
                 const t = `*LIQUEFACTION REPORT*\nDate: ${form.date} ${form.analysisTime || ''}\n${form.jetCookerTemp ? `\nJet Cooker: ${form.jetCookerTemp}°C${form.jetCookerFlow ? ' | Flow: ' + form.jetCookerFlow : ''}` : ''}\n\n*ILT*${form.iltLevel ? '\nLevel: ' + form.iltLevel : ''}\nGravity: ${form.iltSpGravity || '—'} | pH: ${form.iltPh || '—'} | RS: ${form.iltRs || '—'}%\nTemp: ${form.iltTemp || '—'}°C\n\n*FLT*${form.fltLevel ? '\nLevel: ' + form.fltLevel : ''}${form.fltFlowRate ? ' | Flow: ' + form.fltFlowRate : ''}\nGravity: ${form.fltSpGravity || '—'} | pH: ${form.fltPh || '—'}\nRS: ${form.fltRs || '—'}% | RST: ${form.fltRst || '—'}%\nTemp: ${form.fltTemp || '—'}°C${form.remark ? '\n\nRemarks: ' + form.remark : ''}`;
-                window.open(`https://wa.me/?text=${encodeURIComponent(t)}`, '_blank');
+                if (navigator.share) { navigator.share({ text: t }).catch(() => { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }); } else { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }
               }} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
-                <Share2 size={16} /> WhatsApp
+                <Share2 size={16} /> Share
               </button>
               <button onClick={() => { handleSave(); setShowPreview(false); }} disabled={saving}
                 className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">

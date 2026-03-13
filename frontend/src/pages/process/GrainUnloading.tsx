@@ -850,9 +850,9 @@ export default function GrainUnloading() {
               </button>
               <button onClick={() => {
                 const t = `*GRAIN STOCK REPORT*\nDate: ${form.date}${prevElapsed > 0 ? ` (last entry ${fmtHrs(prevElapsed)} ago)` : ''}\nGrain to Silo: ${form.grainUnloaded ?? '—'} T (${truckSummary.truckCount} trucks, net ${truckSummary.totalNet.toFixed(1)} T)${(form.quarantineStock ?? 0) > 0 ? `\nQuarantine: ${(form.quarantineStock ?? 0).toFixed(1)} T (not in silo)` : ''}${flourSiloTotal > 0 ? `\nFlour Silos: S1: ${flourSilo1T.toFixed(1)} T (${form.flourSilo1Pct ?? 0}%) | S2: ${flourSilo2T.toFixed(1)} T (${form.flourSilo2Pct ?? 0}%)` : ''}\nWash Made: ${washMade.toFixed(1)} KL (Δferm ${(fermVol - prevFermVol).toFixed(1)} + distilled ${washDiff.toFixed(1)})${fermElapsed > 0 ? ' in ' + fmtHrs(fermElapsed) : ''}\nWash Distilled: ${washDiff.toFixed(1)} KL${washElapsed > 0 ? ' in ' + fmtHrs(washElapsed) : ''}\nGrain Consumed: ${grainConsumed.toFixed(2)} T (distilled ${grainDistilled.toFixed(2)} + Δprocess ${deltaGrainInProcess.toFixed(2)} + Δflour ${deltaFlour.toFixed(2)})\nF1: ${form.f1Pct ?? '—'}% | F2: ${form.f2Pct ?? '—'}% | F3: ${form.f3Pct ?? '—'}% | F4: ${form.f4Pct ?? '—'}%\nBeer Well: ${form.beerWellPct ?? '—'}%\nPF1: ${form.pf1Pct ?? '—'}% | PF2: ${form.pf2Pct ?? '—'}%\nILT: ${form.iltPct ?? '—'}% | FLT: ${form.fltPct ?? '—'}%\nSilo Closing: ${siloClosing.toFixed(1)} T | Total@Plant: ${totalAtPlant.toFixed(1)} T${form.remarks ? '\nRemarks: ' + form.remarks : ''}`;
-                window.open(`https://wa.me/?text=${encodeURIComponent(t)}`, '_blank');
+                if (navigator.share) { navigator.share({ text: t }).catch(() => { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }); } else { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }
               }} className="flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 transition">
-                <Share2 size={16} /> WhatsApp
+                <Share2 size={16} /> Share
               </button>
             </div>
           </div>

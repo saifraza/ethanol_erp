@@ -611,7 +611,7 @@ export default function Fermentation() {
                 const b = activeBatch;
                 const dosingList = b.dosings.map(d => `  ${d.chemicalName}: ${d.quantity} ${d.unit}`).join('\n');
                 const t = `*FERMENTATION — Batch #${b.batchNo} F${b.fermenterNo}*\nPhase: ${phaseLabels[b.phase]}${b.fillingStartTime ? '\nFilling: ' + new Date(b.fillingStartTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : ''}${b.fermLevel != null ? `\nLevel: ${b.fermLevel}% (${(b.fermLevel / 100 * FERM_CAPACITY_M3).toFixed(0)} M³)` : ''}${b.setupGravity ? ' | SG: ' + b.setupGravity : ''}${b.setupRs ? ' | RS: ' + b.setupRs + '%' : ''}${b.dosings.length > 0 ? '\n\n*Dosing* (' + b.dosings.length + ')\n' + dosingList : ''}${b.finalAlcohol ? '\n\n*Final*\nAlcohol: ' + b.finalAlcohol + '%' : ''}${b.totalHours ? ' | Hours: ' + b.totalHours : ''}${b.remarks ? '\n\nRemarks: ' + b.remarks : ''}`;
-                window.open(`https://wa.me/?text=${encodeURIComponent(t)}`, '_blank');
+                if (navigator.share) { navigator.share({ text: t }).catch(() => { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }); } else { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }
               }} className="text-white/80 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition" title="Share on WhatsApp">
                 <Share2 size={18} />
               </button>
