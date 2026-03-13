@@ -59,6 +59,8 @@ router.post('/', upload.single('iodinePhoto'), async (req: Request, res: Respons
         thinSlopRecycleFlowRate: b.thinSlopRecycleFlowRate ? parseFloat(b.thinSlopRecycleFlowRate) : null,
         slurryFlow: b.slurryFlow ? parseFloat(b.slurryFlow) : null,
         steamFlow: b.steamFlow ? parseFloat(b.steamFlow) : null,
+        iltSteam: b.iltSteam ? parseFloat(b.iltSteam) : null,
+        flowToFermenter: b.flowToFermenter ? parseFloat(b.flowToFermenter) : null,
         fltIodineTest: b.fltIodineTest || null,
         fltIodinePhotoUrl: photoUrl || b.fltIodinePhotoUrl || null,
         remark: b.remark || null, userId
