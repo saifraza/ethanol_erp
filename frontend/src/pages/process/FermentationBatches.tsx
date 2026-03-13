@@ -322,6 +322,181 @@ function BatchHistoryCard({ batch: b, isActive, isExpanded, onToggle, onDelete, 
   );
 }
 
+/* ═══════════════════════ BEER WELL PANEL ═══════════════════════ */
+function BeerWellPanel() {
+  const [bwLevel, setBwLevel] = useState<number | null>(null);
+  const [bwLoading, setBwLoading] = useState(true);
+  const [bwLabEntries, setBwLabEntries] = useState<LabEntry[]>([]);
+  const [showBwUpdate, setShowBwUpdate] = useState(false);
+  const [bwForm, setBwForm] = useState({ level: '', spGravity: '', ph: '', rs: '', temp: '', alcohol: '' });
+
+  const FERM_CAP = 2300;
+
+  const loadBw = useCallback(() => {
+    setBwLoading(true);
+    api.get('/grain/latest').then(r => {
+      setBwLevel(r.data?.previous?.beerWellLevel ?? null);
+    }).catch(() => {}).finally(() => setBwLoading(false));
+    api.get('/fermentation/fermenter/5').then(r => setBwLabEntries(r.data || [])).catch(() => {});
+  }, []);
+
+  useEffect(() => { loadBw(); }, [loadBw]);
+
+  const saveBwUpdate = async () => {
+    try {
+      // Update beer well level in grain entry
+      if (bwForm.level) {
+        await api.patch('/grain/latest-levels', { beerWellLevel: parseFloat(bwForm.level) / 100 * FERM_CAP });
+      }
+      // Log a lab entry for BW (fermenterNo=5)
+      const fd = new FormData();
+      fd.append('date', new Date().toISOString());
+      fd.append('analysisTime', new Date().toISOString());
+      fd.append('batchNo', '0');
+      fd.append('fermenterNo', '5');
+      fd.append('status', 'ACTIVE');
+      if (bwForm.level) fd.append('level', bwForm.level);
+      if (bwForm.spGravity) fd.append('spGravity', bwForm.spGravity);
+      if (bwForm.ph) fd.append('ph', bwForm.ph);
+      if (bwForm.rs) fd.append('rs', bwForm.rs);
+      if (bwForm.temp) fd.append('temp', bwForm.temp);
+      if (bwForm.alcohol) fd.append('alcohol', bwForm.alcohol);
+      await api.post('/fermentation', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setShowBwUpdate(false);
+      setBwForm({ level: '', spGravity: '', ph: '', rs: '', temp: '', alcohol: '' });
+      loadBw();
+    } catch {}
+  };
+
+  const bwPct = bwLevel != null ? (bwLevel / FERM_CAP * 100) : 0;
+
+  return (
+    <div className="space-y-4">
+      {/* BW Status Card */}
+      <div className="bg-white rounded-xl shadow border overflow-hidden">
+        <div className="bg-gradient-to-r from-purple-600 to-fuchsia-600 p-4 text-white">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold flex items-center gap-2"><Beer size={22} /> Beer Well</h2>
+              <p className="text-purple-200 text-sm mt-0.5">Live Status</p>
+            </div>
+            <button onClick={() => {
+              setShowBwUpdate(true);
+              setBwForm(f => ({ ...f, level: bwPct > 0 ? bwPct.toFixed(1) : '' }));
+            }} className="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1.5">
+              <Pencil size={14} /> Update
+            </button>
+          </div>
+        </div>
+        <div className="p-5">
+          {bwLoading ? (
+            <div className="text-gray-400 text-center py-8">Loading...</div>
+          ) : (
+            <div className="flex items-center gap-6">
+              {/* Tank visual */}
+              <div className="relative w-20 h-32 rounded-xl border-2 border-purple-300 overflow-hidden bg-gray-50 flex-shrink-0">
+                <div className="absolute bottom-0 w-full transition-all duration-500 rounded-b-lg"
+                  style={{ height: `${Math.min(bwPct, 100)}%`, background: 'linear-gradient(to top, #9333ea, #c084fc)' }} />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-sm font-bold text-white drop-shadow">{bwPct.toFixed(0)}%</span>
+                </div>
+              </div>
+              {/* Info */}
+              <div className="flex-1">
+                <div className="text-3xl font-bold text-purple-700">{bwLevel != null ? `${bwLevel.toFixed(0)} KL` : 'Empty'}</div>
+                <div className="text-sm text-gray-500 mt-1">of {FERM_CAP} KL capacity</div>
+                {bwLabEntries.length > 0 && (
+                  <div className="flex gap-3 mt-3 flex-wrap text-sm">
+                    {(() => { const last = bwLabEntries[bwLabEntries.length - 1]; return (<>
+                      {last.spGravity != null && <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded">SG: {last.spGravity}</span>}
+                      {last.ph != null && <span className="bg-amber-50 text-amber-700 px-2 py-0.5 rounded">pH: {last.ph}</span>}
+                      {last.rs != null && <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded">RS: {last.rs}%</span>}
+                      {last.temp != null && <span className="bg-purple-50 text-purple-700 px-2 py-0.5 rounded">Temp: {last.temp}°C</span>}
+                      {last.alcohol != null && <span className="bg-red-50 text-red-700 px-2 py-0.5 rounded">Alc: {last.alcohol}%</span>}
+                      <span className="text-gray-400 text-xs">Last: {new Date(last.analysisTime || last.date).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false })}</span>
+                    </>); })()}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* BW Lab History */}
+      {bwLabEntries.length > 0 && (
+        <div className="bg-white rounded-xl shadow border">
+          <div className="p-4 border-b">
+            <h3 className="font-bold text-gray-700 flex items-center gap-2"><FlaskConical size={16} /> Lab Readings ({bwLabEntries.length})</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="bg-gray-50 text-xs text-gray-500">{['Date/Time', 'Level%', 'SG', 'pH', 'RS%', 'Alc%', 'Temp'].map(h => <th key={h} className="text-left py-2 px-2 font-medium">{h}</th>)}</tr></thead>
+              <tbody>{[...bwLabEntries].reverse().slice(0, 20).map((r, i) => (
+                <tr key={r.id} className={`border-t ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
+                  <td className="px-2 py-1.5 text-xs whitespace-nowrap">{(r.analysisTime || r.date) ? new Date(r.analysisTime || r.date).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : '-'}</td>
+                  <td className="px-2 text-emerald-600 font-medium">{r.level ?? '-'}</td>
+                  <td className="px-2 font-medium">{r.spGravity ?? '-'}</td>
+                  <td className="px-2">{r.ph ?? '-'}</td>
+                  <td className="px-2">{r.rs ?? '-'}</td>
+                  <td className="px-2 text-red-600 font-medium">{r.alcohol ?? '-'}</td>
+                  <td className="px-2">{r.temp ?? '-'}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* BW Update Modal */}
+      {showBwUpdate && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-end md:items-center justify-center" onClick={() => setShowBwUpdate(false)}>
+          <div className="bg-white rounded-t-2xl md:rounded-2xl w-full max-w-md p-5 shadow-2xl animate-in" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2"><Beer size={18} /> Update Beer Well</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-500 font-medium">Level %</label>
+                <input type="number" step="0.1" value={bwForm.level} onChange={e => setBwForm(f => ({ ...f, level: e.target.value }))} placeholder="e.g. 67"
+                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-base focus:border-purple-400 outline-none" />
+                {bwForm.level && <span className="text-xs text-purple-600">{(parseFloat(bwForm.level) / 100 * FERM_CAP).toFixed(0)} KL</span>}
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 font-medium">SG</label>
+                <input type="number" step="0.001" value={bwForm.spGravity} onChange={e => setBwForm(f => ({ ...f, spGravity: e.target.value }))} placeholder="e.g. 1.000"
+                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-base focus:border-indigo-400 outline-none" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 font-medium">pH</label>
+                <input type="number" step="0.01" value={bwForm.ph} onChange={e => setBwForm(f => ({ ...f, ph: e.target.value }))} placeholder="e.g. 4.2"
+                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-base focus:border-amber-400 outline-none" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 font-medium">RS %</label>
+                <input type="number" step="0.01" value={bwForm.rs} onChange={e => setBwForm(f => ({ ...f, rs: e.target.value }))} placeholder="e.g. 0.5"
+                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-base focus:border-emerald-400 outline-none" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 font-medium">Alcohol %</label>
+                <input type="number" step="0.01" value={bwForm.alcohol} onChange={e => setBwForm(f => ({ ...f, alcohol: e.target.value }))} placeholder="e.g. 8.5"
+                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-base focus:border-red-400 outline-none" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 font-medium">Temp °C</label>
+                <input type="number" step="0.1" value={bwForm.temp} onChange={e => setBwForm(f => ({ ...f, temp: e.target.value }))} placeholder="e.g. 30"
+                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-base focus:border-purple-400 outline-none" />
+              </div>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button onClick={saveBwUpdate} className="flex-1 bg-purple-600 text-white py-3 rounded-xl text-base font-semibold hover:bg-purple-700 shadow-sm">Save</button>
+              <button onClick={() => setShowBwUpdate(false)} className="px-6 py-3 bg-gray-100 text-gray-600 rounded-xl text-base font-medium hover:bg-gray-200">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ═══════════════════════ MAIN COMPONENT ═══════════════════════ */
 export default function Fermentation() {
   const [tab, setTab] = useState(1);
@@ -585,7 +760,7 @@ export default function Fermentation() {
             <h1 className="text-2xl font-bold flex items-center gap-2"><FlaskConical size={24} /> Fermentation</h1>
             <p className="text-emerald-200 text-sm mt-1">{batches.length} batches | {batches.filter(b => b.phase !== 'DONE').length} active</p>
           </div>
-          <button onClick={() => setShowNewBatch(true)} className="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1"><Plus size={16} /> New Batch</button>
+          {tab !== 5 && <button onClick={() => setShowNewBatch(true)} className="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1"><Plus size={16} /> New Batch</button>}
         </div>
       </div>
 
@@ -609,6 +784,11 @@ export default function Fermentation() {
         })}
       </div>
 
+      {/* ═══════ BEER WELL (tab 5) — live status, no batches ═══════ */}
+      {tab === 5 ? (
+        <BeerWellPanel />
+      ) : (
+      <>
       {/* NEW BATCH FORM */}
       {showNewBatch && (
         <div className="bg-white rounded-lg shadow p-4 border-l-4 border-emerald-500">
@@ -976,6 +1156,8 @@ export default function Fermentation() {
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }
