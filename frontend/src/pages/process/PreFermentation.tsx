@@ -38,10 +38,13 @@ export default function PreFermentation() {
   const [doseForm, setDoseForm] = useState({ chemicalName: '', quantity: '', unit: 'kg', rate: '' });
   const [labForm, setLabForm] = useState({ analysisTime: '', spGravity: '', ph: '', rs: '', rst: '', alcohol: '', ds: '', vfaPpa: '', temp: '', remarks: '' });
   const [chemForm, setChemForm] = useState({ name: '', rate: '', unit: 'kg' });
+  const [pfRecipes, setPfRecipes] = useState<{ id: string; chemicalName: string; quantity: number; unit: string }[]>([]);
+  const [applyingRecipe, setApplyingRecipe] = useState(false);
 
   const load = useCallback(() => {
     api.get('/pre-fermentation/batches').then(r => setBatches(r.data)).catch(() => {});
     api.get('/pre-fermentation/chemicals').then(r => setChemicals(r.data)).catch(() => {});
+    api.get('/dosing-recipes/PF').then(r => setPfRecipes(r.data)).catch(() => {});
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -69,6 +72,20 @@ export default function PreFermentation() {
       setDoseForm(f => ({ ...f, quantity: '' }));
       load();
     } catch {}
+  };
+
+  const applyRecipeTemplate = async () => {
+    if (!activeBatch || pfRecipes.length === 0) return;
+    setApplyingRecipe(true);
+    try {
+      for (const r of pfRecipes) {
+        await api.post(`/pre-fermentation/batches/${activeBatch.id}/dosing`, {
+          chemicalName: r.chemicalName, quantity: String(r.quantity), unit: r.unit
+        });
+      }
+      load();
+    } catch {}
+    setApplyingRecipe(false);
   };
 
   const addLabReading = async () => {
@@ -380,6 +397,26 @@ export default function PreFermentation() {
             {['SETUP', 'DOSING', 'LAB'].includes(activeBatch.phase) && (
               <div className="bg-amber-50 rounded-lg p-3 border border-amber-200">
                 <h3 className="font-semibold text-amber-800 flex items-center gap-1 mb-2"><Beaker size={16} /> Chemical Dosing</h3>
+                {/* Recipe Template — show when no dosings added yet */}
+                {activeBatch.dosings.length === 0 && pfRecipes.length > 0 && (
+                  <div className="mb-3 bg-white rounded-lg border border-amber-300 p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-amber-700">PF Recipe Template</span>
+                      <button onClick={applyRecipeTemplate} disabled={applyingRecipe}
+                        className="bg-amber-500 text-white px-3 py-1.5 rounded text-sm hover:bg-amber-600 font-medium disabled:opacity-50">
+                        {applyingRecipe ? 'Applying...' : 'Apply All'}
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                      {pfRecipes.map(r => (
+                        <div key={r.id} className="flex justify-between bg-amber-50 rounded px-2 py-1 text-sm">
+                          <span className="text-gray-700">{r.chemicalName}</span>
+                          <span className="text-amber-700 font-medium">{r.quantity} {r.unit}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {activeBatch.dosings.length > 0 && (
                   <table className="w-full text-sm mb-3">
                     <thead><tr className="text-xs text-gray-500"><th className="text-left py-1">Chemical</th><th className="text-right">Qty</th><th className="text-right">Unit</th><th className="text-right">Time</th><th className="text-right">T0+</th><th></th></tr></thead>
