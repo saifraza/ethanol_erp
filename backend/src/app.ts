@@ -67,6 +67,11 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// 404 for unknown API routes (before SPA fallback)
+app.all('/api/*', (req, res) => {
+  res.status(404).json({ error: `API route not found: ${req.method} ${req.path}` });
+});
+
 const publicPath = path.join(__dirname, '..', 'public');
 app.use(express.static(publicPath));
 app.get('*', (req, res) => {

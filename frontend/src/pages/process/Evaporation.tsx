@@ -14,6 +14,9 @@ interface EvapForm {
   syrupConcentration: string;
   vacuum: string; thinSlopFlowRate: string;
   lastSyrupGravity: string; remark: string;
+  reboilerATemp: string; reboilerBTemp: string; reboilerCTemp: string;
+  thinSlopGravity: string; thinSlopSolids: string;
+  spentWashGravity: string; spentWashSolids: string;
 }
 
 const empty = (): EvapForm => ({
@@ -23,7 +26,10 @@ const empty = (): EvapForm => ({
   ff5SpGravity: '', ff5Temp: '', fc1SpGravity: '', fc1Temp: '',
   fc2SpGravity: '', fc2Temp: '',
   syrupConcentration: '',
-  vacuum: '', thinSlopFlowRate: '', lastSyrupGravity: '', remark: ''
+  vacuum: '', thinSlopFlowRate: '', lastSyrupGravity: '', remark: '',
+  reboilerATemp: '', reboilerBTemp: '', reboilerCTemp: '',
+  thinSlopGravity: '', thinSlopSolids: '',
+  spentWashGravity: '', spentWashSolids: ''
 });
 
 const FFE_UNITS = [
@@ -79,6 +85,14 @@ export default function Evaporation() {
       `*Syrup:*`,
       `  Gravity: ${form.lastSyrupGravity || '—'}`,
       `  Concentration: ${form.syrupConcentration || '—'}%`,
+      ``,
+      `*Reboiler (Analyzer Column):*`,
+      `  A: ${form.reboilerATemp || '—'}°C | B: ${form.reboilerBTemp || '—'}°C | C: ${form.reboilerCTemp || '—'}°C`,
+      ``,
+      `*Thin Slop:*`,
+      `  Gravity: ${form.thinSlopGravity || '—'} | Solids: ${form.thinSlopSolids || '—'}%`,
+      `*Spent Wash:*`,
+      `  Gravity: ${form.spentWashGravity || '—'} | Solids: ${form.spentWashSolids || '—'}%`,
       ``,
       `Vacuum: ${form.vacuum || '—'}`,
       `Thin Slop Flow Rate: ${form.thinSlopFlowRate || '—'}`,
@@ -167,7 +181,28 @@ export default function Evaporation() {
         </div>
       </div>
 
-      {/* Vacuum, Thin Slop, Last Syrup */}
+      {/* Reboiler (Analyzer Column) */}
+      <div className="bg-white rounded-lg shadow-sm border p-4 mb-4">
+        <h3 className="text-sm font-semibold text-red-700 mb-3 uppercase tracking-wide">Reboiler — Analyzer Column</h3>
+        <div className="grid grid-cols-3 gap-3">
+          <div><label className="text-xs text-gray-500">Reboiler A (°C)</label><input type="number" step="0.1" value={form.reboilerATemp} onChange={e => upd('reboilerATemp', e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+          <div><label className="text-xs text-gray-500">Reboiler B (°C)</label><input type="number" step="0.1" value={form.reboilerBTemp} onChange={e => upd('reboilerBTemp', e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+          <div><label className="text-xs text-gray-500">Reboiler C (°C)</label><input type="number" step="0.1" value={form.reboilerCTemp} onChange={e => upd('reboilerCTemp', e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+        </div>
+      </div>
+
+      {/* Thin Slop & Spent Wash */}
+      <div className="bg-white rounded-lg shadow-sm border p-4 mb-4">
+        <h3 className="text-sm font-semibold text-amber-700 mb-3 uppercase tracking-wide">Thin Slop & Spent Wash</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div><label className="text-xs text-gray-500">Thin Slop Gravity</label><input type="number" step="0.001" value={form.thinSlopGravity} onChange={e => upd('thinSlopGravity', e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+          <div><label className="text-xs text-gray-500">Thin Slop Solids (%)</label><input type="number" step="0.01" value={form.thinSlopSolids} onChange={e => upd('thinSlopSolids', e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+          <div><label className="text-xs text-gray-500">Spent Wash Gravity</label><input type="number" step="0.001" value={form.spentWashGravity} onChange={e => upd('spentWashGravity', e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+          <div><label className="text-xs text-gray-500">Spent Wash Solids (%)</label><input type="number" step="0.01" value={form.spentWashSolids} onChange={e => upd('spentWashSolids', e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+        </div>
+      </div>
+
+      {/* Vacuum, Thin Slop Flow, Remark */}
       <div className="bg-white rounded-lg shadow-sm border p-4 mb-4">
         <h3 className="text-sm font-semibold text-orange-700 mb-3 uppercase tracking-wide">Process Parameters</h3>
         <div className="grid grid-cols-2 gap-3">
@@ -242,6 +277,34 @@ export default function Evaporation() {
                 </div>
               </div>
 
+              <div>
+                <h4 className="font-semibold text-red-700 mb-1">Reboiler — Analyzer Column</h4>
+                <div className="grid grid-cols-3 gap-2">
+                  {['A', 'B', 'C'].map(l => (
+                    <div key={l} className="bg-red-50 rounded p-2 text-center">
+                      <div className="text-xs text-gray-500">Reboiler {l}</div>
+                      <div className="font-semibold">{(form as any)[`reboiler${l}Temp`] || '—'}°C</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <h4 className="font-semibold text-amber-700 mb-1">Thin Slop & Spent Wash</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="bg-amber-50 rounded p-2 text-center">
+                    <div className="text-xs text-gray-500">Thin Slop Gr</div>
+                    <div className="font-semibold">{form.thinSlopGravity || '—'}</div>
+                    <div className="text-xs text-gray-400">Solids: {form.thinSlopSolids || '—'}%</div>
+                  </div>
+                  <div className="bg-amber-50 rounded p-2 text-center">
+                    <div className="text-xs text-gray-500">Spent Wash Gr</div>
+                    <div className="font-semibold">{form.spentWashGravity || '—'}</div>
+                    <div className="text-xs text-gray-400">Solids: {form.spentWashSolids || '—'}%</div>
+                  </div>
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-2">
                 <div className="bg-orange-50 rounded p-2 text-center">
                   <div className="text-xs text-gray-500">Vacuum</div>
@@ -276,7 +339,7 @@ export default function Evaporation() {
         {showHistory && (
           <div className="overflow-x-auto max-h-64 overflow-y-auto">
             <table className="w-full text-xs"><thead className="bg-gray-50 sticky top-0"><tr>
-              {['Date', 'Time', 'FF1 SG', 'FF3 SG', 'FF5 SG', 'Vacuum', 'Syrup Gr', ''].map(h =>
+              {['Date', 'Time', 'FF1 SG', 'FF5 SG', 'Reb A', 'Reb B', 'Reb C', 'TS Gr', 'SW Gr', 'Vacuum', ''].map(h =>
                 <th key={h} className="px-2 py-1 text-left font-medium text-gray-600">{h}</th>)}
             </tr></thead><tbody>
               {entries.slice(0, 50).map(e => (
@@ -284,10 +347,13 @@ export default function Evaporation() {
                   <td className="px-2 py-1">{e.date?.split('T')[0]}</td>
                   <td className="px-2 py-1">{e.analysisTime}</td>
                   <td className="px-2 py-1">{e.ff1SpGravity ?? '—'}</td>
-                  <td className="px-2 py-1">{e.ff3SpGravity ?? '—'}</td>
                   <td className="px-2 py-1">{e.ff5SpGravity ?? '—'}</td>
+                  <td className="px-2 py-1">{e.reboilerATemp ?? '—'}</td>
+                  <td className="px-2 py-1">{e.reboilerBTemp ?? '—'}</td>
+                  <td className="px-2 py-1">{e.reboilerCTemp ?? '—'}</td>
+                  <td className="px-2 py-1">{e.thinSlopGravity ?? '—'}</td>
+                  <td className="px-2 py-1">{e.spentWashGravity ?? '—'}</td>
                   <td className="px-2 py-1">{e.vacuum ?? '—'}</td>
-                  <td className="px-2 py-1">{e.lastSyrupGravity ?? '—'}</td>
                   <td className="px-2 py-1"><button onClick={() => api.delete(`/evaporation/${e.id}`).then(load)} className="text-red-400 hover:text-red-600"><Trash2 size={12} /></button></td>
                 </tr>
               ))}
