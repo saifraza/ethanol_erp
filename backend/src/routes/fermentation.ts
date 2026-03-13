@@ -91,6 +91,30 @@ router.delete('/batches/:id', authorize('ADMIN') as any, async (req: Request, re
   res.json({ ok: true });
 });
 
+/* ═══════ CREATE FROM PF TRANSFER ═══════ */
+router.post('/batches/from-pf', async (req: Request, res: Response) => {
+  try {
+    const b = req.body;
+    const now = new Date();
+    const batch = await prisma.fermentationBatch.create({
+      data: {
+        batchNo: parseInt(b.batchNo) || 0,
+        fermenterNo: parseInt(b.fermenterNo) || 1,
+        phase: 'FILLING',
+        pfTransferTime: b.pfTransferTime ? new Date(b.pfTransferTime) : now,
+        fillingStartTime: b.pfTransferTime ? new Date(b.pfTransferTime) : now,
+        fermLevel: b.fermLevel ? parseFloat(b.fermLevel) : null,
+        volume: b.fermLevel ? parseFloat((parseFloat(b.fermLevel) / 100 * 2300 * 1000).toFixed(0)) : null,
+        setupGravity: b.setupGravity ? parseFloat(b.setupGravity) : null,
+        remarks: b.remarks ? String(b.remarks) : (b.pfBatchId ? `From PF${b.pfNo || ''} batch` : null),
+        userId: (req as any).user?.id || 'unknown'
+      },
+      include: { dosings: true }
+    });
+    res.status(201).json(batch);
+  } catch (err: any) { res.status(400).json({ error: err.message }); }
+});
+
 /* ═══════ DOSING ═══════ */
 router.post('/batches/:id/dosing', async (req: Request, res: Response) => {
   try {

@@ -399,6 +399,21 @@ model FermDosing {
 }
 
 // ═══════════════════════════════════════════════
+// DOSING RECIPES (fixed patterns)
+// ═══════════════════════════════════════════════
+model DosingRecipe {
+  id           String   @id @default(uuid())
+  category     String   // PF, FERMENTER, LIQUEFACTION
+  chemicalName String
+  quantity     Float
+  unit         String   @default("kg")
+  order        Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// ═══════════════════════════════════════════════
 // DISTILLATION
 // ═══════════════════════════════════════════════
 model DistillationEntry {

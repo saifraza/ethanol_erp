@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, ReferenceLine } from 'recharts';
-import { Plus, FlaskConical, Beaker, ArrowRight, RotateCcw, Trash2, ChevronDown, ChevronUp, Clock, Pencil, TrendingDown, Thermometer, Droplets, BarChart3, Share2, Camera, Beer } from 'lucide-react';
+import { Plus, FlaskConical, Beaker, ArrowRight, RotateCcw, Trash2, ChevronDown, ChevronUp, Clock, Pencil, TrendingDown, Thermometer, Droplets, BarChart3, Share2, Camera, Beer, Timer, CheckCircle } from 'lucide-react';
 import api from '../../services/api';
 
 /* ═══════════════════════ TYPES ═══════════════════════ */
@@ -33,10 +33,24 @@ const toLocal = (iso: string | null) => {
 };
 const nowLocal = () => toLocal(new Date().toISOString());
 
-const PHASES = ['PF_TRANSFER', 'FILLING', 'REACTION', 'RETENTION', 'TRANSFER', 'CIP', 'DONE'] as const;
+const PHASES = ['PF_TRANSFER', 'FILLING', 'REACTION', 'RETENTION', 'DONE'] as const;
 const phaseColors: Record<string, string> = { PF_TRANSFER: '#f97316', FILLING: '#6366f1', REACTION: '#10b981', RETENTION: '#06b6d4', TRANSFER: '#3b82f6', CIP: '#8b5cf6', DONE: '#6b7280' };
 const phaseLabels: Record<string, string> = { PF_TRANSFER: 'PF Transfer', FILLING: 'Filling', REACTION: 'Reaction', RETENTION: 'Retention', TRANSFER: 'Transfer', CIP: 'CIP', DONE: 'Done' };
-const FERMENTERS = [1, 2, 3, 4, 5]; // 5 = Beer Well
+const RETENTION_HOURS = 12;
+
+/* Retention countdown: returns { hours, minutes, seconds, totalMs, isReady } */
+const retentionCountdown = (retentionStartTime: string | null) => {
+  if (!retentionStartTime) return null;
+  const elapsedMs = Date.now() - new Date(retentionStartTime).getTime();
+  const targetMs = RETENTION_HOURS * 3600000;
+  const remainMs = targetMs - elapsedMs;
+  if (remainMs <= 0) return { hours: 0, minutes: 0, seconds: 0, totalMs: 0, isReady: true, elapsed: elapsedMs };
+  const h = Math.floor(remainMs / 3600000);
+  const m = Math.floor((remainMs % 3600000) / 60000);
+  const s = Math.floor((remainMs % 60000) / 1000);
+  return { hours: h, minutes: m, seconds: s, totalMs: remainMs, isReady: false, elapsed: elapsedMs };
+};
+const FERMENTERS = [1, 2, 3, 4];
 const F_COLORS: Record<number, string> = { 1: '#3b82f6', 2: '#10b981', 3: '#f59e0b', 4: '#ef4444', 5: '#8b5cf6' };
 const F_LABELS: Record<number, string> = { 1: 'F1', 2: 'F2', 3: 'F3', 4: 'F4', 5: 'BW' };
 const FERM_CAPACITY_M3 = 2300;
@@ -322,181 +336,6 @@ function BatchHistoryCard({ batch: b, isActive, isExpanded, onToggle, onDelete, 
   );
 }
 
-/* ═══════════════════════ BEER WELL PANEL ═══════════════════════ */
-function BeerWellPanel() {
-  const [bwLevel, setBwLevel] = useState<number | null>(null);
-  const [bwLoading, setBwLoading] = useState(true);
-  const [bwLabEntries, setBwLabEntries] = useState<LabEntry[]>([]);
-  const [showBwUpdate, setShowBwUpdate] = useState(false);
-  const [bwForm, setBwForm] = useState({ level: '', spGravity: '', ph: '', rs: '', temp: '', alcohol: '' });
-
-  const FERM_CAP = 2300;
-
-  const loadBw = useCallback(() => {
-    setBwLoading(true);
-    api.get('/grain/latest').then(r => {
-      setBwLevel(r.data?.previous?.beerWellLevel ?? null);
-    }).catch(() => {}).finally(() => setBwLoading(false));
-    api.get('/fermentation/fermenter/5').then(r => setBwLabEntries(r.data || [])).catch(() => {});
-  }, []);
-
-  useEffect(() => { loadBw(); }, [loadBw]);
-
-  const saveBwUpdate = async () => {
-    try {
-      // Update beer well level in grain entry
-      if (bwForm.level) {
-        await api.patch('/grain/latest-levels', { beerWellLevel: parseFloat(bwForm.level) / 100 * FERM_CAP });
-      }
-      // Log a lab entry for BW (fermenterNo=5)
-      const fd = new FormData();
-      fd.append('date', new Date().toISOString());
-      fd.append('analysisTime', new Date().toISOString());
-      fd.append('batchNo', '0');
-      fd.append('fermenterNo', '5');
-      fd.append('status', 'ACTIVE');
-      if (bwForm.level) fd.append('level', bwForm.level);
-      if (bwForm.spGravity) fd.append('spGravity', bwForm.spGravity);
-      if (bwForm.ph) fd.append('ph', bwForm.ph);
-      if (bwForm.rs) fd.append('rs', bwForm.rs);
-      if (bwForm.temp) fd.append('temp', bwForm.temp);
-      if (bwForm.alcohol) fd.append('alcohol', bwForm.alcohol);
-      await api.post('/fermentation', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      setShowBwUpdate(false);
-      setBwForm({ level: '', spGravity: '', ph: '', rs: '', temp: '', alcohol: '' });
-      loadBw();
-    } catch {}
-  };
-
-  const bwPct = bwLevel != null ? (bwLevel / FERM_CAP * 100) : 0;
-
-  return (
-    <div className="space-y-4">
-      {/* BW Status Card */}
-      <div className="bg-white rounded-xl shadow border overflow-hidden">
-        <div className="bg-gradient-to-r from-purple-600 to-fuchsia-600 p-4 text-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-bold flex items-center gap-2"><Beer size={22} /> Beer Well</h2>
-              <p className="text-purple-200 text-sm mt-0.5">Live Status</p>
-            </div>
-            <button onClick={() => {
-              setShowBwUpdate(true);
-              setBwForm(f => ({ ...f, level: bwPct > 0 ? bwPct.toFixed(1) : '' }));
-            }} className="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1.5">
-              <Pencil size={14} /> Update
-            </button>
-          </div>
-        </div>
-        <div className="p-5">
-          {bwLoading ? (
-            <div className="text-gray-400 text-center py-8">Loading...</div>
-          ) : (
-            <div className="flex items-center gap-6">
-              {/* Tank visual */}
-              <div className="relative w-20 h-32 rounded-xl border-2 border-purple-300 overflow-hidden bg-gray-50 flex-shrink-0">
-                <div className="absolute bottom-0 w-full transition-all duration-500 rounded-b-lg"
-                  style={{ height: `${Math.min(bwPct, 100)}%`, background: 'linear-gradient(to top, #9333ea, #c084fc)' }} />
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-sm font-bold text-white drop-shadow">{bwPct.toFixed(0)}%</span>
-                </div>
-              </div>
-              {/* Info */}
-              <div className="flex-1">
-                <div className="text-3xl font-bold text-purple-700">{bwLevel != null && bwLevel > 0 ? `${bwPct.toFixed(1)}%` : 'Empty'}</div>
-                <div className="text-sm text-gray-500 mt-1">{bwLevel != null && bwLevel > 0 ? `${bwLevel.toFixed(0)} KL of ${FERM_CAP} KL` : `Capacity: ${FERM_CAP} KL`}</div>
-                {bwLabEntries.length > 0 && (
-                  <div className="flex gap-3 mt-3 flex-wrap text-sm">
-                    {(() => { const last = bwLabEntries[bwLabEntries.length - 1]; return (<>
-                      {last.spGravity != null && <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded">SG: {last.spGravity}</span>}
-                      {last.ph != null && <span className="bg-amber-50 text-amber-700 px-2 py-0.5 rounded">pH: {last.ph}</span>}
-                      {last.rs != null && <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded">RS: {last.rs}%</span>}
-                      {last.temp != null && <span className="bg-purple-50 text-purple-700 px-2 py-0.5 rounded">Temp: {last.temp}°C</span>}
-                      {last.alcohol != null && <span className="bg-red-50 text-red-700 px-2 py-0.5 rounded">Alc: {last.alcohol}%</span>}
-                      <span className="text-gray-400 text-xs">Last: {new Date(last.analysisTime || last.date).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false })}</span>
-                    </>); })()}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* BW Lab History */}
-      {bwLabEntries.length > 0 && (
-        <div className="bg-white rounded-xl shadow border">
-          <div className="p-4 border-b">
-            <h3 className="font-bold text-gray-700 flex items-center gap-2"><FlaskConical size={16} /> Lab Readings ({bwLabEntries.length})</h3>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead><tr className="bg-gray-50 text-xs text-gray-500">{['Date/Time', 'Level%', 'SG', 'pH', 'RS%', 'Alc%', 'Temp'].map(h => <th key={h} className="text-left py-2 px-2 font-medium">{h}</th>)}</tr></thead>
-              <tbody>{[...bwLabEntries].reverse().slice(0, 20).map((r, i) => (
-                <tr key={r.id} className={`border-t ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
-                  <td className="px-2 py-1.5 text-xs whitespace-nowrap">{(r.analysisTime || r.date) ? new Date(r.analysisTime || r.date).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : '-'}</td>
-                  <td className="px-2 text-emerald-600 font-medium">{r.level ?? '-'}</td>
-                  <td className="px-2 font-medium">{r.spGravity ?? '-'}</td>
-                  <td className="px-2">{r.ph ?? '-'}</td>
-                  <td className="px-2">{r.rs ?? '-'}</td>
-                  <td className="px-2 text-red-600 font-medium">{r.alcohol ?? '-'}</td>
-                  <td className="px-2">{r.temp ?? '-'}</td>
-                </tr>
-              ))}</tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* BW Update Modal */}
-      {showBwUpdate && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-end md:items-center justify-center" onClick={() => setShowBwUpdate(false)}>
-          <div className="bg-white rounded-t-2xl md:rounded-2xl w-full max-w-md p-5 shadow-2xl animate-in" onClick={e => e.stopPropagation()}>
-            <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2"><Beer size={18} /> Update Beer Well</h3>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs text-gray-500 font-medium">Level %</label>
-                <input type="number" step="0.1" value={bwForm.level} onChange={e => setBwForm(f => ({ ...f, level: e.target.value }))} placeholder="e.g. 67"
-                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-base focus:border-purple-400 outline-none" />
-                {bwForm.level && <span className="text-xs text-purple-600">{(parseFloat(bwForm.level) / 100 * FERM_CAP).toFixed(0)} KL</span>}
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 font-medium">SG</label>
-                <input type="number" step="0.001" value={bwForm.spGravity} onChange={e => setBwForm(f => ({ ...f, spGravity: e.target.value }))} placeholder="e.g. 1.000"
-                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-base focus:border-indigo-400 outline-none" />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 font-medium">pH</label>
-                <input type="number" step="0.01" value={bwForm.ph} onChange={e => setBwForm(f => ({ ...f, ph: e.target.value }))} placeholder="e.g. 4.2"
-                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-base focus:border-amber-400 outline-none" />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 font-medium">RS %</label>
-                <input type="number" step="0.01" value={bwForm.rs} onChange={e => setBwForm(f => ({ ...f, rs: e.target.value }))} placeholder="e.g. 0.5"
-                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-base focus:border-emerald-400 outline-none" />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 font-medium">Alcohol %</label>
-                <input type="number" step="0.01" value={bwForm.alcohol} onChange={e => setBwForm(f => ({ ...f, alcohol: e.target.value }))} placeholder="e.g. 8.5"
-                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-base focus:border-red-400 outline-none" />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 font-medium">Temp °C</label>
-                <input type="number" step="0.1" value={bwForm.temp} onChange={e => setBwForm(f => ({ ...f, temp: e.target.value }))} placeholder="e.g. 30"
-                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-base focus:border-purple-400 outline-none" />
-              </div>
-            </div>
-            <div className="flex gap-2 mt-4">
-              <button onClick={saveBwUpdate} className="flex-1 bg-purple-600 text-white py-3 rounded-xl text-base font-semibold hover:bg-purple-700 shadow-sm">Save</button>
-              <button onClick={() => setShowBwUpdate(false)} className="px-6 py-3 bg-gray-100 text-gray-600 rounded-xl text-base font-medium hover:bg-gray-200">Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 /* ═══════════════════════ MAIN COMPONENT ═══════════════════════ */
 export default function Fermentation() {
   const [tab, setTab] = useState(1);
@@ -569,6 +408,26 @@ export default function Fermentation() {
       // update batch fermLevel if level was entered
       if (labForm.level) {
         await api.patch(`/fermentation/batches/${activeBatch.id}`, { fermLevel: labForm.level });
+      }
+      // Auto-advance FILLING → REACTION: if 2 level readings are same and >30 min apart
+      if (activeBatch.phase === 'FILLING' && labForm.level) {
+        const prevReadings = batchLab.filter(r => r.level != null).sort((a, c) => new Date(a.analysisTime || a.date).getTime() - new Date(c.analysisTime || c.date).getTime());
+        if (prevReadings.length > 0) {
+          const lastReading = prevReadings[prevReadings.length - 1];
+          const lastLevel = lastReading.level;
+          const currentLevel = parseFloat(labForm.level);
+          const lastTime = new Date(lastReading.analysisTime || lastReading.date).getTime();
+          const nowMs = new Date(analysisTimeISO).getTime();
+          const diffMins = (nowMs - lastTime) / 60000;
+          if (lastLevel != null && Math.abs(currentLevel - lastLevel) < 0.5 && diffMins >= 30) {
+            await api.patch(`/fermentation/batches/${activeBatch.id}`, {
+              phase: 'REACTION',
+              fillingEndTime: analysisTimeISO
+            });
+            setPhaseMsg('✓ Level stable for 30+ min — auto-moved to Reaction');
+            setTimeout(() => setPhaseMsg(null), 3000);
+          }
+        }
       }
       // Auto-advance: SG ≤ 1.000 during REACTION → move to RETENTION
       const sg = labForm.spGravity ? parseFloat(labForm.spGravity) : null;
@@ -721,6 +580,20 @@ export default function Fermentation() {
   const canDose = activeBatch && ['FILLING', 'REACTION', 'RETENTION'].includes(activeBatch.phase);
   /* can add lab readings in ANY active phase */
   const canLab = activeBatch && activeBatch.phase !== 'DONE';
+
+  /* ─── Retention countdown timer ─── */
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (activeBatch?.phase === 'RETENTION' && activeBatch.retentionStartTime) {
+      const iv = setInterval(() => setTick(t => t + 1), 1000);
+      return () => clearInterval(iv);
+    }
+  }, [activeBatch?.phase, activeBatch?.retentionStartTime]);
+  const retCountdown = useMemo(() => {
+    if (activeBatch?.phase === 'RETENTION') return retentionCountdown(activeBatch.retentionStartTime);
+    return null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeBatch?.retentionStartTime, activeBatch?.phase, tick]);
   /* quick update modal */
   const [showQuickUpdate, setShowQuickUpdate] = useState(false);
   const [quForm, setQuForm] = useState({ fermLevel: '', spGravity: '', ph: '', rs: '', temp: '' });
@@ -757,6 +630,22 @@ export default function Fermentation() {
       if (quForm.rs) fd.append('rs', quForm.rs);
       if (quForm.temp) fd.append('temp', quForm.temp);
       await api.post('/fermentation', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      // Auto-advance FILLING → REACTION: if level same as last reading and >30 min
+      if (activeBatch.phase === 'FILLING' && quForm.fermLevel) {
+        const prevReadings = batchLab.filter(r => r.level != null).sort((a, c) => new Date(a.analysisTime || a.date).getTime() - new Date(c.analysisTime || c.date).getTime());
+        if (prevReadings.length > 0) {
+          const lastReading = prevReadings[prevReadings.length - 1];
+          const lastLevel = lastReading.level;
+          const currentLevel = parseFloat(quForm.fermLevel);
+          const lastTime = new Date(lastReading.analysisTime || lastReading.date).getTime();
+          const diffMins = (Date.now() - lastTime) / 60000;
+          if (lastLevel != null && Math.abs(currentLevel - lastLevel) < 0.5 && diffMins >= 30) {
+            await api.patch(`/fermentation/batches/${activeBatch.id}`, { phase: 'REACTION', fillingEndTime: new Date().toISOString() });
+            setPhaseMsg('✓ Level stable for 30+ min — auto-moved to Reaction');
+            setTimeout(() => setPhaseMsg(null), 3000);
+          }
+        }
+      }
       // Auto-advance: SG ≤ 1.000 during REACTION → move to RETENTION
       const sg = quForm.spGravity ? parseFloat(quForm.spGravity) : null;
       if (sg != null && sg <= 1.0 && activeBatch.phase === 'REACTION') {
@@ -782,7 +671,7 @@ export default function Fermentation() {
             <h1 className="text-2xl font-bold flex items-center gap-2"><FlaskConical size={24} /> Fermentation</h1>
             <p className="text-emerald-200 text-sm mt-1">{batches.length} batches | {batches.filter(b => b.phase !== 'DONE').length} active</p>
           </div>
-          {tab !== 5 && <button onClick={() => setShowNewBatch(true)} className="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1"><Plus size={16} /> New Batch</button>}
+          <button onClick={() => setShowNewBatch(true)} className="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1"><Plus size={16} /> New Batch</button>
         </div>
       </div>
 
@@ -806,11 +695,6 @@ export default function Fermentation() {
         })}
       </div>
 
-      {/* ═══════ BEER WELL (tab 5) — live status, no batches ═══════ */}
-      {tab === 5 ? (
-        <BeerWellPanel />
-      ) : (
-      <>
       {/* NEW BATCH FORM */}
       {showNewBatch && (
         <div className="bg-white rounded-lg shadow p-4 border-l-4 border-emerald-500">
@@ -856,16 +740,23 @@ export default function Fermentation() {
                 {activeBatch.fillingEndTime && <TimeField label="Filling End" value={activeBatch.fillingEndTime} field="fillingEndTime" batchId={activeBatch.id} color="indigo" />}
                 {activeBatch.reactionStartTime && <TimeField label="Reaction Start" value={activeBatch.reactionStartTime} field="reactionStartTime" batchId={activeBatch.id} color="emerald" />}
                 {activeBatch.retentionStartTime && <TimeField label="Retention Start" value={activeBatch.retentionStartTime} field="retentionStartTime" batchId={activeBatch.id} color="cyan" />}
-                {['TRANSFER','CIP','DONE'].includes(activeBatch.phase) && <TimeField label="Transfer" value={activeBatch.transferTime} field="transferTime" batchId={activeBatch.id} color="blue" />}
-                {['CIP','DONE'].includes(activeBatch.phase) && <TimeField label="CIP Start" value={activeBatch.cipStartTime} field="cipStartTime" batchId={activeBatch.id} color="purple" />}
-                {activeBatch.phase === 'DONE' && <TimeField label="CIP End" value={activeBatch.cipEndTime} field="cipEndTime" batchId={activeBatch.id} color="gray" />}
+                {activeBatch.phase === 'DONE' && activeBatch.transferTime && <TimeField label="Transfer" value={activeBatch.transferTime} field="transferTime" batchId={activeBatch.id} color="blue" />}
               </div>
             </div>
             <div className="flex items-center gap-2">
               <button onClick={() => {
                 const b = activeBatch;
                 const dosingList = b.dosings.map(d => `  ${d.chemicalName}: ${d.quantity} ${d.unit}`).join('\n');
-                const t = `*FERMENTATION — Batch #${b.batchNo} ${F_LABELS[b.fermenterNo] || 'F' + b.fermenterNo}*\nPhase: ${phaseLabels[b.phase]}${b.fillingStartTime ? '\nFilling: ' + new Date(b.fillingStartTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : ''}${b.fermLevel != null ? `\nLevel: ${b.fermLevel}% (${(b.fermLevel / 100 * FERM_CAPACITY_M3).toFixed(0)} M³)` : ''}${b.setupGravity ? ' | SG: ' + b.setupGravity : ''}${b.setupRs ? ' | RS: ' + b.setupRs + '%' : ''}${b.dosings.length > 0 ? '\n\n*Dosing* (' + b.dosings.length + ')\n' + dosingList : ''}${b.finalAlcohol ? '\n\n*Final*\nAlcohol: ' + b.finalAlcohol + '%' : ''}${b.totalHours ? ' | Hours: ' + b.totalHours : ''}${b.remarks ? '\n\nRemarks: ' + b.remarks : ''}`;
+                // Last test time
+                const lastTest = batchLab.length > 0 ? batchLab.sort((a,c) => new Date(c.analysisTime||c.date).getTime() - new Date(a.analysisTime||a.date).getTime())[0] : null;
+                const lastTestStr = lastTest ? `\nLast Test: ${new Date(lastTest.analysisTime || lastTest.date).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false })}${lastTest.spGravity != null ? ' | SG: ' + lastTest.spGravity : ''}${lastTest.alcohol != null ? ' | Alc: ' + lastTest.alcohol + '%' : ''}${lastTest.temp != null ? ' | Temp: ' + lastTest.temp + '°C' : ''}` : '';
+                // Retention countdown
+                let retStr = '';
+                if (b.phase === 'RETENTION' && retCountdown) {
+                  if (retCountdown.isReady) { retStr = '\n✅ *READY TO TRANSFER* (12hr retention done)'; }
+                  else { retStr = `\n⏱ Retention: ${retCountdown.hours}h ${retCountdown.minutes}m left`; }
+                }
+                const t = `*FERMENTATION — Batch #${b.batchNo} ${F_LABELS[b.fermenterNo] || 'F' + b.fermenterNo}*\nPhase: ${phaseLabels[b.phase]}${b.fillingStartTime ? '\nFilling: ' + new Date(b.fillingStartTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : ''}${b.fermLevel != null ? `\nLevel: ${b.fermLevel}% (${(b.fermLevel / 100 * FERM_CAPACITY_M3).toFixed(0)} M³)` : ''}${b.setupGravity ? ' | SG: ' + b.setupGravity : ''}${b.setupRs ? ' | RS: ' + b.setupRs + '%' : ''}${lastTestStr}${retStr}${b.dosings.length > 0 ? '\n\n*Dosing* (' + b.dosings.length + ')\n' + dosingList : ''}${b.finalAlcohol ? '\n\n*Final*\nAlcohol: ' + b.finalAlcohol + '%' : ''}${b.totalHours ? ' | Hours: ' + b.totalHours : ''}${b.remarks ? '\n\nRemarks: ' + b.remarks : ''}`;
                 if (navigator.share) { navigator.share({ text: t }).catch(() => { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }); } else { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }
               }} className="text-white/80 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition" title="Share on WhatsApp">
                 <Share2 size={18} />
@@ -874,6 +765,38 @@ export default function Fermentation() {
             </div>
           </div>
           <PhaseTimeline batch={activeBatch} />
+
+          {/* Retention Countdown */}
+          {retCountdown && (
+            <div className={`mx-4 px-4 py-3 rounded-lg border-2 flex items-center gap-3 ${retCountdown.isReady ? 'bg-green-50 border-green-400' : 'bg-cyan-50 border-cyan-300'}`}>
+              {retCountdown.isReady ? (
+                <>
+                  <CheckCircle size={22} className="text-green-600 shrink-0" />
+                  <div>
+                    <div className="font-bold text-green-700 text-base">Ready to Transfer</div>
+                    <div className="text-sm text-green-600">12hr retention complete — batch can be transferred to beer well</div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Timer size={22} className="text-cyan-600 shrink-0 animate-pulse" />
+                  <div>
+                    <div className="font-bold text-cyan-800 text-base">
+                      Retention: {retCountdown.hours}h {String(retCountdown.minutes).padStart(2,'0')}m {String(retCountdown.seconds).padStart(2,'0')}s remaining
+                    </div>
+                    <div className="text-sm text-cyan-600">
+                      Started {activeBatch.retentionStartTime ? new Date(activeBatch.retentionStartTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : ''} — ready at {activeBatch.retentionStartTime ? new Date(new Date(activeBatch.retentionStartTime).getTime() + RETENTION_HOURS * 3600000).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : ''}
+                    </div>
+                  </div>
+                  {/* Progress bar */}
+                  <div className="ml-auto w-24 bg-cyan-200 rounded-full h-2.5 shrink-0">
+                    <div className="bg-cyan-600 h-2.5 rounded-full transition-all" style={{ width: `${Math.min(100, (retCountdown.elapsed || 0) / (RETENTION_HOURS * 3600000) * 100)}%` }}></div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           {phaseMsg && (
             <div className="mx-4 px-3 py-2 bg-green-50 border border-green-200 rounded text-green-700 text-sm font-medium flex items-center gap-2 animate-pulse">{phaseMsg}</div>
           )}
@@ -1018,7 +941,7 @@ export default function Fermentation() {
                   </div>
                 )}
                 <LabChart readings={batchLab} t0v={t0(activeBatch)} />
-                <div className="grid grid-cols-2 md:grid-cols-6 lg:grid-cols-12 gap-2 mt-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 lg:grid-cols-12 gap-2 mt-3">
                   <div className="col-span-3">
                     <label className="text-xs text-gray-500">Date & Time</label>
                     <div className="flex gap-1.5 items-center">
@@ -1066,7 +989,7 @@ export default function Fermentation() {
             )}
 
             {/* ═══ PHASE ACTIONS ═══ */}
-            <div className="flex gap-2 flex-wrap items-center">
+            <div className="flex gap-2 flex-wrap items-center [&_button]:w-full [&_button]:sm:w-auto">
               {activeBatch.phase === 'PF_TRANSFER' && (
                 <>
                   <div className="flex items-center gap-1.5">
@@ -1119,34 +1042,11 @@ export default function Fermentation() {
                   </div>
                   <button onClick={() => {
                     const inp = (document.getElementById('transferTimeInput') as HTMLInputElement)?.value;
-                    advancePhase(activeBatch, 'TRANSFER', { transferTime: inp ? new Date(inp).toISOString() : new Date().toISOString() });
-                  }} className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 flex items-center gap-1"><ArrowRight size={16} /> Transfer to Beer Well</button>
-                </>
-              )}
-              {activeBatch.phase === 'TRANSFER' && (
-                <>
-                  <TimeField label="Transfer" value={activeBatch.transferTime} field="transferTime" batchId={activeBatch.id} color="blue" />
-                  <div className="flex items-center gap-1.5">
-                    <Clock size={14} className="text-purple-600" />
-                    <input type="datetime-local" id="cipStartInput" defaultValue={nowLocal()} className="border border-purple-300 rounded px-2 py-1.5 text-sm" />
-                  </div>
-                  <button onClick={() => {
-                    const inp = (document.getElementById('cipStartInput') as HTMLInputElement)?.value;
-                    advancePhase(activeBatch, 'CIP', { cipStartTime: inp ? new Date(inp).toISOString() : new Date().toISOString() });
-                  }} className="bg-purple-600 text-white px-4 py-2 rounded text-sm hover:bg-purple-700 flex items-center gap-1"><RotateCcw size={16} /> Start CIP</button>
-                </>
-              )}
-              {activeBatch.phase === 'CIP' && (
-                <>
-                  <TimeField label="CIP Start" value={activeBatch.cipStartTime} field="cipStartTime" batchId={activeBatch.id} color="purple" />
-                  <div className="flex items-center gap-1.5">
-                    <Clock size={14} className="text-gray-600" />
-                    <input type="datetime-local" id="cipEndInput" defaultValue={nowLocal()} className="border border-gray-300 rounded px-2 py-1.5 text-sm" />
-                  </div>
-                  <button onClick={() => {
-                    const inp = (document.getElementById('cipEndInput') as HTMLInputElement)?.value;
-                    advancePhase(activeBatch, 'DONE', { cipEndTime: inp ? new Date(inp).toISOString() : new Date().toISOString() });
-                  }} className="bg-gray-600 text-white px-4 py-2 rounded text-sm hover:bg-gray-700">End CIP → Done</button>
+                    const dt = inp ? new Date(inp).toISOString() : new Date().toISOString();
+                    advancePhase(activeBatch, 'DONE', { transferTime: dt });
+                  }} className={`${retCountdown?.isReady ? 'bg-green-600 hover:bg-green-700 animate-pulse' : 'bg-blue-600 hover:bg-blue-700'} text-white px-4 py-2 rounded text-sm font-medium flex items-center gap-1`}>
+                    <ArrowRight size={16} /> Transfer to Beer Well → Done
+                  </button>
                 </>
               )}
             </div>
@@ -1178,8 +1078,6 @@ export default function Fermentation() {
           </div>
         )}
       </div>
-      </>
-      )}
     </div>
   );
 }

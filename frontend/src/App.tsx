@@ -26,6 +26,7 @@ import WaterUtility from './pages/process/WaterUtility';
 import LabSampling from './pages/process/LabSampling';
 import DDGSStock from './pages/process/DDGSStock';
 import DDGSDispatch from './pages/process/DDGSDispatch';
+import DosingRecipes from './pages/process/DosingRecipes';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -72,6 +73,7 @@ export default function App() {
         <Route path="process/ethanol-dispatch" element={<EthanolDispatch />} />
         <Route path="process/water-utility" element={<WaterUtility />} />
         <Route path="process/lab-sampling" element={<LabSampling />} />
+        <Route path="process/dosing-recipes" element={<DosingRecipes />} />
         <Route path="reports" element={<Reports />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="users" element={<UsersPage />} />

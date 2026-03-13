@@ -30,6 +30,8 @@ export default function PreFermentation() {
   const [showNewChem, setShowNewChem] = useState(false);
   const [expandedBatch, setExpandedBatch] = useState<string | null>(null);
   const [phaseMsg, setPhaseMsg] = useState<string | null>(null);
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [transferTarget, setTransferTarget] = useState<{ pfBatch: Batch; fermenterNo: string; transferTime: string } | null>(null);
 
   const [nbForm, setNbForm] = useState({ batchNo: '', fermenterNo: '1', pfLevel: '', slurryGravity: '', slurryTemp: '', remarks: '' });
   const [doseForm, setDoseForm] = useState({ chemicalName: '', quantity: '', unit: 'kg', rate: '' });
@@ -80,6 +82,41 @@ export default function PreFermentation() {
       load();
       setTimeout(() => setPhaseMsg(null), 2000);
     } catch { setPhaseMsg(null); }
+  };
+
+  /* Transfer PF to Fermenter — creates fermenter batch automatically */
+  const startTransfer = (batch: Batch) => {
+    setTransferTarget({ pfBatch: batch, fermenterNo: '1', transferTime: nowLocal() });
+    setShowTransferModal(true);
+  };
+
+  const confirmTransfer = async () => {
+    if (!transferTarget) return;
+    const { pfBatch, fermenterNo, transferTime } = transferTarget;
+    const dt = transferTime ? new Date(transferTime).toISOString() : new Date().toISOString();
+    try {
+      setPhaseMsg('Transferring to Fermenter...');
+      // 1. Advance PF to TRANSFER phase
+      await api.patch(`/pre-fermentation/batches/${pfBatch.id}`, { phase: 'TRANSFER', transferTime: dt });
+      // 2. Auto-create fermenter batch (FILLING starts immediately)
+      await api.post('/fermentation/batches/from-pf', {
+        batchNo: pfBatch.batchNo,
+        fermenterNo: parseInt(fermenterNo),
+        pfTransferTime: dt,
+        setupGravity: pfBatch.slurryGravity,
+        pfNo: pfBatch.fermenterNo,
+        pfBatchId: pfBatch.id,
+        remarks: `From PF${pfBatch.fermenterNo} batch #${pfBatch.batchNo}`
+      });
+      setShowTransferModal(false);
+      setTransferTarget(null);
+      setPhaseMsg(`✓ PF${pfBatch.fermenterNo} → F${fermenterNo} — Batch started!`);
+      load();
+      setTimeout(() => setPhaseMsg(null), 3000);
+    } catch (e: any) {
+      setPhaseMsg(`❌ Transfer failed: ${e?.response?.data?.error || e.message}`);
+      setTimeout(() => setPhaseMsg(null), 4000);
+    }
   };
 
   const deleteBatch = async (id: string) => {
@@ -449,14 +486,8 @@ export default function PreFermentation() {
               {activeBatch.phase === 'LAB' && (
                 <>
                   <button onClick={() => advancePhase(activeBatch, 'DOSING')} className="bg-amber-500 text-white px-4 py-2 rounded text-sm hover:bg-amber-600 flex items-center gap-1">← Back to Dosing</button>
-                  <div className="flex items-center gap-1.5">
-                    <Clock size={14} className="text-blue-600" />
-                    <input type="datetime-local" id="transferTimeInput" defaultValue={nowLocal()} className="border border-blue-300 rounded px-2 py-1.5 text-sm" />
-                  </div>
-                  <button onClick={() => {
-                    const inp = (document.getElementById('transferTimeInput') as HTMLInputElement)?.value;
-                    advancePhase(activeBatch, 'TRANSFER', { transferTime: inp ? new Date(inp).toISOString() : new Date().toISOString() });
-                  }} className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 flex items-center gap-1"><ArrowRight size={16} /> Transfer to Fermenter</button>
+                  <button onClick={() => startTransfer(activeBatch)}
+                    className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 flex items-center gap-1"><ArrowRight size={16} /> Transfer to Fermenter</button>
                 </>
               )}
               {activeBatch.phase === 'TRANSFER' && (
@@ -485,6 +516,41 @@ export default function PreFermentation() {
                   }} className="bg-gray-600 text-white px-4 py-2 rounded text-sm hover:bg-gray-700">End CIP → Done</button>
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TRANSFER TO FERMENTER MODAL */}
+      {showTransferModal && transferTarget && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-end md:items-center justify-center" onClick={() => setShowTransferModal(false)}>
+          <div className="bg-white rounded-t-2xl md:rounded-2xl w-full max-w-md p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-gray-800 mb-1">Transfer PF{transferTarget.pfBatch.fermenterNo} → Fermenter</h3>
+            <p className="text-sm text-gray-500 mb-4">Batch #{transferTarget.pfBatch.batchNo} will start filling automatically</p>
+            <div className="mb-4">
+              <label className="text-xs text-gray-500 font-medium mb-2 block">Select Fermenter</label>
+              <div className="grid grid-cols-4 gap-2">
+                {[1, 2, 3, 4].map(n => (
+                  <button key={n} onClick={() => setTransferTarget(t => t ? { ...t, fermenterNo: String(n) } : t)}
+                    className={`py-3 rounded-xl text-lg font-bold border-2 transition ${transferTarget.fermenterNo === String(n) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-200 hover:border-blue-400'}`}>
+                    F{n}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="mb-4">
+              <label className="text-xs text-gray-500 font-medium">Transfer Time</label>
+              <input type="datetime-local" value={transferTarget.transferTime}
+                onChange={e => setTransferTarget(t => t ? { ...t, transferTime: e.target.value } : t)}
+                className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:border-blue-400 outline-none" />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={confirmTransfer}
+                className="flex-1 bg-blue-600 text-white py-3 rounded-xl text-base font-semibold hover:bg-blue-700 shadow-sm flex items-center justify-center gap-2">
+                <ArrowRight size={18} /> Transfer & Start Filling
+              </button>
+              <button onClick={() => setShowTransferModal(false)}
+                className="px-6 py-3 bg-gray-100 text-gray-600 rounded-xl text-base font-medium hover:bg-gray-200">Cancel</button>
             </div>
           </div>
         </div>

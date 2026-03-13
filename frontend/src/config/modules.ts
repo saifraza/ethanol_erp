@@ -26,6 +26,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'milling', label: 'Milling', to: '/process/milling', icon: CogIcon, group: 'process' },
   { key: 'liquefaction', label: 'Liquefaction', to: '/process/liquefaction', icon: Droplets, group: 'process' },
   { key: 'fermentation', label: 'Fermentation', to: '/process/fermentation', icon: Beaker, group: 'process' },
+  { key: 'dosing-recipes', label: 'Dosing Recipes', to: '/process/dosing-recipes', icon: Beaker, group: 'process' },
   { key: 'distillation', label: 'Distillation', to: '/process/distillation', icon: Flame, group: 'process' },
   { key: 'evaporation', label: 'Evaporation', to: '/process/evaporation', icon: Wind, group: 'process' },
   { key: 'ddgs-stock', label: 'DDGS Stock', to: '/process/ddgs-stock', icon: Package, group: 'process' },
