@@ -296,10 +296,11 @@ export default function Liquefaction() {
             {numInput("Temp °C", "fltTemp", "0.1")}
             {numInput("Sp. Gravity", "fltSpGravity")}
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             {numInput("pH", "fltPh")}
             {numInput("RS %", "fltRs")}
             {numInput("RST %", "fltRst")}
+            {numInput("TS (Total Solids)", "fltTs")}
           </div>
 
           {/* Iodine Test */}
@@ -432,6 +433,7 @@ export default function Liquefaction() {
                   {form.fltPh && <div>pH: <b>{form.fltPh}</b></div>}
                   {form.fltRs && <div>RS%: <b>{form.fltRs}</b></div>}
                   {form.fltRst && <div>RST%: <b>{form.fltRst}</b></div>}
+                  {form.fltTs && <div>TS: <b>{form.fltTs}</b></div>}
                 </div>
                 {form.fltIodineTest && (
                   <div className="mt-2 flex items-center gap-2">
@@ -447,7 +449,7 @@ export default function Liquefaction() {
             </div>
             <div className="p-4 border-t flex gap-2">
               <button onClick={() => {
-                const t = `*LIQUEFACTION REPORT*\nDate: ${form.date} ${form.analysisTime || ''}\n${form.jetCookerTemp ? `\nJet Cooker: ${form.jetCookerTemp}°C${form.jetCookerFlow ? ' | Flow: ' + form.jetCookerFlow : ''}` : ''}${form.flowToFermenter ? '\nFlow to Fermenter: ' + form.flowToFermenter + ' M³/hr' : ''}\n\n*ILT*${form.iltLevel ? '\nLevel: ' + form.iltLevel : ''}${form.iltSteam ? ' | Steam: ' + form.iltSteam : ''}\nGravity: ${form.iltSpGravity || '—'} | pH: ${form.iltPh || '—'} | RS: ${form.iltRs || '—'}%\nTemp: ${form.iltTemp || '—'}°C\n\n*FLT*${form.fltLevel ? '\nLevel: ' + form.fltLevel : ''}${form.fltFlowRate ? ' | Flow: ' + form.fltFlowRate : ''}\nGravity: ${form.fltSpGravity || '—'} | pH: ${form.fltPh || '—'}\nRS: ${form.fltRs || '—'}% | RST: ${form.fltRst || '—'}%\nTemp: ${form.fltTemp || '—'}°C${form.fltIodineTest ? '\nIodine Test: ' + form.fltIodineTest + (form.fltIodineTest === 'NEGATIVE' ? ' ✅' : ' ❌') : ''}${form.remark ? '\n\nRemarks: ' + form.remark : ''}`;
+                const t = `*LIQUEFACTION REPORT*\nDate: ${form.date} ${form.analysisTime || ''}\n${form.jetCookerTemp ? `\nJet Cooker: ${form.jetCookerTemp}°C${form.jetCookerFlow ? ' | Flow: ' + form.jetCookerFlow : ''}` : ''}${form.flowToFermenter ? '\nFlow to Fermenter: ' + form.flowToFermenter + ' M³/hr' : ''}\n\n*ILT*${form.iltLevel ? '\nLevel: ' + form.iltLevel : ''}${form.iltSteam ? ' | Steam: ' + form.iltSteam : ''}\nGravity: ${form.iltSpGravity || '—'} | pH: ${form.iltPh || '—'} | RS: ${form.iltRs || '—'}%\nTemp: ${form.iltTemp || '—'}°C\n\n*FLT*${form.fltLevel ? '\nLevel: ' + form.fltLevel : ''}${form.fltFlowRate ? ' | Flow: ' + form.fltFlowRate : ''}\nGravity: ${form.fltSpGravity || '—'} | pH: ${form.fltPh || '—'}\nRS: ${form.fltRs || '—'}% | RST: ${form.fltRst || '—'}%${form.fltTs ? ' | TS: ' + form.fltTs : ''}\nTemp: ${form.fltTemp || '—'}°C${form.fltIodineTest ? '\nIodine Test: ' + form.fltIodineTest + (form.fltIodineTest === 'NEGATIVE' ? ' ✅' : ' ❌') : ''}${form.remark ? '\n\nRemarks: ' + form.remark : ''}`;
                 if (navigator.share) { navigator.share({ text: t }).catch(() => { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }); } else { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }
               }} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
                 <Share2 size={16} /> Share
