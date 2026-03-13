@@ -17,9 +17,9 @@ async function autoSeed() {
     const count = await prisma.user.count();
     if (count === 0) {
       console.log('No users found — seeding default accounts...');
-      const adminHash = await bcrypt.hash(process.env.ADMIN_PASSWORD || 'admin123', 10);
-      const opHash = await bcrypt.hash(process.env.OPERATOR_PASSWORD || 'operator123', 10);
-      const labHash = await bcrypt.hash(process.env.LAB_PASSWORD || 'lab@1234', 10);
+      const adminHash = await bcrypt.hash('admin123', 10);
+      const opHash = await bcrypt.hash('operator123', 10);
+      const labHash = await bcrypt.hash('lab@1234', 10);
       await prisma.user.create({ data: { email: 'admin@distillery.com', password: adminHash, name: 'Admin User', role: 'ADMIN' } });
       await prisma.user.create({ data: { email: 'operator@distillery.com', password: opHash, name: 'Operator User', role: 'OPERATOR' } });
       await prisma.user.create({ data: { email: 'lab@mspil.in', password: labHash, name: 'Lab User', role: 'LAB' } });
