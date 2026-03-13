@@ -412,6 +412,8 @@ model DistillationEntry {
   rcStrength          Float?
   actStrength         Float?
   spentLossLevel      String?  // NIL, SLIGHT, HIGH
+  spentWashPhotoUrl   String?
+  rcLessPhotoUrl      String?
   remark              String?
   userId              String
   createdAt           DateTime @default(now())
