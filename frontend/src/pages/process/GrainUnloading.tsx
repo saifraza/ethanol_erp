@@ -170,7 +170,12 @@ export default function GrainUnloading() {
   // Internal transfers (flour→process) cancel out naturally
   const deltaGrainInProcess = grainInProcess - prevGrainInProcess;
   const deltaFlour = flourSiloTotal - prevFlourTotal;
-  const grainConsumed = Math.max(0, grainDistilled + deltaGrainInProcess + deltaFlour);
+  // If no process levels entered yet, just use distilled * grain%
+  // (avoids false-zero when fermenters appear empty but user hasn't filled levels)
+  const hasProcessLevels = (form.f1Pct ?? 0) > 0 || (form.f2Pct ?? 0) > 0 || (form.f3Pct ?? 0) > 0 || (form.f4Pct ?? 0) > 0 || (form.beerWellPct ?? 0) > 0 || (form.pf1Pct ?? 0) > 0 || (form.pf2Pct ?? 0) > 0 || (form.iltPct ?? 0) > 0 || (form.fltPct ?? 0) > 0;
+  const grainConsumed = hasProcessLevels
+    ? Math.max(0, grainDistilled + deltaGrainInProcess + deltaFlour)
+    : grainDistilled;
 
   const opening = defaults.siloOpeningStock || 0;
   const grainReceived = form.grainUnloaded || 0;

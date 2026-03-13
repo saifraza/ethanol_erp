@@ -351,8 +351,8 @@ export default function Milling() {
             </div>
             <div className="p-4 border-t flex gap-2">
               <button onClick={() => {
-                const text = `*Milling Report*%0A📅 ${form.date} ${form.analysisTime || ''}%0A%0A*Sieve Analysis*%0A1.00mm: ${form.sieve_1mm ?? '-'}%25%0A0.850mm: ${form.sieve_850 ?? '-'}%25%0A0.600mm: ${form.sieve_600 ?? '-'}%25%0A0.300mm: ${form.sieve_300 ?? '-'}%25%0ATotal Fine: ${totalFine}%25%0A%0A*Mill RPM/Load*%0AMill A: ${form.millA_rpm ?? '-'} rpm / ${form.millA_load ?? '-'} A%0AMill B: ${form.millB_rpm ?? '-'} rpm / ${form.millB_load ?? '-'} A%0AMill C: ${form.millC_rpm ?? '-'} rpm / ${form.millC_load ?? '-'} A${form.remarks ? '%0A%0ARemarks: ' + form.remarks : ''}`;
-                window.open(`https://wa.me/?text=${text}`, '_blank');
+                const t = `*MILLING REPORT*\nDate: ${form.date} ${form.analysisTime || ''}\n\n*Sieve Analysis*\n1.00mm: ${form.sieve_1mm ?? '—'}%\n0.850mm: ${form.sieve_850 ?? '—'}%\n0.600mm: ${form.sieve_600 ?? '—'}%\n0.300mm: ${form.sieve_300 ?? '—'}%\nTotal Fine: ${totalFine}%\n\n*Mill RPM / Load*\nMill A: ${form.millA_rpm ?? '—'} rpm / ${form.millA_load ?? '—'} A\nMill B: ${form.millB_rpm ?? '—'} rpm / ${form.millB_load ?? '—'} A\nMill C: ${form.millC_rpm ?? '—'} rpm / ${form.millC_load ?? '—'} A${form.remarks ? '\n\nRemarks: ' + form.remarks : ''}`;
+                window.open(`https://wa.me/?text=${encodeURIComponent(t)}`, '_blank');
               }} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
                 <Share2 size={16} /> WhatsApp
               </button>
