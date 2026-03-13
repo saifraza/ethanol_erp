@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Flame, Save, Loader2, ChevronDown, ChevronUp, Trash2, Eye, X, Share2 } from 'lucide-react';
+import React, { useEffect, useState, useRef } from 'react';
+import { Flame, Save, Loader2, ChevronDown, ChevronUp, Trash2, Eye, X, Share2, Camera } from 'lucide-react';
 import api from '../../services/api';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
@@ -29,6 +29,14 @@ export default function Distillation() {
   const [showHistory, setShowHistory] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
 
+  // Photo state
+  const [swPhoto, setSwPhoto] = useState<File | null>(null);
+  const [swPreview, setSwPreview] = useState<string | null>(null);
+  const [rcPhoto, setRcPhoto] = useState<File | null>(null);
+  const [rcPreview, setRcPreview] = useState<string | null>(null);
+  const swInputRef = useRef<HTMLInputElement>(null);
+  const rcInputRef = useRef<HTMLInputElement>(null);
+
   const load = () => api.get('/distillation').then(r => setEntries(r.data)).catch(() => {});
   useEffect(() => { load(); }, []);
 
@@ -40,9 +48,15 @@ export default function Distillation() {
   const handleSave = async () => {
     setSaving(true); setMsg(null);
     try {
-      await api.post('/distillation', form);
+      const fd = new FormData();
+      Object.entries(form).forEach(([k, v]) => { if (v !== '' && v != null) fd.append(k, v); });
+      if (swPhoto) fd.append('spentWashPhoto', swPhoto);
+      if (rcPhoto) fd.append('rcLessPhoto', rcPhoto);
+      await api.post('/distillation', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       setMsg({ type: 'ok', text: `Saved at ${new Date().toLocaleTimeString()}` });
-      setForm(emptyForm()); setShowPreview(false); load();
+      setForm(emptyForm()); setShowPreview(false);
+      setSwPhoto(null); setSwPreview(null); setRcPhoto(null); setRcPreview(null);
+      load();
     } catch (err: any) {
       setMsg({ type: 'err', text: err.response?.data?.error || 'Save failed' });
     }
@@ -50,6 +64,14 @@ export default function Distillation() {
   };
 
   const upd = (key: keyof DistForm, val: string) => setForm(f => ({ ...f, [key]: val }));
+
+  const handlePhoto = (file: File | undefined, setPhoto: (f: File | null) => void, setPreview: (s: string | null) => void) => {
+    if (!file) return;
+    setPhoto(file);
+    const reader = new FileReader();
+    reader.onloadend = () => setPreview(reader.result as string);
+    reader.readAsDataURL(file);
+  };
 
   const buildPreviewText = () => {
     const lines = [
@@ -62,8 +84,8 @@ export default function Distillation() {
       `RC Reflex Strength: ${form.rcReflexStrength || '—'}`,
       `Regeneration Strength: ${form.regenerationStrength || '—'}`,
       ``,
-      `Spent Wash Loss: ${form.spentWashLoss || '—'}`,
-      `RC Less Loss: ${form.rcLessLoss || '—'}`,
+      `Spent Wash Loss: ${form.spentWashLoss || '—'}${swPhoto ? ' 📷' : ''}`,
+      `RC Less Loss: ${form.rcLessLoss || '—'}${rcPhoto ? ' 📷' : ''}`,
       `Spent Loss: ${form.spentLossLevel || '—'}`,
       `Evaporation SPGR: ${form.evaporationSpgr || '—'}`,
       form.remark ? `Remark: ${form.remark}` : '',
@@ -137,10 +159,38 @@ export default function Distillation() {
           </div>
         </div>
 
+        {/* Spent Wash Loss + Photo */}
+        <div className="mb-4 p-3 border border-orange-200 rounded-lg bg-orange-50/30">
+          <label className="block text-xs font-semibold text-orange-700 mb-2">Spent Wash Loss</label>
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="w-32">
+              <input type="number" step="0.01" value={form.spentWashLoss} onChange={e => upd('spentWashLoss', e.target.value)} placeholder="Value" className="w-full border rounded px-2 py-1.5 text-sm" />
+            </div>
+            <input ref={swInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={e => handlePhoto(e.target.files?.[0], setSwPhoto, setSwPreview)} />
+            <button type="button" onClick={() => swInputRef.current?.click()} className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-100 text-orange-700 rounded-lg text-xs font-medium hover:bg-orange-200 transition">
+              <Camera size={14} /> {swPhoto ? 'Change Photo' : 'Take Photo'}
+            </button>
+            {swPreview && <img src={swPreview} alt="Spent wash" className="w-16 h-16 object-cover rounded border" />}
+          </div>
+        </div>
+
+        {/* RC Less Loss + Photo */}
+        <div className="mb-4 p-3 border border-blue-200 rounded-lg bg-blue-50/30">
+          <label className="block text-xs font-semibold text-blue-700 mb-2">RC Less Loss</label>
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="w-32">
+              <input type="number" step="0.01" value={form.rcLessLoss} onChange={e => upd('rcLessLoss', e.target.value)} placeholder="Value" className="w-full border rounded px-2 py-1.5 text-sm" />
+            </div>
+            <input ref={rcInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={e => handlePhoto(e.target.files?.[0], setRcPhoto, setRcPreview)} />
+            <button type="button" onClick={() => rcInputRef.current?.click()} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg text-xs font-medium hover:bg-blue-200 transition">
+              <Camera size={14} /> {rcPhoto ? 'Change Photo' : 'Take Photo'}
+            </button>
+            {rcPreview && <img src={rcPreview} alt="RC less" className="w-16 h-16 object-cover rounded border" />}
+          </div>
+        </div>
+
         {/* Other fields */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          <div><label className="text-xs text-gray-500">Spent Wash Loss</label><input type="number" step="0.01" value={form.spentWashLoss} onChange={e => upd('spentWashLoss', e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
-          <div><label className="text-xs text-gray-500">RC Less Loss</label><input type="number" step="0.01" value={form.rcLessLoss} onChange={e => upd('rcLessLoss', e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+        <div className="grid grid-cols-2 gap-3 mb-4">
           <div><label className="text-xs text-gray-500">Regeneration Strength</label><input type="number" step="0.01" value={form.regenerationStrength} onChange={e => upd('regenerationStrength', e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
           <div><label className="text-xs text-gray-500">Evaporation SPGR</label><input type="number" step="0.01" value={form.evaporationSpgr} onChange={e => upd('evaporationSpgr', e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
         </div>
@@ -210,19 +260,23 @@ export default function Distillation() {
                 ) : <span className="text-gray-400">—</span>}
               </div>
 
-              <div className="grid grid-cols-3 gap-2">
+              {/* Spent Wash + RC Less with photos */}
+              <div className="grid grid-cols-2 gap-2">
                 <div className="bg-orange-50 rounded p-2 text-center">
-                  <div className="text-xs text-gray-500">Spent Wash</div>
+                  <div className="text-xs text-gray-500">Spent Wash Loss</div>
                   <div className="font-semibold">{form.spentWashLoss || '—'}</div>
+                  {swPreview && <img src={swPreview} alt="SW" className="mt-1 w-16 h-16 object-cover rounded border mx-auto" />}
                 </div>
-                <div className="bg-orange-50 rounded p-2 text-center">
+                <div className="bg-blue-50 rounded p-2 text-center">
                   <div className="text-xs text-gray-500">RC Less Loss</div>
                   <div className="font-semibold">{form.rcLessLoss || '—'}</div>
+                  {rcPreview && <img src={rcPreview} alt="RC" className="mt-1 w-16 h-16 object-cover rounded border mx-auto" />}
                 </div>
-                <div className="bg-orange-50 rounded p-2 text-center">
-                  <div className="text-xs text-gray-500">Evap SPGR</div>
-                  <div className="font-semibold">{form.evaporationSpgr || '—'}</div>
-                </div>
+              </div>
+
+              <div className="bg-orange-50 rounded p-2 text-center">
+                <div className="text-xs text-gray-500">Evap SPGR</div>
+                <div className="font-semibold">{form.evaporationSpgr || '—'}</div>
               </div>
 
               {form.remark && <div className="text-gray-600 italic">Remark: {form.remark}</div>}
@@ -266,7 +320,7 @@ export default function Distillation() {
         {showHistory && (
           <div className="overflow-x-auto max-h-64 overflow-y-auto">
             <table className="w-full text-xs"><thead className="bg-gray-50 sticky top-0"><tr>
-              {['Date', 'Time', 'RC Str', 'ACT Str', 'Ethanol%', 'Spent Loss', 'Evap', ''].map(h =>
+              {['Date', 'Time', 'RC Str', 'ACT Str', 'Ethanol%', 'SW Loss', 'RC Loss', 'Spent Loss', ''].map(h =>
                 <th key={h} className="px-2 py-1 text-left font-medium text-gray-600">{h}</th>)}
             </tr></thead><tbody>
               {entries.slice(0, 50).map(e => (
@@ -276,6 +330,8 @@ export default function Distillation() {
                   <td className="px-2 py-1">{e.rcStrength ?? '—'}</td>
                   <td className="px-2 py-1">{e.actStrength ?? '—'}</td>
                   <td className="px-2 py-1">{e.ethanolStrength ?? '—'}</td>
+                  <td className="px-2 py-1">{e.spentWashLoss ?? '—'}{e.spentWashPhotoUrl ? ' 📷' : ''}</td>
+                  <td className="px-2 py-1">{e.rcLessLoss ?? '—'}{e.rcLessPhotoUrl ? ' 📷' : ''}</td>
                   <td className="px-2 py-1">
                     {e.spentLossLevel ? (
                       <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
@@ -285,7 +341,6 @@ export default function Distillation() {
                       }`}>{e.spentLossLevel}</span>
                     ) : '—'}
                   </td>
-                  <td className="px-2 py-1">{e.evaporationSpgr ?? '—'}</td>
                   <td className="px-2 py-1"><button onClick={() => api.delete(`/distillation/${e.id}`).then(load)} className="text-red-400 hover:text-red-600"><Trash2 size={12} /></button></td>
                 </tr>
               ))}
