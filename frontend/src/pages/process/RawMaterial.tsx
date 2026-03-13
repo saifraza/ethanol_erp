@@ -32,7 +32,7 @@ export default function RawMaterial() {
   const [selectedEntry, setSelectedEntry] = useState<string | null>(null);
 
   const [form, setForm] = useState({
-    date: isoDate(new Date()), vehicleCode: '', material: 'Corn',
+    date: isoDate(new Date()), vehicleCode: '', vehicleNo: '', material: 'Corn',
     moisture: '', starch: '', fungus: '', immature: '', damaged: '', waterDamaged: '', tfm: '', remark: ''
   });
 
@@ -40,7 +40,7 @@ export default function RawMaterial() {
   useEffect(() => { load(); }, []);
 
   const resetForm = () => {
-    setForm(f => ({ ...f, vehicleCode: '', moisture: '', starch: '', fungus: '', immature: '', damaged: '', waterDamaged: '', tfm: '', remark: '', material: 'Corn' }));
+    setForm(f => ({ ...f, vehicleCode: '', vehicleNo: '', moisture: '', starch: '', fungus: '', immature: '', damaged: '', waterDamaged: '', tfm: '', remark: '', material: 'Corn' }));
     setShowForm(false); setShowPreview(false); setEditId(null);
   };
 
@@ -49,9 +49,9 @@ export default function RawMaterial() {
     setSaving(true); setMsg(null);
     try {
       if (editId) {
-        await api.put(`/raw-material/${editId}`, { ...form, vehicleNo: '' });
+        await api.put(`/raw-material/${editId}`, form);
       } else {
-        await api.post('/raw-material', { ...form, vehicleNo: '' });
+        await api.post('/raw-material', form);
       }
       setMsg({ type: 'ok', text: editId ? 'Updated!' : 'Saved!' }); resetForm(); load();
     } catch { setMsg({ type: 'err', text: 'Save failed' }); }
@@ -66,6 +66,7 @@ export default function RawMaterial() {
     setForm({
       date: isoDate(new Date(e.date)),
       vehicleCode: e.vehicleCode,
+      vehicleNo: e.vehicleNo || '',
       material: (e as any).material || 'Corn',
       moisture: String(e.moisture || ''),
       starch: String(e.starch || ''),
@@ -124,7 +125,7 @@ export default function RawMaterial() {
   };
 
   const shareText = (e: Entry) =>
-    `*Lab Analysis - ${e.material || 'Corn'}*\nRST: ${e.vehicleCode}\n📅 ${new Date(e.date).toLocaleDateString('en-IN')}\n\nMoisture: ${e.moisture}%\nStarch: ${e.starch}%\nDamaged: ${e.damaged}%\nTFM: ${e.tfm}%\nFungus: ${e.fungus}%\nImmature: ${e.immature}%\nWater Dam: ${e.waterDamaged}%${e.remark ? '\n\nRemark: ' + e.remark : ''}`;
+    `*Lab Analysis - ${e.material || 'Corn'}*\nRST: ${e.vehicleCode}${e.vehicleNo ? '\nVehicle: ' + e.vehicleNo : ''}\n📅 ${new Date(e.date).toLocaleDateString('en-IN')}\n\nMoisture: ${e.moisture}%\nStarch: ${e.starch}%\nDamaged: ${e.damaged}%\nTFM: ${e.tfm}%\nFungus: ${e.fungus}%\nImmature: ${e.immature}%\nWater Dam: ${e.waterDamaged}%${e.remark ? '\n\nRemark: ' + e.remark : ''}`;
 
   return (
     <ProcessPage title="Raw Material Analysis" icon={<FlaskConical size={28} />}
@@ -166,7 +167,7 @@ export default function RawMaterial() {
             <button onClick={resetForm} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
           </div>
 
-          <div className="grid grid-cols-3 gap-2 md:gap-3 mb-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 md:gap-3 mb-3">
             <div>
               <label className="text-[10px] md:text-xs text-gray-500">Date</label>
               <input type="date" value={form.date} onChange={e => set('date', e.target.value)}
@@ -177,6 +178,12 @@ export default function RawMaterial() {
               <input value={form.vehicleCode} onChange={e => set('vehicleCode', e.target.value)}
                 className="input-field w-full border-indigo-300 bg-indigo-50 font-medium text-xs md:text-sm"
                 placeholder="RST / UID" autoFocus />
+            </div>
+            <div>
+              <label className="text-[10px] md:text-xs text-gray-500">Vehicle No.</label>
+              <input value={form.vehicleNo} onChange={e => set('vehicleNo', e.target.value)}
+                className="input-field w-full text-xs md:text-sm"
+                placeholder="MH-12-XX-1234" />
             </div>
             <div>
               <label className="text-[10px] md:text-xs text-gray-500">Material</label>
@@ -228,6 +235,7 @@ export default function RawMaterial() {
             <div className="p-3 space-y-1.5 text-sm">
               <div className="flex justify-between"><span className="text-gray-500">Date</span><span className="font-medium">{form.date}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">RST</span><span className="font-bold text-indigo-600">{form.vehicleCode}</span></div>
+              {form.vehicleNo && <div className="flex justify-between"><span className="text-gray-500">Vehicle No.</span><span className="font-medium">{form.vehicleNo}</span></div>}
               <div className="flex justify-between"><span className="text-gray-500">Material</span><span className="font-medium text-amber-700">{form.material}</span></div>
               <div className="border-t pt-2 grid grid-cols-2 gap-1.5 text-xs">
                 {form.moisture && <div>Moisture: <b>{form.moisture}%</b></div>}
@@ -242,7 +250,7 @@ export default function RawMaterial() {
             </div>
             <div className="p-3 border-t flex gap-2">
               <button onClick={() => {
-                const text = `*Lab Analysis - ${form.material}*\nRST: ${form.vehicleCode}\n📅 ${form.date}\n\nMoisture: ${form.moisture || '-'}%\nStarch: ${form.starch || '-'}%\nDamaged: ${form.damaged || '-'}%\nTFM: ${form.tfm || '-'}%\nFungus: ${form.fungus || '-'}%\nImmature: ${form.immature || '-'}%\nWater Dam: ${form.waterDamaged || '-'}%${form.remark ? '\n\nRemark: ' + form.remark : ''}`;
+                const text = `*Lab Analysis - ${form.material}*\nRST: ${form.vehicleCode}${form.vehicleNo ? '\nVehicle: ' + form.vehicleNo : ''}\n📅 ${form.date}\n\nMoisture: ${form.moisture || '-'}%\nStarch: ${form.starch || '-'}%\nDamaged: ${form.damaged || '-'}%\nTFM: ${form.tfm || '-'}%\nFungus: ${form.fungus || '-'}%\nImmature: ${form.immature || '-'}%\nWater Dam: ${form.waterDamaged || '-'}%${form.remark ? '\n\nRemark: ' + form.remark : ''}`;
                 doShare(text);
               }} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-green-700">
                 <Share2 size={14} /> Share

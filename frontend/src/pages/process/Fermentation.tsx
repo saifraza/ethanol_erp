@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Share2, Beaker, FlaskConical, RefreshCw, Clock, ArrowDown } from 'lucide-react';
+import { Share2, Beaker, FlaskConical, RefreshCw, Clock, ArrowDown, Droplets } from 'lucide-react';
 import api from '../../services/api';
 import PreFermentation from './PreFermentation';
 import FermentationBatches from './FermentationBatches';
@@ -86,10 +86,14 @@ export default function Fermentation() {
   const [tab, setTab] = useState<'overview' | 'pf' | 'ferm'>('overview');
   const [pfBatches, setPfBatches] = useState<PFBatch[]>([]);
   const [fermBatches, setFermBatches] = useState<FermBatch[]>([]);
+  const [beerWellLevel, setBeerWellLevel] = useState<number | null>(null);
 
   const load = useCallback(() => {
     api.get('/pre-fermentation/batches').then(r => setPfBatches(r.data)).catch(() => {});
     api.get('/fermentation/batches').then(r => setFermBatches(r.data)).catch(() => {});
+    api.get('/grain/latest').then(r => {
+      setBeerWellLevel(r.data?.previous?.beerWellLevel ?? null);
+    }).catch(() => {});
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -127,6 +131,8 @@ export default function Fermentation() {
         t += ` (${timeSince(fermPhaseStart(b))})\n`;
       } else t += `F${n}: Empty\n`;
     }
+    t += `\n*── Beer Well ──*\n`;
+    t += beerWellLevel && beerWellLevel > 0 ? `Level: ${beerWellLevel.toFixed(0)} KL\n` : `Empty\n`;
     if (navigator.share) {
       navigator.share({ text: t }).catch(() => {
         window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank');
@@ -310,6 +316,47 @@ export default function Fermentation() {
               <FermCard fNo={2} />
               <FermCard fNo={3} />
               <FermCard fNo={4} />
+            </div>
+          </div>
+
+          {/* Flow arrow to Beer Well */}
+          <div className="flex justify-center py-1">
+            <div className="flex flex-col items-center gap-0.5 text-gray-300">
+              <ArrowDown size={22} strokeWidth={2.5} />
+              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Transfer</span>
+            </div>
+          </div>
+
+          {/* Beer Well */}
+          <div className="bg-gradient-to-br from-purple-50 to-fuchsia-50 rounded-xl p-4 border border-purple-100">
+            <h2 className="text-sm font-bold text-purple-700 mb-3 flex items-center gap-1.5 uppercase tracking-wide">
+              <Droplets size={14} /> Beer Well
+            </h2>
+            <div className="bg-white rounded-xl shadow-sm border-2 border-purple-200 p-4">
+              <div className="flex items-start gap-3">
+                <Tank fillPct={beerWellLevel ?? 0} color="#a855f7" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-bold text-lg text-gray-800">Beer Well</h3>
+                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${beerWellLevel && beerWellLevel > 0 ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-400'}`}>
+                      {beerWellLevel && beerWellLevel > 0 ? `${beerWellLevel.toFixed(0)} KL` : 'Empty'}
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {beerWellLevel && beerWellLevel > 0
+                      ? `Holding ${beerWellLevel.toFixed(0)} KL of fermented wash`
+                      : 'No wash in beer well'}
+                  </p>
+                  {(() => {
+                    const transferring = fermBatches.filter(b => b.phase === 'TRANSFER');
+                    return transferring.length > 0 ? (
+                      <div className="mt-2 text-xs text-amber-600 font-medium">
+                        Receiving from: {transferring.map(b => `F-${b.fermenterNo}`).join(', ')}
+                      </div>
+                    ) : null;
+                  })()}
+                </div>
+              </div>
             </div>
           </div>
 
