@@ -4,7 +4,7 @@ import api from '../../services/api';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 interface DistForm {
-  date: string; analysisTime: string; batchNo: string;
+  date: string; analysisTime: string;
   spentWashLoss: string; rcLessLoss: string; ethanolStrength: string;
   rcReflexStrength: string; regenerationStrength: string; evaporationSpgr: string;
   rcStrength: string; actStrength: string; spentLossLevel: string;
@@ -12,7 +12,7 @@ interface DistForm {
 }
 
 const emptyForm = (): DistForm => ({
-  date: new Date().toISOString().split('T')[0], analysisTime: '', batchNo: '',
+  date: new Date().toISOString().split('T')[0], analysisTime: '',
   spentWashLoss: '', rcLessLoss: '', ethanolStrength: '', rcReflexStrength: '',
   regenerationStrength: '', evaporationSpgr: '',
   rcStrength: '', actStrength: '', spentLossLevel: '',
@@ -55,7 +55,6 @@ export default function Distillation() {
     const lines = [
       `*DISTILLATION REPORT*`,
       `Date: ${form.date} | Time: ${form.analysisTime || '—'}`,
-      form.batchNo ? `Batch No: ${form.batchNo}` : '',
       ``,
       `RC Strength: ${form.rcStrength || '—'}`,
       `ACT Strength: ${form.actStrength || '—'}`,
@@ -97,8 +96,8 @@ export default function Distillation() {
       <div className="bg-white rounded-lg shadow-sm border p-4 mb-4">
         <h3 className="text-sm font-semibold text-red-700 mb-3 uppercase tracking-wide">New Reading</h3>
 
-        {/* Date/Time/Batch */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+        {/* Date/Time */}
+        <div className="grid grid-cols-2 gap-3 mb-4">
           <div><label className="text-xs text-gray-500">Date</label><input type="date" value={form.date} onChange={e => upd('date', e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
           <div><label className="text-xs text-gray-500">Time</label>
             <div className="flex gap-1">
@@ -106,7 +105,6 @@ export default function Distillation() {
               <button onClick={setNow} className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-medium hover:bg-red-200">Now</button>
             </div>
           </div>
-          <div><label className="text-xs text-gray-500">Batch No.</label><input type="number" value={form.batchNo} onChange={e => upd('batchNo', e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
         </div>
 
         {/* RC & ACT Strength */}
@@ -174,8 +172,6 @@ export default function Distillation() {
                 <span>Date: <strong>{form.date}</strong></span>
                 <span>Time: <strong>{form.analysisTime || '—'}</strong></span>
               </div>
-              {form.batchNo && <div className="text-gray-600">Batch No: <strong>{form.batchNo}</strong></div>}
-
               <div className="grid grid-cols-2 gap-2">
                 <div className="bg-red-50 rounded p-2 text-center">
                   <div className="text-xs text-gray-500">RC Strength</div>

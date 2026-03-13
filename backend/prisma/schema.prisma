@@ -402,7 +402,6 @@ model DistillationEntry {
   id                  String   @id @default(uuid())
   date                DateTime
   analysisTime        String   @default("")
-  batchNo             Int?
   spentWashLoss       Float?
   rcLessLoss          Float?
   ethanolStrength     Float?
@@ -455,6 +454,16 @@ model EvaporationEntry {
   thinSlopFlowRate Float?
   // Last syrup gravity
   lastSyrupGravity Float?
+  // Reboiler of Analyzer Column (A, B, C)
+  reboilerATemp    Float?
+  reboilerBTemp    Float?
+  reboilerCTemp    Float?
+  // Thin Slop
+  thinSlopGravity  Float?
+  thinSlopSolids   Float?
+  // Spent Wash
+  spentWashGravity Float?
+  spentWashSolids  Float?
   remark          String?
   userId          String
   createdAt       DateTime @default(now())

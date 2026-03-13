@@ -9,7 +9,7 @@ const router = Router();
 
 router.post('/register', async (req: AuthRequest, res: Response) => {
   try {
-    const { email, password, name, role } = req.body;
+    const { email, password, name } = req.body;
 
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
@@ -23,7 +23,7 @@ router.post('/register', async (req: AuthRequest, res: Response) => {
         email,
         password: hash,
         name,
-        role: role || 'OPERATOR',
+        role: 'OPERATOR', // always OPERATOR — only ADMIN can promote via settings
       },
     });
 
@@ -91,7 +91,10 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
       res.status(401).json({ error: 'No user' });
       return;
     }
-    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { id: true, email: true, name: true, role: true, allowedModules: true, isActive: true, createdAt: true },
+    });
     res.json(user);
   } catch (err: any) {
     res.status(500).json({ error: err.message });

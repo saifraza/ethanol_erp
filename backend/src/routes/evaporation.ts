@@ -1,9 +1,8 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import prisma from '../config/prisma';
 import { authenticate, authorize } from '../middleware/auth';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 router.use(authenticate as any);
 
@@ -12,7 +11,9 @@ const FLOAT_FIELDS = [
   'ff4SpGravity','ff4Temp','ff5SpGravity','ff5Temp',
   'fc1SpGravity','fc1Temp','fc2SpGravity','fc2Temp',
   'ff1Concentration','ff2Concentration','ff3Concentration','ff4Concentration','ff5Concentration',
-  'syrupConcentration','vacuum','thinSlopFlowRate','lastSyrupGravity'
+  'syrupConcentration','vacuum','thinSlopFlowRate','lastSyrupGravity',
+  'reboilerATemp','reboilerBTemp','reboilerCTemp',
+  'thinSlopGravity','thinSlopSolids','spentWashGravity','spentWashSolids'
 ];
 
 function parseBody(b: any) {
