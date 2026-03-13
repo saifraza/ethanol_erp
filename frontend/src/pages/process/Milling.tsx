@@ -352,9 +352,9 @@ export default function Milling() {
             <div className="p-4 border-t flex gap-2">
               <button onClick={() => {
                 const t = `*MILLING REPORT*\nDate: ${form.date} ${form.analysisTime || ''}\n\n*Sieve Analysis*\n1.00mm: ${form.sieve_1mm ?? '—'}%\n0.850mm: ${form.sieve_850 ?? '—'}%\n0.600mm: ${form.sieve_600 ?? '—'}%\n0.300mm: ${form.sieve_300 ?? '—'}%\nTotal Fine: ${totalFine}%\n\n*Mill RPM / Load*\nMill A: ${form.millA_rpm ?? '—'} rpm / ${form.millA_load ?? '—'} A\nMill B: ${form.millB_rpm ?? '—'} rpm / ${form.millB_load ?? '—'} A\nMill C: ${form.millC_rpm ?? '—'} rpm / ${form.millC_load ?? '—'} A${form.remarks ? '\n\nRemarks: ' + form.remarks : ''}`;
-                window.open(`https://wa.me/?text=${encodeURIComponent(t)}`, '_blank');
+                if (navigator.share) { navigator.share({ text: t }).catch(() => { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }); } else { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }
               }} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
-                <Share2 size={16} /> WhatsApp
+                <Share2 size={16} /> Share
               </button>
               <button onClick={() => { handleSave(); setShowPreview(false); }} disabled={saving}
                 className="flex-1 flex items-center justify-center gap-2 bg-stone-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-stone-700 disabled:opacity-50">
