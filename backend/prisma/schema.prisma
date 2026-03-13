@@ -209,6 +209,8 @@ model LiquefactionEntry {
   thinSlopRecycleFlowRate Float?   // Thin Slop Recycle Flow Rate
   slurryFlow              Float?   // ILT to Jet Cooker Slurry Flow
   steamFlow               Float?   // Liquefaction Steam Flow
+  fltIodineTest           String?  // POSITIVE or NEGATIVE
+  fltIodinePhotoUrl       String?  // photo of iodine test
   remark          String?
   userId          String
   createdAt       DateTime @default(now())
