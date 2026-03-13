@@ -325,6 +325,8 @@ model FermentationEntry {
   ds              Float?
   vfaPpa          Float?
   temp            Float?
+  spentLoss       Float?
+  spentLossPhotoUrl String?
   status          String   @default("U/F")
   remarks         String?
   userId          String

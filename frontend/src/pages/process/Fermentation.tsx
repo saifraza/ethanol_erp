@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, ReferenceLine } from 'recharts';
-import { Plus, FlaskConical, Beaker, ArrowRight, RotateCcw, Trash2, ChevronDown, ChevronUp, Clock, Pencil, TrendingDown, Thermometer, Droplets, BarChart3, Share2 } from 'lucide-react';
+import { Plus, FlaskConical, Beaker, ArrowRight, RotateCcw, Trash2, ChevronDown, ChevronUp, Clock, Pencil, TrendingDown, Thermometer, Droplets, BarChart3, Share2, Camera, Beer } from 'lucide-react';
 import api from '../../services/api';
 
 /* ═══════════════════════ TYPES ═══════════════════════ */
@@ -21,6 +21,7 @@ interface LabEntry {
   id: string; date: string; analysisTime: string; batchNo: number; fermenterNo: number;
   level: number | null; spGravity: number | null; ph: number | null; rs: number | null; rst: number | null;
   alcohol: number | null; ds: number | null; vfaPpa: number | null; temp: number | null;
+  spentLoss: number | null; spentLossPhotoUrl: string | null;
   status: string; remarks: string | null;
 }
 
@@ -35,8 +36,9 @@ const nowLocal = () => toLocal(new Date().toISOString());
 const PHASES = ['FILLING', 'REACTION', 'RETENTION', 'TRANSFER', 'CIP', 'DONE'] as const;
 const phaseColors: Record<string, string> = { FILLING: '#6366f1', REACTION: '#10b981', RETENTION: '#06b6d4', TRANSFER: '#3b82f6', CIP: '#8b5cf6', DONE: '#6b7280' };
 const phaseLabels: Record<string, string> = { FILLING: 'Filling', REACTION: 'Reaction', RETENTION: 'Retention', TRANSFER: 'Transfer', CIP: 'CIP', DONE: 'Done' };
-const FERMENTERS = [1, 2, 3, 4];
-const F_COLORS: Record<number, string> = { 1: '#3b82f6', 2: '#10b981', 3: '#f59e0b', 4: '#ef4444' };
+const FERMENTERS = [1, 2, 3, 4, 5]; // 5 = Beer Well
+const F_COLORS: Record<number, string> = { 1: '#3b82f6', 2: '#10b981', 3: '#f59e0b', 4: '#ef4444', 5: '#8b5cf6' };
+const F_LABELS: Record<number, string> = { 1: 'F1', 2: 'F2', 3: 'F3', 4: 'F4', 5: 'BW' };
 const FERM_CAPACITY_M3 = 2300;
 
 /* elapsed time helper: returns "+2h 15m" from T0 */
@@ -134,7 +136,7 @@ function BatchHistoryCard({ batch: b, isActive, isExpanded, onToggle, onDelete, 
       <div className="flex items-center justify-between p-3 px-4 cursor-pointer hover:bg-gray-50/80 transition-colors" onClick={onToggle}>
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-white bg-gray-500 px-1.5 py-0.5 rounded">F{b.fermenterNo}</span>
+            <span className="text-xs font-bold text-white bg-gray-500 px-1.5 py-0.5 rounded">{F_LABELS[b.fermenterNo] || `F${b.fermenterNo}`}</span>
             <span className="text-lg font-bold text-gray-800">#{b.batchNo}</span>
             <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold text-white shadow-sm" style={{ backgroundColor: phaseColors[b.phase] }}>{phaseLabels[b.phase]}</span>
           </div>
@@ -275,7 +277,7 @@ function BatchHistoryCard({ batch: b, isActive, isExpanded, onToggle, onDelete, 
               {showTable && (
                 <div className="overflow-x-auto border-t">
                   <table className="w-full text-sm">
-                    <thead><tr className="bg-gray-50 text-xs text-gray-500">{['Date/Time', 'T0+', 'SG', 'pH', 'RS%', 'RST%', 'Alc%', 'DS%', 'VFA', 'Temp', 'Phase'].map(h => <th key={h} className="text-left py-2 px-2 font-medium">{h}</th>)}</tr></thead>
+                    <thead><tr className="bg-gray-50 text-xs text-gray-500">{['Date/Time', 'T0+', 'SG', 'pH', 'RS%', 'RST%', 'Alc%', 'DS%', 'VFA', 'Temp', 'SpLoss', 'Phase'].map(h => <th key={h} className="text-left py-2 px-2 font-medium">{h}</th>)}</tr></thead>
                     <tbody>{labData.map((r, i) => {
                       const ts = r.analysisTime || r.date;
                       return (
@@ -290,6 +292,7 @@ function BatchHistoryCard({ batch: b, isActive, isExpanded, onToggle, onDelete, 
                           <td className="px-2">{r.ds ?? <span className="text-gray-300">-</span>}</td>
                           <td className="px-2">{r.vfaPpa ?? <span className="text-gray-300">-</span>}</td>
                           <td className={`px-2 ${r.temp != null && r.temp > 37 ? 'text-red-600 font-bold' : ''}`}>{r.temp ?? <span className="text-gray-300">-</span>}</td>
+                          <td className="px-2 text-orange-600">{r.spentLoss != null ? r.spentLoss : <span className="text-gray-300">-</span>}</td>
                           <td className="px-2"><span className="text-[10px] font-bold text-white px-1.5 py-0.5 rounded-full" style={{ backgroundColor: phaseColors[r.status] || '#6b7280' }}>{phaseLabels[r.status] || r.status}</span></td>
                         </tr>
                       );
@@ -331,7 +334,10 @@ export default function Fermentation() {
 
   const [nbForm, setNbForm] = useState({ batchNo: '', fermLevel: '', setupGravity: '', remarks: '' });
   const [doseForm, setDoseForm] = useState({ chemicalName: '', quantity: '', unit: 'kg' });
-  const [labForm, setLabForm] = useState({ analysisTime: '', level: '', spGravity: '', ph: '', rs: '', rst: '', alcohol: '', ds: '', vfaPpa: '', temp: '', status: 'U/F', remarks: '' });
+  const [labForm, setLabForm] = useState({ analysisTime: '', level: '', spGravity: '', ph: '', rs: '', rst: '', alcohol: '', ds: '', vfaPpa: '', temp: '', spentLoss: '', status: 'U/F', remarks: '' });
+  const [slPhoto, setSlPhoto] = useState<File | null>(null);
+  const [slPreview, setSlPreview] = useState<string | null>(null);
+  const slInputRef = useRef<HTMLInputElement>(null);
   const [chemForm, setChemForm] = useState({ name: '', unit: 'kg' });
 
   const load = useCallback(() => {
@@ -379,12 +385,17 @@ export default function Fermentation() {
     if (!activeBatch) return;
     try {
       const analysisTimeISO = labForm.analysisTime ? new Date(labForm.analysisTime).toISOString() : new Date().toISOString();
-      await api.post('/fermentation', { ...labForm, analysisTime: analysisTimeISO, status: activeBatch.phase, date: analysisTimeISO, batchNo: activeBatch.batchNo, fermenterNo: tab });
+      const fd = new FormData();
+      const payload = { ...labForm, analysisTime: analysisTimeISO, status: activeBatch.phase, date: analysisTimeISO, batchNo: String(activeBatch.batchNo), fermenterNo: String(tab) };
+      Object.entries(payload).forEach(([k, v]) => { if (v !== '' && v != null) fd.append(k, v); });
+      if (slPhoto) fd.append('spentLossPhoto', slPhoto);
+      await api.post('/fermentation', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       // update batch fermLevel if level was entered
       if (labForm.level) {
         await api.patch(`/fermentation/batches/${activeBatch.id}`, { fermLevel: labForm.level });
       }
-      setLabForm({ analysisTime: '', level: '', spGravity: '', ph: '', rs: '', rst: '', alcohol: '', ds: '', vfaPpa: '', temp: '', status: 'U/F', remarks: '' });
+      setLabForm({ analysisTime: '', level: '', spGravity: '', ph: '', rs: '', rst: '', alcohol: '', ds: '', vfaPpa: '', temp: '', spentLoss: '', status: 'U/F', remarks: '' });
+      setSlPhoto(null); setSlPreview(null);
       load(); loadLab();
     } catch {}
   };
@@ -545,7 +556,7 @@ export default function Fermentation() {
             <button key={n} onClick={() => setTab(n)}
               className={`flex-1 py-2.5 px-3 rounded-lg text-sm font-medium transition-all ${tab === n ? 'bg-white shadow text-emerald-700' : 'text-gray-500 hover:text-gray-700 hover:bg-white/50'}`}>
               <div className="flex items-center justify-center gap-2">
-                <span className="font-bold" style={{ color: F_COLORS[n] }}>F{n}</span>
+                <span className="font-bold" style={{ color: F_COLORS[n] }}>{F_LABELS[n]}</span>
                 {active && (
                   <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold text-white" style={{ backgroundColor: phaseColors[active.phase] }}>
                     #{active.batchNo}
@@ -560,7 +571,7 @@ export default function Fermentation() {
       {/* NEW BATCH FORM */}
       {showNewBatch && (
         <div className="bg-white rounded-lg shadow p-4 border-l-4 border-emerald-500">
-          <h3 className="font-semibold mb-3">Start New Batch — Fermenter F{tab}</h3>
+          <h3 className="font-semibold mb-3">Start New Batch — {F_LABELS[tab]}</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {numField('Batch No', nbForm.batchNo, v => setNbForm(f => ({ ...f, batchNo: v })), '1', 'e.g. 42')}
             <div>
@@ -588,7 +599,7 @@ export default function Fermentation() {
         <div className="bg-white rounded-lg shadow border">
           <div className="p-4 border-b flex justify-between items-start">
             <div>
-              <h2 className="text-lg font-bold">Batch #{activeBatch.batchNo} — F{activeBatch.fermenterNo}</h2>
+              <h2 className="text-lg font-bold">Batch #{activeBatch.batchNo} — {F_LABELS[activeBatch.fermenterNo]}</h2>
               <div className="text-sm text-gray-500 flex gap-3 mt-1 flex-wrap">
                 {activeBatch.fermLevel != null && (
                   <span>Level: {activeBatch.fermLevel}% ({(activeBatch.fermLevel / 100 * FERM_CAPACITY_M3).toFixed(0)} M³)</span>
@@ -610,7 +621,7 @@ export default function Fermentation() {
               <button onClick={() => {
                 const b = activeBatch;
                 const dosingList = b.dosings.map(d => `  ${d.chemicalName}: ${d.quantity} ${d.unit}`).join('\n');
-                const t = `*FERMENTATION — Batch #${b.batchNo} F${b.fermenterNo}*\nPhase: ${phaseLabels[b.phase]}${b.fillingStartTime ? '\nFilling: ' + new Date(b.fillingStartTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : ''}${b.fermLevel != null ? `\nLevel: ${b.fermLevel}% (${(b.fermLevel / 100 * FERM_CAPACITY_M3).toFixed(0)} M³)` : ''}${b.setupGravity ? ' | SG: ' + b.setupGravity : ''}${b.setupRs ? ' | RS: ' + b.setupRs + '%' : ''}${b.dosings.length > 0 ? '\n\n*Dosing* (' + b.dosings.length + ')\n' + dosingList : ''}${b.finalAlcohol ? '\n\n*Final*\nAlcohol: ' + b.finalAlcohol + '%' : ''}${b.totalHours ? ' | Hours: ' + b.totalHours : ''}${b.remarks ? '\n\nRemarks: ' + b.remarks : ''}`;
+                const t = `*FERMENTATION — Batch #${b.batchNo} ${F_LABELS[b.fermenterNo] || 'F' + b.fermenterNo}*\nPhase: ${phaseLabels[b.phase]}${b.fillingStartTime ? '\nFilling: ' + new Date(b.fillingStartTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : ''}${b.fermLevel != null ? `\nLevel: ${b.fermLevel}% (${(b.fermLevel / 100 * FERM_CAPACITY_M3).toFixed(0)} M³)` : ''}${b.setupGravity ? ' | SG: ' + b.setupGravity : ''}${b.setupRs ? ' | RS: ' + b.setupRs + '%' : ''}${b.dosings.length > 0 ? '\n\n*Dosing* (' + b.dosings.length + ')\n' + dosingList : ''}${b.finalAlcohol ? '\n\n*Final*\nAlcohol: ' + b.finalAlcohol + '%' : ''}${b.totalHours ? ' | Hours: ' + b.totalHours : ''}${b.remarks ? '\n\nRemarks: ' + b.remarks : ''}`;
                 if (navigator.share) { navigator.share({ text: t }).catch(() => { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }); } else { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }
               }} className="text-white/80 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition" title="Share on WhatsApp">
                 <Share2 size={18} />
@@ -712,13 +723,14 @@ export default function Fermentation() {
                 {batchLab.length > 0 && (
                   <div className="overflow-x-auto mb-3">
                     <table className="w-full text-sm">
-                      <thead><tr className="text-xs text-gray-500">{['Date/Time', 'T0+', 'Level%', 'Gravity', 'pH', 'RS%', 'RST%', 'Alc%', 'DS%', 'VFA', 'Temp', 'Phase', ''].map(h => <th key={h} className="text-left py-1 px-1">{h}</th>)}</tr></thead>
+                      <thead><tr className="text-xs text-gray-500">{['Date/Time', 'T0+', 'Level%', 'Gravity', 'pH', 'RS%', 'RST%', 'Alc%', 'DS%', 'VFA', 'Temp', 'SpLoss', 'Phase', ''].map(h => <th key={h} className="text-left py-1 px-1">{h}</th>)}</tr></thead>
                       <tbody>{batchLab.map(r => (
                         <tr key={r.id} className="border-t">
                           <td className="px-1 py-1 text-xs whitespace-nowrap">{r.analysisTime ? new Date(r.analysisTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : r.analysisTime}</td>
                           <td className="px-1 text-xs font-medium text-indigo-600">{elapsed(t0(activeBatch), r.analysisTime || r.date)}</td>
                           <td className="px-1 text-xs text-emerald-600 font-medium">{r.level != null ? `${r.level}%` : '-'}</td>
                           <td className="px-1">{r.spGravity ?? '-'}</td><td className="px-1">{r.ph ?? '-'}</td><td className="px-1">{r.rs ?? '-'}</td><td className="px-1">{r.rst ?? '-'}</td><td className="px-1">{r.alcohol ?? '-'}</td><td className="px-1">{r.ds ?? '-'}</td><td className="px-1">{r.vfaPpa ?? '-'}</td><td className="px-1">{r.temp ?? '-'}</td>
+                          <td className="px-1 text-orange-600 font-medium">{r.spentLoss != null ? r.spentLoss : '-'}{r.spentLossPhotoUrl && <span title="Has photo">📷</span>}</td>
                           <td className="px-1"><span className="text-[10px] font-bold text-white px-1.5 py-0.5 rounded" style={{ backgroundColor: phaseColors[r.status] || '#6b7280' }}>{phaseLabels[r.status] || r.status}</span></td>
                           <td className="px-1"><button onClick={() => { api.delete(`/fermentation/${r.id}`); loadLab(); }} className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button></td>
                         </tr>
@@ -751,6 +763,24 @@ export default function Fermentation() {
                     </div>
                   </div>
                   <div><label className="text-xs text-gray-500">Remarks</label><input value={labForm.remarks} onChange={e => setLabForm(f => ({ ...f, remarks: e.target.value }))} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+                </div>
+                {/* Spent Loss */}
+                <div className="mt-3 p-3 border border-orange-200 rounded-lg bg-orange-50/30">
+                  <label className="block text-xs font-semibold text-orange-700 mb-2">Spent Loss</label>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <div className="w-32">
+                      <input type="number" step="0.01" placeholder="Loss %" value={labForm.spentLoss}
+                        onChange={e => setLabForm(f => ({ ...f, spentLoss: e.target.value }))}
+                        className="w-full border border-orange-300 rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-orange-400 outline-none" />
+                    </div>
+                    <input ref={slInputRef} type="file" accept="image/*" capture="environment" className="hidden"
+                      onChange={e => { const f = e.target.files?.[0]; if (f) { setSlPhoto(f); setSlPreview(URL.createObjectURL(f)); } }} />
+                    <button type="button" onClick={() => slInputRef.current?.click()}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-white text-orange-600 border border-orange-300 hover:bg-orange-50 transition">
+                      <Camera size={16} /> {slPhoto ? 'Change Photo' : 'Take Photo'}
+                    </button>
+                    {slPreview && <img src={slPreview} alt="Spent loss" className="w-16 h-16 object-cover rounded border" />}
+                  </div>
                 </div>
                 <button onClick={addLabReading} className="mt-2 bg-teal-600 text-white px-4 py-1.5 rounded text-sm hover:bg-teal-700">Add Reading</button>
               </div>
@@ -833,7 +863,7 @@ export default function Fermentation() {
       ) : (
         <div className="bg-white rounded-lg shadow p-8 text-center text-gray-400">
           <FlaskConical size={48} className="mx-auto mb-3 opacity-30" />
-          <p>No active batch on Fermenter F{tab}</p>
+          <p>No active batch on {F_LABELS[tab]}</p>
           <button onClick={() => setShowNewBatch(true)} className="mt-3 bg-emerald-600 text-white px-4 py-2 rounded text-sm hover:bg-emerald-700">Start New Batch</button>
         </div>
       )}
