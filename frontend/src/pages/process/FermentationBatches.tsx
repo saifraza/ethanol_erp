@@ -570,6 +570,17 @@ export default function Fermentation() {
       if (labForm.level) {
         await api.patch(`/fermentation/batches/${activeBatch.id}`, { fermLevel: labForm.level });
       }
+      // Auto-advance: SG ≤ 1.000 during REACTION → move to RETENTION
+      const sg = labForm.spGravity ? parseFloat(labForm.spGravity) : null;
+      if (sg != null && sg <= 1.0 && activeBatch.phase === 'REACTION') {
+        await api.patch(`/fermentation/batches/${activeBatch.id}`, {
+          phase: 'RETENTION',
+          retentionStartTime: analysisTimeISO,
+          setupGravity: sg
+        });
+        setPhaseMsg('✓ SG reached 1.000 — auto-moved to Retention');
+        setTimeout(() => setPhaseMsg(null), 3000);
+      }
       setLabForm({ analysisTime: '', level: '', spGravity: '', ph: '', rs: '', rst: '', alcohol: '', ds: '', vfaPpa: '', temp: '', spentLoss: '', status: 'U/F', remarks: '' });
       setSlPhoto(null); setSlPreview(null);
       load(); loadLab();
@@ -746,6 +757,17 @@ export default function Fermentation() {
       if (quForm.rs) fd.append('rs', quForm.rs);
       if (quForm.temp) fd.append('temp', quForm.temp);
       await api.post('/fermentation', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      // Auto-advance: SG ≤ 1.000 during REACTION → move to RETENTION
+      const sg = quForm.spGravity ? parseFloat(quForm.spGravity) : null;
+      if (sg != null && sg <= 1.0 && activeBatch.phase === 'REACTION') {
+        await api.patch(`/fermentation/batches/${activeBatch.id}`, {
+          phase: 'RETENTION',
+          retentionStartTime: new Date().toISOString(),
+          setupGravity: sg
+        });
+        setPhaseMsg('✓ SG reached 1.000 — auto-moved to Retention');
+        setTimeout(() => setPhaseMsg(null), 3000);
+      }
       setShowQuickUpdate(false);
       load(); loadLab();
     } catch {}
