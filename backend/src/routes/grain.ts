@@ -154,6 +154,22 @@ router.get('/latest', authenticate, async (req: AuthRequest, res: Response) => {
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
+// PATCH /api/grain/latest-levels — update just level fields on latest entry
+router.patch('/latest-levels', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const yearStart = getCurrentYearStart();
+    const latest = await getLastEntry(yearStart);
+    if (!latest) return res.status(404).json({ error: 'No grain entry found' });
+    const data: any = {};
+    const b = req.body;
+    for (const f of ['beerWellLevel', 'f1Level', 'f2Level', 'f3Level', 'f4Level', 'pf1Level', 'pf2Level', 'iltLevel', 'fltLevel']) {
+      if (b[f] !== undefined) data[f] = b[f] != null ? parseFloat(b[f]) : null;
+    }
+    const updated = await prisma.grainEntry.update({ where: { id: latest.id }, data });
+    res.json(updated);
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
 // GET /api/grain/summary
 router.get('/summary', authenticate, async (req: AuthRequest, res: Response) => {
   try {
