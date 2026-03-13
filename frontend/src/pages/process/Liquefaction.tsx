@@ -1,5 +1,5 @@
-import { useEffect, useState, useMemo } from 'react';
-import { Droplets, Save, Loader2, Trash2, Clock, TrendingUp, Database, AlertTriangle, ChevronDown, ChevronUp, FlaskConical, Eye, X, Share2 } from 'lucide-react';
+import { useEffect, useState, useMemo, useRef } from 'react';
+import { Droplets, Save, Loader2, Trash2, Clock, TrendingUp, Database, AlertTriangle, ChevronDown, ChevronUp, FlaskConical, Eye, X, Share2, Camera, CheckCircle, XCircle } from 'lucide-react';
 import api from '../../services/api';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -24,6 +24,8 @@ interface LiqEntry {
   thinSlopRecycleFlowRate: number | null;
   slurryFlow: number | null;
   steamFlow: number | null;
+  fltIodineTest: string | null;
+  fltIodinePhotoUrl: string | null;
   remark: string | null;
 }
 
@@ -38,6 +40,7 @@ interface FormState {
   iltLevel: string; fltLevel: string; fltFlowRate: string;
   flourRate: string; hotWaterFlowRate: string; thinSlopRecycleFlowRate: string;
   slurryFlow: string; steamFlow: string;
+  fltIodineTest: string;
   remark: string;
 }
 
@@ -51,6 +54,7 @@ const emptyForm = (): FormState => ({
   iltLevel: '', fltLevel: '', fltFlowRate: '',
   flourRate: '', hotWaterFlowRate: '', thinSlopRecycleFlowRate: '',
   slurryFlow: '', steamFlow: '',
+  fltIodineTest: '',
   remark: ''
 });
 
@@ -83,6 +87,9 @@ export default function Liquefaction() {
   const [showExtra, setShowExtra] = useState(false);
   const [lastSavedId, setLastSavedId] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [iodinePhoto, setIodinePhoto] = useState<File | null>(null);
+  const [iodinePreview, setIodinePreview] = useState<string | null>(null);
+  const iodineInputRef = useRef<HTMLInputElement>(null);
 
   const load = () => api.get('/liquefaction').then(r => setEntries(r.data)).catch(() => {});
   useEffect(() => { load(); }, []);
@@ -147,10 +154,13 @@ export default function Liquefaction() {
     if (!form.date) { setMsg({ type: 'err', text: 'Date is required' }); return; }
     setSaving(true); setMsg(null);
     try {
-      const resp = await api.post('/liquefaction', form);
+      const fd = new FormData();
+      Object.entries(form).forEach(([k, v]) => { if (v !== '' && v !== null) fd.append(k, v); });
+      if (iodinePhoto) fd.append('iodinePhoto', iodinePhoto);
+      const resp = await api.post('/liquefaction', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       setLastSavedId(resp.data.id);
       setMsg({ type: 'ok', text: `Entry saved successfully at ${new Date().toLocaleTimeString()}` });
-      setForm(emptyForm()); load();
+      setForm(emptyForm()); setIodinePhoto(null); setIodinePreview(null); load();
       setTimeout(() => setMsg(null), 5000);
       setTimeout(() => setLastSavedId(null), 8000);
     } catch (err: any) {
@@ -283,6 +293,36 @@ export default function Liquefaction() {
             {numInput("RS %", "fltRs")}
             {numInput("RST %", "fltRst")}
           </div>
+
+          {/* Iodine Test */}
+          <div className="mt-3 p-3 border border-indigo-200 rounded-lg bg-indigo-50/30">
+            <label className="block text-xs font-semibold text-indigo-700 mb-2">Iodine Test</label>
+            <div className="flex items-center gap-3 flex-wrap">
+              <button type="button" onClick={() => upd('fltIodineTest', 'POSITIVE')}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition border ${form.fltIodineTest === 'POSITIVE' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-red-600 border-red-300 hover:bg-red-50'}`}>
+                <XCircle size={16} /> Positive
+              </button>
+              <button type="button" onClick={() => upd('fltIodineTest', 'NEGATIVE')}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition border ${form.fltIodineTest === 'NEGATIVE' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-green-600 border-green-300 hover:bg-green-50'}`}>
+                <CheckCircle size={16} /> Negative
+              </button>
+              <input ref={iodineInputRef} type="file" accept="image/*" capture="environment" className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) { setIodinePhoto(f); setIodinePreview(URL.createObjectURL(f)); } }} />
+              <button type="button" onClick={() => iodineInputRef.current?.click()}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-white text-indigo-600 border border-indigo-300 hover:bg-indigo-50 transition">
+                <Camera size={16} /> {iodinePhoto ? 'Change Photo' : 'Take Photo'}
+              </button>
+              {form.fltIodineTest && (
+                <button type="button" onClick={() => { upd('fltIodineTest', ''); setIodinePhoto(null); setIodinePreview(null); }}
+                  className="text-xs text-gray-400 hover:text-gray-600">Clear</button>
+              )}
+            </div>
+            {iodinePreview && (
+              <div className="mt-2">
+                <img src={iodinePreview} alt="Iodine test" className="w-32 h-32 object-cover rounded-lg border" />
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Extra Tests Toggle */}
@@ -379,12 +419,21 @@ export default function Liquefaction() {
                   {form.fltRs && <div>RS%: <b>{form.fltRs}</b></div>}
                   {form.fltRst && <div>RST%: <b>{form.fltRst}</b></div>}
                 </div>
+                {form.fltIodineTest && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="text-gray-500">Iodine:</span>
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold ${form.fltIodineTest === 'NEGATIVE' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                      {form.fltIodineTest === 'NEGATIVE' ? <CheckCircle size={12} /> : <XCircle size={12} />} {form.fltIodineTest}
+                    </span>
+                  </div>
+                )}
+                {iodinePreview && <img src={iodinePreview} alt="Iodine" className="mt-1 w-20 h-20 object-cover rounded border" />}
               </div>
               {form.remark && <div className="border-t pt-2"><span className="text-gray-500">Remark:</span> {form.remark}</div>}
             </div>
             <div className="p-4 border-t flex gap-2">
               <button onClick={() => {
-                const t = `*LIQUEFACTION REPORT*\nDate: ${form.date} ${form.analysisTime || ''}\n${form.jetCookerTemp ? `\nJet Cooker: ${form.jetCookerTemp}°C${form.jetCookerFlow ? ' | Flow: ' + form.jetCookerFlow : ''}` : ''}\n\n*ILT*${form.iltLevel ? '\nLevel: ' + form.iltLevel : ''}\nGravity: ${form.iltSpGravity || '—'} | pH: ${form.iltPh || '—'} | RS: ${form.iltRs || '—'}%\nTemp: ${form.iltTemp || '—'}°C\n\n*FLT*${form.fltLevel ? '\nLevel: ' + form.fltLevel : ''}${form.fltFlowRate ? ' | Flow: ' + form.fltFlowRate : ''}\nGravity: ${form.fltSpGravity || '—'} | pH: ${form.fltPh || '—'}\nRS: ${form.fltRs || '—'}% | RST: ${form.fltRst || '—'}%\nTemp: ${form.fltTemp || '—'}°C${form.remark ? '\n\nRemarks: ' + form.remark : ''}`;
+                const t = `*LIQUEFACTION REPORT*\nDate: ${form.date} ${form.analysisTime || ''}\n${form.jetCookerTemp ? `\nJet Cooker: ${form.jetCookerTemp}°C${form.jetCookerFlow ? ' | Flow: ' + form.jetCookerFlow : ''}` : ''}\n\n*ILT*${form.iltLevel ? '\nLevel: ' + form.iltLevel : ''}\nGravity: ${form.iltSpGravity || '—'} | pH: ${form.iltPh || '—'} | RS: ${form.iltRs || '—'}%\nTemp: ${form.iltTemp || '—'}°C\n\n*FLT*${form.fltLevel ? '\nLevel: ' + form.fltLevel : ''}${form.fltFlowRate ? ' | Flow: ' + form.fltFlowRate : ''}\nGravity: ${form.fltSpGravity || '—'} | pH: ${form.fltPh || '—'}\nRS: ${form.fltRs || '—'}% | RST: ${form.fltRst || '—'}%\nTemp: ${form.fltTemp || '—'}°C${form.fltIodineTest ? '\nIodine Test: ' + form.fltIodineTest + (form.fltIodineTest === 'NEGATIVE' ? ' ✅' : ' ❌') : ''}${form.remark ? '\n\nRemarks: ' + form.remark : ''}`;
                 if (navigator.share) { navigator.share({ text: t }).catch(() => { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }); } else { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }
               }} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
                 <Share2 size={16} /> Share
@@ -492,6 +541,7 @@ export default function Liquefaction() {
                 <th className="px-2 py-2 text-right font-semibold text-green-600">FLT pH</th>
                 <th className="px-2 py-2 text-right font-semibold text-green-600">FLT RS%</th>
                 <th className="px-2 py-2 text-right font-semibold text-green-600">FLT RST%</th>
+                <th className="px-2 py-2 text-center font-semibold text-indigo-600">Iodine</th>
                 <th className="px-2 py-2 text-left font-semibold text-gray-600">Remark</th>
                 <th className="px-2 py-2"></th>
               </tr>
@@ -508,6 +558,13 @@ export default function Liquefaction() {
                   <td className="px-2 py-1.5 text-right font-mono">{fmt(e.fltPh)}</td>
                   <td className="px-2 py-1.5 text-right font-mono">{fmt(e.fltRs)}</td>
                   <td className="px-2 py-1.5 text-right font-mono">{fmt(e.fltRst)}</td>
+                  <td className="px-2 py-1.5 text-center">
+                    {e.fltIodineTest ? (
+                      <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${e.fltIodineTest === 'NEGATIVE' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                        {e.fltIodineTest === 'NEGATIVE' ? '✅' : '❌'} {e.fltIodineTest.slice(0, 3)}
+                      </span>
+                    ) : '—'}
+                  </td>
                   <td className="px-2 py-1.5 text-gray-500 max-w-[120px] truncate">{e.remark || ''}</td>
                   <td className="px-2 py-1.5">
                     <button onClick={() => handleDelete(e.id)} disabled={deletingId === e.id}
