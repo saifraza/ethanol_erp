@@ -23,6 +23,7 @@ interface FermBatch {
 }
 
 const PF_CAP = 450;
+const BEER_WELL_CAP = 2300;
 const pfPhaseColors: Record<string, string> = { SETUP: '#6366f1', DOSING: '#f59e0b', LAB: '#10b981', TRANSFER: '#3b82f6', CIP: '#8b5cf6', DONE: '#9ca3af' };
 const fermPhaseColors: Record<string, string> = { PF_TRANSFER: '#f97316', FILLING: '#3b82f6', SETUP: '#6366f1', REACTION: '#f59e0b', RETENTION: '#10b981', TRANSFER: '#06b6d4', CIP: '#8b5cf6', DONE: '#9ca3af' };
 const pfPhaseLabels: Record<string, string> = { SETUP: 'Setup', DOSING: 'Dosing', LAB: 'Lab', TRANSFER: 'Transfer', CIP: 'CIP', DONE: 'Done' };
@@ -334,7 +335,7 @@ export default function Fermentation() {
             </h2>
             <div className="bg-white rounded-xl shadow-sm border-2 border-purple-200 p-4">
               <div className="flex items-start gap-3">
-                <Tank fillPct={beerWellLevel ?? 0} color="#a855f7" />
+                <Tank fillPct={beerWellLevel ? (beerWellLevel / BEER_WELL_CAP * 100) : 0} color="#a855f7" />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
                     <h3 className="font-bold text-lg text-gray-800">Beer Well</h3>
