@@ -83,8 +83,8 @@ export default function Layout() {
         </div>
 
         <nav className="flex-1 p-2 space-y-1">
-          {user?.role === 'ADMIN' && (
-            <NavLink to="/" label="Dashboard" icon={LayoutDashboard} active={location.pathname === '/'} onClick={closeSidebar} />
+          {hasModuleAccess(user, 'dashboard') && (
+            <NavLink to="/dashboard" label="Dashboard" icon={LayoutDashboard} active={location.pathname === '/dashboard'} onClick={closeSidebar} />
           )}
 
           <button onClick={() => setProcessOpen(!processOpen)} className="flex items-center justify-between w-full px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mt-3 hover:text-gray-200">

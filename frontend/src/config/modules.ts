@@ -4,7 +4,7 @@
 import {
   Wheat, CogIcon, Droplets, Beaker, Flame, Wind,
   Fuel, Waves, FileText, ClipboardList, BarChart3,
-  Settings, Users, Truck, FlaskConical, Package
+  Settings, Users, Truck, FlaskConical, Package, LayoutDashboard
 } from 'lucide-react';
 
 export interface ModuleDef {
@@ -17,6 +17,8 @@ export interface ModuleDef {
 }
 
 export const MODULE_DEFS: ModuleDef[] = [
+  // Dashboard (controlled access)
+  { key: 'dashboard', label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard, group: 'admin' },
   // Process modules
   { key: 'raw-material', label: 'Raw Material', to: '/process/raw-material', icon: Wheat, group: 'process' },
   { key: 'grain-stock', label: 'Grain Stock', to: '/process/grain-stock', icon: Wheat, group: 'process' },
