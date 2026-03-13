@@ -1,9 +1,20 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import prisma from '../config/prisma';
 import { authenticate, authorize } from '../middleware/auth';
 
 const router = Router();
-const prisma = new PrismaClient();
+
+/* ═══════ MULTER for spent-loss photos ═══════ */
+const uploadDir = path.join(__dirname, '../../uploads/spent-loss');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadDir),
+  filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
+});
+const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 
 router.use(authenticate as any);
 
@@ -118,7 +129,7 @@ router.get('/batch/:batchNo', async (req: Request, res: Response) => {
   res.json(entries);
 });
 
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', upload.single('spentLossPhoto'), async (req: Request, res: Response) => {
   const b = req.body;
   const entry = await prisma.fermentationEntry.create({
     data: {
@@ -133,6 +144,8 @@ router.post('/', async (req: Request, res: Response) => {
       ds: b.ds ? parseFloat(b.ds) : null,
       vfaPpa: b.vfaPpa ? parseFloat(b.vfaPpa) : null,
       temp: b.temp ? parseFloat(b.temp) : null,
+      spentLoss: b.spentLoss ? parseFloat(b.spentLoss) : null,
+      spentLossPhotoUrl: req.file ? `/uploads/spent-loss/${req.file.filename}` : null,
       status: b.status || 'U/F',
       remarks: b.remarks || null, userId: (req as any).user?.id || 'unknown'
     }
@@ -141,6 +154,11 @@ router.post('/', async (req: Request, res: Response) => {
 });
 
 router.delete('/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
+  const entry = await prisma.fermentationEntry.findUnique({ where: { id: req.params.id } });
+  if (entry?.spentLossPhotoUrl) {
+    const fp = path.join(__dirname, '../..', entry.spentLossPhotoUrl);
+    fs.unlink(fp, () => {});
+  }
   await prisma.fermentationEntry.delete({ where: { id: req.params.id } });
   res.json({ ok: true });
 });
