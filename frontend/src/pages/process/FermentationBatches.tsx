@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, ReferenceLine } from 'recharts';
 import { Plus, FlaskConical, Beaker, ArrowRight, RotateCcw, Trash2, ChevronDown, ChevronUp, Clock, Pencil, TrendingDown, Thermometer, Droplets, BarChart3, Share2, Camera, Beer, Timer, CheckCircle } from 'lucide-react';
 import api from '../../services/api';
+import { FERM_CAPACITY_KL, RETENTION_HOURS as CFG_RETENTION_HOURS } from '../../config/constants';
 
 /* ═══════════════════════ TYPES ═══════════════════════ */
 interface Chemical { id: string; name: string; unit: string; }
@@ -36,7 +37,7 @@ const nowLocal = () => toLocal(new Date().toISOString());
 const PHASES = ['PF_TRANSFER', 'FILLING', 'REACTION', 'RETENTION', 'DONE'] as const;
 const phaseColors: Record<string, string> = { PF_TRANSFER: '#f97316', FILLING: '#6366f1', REACTION: '#10b981', RETENTION: '#06b6d4', TRANSFER: '#3b82f6', CIP: '#8b5cf6', DONE: '#6b7280' };
 const phaseLabels: Record<string, string> = { PF_TRANSFER: 'PF Transfer', FILLING: 'Filling', REACTION: 'Reaction', RETENTION: 'Retention', TRANSFER: 'Transfer', CIP: 'CIP', DONE: 'Done' };
-const RETENTION_HOURS = 12;
+const RETENTION_HOURS = CFG_RETENTION_HOURS;
 
 /* Retention countdown: returns { hours, minutes, seconds, totalMs, isReady } */
 const retentionCountdown = (retentionStartTime: string | null) => {
@@ -53,7 +54,7 @@ const retentionCountdown = (retentionStartTime: string | null) => {
 const FERMENTERS = [1, 2, 3, 4];
 const F_COLORS: Record<number, string> = { 1: '#3b82f6', 2: '#10b981', 3: '#f59e0b', 4: '#ef4444', 5: '#8b5cf6' };
 const F_LABELS: Record<number, string> = { 1: 'F1', 2: 'F2', 3: 'F3', 4: 'F4', 5: 'BW' };
-const FERM_CAPACITY_M3 = 2300;
+const FERM_CAPACITY_M3 = FERM_CAPACITY_KL;
 
 /* elapsed time helper: returns "+2h 15m" from T0 */
 const elapsed = (from: string | null, to: string | null) => {
@@ -431,7 +432,7 @@ export default function Fermentation() {
       }
       // Auto-advance: SG ≤ 1.000 during REACTION → move to RETENTION
       const sg = labForm.spGravity ? parseFloat(labForm.spGravity) : null;
-      if (sg != null && sg <= 1.0 && activeBatch.phase === 'REACTION') {
+      if (sg != null && sg <= 1.001 && activeBatch.phase === 'REACTION') {
         await api.patch(`/fermentation/batches/${activeBatch.id}`, {
           phase: 'RETENTION',
           retentionStartTime: analysisTimeISO,
@@ -648,7 +649,7 @@ export default function Fermentation() {
       }
       // Auto-advance: SG ≤ 1.000 during REACTION → move to RETENTION
       const sg = quForm.spGravity ? parseFloat(quForm.spGravity) : null;
-      if (sg != null && sg <= 1.0 && activeBatch.phase === 'REACTION') {
+      if (sg != null && sg <= 1.001 && activeBatch.phase === 'REACTION') {
         await api.patch(`/fermentation/batches/${activeBatch.id}`, {
           phase: 'RETENTION',
           retentionStartTime: new Date().toISOString(),

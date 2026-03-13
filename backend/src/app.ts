@@ -29,7 +29,12 @@ import dosingRecipeRoutes from './routes/dosingRecipes';
 
 const app = express();
 
-app.use(cors());
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production'
+    ? [process.env.FRONTEND_URL || 'https://web-production-d305.up.railway.app']
+    : true,
+  credentials: true,
+}));
 app.use(morgan('dev'));
 app.use(express.json());
 

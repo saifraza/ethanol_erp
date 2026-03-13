@@ -27,6 +27,8 @@ import LabSampling from './pages/process/LabSampling';
 import DDGSStock from './pages/process/DDGSStock';
 import DDGSDispatch from './pages/process/DDGSDispatch';
 import DosingRecipes from './pages/process/DosingRecipes';
+import { useToast } from './components/common/Toast';
+import { setupApiToast } from './services/apiToast';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -47,6 +49,9 @@ function HomeRedirect() {
 
 export default function App() {
   const { user, loading } = useAuth();
+  const { toast } = useToast();
+  // Wire up API error toasts once
+  React.useEffect(() => { setupApiToast(toast); }, [toast]);
 
   if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
 
