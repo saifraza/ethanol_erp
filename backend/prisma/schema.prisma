@@ -341,7 +341,8 @@ model FermentationBatch {
   id                  String   @id @default(uuid())
   batchNo             Int
   fermenterNo         Int      @default(1)
-  phase               String   @default("FILLING") // FILLING, SETUP, REACTION, RETENTION, TRANSFER, CIP, DONE
+  phase               String   @default("PF_TRANSFER") // PF_TRANSFER, FILLING, REACTION, RETENTION, TRANSFER, CIP, DONE
+  pfTransferTime      DateTime?
   fillingStartTime    DateTime?
   fillingEndTime      DateTime?
   setupEndTime        DateTime?

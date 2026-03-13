@@ -40,8 +40,9 @@ router.post('/batches', async (req: Request, res: Response) => {
       data: {
         batchNo: parseInt(b.batchNo) || 0,
         fermenterNo: parseInt(b.fermenterNo) || 1,
-        phase: 'FILLING',
-        fillingStartTime: b.fillingStartTime ? new Date(b.fillingStartTime) : new Date(),
+        phase: 'PF_TRANSFER',
+        pfTransferTime: b.pfTransferTime ? new Date(b.pfTransferTime) : new Date(),
+        fillingStartTime: b.fillingStartTime ? new Date(b.fillingStartTime) : null,
         fermLevel: b.fermLevel ? parseFloat(b.fermLevel) : null,
         volume: b.fermLevel ? parseFloat((parseFloat(b.fermLevel) / 100 * 2300 * 1000).toFixed(0)) : (b.volume ? parseFloat(b.volume) : null),
         setupGravity: b.setupGravity ? parseFloat(b.setupGravity) : null,
@@ -61,7 +62,7 @@ router.patch('/batches/:id', async (req: Request, res: Response) => {
     // phase
     if (b.phase) data.phase = b.phase;
     // time fields
-    for (const f of ['fillingStartTime', 'fillingEndTime', 'setupEndTime', 'reactionStartTime', 'retentionStartTime', 'transferTime', 'cipStartTime', 'cipEndTime']) {
+    for (const f of ['pfTransferTime', 'fillingStartTime', 'fillingEndTime', 'setupEndTime', 'reactionStartTime', 'retentionStartTime', 'transferTime', 'cipStartTime', 'cipEndTime']) {
       if (b[f] !== undefined) data[f] = b[f] ? new Date(b[f]) : null;
     }
     // numeric

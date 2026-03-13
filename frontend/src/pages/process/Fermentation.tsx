@@ -24,9 +24,9 @@ interface FermBatch {
 
 const PF_CAP = 450;
 const pfPhaseColors: Record<string, string> = { SETUP: '#6366f1', DOSING: '#f59e0b', LAB: '#10b981', TRANSFER: '#3b82f6', CIP: '#8b5cf6', DONE: '#9ca3af' };
-const fermPhaseColors: Record<string, string> = { FILLING: '#3b82f6', SETUP: '#6366f1', REACTION: '#f59e0b', RETENTION: '#10b981', TRANSFER: '#06b6d4', CIP: '#8b5cf6', DONE: '#9ca3af' };
+const fermPhaseColors: Record<string, string> = { PF_TRANSFER: '#f97316', FILLING: '#3b82f6', SETUP: '#6366f1', REACTION: '#f59e0b', RETENTION: '#10b981', TRANSFER: '#06b6d4', CIP: '#8b5cf6', DONE: '#9ca3af' };
 const pfPhaseLabels: Record<string, string> = { SETUP: 'Setup', DOSING: 'Dosing', LAB: 'Lab', TRANSFER: 'Transfer', CIP: 'CIP', DONE: 'Done' };
-const fermPhaseLabels: Record<string, string> = { FILLING: 'Filling', SETUP: 'Setup', REACTION: 'Reaction', RETENTION: 'Retention', TRANSFER: 'Transfer', CIP: 'CIP', DONE: 'Done' };
+const fermPhaseLabels: Record<string, string> = { PF_TRANSFER: 'PF Transfer', FILLING: 'Filling', SETUP: 'Setup', REACTION: 'Reaction', RETENTION: 'Retention', TRANSFER: 'Transfer', CIP: 'CIP', DONE: 'Done' };
 
 /* time since helper */
 const timeSince = (iso: string | null) => {
@@ -52,7 +52,7 @@ const pfPhaseStart = (b: PFBatch): string | null => {
 
 const fermPhaseStart = (b: FermBatch): string | null => {
   const map: Record<string, string | null> = {
-    FILLING: b.fillingStartTime, SETUP: b.fillingEndTime,
+    PF_TRANSFER: (b as any).pfTransferTime, FILLING: b.fillingStartTime, SETUP: b.fillingEndTime,
     REACTION: b.reactionStartTime, RETENTION: b.retentionStartTime,
     TRANSFER: b.transferTime, CIP: b.cipStartTime, DONE: b.cipEndTime
   };

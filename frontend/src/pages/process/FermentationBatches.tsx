@@ -8,7 +8,7 @@ interface Chemical { id: string; name: string; unit: string; }
 interface Dosing { id: string; chemicalName: string; quantity: number; unit: string; level: number | null; addedAt: string; }
 interface Batch {
   id: string; batchNo: number; fermenterNo: number; phase: string;
-  fillingStartTime: string | null; fillingEndTime: string | null;
+  pfTransferTime: string | null; fillingStartTime: string | null; fillingEndTime: string | null;
   setupEndTime: string | null; reactionStartTime: string | null; retentionStartTime: string | null;
   transferTime: string | null; cipStartTime: string | null; cipEndTime: string | null;
   setupTime: string | null; setupDate: string | null; setupGravity: number | null; setupRs: number | null; setupRst: number | null;
@@ -33,9 +33,9 @@ const toLocal = (iso: string | null) => {
 };
 const nowLocal = () => toLocal(new Date().toISOString());
 
-const PHASES = ['FILLING', 'REACTION', 'RETENTION', 'TRANSFER', 'CIP', 'DONE'] as const;
-const phaseColors: Record<string, string> = { FILLING: '#6366f1', REACTION: '#10b981', RETENTION: '#06b6d4', TRANSFER: '#3b82f6', CIP: '#8b5cf6', DONE: '#6b7280' };
-const phaseLabels: Record<string, string> = { FILLING: 'Filling', REACTION: 'Reaction', RETENTION: 'Retention', TRANSFER: 'Transfer', CIP: 'CIP', DONE: 'Done' };
+const PHASES = ['PF_TRANSFER', 'FILLING', 'REACTION', 'RETENTION', 'TRANSFER', 'CIP', 'DONE'] as const;
+const phaseColors: Record<string, string> = { PF_TRANSFER: '#f97316', FILLING: '#6366f1', REACTION: '#10b981', RETENTION: '#06b6d4', TRANSFER: '#3b82f6', CIP: '#8b5cf6', DONE: '#6b7280' };
+const phaseLabels: Record<string, string> = { PF_TRANSFER: 'PF Transfer', FILLING: 'Filling', REACTION: 'Reaction', RETENTION: 'Retention', TRANSFER: 'Transfer', CIP: 'CIP', DONE: 'Done' };
 const FERMENTERS = [1, 2, 3, 4, 5]; // 5 = Beer Well
 const F_COLORS: Record<number, string> = { 1: '#3b82f6', 2: '#10b981', 3: '#f59e0b', 4: '#ef4444', 5: '#8b5cf6' };
 const F_LABELS: Record<number, string> = { 1: 'F1', 2: 'F2', 3: 'F3', 4: 'F4', 5: 'BW' };
@@ -54,6 +54,7 @@ const elapsed = (from: string | null, to: string | null) => {
 
 const phaseTime = (batch: Batch, phase: string): string | null => {
   switch (phase) {
+    case 'PF_TRANSFER': return batch.pfTransferTime;
     case 'FILLING': return batch.fillingStartTime;
     case 'REACTION': return batch.fillingEndTime;
     case 'RETENTION': return batch.reactionStartTime;
@@ -63,17 +64,17 @@ const phaseTime = (batch: Batch, phase: string): string | null => {
     default: return null;
   }
 };
-const t0 = (batch: Batch) => batch.fillingStartTime;
+const t0 = (batch: Batch) => batch.pfTransferTime || batch.fillingStartTime;
 
 /* Phase duration: time spent in each phase */
 const phaseDuration = (batch: Batch, phase: string): string => {
   const starts: Record<string, string | null> = {
-    FILLING: batch.fillingStartTime, REACTION: batch.fillingEndTime,
+    PF_TRANSFER: batch.pfTransferTime, FILLING: batch.fillingStartTime, REACTION: batch.fillingEndTime,
     RETENTION: batch.reactionStartTime, TRANSFER: batch.retentionStartTime || batch.transferTime,
     CIP: batch.cipStartTime, DONE: batch.cipEndTime,
   };
   const ends: Record<string, string | null> = {
-    FILLING: batch.fillingEndTime, REACTION: batch.reactionStartTime,
+    PF_TRANSFER: batch.fillingStartTime, FILLING: batch.fillingEndTime, REACTION: batch.reactionStartTime,
     RETENTION: batch.transferTime, TRANSFER: batch.cipStartTime,
     CIP: batch.cipEndTime, DONE: null,
   };
@@ -365,7 +366,7 @@ export default function Fermentation() {
 
   const createBatch = async () => {
     try {
-      await api.post('/fermentation/batches', { ...nbForm, fermenterNo: tab, fillingStartTime: new Date().toISOString() });
+      await api.post('/fermentation/batches', { ...nbForm, fermenterNo: tab, pfTransferTime: new Date().toISOString() });
       setShowNewBatch(false);
       setNbForm({ batchNo: '', fermLevel: '', setupGravity: '', remarks: '' });
       load();
@@ -648,7 +649,8 @@ export default function Fermentation() {
                 {activeBatch.beerWellNo && <span>→ Beer Well #{activeBatch.beerWellNo}</span>}
               </div>
               <div className="flex flex-wrap gap-x-5 gap-y-1 mt-2">
-                <TimeField label="Filling Start" value={activeBatch.fillingStartTime} field="fillingStartTime" batchId={activeBatch.id} color="indigo" />
+                {activeBatch.pfTransferTime && <TimeField label="PF Transfer" value={activeBatch.pfTransferTime} field="pfTransferTime" batchId={activeBatch.id} color="orange" />}
+                {activeBatch.fillingStartTime && <TimeField label="Filling Start" value={activeBatch.fillingStartTime} field="fillingStartTime" batchId={activeBatch.id} color="indigo" />}
                 {activeBatch.fillingEndTime && <TimeField label="Filling End" value={activeBatch.fillingEndTime} field="fillingEndTime" batchId={activeBatch.id} color="indigo" />}
                 {activeBatch.reactionStartTime && <TimeField label="Reaction Start" value={activeBatch.reactionStartTime} field="reactionStartTime" batchId={activeBatch.id} color="emerald" />}
                 {activeBatch.retentionStartTime && <TimeField label="Retention Start" value={activeBatch.retentionStartTime} field="retentionStartTime" batchId={activeBatch.id} color="cyan" />}
@@ -863,6 +865,19 @@ export default function Fermentation() {
 
             {/* ═══ PHASE ACTIONS ═══ */}
             <div className="flex gap-2 flex-wrap items-center">
+              {activeBatch.phase === 'PF_TRANSFER' && (
+                <>
+                  <div className="flex items-center gap-1.5">
+                    <Clock size={14} className="text-orange-600" />
+                    <input type="datetime-local" id="pfFillInput" defaultValue={nowLocal()} className="border border-orange-300 rounded px-2 py-1.5 text-sm" />
+                  </div>
+                  <button onClick={() => {
+                    const inp = (document.getElementById('pfFillInput') as HTMLInputElement)?.value;
+                    const dt = inp ? new Date(inp).toISOString() : new Date().toISOString();
+                    advancePhase(activeBatch, 'FILLING', { fillingStartTime: dt });
+                  }} className="bg-orange-600 text-white px-4 py-2 rounded text-sm hover:bg-orange-700 font-medium">PF Transfer Done → Start Filling</button>
+                </>
+              )}
               {activeBatch.phase === 'FILLING' && (
                 <>
                   <div className="flex items-center gap-1.5">
