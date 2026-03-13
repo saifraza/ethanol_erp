@@ -3,8 +3,6 @@ import cors from 'cors';
 import morgan from 'morgan';
 import path from 'path';
 import authRoutes from './routes/auth';
-import dailyEntryRoutes from './routes/dailyEntries';
-import tankDipRoutes from './routes/tankDips';
 import dashboardRoutes from './routes/dashboard';
 import reportRoutes from './routes/reports';
 import settingsRoutes from './routes/settings';
@@ -35,8 +33,6 @@ app.use(morgan('dev'));
 app.use(express.json());
 
 app.use('/api/auth', authRoutes);
-app.use('/api/daily-entries', dailyEntryRoutes);
-app.use('/api/tank-dips', tankDipRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/settings', settingsRoutes);

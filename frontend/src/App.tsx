@@ -5,9 +5,6 @@ import Layout from './components/Layout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import { MODULE_DEFS } from './config/modules';
-import DailyEntry from './pages/DailyEntry';
-import TankDip from './pages/TankDip';
-import DailyLog from './pages/DailyLog';
 import Reports from './pages/Reports';
 import SettingsPage from './pages/SettingsPage';
 import UsersPage from './pages/UsersPage';
@@ -76,9 +73,6 @@ export default function App() {
         <Route path="process/ethanol-dispatch" element={<EthanolDispatch />} />
         <Route path="process/water-utility" element={<WaterUtility />} />
         <Route path="process/lab-sampling" element={<LabSampling />} />
-        <Route path="daily-entry" element={<DailyEntry />} />
-        <Route path="tank-dip" element={<TankDip />} />
-        <Route path="log" element={<DailyLog />} />
         <Route path="reports" element={<Reports />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="users" element={<UsersPage />} />
