@@ -15,7 +15,7 @@ import Liquefaction from './pages/process/Liquefaction';
 import Fermentation from './pages/process/Fermentation';
 import Distillation from './pages/process/Distillation';
 import RawMaterial from './pages/process/RawMaterial';
-import PreFermentation from './pages/process/PreFermentation';
+
 
 import DryerMonitor from './pages/process/DryerMonitor';
 import Decanter from './pages/process/Decanter';
@@ -60,7 +60,6 @@ export default function App() {
         <Route path="process/grain-unloading" element={<GrainUnloadingTrucks />} />
         <Route path="process/milling" element={<Milling />} />
         <Route path="process/liquefaction" element={<Liquefaction />} />
-        <Route path="process/pre-fermentation" element={<PreFermentation />} />
         <Route path="process/fermentation" element={<Fermentation />} />
         <Route path="process/distillation" element={<Distillation />} />
         <Route path="process/evaporation" element={<Evaporation />} />

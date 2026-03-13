@@ -25,7 +25,6 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'grain-unloading', label: 'Grain Unloading', to: '/process/grain-unloading', icon: Wheat, group: 'process' },
   { key: 'milling', label: 'Milling', to: '/process/milling', icon: CogIcon, group: 'process' },
   { key: 'liquefaction', label: 'Liquefaction', to: '/process/liquefaction', icon: Droplets, group: 'process' },
-  { key: 'pre-fermentation', label: 'Pre-Fermentation', to: '/process/pre-fermentation', icon: Beaker, group: 'process' },
   { key: 'fermentation', label: 'Fermentation', to: '/process/fermentation', icon: Beaker, group: 'process' },
   { key: 'distillation', label: 'Distillation', to: '/process/distillation', icon: Flame, group: 'process' },
   { key: 'evaporation', label: 'Evaporation', to: '/process/evaporation', icon: Wind, group: 'process' },
