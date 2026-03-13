@@ -532,8 +532,48 @@ export default function Fermentation() {
 
   /* can dose in these phases */
   const canDose = activeBatch && ['FILLING', 'REACTION', 'RETENTION'].includes(activeBatch.phase);
-  /* can add lab readings in these phases */
-  const canLab = activeBatch && ['FILLING', 'REACTION', 'RETENTION'].includes(activeBatch.phase);
+  /* can add lab readings in ANY active phase */
+  const canLab = activeBatch && activeBatch.phase !== 'DONE';
+  /* quick update modal */
+  const [showQuickUpdate, setShowQuickUpdate] = useState(false);
+  const [quForm, setQuForm] = useState({ fermLevel: '', spGravity: '', ph: '', rs: '', temp: '' });
+  const openQuickUpdate = () => {
+    if (!activeBatch) return;
+    setQuForm({
+      fermLevel: activeBatch.fermLevel != null ? String(activeBatch.fermLevel) : '',
+      spGravity: activeBatch.setupGravity != null ? String(activeBatch.setupGravity) : '',
+      ph: '', rs: activeBatch.setupRs != null ? String(activeBatch.setupRs) : '', temp: ''
+    });
+    setShowQuickUpdate(true);
+  };
+  const saveQuickUpdate = async () => {
+    if (!activeBatch) return;
+    try {
+      // Update batch fields (level, SG, RS)
+      const batchData: any = {};
+      if (quForm.fermLevel) batchData.fermLevel = quForm.fermLevel;
+      if (quForm.spGravity) batchData.setupGravity = quForm.spGravity;
+      if (quForm.rs) batchData.setupRs = quForm.rs;
+      if (Object.keys(batchData).length > 0) {
+        await api.patch(`/fermentation/batches/${activeBatch.id}`, batchData);
+      }
+      // Also log a lab entry with all values
+      const fd = new FormData();
+      fd.append('date', new Date().toISOString());
+      fd.append('analysisTime', new Date().toISOString());
+      fd.append('batchNo', String(activeBatch.batchNo));
+      fd.append('fermenterNo', String(activeBatch.fermenterNo));
+      fd.append('status', activeBatch.phase);
+      if (quForm.fermLevel) fd.append('level', quForm.fermLevel);
+      if (quForm.spGravity) fd.append('spGravity', quForm.spGravity);
+      if (quForm.ph) fd.append('ph', quForm.ph);
+      if (quForm.rs) fd.append('rs', quForm.rs);
+      if (quForm.temp) fd.append('temp', quForm.temp);
+      await api.post('/fermentation', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setShowQuickUpdate(false);
+      load(); loadLab();
+    } catch {}
+  };
 
   return (
     <div className="space-y-5">
@@ -635,19 +675,54 @@ export default function Fermentation() {
           )}
           <div className="p-4 space-y-4">
 
-            {/* ═══ LEVEL (during FILLING) ═══ */}
-            {activeBatch.phase === 'FILLING' && (
-              <div className="bg-indigo-50 rounded-lg p-3 border border-indigo-200">
-                <h3 className="font-semibold text-indigo-800 flex items-center gap-1 mb-2"><FlaskConical size={16} /> Fermenter Level</h3>
-                <div className="flex gap-3 items-end">
-                  <div>
-                    <label className="text-xs text-gray-500">Level %</label>
-                    <input type="number" step="1" value={activeBatch.fermLevel ?? ''} onChange={e => updateBatchField(activeBatch.id, 'fermLevel', e.target.value)}
-                      className="w-24 border rounded px-2 py-1.5 text-sm" />
+            {/* ═══ QUICK UPDATE — always available ═══ */}
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-3 border border-blue-200">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="font-semibold text-blue-800 flex items-center gap-1"><Pencil size={14} /> Quick Update</h3>
+                <button onClick={openQuickUpdate} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-700 flex items-center gap-1.5 shadow-sm">
+                  <Pencil size={14} /> Update Readings
+                </button>
+              </div>
+              <div className="flex gap-4 flex-wrap text-sm text-gray-600 mt-1">
+                {activeBatch.fermLevel != null && <span>Level: <b className="text-blue-700">{activeBatch.fermLevel}%</b> ({(activeBatch.fermLevel / 100 * FERM_CAPACITY_M3).toFixed(0)} M³)</span>}
+                {activeBatch.setupGravity != null && <span>SG: <b className="text-indigo-700">{activeBatch.setupGravity}</b></span>}
+                {activeBatch.setupRs != null && <span>RS: <b className="text-emerald-700">{activeBatch.setupRs}%</b></span>}
+                {activeBatch.setupRst != null && <span>RST: <b className="text-teal-700">{activeBatch.setupRst}%</b></span>}
+              </div>
+            </div>
+            {/* Quick Update Modal */}
+            {showQuickUpdate && (
+              <div className="fixed inset-0 bg-black/40 z-50 flex items-end md:items-center justify-center" onClick={() => setShowQuickUpdate(false)}>
+                <div className="bg-white rounded-t-2xl md:rounded-2xl w-full max-w-md p-5 shadow-2xl animate-in" onClick={e => e.stopPropagation()}>
+                  <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2"><Pencil size={18} /> Update Readings — Batch #{activeBatch.batchNo}</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-gray-500 font-medium">Level %</label>
+                      <input type="number" step="0.1" value={quForm.fermLevel} onChange={e => setQuForm(f => ({ ...f, fermLevel: e.target.value }))} placeholder="e.g. 80" className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-base focus:border-blue-400 outline-none" />
+                      {quForm.fermLevel && <span className="text-xs text-blue-600">{(parseFloat(quForm.fermLevel) / 100 * FERM_CAPACITY_M3).toFixed(0)} M³</span>}
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 font-medium">SG (Gravity)</label>
+                      <input type="number" step="0.001" value={quForm.spGravity} onChange={e => setQuForm(f => ({ ...f, spGravity: e.target.value }))} placeholder="e.g. 1.044" className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-base focus:border-indigo-400 outline-none" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 font-medium">pH</label>
+                      <input type="number" step="0.01" value={quForm.ph} onChange={e => setQuForm(f => ({ ...f, ph: e.target.value }))} placeholder="e.g. 4.5" className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-base focus:border-amber-400 outline-none" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 font-medium">RS %</label>
+                      <input type="number" step="0.01" value={quForm.rs} onChange={e => setQuForm(f => ({ ...f, rs: e.target.value }))} placeholder="e.g. 2.5" className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-base focus:border-emerald-400 outline-none" />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-xs text-gray-500 font-medium">Temp °C</label>
+                      <input type="number" step="0.1" value={quForm.temp} onChange={e => setQuForm(f => ({ ...f, temp: e.target.value }))} placeholder="e.g. 32" className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-base focus:border-purple-400 outline-none" />
+                    </div>
                   </div>
-                  <div className="text-sm text-indigo-600 pb-1.5">
-                    {activeBatch.fermLevel != null && `= ${(activeBatch.fermLevel / 100 * FERM_CAPACITY_M3).toFixed(0)} M³`}
+                  <div className="flex gap-2 mt-4">
+                    <button onClick={saveQuickUpdate} className="flex-1 bg-blue-600 text-white py-3 rounded-xl text-base font-semibold hover:bg-blue-700 shadow-sm">Save & Log</button>
+                    <button onClick={() => setShowQuickUpdate(false)} className="px-6 py-3 bg-gray-100 text-gray-600 rounded-xl text-base font-medium hover:bg-gray-200">Cancel</button>
                   </div>
+                  <p className="text-xs text-gray-400 mt-2 text-center">Updates batch + logs a lab reading</p>
                 </div>
               </div>
             )}
