@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Plus, FlaskConical, Beaker, ArrowRight, RotateCcw, Trash2, ChevronDown, ChevronUp, Clock, Pencil } from 'lucide-react';
+import { Plus, FlaskConical, Beaker, ArrowRight, RotateCcw, Trash2, ChevronDown, ChevronUp, Clock, Pencil, Share2 } from 'lucide-react';
 import api from '../../services/api';
 
 /* ═══════════════════════ TYPES ═══════════════════════ */
@@ -313,7 +313,18 @@ export default function PreFermentation() {
                 )}
               </div>
             </div>
-            <span className="px-3 py-1 rounded-full text-sm font-bold text-white" style={{ backgroundColor: phaseColors[activeBatch.phase] }}>{phaseLabels[activeBatch.phase]}</span>
+            <div className="flex items-center gap-2">
+              <button onClick={() => {
+                const b = activeBatch;
+                const dosingList = b.dosings.map(d => `  ${d.chemicalName}: ${d.quantity} ${d.unit}`).join('\n');
+                const lastLab = b.labReadings.length > 0 ? b.labReadings[b.labReadings.length - 1] : null;
+                const t = `*PRE-FERMENTATION — Batch #${b.batchNo} PF${b.fermenterNo}*\nPhase: ${phaseLabels[b.phase]}${b.setupTime ? '\nSetup: ' + new Date(b.setupTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : ''}${b.slurryVolume ? `\nLevel: ${(b.slurryVolume / (PF_VOLUME_M3 * 1000) * 100).toFixed(0)}% (${(b.slurryVolume / 1000).toFixed(0)} M³)` : ''}${b.slurryGravity ? ' | SG: ' + b.slurryGravity : ''}${b.slurryTemp ? ' | Temp: ' + b.slurryTemp + '°C' : ''}${b.dosings.length > 0 ? '\n\n*Dosing* (' + b.dosings.length + ' chemicals)\n' + dosingList : ''}${lastLab ? `\n\n*Latest Lab*\nGravity: ${lastLab.spGravity ?? '—'} | pH: ${lastLab.ph ?? '—'} | RS: ${lastLab.rs ?? '—'}%\nAlcohol: ${lastLab.alcohol ?? '—'}% | Temp: ${lastLab.temp ?? '—'}°C` : ''}${b.remarks ? '\n\nRemarks: ' + b.remarks : ''}`;
+                window.open(`https://wa.me/?text=${encodeURIComponent(t)}`, '_blank');
+              }} className="text-white/80 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition" title="Share on WhatsApp">
+                <Share2 size={18} />
+              </button>
+              <span className="px-3 py-1 rounded-full text-sm font-bold text-white" style={{ backgroundColor: phaseColors[activeBatch.phase] }}>{phaseLabels[activeBatch.phase]}</span>
+            </div>
           </div>
           <PhaseTimeline batch={activeBatch} />
           {phaseMsg && (
