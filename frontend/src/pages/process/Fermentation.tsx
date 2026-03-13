@@ -22,8 +22,9 @@ interface FermBatch {
   dosings: any[]; createdAt: string;
 }
 
-const PF_CAP = 450;
-const BEER_WELL_CAP = 2300;
+import { PF_CAPACITY_KL, BEER_WELL_CAPACITY_KL } from '../../config/constants';
+const PF_CAP = PF_CAPACITY_KL;
+const BEER_WELL_CAP = BEER_WELL_CAPACITY_KL;
 const pfPhaseColors: Record<string, string> = { SETUP: '#6366f1', DOSING: '#f59e0b', LAB: '#10b981', TRANSFER: '#3b82f6', CIP: '#8b5cf6', DONE: '#9ca3af' };
 const fermPhaseColors: Record<string, string> = { PF_TRANSFER: '#f97316', FILLING: '#3b82f6', SETUP: '#6366f1', REACTION: '#f59e0b', RETENTION: '#10b981', TRANSFER: '#06b6d4', CIP: '#8b5cf6', DONE: '#9ca3af' };
 const pfPhaseLabels: Record<string, string> = { SETUP: 'Setup', DOSING: 'Dosing', LAB: 'Lab', TRANSFER: 'Transfer', CIP: 'CIP', DONE: 'Done' };

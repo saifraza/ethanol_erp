@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Plus, FlaskConical, Beaker, ArrowRight, RotateCcw, Trash2, ChevronDown, ChevronUp, Clock, Pencil, Share2 } from 'lucide-react';
 import api from '../../services/api';
+import { PF_CAPACITY_KL } from '../../config/constants';
 
 /* ═══════════════════════ TYPES ═══════════════════════ */
 interface Chemical { id: string; name: string; rate: number | null; unit: string; }
@@ -20,7 +21,7 @@ const nowLocal = () => toLocal(new Date().toISOString());
 const PHASES = ['SETUP', 'DOSING', 'LAB', 'TRANSFER', 'CIP', 'DONE'] as const;
 const phaseColors: Record<string, string> = { SETUP: '#6366f1', DOSING: '#f59e0b', LAB: '#10b981', TRANSFER: '#3b82f6', CIP: '#8b5cf6', DONE: '#6b7280' };
 const phaseLabels: Record<string, string> = { SETUP: 'Setup', DOSING: 'Dosing', LAB: 'Lab Analysis', TRANSFER: 'Transfer', CIP: 'CIP', DONE: 'Done' };
-const PF_VOLUME_M3 = 450;
+const PF_VOLUME_M3 = PF_CAPACITY_KL;
 
 export default function PreFermentation() {
   const [batches, setBatches] = useState<Batch[]>([]);
@@ -48,7 +49,12 @@ export default function PreFermentation() {
 
   const createBatch = async () => {
     try {
-      const slurryVolume = nbForm.pfLevel ? (parseFloat(nbForm.pfLevel) / 100 * PF_VOLUME_M3 * 1000).toFixed(0) : '';
+      const lvl = parseFloat(nbForm.pfLevel);
+      if (nbForm.pfLevel && (isNaN(lvl) || lvl < 0 || lvl > 100)) {
+        alert('PF Level must be between 0 and 100%');
+        return;
+      }
+      const slurryVolume = nbForm.pfLevel ? (lvl / 100 * PF_VOLUME_M3 * 1000).toFixed(0) : '';
       await api.post('/pre-fermentation/batches', { ...nbForm, slurryVolume, setupTime: new Date().toISOString() }); // auto-set, editable later via TimeField
       setShowNewBatch(false);
       setNbForm({ batchNo: '', fermenterNo: '1', pfLevel: '', slurryGravity: '', slurryTemp: '', remarks: '' });
