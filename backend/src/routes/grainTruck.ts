@@ -40,6 +40,12 @@ function currentShiftDate(): string {
   return ist.toISOString().split('T')[0];
 }
 
+function shiftDateFor(date: Date): string {
+  const ist = new Date(date.getTime() + IST_OFFSET_MS);
+  if (ist.getUTCHours() < 9) ist.setUTCDate(ist.getUTCDate() - 1);
+  return ist.toISOString().split('T')[0];
+}
+
 function invalidTruckWeightMessage(weightNet: number, quarantineWeight: number) {
   if (weightNet < 0) return 'Gross weight cannot be less than tare weight';
   if (quarantineWeight < 0) return 'Quarantine weight cannot be negative';
@@ -69,6 +75,23 @@ function validatePercentageNumber(label: string, parsed: ReturnType<typeof parse
   if (err) return err;
   if (parsed.value != null && parsed.value > 100) return `${label} must be between 0 and 100`;
   return null;
+}
+
+function summarizeTrucks(trucks: any[]) {
+  const totalReceived = trucks.reduce((s, t) => s + (t.weightNet || 0), 0);
+  const quarantine = trucks.reduce((s, t) => s + (t.quarantineWeight || 0), 0);
+  const toSilo = trucks.reduce((s, t) => s + (t.toSilo ?? ((t.weightNet || 0) - (t.quarantineWeight || 0))), 0);
+  const invalidCount = trucks.filter(t => t.invalidQuarantine).length;
+
+  return {
+    totalReceived,
+    quarantine,
+    toSilo,
+    truckCount: trucks.length,
+    avgTruckWeight: trucks.length ? totalReceived / trucks.length : 0,
+    avgToSilo: trucks.length ? toSilo / trucks.length : 0,
+    invalidCount,
+  };
 }
 
 // GET /api/grain-truck — shift trucks (9AM to 9AM)
@@ -107,6 +130,126 @@ router.get('/summary', authenticate, async (req: AuthRequest, res: Response) => 
     const truckCount = trucks.length;
 
     res.json({ totalNet, quarantineNet, totalReceived, truckCount });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/grain-truck/report — baseline-to-date received report with filters
+router.get('/report', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const yearStart = Number(req.query.year) || new Date().getFullYear();
+    const baseline = await prisma.grainEntry.findFirst({
+      where: { yearStart },
+      orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+      select: { id: true, date: true, createdAt: true, cumulativeUnloaded: true },
+    });
+
+    const rangeStart = baseline?.createdAt ?? new Date(Date.UTC(yearStart, 0, 1));
+    const rangeEnd = new Date(Date.UTC(yearStart + 1, 0, 1));
+    const rows = await prisma.grainTruck.findMany({
+      where: {
+        date: { gt: rangeStart, lt: rangeEnd },
+      },
+      orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+    });
+
+    const trucks = rows.map((t) => {
+      const shiftDate = shiftDateFor(t.date);
+      const quarantineWeight = t.quarantineWeight || 0;
+      const weightNet = t.weightNet || 0;
+      return {
+        ...t,
+        shiftDate,
+        supplier: t.supplier || 'Unknown',
+        toSilo: weightNet - quarantineWeight,
+        invalidQuarantine: quarantineWeight > weightNet,
+      };
+    });
+
+    const firstShiftDate = trucks[0]?.shiftDate ?? shiftDateFor(rangeStart);
+    const lastShiftDate = trucks[trucks.length - 1]?.shiftDate ?? currentShiftDate();
+
+    const from = typeof req.query.from === 'string' && req.query.from ? req.query.from : firstShiftDate;
+    const to = typeof req.query.to === 'string' && req.query.to ? req.query.to : lastShiftDate;
+    const supplier = typeof req.query.supplier === 'string' ? req.query.supplier.trim() : '';
+    const search = typeof req.query.search === 'string' ? req.query.search.trim().toLowerCase() : '';
+    const quarantine = req.query.quarantine === 'yes' || req.query.quarantine === 'no'
+      ? req.query.quarantine
+      : 'all';
+
+    if (from > to) {
+      res.status(400).json({ error: 'From Shift cannot be after To Shift' });
+      return;
+    }
+
+    const filtered = trucks.filter((t) => {
+      if (t.shiftDate < from || t.shiftDate > to) return false;
+      if (supplier && t.supplier !== supplier) return false;
+      if (quarantine === 'yes' && !(t.quarantineWeight > 0)) return false;
+      if (quarantine === 'no' && t.quarantineWeight > 0) return false;
+      if (search) {
+        const haystack = `${t.vehicleNo || ''} ${t.uidRst || ''} ${t.supplier || ''}`.toLowerCase();
+        if (!haystack.includes(search)) return false;
+      }
+      return true;
+    });
+
+    const dailyMap: Record<string, any> = {};
+    for (const t of filtered) {
+      if (!dailyMap[t.shiftDate]) {
+        dailyMap[t.shiftDate] = { shiftDate: t.shiftDate, truckCount: 0, totalReceived: 0, quarantine: 0, toSilo: 0, invalidCount: 0 };
+      }
+      dailyMap[t.shiftDate].truckCount += 1;
+      dailyMap[t.shiftDate].totalReceived += t.weightNet || 0;
+      dailyMap[t.shiftDate].quarantine += t.quarantineWeight || 0;
+      dailyMap[t.shiftDate].toSilo += t.toSilo || 0;
+      dailyMap[t.shiftDate].invalidCount += t.invalidQuarantine ? 1 : 0;
+    }
+
+    const supplierMap: Record<string, any> = {};
+    for (const t of filtered) {
+      const key = t.supplier || 'Unknown';
+      if (!supplierMap[key]) {
+        supplierMap[key] = { supplier: key, truckCount: 0, totalReceived: 0, quarantine: 0, toSilo: 0 };
+      }
+      supplierMap[key].truckCount += 1;
+      supplierMap[key].totalReceived += t.weightNet || 0;
+      supplierMap[key].quarantine += t.quarantineWeight || 0;
+      supplierMap[key].toSilo += t.toSilo || 0;
+    }
+
+    const allSummary = summarizeTrucks(trucks);
+    const filteredSummary = summarizeTrucks(filtered);
+    const baselineReceived = baseline?.cumulativeUnloaded ?? 0;
+
+    res.json({
+      baseline: baseline ? {
+        id: baseline.id,
+        date: baseline.date,
+        createdAt: baseline.createdAt,
+        cumulativeUnloaded: baseline.cumulativeUnloaded,
+      } : null,
+      defaults: {
+        from: firstShiftDate,
+        to: lastShiftDate,
+        supplier: '',
+        search: '',
+        quarantine: 'all',
+      },
+      filters: { from, to, supplier, search, quarantine },
+      summary: {
+        ...filteredSummary,
+        baselineReceived,
+        filteredLiveTotal: baselineReceived + filteredSummary.totalReceived,
+        allLiveTotal: baselineReceived + allSummary.totalReceived,
+        allTruckCount: allSummary.truckCount,
+      },
+      daily: Object.values(dailyMap).sort((a: any, b: any) => a.shiftDate.localeCompare(b.shiftDate)),
+      suppliers: Object.values(supplierMap).sort((a: any, b: any) => b.totalReceived - a.totalReceived),
+      availableSuppliers: Array.from(new Set(trucks.map(t => t.supplier || 'Unknown'))).sort(),
+      trucks: filtered,
+      totalRows: filtered.length,
+      allRows: trucks.length,
+    });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 

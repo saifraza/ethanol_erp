@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Wheat, Save, Loader2, ChevronDown, ChevronUp, Trash2, Eye, X, Share2, AlertTriangle } from 'lucide-react';
+import { Wheat, Save, Loader2, ChevronDown, ChevronUp, Trash2, Eye, X, Share2, AlertTriangle, Download } from 'lucide-react';
 import ProcessPage, { InputCard, Field } from './ProcessPage';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
@@ -36,6 +36,27 @@ interface GrainForm {
   damagedPercent: number | null;
   foreignMatter: number | null;
   remarks: string;
+}
+
+interface TruckReportFilters {
+  from: string;
+  to: string;
+  supplier: string;
+  search: string;
+  quarantine: 'all' | 'yes' | 'no';
+}
+
+interface TruckReportData {
+  baseline: any;
+  defaults: TruckReportFilters;
+  filters: TruckReportFilters;
+  summary: any;
+  daily: any[];
+  suppliers: any[];
+  availableSuppliers: string[];
+  trucks: any[];
+  totalRows: number;
+  allRows: number;
 }
 
 function nowLocal() {
@@ -85,6 +106,28 @@ function fmtHrs(ms: number) {
   return h < 1 ? `${Math.round(h * 60)} min` : `${h.toFixed(1)} hrs`;
 }
 
+function fmtDateTime(iso: string | null) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function fmtPct(value: number | null | undefined) {
+  if (value == null) return '—';
+  return `${value.toFixed(1)}%`;
+}
+
+function csvCell(value: unknown) {
+  const text = value == null ? '' : String(value);
+  if (/[",\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+  return text;
+}
+
 // Convert KL to percentage
 function klToPct(kl: number | null, cap: number): number | null {
   if (kl == null) return null;
@@ -113,6 +156,17 @@ export default function GrainUnloading() {
   const [truckList, setTruckList] = useState<any[]>([]);
   const [showTruckList, setShowTruckList] = useState(false);
   const [plantSettings, setPlantSettings] = useState<any>(null);
+  const [showReceivedReport, setShowReceivedReport] = useState(false);
+  const [receivedReport, setReceivedReport] = useState<TruckReportData | null>(null);
+  const [receivedReportLoading, setReceivedReportLoading] = useState(false);
+  const [receivedReportError, setReceivedReportError] = useState<string | null>(null);
+  const [reportFilters, setReportFilters] = useState<TruckReportFilters>({
+    from: '',
+    to: '',
+    supplier: '',
+    search: '',
+    quarantine: 'all',
+  });
 
   const u = (n: string, v: any) => setForm(f => ({ ...f, [n]: v }));
 
@@ -228,6 +282,94 @@ export default function GrainUnloading() {
     } catch (e) { console.error(e); }
   }
 
+  function setReportFilter<K extends keyof TruckReportFilters>(key: K, value: TruckReportFilters[K]) {
+    setReportFilters(f => ({ ...f, [key]: value }));
+  }
+
+  async function loadReceivedReport(overrides?: Partial<TruckReportFilters>) {
+    const nextFilters = { ...reportFilters, ...overrides };
+    if (nextFilters.from && nextFilters.to && nextFilters.from > nextFilters.to) {
+      setReceivedReportError('From Shift cannot be after To Shift');
+      return;
+    }
+    setReceivedReportLoading(true);
+    setReceivedReportError(null);
+    try {
+      const params = new URLSearchParams();
+      if (nextFilters.from) params.set('from', nextFilters.from);
+      if (nextFilters.to) params.set('to', nextFilters.to);
+      if (nextFilters.supplier) params.set('supplier', nextFilters.supplier);
+      if (nextFilters.search) params.set('search', nextFilters.search);
+      if (nextFilters.quarantine !== 'all') params.set('quarantine', nextFilters.quarantine);
+      const res = await api.get(`/grain-truck/report${params.toString() ? `?${params.toString()}` : ''}`);
+      setReceivedReport(res.data);
+      setReportFilters(res.data.filters || nextFilters);
+    } catch (err: any) {
+      setReceivedReportError(err.response?.data?.error || 'Failed to load report');
+    }
+    setReceivedReportLoading(false);
+  }
+
+  function openReceivedReport() {
+    setShowReceivedReport(true);
+    const defaults = receivedReport?.defaults;
+    if (defaults) {
+      setReportFilters(defaults);
+      loadReceivedReport(defaults);
+      return;
+    }
+    loadReceivedReport();
+  }
+
+  function resetReceivedReportFilters() {
+    const defaults = receivedReport?.defaults || { from: '', to: '', supplier: '', search: '', quarantine: 'all' as const };
+    setReportFilters(defaults);
+    loadReceivedReport(defaults);
+  }
+
+  function downloadReceivedReportCsv() {
+    if (!receivedReport) return;
+    const rows = [
+      ['Opening Base (T)', receivedReport.summary.baselineReceived.toFixed(2)],
+      ['Filtered Received (T)', receivedReport.summary.totalReceived.toFixed(2)],
+      ['Filtered Quarantine (T)', receivedReport.summary.quarantine.toFixed(2)],
+      ['Filtered To Silo (T)', receivedReport.summary.toSilo.toFixed(2)],
+      ['Filtered Live Total (T)', receivedReport.summary.filteredLiveTotal.toFixed(2)],
+      ['Full Year Total (T)', receivedReport.summary.allLiveTotal.toFixed(2)],
+      ['Filtered Trucks', String(receivedReport.summary.truckCount)],
+      ['Invalid Rows', String(receivedReport.summary.invalidCount)],
+      [],
+      ['Shift Date', 'Timestamp', 'Vehicle', 'UID/RST', 'Supplier', 'Gross', 'Tare', 'Net', 'Quarantine', 'To Silo', 'Bags', 'Moisture', 'Starch', 'Damaged', 'Foreign Matter', 'Quarantine Reason', 'Remarks'],
+      ...receivedReport.trucks.map((truck: any) => ([
+        truck.shiftDate,
+        fmtDateTime(truck.date),
+        truck.vehicleNo || '',
+        truck.uidRst || '',
+        truck.supplier || '',
+        (truck.weightGross || 0).toFixed(2),
+        (truck.weightTare || 0).toFixed(2),
+        (truck.weightNet || 0).toFixed(2),
+        (truck.quarantineWeight || 0).toFixed(2),
+        (truck.toSilo || 0).toFixed(2),
+        truck.bags != null ? String(truck.bags) : '',
+        truck.moisture != null ? truck.moisture.toFixed(2) : '',
+        truck.starchPercent != null ? truck.starchPercent.toFixed(2) : '',
+        truck.damagedPercent != null ? truck.damagedPercent.toFixed(2) : '',
+        truck.foreignMatter != null ? truck.foreignMatter.toFixed(2) : '',
+        truck.quarantineReason || '',
+        truck.remarks || '',
+      ])),
+    ];
+    const csv = rows.map((row) => row.map(csvCell).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `year-received-report-${reportFilters.from || 'start'}-to-${reportFilters.to || 'latest'}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function handleSave() {
     if (!form.date) { setMsg({ type: 'err', text: 'Date is required' }); return; }
     setSaving(true); setMsg(null);
@@ -320,22 +462,36 @@ export default function GrainUnloading() {
     return kl ? Math.round((kl / cap) * 100) : 0;
   };
 
+  const statCards = [
+    { label: 'Silo Stock', value: (form.grainUnloaded != null || form.washConsumed != null) ? siloClosing : (defaults.siloOpeningStock ?? 0), unit: 'Ton', color: 'bg-amber-50 border-amber-200' },
+    { label: 'Grain@Plant', value: form.f1Pct != null ? totalAtPlant : (defaults.totalGrainAtPlant ?? 0), unit: 'Ton', color: 'bg-green-50 border-green-200' },
+    { label: 'Last Unloaded', value: form.grainUnloaded ?? (defaults.lastUnloaded ?? 0), unit: 'Ton', color: 'bg-blue-50 border-blue-200' },
+    { label: 'Quarantine', value: form.quarantineStock ?? (defaults.quarantineStock ?? 0), unit: 'Ton', color: 'bg-orange-50 border-orange-200' },
+    { label: 'Year Received', value: (defaults.cumulativeUnloaded ?? 0), unit: 'Ton', color: 'bg-purple-50 border-purple-200', action: openReceivedReport, hint: 'View full report' },
+  ];
+
   return (
     <ProcessPage title="Grain Stock" icon={<Wheat size={28} />} description="Track silo balance, fermenter levels & wash — grain received auto-pulled from truck unloading" flow={{ from: 'Truck / Process', to: 'Grain Silo' }} color="bg-amber-600">
       {/* Stat Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 md:gap-3 mb-4 md:mb-5">
-        {[
-          { label: 'Silo Stock', value: (form.grainUnloaded != null || form.washConsumed != null) ? siloClosing : (defaults.siloOpeningStock ?? 0), unit: 'Ton', color: 'bg-amber-50 border-amber-200' },
-          { label: 'Grain@Plant', value: form.f1Pct != null ? totalAtPlant : (defaults.totalGrainAtPlant ?? 0), unit: 'Ton', color: 'bg-green-50 border-green-200' },
-          { label: 'Last Unloaded', value: form.grainUnloaded ?? (defaults.lastUnloaded ?? 0), unit: 'Ton', color: 'bg-blue-50 border-blue-200' },
-          { label: 'Quarantine', value: form.quarantineStock ?? (defaults.quarantineStock ?? 0), unit: 'Ton', color: 'bg-orange-50 border-orange-200' },
-          { label: 'Year Received', value: (defaults.cumulativeUnloaded ?? 0), unit: 'Ton', color: 'bg-purple-50 border-purple-200' },
-        ].map(k => (
-          <div key={k.label} className={`rounded-lg border p-2 md:p-3 ${k.color}`}>
-            <div className="text-[10px] md:text-xs text-gray-500">{k.label}</div>
-            <div className="text-lg md:text-xl font-bold">{typeof k.value === 'number' ? k.value.toFixed(1) : k.value} <span className="text-[10px] md:text-xs font-normal text-gray-400">{k.unit}</span></div>
-          </div>
-        ))}
+        {statCards.map(k => {
+          const content = (
+            <>
+              <div className="text-[10px] md:text-xs text-gray-500">{k.label}</div>
+              <div className="text-lg md:text-xl font-bold">{typeof k.value === 'number' ? k.value.toFixed(1) : k.value} <span className="text-[10px] md:text-xs font-normal text-gray-400">{k.unit}</span></div>
+              {(k as any).hint && <div className="text-[10px] text-purple-600 mt-1">{(k as any).hint}</div>}
+            </>
+          );
+          return (k as any).action ? (
+            <button key={k.label} type="button" onClick={() => (k as any).action()} className={`rounded-lg border p-2 md:p-3 text-left transition hover:shadow-sm hover:-translate-y-px ${k.color}`}>
+              {content}
+            </button>
+          ) : (
+            <div key={k.label} className={`rounded-lg border p-2 md:p-3 ${k.color}`}>
+              {content}
+            </div>
+          );
+        })}
       </div>
 
       {msg && (
@@ -854,6 +1010,232 @@ export default function GrainUnloading() {
               }} className="flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 transition">
                 <Share2 size={16} /> Share
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showReceivedReport && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowReceivedReport(false)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="sticky top-0 bg-purple-700 text-white p-4 rounded-t-xl flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-lg">Year Received Report</h3>
+                <div className="text-xs text-purple-100">From baseline opening through truck unloads, with filters and analytics</div>
+              </div>
+              <button onClick={() => setShowReceivedReport(false)} className="p-1 hover:bg-purple-800 rounded"><X size={20} /></button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              {receivedReportError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 text-red-700 px-3 py-2 text-sm">{receivedReportError}</div>
+              )}
+
+              {!receivedReport && receivedReportLoading && (
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-6 text-sm text-gray-500 flex items-center justify-center gap-2">
+                  <Loader2 size={16} className="animate-spin" /> Loading report…
+                </div>
+              )}
+
+              <div className="rounded-lg border border-purple-200 bg-purple-50 p-3">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">From Shift</label>
+                    <input type="date" value={reportFilters.from} onChange={e => setReportFilter('from', e.target.value)} className="input-field w-full text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">To Shift</label>
+                    <input type="date" value={reportFilters.to} onChange={e => setReportFilter('to', e.target.value)} className="input-field w-full text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Supplier</label>
+                    <select value={reportFilters.supplier} onChange={e => setReportFilter('supplier', e.target.value)} className="input-field w-full text-sm">
+                      <option value="">All Suppliers</option>
+                      {(receivedReport?.availableSuppliers || []).map((supplier: string) => (
+                        <option key={supplier} value={supplier}>{supplier}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Quarantine</label>
+                    <select value={reportFilters.quarantine} onChange={e => setReportFilter('quarantine', e.target.value as TruckReportFilters['quarantine'])} className="input-field w-full text-sm">
+                      <option value="all">All Trucks</option>
+                      <option value="yes">With Quarantine</option>
+                      <option value="no">No Quarantine</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Search</label>
+                    <input type="text" value={reportFilters.search} onChange={e => setReportFilter('search', e.target.value)} placeholder="Vehicle, UID/RST, supplier" className="input-field w-full text-sm" />
+                  </div>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2 mt-3">
+                  <button type="button" onClick={() => loadReceivedReport()} className="bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-800 transition">
+                    Apply Filters
+                  </button>
+                  <button type="button" onClick={resetReceivedReportFilters} className="bg-white border border-purple-200 text-purple-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-50 transition">
+                    Reset
+                  </button>
+                  <button type="button" onClick={downloadReceivedReportCsv} disabled={!receivedReport || receivedReport.trucks.length === 0} className="bg-white border border-purple-200 text-purple-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-50 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+                    <Download size={14} /> Export CSV
+                  </button>
+                  {receivedReportLoading && <span className="text-sm text-gray-500 flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Loading report…</span>}
+                </div>
+              </div>
+
+              {receivedReport && (
+                <>
+                  <div className="text-sm text-gray-600">
+                    <span className="font-medium text-gray-700">Baseline:</span>{' '}
+                    {receivedReport.baseline ? `${receivedReport.summary.baselineReceived.toFixed(2)} T on ${fmtDateTime(receivedReport.baseline.createdAt)}` : 'No baseline found'}
+                    <span className="mx-2 text-gray-300">|</span>
+                    Showing <span className="font-semibold text-purple-700">{receivedReport.totalRows}</span> of <span className="font-semibold">{receivedReport.allRows}</span> trucks
+                  </div>
+
+                  {receivedReport.summary.invalidCount > 0 && (
+                    <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-700">
+                      {receivedReport.summary.invalidCount} truck row(s) in this filtered view have quarantine greater than net weight. Those rows should be corrected in unloading history.
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2">
+                    {[
+                      { label: 'Opening Base', value: receivedReport.summary.baselineReceived, color: 'bg-gray-50 border-gray-200' },
+                      { label: 'Filtered Received', value: receivedReport.summary.totalReceived, color: 'bg-purple-50 border-purple-200' },
+                      { label: 'Filtered Quarantine', value: receivedReport.summary.quarantine, color: 'bg-orange-50 border-orange-200' },
+                      { label: 'Filtered To Silo', value: receivedReport.summary.toSilo, color: 'bg-amber-50 border-amber-200' },
+                      { label: 'Filtered Live Total', value: receivedReport.summary.filteredLiveTotal, color: 'bg-indigo-50 border-indigo-200' },
+                      { label: 'Full Year Total', value: receivedReport.summary.allLiveTotal, color: 'bg-green-50 border-green-200' },
+                      { label: 'Filtered Trucks', value: receivedReport.summary.truckCount, color: 'bg-blue-50 border-blue-200', unit: '' },
+                      { label: 'Invalid Rows', value: receivedReport.summary.invalidCount, color: 'bg-red-50 border-red-200', unit: '' },
+                      { label: 'Avg Truck Weight', value: receivedReport.summary.avgTruckWeight, color: 'bg-blue-50 border-blue-200' },
+                    ].map(card => (
+                      <div key={card.label} className={`rounded-lg border p-3 ${card.color}`}>
+                        <div className="text-[10px] uppercase text-gray-500">{card.label}</div>
+                        <div className="text-lg font-bold">
+                          {typeof card.value === 'number' ? card.value.toFixed(card.unit === '' ? 0 : 2) : card.value}
+                          <span className="text-xs font-normal text-gray-400">{card.unit === '' ? '' : ' T'}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    <div className="rounded-lg border border-gray-200 overflow-hidden">
+                      <div className="px-4 py-3 bg-gray-50 border-b font-semibold text-gray-700">Daily Breakdown</div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead className="bg-white text-gray-500">
+                            <tr className="border-b">
+                              <th className="py-2 px-3 text-left">Shift Date</th>
+                              <th className="py-2 px-3 text-right">Trucks</th>
+                              <th className="py-2 px-3 text-right">Received</th>
+                              <th className="py-2 px-3 text-right">Q</th>
+                              <th className="py-2 px-3 text-right">To Silo</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {receivedReport.daily.map((day: any) => (
+                              <tr key={day.shiftDate} className="border-b last:border-b-0">
+                                <td className="py-2 px-3 font-medium">{day.shiftDate}</td>
+                                <td className="py-2 px-3 text-right">{day.truckCount}</td>
+                                <td className="py-2 px-3 text-right">{day.totalReceived.toFixed(2)}</td>
+                                <td className="py-2 px-3 text-right text-orange-600">{day.quarantine.toFixed(2)}</td>
+                                <td className="py-2 px-3 text-right text-amber-700">{day.toSilo.toFixed(2)}</td>
+                              </tr>
+                            ))}
+                            {receivedReport.daily.length === 0 && (
+                              <tr><td colSpan={5} className="py-4 text-center text-gray-400">No trucks in this range.</td></tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-gray-200 overflow-hidden">
+                      <div className="px-4 py-3 bg-gray-50 border-b font-semibold text-gray-700">Supplier Analytics</div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead className="bg-white text-gray-500">
+                            <tr className="border-b">
+                              <th className="py-2 px-3 text-left">Supplier</th>
+                              <th className="py-2 px-3 text-right">Trucks</th>
+                              <th className="py-2 px-3 text-right">Received</th>
+                              <th className="py-2 px-3 text-right">To Silo</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {receivedReport.suppliers.map((supplier: any) => (
+                              <tr key={supplier.supplier} className="border-b last:border-b-0">
+                                <td className="py-2 px-3">{supplier.supplier}</td>
+                                <td className="py-2 px-3 text-right">{supplier.truckCount}</td>
+                                <td className="py-2 px-3 text-right">{supplier.totalReceived.toFixed(2)}</td>
+                                <td className="py-2 px-3 text-right text-amber-700">{supplier.toSilo.toFixed(2)}</td>
+                              </tr>
+                            ))}
+                            {receivedReport.suppliers.length === 0 && (
+                              <tr><td colSpan={4} className="py-4 text-center text-gray-400">No supplier analytics for this range.</td></tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-gray-200 overflow-hidden">
+                    <div className="px-4 py-3 bg-gray-50 border-b font-semibold text-gray-700">Truck Details</div>
+                    <div className="overflow-x-auto max-h-[45vh]">
+                      <table className="w-full text-sm">
+                        <thead className="sticky top-0 bg-white text-gray-500">
+                          <tr className="border-b">
+                            <th className="py-2 px-3 text-left">Shift</th>
+                            <th className="py-2 px-3 text-left">Timestamp</th>
+                            <th className="py-2 px-3 text-left">Vehicle</th>
+                            <th className="py-2 px-3 text-left">UID/RST</th>
+                            <th className="py-2 px-3 text-left">Supplier</th>
+                            <th className="py-2 px-3 text-right">Gross</th>
+                            <th className="py-2 px-3 text-right">Tare</th>
+                            <th className="py-2 px-3 text-right">Net</th>
+                            <th className="py-2 px-3 text-right">Q</th>
+                            <th className="py-2 px-3 text-right">To Silo</th>
+                            <th className="py-2 px-3 text-right">Bags</th>
+                            <th className="py-2 px-3 text-left">Quality</th>
+                            <th className="py-2 px-3 text-left">Notes</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {receivedReport.trucks.map((truck: any, idx: number) => (
+                            <tr key={`${truck.id || truck.uidRst || truck.vehicleNo}-${idx}`} className={`border-b last:border-b-0 ${truck.invalidQuarantine ? 'bg-orange-50' : ''}`}>
+                              <td className="py-2 px-3 font-medium">{truck.shiftDate}</td>
+                              <td className="py-2 px-3">{fmtDateTime(truck.date)}</td>
+                              <td className="py-2 px-3">{truck.vehicleNo || '—'}</td>
+                              <td className="py-2 px-3">{truck.uidRst || '—'}</td>
+                              <td className="py-2 px-3">{truck.supplier || '—'}</td>
+                              <td className="py-2 px-3 text-right">{(truck.weightGross || 0).toFixed(2)}</td>
+                              <td className="py-2 px-3 text-right">{(truck.weightTare || 0).toFixed(2)}</td>
+                              <td className="py-2 px-3 text-right">{(truck.weightNet || 0).toFixed(2)}</td>
+                              <td className="py-2 px-3 text-right text-orange-600">{(truck.quarantineWeight || 0).toFixed(2)}</td>
+                              <td className="py-2 px-3 text-right font-semibold text-amber-700">{(truck.toSilo || 0).toFixed(2)}</td>
+                              <td className="py-2 px-3 text-right">{truck.bags != null ? truck.bags : '—'}</td>
+                              <td className="py-2 px-3 whitespace-nowrap text-xs text-gray-600">
+                                {`M ${fmtPct(truck.moisture)} | S ${fmtPct(truck.starchPercent)} | D ${fmtPct(truck.damagedPercent)} | FM ${fmtPct(truck.foreignMatter)}`}
+                              </td>
+                              <td className="py-2 px-3 text-xs text-gray-600 min-w-[220px]">
+                                {truck.quarantineReason || truck.remarks
+                                  ? `${truck.quarantineReason ? `Q: ${truck.quarantineReason}` : ''}${truck.quarantineReason && truck.remarks ? ' | ' : ''}${truck.remarks ? `Remarks: ${truck.remarks}` : ''}`
+                                  : '—'}
+                              </td>
+                            </tr>
+                          ))}
+                          {receivedReport.trucks.length === 0 && (
+                            <tr><td colSpan={13} className="py-6 text-center text-gray-400">No trucks matched these filters.</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
