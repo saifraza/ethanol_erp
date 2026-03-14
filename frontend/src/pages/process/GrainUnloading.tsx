@@ -319,6 +319,9 @@ export default function GrainUnloading() {
   const effectiveGrain = grainReceived - millingLoss;
   const siloClosing = opening + effectiveGrain - grainConsumed;
   const totalAtPlant = grainInProcess + flourSiloTotal;
+  const liveSiloEstimate = defaults.liveSiloEstimate ?? defaults.siloOpeningStock ?? 0;
+  const hasPreviewInputs = !!editId || form.washConsumed != null || hasProcessLevels || form.flourSilo1Pct != null || form.flourSilo2Pct != null;
+  const displayedSiloStock = hasPreviewInputs ? siloClosing : liveSiloEstimate;
 
   const pGIP = prev?.grainInProcess ?? 0;
   const historyEntriesAsc = [...entries].sort((a, b) => {
@@ -563,7 +566,7 @@ export default function GrainUnloading() {
   };
 
   const statCards = [
-    { label: 'Silo Stock', value: (form.grainUnloaded != null || form.washConsumed != null) ? siloClosing : (defaults.siloOpeningStock ?? 0), unit: 'Ton', color: 'bg-amber-50 border-amber-200' },
+    { label: 'Silo Stock', value: displayedSiloStock, unit: 'Ton', color: 'bg-amber-50 border-amber-200', hint: hasPreviewInputs ? 'Preview from current entry' : 'Estimated until next stock save' },
     { label: 'Grain@Plant', value: form.f1Pct != null ? totalAtPlant : (defaults.totalGrainAtPlant ?? 0), unit: 'Ton', color: 'bg-green-50 border-green-200' },
     { label: 'Last Unloaded', value: form.grainUnloaded ?? (defaults.lastUnloaded ?? 0), unit: 'Ton', color: 'bg-blue-50 border-blue-200' },
     { label: 'Quarantine', value: form.quarantineStock ?? (defaults.quarantineStock ?? 0), unit: 'Ton', color: 'bg-orange-50 border-orange-200' },
@@ -622,6 +625,20 @@ export default function GrainUnloading() {
             <div className="text-xs uppercase text-slate-500 mb-1">Distilled Wash</div>
             <div className="font-semibold text-slate-800">Flow-meter difference since the previous grain entry</div>
             <div className="text-xs text-slate-500 mt-1">{isOpeningSnapshot ? 'Opening row: starts at 0 KL' : `Current: ${washDiff.toFixed(1)} KL (meter ${Number(form.washConsumed || 0).toFixed(1)} - prev ${pW.toFixed(1)})`}</div>
+          </div>
+        </div>
+        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-100/60 p-3 text-sm text-amber-900">
+          <div className="font-medium">Live estimated silo now</div>
+          <div className="text-xs mt-1">
+            {Number(defaults.latestSavedSiloClosing ?? 0).toFixed(2)} T last saved silo
+            {' + '}
+            {Number(defaults.pendingTruckToSilo ?? 0).toFixed(2)} T truck inflow to silo
+            {' = '}
+            <span className="font-semibold">{liveSiloEstimate.toFixed(2)} T</span>
+          </div>
+          <div className="text-[11px] text-amber-800 mt-1">
+            This live estimate does not subtract any new consumption until the next grain stock save.
+            {Number(defaults.pendingInvalidTruckCount ?? 0) > 0 ? ` ${defaults.pendingInvalidTruckCount} old truck row(s) had invalid quarantine and were clamped to zero silo inflow.` : ''}
           </div>
         </div>
       </div>

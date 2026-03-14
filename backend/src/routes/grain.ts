@@ -114,6 +114,48 @@ async function getLiveCumulativeUnloaded(yearStart: number) {
   return r2((baseline.cumulativeUnloaded ?? DEFAULT_CUM_UNLOADED) + (trucks._sum.weightNet ?? 0));
 }
 
+async function getLiveSiloEstimate(yearStart: number) {
+  const latest = await getLastEntry(yearStart);
+  if (!latest) {
+    return {
+      latestSavedSiloClosing: DEFAULT_SILO,
+      pendingTruckToSilo: 0,
+      liveSiloEstimate: DEFAULT_SILO,
+      pendingTruckCount: 0,
+      pendingInvalidTruckCount: 0,
+    };
+  }
+
+  const nextYear = new Date(Date.UTC(yearStart + 1, 0, 1));
+  const trucks = await prisma.grainTruck.findMany({
+    where: {
+      date: {
+        gt: latest.createdAt,
+        lt: nextYear,
+      },
+    },
+    select: {
+      weightNet: true,
+      quarantineWeight: true,
+    },
+  });
+
+  const pendingTruckToSilo = r2(trucks.reduce((sum, truck) => {
+    const toSilo = (truck.weightNet ?? 0) - (truck.quarantineWeight ?? 0);
+    return sum + Math.max(toSilo, 0);
+  }, 0));
+  const pendingInvalidTruckCount = trucks.filter(truck => (truck.quarantineWeight ?? 0) > (truck.weightNet ?? 0)).length;
+  const latestSavedSiloClosing = latest.siloClosingStock ?? DEFAULT_SILO;
+
+  return {
+    latestSavedSiloClosing: r2(latestSavedSiloClosing),
+    pendingTruckToSilo,
+    liveSiloEstimate: r2(latestSavedSiloClosing + pendingTruckToSilo),
+    pendingTruckCount: trucks.length,
+    pendingInvalidTruckCount,
+  };
+}
+
 // GET /api/grain
 router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
@@ -143,10 +185,16 @@ router.get('/latest', authenticate, async (req: AuthRequest, res: Response) => {
     }
     const latest = await getLastEntry(yearStart, beforeDate);
     const liveCumulativeUnloaded = await getLiveCumulativeUnloaded(yearStart);
+    const liveSilo = await getLiveSiloEstimate(yearStart);
     res.json({
       latest,
       defaults: {
         siloOpeningStock: latest?.siloClosingStock ?? DEFAULT_SILO,
+        liveSiloEstimate: liveSilo.liveSiloEstimate,
+        latestSavedSiloClosing: liveSilo.latestSavedSiloClosing,
+        pendingTruckToSilo: liveSilo.pendingTruckToSilo,
+        pendingTruckCount: liveSilo.pendingTruckCount,
+        pendingInvalidTruckCount: liveSilo.pendingInvalidTruckCount,
         totalGrainAtPlant: latest?.totalGrainAtPlant ?? DEFAULT_SILO,
         cumulativeUnloaded: liveCumulativeUnloaded,
         cumulativeConsumed: latest?.cumulativeConsumed ?? DEFAULT_CUM_CONSUMED,
@@ -199,6 +247,7 @@ router.get('/summary', authenticate, async (req: AuthRequest, res: Response) => 
     const yearStart = getCurrentYearStart();
     const latest = await getLastEntry(yearStart);
     const liveCumulativeUnloaded = await getLiveCumulativeUnloaded(yearStart);
+    const liveSilo = await getLiveSiloEstimate(yearStart);
     const recentEntries = await prisma.grainEntry.findMany({
       where: { yearStart },
       orderBy: { date: 'desc' },
@@ -207,6 +256,11 @@ router.get('/summary', authenticate, async (req: AuthRequest, res: Response) => 
     });
     res.json({
       currentSiloStock: latest?.siloClosingStock ?? DEFAULT_SILO,
+      liveSiloEstimate: liveSilo.liveSiloEstimate,
+      latestSavedSiloClosing: liveSilo.latestSavedSiloClosing,
+      pendingTruckToSilo: liveSilo.pendingTruckToSilo,
+      pendingTruckCount: liveSilo.pendingTruckCount,
+      pendingInvalidTruckCount: liveSilo.pendingInvalidTruckCount,
       totalGrainAtPlant: latest?.totalGrainAtPlant ?? DEFAULT_SILO,
       grainInProcess: latest?.grainInProcess ?? 0,
       cumulativeUnloaded: liveCumulativeUnloaded,
