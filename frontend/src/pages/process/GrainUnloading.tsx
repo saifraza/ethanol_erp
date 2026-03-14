@@ -220,6 +220,16 @@ function pctToKl(pct: number | null, cap: number): number {
   return (pct / 100) * cap;
 }
 
+function pctToKlOrFallback(pct: number | null, cap: number, fallback: number | null | undefined): number {
+  if (pct == null) return fallback ?? 0;
+  return (pct / 100) * cap;
+}
+
+function pctToKlNullable(pct: number | null, cap: number): number | null {
+  if (pct == null) return null;
+  return (pct / 100) * cap;
+}
+
 export default function GrainUnloading() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
@@ -260,17 +270,18 @@ export default function GrainUnloading() {
   const PF_GRAIN_PCT = (plantSettings?.pfGrainPercent ?? DEF_PF_PCT * 100) / 100;
   const MILLING_LOSS_PCT = (plantSettings?.millingLossPercent ?? 2.5) / 100;
   const FLOUR_SILO_CAP = 140; // 140 T each
+  const editingEntry = editId ? entries.find(e => e.id === editId) ?? null : null;
 
-  // Convert percentages to KL for calculations
-  const f1KL = pctToKl(form.f1Pct, FERM_CAPACITY);
-  const f2KL = pctToKl(form.f2Pct, FERM_CAPACITY);
-  const f3KL = pctToKl(form.f3Pct, FERM_CAPACITY);
-  const f4KL = pctToKl(form.f4Pct, FERM_CAPACITY);
-  const beerWellKL = pctToKl(form.beerWellPct, FERM_CAPACITY);
-  const pf1KL = pctToKl(form.pf1Pct, PF_CAPACITY);
-  const pf2KL = pctToKl(form.pf2Pct, PF_CAPACITY);
-  const iltKL = pctToKl(form.iltPct, ILT_CAPACITY);
-  const fltKL = pctToKl(form.fltPct, FLT_CAPACITY);
+  // Blank readings carry forward the last saved value; enter 0 to explicitly set empty.
+  const f1KL = pctToKlOrFallback(form.f1Pct, FERM_CAPACITY, editingEntry?.f1Level ?? prev?.f1Level);
+  const f2KL = pctToKlOrFallback(form.f2Pct, FERM_CAPACITY, editingEntry?.f2Level ?? prev?.f2Level);
+  const f3KL = pctToKlOrFallback(form.f3Pct, FERM_CAPACITY, editingEntry?.f3Level ?? prev?.f3Level);
+  const f4KL = pctToKlOrFallback(form.f4Pct, FERM_CAPACITY, editingEntry?.f4Level ?? prev?.f4Level);
+  const beerWellKL = pctToKlOrFallback(form.beerWellPct, FERM_CAPACITY, editingEntry?.beerWellLevel ?? prev?.beerWellLevel);
+  const pf1KL = pctToKlOrFallback(form.pf1Pct, PF_CAPACITY, editingEntry?.pf1Level ?? prev?.pf1Level);
+  const pf2KL = pctToKlOrFallback(form.pf2Pct, PF_CAPACITY, editingEntry?.pf2Level ?? prev?.pf2Level);
+  const iltKL = pctToKlOrFallback(form.iltPct, ILT_CAPACITY, editingEntry?.iltLevel ?? prev?.iltLevel);
+  const fltKL = pctToKlOrFallback(form.fltPct, FLT_CAPACITY, editingEntry?.fltLevel ?? prev?.fltLevel);
 
   const fermVol = f1KL + f2KL + f3KL + f4KL + beerWellKL;
   const pfVol = pf1KL + pf2KL;
@@ -282,8 +293,8 @@ export default function GrainUnloading() {
   const grainInPF = pfVol * PF_GRAIN_PCT;
   const grainInIltFlt = iltFltVol * FERM_GRAIN_PCT;
   const grainInProcess = grainInFerm + grainInPF + grainInIltFlt;
-  const flourSilo1T = pctToKl(form.flourSilo1Pct, FLOUR_SILO_CAP);
-  const flourSilo2T = pctToKl(form.flourSilo2Pct, FLOUR_SILO_CAP);
+  const flourSilo1T = pctToKlOrFallback(form.flourSilo1Pct, FLOUR_SILO_CAP, editingEntry?.flourSilo1Level ?? prev?.flourSilo1Level);
+  const flourSilo2T = pctToKlOrFallback(form.flourSilo2Pct, FLOUR_SILO_CAP, editingEntry?.flourSilo2Level ?? prev?.flourSilo2Level);
   const flourSiloTotal = flourSilo1T + flourSilo2T;
 
   // Previous grain in each stage
@@ -295,8 +306,9 @@ export default function GrainUnloading() {
   const isOpeningSnapshot = !prev;
 
   // The first row is an opening snapshot, not a delta from zero.
+  const currentWashMeter = form.washConsumed ?? editingEntry?.washConsumed ?? prev?.washConsumed ?? 0;
   const pW = prev?.washConsumed ?? 0;
-  const washDiff = isOpeningSnapshot ? 0 : Math.max(0, (form.washConsumed || 0) - pW);
+  const washDiff = isOpeningSnapshot ? 0 : Math.max(0, currentWashMeter - pW);
   const grainDistilled = washDiff * FERM_GRAIN_PCT;
 
   // Net change in all wash currently inside the process.
@@ -307,12 +319,7 @@ export default function GrainUnloading() {
   // Internal transfers (flour→process) cancel out naturally
   const deltaGrainInProcess = isOpeningSnapshot ? 0 : grainInProcess - prevGrainInProcess;
   const deltaFlour = isOpeningSnapshot ? 0 : flourSiloTotal - prevFlourTotal;
-  // If no process levels entered yet, just use distilled * grain%
-  // (avoids false-zero when fermenters appear empty but user hasn't filled levels)
-  const hasProcessLevels = (form.f1Pct ?? 0) > 0 || (form.f2Pct ?? 0) > 0 || (form.f3Pct ?? 0) > 0 || (form.f4Pct ?? 0) > 0 || (form.beerWellPct ?? 0) > 0 || (form.pf1Pct ?? 0) > 0 || (form.pf2Pct ?? 0) > 0 || (form.iltPct ?? 0) > 0 || (form.fltPct ?? 0) > 0;
-  const grainConsumed = isOpeningSnapshot ? 0 : (hasProcessLevels
-    ? Math.max(0, grainDistilled + deltaGrainInProcess + deltaFlour)
-    : grainDistilled);
+  const grainConsumed = isOpeningSnapshot ? 0 : Math.max(0, grainDistilled + deltaGrainInProcess + deltaFlour);
 
   const opening = defaults.siloOpeningStock || 0;
   const grainReceived = form.grainUnloaded || 0;
@@ -321,7 +328,7 @@ export default function GrainUnloading() {
   const siloClosing = opening + effectiveGrain - grainConsumed;
   const totalAtPlant = grainInProcess + flourSiloTotal;
   const liveSiloEstimate = defaults.liveSiloEstimate ?? defaults.siloOpeningStock ?? 0;
-  const hasPreviewInputs = !!editId || form.washConsumed != null || hasProcessLevels || form.flourSilo1Pct != null || form.flourSilo2Pct != null;
+  const hasPreviewInputs = !!editId || form.washConsumed != null || form.f1Pct != null || form.f2Pct != null || form.f3Pct != null || form.f4Pct != null || form.beerWellPct != null || form.pf1Pct != null || form.pf2Pct != null || form.iltPct != null || form.fltPct != null || form.flourSilo1Pct != null || form.flourSilo2Pct != null;
   const displayedSiloStock = hasPreviewInputs ? siloClosing : liveSiloEstimate;
 
   const pGIP = prev?.grainInProcess ?? 0;
@@ -477,15 +484,20 @@ export default function GrainUnloading() {
       const payload = {
         date: buildEntryDate(form.date).toISOString(),
         grainUnloaded: form.grainUnloaded,
-        washConsumed: form.washConsumed,
+        washConsumed: form.washConsumed ?? null,
         washConsumedAt: form.washConsumedAt ? new Date(form.washConsumedAt).toISOString() : null,
-        f1Level: f1KL, f2Level: f2KL, f3Level: f3KL, f4Level: f4KL,
-        beerWellLevel: beerWellKL,
-        pf1Level: pf1KL, pf2Level: pf2KL,
-        iltLevel: iltKL, fltLevel: fltKL,
+        f1Level: pctToKlNullable(form.f1Pct, FERM_CAPACITY),
+        f2Level: pctToKlNullable(form.f2Pct, FERM_CAPACITY),
+        f3Level: pctToKlNullable(form.f3Pct, FERM_CAPACITY),
+        f4Level: pctToKlNullable(form.f4Pct, FERM_CAPACITY),
+        beerWellLevel: pctToKlNullable(form.beerWellPct, FERM_CAPACITY),
+        pf1Level: pctToKlNullable(form.pf1Pct, PF_CAPACITY),
+        pf2Level: pctToKlNullable(form.pf2Pct, PF_CAPACITY),
+        iltLevel: pctToKlNullable(form.iltPct, ILT_CAPACITY),
+        fltLevel: pctToKlNullable(form.fltPct, FLT_CAPACITY),
         quarantineStock: form.quarantineStock ?? 0,
-        flourSilo1Level: flourSilo1T,
-        flourSilo2Level: flourSilo2T,
+        flourSilo1Level: pctToKlNullable(form.flourSilo1Pct, FLOUR_SILO_CAP),
+        flourSilo2Level: pctToKlNullable(form.flourSilo2Pct, FLOUR_SILO_CAP),
         fermentationVolumeAt: form.fermentationVolumeAt ? new Date(form.fermentationVolumeAt).toISOString() : null,
         moisture: form.moisture, starchPercent: form.starchPercent,
         damagedPercent: form.damagedPercent, foreignMatter: form.foreignMatter,
@@ -699,6 +711,7 @@ export default function GrainUnloading() {
             <label className="text-xs text-gray-500 mb-1 block">Volume (KL)</label>
             <input type="number" value={form.washConsumed ?? ''} onChange={e => u('washConsumed', e.target.value ? parseFloat(e.target.value) : null)}
               placeholder="From distillation section" className="input-field w-full text-lg" />
+            <div className="text-[11px] text-gray-400 mt-1">Leave blank to keep the previous flow-meter reading.</div>
           </div>
           <div>
             <label className="text-xs text-gray-500 mb-1 block">Date & Time of Reading</label>
@@ -738,6 +751,7 @@ export default function GrainUnloading() {
             <label className="text-xs text-gray-500">Date & Time of Level Reading</label>
             <input type="datetime-local" value={form.fermentationVolumeAt} onChange={e => u('fermentationVolumeAt', e.target.value)}
               className="input-field mt-1" />
+            <div className="text-[11px] text-gray-400 mt-1">Leave a tank blank to keep the previous reading. Enter `0` to mark it empty.</div>
           </div>
           {fermElapsed > 0 && <span className="text-xs text-gray-400">Since last: {elapsed(fermElapsed)}</span>}
         </div>
@@ -904,7 +918,7 @@ export default function GrainUnloading() {
             )}
             {/* Row helper */}
             {[
-              { label: 'Wash Distilled', value: `${washDiff.toFixed(1)} KL`, sub: `meter: ${(form.washConsumed ?? 0).toFixed(1)} KL` },
+              { label: 'Wash Distilled', value: `${washDiff.toFixed(1)} KL`, sub: `meter: ${currentWashMeter.toFixed(1)} KL` },
               { label: 'Δ Process Wash', value: `${deltaProcessWash >= 0 ? '+' : ''}${deltaProcessWash.toFixed(1)} KL`, sub: 'ferm + PF + ILT/FLT' },
               { label: 'Grain Distilled', value: `${grainDistilled.toFixed(2)} T`, sub: `wash × ${(FERM_GRAIN_PCT * 100).toFixed(0)}%` },
               { label: 'Δ Grain in Process', value: `${deltaGrainInProcess >= 0 ? '+' : ''}${deltaGrainInProcess.toFixed(2)} T`, sub: 'ferm+PF+ILT/FLT' },
@@ -1058,7 +1072,7 @@ export default function GrainUnloading() {
                 <div className="bg-purple-50 rounded p-2 text-center">
                   <div className="text-xs text-gray-500">Wash Distilled</div>
                   <div className="font-bold text-lg">{washDiff.toFixed(1)} KL</div>
-                  {prev && <div className="text-[10px] text-gray-400">meter: {(form.washConsumed ?? 0).toFixed(1)} (prev {pW.toFixed(1)})</div>}
+                  {prev && <div className="text-[10px] text-gray-400">meter: {currentWashMeter.toFixed(1)} (prev {pW.toFixed(1)})</div>}
                   {washElapsed > 0 && <div className="text-[10px] text-purple-500">in {fmtHrs(washElapsed)}</div>}
                 </div>
               </div>
