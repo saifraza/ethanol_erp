@@ -92,6 +92,27 @@ async function getLastEntry(yearStart: number, beforeDate?: Date) {
   });
 }
 
+async function getLiveCumulativeUnloaded(yearStart: number) {
+  const baseline = await prisma.grainEntry.findFirst({
+    where: { yearStart },
+    orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+  });
+  if (!baseline) return DEFAULT_CUM_UNLOADED;
+
+  const nextYear = new Date(Date.UTC(yearStart + 1, 0, 1));
+  const trucks = await prisma.grainTruck.aggregate({
+    _sum: { weightNet: true },
+    where: {
+      date: {
+        gt: baseline.createdAt,
+        lt: nextYear,
+      },
+    },
+  });
+
+  return r2((baseline.cumulativeUnloaded ?? DEFAULT_CUM_UNLOADED) + (trucks._sum.weightNet ?? 0));
+}
+
 // GET /api/grain
 router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
@@ -120,12 +141,13 @@ router.get('/latest', authenticate, async (req: AuthRequest, res: Response) => {
       if (editEntry) beforeDate = editEntry.date;
     }
     const latest = await getLastEntry(yearStart, beforeDate);
+    const liveCumulativeUnloaded = await getLiveCumulativeUnloaded(yearStart);
     res.json({
       latest,
       defaults: {
         siloOpeningStock: latest?.siloClosingStock ?? DEFAULT_SILO,
         totalGrainAtPlant: latest?.totalGrainAtPlant ?? DEFAULT_SILO,
-        cumulativeUnloaded: latest?.cumulativeUnloaded ?? DEFAULT_CUM_UNLOADED,
+        cumulativeUnloaded: liveCumulativeUnloaded,
         cumulativeConsumed: latest?.cumulativeConsumed ?? DEFAULT_CUM_CONSUMED,
         lastUnloaded: latest?.grainUnloaded ?? 0,
         quarantineStock: latest?.quarantineStock ?? 0,
@@ -175,6 +197,7 @@ router.get('/summary', authenticate, async (req: AuthRequest, res: Response) => 
   try {
     const yearStart = getCurrentYearStart();
     const latest = await getLastEntry(yearStart);
+    const liveCumulativeUnloaded = await getLiveCumulativeUnloaded(yearStart);
     const recentEntries = await prisma.grainEntry.findMany({
       where: { yearStart },
       orderBy: { date: 'desc' },
@@ -185,7 +208,7 @@ router.get('/summary', authenticate, async (req: AuthRequest, res: Response) => 
       currentSiloStock: latest?.siloClosingStock ?? DEFAULT_SILO,
       totalGrainAtPlant: latest?.totalGrainAtPlant ?? DEFAULT_SILO,
       grainInProcess: latest?.grainInProcess ?? 0,
-      cumulativeUnloaded: latest?.cumulativeUnloaded ?? DEFAULT_CUM_UNLOADED,
+      cumulativeUnloaded: liveCumulativeUnloaded,
       cumulativeConsumed: latest?.cumulativeConsumed ?? DEFAULT_CUM_CONSUMED,
       lastUnloaded: latest?.grainUnloaded ?? 0,
       lastEntryDate: latest?.date ?? null,

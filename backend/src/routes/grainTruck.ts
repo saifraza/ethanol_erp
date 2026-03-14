@@ -40,6 +40,37 @@ function currentShiftDate(): string {
   return ist.toISOString().split('T')[0];
 }
 
+function invalidTruckWeightMessage(weightNet: number, quarantineWeight: number) {
+  if (weightNet < 0) return 'Gross weight cannot be less than tare weight';
+  if (quarantineWeight < 0) return 'Quarantine weight cannot be negative';
+  if (quarantineWeight > weightNet) return 'Quarantine weight cannot be greater than net weight';
+  return null;
+}
+
+function parseNumericField(value: any) {
+  if (value === undefined || value === null || value === '') {
+    return { provided: false, valid: true, value: null as number | null };
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return { provided: true, valid: false, value: null as number | null };
+  }
+  return { provided: true, valid: true, value: parsed };
+}
+
+function validateNonNegativeNumber(label: string, parsed: ReturnType<typeof parseNumericField>) {
+  if (!parsed.valid) return `${label} must be a valid number`;
+  if (parsed.value != null && parsed.value < 0) return `${label} cannot be negative`;
+  return null;
+}
+
+function validatePercentageNumber(label: string, parsed: ReturnType<typeof parseNumericField>) {
+  const err = validateNonNegativeNumber(label, parsed);
+  if (err) return err;
+  if (parsed.value != null && parsed.value > 100) return `${label} must be between 0 and 100`;
+  return null;
+}
+
 // GET /api/grain-truck — shift trucks (9AM to 9AM)
 router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
@@ -47,7 +78,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
     const { start, end } = shiftWindow(dateStr);
 
     const trucks = await prisma.grainTruck.findMany({
-      where: { date: { gte: start, lte: end } },
+      where: { date: { gte: start, lt: end } },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -66,7 +97,7 @@ router.get('/summary', authenticate, async (req: AuthRequest, res: Response) => 
     const { start, end } = shiftWindow(dateStr);
 
     const trucks = await prisma.grainTruck.findMany({
-      where: { date: { gte: start, lte: end } },
+      where: { date: { gte: start, lt: end } },
     });
 
     // Partial quarantine: to silo = net - quarantineWeight
@@ -123,9 +154,39 @@ router.post('/', authenticate, upload.single('photo'), async (req: AuthRequest, 
     // Always use server's current time — ensures truck falls in the correct shift window
     const truckDate = new Date();
 
-    const gross = parseFloat(weightGross) || 0;
-    const tare = parseFloat(weightTare) || 0;
-    const qWeight = parseFloat(quarantineWeight) || 0;
+    const grossInput = parseNumericField(weightGross);
+    const tareInput = parseNumericField(weightTare);
+    const qWeightInput = parseNumericField(quarantineWeight);
+    const moistureInput = parseNumericField(moisture);
+    const starchInput = parseNumericField(starchPercent);
+    const damagedInput = parseNumericField(damagedPercent);
+    const foreignMatterInput = parseNumericField(foreignMatter);
+    const bagsInput = parseNumericField(bags);
+
+    const numericError = [
+      validateNonNegativeNumber('Gross weight', grossInput),
+      validateNonNegativeNumber('Tare weight', tareInput),
+      validateNonNegativeNumber('Quarantine weight', qWeightInput),
+      validatePercentageNumber('Moisture', moistureInput),
+      validatePercentageNumber('Starch', starchInput),
+      validatePercentageNumber('Damaged', damagedInput),
+      validatePercentageNumber('Foreign matter', foreignMatterInput),
+      validateNonNegativeNumber('Bags', bagsInput),
+    ].find(Boolean);
+    if (numericError) {
+      res.status(400).json({ error: numericError });
+      return;
+    }
+
+    const gross = grossInput.value ?? 0;
+    const tare = tareInput.value ?? 0;
+    const qWeight = qWeightInput.value ?? 0;
+    const weightNet = gross - tare;
+    const weightError = invalidTruckWeightMessage(weightNet, qWeight);
+    if (weightError) {
+      res.status(400).json({ error: weightError });
+      return;
+    }
     const photoUrl = req.file ? `/uploads/grain-truck/${req.file.filename}` : null;
 
     const truck = await prisma.grainTruck.create({
@@ -136,16 +197,16 @@ router.post('/', authenticate, upload.single('photo'), async (req: AuthRequest, 
         supplier: supplier || '',
         weightGross: gross,
         weightTare: tare,
-        weightNet: gross - tare,
+        weightNet,
         quarantineWeight: qWeight,
-        moisture: moisture ? parseFloat(moisture) : null,
-        starchPercent: starchPercent ? parseFloat(starchPercent) : null,
-        damagedPercent: damagedPercent ? parseFloat(damagedPercent) : null,
-        foreignMatter: foreignMatter ? parseFloat(foreignMatter) : null,
+        moisture: moistureInput.value,
+        starchPercent: starchInput.value,
+        damagedPercent: damagedInput.value,
+        foreignMatter: foreignMatterInput.value,
         quarantine: (quarantine === 'true' || quarantine === true) || qWeight > 0,
         quarantineReason: quarantineReason || null,
         photoUrl,
-        bags: bags ? parseFloat(bags) : null,
+        bags: bagsInput.value,
         remarks: remarks || null,
         userId: req.user!.id,
       },
@@ -158,11 +219,28 @@ router.post('/', authenticate, upload.single('photo'), async (req: AuthRequest, 
 router.put('/:id', authenticate, authorize('ADMIN'), async (req: AuthRequest, res: Response) => {
   try {
     const { quarantine, quarantineReason, quarantineWeight, uidRst } = req.body;
+    const existing = await prisma.grainTruck.findUnique({ where: { id: req.params.id } });
+    if (!existing) {
+      res.status(404).json({ error: 'Truck not found' });
+      return;
+    }
     const data: any = {};
     if (quarantine !== undefined) data.quarantine = quarantine === 'true' || quarantine === true;
     if (quarantineReason !== undefined) data.quarantineReason = quarantineReason || null;
     if (quarantineWeight !== undefined) {
-      data.quarantineWeight = parseFloat(quarantineWeight) || 0;
+      const qWeightInput = parseNumericField(quarantineWeight);
+      const numericError = validateNonNegativeNumber('Quarantine weight', qWeightInput);
+      if (numericError) {
+        res.status(400).json({ error: numericError });
+        return;
+      }
+      const qWeight = qWeightInput.value ?? 0;
+      const weightError = invalidTruckWeightMessage(existing.weightNet, qWeight);
+      if (weightError) {
+        res.status(400).json({ error: weightError });
+        return;
+      }
+      data.quarantineWeight = qWeight;
       data.quarantine = data.quarantineWeight > 0;
     }
     if (uidRst !== undefined) data.uidRst = uidRst || '';

@@ -329,7 +329,7 @@ export default function GrainUnloading() {
           { label: 'Grain@Plant', value: form.f1Pct != null ? totalAtPlant : (defaults.totalGrainAtPlant ?? 0), unit: 'Ton', color: 'bg-green-50 border-green-200' },
           { label: 'Last Unloaded', value: form.grainUnloaded ?? (defaults.lastUnloaded ?? 0), unit: 'Ton', color: 'bg-blue-50 border-blue-200' },
           { label: 'Quarantine', value: form.quarantineStock ?? (defaults.quarantineStock ?? 0), unit: 'Ton', color: 'bg-orange-50 border-orange-200' },
-          { label: 'Year Received', value: (defaults.cumulativeUnloaded ?? 0) + (truckSummary.totalReceived || 0), unit: 'Ton', color: 'bg-purple-50 border-purple-200' },
+          { label: 'Year Received', value: (defaults.cumulativeUnloaded ?? 0), unit: 'Ton', color: 'bg-purple-50 border-purple-200' },
         ].map(k => (
           <div key={k.label} className={`rounded-lg border p-2 md:p-3 ${k.color}`}>
             <div className="text-[10px] md:text-xs text-gray-500">{k.label}</div>
