@@ -128,6 +128,86 @@ function csvCell(value: unknown) {
   return text;
 }
 
+function r2(n: number) {
+  return Math.round(n * 100) / 100;
+}
+
+function entryFermWash(entry: any) {
+  return (entry?.f1Level || 0) + (entry?.f2Level || 0) + (entry?.f3Level || 0) + (entry?.f4Level || 0) + (entry?.beerWellLevel || 0);
+}
+
+function entryPfWash(entry: any) {
+  return (entry?.pf1Level || 0) + (entry?.pf2Level || 0);
+}
+
+function entryIltFltWash(entry: any) {
+  return (entry?.iltLevel || 0) + (entry?.fltLevel || 0);
+}
+
+function entryProcessWash(entry: any) {
+  return entryFermWash(entry) + entryPfWash(entry) + entryIltFltWash(entry);
+}
+
+function entryFlour(entry: any) {
+  return (entry?.flourSilo1Level || 0) + (entry?.flourSilo2Level || 0);
+}
+
+function entryProcessGrain(entry: any, fermPct: number, pfPct: number) {
+  return r2(entryFermWash(entry) * fermPct + entryPfWash(entry) * pfPct + entryIltFltWash(entry) * fermPct);
+}
+
+function buildHistoryBreakdown(entry: any, prevEntry: any, fermPct: number, pfPct: number, millingLossPct: number) {
+  const isOpeningSnapshot = !prevEntry;
+  const fermWash = r2(entryFermWash(entry));
+  const pfWash = r2(entryPfWash(entry));
+  const iltFltWash = r2(entryIltFltWash(entry));
+  const processWash = r2(fermWash + pfWash + iltFltWash);
+  const grainInProcessCalc = entryProcessGrain(entry, fermPct, pfPct);
+  const flourTotal = r2(entryFlour(entry));
+  const prevGrainInProcessCalc = prevEntry ? entryProcessGrain(prevEntry, fermPct, pfPct) : 0;
+  const prevFlourTotal = prevEntry ? r2(entryFlour(prevEntry)) : 0;
+  const washDiff = isOpeningSnapshot ? 0 : r2(Math.max(0, (entry?.washConsumed || 0) - (prevEntry?.washConsumed || 0)));
+  const grainDistilled = r2(washDiff * fermPct);
+  const deltaProcess = isOpeningSnapshot ? 0 : r2(grainInProcessCalc - prevGrainInProcessCalc);
+  const deltaFlour = isOpeningSnapshot ? 0 : r2(flourTotal - prevFlourTotal);
+  const predictedConsumed = isOpeningSnapshot ? 0 : r2(Math.max(0, grainDistilled + deltaProcess + deltaFlour));
+  const receivedToSilo = r2(entry?.grainUnloaded || 0);
+  const effectiveReceived = r2(receivedToSilo * (1 - millingLossPct));
+  const storedGrainInProcess = r2(entry?.grainInProcess || 0);
+  const storedTotalAtPlant = r2(entry?.totalGrainAtPlant || 0);
+  const storedConsumed = r2(entry?.grainConsumed || 0);
+  const storedSiloClosing = r2(entry?.siloClosingStock || 0);
+  const expectedSiloClosing = r2((entry?.siloOpeningStock || 0) + effectiveReceived - storedConsumed);
+  const expectedTotalAtPlant = r2(grainInProcessCalc + flourTotal);
+
+  return {
+    isOpeningSnapshot,
+    fermWash,
+    pfWash,
+    iltFltWash,
+    processWash,
+    flourTotal,
+    grainInProcessCalc,
+    storedGrainInProcess,
+    processMismatch: r2(storedGrainInProcess - grainInProcessCalc),
+    washDiff,
+    grainDistilled,
+    deltaProcess,
+    deltaFlour,
+    predictedConsumed,
+    storedConsumed,
+    consumedMismatch: r2(storedConsumed - predictedConsumed),
+    receivedToSilo,
+    effectiveReceived,
+    storedTotalAtPlant,
+    expectedTotalAtPlant,
+    totalAtPlantMismatch: r2(storedTotalAtPlant - expectedTotalAtPlant),
+    storedSiloClosing,
+    expectedSiloClosing,
+    siloClosingMismatch: r2(storedSiloClosing - expectedSiloClosing),
+  };
+}
+
 // Convert KL to percentage
 function klToPct(kl: number | null, cap: number): number | null {
   if (kl == null) return null;
@@ -160,6 +240,7 @@ export default function GrainUnloading() {
   const [receivedReport, setReceivedReport] = useState<TruckReportData | null>(null);
   const [receivedReportLoading, setReceivedReportLoading] = useState(false);
   const [receivedReportError, setReceivedReportError] = useState<string | null>(null);
+  const [historyDetailEntry, setHistoryDetailEntry] = useState<any | null>(null);
   const [reportFilters, setReportFilters] = useState<TruckReportFilters>({
     from: '',
     to: '',
@@ -210,26 +291,27 @@ export default function GrainUnloading() {
   const prevIltFltVol = prev ? ((prev.iltLevel||0)+(prev.fltLevel||0)) : 0;
   const prevGrainInProcess = prev ? (prevFermVol * FERM_GRAIN_PCT + prevPfVol * PF_GRAIN_PCT + prevIltFltVol * FERM_GRAIN_PCT) : 0;
   const prevFlourTotal = prev ? ((prev.flourSilo1Level||0)+(prev.flourSilo2Level||0)) : 0;
+  const isOpeningSnapshot = !prev;
 
-  // Wash distilled (flow meter diff)
+  // The first row is an opening snapshot, not a delta from zero.
   const pW = prev?.washConsumed ?? 0;
-  const washDiff = Math.max(0, (form.washConsumed || 0) - pW);
+  const washDiff = isOpeningSnapshot ? 0 : Math.max(0, (form.washConsumed || 0) - pW);
   const grainDistilled = washDiff * FERM_GRAIN_PCT;
 
   // Wash Made = new wash produced = level change + what was distilled
-  const washMade = (fermVol - prevFermVol) + washDiff;
+  const washMade = isOpeningSnapshot ? 0 : (fermVol - prevFermVol) + washDiff;
 
   // Mass balance: grain consumed from silo
   // = distilled + Δprocess + Δflour, clamped ≥ 0
   // Internal transfers (flour→process) cancel out naturally
-  const deltaGrainInProcess = grainInProcess - prevGrainInProcess;
-  const deltaFlour = flourSiloTotal - prevFlourTotal;
+  const deltaGrainInProcess = isOpeningSnapshot ? 0 : grainInProcess - prevGrainInProcess;
+  const deltaFlour = isOpeningSnapshot ? 0 : flourSiloTotal - prevFlourTotal;
   // If no process levels entered yet, just use distilled * grain%
   // (avoids false-zero when fermenters appear empty but user hasn't filled levels)
   const hasProcessLevels = (form.f1Pct ?? 0) > 0 || (form.f2Pct ?? 0) > 0 || (form.f3Pct ?? 0) > 0 || (form.f4Pct ?? 0) > 0 || (form.beerWellPct ?? 0) > 0 || (form.pf1Pct ?? 0) > 0 || (form.pf2Pct ?? 0) > 0 || (form.iltPct ?? 0) > 0 || (form.fltPct ?? 0) > 0;
-  const grainConsumed = hasProcessLevels
+  const grainConsumed = isOpeningSnapshot ? 0 : (hasProcessLevels
     ? Math.max(0, grainDistilled + deltaGrainInProcess + deltaFlour)
-    : grainDistilled;
+    : grainDistilled);
 
   const opening = defaults.siloOpeningStock || 0;
   const grainReceived = form.grainUnloaded || 0;
@@ -239,6 +321,19 @@ export default function GrainUnloading() {
   const totalAtPlant = grainInProcess + flourSiloTotal;
 
   const pGIP = prev?.grainInProcess ?? 0;
+  const historyEntriesAsc = [...entries].sort((a, b) => {
+    const dateDiff = new Date(a.date).getTime() - new Date(b.date).getTime();
+    if (dateDiff !== 0) return dateDiff;
+    return new Date(a.createdAt || a.date).getTime() - new Date(b.createdAt || b.date).getTime();
+  });
+  const previousEntryById = new Map<string, any | null>();
+  for (let i = 0; i < historyEntriesAsc.length; i += 1) {
+    previousEntryById.set(historyEntriesAsc[i].id, i > 0 ? historyEntriesAsc[i - 1] : null);
+  }
+  const historyDetailPrev = historyDetailEntry ? previousEntryById.get(historyDetailEntry.id) || null : null;
+  const historyDetail = historyDetailEntry
+    ? buildHistoryBreakdown(historyDetailEntry, historyDetailPrev, FERM_GRAIN_PCT, PF_GRAIN_PCT, MILLING_LOSS_PCT)
+    : null;
 
   const washElapsed = (prev?.washConsumedAt && form.washConsumedAt)
     ? new Date(form.washConsumedAt).getTime() - new Date(prev.washConsumedAt).getTime() : 0;
@@ -406,6 +501,7 @@ export default function GrainUnloading() {
   }
 
   function editEntry(e: any) {
+    setHistoryDetailEntry(null);
     setEditId(e.id);
     setForm({
       date: e.date.split('T')[0],
@@ -432,6 +528,10 @@ export default function GrainUnloading() {
     // Load the correct previous entry (before the one being edited)
     loadLatest(e.id);
     window.scrollTo(0, 0);
+  }
+
+  function openHistoryDetail(entry: any) {
+    setHistoryDetailEntry(entry);
   }
 
   async function deleteEntry(id: string) {
@@ -492,6 +592,38 @@ export default function GrainUnloading() {
             </div>
           );
         })}
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 mb-4">
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div>
+            <h3 className="font-semibold text-slate-800">How Grain Stock Updates</h3>
+            <p className="text-xs text-slate-500">This page tracks three separate things: grain in silo, grain in process, and wash movement through fermentation and distillation.</p>
+          </div>
+          {isOpeningSnapshot && <span className="text-[11px] bg-amber-100 text-amber-800 px-2 py-1 rounded-full font-medium">Opening snapshot mode</span>}
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 text-sm">
+          <div className="rounded-lg border border-white bg-white p-3">
+            <div className="text-xs uppercase text-slate-500 mb-1">Silo Stock</div>
+            <div className="font-semibold text-slate-800">Previous silo + received to silo - grain consumed</div>
+            <div className="text-xs text-slate-500 mt-1">Current: {opening.toFixed(2)} + {effectiveGrain.toFixed(2)} - {grainConsumed.toFixed(2)} = {siloClosing.toFixed(2)} T</div>
+          </div>
+          <div className="rounded-lg border border-white bg-white p-3">
+            <div className="text-xs uppercase text-slate-500 mb-1">Grain In Process</div>
+            <div className="font-semibold text-slate-800">Grain equivalent inside F1-F4, Beer Well, PF, ILT and FLT</div>
+            <div className="text-xs text-slate-500 mt-1">Current: {grainInProcess.toFixed(2)} T</div>
+          </div>
+          <div className="rounded-lg border border-white bg-white p-3">
+            <div className="text-xs uppercase text-slate-500 mb-1">Fermentation Wash</div>
+            <div className="font-semibold text-slate-800">Liquid standing in F1-F4 + Beer Well at the reading time</div>
+            <div className="text-xs text-slate-500 mt-1">Current: {fermVol.toFixed(1)} KL</div>
+          </div>
+          <div className="rounded-lg border border-white bg-white p-3">
+            <div className="text-xs uppercase text-slate-500 mb-1">Distilled Wash</div>
+            <div className="font-semibold text-slate-800">Flow-meter difference since the previous grain entry</div>
+            <div className="text-xs text-slate-500 mt-1">{isOpeningSnapshot ? 'Opening row: starts at 0 KL' : `Current: ${washDiff.toFixed(1)} KL (meter ${Number(form.washConsumed || 0).toFixed(1)} - prev ${pW.toFixed(1)})`}</div>
+          </div>
+        </div>
       </div>
 
       {msg && (
@@ -792,9 +924,14 @@ export default function GrainUnloading() {
           const iltFltDiff = grainInIltFlt - prevIltFltGrain;
           return (
           <div className="text-sm divide-y divide-gray-100">
+            {isOpeningSnapshot && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 mb-2">
+                This is an opening snapshot. Wash distilled, process delta, flour delta, and grain consumed start from zero until the next entry.
+              </div>
+            )}
             {/* Row helper */}
             {[
-              { label: 'Wash Made', value: `${washMade.toFixed(1)} KL`, sub: 'Δ ferm vol + distilled' },
+              { label: 'Wash Made', value: `${washMade.toFixed(1)} KL`, sub: isOpeningSnapshot ? 'opening snapshot' : 'Δ ferm wash + distilled' },
               { label: 'Wash Distilled', value: `${washDiff.toFixed(1)} KL`, sub: `meter: ${(form.washConsumed ?? 0).toFixed(1)} KL` },
               { label: 'Grain Distilled', value: `${grainDistilled.toFixed(2)} T`, sub: `wash × ${(FERM_GRAIN_PCT * 100).toFixed(0)}%` },
               { label: 'Δ Grain in Process', value: `${deltaGrainInProcess >= 0 ? '+' : ''}${deltaGrainInProcess.toFixed(2)} T`, sub: 'ferm+PF+ILT/FLT' },
@@ -849,7 +986,11 @@ export default function GrainUnloading() {
               <span className="font-bold text-amber-700">{grainInProcess.toFixed(2)} T</span>
             </div>
             <div className="flex justify-between items-center py-2 px-1">
-              <span className="text-gray-600 text-xs">Ferm Volume</span>
+              <span className="text-gray-600 text-xs">Fermentation Wash</span>
+              <span className="font-semibold">{fermVol.toFixed(0)} KL</span>
+            </div>
+            <div className="flex justify-between items-center py-2 px-1">
+              <span className="text-gray-600 text-xs">Total Process Wash</span>
               <span className="font-semibold">{totalFermVol.toFixed(0)} KL</span>
             </div>
             <div className="flex justify-between items-center py-2 px-1">
@@ -1241,6 +1382,91 @@ export default function GrainUnloading() {
         </div>
       )}
 
+      {historyDetailEntry && historyDetail && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setHistoryDetailEntry(null)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="sticky top-0 bg-slate-800 text-white p-4 rounded-t-xl flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-lg">Stock Movement Breakdown</h3>
+                <div className="text-xs text-slate-200">{historyDetailEntry.date.split('T')[0]}{historyDetail.isOpeningSnapshot ? ' • opening snapshot' : ''}</div>
+              </div>
+              <button onClick={() => setHistoryDetailEntry(null)} className="p-1 hover:bg-slate-700 rounded"><X size={20} /></button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              <div className="text-sm text-slate-600">
+                {historyDetail.isOpeningSnapshot
+                  ? 'This row is the opening snapshot. The wash meter and process levels are treated as starting state, so grain consumed starts at 0.'
+                  : `Previous row: ${historyDetailPrev?.date?.split('T')[0] || '—'} | Distilled wash is meter diff from the previous row.`}
+              </div>
+
+              {(Math.abs(historyDetail.processMismatch) > 0.05 || Math.abs(historyDetail.consumedMismatch) > 0.05 || Math.abs(historyDetail.totalAtPlantMismatch) > 0.05) && (
+                <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-800">
+                  This saved row does not fully match the current rule. That usually means it was created under an older formula or older settings.
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                {[
+                  { label: 'Silo Opening', value: Number(historyDetailEntry.siloOpeningStock || 0), unit: 'T', color: 'bg-slate-50 border-slate-200' },
+                  { label: 'To Silo', value: historyDetail.receivedToSilo, unit: 'T', color: 'bg-blue-50 border-blue-200' },
+                  { label: 'Stored Consumed', value: historyDetail.storedConsumed, unit: 'T', color: 'bg-red-50 border-red-200' },
+                  { label: 'Stored Silo Close', value: historyDetail.storedSiloClosing, unit: 'T', color: 'bg-green-50 border-green-200' },
+                ].map(card => (
+                  <div key={card.label} className={`rounded-lg border p-3 ${card.color}`}>
+                    <div className="text-[10px] uppercase text-slate-500">{card.label}</div>
+                    <div className="text-lg font-bold">{card.value.toFixed(2)} <span className="text-xs font-normal text-slate-400">{card.unit}</span></div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                <div className="rounded-lg border border-slate-200 overflow-hidden">
+                  <div className="px-4 py-3 bg-slate-50 border-b font-semibold text-slate-700">Wash Snapshot</div>
+                  <div className="p-4 space-y-2 text-sm">
+                    <div className="flex justify-between"><span className="text-slate-500">Fermentation Wash</span><span className="font-semibold">{historyDetail.fermWash.toFixed(2)} KL</span></div>
+                    <div className="flex justify-between"><span className="text-slate-500">PF Wash</span><span className="font-semibold">{historyDetail.pfWash.toFixed(2)} KL</span></div>
+                    <div className="flex justify-between"><span className="text-slate-500">ILT + FLT Wash</span><span className="font-semibold">{historyDetail.iltFltWash.toFixed(2)} KL</span></div>
+                    <div className="flex justify-between border-t pt-2"><span className="text-slate-700 font-medium">Total Process Wash</span><span className="font-bold">{historyDetail.processWash.toFixed(2)} KL</span></div>
+                    <div className="flex justify-between"><span className="text-slate-500">Wash Meter Reading</span><span className="font-semibold">{Number(historyDetailEntry.washConsumed || 0).toFixed(2)} KL</span></div>
+                    <div className="flex justify-between"><span className="text-slate-500">Distilled Wash</span><span className="font-semibold">{historyDetail.washDiff.toFixed(2)} KL</span></div>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-slate-200 overflow-hidden">
+                  <div className="px-4 py-3 bg-slate-50 border-b font-semibold text-slate-700">Grain Movement</div>
+                  <div className="p-4 space-y-2 text-sm">
+                    <div className="flex justify-between"><span className="text-slate-500">Stored Grain In Process</span><span className="font-semibold">{historyDetail.storedGrainInProcess.toFixed(2)} T</span></div>
+                    <div className="flex justify-between"><span className="text-slate-500">Level-Based Grain In Process</span><span className="font-semibold">{historyDetail.grainInProcessCalc.toFixed(2)} T</span></div>
+                    <div className="flex justify-between"><span className="text-slate-500">Grain Distilled</span><span className="font-semibold">{historyDetail.grainDistilled.toFixed(2)} T</span></div>
+                    <div className="flex justify-between"><span className="text-slate-500">Delta Process Grain</span><span className="font-semibold">{historyDetail.deltaProcess >= 0 ? '+' : ''}{historyDetail.deltaProcess.toFixed(2)} T</span></div>
+                    <div className="flex justify-between"><span className="text-slate-500">Delta Flour</span><span className="font-semibold">{historyDetail.deltaFlour >= 0 ? '+' : ''}{historyDetail.deltaFlour.toFixed(2)} T</span></div>
+                    <div className="flex justify-between border-t pt-2"><span className="text-slate-700 font-medium">Current-Rule Grain Consumed</span><span className="font-bold">{historyDetail.predictedConsumed.toFixed(2)} T</span></div>
+                    <div className="flex justify-between"><span className="text-slate-500">Stored Grain Consumed</span><span className="font-semibold">{historyDetail.storedConsumed.toFixed(2)} T</span></div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-slate-200 overflow-hidden">
+                <div className="px-4 py-3 bg-slate-50 border-b font-semibold text-slate-700">Checks</div>
+                <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                  <div className="rounded-lg bg-slate-50 p-3">
+                    <div className="text-xs uppercase text-slate-500 mb-1">Silo Closing Check</div>
+                    <div className="text-slate-700">{Number(historyDetailEntry.siloOpeningStock || 0).toFixed(2)} + {historyDetail.effectiveReceived.toFixed(2)} - {historyDetail.storedConsumed.toFixed(2)} = <span className="font-bold">{historyDetail.expectedSiloClosing.toFixed(2)} T</span></div>
+                    <div className="text-xs text-slate-500 mt-1">Stored: {historyDetail.storedSiloClosing.toFixed(2)} T {Math.abs(historyDetail.siloClosingMismatch) > 0.05 ? `(mismatch ${historyDetail.siloClosingMismatch.toFixed(2)} T)` : ''}</div>
+                  </div>
+                  <div className="rounded-lg bg-slate-50 p-3">
+                    <div className="text-xs uppercase text-slate-500 mb-1">Plant Grain Check</div>
+                    <div className="text-slate-700">{historyDetail.grainInProcessCalc.toFixed(2)} + {historyDetail.flourTotal.toFixed(2)} = <span className="font-bold">{historyDetail.expectedTotalAtPlant.toFixed(2)} T</span></div>
+                    <div className="text-xs text-slate-500 mt-1">Stored: {historyDetail.storedTotalAtPlant.toFixed(2)} T {Math.abs(historyDetail.totalAtPlantMismatch) > 0.05 ? `(mismatch ${historyDetail.totalAtPlantMismatch.toFixed(2)} T)` : ''}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Entry History */}
       <div className="card mb-8">
         <button onClick={() => setShowHistory(!showHistory)} className="flex items-center justify-between w-full text-left">
@@ -1253,35 +1479,51 @@ export default function GrainUnloading() {
               <thead>
                 <tr className="border-b text-left text-gray-500">
                   <th className="py-2 pr-3">Date</th>
-                  <th className="py-2 pr-3">Unloaded</th>
-                  <th className="py-2 pr-3">Wash</th>
-                  <th className="py-2 pr-3">Ferm Vol</th>
-                  <th className="py-2 pr-3">Grain@Process</th>
+                  <th className="py-2 pr-3">To Silo</th>
+                  <th className="py-2 pr-3">Wash Meter</th>
+                  <th className="py-2 pr-3">Ferm Wash</th>
+                  <th className="py-2 pr-3">Process Wash</th>
+                  <th className="py-2 pr-3">Grain In Process</th>
                   <th className="py-2 pr-3">Silo Close</th>
-                  <th className="py-2 pr-3">Total@Plant</th>
+                  <th className="py-2 pr-3">Plant Grain</th>
                   <th className="py-2 pr-3">Quarantine</th>
                   <th className="py-2 pr-3">Flour</th>
-                  {isAdmin && <th className="py-2"></th>}
+                  <th className="py-2 pr-3">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {entries.map(e => (
-                  <tr key={e.id} className={`border-b ${isAdmin ? 'hover:bg-gray-50 cursor-pointer' : ''}`} onClick={() => isAdmin && editEntry(e)}>
+                  <tr key={e.id} className="border-b hover:bg-gray-50">
                     <td className="py-2 pr-3 font-medium">{e.date.split('T')[0]}</td>
                     <td className="py-2 pr-3">{e.grainUnloaded?.toFixed(1)}</td>
                     <td className="py-2 pr-3">{e.washConsumed?.toFixed(1)}</td>
-                    <td className="py-2 pr-3">{e.fermentationVolume?.toFixed(0)}</td>
+                    <td className="py-2 pr-3">{entryFermWash(e).toFixed(0)}</td>
+                    <td className="py-2 pr-3">{entryProcessWash(e).toFixed(0)}</td>
                     <td className="py-2 pr-3">{e.grainInProcess?.toFixed(1)}</td>
                     <td className="py-2 pr-3 font-semibold">{e.siloClosingStock?.toFixed(1)}</td>
                     <td className="py-2 pr-3 font-semibold">{e.totalGrainAtPlant?.toFixed(1)}</td>
                     <td className="py-2 pr-3 text-orange-600">{e.quarantineStock > 0 ? e.quarantineStock?.toFixed(1) : '—'}</td>
                     <td className="py-2 pr-3 text-yellow-700">{((e.flourSilo1Level || 0) + (e.flourSilo2Level || 0)) > 0 ? ((e.flourSilo1Level || 0) + (e.flourSilo2Level || 0)).toFixed(1) : '—'}</td>
-                    {isAdmin && <td className="py-2">
-                      <button onClick={(ev) => { ev.stopPropagation(); deleteEntry(e.id); }} className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
-                    </td>}
+                    <td className="py-2 pr-3">
+                      <div className="flex items-center gap-3">
+                        <button type="button" onClick={() => openHistoryDetail(e)} className="text-blue-600 hover:text-blue-700 flex items-center gap-1 text-xs font-medium">
+                          <Eye size={14} /> View
+                        </button>
+                        {isAdmin && (
+                          <button type="button" onClick={() => editEntry(e)} className="text-amber-600 hover:text-amber-700 text-xs font-medium">
+                            Edit
+                          </button>
+                        )}
+                        {isAdmin && (
+                          <button type="button" onClick={() => deleteEntry(e.id)} className="text-red-400 hover:text-red-600">
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))}
-                {entries.length === 0 && <tr><td colSpan={10} className="py-4 text-center text-gray-400">No entries yet.</td></tr>}
+                {entries.length === 0 && <tr><td colSpan={11} className="py-4 text-center text-gray-400">No entries yet.</td></tr>}
               </tbody>
             </table>
           </div>

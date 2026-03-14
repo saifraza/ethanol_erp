@@ -27,6 +27,7 @@ function r2(n: number) { return Math.round(n * 100) / 100; }
 // Grain consumed from silo = Δflour + Δ(grain in process) + grain distilled
 // If nothing changed between readings, grain consumed = 0
 function calcGrain(data: any, opening: number, prevCumUnloaded: number, prevCumConsumed: number, prevWashConsumed: number, fermPct: number, pfPct: number, millingLossPct: number = 0, prevEntry: any = null) {
+  const isOpeningSnapshot = !prevEntry;
   // Current volumes
   const fermVol = (data.f1Level||0)+(data.f2Level||0)+(data.f3Level||0)+(data.f4Level||0)+(data.beerWellLevel||0);
   const pfVol = (data.pf1Level||0)+(data.pf2Level||0);
@@ -47,17 +48,17 @@ function calcGrain(data: any, opening: number, prevCumUnloaded: number, prevCumC
   const prevGrainInProcess = prevEntry ? (prevFermVol * fermPct + prevPfVol * pfPct + prevIltFltVol * fermPct) : 0;
   const prevFlourTotal = prevEntry ? ((prevEntry.flourSilo1Level||0)+(prevEntry.flourSilo2Level||0)) : 0;
 
-  // Wash distilled (flow meter diff)
-  const washDiff = Math.max(0, (data.washConsumed||0) - prevWashConsumed);
+  // The first row is an opening snapshot, not a delta from zero.
+  const washDiff = isOpeningSnapshot ? 0 : Math.max(0, (data.washConsumed||0) - prevWashConsumed);
   const grainDistilled = washDiff * fermPct;
 
   // Mass balance: grain consumed from silo
   // = grain distilled out + net change in all downstream inventory
   // Clamped to 0: silo can never go UP from processing
   // Internal transfers (flour→process) cancel out naturally
-  const deltaGrainInProcess = grainInProcess - prevGrainInProcess;
-  const deltaFlour = flourTotal - prevFlourTotal;
-  const grainConsumed = Math.max(0, grainDistilled + deltaGrainInProcess + deltaFlour);
+  const deltaGrainInProcess = isOpeningSnapshot ? 0 : grainInProcess - prevGrainInProcess;
+  const deltaFlour = isOpeningSnapshot ? 0 : flourTotal - prevFlourTotal;
+  const grainConsumed = isOpeningSnapshot ? 0 : Math.max(0, grainDistilled + deltaGrainInProcess + deltaFlour);
 
   // Milling loss on received grain
   const grainReceived = data.grainUnloaded || 0;  // to silo (excluding quarantine)
