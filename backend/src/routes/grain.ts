@@ -22,6 +22,10 @@ async function getGrainPcts() {
 
 function r2(n: number) { return Math.round(n * 100) / 100; }
 
+function resolveLevel(value: number | null | undefined, fallback: number | null | undefined = 0) {
+  return value ?? fallback ?? 0;
+}
+
 // Mass-balance grain calculation
 // Flow: Silo → Milling → Flour Silo → ILT/FLT → PF → Fermenters/BW → Distillation
 // Grain consumed from silo = Δflour + Δ(grain in process) + grain distilled
@@ -292,14 +296,18 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     const inputData = {
       grainUnloaded: grainUnloaded || 0,
       totalReceived: totalReceived || 0,
-      washConsumed: washConsumed || 0,
-      f1Level: f1Level || 0, f2Level: f2Level || 0,
-      f3Level: f3Level || 0, f4Level: f4Level || 0,
-      beerWellLevel: beerWellLevel || 0,
-      pf1Level: pf1Level || 0, pf2Level: pf2Level || 0,
-      iltLevel: iltLevel || 0, fltLevel: fltLevel || 0,
-      flourSilo1Level: flourSilo1Level || 0,
-      flourSilo2Level: flourSilo2Level || 0,
+      washConsumed: washConsumed ?? prev?.washConsumed ?? 0,
+      f1Level: resolveLevel(f1Level, prev?.f1Level),
+      f2Level: resolveLevel(f2Level, prev?.f2Level),
+      f3Level: resolveLevel(f3Level, prev?.f3Level),
+      f4Level: resolveLevel(f4Level, prev?.f4Level),
+      beerWellLevel: resolveLevel(beerWellLevel, prev?.beerWellLevel),
+      pf1Level: resolveLevel(pf1Level, prev?.pf1Level),
+      pf2Level: resolveLevel(pf2Level, prev?.pf2Level),
+      iltLevel: resolveLevel(iltLevel, prev?.iltLevel),
+      fltLevel: resolveLevel(fltLevel, prev?.fltLevel),
+      flourSilo1Level: resolveLevel(flourSilo1Level, prev?.flourSilo1Level),
+      flourSilo2Level: resolveLevel(flourSilo2Level, prev?.flourSilo2Level),
     };
     const prevWash = prev?.washConsumed ?? 0;
     const calc = calcGrain(inputData, opening, prevCumUnloaded, prevCumConsumed, prevWash, fermPct, pfPct, millingLossPct, prev);
