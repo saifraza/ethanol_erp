@@ -276,6 +276,7 @@ export default function GrainUnloading() {
   const pfVol = pf1KL + pf2KL;
   const iltFltVol = iltKL + fltKL;
   const totalFermVol = fermVol + pfVol + iltFltVol;
+  const totalProcessWash = totalFermVol;
   // Current grain in each stage
   const grainInFerm = fermVol * FERM_GRAIN_PCT;
   const grainInPF = pfVol * PF_GRAIN_PCT;
@@ -298,8 +299,8 @@ export default function GrainUnloading() {
   const washDiff = isOpeningSnapshot ? 0 : Math.max(0, (form.washConsumed || 0) - pW);
   const grainDistilled = washDiff * FERM_GRAIN_PCT;
 
-  // Wash Made = new wash produced = level change + what was distilled
-  const washMade = isOpeningSnapshot ? 0 : (fermVol - prevFermVol) + washDiff;
+  // Net change in all wash currently inside the process.
+  const deltaProcessWash = isOpeningSnapshot ? 0 : totalProcessWash - (prevFermVol + prevPfVol + prevIltFltVol);
 
   // Mass balance: grain consumed from silo
   // = distilled + Δprocess + Δflour, clamped ≥ 0
@@ -799,9 +800,10 @@ export default function GrainUnloading() {
         </div>
 
         <div className="text-right text-sm text-gray-600 mt-2">
-          Wash Made (F1-F4 + BW): <span className="font-semibold text-blue-700">{fermVol.toFixed(0)} KL</span>
+          Current Fermentation Wash (F1-F4 + BW): <span className="font-semibold text-blue-700">{fermVol.toFixed(0)} KL</span>
           <span className="mx-1">→</span>
           Grain: <span className="font-semibold text-amber-600">{grainInFerm.toFixed(1)} T</span>
+          {prev && <span className="ml-2 text-xs text-gray-400">Δ {(fermVol - prevFermVol) >= 0 ? '+' : ''}{(fermVol - prevFermVol).toFixed(0)} KL</span>}
         </div>
 
         <div className="text-xs text-gray-400 font-medium mb-2 mt-4">PRE-FERMENTERS — {PF_CAPACITY} KL each, grain = vol × {(PF_GRAIN_PCT * 100).toFixed(0)}%</div>
@@ -902,8 +904,8 @@ export default function GrainUnloading() {
             )}
             {/* Row helper */}
             {[
-              { label: 'Wash Made', value: `${washMade.toFixed(1)} KL`, sub: isOpeningSnapshot ? 'opening snapshot' : 'Δ ferm wash + distilled' },
               { label: 'Wash Distilled', value: `${washDiff.toFixed(1)} KL`, sub: `meter: ${(form.washConsumed ?? 0).toFixed(1)} KL` },
+              { label: 'Δ Process Wash', value: `${deltaProcessWash >= 0 ? '+' : ''}${deltaProcessWash.toFixed(1)} KL`, sub: 'ferm + PF + ILT/FLT' },
               { label: 'Grain Distilled', value: `${grainDistilled.toFixed(2)} T`, sub: `wash × ${(FERM_GRAIN_PCT * 100).toFixed(0)}%` },
               { label: 'Δ Grain in Process', value: `${deltaGrainInProcess >= 0 ? '+' : ''}${deltaGrainInProcess.toFixed(2)} T`, sub: 'ferm+PF+ILT/FLT' },
               { label: 'Δ Flour Silos', value: `${deltaFlour >= 0 ? '+' : ''}${deltaFlour.toFixed(2)} T`, sub: 'after milling' },
@@ -1048,10 +1050,10 @@ export default function GrainUnloading() {
               {/* Wash diffs */}
               <div className="grid grid-cols-2 gap-2">
                 <div className="bg-blue-50 rounded p-2 text-center">
-                  <div className="text-xs text-gray-500">Wash Made</div>
-                  <div className="font-bold text-lg">{washMade.toFixed(1)} KL</div>
-                  {prev && <div className="text-[10px] text-gray-400">Δ ferm {(fermVol - prevFermVol) >= 0 ? '+' : ''}{(fermVol - prevFermVol).toFixed(1)} + distilled {washDiff.toFixed(1)}</div>}
-                  {fermElapsed > 0 && <div className="text-[10px] text-blue-500">in {fmtHrs(fermElapsed)}</div>}
+                  <div className="text-xs text-gray-500">Process Wash Now</div>
+                  <div className="font-bold text-lg">{totalProcessWash.toFixed(1)} KL</div>
+                  {prev && <div className="text-[10px] text-gray-400">Δ process {deltaProcessWash >= 0 ? '+' : ''}{deltaProcessWash.toFixed(1)} KL</div>}
+                  {fermElapsed > 0 && <div className="text-[10px] text-blue-500">levels over {fmtHrs(fermElapsed)}</div>}
                 </div>
                 <div className="bg-purple-50 rounded p-2 text-center">
                   <div className="text-xs text-gray-500">Wash Distilled</div>
@@ -1117,7 +1119,7 @@ export default function GrainUnloading() {
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} {editId ? 'Update' : 'Save'} Entry
               </button>
               <button onClick={() => {
-                const t = `*GRAIN STOCK REPORT*\nDate: ${form.date}${prevElapsed > 0 ? ` (last entry ${fmtHrs(prevElapsed)} ago)` : ''}\nGrain to Silo: ${form.grainUnloaded ?? '—'} T (${truckSummary.truckCount} trucks, net ${truckSummary.totalNet.toFixed(1)} T)${(form.quarantineStock ?? 0) > 0 ? `\nQuarantine: ${(form.quarantineStock ?? 0).toFixed(1)} T (not in silo)` : ''}${flourSiloTotal > 0 ? `\nFlour Silos: S1: ${flourSilo1T.toFixed(1)} T (${form.flourSilo1Pct ?? 0}%) | S2: ${flourSilo2T.toFixed(1)} T (${form.flourSilo2Pct ?? 0}%)` : ''}\nWash Made: ${washMade.toFixed(1)} KL (Δferm ${(fermVol - prevFermVol).toFixed(1)} + distilled ${washDiff.toFixed(1)})${fermElapsed > 0 ? ' in ' + fmtHrs(fermElapsed) : ''}\nWash Distilled: ${washDiff.toFixed(1)} KL${washElapsed > 0 ? ' in ' + fmtHrs(washElapsed) : ''}\nGrain Consumed: ${grainConsumed.toFixed(2)} T (distilled ${grainDistilled.toFixed(2)} + Δprocess ${deltaGrainInProcess.toFixed(2)} + Δflour ${deltaFlour.toFixed(2)})\nF1: ${form.f1Pct ?? '—'}% | F2: ${form.f2Pct ?? '—'}% | F3: ${form.f3Pct ?? '—'}% | F4: ${form.f4Pct ?? '—'}%\nBeer Well: ${form.beerWellPct ?? '—'}%\nPF1: ${form.pf1Pct ?? '—'}% | PF2: ${form.pf2Pct ?? '—'}%\nILT: ${form.iltPct ?? '—'}% | FLT: ${form.fltPct ?? '—'}%\nSilo Closing: ${siloClosing.toFixed(1)} T | Total@Plant: ${totalAtPlant.toFixed(1)} T${form.remarks ? '\nRemarks: ' + form.remarks : ''}`;
+                const t = `*GRAIN STOCK REPORT*\nDate: ${form.date}${prevElapsed > 0 ? ` (last entry ${fmtHrs(prevElapsed)} ago)` : ''}\nGrain to Silo: ${form.grainUnloaded ?? '—'} T (${truckSummary.truckCount} trucks, net ${truckSummary.totalNet.toFixed(1)} T)${(form.quarantineStock ?? 0) > 0 ? `\nQuarantine: ${(form.quarantineStock ?? 0).toFixed(1)} T (not in silo)` : ''}${flourSiloTotal > 0 ? `\nFlour Silos: S1: ${flourSilo1T.toFixed(1)} T (${form.flourSilo1Pct ?? 0}%) | S2: ${flourSilo2T.toFixed(1)} T (${form.flourSilo2Pct ?? 0}%)` : ''}\nCurrent Process Wash: ${totalProcessWash.toFixed(1)} KL (Δprocess ${deltaProcessWash >= 0 ? '+' : ''}${deltaProcessWash.toFixed(1)} KL)${fermElapsed > 0 ? ' over ' + fmtHrs(fermElapsed) : ''}\nWash Distilled: ${washDiff.toFixed(1)} KL${washElapsed > 0 ? ' in ' + fmtHrs(washElapsed) : ''}\nGrain Consumed: ${grainConsumed.toFixed(2)} T (distilled ${grainDistilled.toFixed(2)} + Δprocess ${deltaGrainInProcess.toFixed(2)} + Δflour ${deltaFlour.toFixed(2)})\nF1: ${form.f1Pct ?? '—'}% | F2: ${form.f2Pct ?? '—'}% | F3: ${form.f3Pct ?? '—'}% | F4: ${form.f4Pct ?? '—'}%\nBeer Well: ${form.beerWellPct ?? '—'}%\nPF1: ${form.pf1Pct ?? '—'}% | PF2: ${form.pf2Pct ?? '—'}%\nILT: ${form.iltPct ?? '—'}% | FLT: ${form.fltPct ?? '—'}%\nSilo Closing: ${siloClosing.toFixed(1)} T | Total@Plant: ${totalAtPlant.toFixed(1)} T${form.remarks ? '\nRemarks: ' + form.remarks : ''}`;
                 if (navigator.share) { navigator.share({ text: t }).catch(() => { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }); } else { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }
               }} className="flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 transition">
                 <Share2 size={16} /> Share
