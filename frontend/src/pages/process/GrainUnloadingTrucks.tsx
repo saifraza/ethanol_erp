@@ -12,6 +12,12 @@ function shiftDate() {
   return now.toISOString().split('T')[0];
 }
 
+function parseNumberInput(value: string): number | null {
+  if (!value.trim()) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : NaN;
+}
+
 export default function GrainUnloadingTrucks() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
@@ -83,6 +89,7 @@ export default function GrainUnloadingTrucks() {
 
   async function handleSave() {
     if (!vehicleNo && !weightGross) { setMsg({ type: 'err', text: 'Vehicle No or Gross Weight required' }); return; }
+    if (validationError) { setMsg({ type: 'err', text: validationError }); return; }
     setSaving(true); setMsg(null);
     try {
       const fd = new FormData();
@@ -100,7 +107,7 @@ export default function GrainUnloadingTrucks() {
       fd.append('starchPercent', starchPercent);
       fd.append('damagedPercent', damagedPercent);
       fd.append('foreignMatter', foreignMatter);
-      fd.append('quarantine', String(parseFloat(quarantineWeight) > 0));
+      fd.append('quarantine', String((qWeightValue ?? 0) > 0));
       fd.append('quarantineReason', quarantineReason);
       fd.append('bags', bags);
       fd.append('remarks', remarks);
@@ -129,12 +136,55 @@ export default function GrainUnloadingTrucks() {
     if (file) setPhoto(file);
   }
 
-  const net = (parseFloat(weightGross) || 0) - (parseFloat(weightTare) || 0);
-  const qw = parseFloat(quarantineWeight) || 0;
+  const grossValue = parseNumberInput(weightGross);
+  const tareValue = parseNumberInput(weightTare);
+  const qWeightValue = parseNumberInput(quarantineWeight);
+  const moistureValue = parseNumberInput(moisture);
+  const starchValue = parseNumberInput(starchPercent);
+  const damagedValue = parseNumberInput(damagedPercent);
+  const foreignMatterValue = parseNumberInput(foreignMatter);
+  const bagsValue = parseNumberInput(bags);
+
+  const net = (grossValue != null && !Number.isNaN(grossValue) ? grossValue : 0) - (tareValue != null && !Number.isNaN(tareValue) ? tareValue : 0);
+  const qw = qWeightValue != null && !Number.isNaN(qWeightValue) ? qWeightValue : 0;
   const toSilo = net - qw;
   const totalNet = trucks.reduce((s, t) => s + (t.weightNet - (t.quarantineWeight || 0)), 0);
   const quarantineTotal = trucks.reduce((s, t) => s + (t.quarantineWeight || 0), 0);
   const truckCount = trucks.length;
+
+  const validationError = (() => {
+    const numericFields = [
+      ['Gross weight', grossValue],
+      ['Tare weight', tareValue],
+      ['Quarantine weight', qWeightValue],
+      ['Moisture', moistureValue],
+      ['Starch', starchValue],
+      ['Damaged', damagedValue],
+      ['Foreign matter', foreignMatterValue],
+      ['Bags', bagsValue],
+    ] as const;
+
+    for (const [label, value] of numericFields) {
+      if (value != null && Number.isNaN(value)) return `${label} must be a valid number`;
+      if (value != null && value < 0) return `${label} cannot be negative`;
+    }
+
+    const percentageFields = [
+      ['Moisture', moistureValue],
+      ['Starch', starchValue],
+      ['Damaged', damagedValue],
+      ['Foreign matter', foreignMatterValue],
+    ] as const;
+
+    for (const [label, value] of percentageFields) {
+      if (value != null && value > 100) return `${label} must be between 0 and 100`;
+    }
+
+    if (net < 0) return 'Gross weight cannot be less than tare weight';
+    if (qw > net) return 'Quarantine weight cannot be greater than net weight';
+
+    return null;
+  })();
 
   function shareWhatsApp() {
     const lines = trucks.map((t, i) => {
@@ -224,12 +274,12 @@ export default function GrainUnloadingTrucks() {
             </div>
             <div>
               <label className="text-[10px] text-gray-400">Gross Weight (T)</label>
-              <input type="number" step="any" value={weightGross} onChange={e => setWeightGross(e.target.value)}
+              <input type="number" step="any" min="0" value={weightGross} onChange={e => setWeightGross(e.target.value)}
                 className="border rounded px-2 py-2 w-full text-sm" />
             </div>
             <div>
               <label className="text-[10px] text-gray-400">Tare Weight (T)</label>
-              <input type="number" step="any" value={weightTare} onChange={e => setWeightTare(e.target.value)}
+              <input type="number" step="any" min="0" value={weightTare} onChange={e => setWeightTare(e.target.value)}
                 className="border rounded px-2 py-2 w-full text-sm" />
             </div>
             <div>
@@ -244,7 +294,7 @@ export default function GrainUnloadingTrucks() {
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
             <div>
               <label className="text-[10px] text-gray-400">No. of Bags</label>
-              <input type="number" step="1" value={bags} onChange={e => setBags(e.target.value)}
+              <input type="number" step="1" min="0" value={bags} onChange={e => setBags(e.target.value)}
                 className="border rounded px-2 py-2 w-full text-sm" placeholder="0" />
             </div>
           </div>
@@ -253,8 +303,11 @@ export default function GrainUnloadingTrucks() {
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
             <div>
               <label className="text-[10px] text-orange-500 font-medium flex items-center gap-1"><AlertTriangle size={10} /> Rejected/Quarantine (T)</label>
-              <input type="number" step="any" value={quarantineWeight} onChange={e => setQuarantineWeight(e.target.value)}
+              <input type="number" step="any" min="0" value={quarantineWeight} onChange={e => setQuarantineWeight(e.target.value)}
                 className="border border-orange-200 rounded px-2 py-2 w-full text-sm bg-orange-50" placeholder="0 = none" />
+              {validationError && (
+                <div className="text-[10px] text-red-600 mt-1">{validationError}</div>
+              )}
             </div>
             <div>
               <label className="text-[10px] text-green-600 font-medium">To Silo (T)</label>
@@ -278,22 +331,22 @@ export default function GrainUnloadingTrucks() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
             <div>
               <label className="text-[10px] text-gray-400">Moisture %</label>
-              <input type="number" step="any" value={moisture} onChange={e => setMoisture(e.target.value)}
+              <input type="number" step="any" min="0" max="100" value={moisture} onChange={e => setMoisture(e.target.value)}
                 className={`border rounded px-2 py-2 w-full text-sm ${labData?.moisture ? 'bg-indigo-50 border-indigo-200' : ''}`} />
             </div>
             <div>
               <label className="text-[10px] text-gray-400">Starch %</label>
-              <input type="number" step="any" value={starchPercent} onChange={e => setStarchPercent(e.target.value)}
+              <input type="number" step="any" min="0" max="100" value={starchPercent} onChange={e => setStarchPercent(e.target.value)}
                 className={`border rounded px-2 py-2 w-full text-sm ${labData?.starch ? 'bg-indigo-50 border-indigo-200' : ''}`} />
             </div>
             <div>
               <label className="text-[10px] text-gray-400">Damaged %</label>
-              <input type="number" step="any" value={damagedPercent} onChange={e => setDamagedPercent(e.target.value)}
+              <input type="number" step="any" min="0" max="100" value={damagedPercent} onChange={e => setDamagedPercent(e.target.value)}
                 className={`border rounded px-2 py-2 w-full text-sm ${labData?.damaged ? 'bg-indigo-50 border-indigo-200' : ''}`} />
             </div>
             <div>
               <label className="text-[10px] text-gray-400">Foreign Matter %</label>
-              <input type="number" step="any" value={foreignMatter} onChange={e => setForeignMatter(e.target.value)}
+              <input type="number" step="any" min="0" max="100" value={foreignMatter} onChange={e => setForeignMatter(e.target.value)}
                 className={`border rounded px-2 py-2 w-full text-sm ${labData?.tfm ? 'bg-indigo-50 border-indigo-200' : ''}`} />
             </div>
           </div>
