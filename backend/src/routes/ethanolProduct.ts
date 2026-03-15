@@ -93,6 +93,20 @@ router.get('/latest', authenticate, async (req: AuthRequest, res: Response) => {
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
+router.get('/total-production', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const MASH_GIVEN = 2040000; // historical ethanol given to mash
+    const totalProduction = await prisma.ethanolProductEntry.aggregate({
+      _sum: {
+        productionBL: true,
+      },
+    });
+    res.json({ totalProduced: (totalProduction._sum.productionBL || 0) + MASH_GIVEN });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/ethanol-product — history
 router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
