@@ -3,11 +3,13 @@ import api from '../services/api';
 import {
   Wheat, Droplets, Fuel, Truck, Package, Factory, Beaker, Flame,
   TrendingUp, TrendingDown, BarChart3, Filter, RefreshCw, AlertTriangle,
-  Activity, ThermometerSun, Share2
+  Activity, ThermometerSun, Share2, FlaskConical, Clock, Zap, Heart,
+  ArrowRight, ChevronDown, ChevronUp, Brain, Target
 } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  AreaChart, Area, Legend, BarChart, Bar, PieChart, Pie, Cell
+  AreaChart, Area, Legend, BarChart, Bar, PieChart, Pie, Cell, ComposedChart,
+  ReferenceLine, ReferenceArea
 } from 'recharts';
 
 const PERIOD_OPTIONS = [
@@ -19,10 +21,12 @@ const PERIOD_OPTIONS = [
 ];
 
 const COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
+const FERM_COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
 
 const phaseColors: Record<string, string> = {
   FILLING: '#6366f1', SETUP: '#f59e0b', DOSING: '#f59e0b', REACTION: '#22c55e',
   LAB: '#3b82f6', RETENTION: '#06b6d4', TRANSFER: '#3b82f6', CIP: '#a855f7', DONE: '#6b7280',
+  PF_TRANSFER: '#3b82f6',
 };
 
 function KPI({ label, value, unit, icon: Icon, color, sub, trend }: any) {
@@ -79,6 +83,35 @@ function FermCard({ b, type }: { b: any; type: 'F' | 'PF' }) {
   );
 }
 
+/* ═══ Health score bar ═══ */
+function HealthBar({ score }: { score: number }) {
+  const color = score >= 80 ? 'bg-green-500' : score >= 50 ? 'bg-amber-500' : 'bg-red-500';
+  const textColor = score >= 80 ? 'text-green-700' : score >= 50 ? 'text-amber-700' : 'text-red-700';
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex-1 bg-gray-200 rounded-full h-2.5 overflow-hidden">
+        <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${score}%` }} />
+      </div>
+      <span className={`text-xs font-bold ${textColor}`}>{score}</span>
+    </div>
+  );
+}
+
+/* ═══ Pipeline step ═══ */
+function PipelineStep({ label, value, unit, icon: Icon, color, isLast }: any) {
+  return (
+    <div className="flex items-center gap-1">
+      <div className={`flex flex-col items-center p-2 rounded-lg ${color} min-w-[80px]`}>
+        <Icon size={16} className="text-white mb-1" />
+        <span className="text-white font-bold text-sm">{value}</span>
+        <span className="text-white/80 text-[9px]">{unit}</span>
+        <span className="text-white/70 text-[9px] mt-0.5">{label}</span>
+      </div>
+      {!isLast && <ArrowRight size={16} className="text-gray-300 mx-0.5 flex-shrink-0" />}
+    </div>
+  );
+}
+
 const fmtNum = (n: number, d = 1) => n >= 100000 ? (n / 100000).toFixed(d) + ' L' : n >= 1000 ? (n / 1000).toFixed(d) + ' K' : n.toFixed(d);
 const shortDate = (d: string) => {
   const p = d.split('-');
@@ -87,16 +120,23 @@ const shortDate = (d: string) => {
 
 export default function Dashboard() {
   const [data, setData] = useState<any>(null);
+  const [fermData, setFermData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [fermLoading, setFermLoading] = useState(true);
   const [days, setDays] = useState(7);
-  const [activeTab, setActiveTab] = useState<'overview' | 'production' | 'quality' | 'dispatch'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'fermentation' | 'production' | 'quality' | 'dispatch'>('overview');
 
   const fetchData = (d: number) => {
     setLoading(true);
     api.get(`/dashboard/analytics?days=${d}`).then(r => { setData(r.data); setLoading(false); }).catch(() => setLoading(false));
   };
 
-  useEffect(() => { fetchData(days); }, [days]);
+  const fetchFermData = (d: number) => {
+    setFermLoading(true);
+    api.get(`/dashboard/fermentation-deep?days=${d}`).then(r => { setFermData(r.data); setFermLoading(false); }).catch(() => setFermLoading(false));
+  };
+
+  useEffect(() => { fetchData(days); fetchFermData(days); }, [days]);
 
   const handleShare = () => {
     if (!data) return;
@@ -132,7 +172,7 @@ export default function Dashboard() {
               {p.label}
             </button>
           ))}
-          <button onClick={() => fetchData(days)} className="p-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 transition" title="Refresh">
+          <button onClick={() => { fetchData(days); fetchFermData(days); }} className="p-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 transition" title="Refresh">
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           </button>
           <button onClick={handleShare} className="p-1.5 rounded-lg bg-green-100 hover:bg-green-200 transition text-green-700" title="Share">
@@ -143,10 +183,10 @@ export default function Dashboard() {
 
       {/* Tab Navigation */}
       <div className="flex gap-1 bg-gray-100 rounded-lg p-1 overflow-x-auto">
-        {(['overview', 'production', 'quality', 'dispatch'] as const).map(tab => (
+        {(['overview', 'fermentation', 'production', 'quality', 'dispatch'] as const).map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
             className={`px-4 py-2 rounded-md text-xs font-medium transition whitespace-nowrap ${activeTab === tab ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}>
-            {tab === 'overview' ? 'Overview' : tab === 'production' ? 'Production' : tab === 'quality' ? 'Quality' : 'Dispatch'}
+            {tab === 'overview' ? 'Overview' : tab === 'fermentation' ? 'Fermentation' : tab === 'production' ? 'Production' : tab === 'quality' ? 'Quality' : 'Dispatch'}
           </button>
         ))}
       </div>
@@ -166,7 +206,6 @@ export default function Dashboard() {
 
           {/* Two charts */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Ethanol Production Trend */}
             <div className="bg-white rounded-xl shadow-sm border p-4">
               <h3 className="text-sm font-semibold text-gray-700 mb-3">Ethanol Production (BL)</h3>
               <ResponsiveContainer width="100%" height={220}>
@@ -180,7 +219,6 @@ export default function Dashboard() {
               </ResponsiveContainer>
             </div>
 
-            {/* Grain Trend */}
             <div className="bg-white rounded-xl shadow-sm border p-4">
               <h3 className="text-sm font-semibold text-gray-700 mb-3">Grain Stock (Ton)</h3>
               <ResponsiveContainer width="100%" height={220}>
@@ -206,7 +244,30 @@ export default function Dashboard() {
               </div>
             </>
           )}
+
+          {/* Fermentation Alerts (from deep endpoint) */}
+          {fermData && fermData.alerts && fermData.alerts.length > 0 && (
+            <>
+              <SectionHeader title="Fermentation Alerts" icon={AlertTriangle} />
+              <div className="space-y-2">
+                {fermData.alerts.map((a: any, i: number) => (
+                  <div key={i} className={`flex items-start gap-3 p-3 rounded-lg border ${a.severity === 'critical' ? 'bg-red-50 border-red-200' : a.severity === 'warning' ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200'}`}>
+                    <AlertTriangle size={16} className={a.severity === 'critical' ? 'text-red-500' : a.severity === 'warning' ? 'text-amber-500' : 'text-blue-500'} />
+                    <div>
+                      <span className="text-sm font-semibold">{a.vessel}</span>
+                      <span className="text-sm text-gray-600 ml-2">{a.msg}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </>
+      )}
+
+      {/* ═══ FERMENTATION TAB ═══ */}
+      {activeTab === 'fermentation' && (
+        <FermentationDashboard data={fermData} loading={fermLoading} />
       )}
 
       {/* ═══ PRODUCTION TAB ═══ */}
@@ -220,7 +281,6 @@ export default function Dashboard() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Ethanol KLPD trend */}
             <div className="bg-white rounded-xl shadow-sm border p-4">
               <h3 className="text-sm font-semibold text-gray-700 mb-3">KLPD Trend</h3>
               <ResponsiveContainer width="100%" height={220}>
@@ -234,7 +294,6 @@ export default function Dashboard() {
               </ResponsiveContainer>
             </div>
 
-            {/* Grain unloaded vs consumed */}
             <div className="bg-white rounded-xl shadow-sm border p-4">
               <h3 className="text-sm font-semibold text-gray-700 mb-3">Grain: Unloaded vs Consumed</h3>
               <ResponsiveContainer width="100%" height={220}>
@@ -250,7 +309,6 @@ export default function Dashboard() {
               </ResponsiveContainer>
             </div>
 
-            {/* DDGS trend */}
             <div className="bg-white rounded-xl shadow-sm border p-4">
               <h3 className="text-sm font-semibold text-gray-700 mb-3">DDGS Production & Dispatch</h3>
               <ResponsiveContainer width="100%" height={220}>
@@ -266,7 +324,6 @@ export default function Dashboard() {
               </ResponsiveContainer>
             </div>
 
-            {/* Ethanol stock trend */}
             <div className="bg-white rounded-xl shadow-sm border p-4">
               <h3 className="text-sm font-semibold text-gray-700 mb-3">Ethanol Stock (BL)</h3>
               <ResponsiveContainer width="100%" height={220}>
@@ -294,7 +351,6 @@ export default function Dashboard() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Distillation strength trend */}
             <div className="bg-white rounded-xl shadow-sm border p-4">
               <h3 className="text-sm font-semibold text-gray-700 mb-3">Distillation Strength</h3>
               <ResponsiveContainer width="100%" height={220}>
@@ -310,7 +366,6 @@ export default function Dashboard() {
               </ResponsiveContainer>
             </div>
 
-            {/* Liquefaction gravity */}
             <div className="bg-white rounded-xl shadow-sm border p-4">
               <h3 className="text-sm font-semibold text-gray-700 mb-3">Liquefaction Gravity</h3>
               <ResponsiveContainer width="100%" height={220}>
@@ -326,7 +381,6 @@ export default function Dashboard() {
               </ResponsiveContainer>
             </div>
 
-            {/* Liquefaction pH */}
             <div className="bg-white rounded-xl shadow-sm border p-4">
               <h3 className="text-sm font-semibold text-gray-700 mb-3">Liquefaction pH</h3>
               <ResponsiveContainer width="100%" height={220}>
@@ -342,7 +396,6 @@ export default function Dashboard() {
               </ResponsiveContainer>
             </div>
 
-            {/* Milling sieve trend */}
             {t.milling.length > 0 && (
               <div className="bg-white rounded-xl shadow-sm border p-4">
                 <h3 className="text-sm font-semibold text-gray-700 mb-3">Milling Sieve Analysis</h3>
@@ -363,7 +416,6 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* Raw material table */}
           {data.tables.rawMaterial.length > 0 && (
             <div className="bg-white rounded-xl shadow-sm border p-4 overflow-x-auto">
               <h3 className="text-sm font-semibold text-gray-700 mb-3">Recent Raw Material</h3>
@@ -405,7 +457,6 @@ export default function Dashboard() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Dispatch by party pie */}
             {data.tables.dispatchByParty.length > 0 && (
               <div className="bg-white rounded-xl shadow-sm border p-4">
                 <h3 className="text-sm font-semibold text-gray-700 mb-3">Dispatch by Party (BL)</h3>
@@ -424,7 +475,6 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* Daily dispatch trend */}
             <div className="bg-white rounded-xl shadow-sm border p-4">
               <h3 className="text-sm font-semibold text-gray-700 mb-3">Daily Ethanol Dispatch (BL)</h3>
               <ResponsiveContainer width="100%" height={260}>
@@ -439,7 +489,6 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Dispatch table */}
           {data.tables.recentDispatches.length > 0 && (
             <div className="bg-white rounded-xl shadow-sm border p-4 overflow-x-auto">
               <h3 className="text-sm font-semibold text-gray-700 mb-3">Recent Dispatches</h3>
@@ -468,7 +517,6 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* Party summary table */}
           {data.tables.dispatchByParty.length > 0 && (
             <div className="bg-white rounded-xl shadow-sm border p-4 overflow-x-auto">
               <h3 className="text-sm font-semibold text-gray-700 mb-3">Party-wise Summary</h3>
@@ -491,6 +539,385 @@ export default function Dashboard() {
             </div>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   FERMENTATION DASHBOARD — the heart of the business
+   ═══════════════════════════════════════════════════════════════ */
+function FermentationDashboard({ data, loading }: { data: any; loading: boolean }) {
+  const [selectedCurve, setSelectedCurve] = useState<number | null>(null);
+
+  if (loading || !data) return (
+    <div className="flex items-center justify-center h-48">
+      <RefreshCw className="animate-spin text-indigo-500" size={24} />
+      <span className="ml-2 text-gray-500">Loading fermentation analytics...</span>
+    </div>
+  );
+
+  const fk = data.fermKpis;
+  const pipe = data.pipeline;
+
+  // Build gravity chart data — overlay multiple batches + avg curve
+  const gravityCurves = data.gravityCurves || [];
+  const avgCurve = data.avgCurve || [];
+
+  // Merge all curves into chart-friendly format: each point = { hour, batch_N_gravity, avg_gravity }
+  const maxHour = Math.max(
+    ...gravityCurves.flatMap((c: any) => c.points.map((p: any) => p.hour)),
+    ...avgCurve.map((p: any) => p.hour),
+    1
+  );
+  const hourSteps: number[] = [];
+  for (let h = 0; h <= maxHour; h += 2) hourSteps.push(h);
+
+  const gravityChartData = hourSteps.map(h => {
+    const row: any = { hour: h };
+    // avg curve
+    const avg = avgCurve.find((p: any) => p.hour === h);
+    if (avg) {
+      row.avgGravity = avg.avgGravity ? Math.round(avg.avgGravity * 1000) / 1000 : null;
+      row.minGravity = avg.minGravity ? Math.round(avg.minGravity * 1000) / 1000 : null;
+      row.maxGravity = avg.maxGravity ? Math.round(avg.maxGravity * 1000) / 1000 : null;
+    }
+    // per-batch curves
+    gravityCurves.forEach((c: any, i: number) => {
+      const pt = c.points.find((p: any) => Math.abs(p.hour - h) < 1.5);
+      if (pt) row[`b${c.batchNo}`] = Math.round(pt.gravity * 1000) / 1000;
+    });
+    return row;
+  });
+
+  // Alcohol build-up chart — same approach
+  const alcoholChartData = hourSteps.map(h => {
+    const row: any = { hour: h };
+    const avg = avgCurve.find((p: any) => p.hour === h);
+    if (avg?.avgAlcohol) row.avgAlcohol = Math.round(avg.avgAlcohol * 100) / 100;
+    gravityCurves.forEach((c: any) => {
+      const pt = c.points.find((p: any) => Math.abs(p.hour - h) < 1.5);
+      if (pt?.alcohol) row[`b${c.batchNo}`] = Math.round(pt.alcohol * 100) / 100;
+    });
+    return row;
+  });
+
+  // Temperature chart
+  const tempChartData = hourSteps.map(h => {
+    const row: any = { hour: h };
+    const avg = avgCurve.find((p: any) => p.hour === h);
+    if (avg?.avgTemp) row.avgTemp = Math.round(avg.avgTemp * 10) / 10;
+    gravityCurves.forEach((c: any) => {
+      const pt = c.points.find((p: any) => Math.abs(p.hour - h) < 1.5);
+      if (pt?.temp) row[`b${c.batchNo}`] = Math.round(pt.temp * 10) / 10;
+    });
+    return row;
+  });
+
+  return (
+    <div className="space-y-4">
+      {/* ─── Plant Pipeline Flow ─── */}
+      <div className="bg-white rounded-xl shadow-sm border p-4">
+        <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2"><Zap size={14} /> Plant Pipeline</h3>
+        <div className="flex items-center gap-1 overflow-x-auto pb-2">
+          <PipelineStep label="Grain In" value={pipe.grainIn.toFixed(0)} unit="T" icon={Wheat} color="bg-amber-600" />
+          <PipelineStep label="Consumed" value={pipe.grainConsumed.toFixed(0)} unit="T" icon={Flame} color="bg-orange-600" />
+          <PipelineStep label="PF Batches" value={pipe.pfBatchesRun} unit="runs" icon={Beaker} color="bg-indigo-600" />
+          <PipelineStep label="Ferm" value={pipe.fermBatchesRun} unit="batches" icon={FlaskConical} color="bg-emerald-600" />
+          <PipelineStep label="Ethanol" value={fmtNum(pipe.ethanolProduced)} unit="BL" icon={Fuel} color="bg-blue-600" />
+          <PipelineStep label="Dispatched" value={fmtNum(pipe.ethanolDispatched)} unit="BL" icon={Truck} color="bg-green-600" isLast />
+        </div>
+      </div>
+
+      {/* ─── Fermentation KPIs ─── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <KPI label="Total Batches" value={fk.totalBatches} unit="" icon={FlaskConical} color="bg-indigo-600" sub={`${fk.completedCount} done, ${fk.activeFermCount} active`} />
+        <KPI label="Avg Cycle Time" value={fk.avgCycleTime} unit="hrs" icon={Clock} color="bg-blue-600" sub={`PF avg: ${fk.avgPFCycleTime} hrs`} />
+        <KPI label="Avg Final Alcohol" value={fk.avgFinalAlcohol} unit="%" icon={Droplets} color="bg-emerald-600" sub="Completed batches" />
+        <KPI label="Gravity Target" value={fk.gravityTarget} unit="" icon={Target} color="bg-amber-600" sub="PF transfer threshold" />
+      </div>
+
+      {/* ─── AI Alerts ─── */}
+      {data.alerts && data.alerts.length > 0 && (
+        <div className="space-y-2">
+          <SectionHeader title="Active Alerts & Insights" icon={Brain} />
+          {data.alerts.map((a: any, i: number) => (
+            <div key={i} className={`flex items-start gap-3 p-3 rounded-lg border text-sm ${a.severity === 'critical' ? 'bg-red-50 border-red-200' : a.severity === 'warning' ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200'}`}>
+              {a.severity === 'critical' ? <AlertTriangle size={16} className="text-red-500 mt-0.5 flex-shrink-0" /> :
+               a.severity === 'warning' ? <AlertTriangle size={16} className="text-amber-500 mt-0.5 flex-shrink-0" /> :
+               <Activity size={16} className="text-blue-500 mt-0.5 flex-shrink-0" />}
+              <div><span className="font-semibold">{a.vessel}:</span> {a.msg}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ─── Active Batch Predictions ─── */}
+      {data.predictions && data.predictions.length > 0 && (
+        <>
+          <SectionHeader title="Active Batch Predictions" icon={Brain} />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {data.predictions.map((p: any) => (
+              <div key={`pred-${p.batchNo}`} className="bg-white rounded-xl border shadow-sm p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <FlaskConical size={18} className="text-emerald-600" />
+                    <span className="font-bold">F-{p.fermenterNo}</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full text-white font-medium" style={{ backgroundColor: phaseColors[p.phase] || '#6b7280' }}>{p.phase}</span>
+                    <span className="text-xs text-gray-500">#{p.batchNo}</span>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+                  <div>
+                    <span className="text-xs text-gray-500">Current Gravity</span>
+                    <p className="font-bold text-lg">{p.currentGravity.toFixed(3)}</p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-gray-500">Drop Rate</span>
+                    <p className="font-bold text-lg">{p.gravityDropRate}/hr</p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-gray-500">Elapsed</span>
+                    <p className="font-medium">{p.hoursElapsed} hrs</p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-gray-500">Est. Remaining</span>
+                    <p className="font-medium">{p.hoursRemaining ? `${p.hoursRemaining} hrs` : '—'}</p>
+                  </div>
+                  {p.currentTemp && (
+                    <div>
+                      <span className="text-xs text-gray-500">Temperature</span>
+                      <p className={`font-medium ${p.currentTemp > 37 ? 'text-red-600' : ''}`}>{p.currentTemp}°C</p>
+                    </div>
+                  )}
+                  {p.currentAlcohol && (
+                    <div>
+                      <span className="text-xs text-gray-500">Alcohol</span>
+                      <p className="font-medium">{p.currentAlcohol}%</p>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <span className="text-xs text-gray-500 block mb-1">Health Score</span>
+                  <HealthBar score={p.health} />
+                </div>
+                {p.predictedEndTime && (
+                  <p className="text-xs text-gray-400 mt-2">Predicted completion: {new Date(p.predictedEndTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false })}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* ─── Gravity Curves Chart ─── */}
+      {gravityChartData.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border p-4">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Gravity Drop Curves (Batch Comparison)</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <ComposedChart data={gravityChartData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="hour" fontSize={10} label={{ value: 'Hours', position: 'insideBottom', offset: -5, fontSize: 10 }} />
+              <YAxis fontSize={10} domain={['auto', 'auto']} label={{ value: 'Gravity', angle: -90, position: 'insideLeft', fontSize: 10 }} />
+              <Tooltip />
+              <Legend />
+              {/* Avg curve — thick dashed */}
+              <Line type="monotone" dataKey="avgGravity" stroke="#6b7280" strokeWidth={3} strokeDasharray="8 4" dot={false} name="Avg (historical)" />
+              {/* Per-batch curves */}
+              {gravityCurves.map((c: any, i: number) => (
+                <Line key={c.batchNo} type="monotone" dataKey={`b${c.batchNo}`}
+                  stroke={FERM_COLORS[i % FERM_COLORS.length]} strokeWidth={c.phase !== 'DONE' ? 2.5 : 1.5}
+                  dot={c.phase !== 'DONE'} name={`#${c.batchNo} F-${c.fermenterNo}`}
+                  opacity={c.phase !== 'DONE' ? 1 : 0.5} />
+              ))}
+              <ReferenceLine y={1.000} stroke="#ef4444" strokeDasharray="4 4" label={{ value: 'Target', fontSize: 9 }} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* ─── Alcohol Build-up Chart ─── */}
+      {alcoholChartData.some((d: any) => Object.keys(d).length > 1) && (
+        <div className="bg-white rounded-xl shadow-sm border p-4">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Alcohol Build-up Over Time</h3>
+          <ResponsiveContainer width="100%" height={260}>
+            <LineChart data={alcoholChartData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="hour" fontSize={10} />
+              <YAxis fontSize={10} label={{ value: 'Alcohol %', angle: -90, position: 'insideLeft', fontSize: 10 }} />
+              <Tooltip />
+              <Legend />
+              <Line type="monotone" dataKey="avgAlcohol" stroke="#6b7280" strokeWidth={3} strokeDasharray="8 4" dot={false} name="Avg" />
+              {gravityCurves.map((c: any, i: number) => (
+                <Line key={c.batchNo} type="monotone" dataKey={`b${c.batchNo}`}
+                  stroke={FERM_COLORS[i % FERM_COLORS.length]} strokeWidth={1.5} dot={false}
+                  name={`#${c.batchNo}`} opacity={c.phase !== 'DONE' ? 1 : 0.6} />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* ─── Temperature Monitoring ─── */}
+      {tempChartData.some((d: any) => Object.keys(d).length > 1) && (
+        <div className="bg-white rounded-xl shadow-sm border p-4">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Temperature Monitoring</h3>
+          <ResponsiveContainer width="100%" height={260}>
+            <ComposedChart data={tempChartData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="hour" fontSize={10} />
+              <YAxis fontSize={10} domain={[25, 42]} />
+              <Tooltip />
+              <Legend />
+              <ReferenceArea y1={37} y2={42} fill="#fecaca" fillOpacity={0.3} />
+              <ReferenceLine y={37} stroke="#ef4444" strokeDasharray="4 4" label={{ value: '37°C limit', fontSize: 9, fill: '#ef4444' }} />
+              <Line type="monotone" dataKey="avgTemp" stroke="#6b7280" strokeWidth={3} strokeDasharray="8 4" dot={false} name="Avg" />
+              {gravityCurves.map((c: any, i: number) => (
+                <Line key={c.batchNo} type="monotone" dataKey={`b${c.batchNo}`}
+                  stroke={FERM_COLORS[i % FERM_COLORS.length]} strokeWidth={1.5} dot={false}
+                  name={`#${c.batchNo}`} />
+              ))}
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* ─── Batch Comparison Table ─── */}
+      {data.batchComparison && data.batchComparison.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border p-4 overflow-x-auto">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Batch Comparison</h3>
+          <table className="w-full text-xs">
+            <thead><tr className="border-b text-gray-500">
+              <th className="text-left py-2 pr-2">Batch</th>
+              <th className="text-left py-2 pr-2">F#</th>
+              <th className="text-left py-2 pr-2">Phase</th>
+              <th className="text-right py-2 pr-2">Start SG</th>
+              <th className="text-right py-2 pr-2">End SG</th>
+              <th className="text-right py-2 pr-2">Drop</th>
+              <th className="text-right py-2 pr-2">Max Alc%</th>
+              <th className="text-right py-2 pr-2">Avg T°C</th>
+              <th className="text-right py-2 pr-2">Max T°C</th>
+              <th className="text-right py-2 pr-2">Cycle hrs</th>
+              <th className="text-right py-2">#Rdgs</th>
+            </tr></thead>
+            <tbody>
+              {data.batchComparison.map((b: any) => (
+                <tr key={`bc-${b.batchNo}-${b.fermenterNo}`} className="border-b border-gray-50 hover:bg-gray-50">
+                  <td className="py-1.5 pr-2 font-semibold">#{b.batchNo}</td>
+                  <td className="py-1.5 pr-2">F-{b.fermenterNo}</td>
+                  <td className="py-1.5 pr-2">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: phaseColors[b.phase] || '#6b7280' }}>{b.phase}</span>
+                  </td>
+                  <td className="py-1.5 pr-2 text-right">{b.startGravity?.toFixed(3) ?? '—'}</td>
+                  <td className="py-1.5 pr-2 text-right">{b.endGravity?.toFixed(3) ?? '—'}</td>
+                  <td className="py-1.5 pr-2 text-right font-medium">{b.gravityDrop?.toFixed(3) ?? '—'}</td>
+                  <td className="py-1.5 pr-2 text-right">{b.maxAlcohol?.toFixed(1) ?? '—'}</td>
+                  <td className="py-1.5 pr-2 text-right">{b.avgTemp ?? '—'}</td>
+                  <td className={`py-1.5 pr-2 text-right ${b.maxTemp && b.maxTemp > 37 ? 'text-red-600 font-bold' : ''}`}>{b.maxTemp?.toFixed(1) ?? '—'}</td>
+                  <td className="py-1.5 pr-2 text-right">{b.cycleHours ?? '—'}</td>
+                  <td className="py-1.5 text-right">{b.readings}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ─── Chemical Consumption ─── */}
+      {data.chemicalSummary && data.chemicalSummary.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="bg-white rounded-xl shadow-sm border p-4">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">Chemical Consumption</h3>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={data.chemicalSummary.slice(0, 8)} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis type="number" fontSize={10} />
+                <YAxis dataKey="name" type="category" fontSize={10} width={80} />
+                <Tooltip formatter={(v: number, name: string) => [v.toFixed(1), name === 'total' ? 'Total' : 'Avg/batch']} />
+                <Bar dataKey="total" fill="#f59e0b" name="Total" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm border p-4 overflow-x-auto">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">Chemical Details</h3>
+            <table className="w-full text-xs">
+              <thead><tr className="border-b text-gray-500">
+                <th className="text-left py-2 pr-3">Chemical</th>
+                <th className="text-right py-2 pr-3">Total</th>
+                <th className="text-right py-2 pr-3">Avg/batch</th>
+                <th className="text-right py-2">Batches</th>
+              </tr></thead>
+              <tbody>
+                {data.chemicalSummary.map((c: any) => (
+                  <tr key={c.name} className="border-b border-gray-50">
+                    <td className="py-1.5 pr-3 font-medium">{c.name}</td>
+                    <td className="py-1.5 pr-3 text-right">{c.total} {c.unit}</td>
+                    <td className="py-1.5 pr-3 text-right">{c.avgPerBatch} {c.unit}</td>
+                    <td className="py-1.5 text-right">{c.batches}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Fermentation Activity Timeline ─── */}
+      {data.fermActivity && data.fermActivity.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border p-4">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Daily Fermentation Activity</h3>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={data.fermActivity}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="date" fontSize={10} tickFormatter={shortDate} />
+              <YAxis fontSize={10} />
+              <Tooltip />
+              <Legend />
+              <Bar dataKey="started" fill="#6366f1" name="Batches Started" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="completed" fill="#22c55e" name="Batches Completed" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="readings" fill="#f59e0b" name="Lab Readings" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* ─── PF Analytics Table ─── */}
+      {data.pfAnalytics && data.pfAnalytics.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border p-4 overflow-x-auto">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Pre-Fermenter History</h3>
+          <table className="w-full text-xs">
+            <thead><tr className="border-b text-gray-500">
+              <th className="text-left py-2 pr-2">Batch</th>
+              <th className="text-left py-2 pr-2">PF#</th>
+              <th className="text-left py-2 pr-2">Phase</th>
+              <th className="text-right py-2 pr-2">Setup SG</th>
+              <th className="text-right py-2 pr-2">Final SG</th>
+              <th className="text-right py-2 pr-2">Final Alc%</th>
+              <th className="text-right py-2 pr-2">Cycle hrs</th>
+              <th className="text-right py-2 pr-2">Chemicals</th>
+              <th className="text-right py-2">Readings</th>
+            </tr></thead>
+            <tbody>
+              {data.pfAnalytics.map((b: any) => (
+                <tr key={`pfa-${b.batchNo}-${b.fermenterNo}`} className="border-b border-gray-50 hover:bg-gray-50">
+                  <td className="py-1.5 pr-2 font-semibold">#{b.batchNo}</td>
+                  <td className="py-1.5 pr-2">PF-{b.fermenterNo}</td>
+                  <td className="py-1.5 pr-2">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: phaseColors[b.phase] || '#6b7280' }}>{b.phase}</span>
+                  </td>
+                  <td className="py-1.5 pr-2 text-right">{b.slurryGravity?.toFixed(3) ?? '—'}</td>
+                  <td className="py-1.5 pr-2 text-right">{b.finalGravity?.toFixed(3) ?? '—'}</td>
+                  <td className="py-1.5 pr-2 text-right">{b.finalAlcohol?.toFixed(1) ?? '—'}</td>
+                  <td className="py-1.5 pr-2 text-right">{b.cycleHours ?? '—'}</td>
+                  <td className="py-1.5 pr-2 text-right">{b.dosingCount}</td>
+                  <td className="py-1.5 text-right">{b.readingsCount}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
