@@ -416,13 +416,9 @@ function FieldTab({ pfBatches, fermBatches, chemicals, pfRecipes, isAdmin, onRef
                       <ArrowRight size={16} /> Transfer
                     </button>
                   )}
-                  {batch.phase === 'TRANSFER' && (
-                    <button onClick={() => advancePF(batch, 'CIP', { cipStartTime: new Date().toISOString() })}
-                      className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium">Start CIP</button>
-                  )}
-                  {batch.phase === 'CIP' && (
-                    <button onClick={() => advancePF(batch, 'DONE', { cipEndTime: new Date().toISOString() })}
-                      className="bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium">End CIP</button>
+                  {(batch.phase === 'TRANSFER' || batch.phase === 'CIP') && (
+                    <button onClick={() => advancePF(batch, 'DONE', { cipStartTime: new Date().toISOString(), cipEndTime: new Date().toISOString() })}
+                      className="bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium">CIP Done</button>
                   )}
                   <button onClick={() => shareWhatsApp(buildPFShareText(batch))}
                     className="bg-green-600 text-white px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1 ml-auto">
@@ -531,13 +527,9 @@ function FieldTab({ pfBatches, fermBatches, chemicals, pfRecipes, isAdmin, onRef
                       <ArrowRight size={16} /> Transfer to BW
                     </button>
                   )}
-                  {batch.phase === 'TRANSFER' && (
-                    <button onClick={() => advanceFerm(batch, 'CIP', { cipStartTime: new Date().toISOString() })}
-                      className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium">Start CIP</button>
-                  )}
-                  {batch.phase === 'CIP' && (
-                    <button onClick={() => advanceFerm(batch, 'DONE', { cipEndTime: new Date().toISOString() })}
-                      className="bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium">End CIP</button>
+                  {(batch.phase === 'TRANSFER' || batch.phase === 'CIP') && (
+                    <button onClick={() => advanceFerm(batch, 'DONE', { cipStartTime: new Date().toISOString(), cipEndTime: new Date().toISOString() })}
+                      className="bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium">CIP Done</button>
                   )}
                   <button onClick={() => shareWhatsApp(buildFermShareText(batch))}
                     className="bg-green-600 text-white px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1 ml-auto">
