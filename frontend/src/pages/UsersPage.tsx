@@ -117,6 +117,7 @@ export default function UsersPage() {
             <input placeholder="Password" type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm" />
             <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm">
               <option value="OPERATOR">Operator</option>
+              <option value="FIELD">Field</option>
               <option value="SUPERVISOR">Supervisor</option>
               <option value="ADMIN">Admin</option>
             </select>
