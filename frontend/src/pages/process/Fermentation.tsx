@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Share2, Beaker, FlaskConical, RefreshCw, Clock, ArrowDown, Droplets } from 'lucide-react';
+import { Share2, Beaker, FlaskConical, RefreshCw, Clock, ArrowDown, Droplets, Plus, CheckCircle, AlertTriangle, ArrowRight } from 'lucide-react';
 import api from '../../services/api';
 import PreFermentation from './PreFermentation';
 import FermentationBatches from './FermentationBatches';
+import FermentationLab from './FermentationLab';
 
 /* ═══════ TYPES ═══════ */
 interface PFBatch {
@@ -11,6 +12,7 @@ interface PFBatch {
   slurryVolume: number | null; dosingEndTime: string | null; transferTime: string | null;
   cipStartTime: string | null; cipEndTime: string | null;
   dosings: any[]; labReadings: any[]; createdAt: string;
+  lastGravity: number | null; readyToTransfer: boolean; gravityTarget: number;
 }
 interface FermBatch {
   id: string; batchNo: number; fermenterNo: number; phase: string;
@@ -19,7 +21,7 @@ interface FermBatch {
   retentionStartTime: string | null; transferTime: string | null;
   cipStartTime: string | null; cipEndTime: string | null;
   fermLevel: number | null; volume: number | null; setupGravity: number | null;
-  dosings: any[]; createdAt: string;
+  dosings: any[]; createdAt: string; lastLab: any | null;
 }
 
 import { PF_CAPACITY_KL, BEER_WELL_CAPACITY_KL } from '../../config/constants';
@@ -30,7 +32,6 @@ const fermPhaseColors: Record<string, string> = { PF_TRANSFER: '#f97316', FILLIN
 const pfPhaseLabels: Record<string, string> = { SETUP: 'Setup', DOSING: 'Dosing', LAB: 'Lab', TRANSFER: 'Transfer', CIP: 'CIP', DONE: 'Done' };
 const fermPhaseLabels: Record<string, string> = { PF_TRANSFER: 'PF Transfer', FILLING: 'Filling', SETUP: 'Setup', REACTION: 'Reaction', RETENTION: 'Retention', TRANSFER: 'Transfer', CIP: 'CIP', DONE: 'Done' };
 
-/* time since helper */
 const timeSince = (iso: string | null) => {
   if (!iso) return '';
   const ms = Date.now() - new Date(iso).getTime();
@@ -43,7 +44,6 @@ const timeSince = (iso: string | null) => {
   return `${days}d ${hrs % 24}h`;
 };
 
-/* phase start time */
 const pfPhaseStart = (b: PFBatch): string | null => {
   const map: Record<string, string | null> = {
     SETUP: b.setupTime, DOSING: b.setupTime, LAB: b.dosingEndTime,
@@ -65,16 +65,12 @@ const fermPhaseStart = (b: FermBatch): string | null => {
 const Tank = ({ fillPct, color }: { fillPct: number; color: string }) => (
   <div className="relative w-14 h-24 rounded-xl border-2 overflow-hidden bg-gray-50"
     style={{ borderColor: fillPct > 0 ? color + '60' : '#e5e7eb' }}>
-    {/* Graduated marks */}
     {[25, 50, 75].map(mark => (
-      <div key={mark} className="absolute w-full border-t border-dashed border-gray-200"
-        style={{ bottom: `${mark}%` }} />
+      <div key={mark} className="absolute w-full border-t border-dashed border-gray-200" style={{ bottom: `${mark}%` }} />
     ))}
-    {/* Fill */}
     <div className="absolute bottom-0 w-full transition-all duration-700 ease-out"
       style={{ height: `${Math.min(Math.max(fillPct, 0), 100)}%`,
         background: `linear-gradient(to top, ${color}cc, ${color}66)` }} />
-    {/* Fill % label */}
     {fillPct > 0 && (
       <div className="absolute inset-0 flex items-center justify-center">
         <span className="text-[10px] font-bold text-white drop-shadow-sm">{Math.round(fillPct)}%</span>
@@ -85,16 +81,31 @@ const Tank = ({ fillPct, color }: { fillPct: number; color: string }) => (
 
 /* ═══════ MAIN HUB ═══════ */
 export default function Fermentation() {
-  const [tab, setTab] = useState<'overview' | 'pf' | 'ferm'>('overview');
+  const [tab, setTab] = useState<'overview' | 'pf' | 'ferm' | 'lab'>('overview');
   const [pfBatches, setPfBatches] = useState<PFBatch[]>([]);
   const [fermBatches, setFermBatches] = useState<FermBatch[]>([]);
   const [beerWellLevel, setBeerWellLevel] = useState<number | null>(null);
+  const [gravityTarget, setGravityTarget] = useState(1.024);
+  const [freeFerm, setFreeFerm] = useState<number[]>([]);
+  const [transferPF, setTransferPF] = useState<PFBatch | null>(null);
+  const [transferFermNo, setTransferFermNo] = useState('');
+  const [transferring, setTransferring] = useState(false);
 
   const load = useCallback(() => {
-    api.get('/pre-fermentation/batches').then(r => setPfBatches(r.data)).catch(() => {});
-    api.get('/fermentation/batches').then(r => setFermBatches(r.data)).catch(() => {});
+    api.get('/fermentation/overview').then(r => {
+      setPfBatches(r.data.pfBatches || []);
+      setFermBatches(r.data.fermBatches || []);
+      setGravityTarget(r.data.gravityTarget || 1.024);
+    }).catch(() => {
+      // Fallback to old endpoints
+      api.get('/pre-fermentation/batches').then(r => setPfBatches(r.data)).catch(() => {});
+      api.get('/fermentation/batches').then(r => setFermBatches(r.data)).catch(() => {});
+    });
     api.get('/grain/latest').then(r => {
       setBeerWellLevel(r.data?.previous?.beerWellLevel ?? null);
+    }).catch(() => {});
+    api.get('/fermentation/free-vessels').then(r => {
+      setFreeFerm(r.data.freeFerm || []);
     }).catch(() => {});
   }, []);
 
@@ -107,19 +118,35 @@ export default function Fermentation() {
 
   const getActivePF = (n: number) => pfBatches.find(b => b.fermenterNo === n && b.phase !== 'DONE');
   const getActiveFerm = (n: number) => fermBatches.find(b => b.fermenterNo === n && b.phase !== 'DONE');
-  const lastPfLab = (b: PFBatch) => b.labReadings?.length ? b.labReadings[b.labReadings.length - 1] : null;
+
+  /* Transfer PF → Fermenter */
+  const handleTransfer = async () => {
+    if (!transferPF || !transferFermNo) return;
+    setTransferring(true);
+    try {
+      await api.post('/fermentation/transfer-pf', {
+        pfBatchId: transferPF.id,
+        fermenterNo: parseInt(transferFermNo),
+      });
+      setTransferPF(null);
+      setTransferFermNo('');
+      load();
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Transfer failed');
+    }
+    setTransferring(false);
+  };
 
   /* Share overview */
   const shareOverview = () => {
-    let t = `*FERMENTATION SECTION STATUS*\n${new Date().toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}\n\n`;
+    let t = `*FERMENTATION STATUS*\n${new Date().toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}\n\n`;
     t += `*── Pre-Fermenters ──*\n`;
     for (const n of [1, 2]) {
       const b = getActivePF(n);
       if (b) {
-        const lab = lastPfLab(b);
-        t += `PF${n}: Batch #${b.batchNo} — ${pfPhaseLabels[b.phase]}`;
-        if (b.slurryGravity) t += ` | SG: ${b.slurryGravity}`;
-        if (lab?.temp) t += ` | ${lab.temp}°C`;
+        t += `PF${n}: #${b.batchNo} — ${pfPhaseLabels[b.phase]}`;
+        if (b.lastGravity) t += ` | SG: ${b.lastGravity}`;
+        if (b.readyToTransfer) t += ` ✅ READY`;
         t += ` (${timeSince(pfPhaseStart(b))})\n`;
       } else t += `PF${n}: Empty\n`;
     }
@@ -127,14 +154,14 @@ export default function Fermentation() {
     for (const n of [1, 2, 3, 4]) {
       const b = getActiveFerm(n);
       if (b) {
-        t += `F${n}: Batch #${b.batchNo} — ${fermPhaseLabels[b.phase]}`;
-        if (b.fermLevel) t += ` | Level: ${b.fermLevel}%`;
-        if (b.setupGravity) t += ` | SG: ${b.setupGravity}`;
+        t += `F${n}: #${b.batchNo} — ${fermPhaseLabels[b.phase]}`;
+        if (b.fermLevel) t += ` | ${b.fermLevel}%`;
+        if (b.lastLab?.spGravity) t += ` | SG: ${b.lastLab.spGravity}`;
+        if (b.lastLab?.alcohol) t += ` | Alc: ${b.lastLab.alcohol}%`;
         t += ` (${timeSince(fermPhaseStart(b))})\n`;
       } else t += `F${n}: Empty\n`;
     }
-    t += `\n*── Beer Well ──*\n`;
-    t += beerWellLevel && beerWellLevel > 0 ? `Level: ${beerWellLevel.toFixed(0)} KL\n` : `Empty\n`;
+    t += `\n*Beer Well:* ${beerWellLevel && beerWellLevel > 0 ? `${beerWellLevel.toFixed(0)} KL` : 'Empty'}`;
     if (navigator.share) {
       navigator.share({ text: t }).catch(() => {
         window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank');
@@ -147,14 +174,29 @@ export default function Fermentation() {
   /* ═══════ PF CARD ═══════ */
   const PFCard = ({ pfNo }: { pfNo: number }) => {
     const batch = getActivePF(pfNo);
-    const lab = batch ? lastPfLab(batch) : null;
     const fillPct = batch?.slurryVolume ? (batch.slurryVolume / (PF_CAP * 1000) * 100) : 0;
     const phaseColor = batch ? pfPhaseColors[batch.phase] : '#d1d5db';
     const phaseTime = batch ? pfPhaseStart(batch) : null;
+    const ready = batch?.readyToTransfer;
 
     return (
-      <div className={`bg-white rounded-xl shadow-sm border-2 p-4 cursor-pointer hover:shadow-lg transition-all active:scale-[0.98] ${batch ? 'border-indigo-200 hover:border-indigo-300' : 'border-gray-100 hover:border-gray-200'}`}
-        onClick={() => setTab('pf')}>
+      <div className={`bg-white rounded-xl shadow-sm border-2 p-4 transition-all ${
+        ready ? 'border-green-400 ring-2 ring-green-200 animate-pulse' :
+        batch ? 'border-indigo-200' : 'border-gray-100'
+      }`}>
+        {/* Ready to transfer banner */}
+        {ready && (
+          <div className="bg-green-50 border border-green-200 rounded-lg p-2 mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CheckCircle size={16} className="text-green-600" />
+              <span className="text-xs font-bold text-green-700">SG {batch!.lastGravity} ≤ {gravityTarget} — Ready to Transfer!</span>
+            </div>
+            <button onClick={(e) => { e.stopPropagation(); setTransferPF(batch!); setTransferFermNo(freeFerm[0]?.toString() || ''); }}
+              className="bg-green-600 text-white px-3 py-1 rounded-lg text-xs font-bold hover:bg-green-700 flex items-center gap-1">
+              <ArrowRight size={12} /> Transfer
+            </button>
+          </div>
+        )}
         <div className="flex items-start gap-3">
           <Tank fillPct={fillPct} color={phaseColor} />
           <div className="flex-1 min-w-0">
@@ -171,18 +213,32 @@ export default function Fermentation() {
               <>
                 <p className="text-sm text-gray-500 mt-0.5">Batch <b className="text-gray-700">#{batch.batchNo}</b></p>
                 <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 mt-2 text-xs">
-                  {batch.slurryGravity != null && <span className="text-gray-500">SG: <b className="text-gray-800">{batch.slurryGravity}</b></span>}
+                  {batch.slurryGravity != null && <span className="text-gray-500">Setup SG: <b className="text-gray-800">{batch.slurryGravity}</b></span>}
+                  {batch.lastGravity != null && (
+                    <span className="text-gray-500">Latest SG: <b className={batch.readyToTransfer ? 'text-green-700' : 'text-gray-800'}>{batch.lastGravity}</b></span>
+                  )}
                   {batch.slurryTemp != null && <span className="text-gray-500">Temp: <b className="text-gray-800">{batch.slurryTemp}°C</b></span>}
-                  {lab?.ph != null && <span className="text-gray-500">pH: <b className="text-gray-800">{lab.ph}</b></span>}
-                  {lab?.alcohol != null && <span className="text-gray-500">Alc: <b className="text-gray-800">{lab.alcohol}%</b></span>}
                 </div>
+                {/* Gravity progress bar */}
+                {batch.slurryGravity && batch.lastGravity && (
+                  <div className="mt-2">
+                    <div className="flex justify-between text-[9px] text-gray-400 mb-0.5">
+                      <span>Start: {batch.slurryGravity}</span>
+                      <span>Target: {gravityTarget}</span>
+                    </div>
+                    <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full transition-all ${batch.readyToTransfer ? 'bg-green-500' : 'bg-amber-400'}`}
+                        style={{ width: `${Math.min(100, Math.max(0, (batch.slurryGravity - batch.lastGravity) / (batch.slurryGravity - gravityTarget) * 100))}%` }} />
+                    </div>
+                  </div>
+                )}
                 <div className="flex items-center gap-1 mt-2 text-[11px] text-gray-400">
                   <Clock size={10} />
                   <span>{timeSince(phaseTime)}</span>
                   <span className="mx-0.5">|</span>
-                  <span>{batch.dosings.length} dose</span>
+                  <span>{batch.dosings?.length || 0} dose</span>
                   <span className="mx-0.5">|</span>
-                  <span>{batch.labReadings.length} lab</span>
+                  <span>{batch.labReadings?.length || 0} lab</span>
                 </div>
               </>
             ) : (
@@ -200,10 +256,12 @@ export default function Fermentation() {
     const fillPct = batch?.fermLevel || 0;
     const phaseColor = batch ? fermPhaseColors[batch.phase] : '#d1d5db';
     const phaseTime = batch ? fermPhaseStart(batch) : null;
+    const lab = batch?.lastLab;
 
     return (
-      <div className={`bg-white rounded-xl shadow-sm border-2 p-4 cursor-pointer hover:shadow-lg transition-all active:scale-[0.98] ${batch ? 'border-emerald-200 hover:border-emerald-300' : 'border-gray-100 hover:border-gray-200'}`}
-        onClick={() => setTab('ferm')}>
+      <div className={`bg-white rounded-xl shadow-sm border-2 p-4 transition-all ${
+        batch ? 'border-emerald-200' : 'border-gray-100'
+      }`}>
         <div className="flex items-start gap-3">
           <Tank fillPct={fillPct} color={phaseColor} />
           <div className="flex-1 min-w-0">
@@ -222,13 +280,16 @@ export default function Fermentation() {
                 <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 mt-2 text-xs">
                   {batch.fermLevel != null && <span className="text-gray-500">Level: <b className="text-gray-800">{batch.fermLevel}%</b></span>}
                   {batch.volume != null && <span className="text-gray-500">Vol: <b className="text-gray-800">{(batch.volume / 1000).toFixed(0)} M³</b></span>}
-                  {batch.setupGravity != null && <span className="text-gray-500">SG: <b className="text-gray-800">{batch.setupGravity}</b></span>}
+                  {batch.setupGravity != null && <span className="text-gray-500">Setup SG: <b className="text-gray-800">{batch.setupGravity}</b></span>}
+                  {lab?.spGravity != null && <span className="text-gray-500">SG: <b className="text-gray-800">{lab.spGravity}</b></span>}
+                  {lab?.alcohol != null && <span className="text-gray-500">Alc: <b className="text-gray-800">{lab.alcohol}%</b></span>}
+                  {lab?.temp != null && <span className="text-gray-500">Temp: <b className={lab.temp > 37 ? 'text-red-600' : 'text-gray-800'}>{lab.temp}°C</b></span>}
                 </div>
                 <div className="flex items-center gap-1 mt-2 text-[11px] text-gray-400">
                   <Clock size={10} />
                   <span>{timeSince(phaseTime)}</span>
                   <span className="mx-0.5">|</span>
-                  <span>{batch.dosings.length} chemicals</span>
+                  <span>{batch.dosings?.length || 0} chemicals</span>
                 </div>
               </>
             ) : (
@@ -240,11 +301,10 @@ export default function Fermentation() {
     );
   };
 
-  /* stats */
   const activePFs = [1, 2].filter(n => getActivePF(n)).length;
   const activeFerms = [1, 2, 3, 4].filter(n => getActiveFerm(n)).length;
   const inReaction = fermBatches.filter(b => b.phase === 'REACTION').length;
-  const inCip = [...pfBatches.filter(b => b.phase === 'CIP'), ...fermBatches.filter(b => b.phase === 'CIP')].length;
+  const readyCount = pfBatches.filter(b => b.readyToTransfer).length;
 
   return (
     <div className="space-y-4">
@@ -254,7 +314,8 @@ export default function Fermentation() {
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2"><Beaker size={24} /> Fermentation</h1>
             <p className="text-emerald-200 text-sm mt-1">
-              {activePFs}/2 PF · {activeFerms}/4 Fermenters active
+              {activePFs}/2 PF · {activeFerms}/4 Fermenters
+              {readyCount > 0 && <span className="ml-2 bg-green-400/30 px-2 py-0.5 rounded text-green-100 font-bold">{readyCount} ready to transfer</span>}
             </p>
           </div>
           <div className="flex gap-2">
@@ -262,11 +323,9 @@ export default function Fermentation() {
               className="bg-white/20 hover:bg-white/30 px-3 py-2 rounded-lg text-sm flex items-center gap-1.5 transition">
               <Share2 size={16} /> Share
             </button>
-            {tab === 'overview' && (
-              <button onClick={load} className="bg-white/20 hover:bg-white/30 p-2 rounded-lg transition">
-                <RefreshCw size={16} />
-              </button>
-            )}
+            <button onClick={load} className="bg-white/20 hover:bg-white/30 p-2 rounded-lg transition">
+              <RefreshCw size={16} />
+            </button>
           </div>
         </div>
       </div>
@@ -274,22 +333,57 @@ export default function Fermentation() {
       {/* TAB BAR */}
       <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
         {([
-          { key: 'overview' as const, label: 'Overview' },
-          { key: 'pf' as const, label: 'Pre-Fermenter' },
-          { key: 'ferm' as const, label: 'Fermenter' },
+          { key: 'overview' as const, label: 'Overview', icon: '👁' },
+          { key: 'pf' as const, label: 'PF (Field)', icon: '🏭' },
+          { key: 'ferm' as const, label: 'Ferm (Field)', icon: '⚗️' },
+          { key: 'lab' as const, label: 'Lab', icon: '🔬' },
         ]).map(t => (
           <button key={t.key} onClick={() => { setTab(t.key); if (t.key === 'overview') load(); }}
             className={`flex-1 py-2.5 rounded-md text-sm font-medium transition-all
               ${tab === t.key ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
-            {t.label}
+            <span className="mr-1">{t.icon}</span> {t.label}
           </button>
         ))}
       </div>
 
+      {/* ═══════ TRANSFER MODAL ═══════ */}
+      {transferPF && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setTransferPF(null)}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Transfer PF-{transferPF.fermenterNo} → Fermenter</h3>
+            <p className="text-sm text-gray-500 mb-4">Batch #{transferPF.batchNo} · SG: {transferPF.lastGravity}</p>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Select Fermenter</label>
+            <div className="grid grid-cols-4 gap-2 mb-4">
+              {[1, 2, 3, 4].map(n => {
+                const isFree = freeFerm.includes(n);
+                return (
+                  <button key={n} onClick={() => isFree && setTransferFermNo(String(n))}
+                    disabled={!isFree}
+                    className={`py-3 rounded-lg text-lg font-bold transition ${
+                      transferFermNo === String(n) ? 'bg-green-600 text-white' :
+                      isFree ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' :
+                      'bg-gray-50 text-gray-300 cursor-not-allowed'
+                    }`}>
+                    F-{n}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setTransferPF(null)} className="flex-1 py-2.5 border rounded-lg text-gray-600">Cancel</button>
+              <button onClick={handleTransfer} disabled={!transferFermNo || transferring}
+                className="flex-1 py-2.5 bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2">
+                {transferring ? 'Transferring...' : <><ArrowRight size={16} /> Transfer</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ═══════ OVERVIEW TAB ═══════ */}
       {tab === 'overview' && (
         <div className="space-y-4">
-          {/* Pre-Fermenters section */}
+          {/* Pre-Fermenters */}
           <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-4 border border-indigo-100">
             <h2 className="text-sm font-bold text-indigo-700 mb-3 flex items-center gap-1.5 uppercase tracking-wide">
               <FlaskConical size={14} /> Pre-Fermenters
@@ -300,7 +394,6 @@ export default function Fermentation() {
             </div>
           </div>
 
-          {/* Flow arrow */}
           <div className="flex justify-center py-1">
             <div className="flex flex-col items-center gap-0.5 text-gray-300">
               <ArrowDown size={22} strokeWidth={2.5} />
@@ -308,7 +401,7 @@ export default function Fermentation() {
             </div>
           </div>
 
-          {/* Fermenters section */}
+          {/* Fermenters */}
           <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl p-4 border border-emerald-100">
             <h2 className="text-sm font-bold text-emerald-700 mb-3 flex items-center gap-1.5 uppercase tracking-wide">
               <Beaker size={14} /> Fermenters
@@ -321,7 +414,6 @@ export default function Fermentation() {
             </div>
           </div>
 
-          {/* Flow arrow to Beer Well */}
           <div className="flex justify-center py-1">
             <div className="flex flex-col items-center gap-0.5 text-gray-300">
               <ArrowDown size={22} strokeWidth={2.5} />
@@ -344,16 +436,11 @@ export default function Fermentation() {
                       {beerWellLevel && beerWellLevel > 0 ? `${beerWellLevel.toFixed(0)} KL` : 'Empty'}
                     </span>
                   </div>
-                  <p className="text-sm text-gray-500 mt-1">
-                    {beerWellLevel && beerWellLevel > 0
-                      ? `Holding ${beerWellLevel.toFixed(0)} KL of fermented wash`
-                      : 'No wash in beer well'}
-                  </p>
                   {(() => {
-                    const transferring = fermBatches.filter(b => b.phase === 'TRANSFER');
-                    return transferring.length > 0 ? (
+                    const xferring = fermBatches.filter(b => b.phase === 'TRANSFER');
+                    return xferring.length > 0 ? (
                       <div className="mt-2 text-xs text-amber-600 font-medium">
-                        Receiving from: {transferring.map(b => `F-${b.fermenterNo}`).join(', ')}
+                        Receiving from: {xferring.map(b => `F-${b.fermenterNo}`).join(', ')}
                       </div>
                     ) : null;
                   })()}
@@ -376,19 +463,22 @@ export default function Fermentation() {
               <p className="text-[11px] text-amber-500 font-medium">In Reaction</p>
               <p className="text-xl font-bold text-amber-700">{inReaction}</p>
             </div>
-            <div className="bg-purple-50 rounded-lg p-3 border border-purple-100 text-center">
-              <p className="text-[11px] text-purple-500 font-medium">In CIP</p>
-              <p className="text-xl font-bold text-purple-700">{inCip}</p>
+            <div className={`rounded-lg p-3 border text-center ${readyCount > 0 ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-100'}`}>
+              <p className={`text-[11px] font-medium ${readyCount > 0 ? 'text-green-600' : 'text-gray-400'}`}>Ready</p>
+              <p className={`text-xl font-bold ${readyCount > 0 ? 'text-green-700' : 'text-gray-300'}`}>{readyCount}</p>
             </div>
           </div>
         </div>
       )}
 
-      {/* ═══════ PF TAB ═══════ */}
+      {/* ═══════ PF TAB (Field) ═══════ */}
       {tab === 'pf' && <PreFermentation />}
 
-      {/* ═══════ FERMENTER TAB ═══════ */}
+      {/* ═══════ FERMENTER TAB (Field) ═══════ */}
       {tab === 'ferm' && <FermentationBatches />}
+
+      {/* ═══════ LAB TAB ═══════ */}
+      {tab === 'lab' && <FermentationLab onRefresh={load} />}
     </div>
   );
 }
