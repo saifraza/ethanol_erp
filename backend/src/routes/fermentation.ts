@@ -71,7 +71,7 @@ router.get('/overview', async (_req: Request, res: Response) => {
   const [pfBatches, fermBatches] = await Promise.all([
     prisma.pFBatch.findMany({
       where: { phase: { not: 'DONE' } },
-      include: { dosings: true, labReadings: { orderBy: { createdAt: 'desc' }, take: 1 } },
+      include: { dosings: true, labReadings: { orderBy: { createdAt: 'asc' } } },
     }),
     prisma.fermentationBatch.findMany({
       where: { phase: { not: 'DONE' } },
@@ -88,15 +88,18 @@ router.get('/overview', async (_req: Request, res: Response) => {
       })
     : [];
 
-  // Group latest lab entry per fermenter
+  // Group ALL lab entries per fermenter + keep latest
+  const allFermLab: Record<number, any[]> = {};
   const latestFermLab: Record<number, any> = {};
   for (const e of fermLabEntries) {
+    if (!allFermLab[e.fermenterNo]) allFermLab[e.fermenterNo] = [];
+    allFermLab[e.fermenterNo].push(e);
     if (!latestFermLab[e.fermenterNo]) latestFermLab[e.fermenterNo] = e;
   }
 
   // Add readyToTransfer hint for PF batches
   const pfWithHints = pfBatches.map(b => {
-    const lastLab = b.labReadings[0];
+    const lastLab = b.labReadings.length ? b.labReadings[b.labReadings.length - 1] : null;
     const lastGravity = lastLab?.spGravity ?? null;
     const readyToTransfer = lastGravity !== null && lastGravity <= gravityTarget;
     return { ...b, lastGravity, readyToTransfer, gravityTarget };
@@ -107,6 +110,7 @@ router.get('/overview', async (_req: Request, res: Response) => {
     fermBatches: fermBatches.map(b => ({
       ...b,
       lastLab: latestFermLab[b.fermenterNo] || null,
+      labReadings: (allFermLab[b.fermenterNo] || []).sort((a: any, c: any) => new Date(a.createdAt).getTime() - new Date(c.createdAt).getTime()),
     })),
     gravityTarget,
   });
@@ -288,6 +292,45 @@ router.get('/batch/:batchNo', async (req: Request, res: Response) => {
     where: { batchNo }, orderBy: [{ date: 'asc' }, { analysisTime: 'asc' }]
   });
   res.json(entries);
+});
+
+/* ═══════ FIELD INPUT — level/temp/gravity from field users ═══════ */
+router.post('/field-reading', async (req: Request, res: Response) => {
+  try {
+    const { fermenterNo, level, temp, spGravity } = req.body;
+    const vesselNo = parseInt(String(fermenterNo));
+    const userId = (req as any).user?.id || 'unknown';
+
+    const fermBatch = await prisma.fermentationBatch.findFirst({
+      where: { fermenterNo: vesselNo, phase: { not: 'DONE' } },
+    });
+    if (!fermBatch) return res.status(400).json({ error: `No active batch on F-${vesselNo}` });
+
+    // Update batch level
+    const updateData: any = {};
+    if (level) updateData.fermLevel = parseFloat(level);
+
+    if (Object.keys(updateData).length > 0) {
+      await prisma.fermentationBatch.update({ where: { id: fermBatch.id }, data: updateData });
+    }
+
+    // Create a lab entry with field readings so lab can see it
+    const entry = await prisma.fermentationEntry.create({
+      data: {
+        date: new Date(),
+        analysisTime: new Date().toISOString(),
+        batchNo: fermBatch.batchNo,
+        fermenterNo: vesselNo,
+        level: level ? parseFloat(level) : null,
+        spGravity: spGravity ? parseFloat(spGravity) : null,
+        temp: temp ? parseFloat(temp) : null,
+        status: 'FIELD',
+        remarks: 'Field reading',
+        userId,
+      },
+    });
+    res.status(201).json({ entry, batchNo: fermBatch.batchNo });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
 /* ═══════ LAB QUICK-ADD — simplified for lab tab ═══════ */
