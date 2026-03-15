@@ -120,6 +120,18 @@ router.post('/batches/:id/dosing', async (req: Request, res: Response) => {
   }
 });
 
+// Edit dosing quantity
+router.patch('/dosing/:id', async (req: Request, res: Response) => {
+  try {
+    const { quantity } = req.body;
+    const dosing = await prisma.pFDosing.update({
+      where: { id: req.params.id },
+      data: { quantity: parseFloat(quantity) },
+    });
+    res.json(dosing);
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
 router.delete('/dosing/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
   await prisma.pFDosing.delete({ where: { id: req.params.id } });
   res.json({ ok: true });

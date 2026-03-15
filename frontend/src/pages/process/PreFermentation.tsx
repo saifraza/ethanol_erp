@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Plus, FlaskConical, Beaker, ArrowRight, RotateCcw, Trash2, ChevronDown, ChevronUp, Clock, Pencil, Share2 } from 'lucide-react';
+import { Plus, FlaskConical, Beaker, ArrowRight, RotateCcw, Trash2, ChevronDown, ChevronUp, Clock, Pencil, Share2, Check, X } from 'lucide-react';
 import api from '../../services/api';
 import { PF_CAPACITY_KL } from '../../config/constants';
+import { useAuth } from '../../context/AuthContext';
 
 /* ═══════════════════════ TYPES ═══════════════════════ */
 interface Chemical { id: string; name: string; rate: number | null; unit: string; }
@@ -24,6 +25,10 @@ const phaseLabels: Record<string, string> = { SETUP: 'Setup', DOSING: 'Dosing', 
 const PF_VOLUME_M3 = PF_CAPACITY_KL;
 
 export default function PreFermentation() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
+  const isField = user?.role === 'FIELD';
+
   const [batches, setBatches] = useState<Batch[]>([]);
   const [chemicals, setChemicals] = useState<Chemical[]>([]);
   const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
@@ -40,6 +45,10 @@ export default function PreFermentation() {
   const [chemForm, setChemForm] = useState({ name: '', rate: '', unit: 'kg' });
   const [pfRecipes, setPfRecipes] = useState<{ id: string; chemicalName: string; quantity: number; unit: string }[]>([]);
   const [applyingRecipe, setApplyingRecipe] = useState(false);
+
+  // Inline edit for dosing quantity
+  const [editingDoseId, setEditingDoseId] = useState<string | null>(null);
+  const [editDoseQty, setEditDoseQty] = useState('');
 
   const load = useCallback(() => {
     api.get('/pre-fermentation/batches').then(r => setBatches(r.data)).catch(() => {});
@@ -58,7 +67,7 @@ export default function PreFermentation() {
         return;
       }
       const slurryVolume = nbForm.pfLevel ? (lvl / 100 * PF_VOLUME_M3 * 1000).toFixed(0) : '';
-      await api.post('/pre-fermentation/batches', { ...nbForm, slurryVolume, setupTime: new Date().toISOString() }); // auto-set, editable later via TimeField
+      await api.post('/pre-fermentation/batches', { ...nbForm, slurryVolume, setupTime: new Date().toISOString() });
       setShowNewBatch(false);
       setNbForm({ batchNo: '', fermenterNo: '1', pfLevel: '', slurryGravity: '', slurryTemp: '', remarks: '' });
       load();
@@ -88,6 +97,16 @@ export default function PreFermentation() {
     setApplyingRecipe(false);
   };
 
+  const saveDoseQty = async (id: string) => {
+    if (!editDoseQty.trim()) return;
+    try {
+      await api.patch(`/pre-fermentation/dosing/${id}`, { quantity: editDoseQty });
+      setEditingDoseId(null);
+      setEditDoseQty('');
+      load();
+    } catch {}
+  };
+
   const addLabReading = async () => {
     if (!activeBatch) return;
     try {
@@ -107,7 +126,6 @@ export default function PreFermentation() {
     } catch { setPhaseMsg(null); }
   };
 
-  /* Transfer PF to Fermenter — creates fermenter batch automatically */
   const startTransfer = (batch: Batch) => {
     setTransferTarget({ pfBatch: batch, fermenterNo: '1', transferTime: nowLocal() });
     setShowTransferModal(true);
@@ -119,9 +137,7 @@ export default function PreFermentation() {
     const dt = transferTime ? new Date(transferTime).toISOString() : new Date().toISOString();
     try {
       setPhaseMsg('Transferring to Fermenter...');
-      // 1. Advance PF to TRANSFER phase
       await api.patch(`/pre-fermentation/batches/${pfBatch.id}`, { phase: 'TRANSFER', transferTime: dt });
-      // 2. Auto-create fermenter batch (FILLING starts immediately)
       await api.post('/fermentation/batches/from-pf', {
         batchNo: pfBatch.batchNo,
         fermenterNo: parseInt(fermenterNo),
@@ -161,7 +177,6 @@ export default function PreFermentation() {
 
   const setNow = () => setLabForm(f => ({ ...f, analysisTime: nowLocal() }));
 
-  /* update a single time field on a batch */
   const updateBatchTime = async (batchId: string, field: string, value: string) => {
     try {
       await api.patch(`/pre-fermentation/batches/${batchId}`, { [field]: value ? new Date(value).toISOString() : null });
@@ -169,11 +184,20 @@ export default function PreFermentation() {
     } catch {}
   };
 
-  /* inline editable datetime component */
   const TimeField = ({ label, value, field, batchId, color = 'gray' }: { label: string; value: string | null; field: string; batchId: string; color?: string }) => {
     const [editing, setEditing] = useState(false);
     const [val, setVal] = useState(toLocal(value));
     useEffect(() => { setVal(toLocal(value)); }, [value]);
+    if (isField) {
+      // Field users: read-only time display
+      return (
+        <div className="flex items-center gap-1.5 text-sm">
+          <Clock size={13} className={`text-${color}-500`} />
+          <span className="text-gray-500">{label}:</span>
+          {value ? new Date(value).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : <span className="text-gray-300 italic">not set</span>}
+        </div>
+      );
+    }
     return (
       <div className="flex items-center gap-1.5 text-sm">
         <Clock size={13} className={`text-${color}-500`} />
@@ -208,7 +232,6 @@ export default function PreFermentation() {
 
   useEffect(() => { if (chemicals.length > 0 && !doseForm.chemicalName) selectChemical(chemicals[0].name); }, [chemicals]);
 
-  /* elapsed time helper: returns "+2h 15m" from T0 */
   const elapsed = (from: string | null, to: string | null) => {
     if (!from || !to) return '';
     const ms = new Date(to).getTime() - new Date(from).getTime();
@@ -219,7 +242,6 @@ export default function PreFermentation() {
     return h > 0 ? `+${h}h ${m}m` : `+${m}m`;
   };
 
-  /* Phase duration: time spent in each phase */
   const pfPhaseDuration = (batch: Batch, phase: string): string => {
     const starts: Record<string, string | null> = { SETUP: batch.setupTime, DOSING: batch.dosingEndTime ? batch.setupTime : null, LAB: batch.dosingEndTime, TRANSFER: batch.transferTime, CIP: batch.cipStartTime, DONE: batch.cipEndTime };
     const ends: Record<string, string | null> = { SETUP: batch.dosingEndTime || batch.transferTime, DOSING: batch.dosingEndTime, LAB: batch.transferTime, TRANSFER: batch.cipStartTime, CIP: batch.cipEndTime, DONE: null };
@@ -232,12 +254,11 @@ export default function PreFermentation() {
     return h > 0 ? `${h}h ${m}m` : `${m}m`;
   };
 
-  /* map phase → its recorded time */
   const phaseTime = (batch: Batch, phase: string): string | null => {
     switch (phase) {
       case 'SETUP': return batch.setupTime;
       case 'DOSING': return batch.dosingEndTime;
-      case 'LAB': return batch.dosingEndTime; // lab starts when dosing ends
+      case 'LAB': return batch.dosingEndTime;
       case 'TRANSFER': return batch.transferTime;
       case 'CIP': return batch.cipStartTime;
       case 'DONE': return batch.cipEndTime;
@@ -299,7 +320,7 @@ export default function PreFermentation() {
   };
 
   const numField = (label: string, value: string, onChange: (v: string) => void, step = '0.01', placeholder = '') => (
-    <div><label className="text-xs text-gray-500">{label}</label><input type="number" step={step} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+    <div><label className="text-xs text-gray-500">{label}</label><input type="number" step={step} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} className="w-full border rounded px-2 py-1.5 text-sm" inputMode="decimal" /></div>
   );
   const txtField = (label: string, value: string, onChange: (v: string) => void, placeholder = '') => (
     <div><label className="text-xs text-gray-500">{label}</label><input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
@@ -312,7 +333,7 @@ export default function PreFermentation() {
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2"><FlaskConical size={24} /> Pre-Fermentation</h1>
-            <p className="text-indigo-200 text-sm mt-1">{batches.length} batches | {batches.filter(b => b.phase !== 'DONE').length} active</p>
+            <p className="text-indigo-200 text-sm mt-1">{batches.filter(b => b.phase !== 'DONE').length} active batches</p>
           </div>
           <button onClick={() => setShowNewBatch(true)} className="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1"><Plus size={16} /> New Batch</button>
         </div>
@@ -356,22 +377,24 @@ export default function PreFermentation() {
                 {activeBatch.slurryGravity && <span>SG: {activeBatch.slurryGravity}</span>}
                 {activeBatch.slurryTemp && <span>Temp: {activeBatch.slurryTemp}°C</span>}
               </div>
-              {/* ─── Editable phase times ─── */}
-              <div className="flex flex-wrap gap-x-5 gap-y-1 mt-2">
-                <TimeField label="Setup" value={activeBatch.setupTime} field="setupTime" batchId={activeBatch.id} color="indigo" />
-                {activeBatch.dosingEndTime && (
-                  <TimeField label="Dosing Done" value={activeBatch.dosingEndTime} field="dosingEndTime" batchId={activeBatch.id} color="amber" />
-                )}
-                {['TRANSFER','CIP','DONE'].includes(activeBatch.phase) && (
-                  <TimeField label="Transfer" value={activeBatch.transferTime} field="transferTime" batchId={activeBatch.id} color="blue" />
-                )}
-                {['CIP','DONE'].includes(activeBatch.phase) && (
-                  <TimeField label="CIP Start" value={activeBatch.cipStartTime} field="cipStartTime" batchId={activeBatch.id} color="purple" />
-                )}
-                {activeBatch.phase === 'DONE' && (
-                  <TimeField label="CIP End" value={activeBatch.cipEndTime} field="cipEndTime" batchId={activeBatch.id} color="gray" />
-                )}
-              </div>
+              {/* Editable phase times (hidden for FIELD role) */}
+              {!isField && (
+                <div className="flex flex-wrap gap-x-5 gap-y-1 mt-2">
+                  <TimeField label="Setup" value={activeBatch.setupTime} field="setupTime" batchId={activeBatch.id} color="indigo" />
+                  {activeBatch.dosingEndTime && (
+                    <TimeField label="Dosing Done" value={activeBatch.dosingEndTime} field="dosingEndTime" batchId={activeBatch.id} color="amber" />
+                  )}
+                  {['TRANSFER','CIP','DONE'].includes(activeBatch.phase) && (
+                    <TimeField label="Transfer" value={activeBatch.transferTime} field="transferTime" batchId={activeBatch.id} color="blue" />
+                  )}
+                  {['CIP','DONE'].includes(activeBatch.phase) && (
+                    <TimeField label="CIP Start" value={activeBatch.cipStartTime} field="cipStartTime" batchId={activeBatch.id} color="purple" />
+                  )}
+                  {activeBatch.phase === 'DONE' && (
+                    <TimeField label="CIP End" value={activeBatch.cipEndTime} field="cipEndTime" batchId={activeBatch.id} color="gray" />
+                  )}
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <button onClick={() => {
@@ -393,11 +416,11 @@ export default function PreFermentation() {
             </div>
           )}
           <div className="p-4 space-y-4">
-            {/* DOSING */}
+            {/* DOSING — with editable quantities */}
             {['SETUP', 'DOSING', 'LAB'].includes(activeBatch.phase) && (
               <div className="bg-amber-50 rounded-lg p-3 border border-amber-200">
                 <h3 className="font-semibold text-amber-800 flex items-center gap-1 mb-2"><Beaker size={16} /> Chemical Dosing</h3>
-                {/* Recipe Template — show when no dosings added yet */}
+                {/* Recipe Template */}
                 {activeBatch.dosings.length === 0 && pfRecipes.length > 0 && (
                   <div className="mb-3 bg-white rounded-lg border border-amber-300 p-3">
                     <div className="flex items-center justify-between mb-2">
@@ -417,15 +440,34 @@ export default function PreFermentation() {
                     </div>
                   </div>
                 )}
+                {/* Dosing table with editable quantities */}
                 {activeBatch.dosings.length > 0 && (
                   <table className="w-full text-sm mb-3">
                     <thead><tr className="text-xs text-gray-500"><th className="text-left py-1">Chemical</th><th className="text-right">Qty</th><th className="text-right">Unit</th><th className="text-right">Time</th><th className="text-right">T0+</th><th></th></tr></thead>
                     <tbody>{activeBatch.dosings.map(d => (
                       <tr key={d.id} className="border-t">
-                        <td className="py-1">{d.chemicalName}</td><td className="text-right">{d.quantity}</td><td className="text-right">{d.unit}</td>
+                        <td className="py-1">{d.chemicalName}</td>
+                        <td className="text-right">
+                          {editingDoseId === d.id ? (
+                            <span className="inline-flex items-center gap-1">
+                              <input type="number" step="0.1" value={editDoseQty} onChange={e => setEditDoseQty(e.target.value)}
+                                className="w-20 border rounded px-1.5 py-0.5 text-sm text-right" autoFocus
+                                onKeyDown={e => { if (e.key === 'Enter') saveDoseQty(d.id); if (e.key === 'Escape') setEditingDoseId(null); }} />
+                              <button onClick={() => saveDoseQty(d.id)} className="text-green-600 hover:text-green-800"><Check size={14} /></button>
+                              <button onClick={() => setEditingDoseId(null)} className="text-gray-400 hover:text-gray-600"><X size={14} /></button>
+                            </span>
+                          ) : (
+                            <span className="cursor-pointer hover:bg-amber-100 px-1 rounded" onClick={() => { setEditingDoseId(d.id); setEditDoseQty(String(d.quantity)); }}>
+                              {d.quantity} <Pencil size={10} className="inline text-amber-400 ml-0.5" />
+                            </span>
+                          )}
+                        </td>
+                        <td className="text-right">{d.unit}</td>
                         <td className="text-right text-xs text-gray-400">{new Date(d.addedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })}</td>
                         <td className="text-right text-xs font-medium text-indigo-600">{elapsed(activeBatch.setupTime, d.addedAt)}</td>
-                        <td className="text-right"><button onClick={() => { api.delete(`/pre-fermentation/dosing/${d.id}`); load(); }} className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button></td>
+                        <td className="text-right">
+                          {isAdmin && <button onClick={() => { api.delete(`/pre-fermentation/dosing/${d.id}`); load(); }} className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button>}
+                        </td>
                       </tr>
                     ))}</tbody>
                   </table>
@@ -439,7 +481,7 @@ export default function PreFermentation() {
                         {c.name}
                       </button>
                     ))}
-                    <button onClick={() => setShowNewChem(true)} className="px-3 py-1.5 rounded text-sm border border-dashed border-amber-400 text-amber-600 hover:bg-amber-50">+ New</button>
+                    {!isField && <button onClick={() => setShowNewChem(true)} className="px-3 py-1.5 rounded text-sm border border-dashed border-amber-400 text-amber-600 hover:bg-amber-50">+ New</button>}
                   </div>
                   <div className="flex gap-2 items-end flex-wrap">
                     {numField('Quantity', doseForm.quantity, v => setDoseForm(f => ({ ...f, quantity: v })), '0.1')}
@@ -452,21 +494,14 @@ export default function PreFermentation() {
                     <button onClick={addDosing} className="bg-amber-500 text-white px-3 py-1.5 rounded text-sm hover:bg-amber-600 mb-0.5">Add</button>
                   </div>
                   {activeBatch.dosings.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-amber-200 flex items-center gap-3">
-                      <div className="flex items-center gap-1.5">
-                        <Clock size={14} className="text-amber-600" />
-                        <input type="datetime-local" id="dosingEndInput" defaultValue={toLocal(activeBatch.dosingEndTime) || nowLocal()}
-                          className="border border-amber-300 rounded px-2 py-1.5 text-sm" />
-                      </div>
+                    <div className="mt-3 pt-3 border-t border-amber-200">
                       <button onClick={() => {
-                        const inp = (document.getElementById('dosingEndInput') as HTMLInputElement)?.value;
-                        const dt = inp ? new Date(inp).toISOString() : new Date().toISOString();
-                        advancePhase(activeBatch, 'LAB', { dosingEndTime: dt });
+                        advancePhase(activeBatch, 'LAB', { dosingEndTime: new Date().toISOString() });
                       }} className="bg-emerald-600 text-white px-4 py-2 rounded text-sm hover:bg-emerald-700 font-medium">Finish Dosing → Lab</button>
                     </div>
                   )}
                 </div>
-                {showNewChem && (
+                {showNewChem && !isField && (
                   <div className="mt-2 flex gap-2 items-end bg-white p-2 rounded border">
                     {txtField('Chemical Name', chemForm.name, v => setChemForm(f => ({ ...f, name: v })), 'e.g. Urea')}
                     <div>
@@ -482,79 +517,78 @@ export default function PreFermentation() {
               </div>
             )}
 
-            {/* LAB */}
+            {/* LAB READINGS — read-only for FIELD, full form for others */}
             {['SETUP', 'DOSING', 'LAB'].includes(activeBatch.phase) && (
               <div className="bg-emerald-50 rounded-lg p-3 border border-emerald-200">
                 <h3 className="font-semibold text-emerald-800 flex items-center gap-1 mb-2"><FlaskConical size={16} /> Lab Readings</h3>
                 {activeBatch.labReadings.length > 0 && (
                   <div className="overflow-x-auto mb-3">
                     <table className="w-full text-sm">
-                      <thead><tr className="text-xs text-gray-500">{['Date/Time', 'T0+', 'Gravity', 'pH', 'RS%', 'RST%', 'Alc%', 'DS%', 'VFA', 'Temp', 'Remarks', ''].map(h => <th key={h} className="text-left py-1 px-1">{h}</th>)}</tr></thead>
+                      <thead><tr className="text-xs text-gray-500">{['Time', 'T0+', 'Gravity', 'pH', 'RS%', 'RST%', 'Alc%', 'DS%', 'VFA', 'Temp', ...(isField ? [] : ['Remarks', ''])].map(h => <th key={h} className="text-left py-1 px-1">{h}</th>)}</tr></thead>
                       <tbody>{activeBatch.labReadings.map(r => (
                         <tr key={r.id} className="border-t">
-                          <td className="px-1 py-1 text-xs whitespace-nowrap">{r.analysisTime ? new Date(r.analysisTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : r.analysisTime}</td>
+                          <td className="px-1 py-1 text-xs whitespace-nowrap">{r.analysisTime ? new Date(r.analysisTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : '-'}</td>
                           <td className="px-1 text-xs font-medium text-indigo-600">{elapsed(activeBatch.setupTime, r.analysisTime || r.createdAt)}</td>
-                          <td className="px-1">{r.spGravity ?? '-'}</td><td className="px-1">{r.ph ?? '-'}</td><td className="px-1">{r.rs ?? '-'}</td><td className="px-1">{r.rst ?? '-'}</td><td className="px-1">{r.alcohol ?? '-'}</td><td className="px-1">{r.ds ?? '-'}</td><td className="px-1">{r.vfaPpa ?? '-'}</td><td className="px-1">{r.temp ?? '-'}</td><td className="px-1 text-gray-500">{r.remarks || '-'}</td>
-                          <td className="px-1"><button onClick={() => { api.delete(`/pre-fermentation/lab/${r.id}`); load(); }} className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button></td>
+                          <td className="px-1">{r.spGravity ?? '-'}</td><td className="px-1">{r.ph ?? '-'}</td><td className="px-1">{r.rs ?? '-'}</td><td className="px-1">{r.rst ?? '-'}</td><td className="px-1">{r.alcohol ?? '-'}</td><td className="px-1">{r.ds ?? '-'}</td><td className="px-1">{r.vfaPpa ?? '-'}</td><td className="px-1">{r.temp ?? '-'}</td>
+                          {!isField && <td className="px-1 text-gray-500">{r.remarks || '-'}</td>}
+                          {!isField && <td className="px-1"><button onClick={() => { api.delete(`/pre-fermentation/lab/${r.id}`); load(); }} className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button></td>}
                         </tr>
                       ))}</tbody>
                     </table>
                   </div>
                 )}
+                {activeBatch.labReadings.length === 0 && isField && (
+                  <p className="text-sm text-gray-400 italic">No lab readings yet. Lab will update readings here.</p>
+                )}
                 <LabChart readings={activeBatch.labReadings} t0={activeBatch.setupTime} />
-                <div className="grid grid-cols-2 md:grid-cols-5 lg:grid-cols-10 gap-2 mt-3">
-                  <div>
-                    <label className="text-xs text-gray-500">Time</label>
-                    <button onClick={setNow} className="w-full flex items-center justify-center gap-1 bg-blue-50 text-blue-700 font-medium px-2 py-1.5 rounded border border-blue-200 hover:bg-blue-100 text-sm">
-                      <Clock size={14} /> {labForm.analysisTime ? new Date(labForm.analysisTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }) : 'Tap = Now'}
-                    </button>
-                  </div>
-                  {numField('Gravity', labForm.spGravity, v => setLabForm(f => ({ ...f, spGravity: v })), '0.001')}
-                  {numField('pH', labForm.ph, v => setLabForm(f => ({ ...f, ph: v })), '0.01')}
-                  {numField('RS%', labForm.rs, v => setLabForm(f => ({ ...f, rs: v })), '0.01')}
-                  {numField('RST%', labForm.rst, v => setLabForm(f => ({ ...f, rst: v })), '0.01')}
-                  {numField('Alc%', labForm.alcohol, v => setLabForm(f => ({ ...f, alcohol: v })), '0.01')}
-                  {numField('DS%', labForm.ds, v => setLabForm(f => ({ ...f, ds: v })), '0.01')}
-                  {numField('VFA', labForm.vfaPpa, v => setLabForm(f => ({ ...f, vfaPpa: v })), '0.01')}
-                  {numField('Temp°C', labForm.temp, v => setLabForm(f => ({ ...f, temp: v })), '0.1')}
-                  <div><label className="text-xs text-gray-500">Remarks</label><input value={labForm.remarks} onChange={e => setLabForm(f => ({ ...f, remarks: e.target.value }))} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
-                </div>
-                <button onClick={addLabReading} className="mt-2 bg-emerald-600 text-white px-4 py-1.5 rounded text-sm hover:bg-emerald-700">Add Reading</button>
+                {/* Lab form — only for non-FIELD users */}
+                {!isField && (
+                  <>
+                    <div className="grid grid-cols-2 md:grid-cols-5 lg:grid-cols-10 gap-2 mt-3">
+                      <div>
+                        <label className="text-xs text-gray-500">Time</label>
+                        <button onClick={setNow} className="w-full flex items-center justify-center gap-1 bg-blue-50 text-blue-700 font-medium px-2 py-1.5 rounded border border-blue-200 hover:bg-blue-100 text-sm">
+                          <Clock size={14} /> {labForm.analysisTime ? new Date(labForm.analysisTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }) : 'Tap = Now'}
+                        </button>
+                      </div>
+                      {numField('Gravity', labForm.spGravity, v => setLabForm(f => ({ ...f, spGravity: v })), '0.001')}
+                      {numField('pH', labForm.ph, v => setLabForm(f => ({ ...f, ph: v })), '0.01')}
+                      {numField('RS%', labForm.rs, v => setLabForm(f => ({ ...f, rs: v })), '0.01')}
+                      {numField('RST%', labForm.rst, v => setLabForm(f => ({ ...f, rst: v })), '0.01')}
+                      {numField('Alc%', labForm.alcohol, v => setLabForm(f => ({ ...f, alcohol: v })), '0.01')}
+                      {numField('DS%', labForm.ds, v => setLabForm(f => ({ ...f, ds: v })), '0.01')}
+                      {numField('VFA', labForm.vfaPpa, v => setLabForm(f => ({ ...f, vfaPpa: v })), '0.01')}
+                      {numField('Temp°C', labForm.temp, v => setLabForm(f => ({ ...f, temp: v })), '0.1')}
+                      <div><label className="text-xs text-gray-500">Remarks</label><input value={labForm.remarks} onChange={e => setLabForm(f => ({ ...f, remarks: e.target.value }))} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+                    </div>
+                    <button onClick={addLabReading} className="mt-2 bg-emerald-600 text-white px-4 py-1.5 rounded text-sm hover:bg-emerald-700">Add Reading</button>
+                  </>
+                )}
               </div>
             )}
 
-            {/* PHASE ACTIONS */}
+            {/* PHASE ACTIONS — Transfer to Fermenter visible for everyone */}
             <div className="flex gap-2 flex-wrap items-center">
               {activeBatch.phase === 'LAB' && (
                 <>
-                  <button onClick={() => advancePhase(activeBatch, 'DOSING')} className="bg-amber-500 text-white px-4 py-2 rounded text-sm hover:bg-amber-600 flex items-center gap-1">← Back to Dosing</button>
+                  {!isField && <button onClick={() => advancePhase(activeBatch, 'DOSING')} className="bg-amber-500 text-white px-4 py-2 rounded text-sm hover:bg-amber-600 flex items-center gap-1">← Back to Dosing</button>}
                   <button onClick={() => startTransfer(activeBatch)}
                     className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 flex items-center gap-1"><ArrowRight size={16} /> Transfer to Fermenter</button>
                 </>
               )}
-              {activeBatch.phase === 'TRANSFER' && (
+              {activeBatch.phase === 'TRANSFER' && !isField && (
                 <>
                   <TimeField label="Transfer Time" value={activeBatch.transferTime} field="transferTime" batchId={activeBatch.id} color="blue" />
-                  <div className="flex items-center gap-1.5">
-                    <Clock size={14} className="text-purple-600" />
-                    <input type="datetime-local" id="cipStartInput" defaultValue={nowLocal()} className="border border-purple-300 rounded px-2 py-1.5 text-sm" />
-                  </div>
                   <button onClick={() => {
-                    const inp = (document.getElementById('cipStartInput') as HTMLInputElement)?.value;
-                    advancePhase(activeBatch, 'CIP', { cipStartTime: inp ? new Date(inp).toISOString() : new Date().toISOString() });
+                    advancePhase(activeBatch, 'CIP', { cipStartTime: new Date().toISOString() });
                   }} className="bg-purple-600 text-white px-4 py-2 rounded text-sm hover:bg-purple-700 flex items-center gap-1"><RotateCcw size={16} /> Start CIP</button>
                 </>
               )}
-              {activeBatch.phase === 'CIP' && (
+              {activeBatch.phase === 'CIP' && !isField && (
                 <>
                   <TimeField label="CIP Start" value={activeBatch.cipStartTime} field="cipStartTime" batchId={activeBatch.id} color="purple" />
-                  <div className="flex items-center gap-1.5">
-                    <Clock size={14} className="text-gray-600" />
-                    <input type="datetime-local" id="cipEndInput" defaultValue={nowLocal()} className="border border-gray-300 rounded px-2 py-1.5 text-sm" />
-                  </div>
                   <button onClick={() => {
-                    const inp = (document.getElementById('cipEndInput') as HTMLInputElement)?.value;
-                    advancePhase(activeBatch, 'DONE', { cipEndTime: inp ? new Date(inp).toISOString() : new Date().toISOString() });
+                    advancePhase(activeBatch, 'DONE', { cipEndTime: new Date().toISOString() });
                   }} className="bg-gray-600 text-white px-4 py-2 rounded text-sm hover:bg-gray-700">End CIP → Done</button>
                 </>
               )}
@@ -580,12 +614,6 @@ export default function PreFermentation() {
                 ))}
               </div>
             </div>
-            <div className="mb-4">
-              <label className="text-xs text-gray-500 font-medium">Transfer Time</label>
-              <input type="datetime-local" value={transferTarget.transferTime}
-                onChange={e => setTransferTarget(t => t ? { ...t, transferTime: e.target.value } : t)}
-                className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:border-blue-400 outline-none" />
-            </div>
             <div className="flex gap-2">
               <button onClick={confirmTransfer}
                 className="flex-1 bg-blue-600 text-white py-3 rounded-xl text-base font-semibold hover:bg-blue-700 shadow-sm flex items-center justify-center gap-2">
@@ -598,84 +626,85 @@ export default function PreFermentation() {
         </div>
       )}
 
-      {/* BATCH HISTORY */}
-      <div className="bg-white rounded-lg shadow">
-        <div className="p-4 border-b"><h2 className="font-semibold">Batch History</h2></div>
-        {batches.length === 0 ? (
-          <p className="p-4 text-gray-400 text-sm">No batches yet. Create one above.</p>
-        ) : (
-          <div className="divide-y">
-            {batches.map(b => (
-              <div key={b.id} className={`${b.id === activeBatch?.id ? 'bg-indigo-50' : ''}`}>
-                <div className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-50" onClick={() => setExpandedBatch(expandedBatch === b.id ? null : b.id)}>
-                  <div className="flex items-center gap-3">
-                    <span className="font-bold">#{b.batchNo}</span>
-                    <span className="text-sm text-gray-500">PF{b.fermenterNo}</span>
-                    <span className="px-2 py-0.5 rounded-full text-xs font-medium text-white" style={{ backgroundColor: phaseColors[b.phase] }}>{phaseLabels[b.phase]}</span>
-                    <span className="text-xs text-gray-400">{new Date(b.createdAt).toLocaleDateString('en-IN')}</span>
-                    <span className="text-xs text-gray-400">{b.dosings.length} chemicals • {b.labReadings.length} readings</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {b.phase !== 'DONE' && b.id !== activeBatch?.id && (
-                      <button onClick={e => { e.stopPropagation(); setActiveBatchId(b.id); }} className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-200">Select</button>
-                    )}
-                    <button onClick={e => { e.stopPropagation(); deleteBatch(b.id); }} className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
-                    {expandedBatch === b.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                  </div>
-                </div>
-                {expandedBatch === b.id && (
-                  <div className="px-4 pb-4 space-y-3">
-                    <PhaseTimeline batch={b} showDurations={true} />
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
-                      <div><span className="text-gray-500">PF Level:</span> {b.slurryVolume ? `${(b.slurryVolume / (PF_VOLUME_M3 * 1000) * 100).toFixed(0)}% (${(b.slurryVolume / 1000).toFixed(0)} M³)` : '-'}</div>
-                      <div><span className="text-gray-500">Gravity:</span> {b.slurryGravity ?? '-'}</div>
-                      <div><span className="text-gray-500">Temp:</span> {b.slurryTemp ?? '-'}°C</div>
-                      <div><span className="text-gray-500">Transfer Vol:</span> {b.transferVolume ?? '-'} L</div>
+      {/* BATCH HISTORY — only for non-FIELD users */}
+      {!isField && (
+        <div className="bg-white rounded-lg shadow">
+          <div className="p-4 border-b"><h2 className="font-semibold">Batch History</h2></div>
+          {batches.length === 0 ? (
+            <p className="p-4 text-gray-400 text-sm">No batches yet. Create one above.</p>
+          ) : (
+            <div className="divide-y">
+              {batches.map(b => (
+                <div key={b.id} className={`${b.id === activeBatch?.id ? 'bg-indigo-50' : ''}`}>
+                  <div className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-50" onClick={() => setExpandedBatch(expandedBatch === b.id ? null : b.id)}>
+                    <div className="flex items-center gap-3">
+                      <span className="font-bold">#{b.batchNo}</span>
+                      <span className="text-sm text-gray-500">PF{b.fermenterNo}</span>
+                      <span className="px-2 py-0.5 rounded-full text-xs font-medium text-white" style={{ backgroundColor: phaseColors[b.phase] }}>{phaseLabels[b.phase]}</span>
+                      <span className="text-xs text-gray-400">{new Date(b.createdAt).toLocaleDateString('en-IN')}</span>
+                      <span className="text-xs text-gray-400">{b.dosings.length} chemicals • {b.labReadings.length} readings</span>
                     </div>
-                    {/* Time tracking */}
-                    <div className="flex flex-wrap gap-x-5 gap-y-1 mt-1">
-                      <TimeField label="Setup" value={b.setupTime} field="setupTime" batchId={b.id} color="indigo" />
-                      {b.dosingEndTime && <TimeField label="Dosing Done" value={b.dosingEndTime} field="dosingEndTime" batchId={b.id} color="amber" />}
-                      {b.transferTime && <TimeField label="Transfer" value={b.transferTime} field="transferTime" batchId={b.id} color="blue" />}
-                      {b.cipStartTime && <TimeField label="CIP Start" value={b.cipStartTime} field="cipStartTime" batchId={b.id} color="purple" />}
-                      {b.cipEndTime && <TimeField label="CIP End" value={b.cipEndTime} field="cipEndTime" batchId={b.id} color="gray" />}
+                    <div className="flex items-center gap-2">
+                      {b.phase !== 'DONE' && b.id !== activeBatch?.id && (
+                        <button onClick={e => { e.stopPropagation(); setActiveBatchId(b.id); }} className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-200">Select</button>
+                      )}
+                      {isAdmin && <button onClick={e => { e.stopPropagation(); deleteBatch(b.id); }} className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button>}
+                      {expandedBatch === b.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                     </div>
-                    {b.dosings.length > 0 && (
-                      <div>
-                        <h4 className="text-xs font-semibold text-gray-500 mb-1">Dosing</h4>
-                        <div className="flex flex-wrap gap-2">{b.dosings.map(d => (
-                          <span key={d.id} className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">
-                            {d.chemicalName}: {d.quantity} {d.unit}
-                            <span className="text-amber-500 ml-1">{new Date(d.addedAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false })}</span>
-                            <span className="text-indigo-500 ml-1">{elapsed(b.setupTime, d.addedAt)}</span>
-                          </span>
-                        ))}</div>
+                  </div>
+                  {expandedBatch === b.id && (
+                    <div className="px-4 pb-4 space-y-3">
+                      <PhaseTimeline batch={b} showDurations={true} />
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                        <div><span className="text-gray-500">PF Level:</span> {b.slurryVolume ? `${(b.slurryVolume / (PF_VOLUME_M3 * 1000) * 100).toFixed(0)}% (${(b.slurryVolume / 1000).toFixed(0)} M³)` : '-'}</div>
+                        <div><span className="text-gray-500">Gravity:</span> {b.slurryGravity ?? '-'}</div>
+                        <div><span className="text-gray-500">Temp:</span> {b.slurryTemp ?? '-'}°C</div>
+                        <div><span className="text-gray-500">Transfer Vol:</span> {b.transferVolume ?? '-'} L</div>
                       </div>
-                    )}
-                    {b.labReadings.length > 0 && (
-                      <div>
-                        <h4 className="text-xs font-semibold text-gray-500 mb-1">Lab Readings</h4>
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-xs">
-                            <thead><tr className="text-gray-500">{['Date/Time', 'T0+', 'SG', 'pH', 'RS%', 'RST%', 'Alc%', 'DS%', 'VFA', 'Temp'].map(h => <th key={h} className="text-left px-1 py-0.5">{h}</th>)}</tr></thead>
-                            <tbody>{b.labReadings.map(r => (
-                              <tr key={r.id} className="border-t">
-                                <td className="px-1 py-0.5 whitespace-nowrap">{r.analysisTime ? new Date(r.analysisTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : r.analysisTime}</td><td className="px-1 font-medium text-indigo-600">{elapsed(b.setupTime, r.analysisTime || r.createdAt)}</td><td className="px-1">{r.spGravity ?? '-'}</td><td className="px-1">{r.ph ?? '-'}</td><td className="px-1">{r.rs ?? '-'}</td><td className="px-1">{r.rst ?? '-'}</td><td className="px-1">{r.alcohol ?? '-'}</td><td className="px-1">{r.ds ?? '-'}</td><td className="px-1">{r.vfaPpa ?? '-'}</td><td className="px-1">{r.temp ?? '-'}</td>
-                              </tr>
-                            ))}</tbody>
-                          </table>
+                      <div className="flex flex-wrap gap-x-5 gap-y-1 mt-1">
+                        <TimeField label="Setup" value={b.setupTime} field="setupTime" batchId={b.id} color="indigo" />
+                        {b.dosingEndTime && <TimeField label="Dosing Done" value={b.dosingEndTime} field="dosingEndTime" batchId={b.id} color="amber" />}
+                        {b.transferTime && <TimeField label="Transfer" value={b.transferTime} field="transferTime" batchId={b.id} color="blue" />}
+                        {b.cipStartTime && <TimeField label="CIP Start" value={b.cipStartTime} field="cipStartTime" batchId={b.id} color="purple" />}
+                        {b.cipEndTime && <TimeField label="CIP End" value={b.cipEndTime} field="cipEndTime" batchId={b.id} color="gray" />}
+                      </div>
+                      {b.dosings.length > 0 && (
+                        <div>
+                          <h4 className="text-xs font-semibold text-gray-500 mb-1">Dosing</h4>
+                          <div className="flex flex-wrap gap-2">{b.dosings.map(d => (
+                            <span key={d.id} className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">
+                              {d.chemicalName}: {d.quantity} {d.unit}
+                              <span className="text-amber-500 ml-1">{new Date(d.addedAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false })}</span>
+                              <span className="text-indigo-500 ml-1">{elapsed(b.setupTime, d.addedAt)}</span>
+                            </span>
+                          ))}</div>
                         </div>
-                        <LabChart readings={b.labReadings} t0={b.setupTime} />
-                      </div>
-                    )}
-                    {b.remarks && <p className="text-sm text-gray-500">Remarks: {b.remarks}</p>}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+                      )}
+                      {b.labReadings.length > 0 && (
+                        <div>
+                          <h4 className="text-xs font-semibold text-gray-500 mb-1">Lab Readings</h4>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs">
+                              <thead><tr className="text-gray-500">{['Date/Time', 'T0+', 'SG', 'pH', 'RS%', 'RST%', 'Alc%', 'DS%', 'VFA', 'Temp'].map(h => <th key={h} className="text-left px-1 py-0.5">{h}</th>)}</tr></thead>
+                              <tbody>{b.labReadings.map(r => (
+                                <tr key={r.id} className="border-t">
+                                  <td className="px-1 py-0.5 whitespace-nowrap">{r.analysisTime ? new Date(r.analysisTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : r.analysisTime}</td><td className="px-1 font-medium text-indigo-600">{elapsed(b.setupTime, r.analysisTime || r.createdAt)}</td><td className="px-1">{r.spGravity ?? '-'}</td><td className="px-1">{r.ph ?? '-'}</td><td className="px-1">{r.rs ?? '-'}</td><td className="px-1">{r.rst ?? '-'}</td><td className="px-1">{r.alcohol ?? '-'}</td><td className="px-1">{r.ds ?? '-'}</td><td className="px-1">{r.vfaPpa ?? '-'}</td><td className="px-1">{r.temp ?? '-'}</td>
+                                </tr>
+                              ))}</tbody>
+                            </table>
+                          </div>
+                          <LabChart readings={b.labReadings} t0={b.setupTime} />
+                        </div>
+                      )}
+                      {b.remarks && <p className="text-sm text-gray-500">Remarks: {b.remarks}</p>}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
