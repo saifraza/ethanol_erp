@@ -192,7 +192,7 @@ router.post('/transfer-pf', async (req: Request, res: Response) => {
       include: { labReadings: { orderBy: { createdAt: 'desc' }, take: 1 } },
     });
     if (!pfBatch) return res.status(404).json({ error: 'PF batch not found' });
-    if (pfBatch.phase === 'DONE') return res.status(400).json({ error: 'PF batch already done' });
+    if (['DONE', 'CIP', 'TRANSFER'].includes(pfBatch.phase)) return res.status(400).json({ error: `PF batch already in ${pfBatch.phase} phase` });
 
     // Check fermenter is free
     const existing = await prisma.fermentationBatch.findFirst({
