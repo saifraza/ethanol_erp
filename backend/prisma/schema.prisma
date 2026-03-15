@@ -79,6 +79,8 @@ model Settings {
   iltCap                Float    @default(190)
   fltCap                Float    @default(440)
   millingLossPercent    Float    @default(2.5)
+  pfGravityTarget       Float    @default(1.024)   // PF ready-to-transfer gravity
+  fermRetentionHours    Float    @default(8)        // hours before transfer
   rsCap                 Float    @default(15000)
   hfoCap                Float    @default(15000)
   lfoCap                Float    @default(15000)

@@ -24,6 +24,94 @@ router.get('/chemicals', async (_req: Request, res: Response) => {
   res.json(chemicals);
 });
 
+/* ═══════ SETTINGS — gravity target etc ═══════ */
+router.get('/settings', async (_req: Request, res: Response) => {
+  const s = await prisma.settings.findFirst();
+  res.json({
+    pfGravityTarget: (s as any)?.pfGravityTarget ?? 1.024,
+    fermRetentionHours: (s as any)?.fermRetentionHours ?? 8,
+    fermenter1Cap: s?.fermenter1Cap ?? 2300,
+    fermenter2Cap: s?.fermenter2Cap ?? 2300,
+    fermenter3Cap: s?.fermenter3Cap ?? 2300,
+    fermenter4Cap: s?.fermenter4Cap ?? 2300,
+    pfCap: s?.pfCap ?? 430,
+    beerWellCap: s?.beerWellCap ?? 430,
+  });
+});
+
+/* ═══════ NEXT BATCH NUMBER (auto-suggest) ═══════ */
+router.get('/next-batch', async (_req: Request, res: Response) => {
+  const [lastPF, lastFerm] = await Promise.all([
+    prisma.pFBatch.findFirst({ orderBy: { batchNo: 'desc' }, select: { batchNo: true } }),
+    prisma.fermentationBatch.findFirst({ orderBy: { batchNo: 'desc' }, select: { batchNo: true } }),
+  ]);
+  const maxBatch = Math.max(lastPF?.batchNo ?? 0, lastFerm?.batchNo ?? 0);
+  res.json({ nextBatchNo: maxBatch + 1 });
+});
+
+/* ═══════ FREE VESSELS ═══════ */
+router.get('/free-vessels', async (_req: Request, res: Response) => {
+  const [activePF, activeFerm] = await Promise.all([
+    prisma.pFBatch.findMany({ where: { phase: { not: 'DONE' } }, select: { fermenterNo: true } }),
+    prisma.fermentationBatch.findMany({ where: { phase: { not: 'DONE' } }, select: { fermenterNo: true } }),
+  ]);
+  const usedPF = new Set(activePF.map(b => b.fermenterNo));
+  const usedFerm = new Set(activeFerm.map(b => b.fermenterNo));
+  res.json({
+    freePF: [1, 2].filter(n => !usedPF.has(n)),
+    freeFerm: [1, 2, 3, 4].filter(n => !usedFerm.has(n)),
+  });
+});
+
+/* ═══════ OVERVIEW — all active batches with status ═══════ */
+router.get('/overview', async (_req: Request, res: Response) => {
+  const s = await prisma.settings.findFirst();
+  const gravityTarget = (s as any)?.pfGravityTarget ?? 1.024;
+
+  const [pfBatches, fermBatches] = await Promise.all([
+    prisma.pFBatch.findMany({
+      where: { phase: { not: 'DONE' } },
+      include: { dosings: true, labReadings: { orderBy: { createdAt: 'desc' }, take: 1 } },
+    }),
+    prisma.fermentationBatch.findMany({
+      where: { phase: { not: 'DONE' } },
+      include: { dosings: true },
+    }),
+  ]);
+
+  // Get latest ferm lab entries for active batches
+  const activeFermBatchNos = fermBatches.map(b => b.batchNo);
+  const fermLabEntries = activeFermBatchNos.length > 0
+    ? await prisma.fermentationEntry.findMany({
+        where: { batchNo: { in: activeFermBatchNos } },
+        orderBy: { createdAt: 'desc' },
+      })
+    : [];
+
+  // Group latest lab entry per fermenter
+  const latestFermLab: Record<number, any> = {};
+  for (const e of fermLabEntries) {
+    if (!latestFermLab[e.fermenterNo]) latestFermLab[e.fermenterNo] = e;
+  }
+
+  // Add readyToTransfer hint for PF batches
+  const pfWithHints = pfBatches.map(b => {
+    const lastLab = b.labReadings[0];
+    const lastGravity = lastLab?.spGravity ?? null;
+    const readyToTransfer = lastGravity !== null && lastGravity <= gravityTarget;
+    return { ...b, lastGravity, readyToTransfer, gravityTarget };
+  });
+
+  res.json({
+    pfBatches: pfWithHints,
+    fermBatches: fermBatches.map(b => ({
+      ...b,
+      lastLab: latestFermLab[b.fermenterNo] || null,
+    })),
+    gravityTarget,
+  });
+});
+
 /* ═══════ BATCHES (lifecycle) ═══════ */
 router.get('/batches', async (_req: Request, res: Response) => {
   const batches = await prisma.fermentationBatch.findMany({
@@ -40,7 +128,7 @@ router.post('/batches', async (req: Request, res: Response) => {
       data: {
         batchNo: parseInt(b.batchNo) || 0,
         fermenterNo: parseInt(b.fermenterNo) || 1,
-        phase: 'PF_TRANSFER',
+        phase: b.phase || 'PF_TRANSFER',
         pfTransferTime: b.pfTransferTime ? new Date(b.pfTransferTime) : new Date(),
         fillingStartTime: b.fillingStartTime ? new Date(b.fillingStartTime) : null,
         fermLevel: b.fermLevel ? parseFloat(b.fermLevel) : null,
@@ -59,21 +147,16 @@ router.patch('/batches/:id', async (req: Request, res: Response) => {
   try {
     const data: any = {};
     const b = req.body;
-    // phase
     if (b.phase) data.phase = b.phase;
-    // time fields
     for (const f of ['pfTransferTime', 'fillingStartTime', 'fillingEndTime', 'setupEndTime', 'reactionStartTime', 'retentionStartTime', 'transferTime', 'cipStartTime', 'cipEndTime']) {
       if (b[f] !== undefined) data[f] = b[f] ? new Date(b[f]) : null;
     }
-    // numeric
     for (const f of ['volume', 'fermLevel', 'transferVolume', 'setupGravity', 'setupRs', 'setupRst', 'finalRsGravity', 'totalHours', 'finalAlcohol']) {
       if (b[f] !== undefined) data[f] = b[f] ? parseFloat(b[f]) : null;
     }
-    // string
     for (const f of ['remarks', 'yeast', 'enzyme', 'formolin', 'booster', 'urea', 'setupTime']) {
       if (b[f] !== undefined) data[f] = b[f] || null;
     }
-    // int
     if (b.beerWellNo !== undefined) data.beerWellNo = b.beerWellNo ? parseInt(b.beerWellNo) : null;
     if (b.setupDate !== undefined) data.setupDate = b.setupDate ? new Date(b.setupDate) : null;
     if (b.finalDate !== undefined) data.finalDate = b.finalDate ? new Date(b.finalDate) : null;
@@ -91,7 +174,57 @@ router.delete('/batches/:id', authorize('ADMIN') as any, async (req: Request, re
   res.json({ ok: true });
 });
 
-/* ═══════ CREATE FROM PF TRANSFER ═══════ */
+/* ═══════ PF → FERMENTER AUTO-TRANSFER ═══════ */
+// One endpoint: transfers PF batch to a fermenter
+// - Sets PF to CIP
+// - Creates new FermentationBatch in FILLING phase with same batch #
+router.post('/transfer-pf', async (req: Request, res: Response) => {
+  try {
+    const { pfBatchId, fermenterNo } = req.body;
+    if (!pfBatchId || !fermenterNo) return res.status(400).json({ error: 'pfBatchId and fermenterNo required' });
+
+    const pfBatch = await prisma.pFBatch.findUnique({
+      where: { id: pfBatchId },
+      include: { labReadings: { orderBy: { createdAt: 'desc' }, take: 1 } },
+    });
+    if (!pfBatch) return res.status(404).json({ error: 'PF batch not found' });
+    if (pfBatch.phase === 'DONE') return res.status(400).json({ error: 'PF batch already done' });
+
+    // Check fermenter is free
+    const existing = await prisma.fermentationBatch.findFirst({
+      where: { fermenterNo: parseInt(String(fermenterNo)), phase: { not: 'DONE' } },
+    });
+    if (existing) return res.status(400).json({ error: `Fermenter ${fermenterNo} is occupied by batch #${existing.batchNo}` });
+
+    const now = new Date();
+    const lastGravity = pfBatch.labReadings[0]?.spGravity ?? null;
+
+    // Update PF → TRANSFER then CIP
+    await prisma.pFBatch.update({
+      where: { id: pfBatchId },
+      data: { phase: 'CIP', transferTime: now, transferVolume: pfBatch.slurryVolume },
+    });
+
+    // Create fermenter batch
+    const fermBatch = await prisma.fermentationBatch.create({
+      data: {
+        batchNo: pfBatch.batchNo,
+        fermenterNo: parseInt(String(fermenterNo)),
+        phase: 'FILLING',
+        pfTransferTime: now,
+        fillingStartTime: now,
+        setupGravity: lastGravity,
+        remarks: `From PF-${pfBatch.fermenterNo}`,
+        userId: (req as any).user?.id || 'unknown',
+      },
+      include: { dosings: true },
+    });
+
+    res.json({ pfBatch: { id: pfBatchId, phase: 'CIP' }, fermBatch });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+/* ═══════ CREATE FROM PF TRANSFER (legacy) ═══════ */
 router.post('/batches/from-pf', async (req: Request, res: Response) => {
   try {
     const b = req.body;
@@ -132,12 +265,14 @@ router.delete('/dosing/:id', authorize('ADMIN') as any, async (req: Request, res
   res.json({ ok: true });
 });
 
-/* ═══════ LAB READINGS (existing FermentationEntry) ═══════ */
+/* ═══════ LAB READINGS (FermentationEntry) ═══════ */
+// GET all
 router.get('/', async (_req: Request, res: Response) => {
   const entries = await prisma.fermentationEntry.findMany({ orderBy: { date: 'desc' }, take: 500 });
   res.json(entries);
 });
 
+// GET for specific fermenter
 router.get('/fermenter/:no', async (req: Request, res: Response) => {
   const fermenterNo = parseInt(req.params.no);
   const entries = await prisma.fermentationEntry.findMany({
@@ -146,6 +281,7 @@ router.get('/fermenter/:no', async (req: Request, res: Response) => {
   res.json(entries);
 });
 
+// GET for specific batch
 router.get('/batch/:batchNo', async (req: Request, res: Response) => {
   const batchNo = parseInt(req.params.batchNo);
   const entries = await prisma.fermentationEntry.findMany({
@@ -154,6 +290,87 @@ router.get('/batch/:batchNo', async (req: Request, res: Response) => {
   res.json(entries);
 });
 
+/* ═══════ LAB QUICK-ADD — simplified for lab tab ═══════ */
+// POST /fermentation/lab-reading
+// Lab person just picks vessel type + number, enters readings
+// Auto-finds active batch, auto-stamps time
+router.post('/lab-reading', async (req: Request, res: Response) => {
+  try {
+    const b = req.body;
+    const vesselType = b.vesselType; // 'PF' or 'FERM'
+    const vesselNo = parseInt(b.vesselNo);
+    const userId = (req as any).user?.id || 'unknown';
+
+    if (vesselType === 'PF') {
+      // Find active PF batch for this vessel
+      const pfBatch = await prisma.pFBatch.findFirst({
+        where: { fermenterNo: vesselNo, phase: { not: 'DONE' } },
+      });
+      if (!pfBatch) return res.status(400).json({ error: `No active PF batch on PF-${vesselNo}` });
+
+      const reading = await prisma.pFLabReading.create({
+        data: {
+          batchId: pfBatch.id,
+          analysisTime: b.analysisTime || new Date().toISOString(),
+          spGravity: b.spGravity ? parseFloat(b.spGravity) : null,
+          ph: b.ph ? parseFloat(b.ph) : null,
+          rs: b.rs ? parseFloat(b.rs) : null,
+          rst: b.rst ? parseFloat(b.rst) : null,
+          alcohol: b.alcohol ? parseFloat(b.alcohol) : null,
+          ds: b.ds ? parseFloat(b.ds) : null,
+          vfaPpa: b.vfaPpa ? parseFloat(b.vfaPpa) : null,
+          temp: b.temp ? parseFloat(b.temp) : null,
+          remarks: b.remarks || null,
+          userId,
+        },
+      });
+      // Auto advance to LAB phase
+      await prisma.pFBatch.updateMany({
+        where: { id: pfBatch.id, phase: { in: ['SETUP', 'DOSING'] } },
+        data: { phase: 'LAB' },
+      });
+
+      // Check gravity target
+      const settings = await prisma.settings.findFirst();
+      const target = (settings as any)?.pfGravityTarget ?? 1.024;
+      const gravity = b.spGravity ? parseFloat(b.spGravity) : null;
+      const readyToTransfer = gravity !== null && gravity <= target;
+
+      res.status(201).json({ reading, batchNo: pfBatch.batchNo, readyToTransfer, gravityTarget: target });
+    } else {
+      // Fermenter lab reading
+      const fermBatch = await prisma.fermentationBatch.findFirst({
+        where: { fermenterNo: vesselNo, phase: { not: 'DONE' } },
+      });
+      if (!fermBatch) return res.status(400).json({ error: `No active batch on F-${vesselNo}` });
+
+      const entry = await prisma.fermentationEntry.create({
+        data: {
+          date: new Date(),
+          analysisTime: b.analysisTime || new Date().toISOString(),
+          batchNo: fermBatch.batchNo,
+          fermenterNo: vesselNo,
+          level: b.level ? parseFloat(b.level) : null,
+          spGravity: b.spGravity ? parseFloat(b.spGravity) : null,
+          ph: b.ph ? parseFloat(b.ph) : null,
+          rs: b.rs ? parseFloat(b.rs) : null,
+          rst: b.rst ? parseFloat(b.rst) : null,
+          alcohol: b.alcohol ? parseFloat(b.alcohol) : null,
+          ds: b.ds ? parseFloat(b.ds) : null,
+          vfaPpa: b.vfaPpa ? parseFloat(b.vfaPpa) : null,
+          temp: b.temp ? parseFloat(b.temp) : null,
+          spentLoss: b.spentLoss ? parseFloat(b.spentLoss) : null,
+          status: b.status || 'U/F',
+          remarks: b.remarks || null,
+          userId,
+        },
+      });
+      res.status(201).json({ entry, batchNo: fermBatch.batchNo });
+    }
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// POST traditional lab entry (kept for backward compat)
 router.post('/', upload.single('spentLossPhoto'), async (req: Request, res: Response) => {
   const b = req.body;
   const entry = await prisma.fermentationEntry.create({
