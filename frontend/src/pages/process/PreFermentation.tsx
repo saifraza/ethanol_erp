@@ -517,53 +517,23 @@ export default function PreFermentation() {
               </div>
             )}
 
-            {/* LAB READINGS — read-only for FIELD, full form for others */}
-            {['SETUP', 'DOSING', 'LAB'].includes(activeBatch.phase) && (
+            {/* LAB READINGS — read-only, entry is in the Lab tab */}
+            {activeBatch.labReadings.length > 0 && (
               <div className="bg-emerald-50 rounded-lg p-3 border border-emerald-200">
-                <h3 className="font-semibold text-emerald-800 flex items-center gap-1 mb-2"><FlaskConical size={16} /> Lab Readings</h3>
-                {activeBatch.labReadings.length > 0 && (
-                  <div className="overflow-x-auto mb-3">
-                    <table className="w-full text-sm">
-                      <thead><tr className="text-xs text-gray-500">{['Time', 'T0+', 'Gravity', 'pH', 'RS%', 'RST%', 'Alc%', 'DS%', 'VFA', 'Temp', ...(isField ? [] : ['Remarks', ''])].map(h => <th key={h} className="text-left py-1 px-1">{h}</th>)}</tr></thead>
-                      <tbody>{activeBatch.labReadings.map(r => (
-                        <tr key={r.id} className="border-t">
-                          <td className="px-1 py-1 text-xs whitespace-nowrap">{r.analysisTime ? new Date(r.analysisTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : '-'}</td>
-                          <td className="px-1 text-xs font-medium text-indigo-600">{elapsed(activeBatch.setupTime, r.analysisTime || r.createdAt)}</td>
-                          <td className="px-1">{r.spGravity ?? '-'}</td><td className="px-1">{r.ph ?? '-'}</td><td className="px-1">{r.rs ?? '-'}</td><td className="px-1">{r.rst ?? '-'}</td><td className="px-1">{r.alcohol ?? '-'}</td><td className="px-1">{r.ds ?? '-'}</td><td className="px-1">{r.vfaPpa ?? '-'}</td><td className="px-1">{r.temp ?? '-'}</td>
-                          {!isField && <td className="px-1 text-gray-500">{r.remarks || '-'}</td>}
-                          {!isField && <td className="px-1"><button onClick={() => { api.delete(`/pre-fermentation/lab/${r.id}`); load(); }} className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button></td>}
-                        </tr>
-                      ))}</tbody>
-                    </table>
-                  </div>
-                )}
-                {activeBatch.labReadings.length === 0 && isField && (
-                  <p className="text-sm text-gray-400 italic">No lab readings yet. Lab will update readings here.</p>
-                )}
+                <h3 className="font-semibold text-emerald-800 flex items-center gap-1 mb-2"><FlaskConical size={16} /> Lab Readings <span className="text-xs font-normal text-gray-400 ml-1">(enter in Lab tab)</span></h3>
+                <div className="overflow-x-auto mb-3">
+                  <table className="w-full text-sm">
+                    <thead><tr className="text-xs text-gray-500">{['Time', 'T0+', 'Gravity', 'pH', 'RS%', 'RST%', 'Alc%', 'DS%', 'VFA', 'Temp'].map(h => <th key={h} className="text-left py-1 px-1">{h}</th>)}</tr></thead>
+                    <tbody>{activeBatch.labReadings.map(r => (
+                      <tr key={r.id} className="border-t">
+                        <td className="px-1 py-1 text-xs whitespace-nowrap">{r.analysisTime ? new Date(r.analysisTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : '-'}</td>
+                        <td className="px-1 text-xs font-medium text-indigo-600">{elapsed(activeBatch.setupTime, r.analysisTime || r.createdAt)}</td>
+                        <td className="px-1">{r.spGravity ?? '-'}</td><td className="px-1">{r.ph ?? '-'}</td><td className="px-1">{r.rs ?? '-'}</td><td className="px-1">{r.rst ?? '-'}</td><td className="px-1">{r.alcohol ?? '-'}</td><td className="px-1">{r.ds ?? '-'}</td><td className="px-1">{r.vfaPpa ?? '-'}</td><td className="px-1">{r.temp ?? '-'}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
                 <LabChart readings={activeBatch.labReadings} t0={activeBatch.setupTime} />
-                {/* Lab form — only for non-FIELD users */}
-                {!isField && (
-                  <>
-                    <div className="grid grid-cols-2 md:grid-cols-5 lg:grid-cols-10 gap-2 mt-3">
-                      <div>
-                        <label className="text-xs text-gray-500">Time</label>
-                        <button onClick={setNow} className="w-full flex items-center justify-center gap-1 bg-blue-50 text-blue-700 font-medium px-2 py-1.5 rounded border border-blue-200 hover:bg-blue-100 text-sm">
-                          <Clock size={14} /> {labForm.analysisTime ? new Date(labForm.analysisTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }) : 'Tap = Now'}
-                        </button>
-                      </div>
-                      {numField('Gravity', labForm.spGravity, v => setLabForm(f => ({ ...f, spGravity: v })), '0.001')}
-                      {numField('pH', labForm.ph, v => setLabForm(f => ({ ...f, ph: v })), '0.01')}
-                      {numField('RS%', labForm.rs, v => setLabForm(f => ({ ...f, rs: v })), '0.01')}
-                      {numField('RST%', labForm.rst, v => setLabForm(f => ({ ...f, rst: v })), '0.01')}
-                      {numField('Alc%', labForm.alcohol, v => setLabForm(f => ({ ...f, alcohol: v })), '0.01')}
-                      {numField('DS%', labForm.ds, v => setLabForm(f => ({ ...f, ds: v })), '0.01')}
-                      {numField('VFA', labForm.vfaPpa, v => setLabForm(f => ({ ...f, vfaPpa: v })), '0.01')}
-                      {numField('Temp°C', labForm.temp, v => setLabForm(f => ({ ...f, temp: v })), '0.1')}
-                      <div><label className="text-xs text-gray-500">Remarks</label><input value={labForm.remarks} onChange={e => setLabForm(f => ({ ...f, remarks: e.target.value }))} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
-                    </div>
-                    <button onClick={addLabReading} className="mt-2 bg-emerald-600 text-white px-4 py-1.5 rounded text-sm hover:bg-emerald-700">Add Reading</button>
-                  </>
-                )}
               </div>
             )}
 
