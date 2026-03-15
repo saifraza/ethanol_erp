@@ -503,12 +503,11 @@ export default function PreFermentation() {
                 )}
                 <LabChart readings={activeBatch.labReadings} t0={activeBatch.setupTime} />
                 <div className="grid grid-cols-2 md:grid-cols-5 lg:grid-cols-10 gap-2 mt-3">
-                  <div className="col-span-2">
-                    <label className="text-xs text-gray-500">Date & Time</label>
-                    <div className="flex gap-1.5 items-center">
-                      <input type="datetime-local" value={labForm.analysisTime} onChange={e => setLabForm(f => ({ ...f, analysisTime: e.target.value }))} className="flex-1 border rounded px-2 py-1.5 text-sm" />
-                      <button onClick={setNow} className="text-xs bg-blue-50 text-blue-600 px-2 py-1.5 rounded border border-blue-200 hover:bg-blue-100 whitespace-nowrap">Now</button>
-                    </div>
+                  <div>
+                    <label className="text-xs text-gray-500">Time</label>
+                    <button onClick={setNow} className="w-full flex items-center justify-center gap-1 bg-blue-50 text-blue-700 font-medium px-2 py-1.5 rounded border border-blue-200 hover:bg-blue-100 text-sm">
+                      <Clock size={14} /> {labForm.analysisTime ? new Date(labForm.analysisTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }) : 'Tap = Now'}
+                    </button>
                   </div>
                   {numField('Gravity', labForm.spGravity, v => setLabForm(f => ({ ...f, spGravity: v })), '0.001')}
                   {numField('pH', labForm.ph, v => setLabForm(f => ({ ...f, ph: v })), '0.01')}
