@@ -21,8 +21,16 @@
 5. Frontend vite config outputs to `../backend/public` (not `frontend/dist/`)
 6. **Cannot push from VM** — user must run `git push origin main` from their Mac terminal
 
+## Databases — LOCAL vs ONLINE (Railway)
+- **Online Railway DB** (PRODUCTION): `postgresql://postgres:DrENyRNbBLtcdBMKzgIbIhHSMDiiXvBu@shuttle.proxy.rlwy.net:15470/railway`
+  - This is the LIVE database used by the deployed app at https://web-production-d305.up.railway.app/
+  - Query from VM using `psycopg2` (Python) or `pg` (Node.js) with the connection string above
+  - Contains all real production data (EthanolProductEntry, GrainEntry, etc.)
+- **Local DB**: `postgresql://saifraza@localhost:5432/distillery_erp` (not reachable from VM)
+  - Only for local development on Mac
+- **Session local SQLite** (`backend/prisma/dev.db`): Old dev DB in `/sessions/serene-jolly-carson/distillery-erp/` — NOT the production data
+
 ## Local Development
-- Local DB: `postgresql://saifraza@localhost:5432/distillery_erp` (not reachable from VM)
 - Backend dev: `cd backend && npm run dev` (uses tsx, serves on port 5000)
 - Frontend dev: `cd frontend && npm run dev` (vite on port 3000, proxies /api to 5000)
 - After schema changes: `npx prisma db push` locally
@@ -33,6 +41,16 @@
 - Calibration loaded from `backend/src/data/calibrations.json`
 - DIP (cm) → Volume (litres) auto-lookup, Empty checkbox for 0 volume
 - Decanter grouped by dryer: D1-D3→Dryer1, D4-D5→Dryer2, D6-D8→Dryer3
+
+## Ethanol Stock & Production
+- **EthanolProductEntry** table: daily tank readings, stock, dispatch, production
+- **Production per day**: `productionBL = currentTotalStock - prevTotalStock + totalDispatch`
+- **Total Production**: SUM(productionBL) + opening stock from first entry
+  - First entry (25-Feb-2026) has `totalStock = 1,357,471` and `productionBL = 0` — this is the opening balance when ERP started
+  - Total produced = 1,357,471 (opening) + SUM of all daily production = correct cumulative total
+- **KLPD**: `(productionBL / hoursBetween) * 24 / 1000` — kilolitres per day
+- **Dispatch**: comes from DispatchTruck table, linked or standalone
+- Tank calibration: DIP (cm) → Volume (litres) via calibrations.json lookup
 
 ## Grain Stock — Mass Balance
 - **Formula**: `grainConsumed = max(0, grainDistilled + deltaGrainInProcess + deltaFlour)`

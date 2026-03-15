@@ -95,13 +95,25 @@ router.get('/latest', authenticate, async (req: AuthRequest, res: Response) => {
 
 router.get('/total-production', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const MASH_GIVEN = 2040000; // historical ethanol given to mash
+    // Sum all daily production values
     const totalProduction = await prisma.ethanolProductEntry.aggregate({
       _sum: {
         productionBL: true,
       },
     });
-    res.json({ totalProduced: (totalProduction._sum.productionBL || 0) + MASH_GIVEN });
+    const sumProd = totalProduction._sum.productionBL || 0;
+
+    // Add the opening stock from the FIRST entry (base stock when ERP started)
+    const firstEntry = await prisma.ethanolProductEntry.findFirst({
+      orderBy: { date: 'asc' },
+      select: { totalStock: true, productionBL: true },
+    });
+    // If the first entry has production=0, its totalStock is the opening balance
+    const openingStock = (firstEntry && (firstEntry.productionBL === 0 || firstEntry.productionBL === null))
+      ? (firstEntry.totalStock || 0)
+      : 0;
+
+    res.json({ totalProduced: sumProd + openingStock });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
