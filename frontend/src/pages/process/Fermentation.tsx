@@ -410,7 +410,7 @@ function FieldTab({ pfBatches, fermBatches, chemicals, pfRecipes, isAdmin, onRef
                     <button onClick={() => advancePF(batch, 'LAB', { dosingEndTime: new Date().toISOString() })}
                       className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium">Done Dosing</button>
                   )}
-                  {(batch.phase === 'LAB' || batch.readyToTransfer) && (
+                  {['SETUP', 'DOSING', 'LAB'].includes(batch.phase) && (batch.phase === 'LAB' || batch.readyToTransfer) && (
                     <button onClick={() => { setTransferModal(batch); setTransferFermNo('1'); }}
                       className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1">
                       <ArrowRight size={16} /> Transfer
