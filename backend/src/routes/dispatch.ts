@@ -44,15 +44,39 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
 });
 
 // GET /api/dispatch/totals — all-time dispatch sum
+// Uses EthanolProductEntry.totalDispatch as the source of truth (includes seeded historical data)
+// DispatchTruck table only has individual truck records entered after ERP went live
 router.get('/totals', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const all = await prisma.dispatchTruck.findMany({
-      where: { entryId: null },
-      select: { quantityBL: true },
+    // Total dispatch from ethanol product entries (includes historical seeded data)
+    const epTotal = await prisma.ethanolProductEntry.aggregate({
+      _sum: { totalDispatch: true },
     });
-    const totalDispatched = all.reduce((s, d) => s + (d.quantityBL || 0), 0);
-    const count = all.length;
-    res.json({ totalDispatched, count });
+    const totalFromEntries = epTotal._sum.totalDispatch || 0;
+
+    // Also count standalone dispatches NOT yet included in any ethanol entry
+    const lastEntry = await prisma.ethanolProductEntry.findFirst({
+      orderBy: { date: 'desc' },
+      select: { date: true },
+    });
+    let standaloneExtra = 0;
+    let standaloneCount = 0;
+    if (lastEntry) {
+      const standalone = await prisma.dispatchTruck.findMany({
+        where: { entryId: null, date: { gt: lastEntry.date } },
+        select: { quantityBL: true },
+      });
+      standaloneExtra = standalone.reduce((s, d) => s + (d.quantityBL || 0), 0);
+      standaloneCount = standalone.length;
+    }
+
+    // Total truck count (all individual truck records)
+    const truckCount = await prisma.dispatchTruck.count({ where: { entryId: null } });
+
+    res.json({
+      totalDispatched: totalFromEntries + standaloneExtra,
+      count: truckCount + standaloneCount,
+    });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
