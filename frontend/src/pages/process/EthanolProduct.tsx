@@ -33,11 +33,13 @@ export default function EthanolProduct() {
   const [lastPrevStock, setLastPrevStock] = useState<number | null>(null);
   const [allTimeDispatched, setAllTimeDispatched] = useState(0);
   const [allTimeDispatchCount, setAllTimeDispatchCount] = useState(0);
+  const [totalProduced, setTotalProduced] = useState(0);
   const MASH_GIVEN = 2040000; // historical ethanol given to mash
 
   useEffect(() => {
     api.get('/calibration').then(r => setCalData(r.data)).catch(e => console.error('Cal load error:', e));
     loadTotals();
+    api.get('/ethanol-product/total-production').then(r => setTotalProduced(r.data.totalProduced)).catch(e => console.error(e));
   }, []);
 
   async function loadTotals() {
@@ -268,7 +270,7 @@ export default function EthanolProduct() {
             <div className="bg-white/60 rounded-lg p-2 text-center border border-green-100">
               <Factory size={16} className="mx-auto text-green-600 mb-1" />
               <div className="text-[10px] text-gray-400 uppercase">Total Produced</div>
-              <div className="text-lg font-bold text-green-700">{(((lastEntry?.totalStock || 0) - newDispatch + allTimeDispatched + MASH_GIVEN) / 100000).toFixed(2)} L</div>
+              <div className="text-lg font-bold text-green-700">{((totalProduced) / 100000).toFixed(2)} L</div>
               <div className="text-[9px] text-gray-400">Stock + Dispatched + {(MASH_GIVEN/100000).toFixed(1)}L mash</div>
             </div>
           </div>
@@ -296,7 +298,6 @@ export default function EthanolProduct() {
             const newDispInfo = newDispatch > 0 ? `\nNew Dispatch: ${newDispatch.toFixed(0)} BL (${newDispatchList.length} trucks)` : '';
             const newTruckLines = newDispatchList.length > 0 ? '\n' + newDispatchList.map((d: any) => `  ${d.vehicleNo} → ${d.destination || '-'} | ${d.quantityBL?.toFixed(0)} BL | ${d.partyName}`).join('\n') : '';
             const prevLine = lastPrevStock != null && lastPrevDate ? `\nPrev Stock: ${lastPrevStock.toFixed(0)} BL (${fmtDtTime(lastPrevDate)})` : '';
-            const totalProduced = curStock + allTimeDispatched + MASH_GIVEN;
             const text = `*Ethanol Stock Status*\n📅 ${fmtDtTime(lastEntry.date)}\n${prevLine}\nStock: ${lastEntry.totalStock?.toFixed(0)} BL\nStrength: ${lastEntry.avgStrength?.toFixed(1)}%\nProd: ${lastEntry.productionBL?.toFixed(0)} BL${lastPrevDate ? ` (${fmtDtTime(lastPrevDate)} → ${fmtDtTime(lastEntry.date)})` : ''}\nKLPD: ${lastEntry.klpd?.toFixed(1)}${dispInfo}${newDispInfo}${newTruckLines}\n\n📦 *Current Stock: ${curStock.toFixed(0)} BL*\n🚛 Total Dispatched: ${(allTimeDispatched/100000).toFixed(2)} L BL (${allTimeDispatchCount} trucks)\n🏭 Total Produced: ${(totalProduced/100000).toFixed(2)} L BL`;
             if (navigator.share) {
               navigator.share({ text }).catch(() => {
