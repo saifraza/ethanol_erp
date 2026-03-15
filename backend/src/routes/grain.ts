@@ -30,7 +30,7 @@ function resolveLevel(value: number | null | undefined, fallback: number | null 
 // Flow: Silo → Milling → Flour Silo → ILT/FLT → PF → Fermenters/BW → Distillation
 // Grain consumed from silo = Δflour + Δ(grain in process) + grain distilled
 // If nothing changed between readings, grain consumed = 0
-function calcGrain(data: any, opening: number, prevCumUnloaded: number, prevCumConsumed: number, prevWashConsumed: number, fermPct: number, pfPct: number, millingLossPct: number = 0, prevEntry: any = null) {
+function calcGrain(data: any, opening: number, prevCumUnloaded: number, prevCumConsumed: number, prevWashConsumed: number, fermPct: number, pfPct: number, prevEntry: any = null) {
   const isOpeningSnapshot = !prevEntry;
   // Current volumes
   const fermVol = (data.f1Level||0)+(data.f2Level||0)+(data.f3Level||0)+(data.f4Level||0)+(data.beerWellLevel||0);
@@ -67,10 +67,8 @@ function calcGrain(data: any, opening: number, prevCumUnloaded: number, prevCumC
   // Milling loss on received grain
   const grainReceived = data.grainUnloaded || 0;  // to silo (excluding quarantine)
   const totalReceived = data.totalReceived || grainReceived;  // all truck net weight (incl quarantine)
-  const millingLoss = grainReceived * millingLossPct;
-  const effectiveGrain = grainReceived - millingLoss;
 
-  const siloClosingStock = opening + effectiveGrain - grainConsumed;
+  const siloClosingStock = opening + grainReceived - grainConsumed;
   const totalGrainAtPlant = grainInProcess + flourTotal;
   const cumulativeUnloaded = prevCumUnloaded + totalReceived;  // total grain received at factory (incl quarantine)
   const cumulativeConsumed = prevCumConsumed + Math.max(0, grainConsumed);
@@ -291,7 +289,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     const opening = prev?.siloClosingStock ?? DEFAULT_SILO;
     const prevCumUnloaded = prev?.cumulativeUnloaded ?? DEFAULT_CUM_UNLOADED;
     const prevCumConsumed = prev?.cumulativeConsumed ?? DEFAULT_CUM_CONSUMED;
-    const { fermPct, pfPct, millingLossPct } = await getGrainPcts();
+    const { fermPct, pfPct } = await getGrainPcts();
 
     const inputData = {
       grainUnloaded: grainUnloaded || 0,
@@ -310,7 +308,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
       flourSilo2Level: resolveLevel(flourSilo2Level, prev?.flourSilo2Level),
     };
     const prevWash = prev?.washConsumed ?? 0;
-    const calc = calcGrain(inputData, opening, prevCumUnloaded, prevCumConsumed, prevWash, fermPct, pfPct, millingLossPct, prev);
+    const calc = calcGrain(inputData, opening, prevCumUnloaded, prevCumConsumed, prevWash, fermPct, pfPct, prev);
 
     const entry = await prisma.grainEntry.create({
       data: {
@@ -358,7 +356,7 @@ router.put('/:id', authenticate, authorize('ADMIN'), async (req: AuthRequest, re
     const opening = prev?.siloClosingStock ?? DEFAULT_SILO;
     const prevCumUnloaded = prev?.cumulativeUnloaded ?? DEFAULT_CUM_UNLOADED;
     const prevCumConsumed = prev?.cumulativeConsumed ?? DEFAULT_CUM_CONSUMED;
-    const { fermPct, pfPct, millingLossPct } = await getGrainPcts();
+    const { fermPct, pfPct } = await getGrainPcts();
 
     const inputData = {
       grainUnloaded: grainUnloaded ?? existing.grainUnloaded,
@@ -377,7 +375,7 @@ router.put('/:id', authenticate, authorize('ADMIN'), async (req: AuthRequest, re
       flourSilo2Level: flourSilo2Level ?? (existing as any).flourSilo2Level ?? 0,
     };
     const prevWash = prev?.washConsumed ?? 0;
-    const calc = calcGrain(inputData, opening, prevCumUnloaded, prevCumConsumed, prevWash, fermPct, pfPct, millingLossPct, prev);
+    const calc = calcGrain(inputData, opening, prevCumUnloaded, prevCumConsumed, prevWash, fermPct, pfPct, prev);
 
     const entry = await prisma.grainEntry.update({
       where: { id: req.params.id },

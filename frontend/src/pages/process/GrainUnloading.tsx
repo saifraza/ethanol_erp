@@ -156,7 +156,7 @@ function entryProcessGrain(entry: any, fermPct: number, pfPct: number) {
   return r2(entryFermWash(entry) * fermPct + entryPfWash(entry) * pfPct + entryIltFltWash(entry) * fermPct);
 }
 
-function buildHistoryBreakdown(entry: any, prevEntry: any, fermPct: number, pfPct: number, millingLossPct: number) {
+function buildHistoryBreakdown(entry: any, prevEntry: any, fermPct: number, pfPct: number) {
   const isOpeningSnapshot = !prevEntry;
   const fermWash = r2(entryFermWash(entry));
   const pfWash = r2(entryPfWash(entry));
@@ -172,12 +172,11 @@ function buildHistoryBreakdown(entry: any, prevEntry: any, fermPct: number, pfPc
   const deltaFlour = isOpeningSnapshot ? 0 : r2(flourTotal - prevFlourTotal);
   const predictedConsumed = isOpeningSnapshot ? 0 : r2(Math.max(0, grainDistilled + deltaProcess + deltaFlour));
   const receivedToSilo = r2(entry?.grainUnloaded || 0);
-  const effectiveReceived = r2(receivedToSilo * (1 - millingLossPct));
   const storedGrainInProcess = r2(entry?.grainInProcess || 0);
   const storedTotalAtPlant = r2(entry?.totalGrainAtPlant || 0);
   const storedConsumed = r2(entry?.grainConsumed || 0);
   const storedSiloClosing = r2(entry?.siloClosingStock || 0);
-  const expectedSiloClosing = r2((entry?.siloOpeningStock || 0) + effectiveReceived - storedConsumed);
+  const expectedSiloClosing = r2((entry?.siloOpeningStock || 0) + receivedToSilo - storedConsumed);
   const expectedTotalAtPlant = r2(grainInProcessCalc + flourTotal);
 
   return {
@@ -198,7 +197,6 @@ function buildHistoryBreakdown(entry: any, prevEntry: any, fermPct: number, pfPc
     storedConsumed,
     consumedMismatch: r2(storedConsumed - predictedConsumed),
     receivedToSilo,
-    effectiveReceived,
     storedTotalAtPlant,
     expectedTotalAtPlant,
     totalAtPlantMismatch: r2(storedTotalAtPlant - expectedTotalAtPlant),
@@ -324,8 +322,7 @@ export default function GrainUnloading() {
   const opening = defaults.siloOpeningStock || 0;
   const grainReceived = form.grainUnloaded || 0;
   const millingLoss = grainReceived * MILLING_LOSS_PCT;
-  const effectiveGrain = grainReceived - millingLoss;
-  const siloClosing = opening + effectiveGrain - grainConsumed;
+  const siloClosing = opening + grainReceived - grainConsumed;
   const totalAtPlant = grainInProcess + flourSiloTotal;
   const liveSiloEstimate = defaults.liveSiloEstimate ?? defaults.siloOpeningStock ?? 0;
   const hasPreviewInputs = !!editId || form.washConsumed != null || form.f1Pct != null || form.f2Pct != null || form.f3Pct != null || form.f4Pct != null || form.beerWellPct != null || form.pf1Pct != null || form.pf2Pct != null || form.iltPct != null || form.fltPct != null || form.flourSilo1Pct != null || form.flourSilo2Pct != null;
@@ -343,7 +340,7 @@ export default function GrainUnloading() {
   }
   const historyDetailPrev = historyDetailEntry ? previousEntryById.get(historyDetailEntry.id) || null : null;
   const historyDetail = historyDetailEntry
-    ? buildHistoryBreakdown(historyDetailEntry, historyDetailPrev, FERM_GRAIN_PCT, PF_GRAIN_PCT, MILLING_LOSS_PCT)
+    ? buildHistoryBreakdown(historyDetailEntry, historyDetailPrev, FERM_GRAIN_PCT, PF_GRAIN_PCT)
     : null;
 
   const washElapsed = (prev?.washConsumedAt && form.washConsumedAt)
@@ -662,8 +659,8 @@ export default function GrainUnloading() {
         </div>
         {grainReceived > 0 && (
           <div className="flex justify-between items-center py-1 px-1 text-xs">
-            <span className="text-red-400">Milling Loss ({(MILLING_LOSS_PCT * 100).toFixed(1)}%)</span>
-            <span className="text-red-500 font-medium">−{millingLoss.toFixed(1)} T → Effective: {effectiveGrain.toFixed(1)} T</span>
+            <span className="text-red-400">Estimated Milling Loss Later ({(MILLING_LOSS_PCT * 100).toFixed(1)}%)</span>
+            <span className="text-red-500 font-medium">≈ {millingLoss.toFixed(1)} T</span>
           </div>
         )}
         <div className="mt-2 p-3 rounded-lg bg-orange-50 border border-orange-200">
@@ -986,8 +983,8 @@ export default function GrainUnloading() {
             </div>
             {millingLoss > 0 && (
               <div className="flex justify-between items-center py-2 px-1">
-                <span className="text-red-400 text-xs">Milling Loss ({(MILLING_LOSS_PCT * 100).toFixed(1)}%)</span>
-                <span className="font-semibold text-red-500">−{millingLoss.toFixed(2)} T</span>
+                <span className="text-red-400 text-xs">Estimated Milling Loss Later ({(MILLING_LOSS_PCT * 100).toFixed(1)}%)</span>
+                <span className="font-semibold text-red-500">≈{millingLoss.toFixed(2)} T</span>
               </div>
             )}
             <div className="flex justify-between items-center py-2 px-1">
@@ -1439,7 +1436,7 @@ export default function GrainUnloading() {
                 <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                   <div className="rounded-lg bg-slate-50 p-3">
                     <div className="text-xs uppercase text-slate-500 mb-1">Silo Closing Check</div>
-                    <div className="text-slate-700">{Number(historyDetailEntry.siloOpeningStock || 0).toFixed(2)} + {historyDetail.effectiveReceived.toFixed(2)} - {historyDetail.storedConsumed.toFixed(2)} = <span className="font-bold">{historyDetail.expectedSiloClosing.toFixed(2)} T</span></div>
+                    <div className="text-slate-700">{Number(historyDetailEntry.siloOpeningStock || 0).toFixed(2)} + {historyDetail.receivedToSilo.toFixed(2)} - {historyDetail.storedConsumed.toFixed(2)} = <span className="font-bold">{historyDetail.expectedSiloClosing.toFixed(2)} T</span></div>
                     <div className="text-xs text-slate-500 mt-1">Stored: {historyDetail.storedSiloClosing.toFixed(2)} T {Math.abs(historyDetail.siloClosingMismatch) > 0.05 ? `(mismatch ${historyDetail.siloClosingMismatch.toFixed(2)} T)` : ''}</div>
                   </div>
                   <div className="rounded-lg bg-slate-50 p-3">
