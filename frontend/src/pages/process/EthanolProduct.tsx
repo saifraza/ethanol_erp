@@ -126,7 +126,9 @@ export default function EthanolProduct() {
   const totalStock = TANKS.reduce((s, t) => s + (form[`${t.key}Volume`] || 0), 0);
   const wSum = TANKS.reduce((s, t) => s + (form[`${t.key}Volume`] || 0) * (form[`${t.key}Strength`] || 0), 0);
   const avgStrength = totalStock > 0 ? wSum / totalStock : 0;
-  const prevStock = prev ? TANKS.reduce((s, t) => s + (prev[`${t.key}Volume`] || 0), 0) : 0;
+  // Use sum of tank volumes if available, otherwise fall back to totalStock (for spreadsheet-imported entries)
+  const prevTankSum = prev ? TANKS.reduce((s, t) => s + (prev[`${t.key}Volume`] || 0), 0) : 0;
+  const prevStock = prevTankSum > 0 ? prevTankSum : (prev?.totalStock || 0);
   const productionBL = totalStock - prevStock + todayDispatch;
   const productionAL = productionBL * avgStrength / 100;
   // KLPD: production per day in kilolitres
