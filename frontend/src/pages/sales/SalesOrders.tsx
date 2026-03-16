@@ -242,11 +242,19 @@ export default function SalesOrders() {
     const latestShipment = shipments[shipments.length - 1];
     const shipmentDone = latestShipment && ['RELEASED', 'EXITED'].includes(latestShipment.status);
 
+    // Calculate dispatched quantity from shipments with net weight
+    const dispatchedKg = shipments
+      .filter((s: any) => s.weightNet && ['RELEASED', 'EXITED'].includes(s.status))
+      .reduce((sum: number, s: any) => sum + (s.weightNet || 0), 0);
+    const dispatchedMT = dispatchedKg / 1000;
+    const orderedQty = (order.lineItems?.[0] || (order as any).lines?.[0])?.quantity || 0;
+    const dispatchPct = orderedQty > 0 ? Math.min((dispatchedMT / orderedQty) * 100, 100) : 0;
+
     const invoices = order.invoices || [];
     const hasInvoice = invoices.length > 0;
     const latestInvoice = invoices[invoices.length - 1];
 
-    return { hasDR, latestDR, shipments, latestShipment, shipmentDone, hasInvoice, latestInvoice };
+    return { hasDR, latestDR, shipments, latestShipment, shipmentDone, hasInvoice, latestInvoice, dispatchedMT, orderedQty, dispatchPct };
   };
 
   const getStepColor = (done: boolean, active: boolean) =>
@@ -494,21 +502,30 @@ export default function SalesOrders() {
                       </div>
                     </div>
 
-                    {/* Pipeline Mini-tracker */}
+                    {/* Dispatch Progress */}
                     {soConfirmed && order.status !== 'CANCELLED' && (
-                      <div className="flex items-center gap-1 mt-3">
-                        <div className={`h-1.5 flex-1 rounded-full bg-green-500`} />
-                        <div className={`h-1.5 flex-1 rounded-full ${pipe.hasDR ? 'bg-green-500' : 'bg-gray-200'}`} />
-                        <div className={`h-1.5 flex-1 rounded-full ${pipe.shipmentDone ? 'bg-green-500' : pipe.latestShipment ? 'bg-blue-400' : 'bg-gray-200'}`} />
-                        <div className={`h-1.5 flex-1 rounded-full ${pipe.hasInvoice ? 'bg-green-500' : 'bg-gray-200'}`} />
-                        <div className={`h-1.5 flex-1 rounded-full ${pipe.latestInvoice?.status === 'PAID' ? 'bg-green-500' : 'bg-gray-200'}`} />
-                        <div className="text-[9px] text-gray-400 ml-1 whitespace-nowrap">
-                          {!pipe.hasDR ? 'Awaiting logistics' :
-                           !pipe.latestShipment ? 'Trucks scheduled' :
-                           !pipe.shipmentDone ? `Truck: ${pipe.latestShipment.status}` :
-                           !pipe.hasInvoice ? 'Ready to invoice' :
-                           pipe.latestInvoice?.status === 'PAID' ? 'Complete' :
-                           'Payment pending'}
+                      <div className="mt-3">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] text-gray-500">
+                            {pipe.dispatchedMT > 0
+                              ? `${pipe.dispatchedMT.toFixed(1)} / ${pipe.orderedQty} ${line?.unit || 'MT'} dispatched`
+                              : pipe.shipments.length > 0
+                              ? `${pipe.shipments.length} truck${pipe.shipments.length > 1 ? 's' : ''} · ${pipe.latestShipment?.status?.replace(/_/g, ' ')}`
+                              : pipe.hasDR ? 'Trucks scheduled' : 'Awaiting logistics'}
+                          </span>
+                          <span className="text-[10px] font-semibold text-purple-600">
+                            {pipe.dispatchPct > 0 ? `${Math.round(pipe.dispatchPct)}%` :
+                             pipe.hasInvoice ? (pipe.latestInvoice?.status === 'PAID' ? 'Paid' : 'Invoiced') : ''}
+                          </span>
+                        </div>
+                        <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full transition-all duration-500 ${
+                            pipe.latestInvoice?.status === 'PAID' ? 'bg-green-500' :
+                            pipe.hasInvoice ? 'bg-blue-500' :
+                            pipe.dispatchPct > 0 ? 'bg-purple-500' :
+                            pipe.shipments.length > 0 ? 'bg-amber-400' :
+                            pipe.hasDR ? 'bg-blue-300' : 'bg-gray-300'
+                          }`} style={{ width: `${Math.max(pipe.dispatchPct, pipe.hasDR ? 10 : 0, pipe.shipments.length > 0 ? 25 : 0, pipe.hasInvoice ? 85 : 0, pipe.latestInvoice?.status === 'PAID' ? 100 : 0)}%` }} />
                         </div>
                       </div>
                     )}
