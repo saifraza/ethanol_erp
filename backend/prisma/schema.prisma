@@ -400,6 +400,20 @@ model FermDosing {
   addedAt      DateTime          @default(now())
 }
 
+// Beer Well readings
+model BeerWellReading {
+  id        String   @id @default(uuid())
+  wellNo    Int      @default(1)
+  level     Float?   // level %
+  spGravity Float?
+  ph        Float?
+  alcohol   Float?
+  temp      Float?
+  remarks   String?
+  batchNo   Int?     // which batch was transferred here
+  createdAt DateTime @default(now())
+}
+
 // ═══════════════════════════════════════════════
 // DOSING RECIPES (fixed patterns)
 // ═══════════════════════════════════════════════
