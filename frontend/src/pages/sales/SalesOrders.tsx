@@ -199,6 +199,20 @@ export default function SalesOrders() {
     }
   };
 
+  const deleteOrder = async (order: SalesOrder) => {
+    if (!confirm(`Delete order #${order.orderNo}? This cannot be undone.`)) return;
+    setActionLoading(order.id + '_del');
+    try {
+      await api.delete(`/sales-orders/${order.id}`);
+      flash('ok', `Order #${order.orderNo} deleted`);
+      loadAll();
+    } catch (e: any) {
+      flash('err', e.response?.data?.error || 'Failed to delete');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   // ── Pipeline Status ──
   const getPipeline = (order: SalesOrder) => {
     const drs = order.dispatchRequests || [];
@@ -585,6 +599,14 @@ export default function SalesOrders() {
                           <button onClick={() => cancelOrder(order)} disabled={!!actionLoading}
                             className="px-3 py-2 text-red-600 text-sm font-medium rounded-lg border border-red-200 hover:bg-red-50 flex items-center gap-1">
                             <X size={14} /> Cancel
+                          </button>
+                        )}
+
+                        {/* Delete */}
+                        {['DRAFT', 'CONFIRMED', 'CANCELLED'].includes(order.status) && (
+                          <button onClick={() => deleteOrder(order)} disabled={!!actionLoading}
+                            className="px-3 py-2 text-red-600 text-sm font-medium rounded-lg border border-red-200 hover:bg-red-50 flex items-center gap-1">
+                            <Trash2 size={14} /> Delete
                           </button>
                         )}
                       </div>

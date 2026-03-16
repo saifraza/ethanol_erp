@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Truck, Share2, Loader2, ChevronDown, Check, Package, MapPin, Clock, ArrowRight, Plus, X } from 'lucide-react';
+import { Truck, Share2, Loader2, ChevronDown, Check, Package, MapPin, Clock, ArrowRight, Plus, X, Trash2 } from 'lucide-react';
 import api from '../../services/api';
 
 interface Shipment {
@@ -396,6 +396,21 @@ export default function DispatchRequests() {
                           <button onClick={() => { if (confirm('Cancel this dispatch?')) updateStatus(dr.id, 'CANCELLED'); }}
                             className="px-3 py-2 text-red-600 text-sm font-medium rounded-lg border border-red-200 hover:bg-red-50 flex items-center gap-1">
                             <X size={14} /> Cancel
+                          </button>
+                        )}
+
+                        {/* Delete */}
+                        {!['DISPATCHED', 'COMPLETED'].includes(dr.status) && (
+                          <button onClick={async () => {
+                            if (!confirm(`Delete DR #${dr.drNo}? This cannot be undone.`)) return;
+                            try {
+                              await api.delete(`/dispatch-requests/${dr.id}`);
+                              flash('ok', `DR #${dr.drNo} deleted`);
+                              load();
+                            } catch (e: any) { flash('err', e.response?.data?.error || 'Failed'); }
+                          }}
+                            className="px-3 py-2 text-red-600 text-sm font-medium rounded-lg border border-red-200 hover:bg-red-50 flex items-center gap-1">
+                            <Trash2 size={14} /> Delete
                           </button>
                         )}
                       </div>
