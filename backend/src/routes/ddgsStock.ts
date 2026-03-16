@@ -11,15 +11,27 @@ router.get('/latest', async (req: Request, res: Response) => {
   try {
     const beforeId = req.query.beforeId as string | undefined;
 
+    // Settings for baselines
+    const settings = await prisma.settings.findFirst();
+    const ddgsBaseProduction = (settings as any)?.ddgsBaseProduction ?? 3160;
+    const ddgsBaseStock = (settings as any)?.ddgsBaseStock ?? 1956.01;
+
     // Latest entry
     const where = beforeId ? { id: { not: beforeId } } : {};
     const latest = await prisma.dDGSStockEntry.findFirst({
       where, orderBy: { date: 'desc' }
     });
 
-    // Cumulative production from DDGSProductionEntry
+    // Cumulative production from DDGSProductionEntry (ERP entries only)
     const prodAgg = await prisma.dDGSProductionEntry.aggregate({ _sum: { totalProduction: true } });
-    const cumulativeProduction = prodAgg._sum.totalProduction || 0;
+    const erpProduction = prodAgg._sum.totalProduction || 0;
+
+    // Cumulative production from DDGSStockEntry (daily stock entries)
+    const stockProdAgg = await prisma.dDGSStockEntry.aggregate({ _sum: { productionToday: true } });
+    const stockProduction = stockProdAgg._sum.productionToday || 0;
+
+    // Use whichever is larger (production entries or stock entries)
+    const cumulativeProduction = Math.max(erpProduction, stockProduction);
 
     // Cumulative dispatch from DDGSDispatchTruck
     const dispAgg = await prisma.dDGSDispatchTruck.aggregate({ _sum: { weightNet: true } });
@@ -27,9 +39,11 @@ router.get('/latest', async (req: Request, res: Response) => {
 
     res.json({
       defaults: {
-        openingStock: latest?.closingStock ?? 1956.01, // 2576 produced - 619.99 dispatched
+        openingStock: latest?.closingStock ?? ddgsBaseStock,
         cumulativeProduction,
         cumulativeDispatch,
+        ddgsBaseProduction,
+        totalProduction: ddgsBaseProduction + cumulativeProduction,
       },
       previous: latest || null,
     });

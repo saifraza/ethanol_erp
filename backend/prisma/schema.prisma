@@ -84,6 +84,8 @@ model Settings {
   rsCap                 Float    @default(15000)
   hfoCap                Float    @default(15000)
   lfoCap                Float    @default(15000)
+  ddgsBaseProduction    Float    @default(3160)     // historical DDGS production before ERP (Ton)
+  ddgsBaseStock         Float    @default(1956.01)  // DDGS stock at ERP start (Ton)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 }

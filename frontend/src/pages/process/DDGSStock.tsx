@@ -23,7 +23,7 @@ export default function DDGSStock() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
   const [form, setForm] = useState<StockForm>({ ...emptyForm });
-  const [defaults, setDefaults] = useState<any>({ openingStock: 1956.01, cumulativeProduction: 0, cumulativeDispatch: 0 });
+  const [defaults, setDefaults] = useState<any>({ openingStock: 1956.01, cumulativeProduction: 0, cumulativeDispatch: 0, ddgsBaseProduction: 3160, totalProduction: 3160 });
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [entries, setEntries] = useState<any[]>([]);
@@ -45,7 +45,7 @@ export default function DDGSStock() {
   async function loadLatest() {
     try {
       const res = await api.get('/ddgs-stock/latest');
-      setDefaults(res.data.defaults || { openingStock: 1956.01, cumulativeProduction: 0, cumulativeDispatch: 0 });
+      setDefaults(res.data.defaults || { openingStock: 1956.01, cumulativeProduction: 0, cumulativeDispatch: 0, ddgsBaseProduction: 3160, totalProduction: 3160 });
     } catch (e) { console.error(e); }
   }
 
@@ -117,7 +117,7 @@ export default function DDGSStock() {
           { label: 'Produced Today', value: (productionToday || 0).toFixed(2), unit: 'Ton', color: 'bg-green-50 border-green-200' },
           { label: 'Dispatched Today', value: (dispatchToday || 0).toFixed(2), unit: 'Ton', color: 'bg-red-50 border-red-200' },
           { label: 'Closing Stock', value: (closingStock || 0).toFixed(1), unit: 'Ton', color: 'bg-blue-50 border-blue-200' },
-          { label: 'Total Produced', value: ((defaults?.cumulativeProduction || 0) + (productionToday || 0)).toFixed(1), unit: 'Ton', color: 'bg-purple-50 border-purple-200' },
+          { label: 'Total Produced', value: ((defaults?.totalProduction || 3160) + (productionToday || 0)).toFixed(1), unit: 'Ton', color: 'bg-purple-50 border-purple-200' },
         ].map(k => (
           <div key={k.label} className={`rounded-lg border p-2 md:p-3 ${k.color}`}>
             <div className="text-[10px] md:text-xs text-gray-500">{k.label}</div>
