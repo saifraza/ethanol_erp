@@ -7,7 +7,8 @@ import {
   Settings, Users, Truck, Package, LayoutDashboard,
   Warehouse, AlertCircle, ShoppingCart,
   UserCheck, ClipboardList, Send, FileText, IndianRupee,
-  Building2, Box, ShoppingBag, PackageCheck, Receipt, CreditCard
+  Building2, Box, ShoppingBag, PackageCheck, Receipt, CreditCard,
+  Store, Tractor
 } from 'lucide-react';
 
 export interface ModuleDef {
@@ -15,7 +16,7 @@ export interface ModuleDef {
   label: string;
   to: string;
   icon: any;
-  group: 'process' | 'admin' | 'sales' | 'procurement';
+  group: 'process' | 'admin' | 'sales' | 'procurement' | 'trade';
   adminOnly?: boolean;
 }
 
@@ -53,6 +54,9 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'goods-receipts', label: 'Goods Receipt', to: '/procurement/goods-receipts', icon: PackageCheck, group: 'procurement' },
   { key: 'vendor-invoices', label: 'Vendor Invoices', to: '/procurement/vendor-invoices', icon: Receipt, group: 'procurement' },
   { key: 'vendor-payments', label: 'Vendor Payments', to: '/procurement/vendor-payments', icon: CreditCard, group: 'procurement' },
+  // Direct Trade (cash buy/sell)
+  { key: 'direct-purchase', label: 'Cash Purchase', to: '/trade/purchases', icon: Tractor, group: 'trade' },
+  { key: 'direct-sale', label: 'Cash Sale', to: '/trade/sales', icon: Store, group: 'trade' },
   // Store & Maintenance
   { key: 'inventory', label: 'Inventory', to: '/inventory', icon: Warehouse, group: 'admin' },
   { key: 'plant-issues', label: 'Plant Issues', to: '/plant-issues', icon: AlertCircle, group: 'admin' },
@@ -78,6 +82,10 @@ export const salesNav = MODULE_DEFS.filter(m => m.group === 'sales').map(m => ({
 }));
 
 export const procurementNav = MODULE_DEFS.filter(m => m.group === 'procurement').map(m => ({
+  to: m.to, label: m.label, icon: m.icon, moduleKey: m.key,
+}));
+
+export const tradeNav = MODULE_DEFS.filter(m => m.group === 'trade').map(m => ({
   to: m.to, label: m.label, icon: m.icon, moduleKey: m.key,
 }));
 
