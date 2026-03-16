@@ -332,6 +332,23 @@ export default function EthanolProduct() {
         </div>
       </div>
 
+      {/* Copy Previous — for days when plant didn't run */}
+      {prev && (
+        <button type="button" onClick={() => {
+          const f: any = {};
+          for (const t of TANKS) {
+            for (const suffix of ['Dip', 'Lt', 'Strength', 'Volume']) {
+              f[`${t.key}${suffix}`] = prev[`${t.key}${suffix}`] ?? null;
+            }
+            f[`${t.key}Empty`] = (prev[`${t.key}Volume`] || 0) === 0 && !prev[`${t.key}Dip`];
+          }
+          f.rsLevel = prev.rsLevel; f.hfoLevel = prev.hfoLevel; f.lfoLevel = prev.lfoLevel;
+          setForm(f);
+        }} className="mb-4 w-full flex items-center justify-center gap-2 border-2 border-dashed border-gray-300 text-gray-500 py-2.5 rounded-lg text-sm font-medium hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+          <Clock size={16} /> Copy Previous (Plant Not Running)
+        </button>
+      )}
+
       {/* Tank Readings */}
       {groups.map(g => (
         <div key={g.label} className="mb-5">
