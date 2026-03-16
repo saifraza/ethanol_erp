@@ -186,7 +186,7 @@ router.post('/', async (req: Request, res: Response) => {
         transporterName: b.transporterName || null,
         vehicleCount: parseInt(b.vehicleCount) || 0,
         remarks: b.remarks || null,
-        status: 'PENDING',
+        status: 'SCHEDULED',
         userId: (req as any).user.id,
       },
       include: {
@@ -238,13 +238,14 @@ router.put('/:id/status', async (req: Request, res: Response) => {
       return;
     }
 
-    // Validate transitions
+    // Validate transitions — simplified flow (no factory confirmation needed)
     const allowedTransitions: { [key: string]: string[] } = {
-      PENDING: ['ACCEPTED', 'CANCELLED'],
-      ACCEPTED: ['VEHICLE_ASSIGNED', 'CANCELLED'],
-      VEHICLE_ASSIGNED: ['LOADING', 'CANCELLED'],
-      LOADING: ['DISPATCHED', 'CANCELLED'],
-      DISPATCHED: ['COMPLETED', 'CANCELLED'],
+      PENDING: ['SCHEDULED', 'CANCELLED'],     // legacy support
+      SCHEDULED: ['LOADING', 'CANCELLED'],      // logistics scheduled → truck loading at factory
+      ACCEPTED: ['LOADING', 'CANCELLED'],       // legacy support
+      VEHICLE_ASSIGNED: ['LOADING', 'CANCELLED'], // legacy
+      LOADING: ['DISPATCHED', 'CANCELLED'],     // loaded → dispatched
+      DISPATCHED: ['COMPLETED', 'CANCELLED'],   // dispatched → delivered
       COMPLETED: [],
       CANCELLED: [],
     };
@@ -258,12 +259,6 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     }
 
     const updateData: any = { status };
-
-    // Handle PENDING -> ACCEPTED transition
-    if (dr.status === 'PENDING' && status === 'ACCEPTED') {
-      updateData.acceptedAt = new Date();
-      updateData.acceptedBy = acceptedBy || null;
-    }
 
     const updated = await prisma.dispatchRequest.update({
       where: { id: req.params.id },
