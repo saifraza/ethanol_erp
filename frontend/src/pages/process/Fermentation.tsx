@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Beaker, FlaskConical, RefreshCw, ArrowRight, Pencil, Check, X, Send, CheckCircle, AlertTriangle, ChevronDown, ChevronUp, Share2 } from 'lucide-react';
+import { Plus, Beaker, FlaskConical, RefreshCw, ArrowRight, Pencil, Check, X, Send, CheckCircle, AlertTriangle, ChevronDown, ChevronUp, Share2, Cylinder } from 'lucide-react';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 
@@ -92,6 +92,7 @@ export default function Fermentation() {
   const [fermBatches, setFermBatches] = useState<FermBatch[]>([]);
   const [chemicals, setChemicals] = useState<any[]>([]);
   const [pfRecipes, setPfRecipes] = useState<any[]>([]);
+  const [beerWell, setBeerWell] = useState<any>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'ok' | 'err' } | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -109,6 +110,7 @@ export default function Fermentation() {
       ]);
       setPfBatches(ov.data.pfBatches || []);
       setFermBatches(ov.data.fermBatches || []);
+      setBeerWell(ov.data.beerWell || null);
       setChemicals(ch.data || []);
       setPfRecipes(rec.data || []);
     } catch {} finally { setLoading(false); }
@@ -144,8 +146,8 @@ export default function Fermentation() {
         </button>
       </div>
 
-      {tab === 'field' && <FieldTab pfBatches={pfBatches} fermBatches={fermBatches} chemicals={chemicals} pfRecipes={pfRecipes} isAdmin={isAdmin} onRefresh={load} flash={flash} pfFor={pfFor} fermFor={fermFor} />}
-      {tab === 'lab' && <LabTab pfBatches={pfBatches} fermBatches={fermBatches} onRefresh={load} flash={flash} pfFor={pfFor} fermFor={fermFor} />}
+      {tab === 'field' && <FieldTab pfBatches={pfBatches} fermBatches={fermBatches} chemicals={chemicals} pfRecipes={pfRecipes} isAdmin={isAdmin} onRefresh={load} flash={flash} pfFor={pfFor} fermFor={fermFor} beerWell={beerWell} />}
+      {tab === 'lab' && <LabTab pfBatches={pfBatches} fermBatches={fermBatches} onRefresh={load} flash={flash} pfFor={pfFor} fermFor={fermFor} beerWell={beerWell} />}
     </div>
   );
 }
@@ -153,7 +155,7 @@ export default function Fermentation() {
 /* ═══════════════════════════════════════════════════════
    FIELD TAB
    ═══════════════════════════════════════════════════════ */
-function FieldTab({ pfBatches, fermBatches, chemicals, pfRecipes, isAdmin, onRefresh, flash, pfFor, fermFor }: any) {
+function FieldTab({ pfBatches, fermBatches, chemicals, pfRecipes, isAdmin, onRefresh, flash, pfFor, fermFor, beerWell }: any) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [dosingOpen, setDosingOpen] = useState(false);
   const [showNewPF, setShowNewPF] = useState<number | null>(null);
@@ -168,6 +170,24 @@ function FieldTab({ pfBatches, fermBatches, chemicals, pfRecipes, isAdmin, onRef
   // Fermenter field input
   const [fermFieldForm, setFermFieldForm] = useState<Record<string, string>>({});
   const [fermFieldSaving, setFermFieldSaving] = useState(false);
+
+  // Beer well field input
+  const [bwForm, setBwForm] = useState<Record<string, string>>({});
+  const [bwSaving, setBwSaving] = useState(false);
+  const [bwExpanded, setBwExpanded] = useState(false);
+
+  const submitBeerWell = async () => {
+    const hasVal = bwForm.level?.trim() || bwForm.temp?.trim() || bwForm.spGravity?.trim() || bwForm.alcohol?.trim();
+    if (!hasVal) { flash('Enter at least one value', 'err'); return; }
+    setBwSaving(true);
+    try {
+      await api.post('/fermentation/beer-well', bwForm);
+      flash('Beer Well reading saved');
+      setBwForm({});
+      onRefresh();
+    } catch (e: any) { flash(e?.response?.data?.error || 'Failed', 'err'); }
+    finally { setBwSaving(false); }
+  };
 
   useEffect(() => {
     if (showNewPF) {
@@ -542,6 +562,117 @@ function FieldTab({ pfBatches, fermBatches, chemicals, pfRecipes, isAdmin, onRef
         );
       })}
 
+      {/* ─── BEER WELL ─── */}
+      <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mt-4">Beer Well</h2>
+      <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between p-3 cursor-pointer" onClick={() => setBwExpanded(!bwExpanded)}>
+          <div className="flex items-center gap-2">
+            <Cylinder size={18} className="text-amber-600" />
+            <span className="font-bold">Beer Well</span>
+            {beerWell?.latest && (
+              <span className="text-xs text-gray-500">
+                Level: <b className="text-amber-700">{beerWell.latest.level ?? '-'}%</b>
+                {beerWell.latest.alcohol != null && <> | Alc: <b className="text-amber-700">{beerWell.latest.alcohol}%</b></>}
+              </span>
+            )}
+          </div>
+          {bwExpanded ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
+        </div>
+
+        {/* Collapsed summary */}
+        {!bwExpanded && beerWell?.recentBatches?.length > 0 && (
+          <div className="px-3 pb-2 flex gap-3 text-xs text-gray-500">
+            {beerWell.recentBatches.slice(0, 3).map((b: any) => (
+              <span key={b.batchNo}>F-{b.fermenterNo} #{b.batchNo} {b.finalAlcohol ? `(${b.finalAlcohol}%)` : ''}</span>
+            ))}
+          </div>
+        )}
+
+        {/* Expanded */}
+        {bwExpanded && (
+          <div className="border-t p-3 space-y-3">
+            {/* Field input */}
+            <div className="bg-amber-50 rounded-lg p-2.5">
+              <h4 className="text-xs font-semibold text-amber-700 mb-2">New Reading</h4>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div>
+                  <label className="text-[10px] text-amber-600 block">Level %</label>
+                  <input type="number" step="0.1" placeholder="80" value={bwForm.level || ''}
+                    onChange={e => setBwForm(f => ({ ...f, level: e.target.value }))}
+                    className="w-full border border-amber-200 rounded px-2 py-1.5 text-sm bg-white" inputMode="decimal" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-600 block">Gravity</label>
+                  <input type="number" step="0.001" placeholder="1.02" value={bwForm.spGravity || ''}
+                    onChange={e => setBwForm(f => ({ ...f, spGravity: e.target.value }))}
+                    className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm bg-white" inputMode="decimal" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-green-600 block">Alc%</label>
+                  <input type="number" step="0.1" placeholder="8.5" value={bwForm.alcohol || ''}
+                    onChange={e => setBwForm(f => ({ ...f, alcohol: e.target.value }))}
+                    className="w-full border border-green-200 rounded px-2 py-1.5 text-sm bg-white" inputMode="decimal" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-orange-600 block">Temp °C</label>
+                  <input type="number" step="0.1" placeholder="32" value={bwForm.temp || ''}
+                    onChange={e => setBwForm(f => ({ ...f, temp: e.target.value }))}
+                    className="w-full border border-orange-200 rounded px-2 py-1.5 text-sm bg-white" inputMode="decimal" />
+                </div>
+              </div>
+              <button onClick={submitBeerWell} disabled={bwSaving}
+                className="mt-2 w-full bg-amber-600 text-white py-2 rounded-lg text-xs font-medium disabled:opacity-50 hover:bg-amber-700">
+                {bwSaving ? 'Saving...' : 'Save Reading'}
+              </button>
+            </div>
+
+            {/* Recent readings */}
+            {beerWell?.readings?.length > 0 && (
+              <div className="bg-gray-50 rounded-lg p-2.5">
+                <h4 className="text-xs font-semibold text-gray-600 mb-1.5">Recent Readings</h4>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead><tr className="text-gray-500">
+                      <th className="text-left py-1 px-1">Time</th>
+                      <th className="text-left py-1 px-1">Lvl%</th>
+                      <th className="text-left py-1 px-1">SG</th>
+                      <th className="text-left py-1 px-1">Alc%</th>
+                      <th className="text-left py-1 px-1">T°C</th>
+                    </tr></thead>
+                    <tbody>{beerWell.readings.slice(0, 10).map((r: any) => (
+                      <tr key={r.id} className="border-t">
+                        <td className="px-1 py-1 whitespace-nowrap">{fmtDateTime(r.createdAt)}</td>
+                        <td className="px-1">{r.level ?? '-'}</td>
+                        <td className="px-1">{r.spGravity ?? '-'}</td>
+                        <td className="px-1">{r.alcohol ?? '-'}</td>
+                        <td className="px-1">{r.temp ?? '-'}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Recent batches transferred */}
+            {beerWell?.recentBatches?.length > 0 && (
+              <div className="bg-blue-50 rounded-lg p-2.5">
+                <h4 className="text-xs font-semibold text-blue-700 mb-1.5">Recent Transfers</h4>
+                <div className="space-y-1">
+                  {beerWell.recentBatches.map((b: any) => (
+                    <div key={b.batchNo} className="flex justify-between text-xs">
+                      <span>F-{b.fermenterNo} → BW#{b.beerWellNo} <b>Batch #{b.batchNo}</b></span>
+                      <span className="text-gray-500">
+                        {b.finalAlcohol ? `${b.finalAlcohol}%` : ''} {b.transferTime ? fmtDateTime(b.transferTime) : ''}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* ─── NEW BATCH MODAL ─── */}
       {showNewPF && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center" onClick={() => setShowNewPF(null)}>
@@ -595,7 +726,7 @@ function FieldTab({ pfBatches, fermBatches, chemicals, pfRecipes, isAdmin, onRef
 /* ═══════════════════════════════════════════════════════
    LAB TAB
    ═══════════════════════════════════════════════════════ */
-function LabTab({ pfBatches, fermBatches, onRefresh, flash, pfFor, fermFor }: any) {
+function LabTab({ pfBatches, fermBatches, onRefresh, flash, pfFor, fermFor, beerWell }: any) {
   const [selected, setSelected] = useState<{ type: 'PF' | 'FERM'; no: number; batchNo: number } | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -643,6 +774,25 @@ function LabTab({ pfBatches, fermBatches, onRefresh, flash, pfFor, fermFor }: an
       const batch = fermFor(v.no);
       return batch ? buildFermShareText(batch) : '';
     }
+  };
+
+  // Beer well lab form
+  const [bwLabForm, setBwLabForm] = useState<Record<string, string>>({});
+  const [bwLabSaving, setBwLabSaving] = useState(false);
+  const [showBwLab, setShowBwLab] = useState(false);
+
+  const submitBwLab = async () => {
+    const hasVal = bwLabForm.level?.trim() || bwLabForm.spGravity?.trim() || bwLabForm.alcohol?.trim() || bwLabForm.temp?.trim() || bwLabForm.ph?.trim();
+    if (!hasVal) { flash('Enter at least one value', 'err'); return; }
+    setBwLabSaving(true);
+    try {
+      await api.post('/fermentation/beer-well', bwLabForm);
+      flash('Beer Well reading saved');
+      setBwLabForm({});
+      setShowBwLab(false);
+      onRefresh();
+    } catch (e: any) { flash(e?.response?.data?.error || 'Failed', 'err'); }
+    finally { setBwLabSaving(false); }
   };
 
   const vessels: { type: 'PF' | 'FERM'; no: number; label: string; batchNo: number | null; phase: string | null; lastSG: number | null; lastTemp: number | null; lastAlc: number | null; ready: boolean }[] = [];
@@ -745,7 +895,81 @@ function LabTab({ pfBatches, fermBatches, onRefresh, flash, pfFor, fermFor }: an
             </div>
           );
         })}
+        {/* Beer Well entry */}
+        <div className="relative">
+          <button onClick={() => { setBwLabForm({}); setShowBwLab(true); }}
+            className="w-full rounded-xl p-3 text-left border-2 bg-white hover:shadow-md cursor-pointer border-amber-200 transition">
+            <div className="flex items-center gap-1.5 mb-1">
+              <Cylinder size={16} className="text-amber-600" />
+              <span className="font-bold text-sm">Beer Well</span>
+            </div>
+            <div className="text-xs space-y-0.5">
+              {beerWell?.latest ? (
+                <div className="flex gap-2 text-gray-700">
+                  {beerWell.latest.level != null && <span>L:{beerWell.latest.level}%</span>}
+                  {beerWell.latest.spGravity != null && <span>SG:{beerWell.latest.spGravity}</span>}
+                  {beerWell.latest.alcohol != null && <span>A:{beerWell.latest.alcohol}%</span>}
+                  {beerWell.latest.temp != null && <span>T:{beerWell.latest.temp}°</span>}
+                </div>
+              ) : <div className="text-amber-600 font-medium">No readings</div>}
+            </div>
+          </button>
+        </div>
       </div>
+
+      {/* Beer Well lab form overlay */}
+      {showBwLab && (
+        <div className="bg-white rounded-xl border shadow-sm p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Cylinder size={20} className="text-amber-600" />
+              <span className="text-lg font-bold">Beer Well</span>
+            </div>
+            <button onClick={() => setShowBwLab(false)} className="p-1 hover:bg-gray-100 rounded"><X size={20} className="text-gray-400" /></button>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-blue-600 block mb-1">Level %</label>
+              <input type="number" step="0.1" placeholder="80" value={bwLabForm.level || ''}
+                onChange={e => setBwLabForm(p => ({ ...p, level: e.target.value }))}
+                className="w-full border-2 border-blue-200 rounded-lg px-3 py-2.5 text-sm bg-blue-50" inputMode="decimal" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-orange-600 block mb-1">Temp °C</label>
+              <input type="number" step="0.1" placeholder="32" value={bwLabForm.temp || ''}
+                onChange={e => setBwLabForm(p => ({ ...p, temp: e.target.value }))}
+                className="w-full border-2 border-orange-200 rounded-lg px-3 py-2.5 text-sm bg-orange-50" inputMode="decimal" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Gravity</label>
+              <input type="number" step="0.001" placeholder="1.02" value={bwLabForm.spGravity || ''}
+                onChange={e => setBwLabForm(p => ({ ...p, spGravity: e.target.value }))}
+                className="w-full border rounded-lg px-3 py-2 text-sm" inputMode="decimal" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">pH</label>
+              <input type="number" step="0.1" placeholder="4.5" value={bwLabForm.ph || ''}
+                onChange={e => setBwLabForm(p => ({ ...p, ph: e.target.value }))}
+                className="w-full border rounded-lg px-3 py-2 text-sm" inputMode="decimal" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Alc%</label>
+              <input type="number" step="0.1" placeholder="8.5" value={bwLabForm.alcohol || ''}
+                onChange={e => setBwLabForm(p => ({ ...p, alcohol: e.target.value }))}
+                className="w-full border rounded-lg px-3 py-2 text-sm" inputMode="decimal" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Remarks</label>
+              <input value={bwLabForm.remarks || ''} onChange={e => setBwLabForm(p => ({ ...p, remarks: e.target.value }))}
+                placeholder="Optional..." className="w-full border rounded-lg px-3 py-2 text-sm" />
+            </div>
+          </div>
+          <button onClick={submitBwLab} disabled={bwLabSaving}
+            className="w-full bg-amber-600 text-white py-3 rounded-xl font-medium flex items-center justify-center gap-2 disabled:opacity-50 hover:bg-amber-700">
+            <Send size={16} /> {bwLabSaving ? 'Saving...' : 'Save Reading'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -68,7 +68,7 @@ router.get('/overview', async (_req: Request, res: Response) => {
   const s = await prisma.settings.findFirst();
   const gravityTarget = (s as any)?.pfGravityTarget ?? 1.024;
 
-  const [pfBatches, fermBatches] = await Promise.all([
+  const [pfBatches, fermBatches, beerWellReadings, beerWellBatches] = await Promise.all([
     prisma.pFBatch.findMany({
       where: { phase: { not: 'DONE' } },
       include: { dosings: true, labReadings: { orderBy: { createdAt: 'asc' } } },
@@ -76,6 +76,16 @@ router.get('/overview', async (_req: Request, res: Response) => {
     prisma.fermentationBatch.findMany({
       where: { phase: { not: 'DONE' } },
       include: { dosings: true },
+    }),
+    prisma.beerWellReading.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+    }),
+    prisma.fermentationBatch.findMany({
+      where: { phase: 'DONE', beerWellNo: { not: null } },
+      orderBy: { transferTime: 'desc' },
+      take: 5,
+      select: { batchNo: true, fermenterNo: true, beerWellNo: true, transferTime: true, finalAlcohol: true, transferVolume: true },
     }),
   ]);
 
@@ -113,6 +123,11 @@ router.get('/overview', async (_req: Request, res: Response) => {
       labReadings: (allFermLab[b.fermenterNo] || []).sort((a: any, c: any) => new Date(a.createdAt).getTime() - new Date(c.createdAt).getTime()),
     })),
     gravityTarget,
+    beerWell: {
+      readings: beerWellReadings,
+      recentBatches: beerWellBatches,
+      latest: beerWellReadings[0] || null,
+    },
   });
 });
 
@@ -504,6 +519,46 @@ router.get('/anomaly/:fermenterNo', async (req: Request, res: Response) => {
     }
   }
   res.json({ anomalies, avgCurve, currentBatch, historicalBatches: historicalBatches.length });
+});
+
+/* ═══════ BEER WELL ═══════ */
+
+// GET latest beer well readings (last 20)
+router.get('/beer-well', async (_req: Request, res: Response) => {
+  try {
+    const readings = await prisma.beerWellReading.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
+    // Also get batches recently transferred to beer well (DONE phase, last 5)
+    const recentBatches = await prisma.fermentationBatch.findMany({
+      where: { phase: 'DONE', beerWellNo: { not: null } },
+      orderBy: { transferTime: 'desc' },
+      take: 5,
+      select: { batchNo: true, fermenterNo: true, beerWellNo: true, transferTime: true, finalAlcohol: true, transferVolume: true },
+    });
+    res.json({ readings, recentBatches });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// POST beer well reading
+router.post('/beer-well', async (req: Request, res: Response) => {
+  try {
+    const { wellNo, level, spGravity, ph, alcohol, temp, remarks, batchNo } = req.body;
+    const reading = await prisma.beerWellReading.create({
+      data: {
+        wellNo: wellNo ? parseInt(wellNo) : 1,
+        level: level ? parseFloat(level) : null,
+        spGravity: spGravity ? parseFloat(spGravity) : null,
+        ph: ph ? parseFloat(ph) : null,
+        alcohol: alcohol ? parseFloat(alcohol) : null,
+        temp: temp ? parseFloat(temp) : null,
+        remarks: remarks || null,
+        batchNo: batchNo ? parseInt(batchNo) : null,
+      },
+    });
+    res.status(201).json(reading);
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
 export default router;
