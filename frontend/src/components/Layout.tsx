@@ -91,7 +91,7 @@ export default function Layout() {
           )}
 
           <button onClick={() => setProcessOpen(!processOpen)} className="flex items-center justify-between w-full px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mt-3 hover:text-gray-200">
-            <span>Plant Process</span>
+            <span>Plant</span>
             {processOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           </button>
           {processOpen && (
@@ -103,7 +103,7 @@ export default function Layout() {
           )}
 
           <button onClick={() => setSalesOpen(!salesOpen)} className="flex items-center justify-between w-full px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mt-3 hover:text-gray-200">
-            <span>Sales & Dispatch</span>
+            <span>Sales</span>
             {salesOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           </button>
           {salesOpen && (
@@ -115,7 +115,7 @@ export default function Layout() {
           )}
 
           <button onClick={() => setProcurementOpen(!procurementOpen)} className="flex items-center justify-between w-full px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mt-3 hover:text-gray-200">
-            <span>Procurement</span>
+            <span>Purchase</span>
             {procurementOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           </button>
           {procurementOpen && (
@@ -127,7 +127,7 @@ export default function Layout() {
           )}
 
           <button onClick={() => setTradeOpen(!tradeOpen)} className="flex items-center justify-between w-full px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mt-3 hover:text-gray-200">
-            <span>Direct Trade</span>
+            <span>Spot Trade</span>
             {tradeOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           </button>
           {tradeOpen && (
@@ -139,7 +139,7 @@ export default function Layout() {
           )}
 
           <button onClick={() => setAdminOpen(!adminOpen)} className="flex items-center justify-between w-full px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mt-3 hover:text-gray-200">
-            <span>Data & Admin</span>
+            <span>Admin</span>
             {adminOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           </button>
           {adminOpen && (

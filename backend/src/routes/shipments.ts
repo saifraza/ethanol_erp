@@ -100,28 +100,41 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id/weighbridge', async (req: Request, res: Response) => {
   try {
     const b = req.body;
-    const weightTare = parseFloat(b.weightTare) || 0;
-    const weightGross = parseFloat(b.weightGross) || 0;
+    const type = b.type; // 'tare' or 'gross'
     let updateData: any = {};
 
-    if (weightTare && !weightGross) {
-      // Only tare recorded
-      updateData.weightTare = weightTare;
-      updateData.tareTime = b.tareTime || null;
+    // Get existing shipment to fetch stored tare
+    const existing = await prisma.shipment.findUnique({ where: { id: req.params.id } });
+    if (!existing) { res.status(404).json({ error: 'Shipment not found' }); return; }
+
+    if (type === 'tare' || (b.weightTare && !b.weightGross)) {
+      // Tare weight step
+      updateData.weightTare = parseFloat(b.weightTare) || 0;
+      updateData.tareTime = b.tareTime || new Date().toISOString();
       updateData.status = 'TARE_WEIGHED';
-    } else if (weightTare && weightGross) {
-      // Both tare and gross recorded
-      updateData.weightTare = weightTare;
-      updateData.weightGross = weightGross;
-      updateData.weightNet = weightGross - weightTare;
-      updateData.tareTime = b.tareTime || null;
-      updateData.grossTime = b.grossTime || null;
+    } else if (type === 'gross' || b.weightGross) {
+      // Gross weight step — use stored tare if not provided
+      const tare = parseFloat(b.weightTare) || existing.weightTare || 0;
+      const gross = parseFloat(b.weightGross) || 0;
+      updateData.weightGross = gross;
+      updateData.weightNet = gross - tare;
+      updateData.grossTime = b.grossTime || new Date().toISOString();
       updateData.status = 'GROSS_WEIGHED';
+      if (!existing.weightTare && tare) updateData.weightTare = tare;
 
       // For DDGS: if bags and weightPerBag provided
       if (b.bags || b.weightPerBag) {
         updateData.bags = parseInt(b.bags) || 0;
         updateData.weightPerBag = parseFloat(b.weightPerBag) || 50;
+      }
+    } else {
+      // Fallback: set whatever is provided
+      if (b.weightTare) { updateData.weightTare = parseFloat(b.weightTare); updateData.status = 'TARE_WEIGHED'; }
+      if (b.weightGross) {
+        updateData.weightGross = parseFloat(b.weightGross);
+        const tare = parseFloat(b.weightTare) || existing.weightTare || 0;
+        updateData.weightNet = parseFloat(b.weightGross) - tare;
+        updateData.status = 'GROSS_WEIGHED';
       }
     }
 
