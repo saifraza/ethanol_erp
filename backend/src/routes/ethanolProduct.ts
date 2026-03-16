@@ -26,10 +26,13 @@ function calcSummary(tankData: any, prevEntry: any, totalDispatch: number) {
   const wSum = TANK_KEYS.reduce((s, k) => s + (tankData[`${k}Volume`] || 0) * (tankData[`${k}Strength`] || 0), 0);
   const avgStrength = totalStock > 0 ? wSum / totalStock : 0;
 
-  // Previous total stock
-  const prevStock = prevEntry
-    ? TANK_KEYS.reduce((s, k) => s + ((prevEntry as any)[`${k}Volume`] || 0), 0)
-    : 0;
+  // Previous total stock — use sum of tank volumes if available, otherwise fall back to totalStock field
+  // (entries imported from spreadsheet may have totalStock set but null tank volumes)
+  let prevStock = 0;
+  if (prevEntry) {
+    const tankSum = TANK_KEYS.reduce((s, k) => s + ((prevEntry as any)[`${k}Volume`] || 0), 0);
+    prevStock = tankSum > 0 ? tankSum : (prevEntry.totalStock || 0);
+  }
 
   // Production = current stock - prev stock + dispatch
   const productionBL = totalStock - prevStock + totalDispatch;
