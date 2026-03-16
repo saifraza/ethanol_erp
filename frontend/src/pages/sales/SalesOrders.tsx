@@ -306,12 +306,12 @@ export default function SalesOrders() {
                 </select>
               </div>
               <div>
-                <label className="text-xs text-gray-500">PO Number</label>
+                <label className="text-xs text-gray-500">Reference (optional)</label>
                 <input
                   value={poNumber}
                   onChange={e => setPoNumber(e.target.value)}
                   className="input-field w-full text-sm"
-                  placeholder="PO-2024-001"
+                  placeholder="Customer PO / verbal ref"
                 />
               </div>
             </div>
@@ -594,7 +594,7 @@ export default function SalesOrders() {
                         </div>
                         {order.poNumber && (
                           <div>
-                            <p className="text-gray-500">PO Number</p>
+                            <p className="text-gray-500">Reference</p>
                             <p className="text-gray-700 font-medium">{order.poNumber}</p>
                           </div>
                         )}
@@ -644,6 +644,56 @@ export default function SalesOrders() {
                           <span>Grand Total</span>
                           <span>₹{(order.grandTotal || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
                         </div>
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div className="flex gap-2 flex-wrap">
+                        {order.status === 'DRAFT' && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                await api.put(`/sales-orders/${order.id}/status`, { status: 'CONFIRMED' });
+                                loadOrders();
+                              } catch (e: any) {
+                                alert(e.response?.data?.error || 'Failed to confirm');
+                              }
+                            }}
+                            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700"
+                          >
+                            Confirm Order
+                          </button>
+                        )}
+                        {order.status === 'CONFIRMED' && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                await api.put(`/sales-orders/${order.id}/status`, { status: 'IN_PROGRESS' });
+                                loadOrders();
+                              } catch (e: any) {
+                                alert(e.response?.data?.error || 'Failed');
+                              }
+                            }}
+                            className="px-3 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700"
+                          >
+                            Mark In Progress
+                          </button>
+                        )}
+                        {['DRAFT', 'CONFIRMED'].includes(order.status) && (
+                          <button
+                            onClick={async () => {
+                              if (!confirm('Cancel this order?')) return;
+                              try {
+                                await api.put(`/sales-orders/${order.id}/status`, { status: 'CANCELLED' });
+                                loadOrders();
+                              } catch (e: any) {
+                                alert(e.response?.data?.error || 'Failed');
+                              }
+                            }}
+                            className="px-3 py-2 bg-red-50 text-red-700 text-sm font-medium rounded-lg border border-red-300 hover:bg-red-100"
+                          >
+                            Cancel
+                          </button>
+                        )}
                       </div>
                     </div>
                   )}
