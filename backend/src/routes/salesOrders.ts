@@ -25,7 +25,16 @@ router.get('/', async (req: Request, res: Response) => {
         include: {
           customer: { select: { id: true, name: true, shortName: true } },
           lines: true,
-          _count: { select: { dispatchRequests: true } },
+          dispatchRequests: {
+            include: {
+              shipments: {
+                select: { id: true, status: true, vehicleNo: true, weightNet: true, challanNo: true, ewayBill: true },
+              },
+            },
+          },
+          invoices: {
+            select: { id: true, invoiceNo: true, status: true, totalAmount: true },
+          },
         },
         orderBy: { orderDate: 'desc' },
         skip,
