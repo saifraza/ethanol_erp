@@ -38,6 +38,13 @@ import dispatchRequestRoutes from './routes/dispatchRequests';
 import shipmentRoutes from './routes/shipments';
 import invoiceRoutes from './routes/invoices';
 import paymentRoutes from './routes/payments';
+// Procurement (P2P) module
+import vendorRoutes from './routes/vendors';
+import materialRoutes from './routes/materials';
+import purchaseOrderRoutes from './routes/purchaseOrders';
+import goodsReceiptRoutes from './routes/goodsReceipts';
+import vendorInvoiceRoutes from './routes/vendorInvoices';
+import vendorPaymentRoutes from './routes/vendorPayments';
 
 const app = express();
 
@@ -86,6 +93,13 @@ app.use('/api/dispatch-requests', dispatchRequestRoutes);
 app.use('/api/shipments', shipmentRoutes);
 app.use('/api/invoices', invoiceRoutes);
 app.use('/api/payments', paymentRoutes);
+// Procurement (P2P)
+app.use('/api/vendors', vendorRoutes);
+app.use('/api/materials', materialRoutes);
+app.use('/api/purchase-orders', purchaseOrderRoutes);
+app.use('/api/goods-receipts', goodsReceiptRoutes);
+app.use('/api/vendor-invoices', vendorInvoiceRoutes);
+app.use('/api/vendor-payments', vendorPaymentRoutes);
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));

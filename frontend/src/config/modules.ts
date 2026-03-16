@@ -6,7 +6,8 @@ import {
   Fuel, Waves, BarChart3,
   Settings, Users, Truck, Package, LayoutDashboard,
   Warehouse, AlertCircle, ShoppingCart,
-  UserCheck, ClipboardList, Send, FileText, IndianRupee
+  UserCheck, ClipboardList, Send, FileText, IndianRupee,
+  Building2, Box, ShoppingBag, PackageCheck, Receipt, CreditCard
 } from 'lucide-react';
 
 export interface ModuleDef {
@@ -14,7 +15,7 @@ export interface ModuleDef {
   label: string;
   to: string;
   icon: any;
-  group: 'process' | 'admin' | 'sales';
+  group: 'process' | 'admin' | 'sales' | 'procurement';
   adminOnly?: boolean;
 }
 
@@ -45,6 +46,13 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'shipments', label: 'Gate Register', to: '/sales/shipments', icon: Truck, group: 'sales' },
   { key: 'invoices', label: 'Invoices', to: '/sales/invoices', icon: FileText, group: 'sales' },
   { key: 'payments', label: 'Payments', to: '/sales/payments', icon: IndianRupee, group: 'sales' },
+  // Procurement (P2P)
+  { key: 'vendors', label: 'Vendors', to: '/procurement/vendors', icon: Building2, group: 'procurement' },
+  { key: 'materials', label: 'Materials', to: '/procurement/materials', icon: Box, group: 'procurement' },
+  { key: 'purchase-orders', label: 'Purchase Orders', to: '/procurement/purchase-orders', icon: ShoppingBag, group: 'procurement' },
+  { key: 'goods-receipts', label: 'Goods Receipt', to: '/procurement/goods-receipts', icon: PackageCheck, group: 'procurement' },
+  { key: 'vendor-invoices', label: 'Vendor Invoices', to: '/procurement/vendor-invoices', icon: Receipt, group: 'procurement' },
+  { key: 'vendor-payments', label: 'Vendor Payments', to: '/procurement/vendor-payments', icon: CreditCard, group: 'procurement' },
   // Store & Maintenance
   { key: 'inventory', label: 'Inventory', to: '/inventory', icon: Warehouse, group: 'admin' },
   { key: 'plant-issues', label: 'Plant Issues', to: '/plant-issues', icon: AlertCircle, group: 'admin' },
@@ -66,6 +74,10 @@ export const processNav = MODULE_DEFS.filter(m => m.group === 'process').map(m =
 }));
 
 export const salesNav = MODULE_DEFS.filter(m => m.group === 'sales').map(m => ({
+  to: m.to, label: m.label, icon: m.icon, moduleKey: m.key,
+}));
+
+export const procurementNav = MODULE_DEFS.filter(m => m.group === 'procurement').map(m => ({
   to: m.to, label: m.label, icon: m.icon, moduleKey: m.key,
 }));
 

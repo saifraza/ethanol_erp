@@ -37,6 +37,13 @@ import DispatchRequests from './pages/sales/DispatchRequests';
 import Shipments from './pages/sales/Shipments';
 import Invoices from './pages/sales/Invoices';
 import Payments from './pages/sales/Payments';
+// Procurement (P2P)
+import Vendors from './pages/procurement/Vendors';
+import Materials from './pages/procurement/Materials';
+import PurchaseOrders from './pages/procurement/PurchaseOrders';
+import GoodsReceipts from './pages/procurement/GoodsReceipts';
+import VendorInvoices from './pages/procurement/VendorInvoices';
+import VendorPayments from './pages/procurement/VendorPayments';
 import { useToast } from './components/common/Toast';
 import { setupApiToast } from './services/apiToast';
 
@@ -99,6 +106,13 @@ export default function App() {
         <Route path="sales/shipments" element={<Shipments />} />
         <Route path="sales/invoices" element={<Invoices />} />
         <Route path="sales/payments" element={<Payments />} />
+        {/* Procurement (P2P) */}
+        <Route path="procurement/vendors" element={<Vendors />} />
+        <Route path="procurement/materials" element={<Materials />} />
+        <Route path="procurement/purchase-orders" element={<PurchaseOrders />} />
+        <Route path="procurement/goods-receipts" element={<GoodsReceipts />} />
+        <Route path="procurement/vendor-invoices" element={<VendorInvoices />} />
+        <Route path="procurement/vendor-payments" element={<VendorPayments />} />
         <Route path="reports" element={<Reports />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="users" element={<UsersPage />} />

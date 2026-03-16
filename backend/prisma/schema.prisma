@@ -929,7 +929,11 @@ model Transporter {
   name            String
   contactPerson   String?
   phone           String?
+  email           String?
+  gstin           String?
+  pan             String?
   vehicleCount    Int?
+  address         String?
   isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -1109,6 +1113,314 @@ model Payment {
   reference       String?                  // UTR / cheque no / UPI ref
   confirmedBy     String?                  // who confirmed receipt
   confirmedAt     DateTime?
+  remarks         String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PROCUREMENT MODULE (P2P — SAP MM inspired with Indian GST)
+// ═══════════════════════════════════════════════════════════════
+
+// ── Vendor Master (supplier registration) ──
+model Vendor {
+  id              String   @id @default(uuid())
+  vendorCode      String?  @unique          // auto or manual code
+  name            String
+  tradeName       String?                   // business trade name
+  category        String   @default("GENERAL") // RAW_MATERIAL, CHEMICAL, FUEL, PACKING, SERVICE, GENERAL
+  gstin           String?                   // 15-char GSTIN
+  pan             String?                   // 10-char PAN
+  gstState        String?                   // 2-digit state code (e.g., "09" for UP)
+  gstStateCode    String?                   // state name
+  isRCM           Boolean  @default(false)  // Reverse Charge Mechanism applicable
+  isMSME          Boolean  @default(false)  // MSME vendor (priority payment)
+  msmeRegNo       String?
+  msmeCategory    String?                   // MICRO, SMALL, MEDIUM
+  // Address
+  address         String?
+  city            String?
+  state           String?
+  pincode         String?
+  // Contact
+  contactPerson   String?
+  phone           String?
+  email           String?
+  // Bank Details
+  bankName        String?
+  bankBranch      String?
+  bankAccount     String?
+  bankIfsc        String?
+  // Payment
+  paymentTerms    String?                   // ADVANCE, COD, NET7, NET15, NET30, NET45, NET60
+  creditLimit     Float    @default(0)
+  creditDays      Int      @default(30)
+  // TDS
+  tdsApplicable   Boolean  @default(false)
+  tdsSection      String?                   // 194C, 194Q, etc.
+  tdsPercent      Float    @default(0)
+  //
+  isActive        Boolean  @default(true)
+  remarks         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  purchaseOrders  PurchaseOrder[]
+  grns            GoodsReceipt[]
+  vendorInvoices  VendorInvoice[]
+  vendorPayments  VendorPayment[]
+}
+
+// ── Material Master (items you buy) ──
+model Material {
+  id              String   @id @default(uuid())
+  code            String?  @unique          // item code
+  name            String
+  category        String   @default("RAW_MATERIAL") // RAW_MATERIAL, CHEMICAL, FUEL, PACKING, CONSUMABLE, SPARE, SERVICE
+  subCategory     String?                   // e.g., ENZYME, YEAST, ACID
+  hsnCode         String?                   // HSN/SAC code
+  unit            String   @default("KG")   // KG, MT, LTR, KL, NOS, BAG, DRUM
+  gstPercent      Float    @default(18)     // default GST rate
+  defaultRate     Float    @default(0)      // last/standard rate
+  minStock        Float    @default(0)      // reorder level
+  currentStock    Float    @default(0)      // current qty in store
+  storageLocation String?                   // STORE, YARD, TANK, etc.
+  isActive        Boolean  @default(true)
+  remarks         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  poLines         POLine[]
+  grnLines        GRNLine[]
+}
+
+// ── Purchase Order (HQ creates, sent to vendor) ──
+model PurchaseOrder {
+  id              String   @id @default(uuid())
+  poNo            Int      @default(autoincrement())
+  vendorId        String
+  vendor          Vendor   @relation(fields: [vendorId], references: [id])
+  poDate          DateTime @default(now())
+  deliveryDate    DateTime?
+  // GST supply type
+  supplyType      String   @default("INTRA_STATE") // INTRA_STATE (CGST+SGST), INTER_STATE (IGST)
+  placeOfSupply   String?                   // state code
+  // Totals (auto-calculated)
+  subtotal        Float    @default(0)      // sum of line amounts
+  totalCgst       Float    @default(0)
+  totalSgst       Float    @default(0)
+  totalIgst       Float    @default(0)
+  totalGst        Float    @default(0)
+  freightCharge   Float    @default(0)
+  otherCharges    Float    @default(0)
+  roundOff        Float    @default(0)
+  grandTotal      Float    @default(0)
+  // TDS
+  tdsApplicable   Boolean  @default(false)
+  tdsSection      String?
+  tdsPercent      Float    @default(0)
+  tdsAmount       Float    @default(0)
+  // Payment terms
+  paymentTerms    String?
+  creditDays      Int      @default(30)
+  // Logistics
+  deliveryAddress String?                   // factory address
+  transportMode   String?                   // ROAD, RAIL
+  // Status
+  status          String   @default("DRAFT") // DRAFT, APPROVED, SENT, PARTIAL_RECEIVED, RECEIVED, CLOSED, CANCELLED
+  approvedBy      String?
+  approvedAt      DateTime?
+  // Refs
+  remarks         String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  lines           POLine[]
+  grns            GoodsReceipt[]
+  vendorInvoices  VendorInvoice[]
+}
+
+// ── PO Line Item ──
+model POLine {
+  id              String         @id @default(uuid())
+  poId            String
+  po              PurchaseOrder  @relation(fields: [poId], references: [id], onDelete: Cascade)
+  lineNo          Int            @default(1)
+  materialId      String?
+  material        Material?      @relation(fields: [materialId], references: [id])
+  description     String                   // item description
+  hsnCode         String?
+  quantity        Float
+  unit            String         @default("KG")
+  rate            Float
+  amount          Float          @default(0)  // qty × rate
+  discountPercent Float          @default(0)
+  discountAmount  Float          @default(0)
+  taxableAmount   Float          @default(0)  // amount - discount
+  // GST split
+  gstPercent      Float          @default(18)
+  cgstPercent     Float          @default(0)
+  cgstAmount      Float          @default(0)
+  sgstPercent     Float          @default(0)
+  sgstAmount      Float          @default(0)
+  igstPercent     Float          @default(0)
+  igstAmount      Float          @default(0)
+  totalGst        Float          @default(0)
+  lineTotal       Float          @default(0)  // taxable + gst
+  // Receipt tracking
+  receivedQty     Float          @default(0)
+  pendingQty      Float          @default(0)  // = quantity - receivedQty
+  // RCM
+  isRCM           Boolean        @default(false)
+  createdAt       DateTime       @default(now())
+
+  grnLines        GRNLine[]
+}
+
+// ── Goods Receipt Note (factory receives goods against PO) ──
+model GoodsReceipt {
+  id              String   @id @default(uuid())
+  grnNo           Int      @default(autoincrement())
+  poId            String
+  po              PurchaseOrder @relation(fields: [poId], references: [id])
+  vendorId        String
+  vendor          Vendor   @relation(fields: [vendorId], references: [id])
+  grnDate         DateTime @default(now())
+  // Vehicle / delivery info
+  vehicleNo       String?
+  challanNo       String?                   // vendor delivery challan
+  challanDate     DateTime?
+  ewayBill        String?
+  // Quality
+  qualityStatus   String   @default("PENDING") // PENDING, ACCEPTED, REJECTED, PARTIAL_ACCEPTED
+  qualityRemarks  String?
+  inspectedBy     String?
+  // Status
+  status          String   @default("DRAFT") // DRAFT, CONFIRMED, CANCELLED
+  // Totals (from lines)
+  totalQty        Float    @default(0)
+  totalAmount     Float    @default(0)
+  //
+  remarks         String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  lines           GRNLine[]
+  vendorInvoices  VendorInvoice[]
+}
+
+// ── GRN Line Item ──
+model GRNLine {
+  id              String       @id @default(uuid())
+  grnId           String
+  grn             GoodsReceipt @relation(fields: [grnId], references: [id], onDelete: Cascade)
+  poLineId        String?
+  poLine          POLine?      @relation(fields: [poLineId], references: [id])
+  materialId      String?
+  material        Material?    @relation(fields: [materialId], references: [id])
+  description     String
+  receivedQty     Float
+  acceptedQty     Float        @default(0)  // after quality check
+  rejectedQty     Float        @default(0)
+  unit            String       @default("KG")
+  rate            Float        @default(0)  // from PO
+  amount          Float        @default(0)  // acceptedQty × rate
+  storageLocation String?
+  batchNo         String?
+  expiryDate      DateTime?
+  remarks         String?
+  createdAt       DateTime     @default(now())
+}
+
+// ── Vendor Invoice (3-way match: PO + GRN + Invoice) ──
+model VendorInvoice {
+  id              String   @id @default(uuid())
+  invoiceNo       Int      @default(autoincrement())
+  vendorId        String
+  vendor          Vendor   @relation(fields: [vendorId], references: [id])
+  poId            String?
+  po              PurchaseOrder? @relation(fields: [poId], references: [id])
+  grnId           String?
+  grn             GoodsReceipt?  @relation(fields: [grnId], references: [id])
+  // Vendor's invoice details
+  vendorInvNo     String?                   // vendor's own invoice number
+  vendorInvDate   DateTime?                 // vendor's invoice date
+  invoiceDate     DateTime @default(now())  // our booking date
+  dueDate         DateTime?
+  // Line summary
+  productName     String?
+  quantity        Float    @default(0)
+  unit            String   @default("KG")
+  rate            Float    @default(0)
+  subtotal        Float    @default(0)      // qty × rate
+  // GST breakup
+  supplyType      String   @default("INTRA_STATE")
+  gstPercent      Float    @default(18)
+  cgstAmount      Float    @default(0)
+  sgstAmount      Float    @default(0)
+  igstAmount      Float    @default(0)
+  totalGst        Float    @default(0)
+  // RCM
+  isRCM           Boolean  @default(false)
+  rcmCgst         Float    @default(0)
+  rcmSgst         Float    @default(0)
+  rcmIgst         Float    @default(0)
+  rcmTotal        Float    @default(0)
+  // ITC eligibility
+  itcEligible     Boolean  @default(true)
+  itcClaimed      Boolean  @default(false)
+  itcClaimedDate  DateTime?
+  itcReversed     Boolean  @default(false)
+  itcReversalReason String?
+  // Other charges
+  freightCharge   Float    @default(0)
+  loadingCharge   Float    @default(0)
+  otherCharges    Float    @default(0)
+  roundOff        Float    @default(0)
+  totalAmount     Float    @default(0)
+  // TDS
+  tdsSection      String?
+  tdsPercent      Float    @default(0)
+  tdsAmount       Float    @default(0)
+  netPayable      Float    @default(0)      // total - tds
+  // Payment tracking
+  paidAmount      Float    @default(0)
+  balanceAmount   Float    @default(0)
+  status          String   @default("PENDING") // PENDING, VERIFIED, APPROVED, PARTIAL_PAID, PAID, DISPUTED, CANCELLED
+  // 3-way match
+  matchStatus     String   @default("UNMATCHED") // UNMATCHED, MATCHED, MISMATCH
+  matchRemarks    String?
+  // Document refs
+  remarks         String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  payments        VendorPayment[]
+}
+
+// ── Vendor Payment ──
+model VendorPayment {
+  id              String   @id @default(uuid())
+  paymentNo       Int      @default(autoincrement())
+  vendorId        String
+  vendor          Vendor   @relation(fields: [vendorId], references: [id])
+  invoiceId       String?
+  invoice         VendorInvoice? @relation(fields: [invoiceId], references: [id])
+  paymentDate     DateTime @default(now())
+  amount          Float
+  mode            String   @default("BANK_TRANSFER") // CASH, CHEQUE, BANK_TRANSFER, NEFT, RTGS, UPI
+  reference       String?                   // UTR / cheque no
+  // TDS deducted in this payment
+  tdsDeducted     Float    @default(0)
+  tdsSection      String?
+  // Advance payment (no invoice)
+  isAdvance       Boolean  @default(false)
+  advanceAdjusted Float    @default(0)      // how much of advance is adjusted
+  //
   remarks         String?
   userId          String
   createdAt       DateTime @default(now())
