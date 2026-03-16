@@ -6,7 +6,7 @@ import {
   LayoutDashboard, LogOut, ChevronDown, ChevronRight,
   WifiOff, Menu, X
 } from 'lucide-react';
-import { processNav, salesNav, adminNav } from '../config/modules';
+import { processNav, salesNav, procurementNav, adminNav } from '../config/modules';
 
 function hasModuleAccess(user: any, moduleKey: string): boolean {
   if (!user) return false;
@@ -28,6 +28,7 @@ export default function Layout() {
   const location = useLocation();
   const [processOpen, setProcessOpen] = useState(true);
   const [salesOpen, setSalesOpen] = useState(false);
+  const [procurementOpen, setProcurementOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
   const [serverUp, setServerUp] = useState(true);
   const [reconnecting, setReconnecting] = useState(false);
@@ -107,6 +108,18 @@ export default function Layout() {
           {salesOpen && (
             <div className="space-y-0.5 ml-1 border-l border-gray-700 pl-2">
               {salesNav.filter(n => hasModuleAccess(user, n.moduleKey)).map(n => (
+                <NavLink key={n.to} {...n} active={location.pathname === n.to} onClick={closeSidebar} />
+              ))}
+            </div>
+          )}
+
+          <button onClick={() => setProcurementOpen(!procurementOpen)} className="flex items-center justify-between w-full px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mt-3 hover:text-gray-200">
+            <span>Procurement</span>
+            {procurementOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </button>
+          {procurementOpen && (
+            <div className="space-y-0.5 ml-1 border-l border-gray-700 pl-2">
+              {procurementNav.filter(n => hasModuleAccess(user, n.moduleKey)).map(n => (
                 <NavLink key={n.to} {...n} active={location.pathname === n.to} onClick={closeSidebar} />
               ))}
             </div>
