@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, authorize } from '../middleware/auth';
+import { generatePOPdf } from '../utils/pdfGenerator';
 
 const router = Router();
 router.use(authenticate as any);
@@ -60,12 +61,21 @@ router.post('/', async (req: Request, res: Response) => {
   try {
     const b = req.body;
 
+    // Look up materials for auto-fill
+    const materialIds = (b.lines || []).map((l: any) => l.materialId).filter(Boolean);
+    const materialsMap: Record<string, any> = {};
+    if (materialIds.length > 0) {
+      const mats = await prisma.material.findMany({ where: { id: { in: materialIds } } });
+      mats.forEach((m: any) => { materialsMap[m.id] = m; });
+    }
+
     // Process lines with calculations
     const processedLines = (b.lines || []).map((line: any) => {
+      const mat = line.materialId ? materialsMap[line.materialId] : null;
       const quantity = parseFloat(line.quantity) || 0;
       const rate = parseFloat(line.rate) || 0;
       const discountPercent = parseFloat(line.discountPercent) || 0;
-      const gstPercent = parseFloat(line.gstPercent) || 0;
+      const gstPercent = parseFloat(line.gstPercent) || (mat?.gstPercent || 0);
 
       const amount = quantity * rate;
       const discountAmount = amount * (discountPercent / 100);
@@ -89,10 +99,10 @@ router.post('/', async (req: Request, res: Response) => {
 
       return {
         materialId: line.materialId || null,
-        description: line.description || '',
-        hsnCode: line.hsnCode || '',
+        description: line.description || mat?.name || '',
+        hsnCode: line.hsnCode || mat?.hsnCode || '',
         quantity,
-        unit: line.unit || 'kg',
+        unit: line.unit || mat?.unit || 'KG',
         rate,
         discountPercent,
         discountAmount,
@@ -257,6 +267,61 @@ router.delete('/:id', async (req: Request, res: Response) => {
     });
 
     res.json({ ok: true });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /:id/pdf — Generate PO PDF with letterhead
+router.get('/:id/pdf', async (req: Request, res: Response) => {
+  try {
+    const po = await prisma.purchaseOrder.findUnique({
+      where: { id: req.params.id },
+      include: {
+        vendor: true,
+        lines: true,
+      },
+    });
+
+    if (!po) { res.status(404).json({ error: 'PO not found' }); return; }
+
+    const pdfBuffer = await generatePOPdf({
+      poNo: po.poNo,
+      poDate: po.poDate,
+      deliveryDate: po.deliveryDate || po.poDate,
+      vendor: po.vendor,
+      supplyType: po.supplyType,
+      placeOfSupply: po.placeOfSupply,
+      paymentTerms: po.paymentTerms,
+      creditDays: po.creditDays,
+      deliveryAddress: po.deliveryAddress,
+      transportMode: po.transportMode,
+      remarks: po.remarks,
+      lines: po.lines.map((l: any) => ({
+        description: l.description,
+        hsnCode: l.hsnCode || '',
+        quantity: l.quantity,
+        unit: l.unit,
+        rate: l.rate,
+        discountPercent: l.discountPercent || 0,
+        gstPercent: l.gstPercent || 0,
+        isRCM: l.isRCM || false,
+        amount: l.amount || l.quantity * l.rate,
+        taxableAmount: l.taxableAmount || (l.quantity * l.rate * (1 - (l.discountPercent || 0) / 100)),
+        cgst: l.cgst || 0,
+        sgst: l.sgst || 0,
+        igst: l.igst || 0,
+        lineTotal: l.lineTotal || 0,
+      })),
+      subtotal: po.subtotal,
+      totalGst: po.totalGst,
+      freightCharge: po.freightCharge,
+      otherCharges: po.otherCharges,
+      roundOff: po.roundOff,
+      grandTotal: po.grandTotal,
+    });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="PO-${po.poNo}.pdf"`);
+    res.send(pdfBuffer);
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
