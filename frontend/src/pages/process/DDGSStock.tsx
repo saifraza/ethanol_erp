@@ -68,7 +68,7 @@ export default function DDGSStock() {
     setSaving(true); setMsg(null);
     try {
       await api.post('/ddgs-stock', {
-        date: new Date(form.date + 'T00:00:00').toISOString(),
+        date: form.date + 'T00:00:00.000Z',
         yearStart: new Date(form.date).getFullYear(),
         openingStock,
         productionToday,
