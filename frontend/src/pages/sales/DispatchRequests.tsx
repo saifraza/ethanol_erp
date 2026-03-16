@@ -1,21 +1,34 @@
 import { useState, useEffect } from 'react';
-import { Truck, Share2, Loader2, ChevronDown, Check, Package, MapPin, Clock, ArrowRight, Plus, X, Trash2, ArrowDown, ArrowUp } from 'lucide-react';
+import {
+  Truck, Loader2, ChevronDown, Check, Package, MapPin, Clock, Plus, X,
+  Trash2, ArrowDown, ArrowUp, Phone, Navigation, IndianRupee, Save,
+  CheckCircle, AlertCircle, Share2, Route, User, MessageCircle
+} from 'lucide-react';
 import api from '../../services/api';
+
+// ── Factory location (MSPIL) ──
+const FACTORY = { lat: 22.7196, lng: 75.8577, name: 'MSPIL Factory, Indore' }; // Update with actual coords
+
+interface Transporter {
+  id: string; name: string; contactPerson?: string; phone?: string;
+  vehicleCount?: number; address?: string;
+}
 
 interface Shipment {
   id: string; vehicleNo: string; status: string; driverName?: string; driverMobile?: string;
   weightTare?: number; weightGross?: number; weightNet?: number;
-  gateInTime?: string; tareTime?: string; grossTime?: string; releaseTime?: string; exitTime?: string;
   transporterName?: string; capacityTon?: number;
+  gateInTime?: string; tareTime?: string; grossTime?: string; releaseTime?: string; exitTime?: string;
 }
 
 interface DR {
   id: string; drNo: number; status: string;
   productName: string; quantity: number; unit: string;
   customerName: string; destination?: string; deliveryDate?: string;
-  logisticsBy: string; transporterName?: string; vehicleCount: number;
+  logisticsBy: string; transporterName?: string; transporterId?: string;
+  vehicleCount: number; freightRate?: number; distanceKm?: number;
   remarks?: string; createdAt: string;
-  order?: { id: string; orderNo: string; customer?: { name: string } };
+  order?: { id: string; orderNo: string; logisticsBy?: string; customer?: { id: string; name: string }; lines?: any[] };
   shipments?: Shipment[];
   _count?: { shipments: number };
 }
@@ -25,34 +38,81 @@ interface GrainTruck {
   createdAt: string; quarantineWeight?: number; status?: string;
 }
 
+// ── Status helpers ──
+type LogisticsStep = 'NEW' | 'TRANSPORTER_SET' | 'TRUCKS_ASSIGNED' | 'AT_FACTORY' | 'DISPATCHED';
+
+function getDRStep(dr: DR): { step: LogisticsStep; label: string; action: string; stepIdx: number } {
+  const shipments = dr.shipments || [];
+  const hasExited = shipments.some(s => ['RELEASED', 'EXITED'].includes(s.status));
+  const hasActive = shipments.some(s => ['GATE_IN', 'TARE_WEIGHED', 'LOADING', 'GROSS_WEIGHED'].includes(s.status));
+  const hasTrucks = shipments.length > 0;
+
+  if (['DISPATCHED', 'COMPLETED'].includes(dr.status) || hasExited)
+    return { step: 'DISPATCHED', label: 'Dispatched', action: '', stepIdx: 4 };
+  if (hasActive)
+    return { step: 'AT_FACTORY', label: 'At Factory', action: 'Track weighbridge', stepIdx: 3 };
+  if (hasTrucks)
+    return { step: 'TRUCKS_ASSIGNED', label: 'Trucks Assigned', action: 'Waiting for arrival', stepIdx: 2 };
+  if (dr.transporterName || dr.transporterId)
+    return { step: 'TRANSPORTER_SET', label: 'Transporter Set', action: 'Get truck details', stepIdx: 1 };
+  return { step: 'NEW', label: 'Needs Transporter', action: 'Assign transporter & rate', stepIdx: 0 };
+}
+
+const STEP_COLORS = [
+  'bg-red-500',     // NEW
+  'bg-orange-500',  // TRANSPORTER_SET
+  'bg-blue-500',    // TRUCKS_ASSIGNED
+  'bg-amber-500',   // AT_FACTORY
+  'bg-green-500',   // DISPATCHED
+];
+
+const STEP_BADGES: Record<LogisticsStep, string> = {
+  NEW: 'bg-red-100 text-red-700',
+  TRANSPORTER_SET: 'bg-orange-100 text-orange-700',
+  TRUCKS_ASSIGNED: 'bg-blue-100 text-blue-700',
+  AT_FACTORY: 'bg-amber-100 text-amber-700',
+  DISPATCHED: 'bg-green-100 text-green-700',
+};
+
 export default function DispatchRequests() {
   const [drs, setDrs] = useState<DR[]>([]);
+  const [transporters, setTransporters] = useState<Transporter[]>([]);
   const [grainTrucks, setGrainTrucks] = useState<GrainTruck[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [filterTab, setFilterTab] = useState('ACTIVE');
+  const [filterStep, setFilterStep] = useState('ACTIVE');
   const [direction, setDirection] = useState<'OUTBOUND' | 'INBOUND'>('OUTBOUND');
 
-  // Truck assignment form
-  const [showTruckForm, setShowTruckForm] = useState<string | null>(null);
-  const [truckVehicleNo, setTruckVehicleNo] = useState('');
+  // Logistics form (inline per DR)
+  const [editingDR, setEditingDR] = useState<string | null>(null);
+  const [editTransporterId, setEditTransporterId] = useState('');
+  const [editTransporterName, setEditTransporterName] = useState('');
+  const [editFreightRate, setEditFreightRate] = useState('');
+  const [editDistanceKm, setEditDistanceKm] = useState('');
+  const [editDestination, setEditDestination] = useState('');
+  const [editVehicleCount, setEditVehicleCount] = useState('');
+
+  // Truck form
+  const [truckFormDR, setTruckFormDR] = useState<string | null>(null);
+  const [truckVehicle, setTruckVehicle] = useState('');
   const [truckDriver, setTruckDriver] = useState('');
-  const [truckDriverMobile, setTruckDriverMobile] = useState('');
-  const [truckTransporter, setTruckTransporter] = useState('');
+  const [truckMobile, setTruckMobile] = useState('');
 
   const load = async () => {
     try {
       setLoading(true);
-      const [drRes, grainRes] = await Promise.all([
+      const [drRes, grainRes, transRes] = await Promise.all([
         api.get('/dispatch-requests/factory'),
         api.get('/grain-truck').catch(() => ({ data: { trucks: [] } })),
+        api.get('/transporters'),
       ]);
       setDrs(drRes.data.dispatchRequests || drRes.data || []);
       setGrainTrucks(grainRes.data.trucks || grainRes.data || []);
+      setTransporters(transRes.data.transporters || transRes.data || []);
     } catch {
-      setMsg({ type: 'err', text: 'Failed to load' });
+      flash('err', 'Failed to load');
     } finally {
       setLoading(false);
     }
@@ -65,25 +125,38 @@ export default function DispatchRequests() {
     setTimeout(() => setMsg(null), 4000);
   };
 
-  // ── Stats ──
-  const scheduled = drs.filter(d => ['SCHEDULED', 'PENDING', 'ACCEPTED', 'VEHICLE_ASSIGNED'].includes(d.status));
-  const loadingDrs = drs.filter(d => d.status === 'LOADING');
-  const dispatched = drs.filter(d => d.status === 'DISPATCHED');
-  const allActive = drs.filter(d => !['COMPLETED', 'CANCELLED'].includes(d.status));
+  // ── Google Maps helpers ──
+  const getMapUrl = (destination: string) => {
+    const origin = encodeURIComponent(FACTORY.name);
+    const dest = encodeURIComponent(destination);
+    return `https://www.google.com/maps/dir/${origin}/${dest}`;
+  };
 
-  const trucksOnWay = scheduled.reduce((s, d) => {
-    const shipCount = d.shipments?.length || d._count?.shipments || 0;
-    return s + Math.max(d.vehicleCount, shipCount);
-  }, 0);
+  // ── Logistics actions ──
+  const startEditDR = (dr: DR) => {
+    setEditingDR(dr.id);
+    setEditTransporterId(dr.transporterId || '');
+    setEditTransporterName(dr.transporterName || '');
+    setEditFreightRate(dr.freightRate ? String(dr.freightRate) : '');
+    setEditDistanceKm(dr.distanceKm ? String(dr.distanceKm) : '');
+    setEditDestination(dr.destination || '');
+    setEditVehicleCount(dr.vehicleCount ? String(dr.vehicleCount) : '1');
+  };
 
-  const totalQtyScheduled = scheduled.reduce((s, d) => s + d.quantity, 0);
-
-  // ── Actions ──
-  const updateStatus = async (drId: string, newStatus: string) => {
+  const saveLogistics = async (drId: string) => {
     setActionLoading(drId);
     try {
-      await api.put(`/dispatch-requests/${drId}/status`, { status: newStatus });
-      flash('ok', `Updated to ${newStatus.replace(/_/g, ' ')}`);
+      const transporter = transporters.find(t => t.id === editTransporterId);
+      await api.put(`/dispatch-requests/${drId}`, {
+        transporterId: editTransporterId || null,
+        transporterName: transporter?.name || editTransporterName || null,
+        freightRate: editFreightRate ? parseFloat(editFreightRate) : null,
+        distanceKm: editDistanceKm ? parseFloat(editDistanceKm) : null,
+        destination: editDestination,
+        vehicleCount: parseInt(editVehicleCount) || 1,
+      });
+      flash('ok', 'Logistics details saved');
+      setEditingDR(null);
       load();
     } catch (e: any) {
       flash('err', e.response?.data?.error || 'Failed');
@@ -93,38 +166,42 @@ export default function DispatchRequests() {
   };
 
   const assignTruck = async (drId: string) => {
-    if (!truckVehicleNo.trim()) { flash('err', 'Enter vehicle number'); return; }
+    if (!truckVehicle.trim()) { flash('err', 'Enter vehicle number'); return; }
     setActionLoading(drId + '_truck');
     try {
+      const dr = drs.find(d => d.id === drId);
       await api.post('/shipments', {
         dispatchRequestId: drId,
-        vehicleNo: truckVehicleNo.trim().toUpperCase(),
+        vehicleNo: truckVehicle.trim().toUpperCase(),
         driverName: truckDriver || null,
-        driverMobile: truckDriverMobile || null,
-        transporterName: truckTransporter || null,
+        driverMobile: truckMobile || null,
+        transporterName: dr?.transporterName || '',
         gateInTime: new Date().toISOString(),
-        productName: drs.find(d => d.id === drId)?.productName || '',
-        customerName: drs.find(d => d.id === drId)?.customerName || '',
-        destination: drs.find(d => d.id === drId)?.destination || '',
+        productName: dr?.productName || '',
+        customerName: dr?.customerName || '',
+        destination: dr?.destination || '',
       });
-      flash('ok', `Truck ${truckVehicleNo} assigned`);
-      setShowTruckForm(null);
-      setTruckVehicleNo(''); setTruckDriver(''); setTruckDriverMobile(''); setTruckTransporter('');
+      flash('ok', `Truck ${truckVehicle} assigned — will appear at gate on arrival`);
+      setTruckFormDR(null); setTruckVehicle(''); setTruckDriver(''); setTruckMobile('');
       load();
     } catch (e: any) {
-      flash('err', e.response?.data?.error || 'Failed to assign truck');
+      flash('err', e.response?.data?.error || 'Failed');
     } finally {
       setActionLoading(null);
     }
   };
 
-  const shareDr = (dr: DR) => {
+  const shareDR = (dr: DR) => {
     const trucks = dr.shipments?.map(s => s.vehicleNo).join(', ') || 'TBD';
     const text = `*Dispatch #${dr.drNo}*\n` +
       `Customer: ${dr.customerName}\n` +
       `Product: ${dr.productName} - ${dr.quantity} ${dr.unit}\n` +
+      `Destination: ${dr.destination || 'TBD'}\n` +
+      `Distance: ${dr.distanceKm ? dr.distanceKm + ' km' : 'TBD'}\n` +
+      `Transporter: ${dr.transporterName || 'TBD'}\n` +
+      `Rate: ${dr.freightRate ? '₹' + dr.freightRate + '/MT' : 'TBD'}\n` +
       `Trucks: ${trucks}\n` +
-      `Status: ${dr.status.replace(/_/g, ' ')}`;
+      `Status: ${getDRStep(dr).label}`;
     if (navigator.share) {
       navigator.share({ text }).catch(() => {});
     } else {
@@ -132,36 +209,16 @@ export default function DispatchRequests() {
     }
   };
 
-  const getStatusStyle = (s: string) => {
-    const map: Record<string, string> = {
-      SCHEDULED: 'bg-blue-100 text-blue-700',
-      PENDING: 'bg-gray-100 text-gray-700',
-      ACCEPTED: 'bg-blue-100 text-blue-700',
-      VEHICLE_ASSIGNED: 'bg-purple-100 text-purple-700',
-      LOADING: 'bg-amber-100 text-amber-700',
-      DISPATCHED: 'bg-green-100 text-green-700',
-      COMPLETED: 'bg-emerald-100 text-emerald-700',
-      CANCELLED: 'bg-red-100 text-red-700',
-    };
-    return map[s] || 'bg-gray-100 text-gray-700';
-  };
+  // ── Filter ──
+  const drSteps = drs.map(dr => ({ dr, ...getDRStep(dr) }));
+  const needsAction = drSteps.filter(d => d.step === 'NEW');
+  const inProgress = drSteps.filter(d => ['TRANSPORTER_SET', 'TRUCKS_ASSIGNED', 'AT_FACTORY'].includes(d.step));
+  const done = drSteps.filter(d => d.step === 'DISPATCHED');
 
-  const getShipmentBadge = (s: string) => {
-    const map: Record<string, string> = {
-      GATE_IN: 'bg-blue-100 text-blue-700',
-      TARE_WEIGHED: 'bg-indigo-100 text-indigo-700',
-      LOADING: 'bg-amber-100 text-amber-700',
-      GROSS_WEIGHED: 'bg-purple-100 text-purple-700',
-      RELEASED: 'bg-green-100 text-green-700',
-      EXITED: 'bg-emerald-100 text-emerald-700',
-    };
-    return map[s] || 'bg-gray-100 text-gray-700';
-  };
-
-  const filteredDrs = filterTab === 'ACTIVE' ? allActive :
-    filterTab === 'SCHEDULED' ? scheduled :
-    filterTab === 'LOADING' ? loadingDrs :
-    filterTab === 'DISPATCHED' ? dispatched : drs;
+  const filtered = filterStep === 'ACTIVE' ? drSteps.filter(d => d.step !== 'DISPATCHED') :
+    filterStep === 'NEEDS_ACTION' ? needsAction :
+    filterStep === 'IN_PROGRESS' ? inProgress :
+    filterStep === 'DONE' ? done : drSteps;
 
   const inboundToday = grainTrucks.length;
   const inboundTotalNet = grainTrucks.reduce((s, t) => s + (t.weightNet || 0), 0);
@@ -172,10 +229,9 @@ export default function DispatchRequests() {
       <div className={`bg-gradient-to-r ${direction === 'OUTBOUND' ? 'from-orange-600 to-orange-700' : 'from-teal-600 to-teal-700'} text-white`}>
         <div className="max-w-6xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between mb-3">
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Truck size={28} /> Logistics
+            <h1 className="text-xl font-bold flex items-center gap-2">
+              <Truck size={24} /> Logistics
             </h1>
-            {/* Direction Toggle */}
             <div className="flex bg-white/20 rounded-lg p-0.5">
               <button onClick={() => setDirection('OUTBOUND')}
                 className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1 transition ${direction === 'OUTBOUND' ? 'bg-white text-orange-700' : 'text-white/80 hover:text-white'}`}>
@@ -188,24 +244,27 @@ export default function DispatchRequests() {
             </div>
           </div>
 
-          {/* Summary Cards */}
           {direction === 'OUTBOUND' ? (
             <div className="grid grid-cols-4 gap-3">
               <div className="bg-white/15 rounded-lg p-2.5 text-center">
-                <div className="text-2xl font-bold">{scheduled.length}</div>
-                <div className="text-[10px] text-orange-100">Scheduled</div>
+                <div className="text-2xl font-bold">{needsAction.length}</div>
+                <div className="text-[10px] text-orange-100">Need Transporter</div>
               </div>
               <div className="bg-white/15 rounded-lg p-2.5 text-center">
-                <div className="text-2xl font-bold">{trucksOnWay}</div>
-                <div className="text-[10px] text-orange-100">Trucks Expected</div>
+                <div className="text-2xl font-bold">{inProgress.length}</div>
+                <div className="text-[10px] text-orange-100">In Progress</div>
               </div>
               <div className="bg-white/15 rounded-lg p-2.5 text-center">
-                <div className="text-2xl font-bold">{loadingDrs.length}</div>
-                <div className="text-[10px] text-orange-100">Loading</div>
+                <div className="text-2xl font-bold">
+                  {drs.reduce((s, d) => s + (d.shipments?.length || 0), 0)}
+                </div>
+                <div className="text-[10px] text-orange-100">Total Trucks</div>
               </div>
               <div className="bg-white/15 rounded-lg p-2.5 text-center">
-                <div className="text-2xl font-bold">{totalQtyScheduled}</div>
-                <div className="text-[10px] text-orange-100">{scheduled[0]?.unit || 'MT'} Pending</div>
+                <div className="text-2xl font-bold">
+                  {drs.reduce((s, d) => s + d.quantity, 0).toFixed(0)}
+                </div>
+                <div className="text-[10px] text-orange-100">MT Pending</div>
               </div>
             </div>
           ) : (
@@ -230,245 +289,372 @@ export default function DispatchRequests() {
       <div className="max-w-6xl mx-auto px-4 py-4">
         {msg && (
           <div className={`rounded-lg p-3 mb-4 text-sm flex items-center gap-2 ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-            {msg.type === 'ok' ? <Check size={16} /> : <X size={16} />} {msg.text}
+            {msg.type === 'ok' ? <CheckCircle size={16} /> : <AlertCircle size={16} />} {msg.text}
           </div>
         )}
 
-        {/* ── OUTBOUND (Sales Dispatch) ── */}
+        {/* ── OUTBOUND ── */}
         {direction === 'OUTBOUND' && (<>
-        {/* Filter Tabs */}
-        <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
-          {['ACTIVE', 'SCHEDULED', 'LOADING', 'DISPATCHED', 'ALL'].map(tab => (
-            <button key={tab} onClick={() => setFilterTab(tab)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition ${
-                filterTab === tab ? 'bg-orange-600 text-white' : 'bg-white text-gray-600 border hover:bg-gray-50'
-              }`}>
-              {tab === 'ACTIVE' ? `Active (${allActive.length})` :
-               tab === 'SCHEDULED' ? `Scheduled (${scheduled.length})` :
-               tab === 'LOADING' ? `Loading (${loadingDrs.length})` :
-               tab === 'DISPATCHED' ? `Dispatched (${dispatched.length})` :
-               `All (${drs.length})`}
-            </button>
-          ))}
-        </div>
-
-        {/* Loading */}
-        {loading ? (
-          <div className="text-center py-12 text-gray-400">
-            <Loader2 size={32} className="animate-spin mx-auto mb-2" />
+          {/* Filter */}
+          <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
+            {[
+              { key: 'ACTIVE', label: `Active (${needsAction.length + inProgress.length})` },
+              { key: 'NEEDS_ACTION', label: `Need Transporter (${needsAction.length})` },
+              { key: 'IN_PROGRESS', label: `In Progress (${inProgress.length})` },
+              { key: 'DONE', label: `Done (${done.length})` },
+              { key: 'ALL', label: `All (${drs.length})` },
+            ].map(tab => (
+              <button key={tab.key} onClick={() => setFilterStep(tab.key)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition ${
+                  filterStep === tab.key ? 'bg-orange-600 text-white' : 'bg-white text-gray-600 border hover:bg-gray-50'
+                }`}>
+                {tab.label}
+              </button>
+            ))}
           </div>
-        ) : filteredDrs.length === 0 ? (
-          <div className="text-center py-12">
-            <Truck size={48} className="mx-auto text-gray-300 mb-3" />
-            <p className="text-gray-500 text-sm">No dispatch requests</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {filteredDrs.map(dr => {
-              const isExpanded = expandedId === dr.id;
-              const shipments = dr.shipments || [];
-              const isScheduled = ['SCHEDULED', 'PENDING', 'ACCEPTED', 'VEHICLE_ASSIGNED'].includes(dr.status);
 
-              return (
-                <div key={dr.id} className="bg-white rounded-lg border shadow-sm hover:shadow-md transition">
-                  {/* Card Header */}
-                  <button onClick={() => setExpandedId(isExpanded ? null : dr.id)} className="w-full p-4 text-left">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-bold text-gray-900">DR #{dr.drNo}</span>
-                          <span className="text-xs text-gray-400">SO #{dr.order?.orderNo}</span>
-                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${getStatusStyle(dr.status)}`}>
-                            {dr.status.replace(/_/g, ' ')}
-                          </span>
-                        </div>
-                        <p className="text-sm text-gray-700 font-medium">{dr.customerName}</p>
-                        <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
-                          <span className="flex items-center gap-1">
-                            <Package size={12} /> {dr.productName} · {dr.quantity} {dr.unit}
-                          </span>
-                          {dr.destination && (
-                            <span className="flex items-center gap-1">
-                              <MapPin size={12} /> {dr.destination.slice(0, 30)}
+          {loading ? (
+            <div className="text-center py-12 text-gray-400">
+              <Loader2 size={32} className="animate-spin mx-auto mb-2" />
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="text-center py-12">
+              <Truck size={48} className="mx-auto text-gray-300 mb-3" />
+              <p className="text-gray-500 text-sm">No dispatch requests</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filtered.map(({ dr, step, label, action, stepIdx }) => {
+                const isExpanded = expandedId === dr.id;
+                const shipments = dr.shipments || [];
+                const isEditing = editingDR === dr.id;
+
+                return (
+                  <div key={dr.id} className="bg-white rounded-lg border shadow-sm hover:shadow-md transition">
+                    {/* Card Header */}
+                    <button onClick={() => setExpandedId(isExpanded ? null : dr.id)} className="w-full p-4 text-left">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-bold text-gray-900">DR #{dr.drNo}</span>
+                            <span className="text-xs text-gray-400">SO #{dr.order?.orderNo}</span>
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${STEP_BADGES[step]}`}>
+                              {label}
                             </span>
-                          )}
-                          {dr.deliveryDate && (
-                            <span className="flex items-center gap-1">
-                              <Clock size={12} /> {new Date(dr.deliveryDate).toLocaleDateString('en-IN')}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="text-right ml-4 shrink-0">
-                        <div className="text-sm font-bold text-orange-600">
-                          {shipments.length} truck{shipments.length !== 1 ? 's' : ''}
-                        </div>
-                        <ChevronDown size={16} className={`text-gray-400 ml-auto transition ${isExpanded ? 'rotate-180' : ''}`} />
-                      </div>
-                    </div>
-
-                    {/* Mini Progress */}
-                    <div className="flex items-center gap-1 mt-2.5">
-                      <div className={`h-1.5 flex-1 rounded-full ${isScheduled ? 'bg-blue-400' : 'bg-green-500'}`} />
-                      <div className={`h-1.5 flex-1 rounded-full ${dr.status === 'LOADING' ? 'bg-amber-400 animate-pulse' : ['DISPATCHED', 'COMPLETED'].includes(dr.status) ? 'bg-green-500' : 'bg-gray-200'}`} />
-                      <div className={`h-1.5 flex-1 rounded-full ${['DISPATCHED', 'COMPLETED'].includes(dr.status) ? 'bg-green-500' : 'bg-gray-200'}`} />
-                    </div>
-                  </button>
-
-                  {/* Expanded */}
-                  {isExpanded && (
-                    <div className="border-t bg-gray-50 p-4 space-y-3">
-                      {/* Trucks */}
-                      {shipments.length > 0 && (
-                        <div>
-                          <div className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1">
-                            <Truck size={12} /> Trucks ({shipments.length})
+                            {dr.logisticsBy === 'SELLER' && (
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-orange-50 text-orange-600 border border-orange-200">
+                                MSPIL Transport
+                              </span>
+                            )}
                           </div>
-                          <div className="space-y-2">
-                            {shipments.map(s => (
-                              <div key={s.id} className="bg-white rounded-lg border p-3">
-                                <div className="flex items-center justify-between mb-1">
-                                  <span className="font-bold text-sm">{s.vehicleNo}</span>
-                                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${getShipmentBadge(s.status)}`}>
-                                    {s.status.replace(/_/g, ' ')}
-                                  </span>
-                                </div>
-                                <div className="grid grid-cols-3 gap-2 text-xs text-gray-500">
-                                  {s.driverName && <span>Driver: {s.driverName}</span>}
-                                  {s.transporterName && <span>Transporter: {s.transporterName}</span>}
-                                  {s.weightNet ? (
-                                    <span className="font-medium text-green-700">Net: {(s.weightNet / 1000).toFixed(2)} MT</span>
-                                  ) : s.weightTare ? (
-                                    <span>Tare: {s.weightTare} kg</span>
-                                  ) : null}
-                                </div>
-                                {/* Weighbridge progress */}
-                                <div className="flex gap-1 mt-2">
-                                  {['GATE_IN', 'TARE_WEIGHED', 'LOADING', 'GROSS_WEIGHED', 'RELEASED', 'EXITED'].map((step, i) => {
-                                    const stepIdx = ['GATE_IN', 'TARE_WEIGHED', 'LOADING', 'GROSS_WEIGHED', 'RELEASED', 'EXITED'].indexOf(s.status);
-                                    return (
-                                      <div key={step} className={`h-1 flex-1 rounded-full ${i <= stepIdx ? 'bg-green-500' : 'bg-gray-200'}`} />
-                                    );
-                                  })}
+                          <p className="text-sm text-gray-700 font-medium">{dr.customerName}</p>
+                          <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 flex-wrap">
+                            <span className="flex items-center gap-1">
+                              <Package size={12} /> {dr.productName} · {dr.quantity} {dr.unit}
+                            </span>
+                            {dr.destination && (
+                              <span className="flex items-center gap-1">
+                                <MapPin size={12} /> {dr.destination.slice(0, 40)}
+                              </span>
+                            )}
+                            {dr.distanceKm && (
+                              <span className="flex items-center gap-1 text-blue-600">
+                                <Route size={12} /> {dr.distanceKm} km
+                              </span>
+                            )}
+                            {dr.freightRate && (
+                              <span className="flex items-center gap-1 text-green-600 font-medium">
+                                <IndianRupee size={12} /> ₹{dr.freightRate}/MT
+                              </span>
+                            )}
+                            {dr.transporterName && (
+                              <span className="flex items-center gap-1 text-indigo-600">
+                                <Truck size={12} /> {dr.transporterName}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Action hint */}
+                          {action && (
+                            <div className="mt-1.5 text-xs font-medium text-orange-600">
+                              → {action}
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-right ml-4 shrink-0">
+                          <div className="text-sm font-bold text-orange-600">
+                            {shipments.length} truck{shipments.length !== 1 ? 's' : ''}
+                          </div>
+                          <ChevronDown size={16} className={`text-gray-400 ml-auto transition ${isExpanded ? 'rotate-180' : ''}`} />
+                        </div>
+                      </div>
+
+                      {/* Progress bar */}
+                      <div className="flex gap-1 mt-2.5">
+                        {['Transporter', 'Trucks', 'At Gate', 'Weigh', 'Dispatch'].map((s, i) => (
+                          <div key={s} className="flex-1 flex flex-col items-center">
+                            <div className={`w-full h-1.5 rounded-full ${
+                              i <= stepIdx ? STEP_COLORS[stepIdx] : 'bg-gray-200'
+                            } ${i === stepIdx && stepIdx < 4 ? 'animate-pulse' : ''}`} />
+                            <span className={`text-[7px] mt-0.5 ${i <= stepIdx ? 'text-gray-600 font-medium' : 'text-gray-400'}`}>{s}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </button>
+
+                    {/* ── Expanded ── */}
+                    {isExpanded && (
+                      <div className="border-t bg-gray-50 p-4 space-y-3">
+
+                        {/* ── Logistics Details / Edit Form ── */}
+                        {isEditing ? (
+                          <div className="bg-orange-50 rounded-lg p-3 border border-orange-200 space-y-3">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-xs font-bold text-orange-800">Set Logistics Details</span>
+                              <button onClick={() => setEditingDR(null)} className="text-gray-400"><X size={14} /></button>
+                            </div>
+
+                            {/* Destination + Distance */}
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                              <div className="md:col-span-2">
+                                <label className="text-[10px] text-gray-500 font-medium">Destination</label>
+                                <div className="flex gap-1">
+                                  <input value={editDestination} onChange={e => setEditDestination(e.target.value)}
+                                    placeholder="City, State" className="input-field text-xs flex-1" />
+                                  {editDestination && (
+                                    <a href={getMapUrl(editDestination)} target="_blank" rel="noopener"
+                                      className="px-2 py-1.5 bg-blue-600 text-white text-[10px] rounded font-medium hover:bg-blue-700 flex items-center gap-1 whitespace-nowrap">
+                                      <Navigation size={10} /> Maps
+                                    </a>
+                                  )}
                                 </div>
                               </div>
-                            ))}
+                              <div>
+                                <label className="text-[10px] text-gray-500 font-medium">Distance (km)</label>
+                                <input type="number" value={editDistanceKm} onChange={e => setEditDistanceKm(e.target.value)}
+                                  placeholder="From Maps" className="input-field text-xs w-full" />
+                              </div>
+                            </div>
+
+                            {/* Transporter + Rate */}
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                              <div>
+                                <label className="text-[10px] text-gray-500 font-medium">Transporter</label>
+                                <select value={editTransporterId} onChange={e => {
+                                  setEditTransporterId(e.target.value);
+                                  const t = transporters.find(t => t.id === e.target.value);
+                                  if (t) setEditTransporterName(t.name);
+                                }}
+                                  className="input-field text-xs w-full">
+                                  <option value="">Select transporter</option>
+                                  {transporters.map(t => (
+                                    <option key={t.id} value={t.id}>{t.name} ({t.vehicleCount || 0} vehicles)</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="text-[10px] text-gray-500 font-medium">Freight Rate (₹/MT)</label>
+                                <input type="number" value={editFreightRate} onChange={e => setEditFreightRate(e.target.value)}
+                                  placeholder="Negotiated rate" className="input-field text-xs w-full" />
+                              </div>
+                              <div>
+                                <label className="text-[10px] text-gray-500 font-medium">Trucks Needed</label>
+                                <input type="number" value={editVehicleCount} onChange={e => setEditVehicleCount(e.target.value)}
+                                  placeholder="1" className="input-field text-xs w-full" />
+                              </div>
+                            </div>
+
+                            {/* Total freight estimate */}
+                            {editFreightRate && dr.quantity > 0 && (
+                              <div className="bg-white rounded p-2 border text-xs">
+                                <span className="text-gray-500">Estimated freight: </span>
+                                <span className="font-bold text-green-700">
+                                  ₹{(parseFloat(editFreightRate) * dr.quantity).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                                </span>
+                                <span className="text-gray-400"> ({dr.quantity} {dr.unit} × ₹{editFreightRate}/MT)</span>
+                              </div>
+                            )}
+
+                            {/* Transporter contact info */}
+                            {editTransporterId && (() => {
+                              const t = transporters.find(tr => tr.id === editTransporterId);
+                              return t?.phone ? (
+                                <div className="flex items-center gap-2 text-xs text-gray-600">
+                                  <Phone size={11} />
+                                  <a href={`tel:${t.phone}`} className="text-indigo-600 hover:underline">{t.phone}</a>
+                                  {t.contactPerson && <span>({t.contactPerson})</span>}
+                                  <a href={`https://api.whatsapp.com/send?phone=${t.phone}`} target="_blank" rel="noopener"
+                                    className="text-green-600 hover:underline flex items-center gap-0.5">
+                                    <MessageCircle size={10} /> WhatsApp
+                                  </a>
+                                </div>
+                              ) : null;
+                            })()}
+
+                            <button onClick={() => saveLogistics(dr.id)}
+                              disabled={!!actionLoading}
+                              className="w-full py-2 bg-orange-600 text-white text-sm font-medium rounded-lg hover:bg-orange-700 disabled:opacity-50 flex items-center justify-center gap-2">
+                              {actionLoading === dr.id ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                              Save Logistics
+                            </button>
                           </div>
+                        ) : (
+                          /* View mode */
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                            <div>
+                              <span className="text-gray-500">Destination</span><br/>
+                              <span className="font-medium">{dr.destination || '—'}</span>
+                              {dr.destination && (
+                                <a href={getMapUrl(dr.destination)} target="_blank" rel="noopener"
+                                  className="ml-1 text-blue-600 hover:underline text-[10px]">📍 Map</a>
+                              )}
+                            </div>
+                            <div>
+                              <span className="text-gray-500">Distance</span><br/>
+                              <span className="font-medium">{dr.distanceKm ? `${dr.distanceKm} km` : '—'}</span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500">Transporter</span><br/>
+                              <span className="font-medium">{dr.transporterName || '—'}</span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500">Freight Rate</span><br/>
+                              <span className="font-medium">{dr.freightRate ? `₹${dr.freightRate}/MT` : '—'}</span>
+                              {dr.freightRate && dr.quantity > 0 && (
+                                <span className="text-gray-400 ml-1 text-[10px]">
+                                  (₹{(dr.freightRate * dr.quantity).toLocaleString('en-IN', { maximumFractionDigits: 0 })} total)
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Edit logistics button */}
+                        {!isEditing && !['DISPATCHED', 'COMPLETED'].includes(dr.status) && (
+                          <button onClick={() => startEditDR(dr)}
+                            className="text-xs text-orange-600 font-medium hover:underline flex items-center gap-1">
+                            ✏️ Edit logistics details
+                          </button>
+                        )}
+
+                        {/* ── Trucks / Shipments ── */}
+                        {shipments.length > 0 && (
+                          <div>
+                            <div className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1">
+                              <Truck size={12} /> Trucks ({shipments.length})
+                            </div>
+                            <div className="space-y-2">
+                              {shipments.map(s => {
+                                const netKg = s.weightNet || (s.weightGross && s.weightTare ? s.weightGross - s.weightTare : null);
+                                return (
+                                  <div key={s.id} className="bg-white rounded-lg border p-3">
+                                    <div className="flex items-center justify-between mb-1">
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-bold text-sm">{s.vehicleNo}</span>
+                                        {s.driverName && <span className="text-xs text-gray-500">{s.driverName}</span>}
+                                        {s.driverMobile && (
+                                          <a href={`tel:${s.driverMobile}`} className="text-xs text-blue-600">
+                                            <Phone size={10} />
+                                          </a>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        {netKg && <span className="text-xs font-bold text-green-700">{(netKg / 1000).toFixed(2)} MT</span>}
+                                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                                          ['RELEASED', 'EXITED'].includes(s.status) ? 'bg-green-100 text-green-700' :
+                                          s.status === 'LOADING' ? 'bg-amber-100 text-amber-700' :
+                                          s.status === 'GROSS_WEIGHED' ? 'bg-orange-100 text-orange-700' :
+                                          'bg-blue-100 text-blue-700'
+                                        }`}>{s.status.replace(/_/g, ' ')}</span>
+                                      </div>
+                                    </div>
+                                    <div className="flex gap-0.5 mt-1">
+                                      {['GATE_IN', 'TARE_WEIGHED', 'LOADING', 'GROSS_WEIGHED', 'RELEASED', 'EXITED'].map((step, i) => {
+                                        const stepIdx = ['GATE_IN', 'TARE_WEIGHED', 'LOADING', 'GROSS_WEIGHED', 'RELEASED', 'EXITED'].indexOf(s.status);
+                                        return <div key={step} className={`h-1 flex-1 rounded-full ${i <= stepIdx ? 'bg-green-500' : 'bg-gray-200'}`} />;
+                                      })}
+                                    </div>
+                                    <div className="flex gap-2 mt-1 text-[10px] text-gray-400">
+                                      {s.weightTare && <span>Tare: {s.weightTare} kg</span>}
+                                      {s.weightGross && <span>Gross: {s.weightGross} kg</span>}
+                                      {s.gateInTime && <span>In: {new Date(s.gateInTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Add truck — transporter provides details ~1hr before arrival */}
+                        {!['DISPATCHED', 'COMPLETED', 'CANCELLED'].includes(dr.status) && (
+                          truckFormDR === dr.id ? (
+                            <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-xs font-bold text-blue-800">Add Truck (from transporter)</span>
+                                <button onClick={() => setTruckFormDR(null)} className="text-gray-400"><X size={14} /></button>
+                              </div>
+                              <p className="text-[10px] text-gray-500 mb-2">Transporter provides truck details ~1hr before arrival at factory gate</p>
+                              <div className="grid grid-cols-3 gap-2 mb-2">
+                                <input value={truckVehicle} onChange={e => setTruckVehicle(e.target.value)}
+                                  placeholder="Vehicle No *" className="input-field text-xs" autoFocus />
+                                <input value={truckDriver} onChange={e => setTruckDriver(e.target.value)}
+                                  placeholder="Driver Name" className="input-field text-xs" />
+                                <input value={truckMobile} onChange={e => setTruckMobile(e.target.value)}
+                                  placeholder="Driver Mobile" className="input-field text-xs" />
+                              </div>
+                              <button onClick={() => assignTruck(dr.id)}
+                                disabled={!!actionLoading}
+                                className="w-full py-2 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-1">
+                                {actionLoading === dr.id + '_truck' ? <Loader2 size={12} className="animate-spin" /> : <Truck size={12} />}
+                                Register Truck for Gate Entry
+                              </button>
+                            </div>
+                          ) : (
+                            <button onClick={() => setTruckFormDR(dr.id)}
+                              className="w-full py-2 border-2 border-dashed border-blue-300 rounded-lg text-blue-600 text-xs font-medium hover:bg-blue-50 flex items-center justify-center gap-1">
+                              <Plus size={14} /> Add Truck Details (from transporter)
+                            </button>
+                          )
+                        )}
+
+                        {/* Action buttons */}
+                        <div className="flex gap-2 flex-wrap pt-2 border-t">
+                          <button onClick={() => shareDR(dr)}
+                            className="px-3 py-1.5 text-green-700 text-xs font-medium rounded-lg border border-green-300 hover:bg-green-50 flex items-center gap-1">
+                            <Share2 size={12} /> Share
+                          </button>
+
+                          {dr.deliveryDate && (
+                            <span className="px-3 py-1.5 text-gray-500 text-xs flex items-center gap-1">
+                              <Clock size={12} /> Deliver by {new Date(dr.deliveryDate).toLocaleDateString('en-IN')}
+                            </span>
+                          )}
+
+                          {!['DISPATCHED', 'COMPLETED'].includes(dr.status) && (
+                            <button onClick={async () => {
+                              if (!confirm(`Delete DR #${dr.drNo}?`)) return;
+                              try {
+                                await api.delete(`/dispatch-requests/${dr.id}`);
+                                flash('ok', `DR #${dr.drNo} deleted`);
+                                load();
+                              } catch (e: any) { flash('err', e.response?.data?.error || 'Failed'); }
+                            }}
+                              className="px-3 py-1.5 text-red-600 text-xs font-medium rounded-lg border border-red-200 hover:bg-red-50 flex items-center gap-1 ml-auto">
+                              <Trash2 size={12} /> Delete
+                            </button>
+                          )}
                         </div>
-                      )}
-
-                      {/* Add Truck (for scheduled DRs) */}
-                      {isScheduled && showTruckForm !== dr.id && (
-                        <button onClick={() => setShowTruckForm(dr.id)}
-                          className="w-full py-2 border-2 border-dashed border-blue-300 rounded-lg text-blue-600 text-xs font-medium hover:bg-blue-50 flex items-center justify-center gap-1">
-                          <Plus size={14} /> Add Truck
-                        </button>
-                      )}
-
-                      {showTruckForm === dr.id && (
-                        <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs font-semibold text-blue-700">Assign Truck</span>
-                            <button onClick={() => setShowTruckForm(null)} className="text-gray-400 hover:text-gray-600"><X size={14} /></button>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2 mb-2">
-                            <input value={truckVehicleNo} onChange={e => setTruckVehicleNo(e.target.value)}
-                              placeholder="Vehicle No *" className="input-field text-xs" />
-                            <input value={truckDriver} onChange={e => setTruckDriver(e.target.value)}
-                              placeholder="Driver Name" className="input-field text-xs" />
-                            <input value={truckDriverMobile} onChange={e => setTruckDriverMobile(e.target.value)}
-                              placeholder="Driver Mobile" className="input-field text-xs" />
-                            <input value={truckTransporter} onChange={e => setTruckTransporter(e.target.value)}
-                              placeholder="Transporter" className="input-field text-xs" />
-                          </div>
-                          <button onClick={() => assignTruck(dr.id)}
-                            disabled={actionLoading === dr.id + '_truck'}
-                            className="w-full py-2 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-1">
-                            {actionLoading === dr.id + '_truck' ? <Loader2 size={14} className="animate-spin" /> : <Truck size={14} />}
-                            Gate In Truck
-                          </button>
-                        </div>
-                      )}
-
-                      {/* Details */}
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-                        <div><span className="text-gray-500">Logistics</span><br/><span className="font-medium">{dr.logisticsBy}</span></div>
-                        {dr.transporterName && <div><span className="text-gray-500">Transporter</span><br/><span className="font-medium">{dr.transporterName}</span></div>}
-                        <div><span className="text-gray-500">Vehicles Expected</span><br/><span className="font-medium">{dr.vehicleCount || '-'}</span></div>
-                        {dr.remarks && <div className="col-span-2"><span className="text-gray-500">Remarks</span><br/><span className="font-medium">{dr.remarks}</span></div>}
                       </div>
-
-                      {/* Action Buttons */}
-                      <div className="flex gap-2 flex-wrap pt-2 border-t">
-                        {/* Start Loading */}
-                        {isScheduled && shipments.length > 0 && (
-                          <button onClick={() => updateStatus(dr.id, 'LOADING')}
-                            disabled={!!actionLoading}
-                            className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 flex items-center gap-2 disabled:opacity-50">
-                            {actionLoading === dr.id ? <Loader2 size={14} className="animate-spin" /> : <ArrowRight size={14} />}
-                            Start Loading
-                          </button>
-                        )}
-
-                        {/* Mark Dispatched */}
-                        {dr.status === 'LOADING' && (
-                          <button onClick={() => updateStatus(dr.id, 'DISPATCHED')}
-                            disabled={!!actionLoading}
-                            className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 flex items-center gap-2 disabled:opacity-50">
-                            {actionLoading === dr.id ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                            Mark Dispatched
-                          </button>
-                        )}
-
-                        {/* Complete */}
-                        {dr.status === 'DISPATCHED' && (
-                          <button onClick={() => updateStatus(dr.id, 'COMPLETED')}
-                            disabled={!!actionLoading}
-                            className="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 flex items-center gap-2 disabled:opacity-50">
-                            {actionLoading === dr.id ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                            Complete
-                          </button>
-                        )}
-
-                        {/* Share */}
-                        <button onClick={() => shareDr(dr)}
-                          className="px-3 py-2 text-green-700 text-sm font-medium rounded-lg border border-green-300 hover:bg-green-50 flex items-center gap-1">
-                          <Share2 size={14} /> Share
-                        </button>
-
-                        {/* Cancel */}
-                        {!['COMPLETED', 'CANCELLED', 'DISPATCHED'].includes(dr.status) && (
-                          <button onClick={() => { if (confirm('Cancel this dispatch?')) updateStatus(dr.id, 'CANCELLED'); }}
-                            className="px-3 py-2 text-red-600 text-sm font-medium rounded-lg border border-red-200 hover:bg-red-50 flex items-center gap-1">
-                            <X size={14} /> Cancel
-                          </button>
-                        )}
-
-                        {/* Delete */}
-                        {!['DISPATCHED', 'COMPLETED'].includes(dr.status) && (
-                          <button onClick={async () => {
-                            if (!confirm(`Delete DR #${dr.drNo}? This cannot be undone.`)) return;
-                            try {
-                              await api.delete(`/dispatch-requests/${dr.id}`);
-                              flash('ok', `DR #${dr.drNo} deleted`);
-                              load();
-                            } catch (e: any) { flash('err', e.response?.data?.error || 'Failed'); }
-                          }}
-                            className="px-3 py-2 text-red-600 text-sm font-medium rounded-lg border border-red-200 hover:bg-red-50 flex items-center gap-1">
-                            <Trash2 size={14} /> Delete
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </>)}
 
-        {/* ── INBOUND (Grain Procurement) ── */}
+        {/* ── INBOUND ── */}
         {direction === 'INBOUND' && (
           <>
             {loading ? (
@@ -506,8 +692,6 @@ export default function DispatchRequests() {
                     </div>
                   </div>
                 ))}
-
-                {/* Inbound Summary */}
                 <div className="bg-teal-50 rounded-lg border border-teal-200 p-3 mt-3">
                   <div className="grid grid-cols-3 gap-3 text-center text-xs">
                     <div>

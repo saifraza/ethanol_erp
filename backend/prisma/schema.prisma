@@ -1002,7 +1002,10 @@ model DispatchRequest {
   // Logistics
   logisticsBy     String          @default("BUYER")
   transporterName String?
+  transporterId   String?                  // selected transporter from master
   vehicleCount    Int?                     // expected trucks
+  freightRate     Float?                   // Rs per MT (negotiated)
+  distanceKm      Float?                   // factory to destination distance
   // Status flow
   status          String          @default("PENDING")
   // PENDING → ACCEPTED → VEHICLE_ASSIGNED → LOADING → DISPATCHED → COMPLETED

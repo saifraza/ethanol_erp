@@ -502,18 +502,17 @@ export default function SalesDashboard() {
               ))}
 
               <div className="flex items-center gap-4 text-sm">
-                <span className="text-gray-500 text-xs font-medium">Freight:</span>
+                <span className="text-gray-500 text-xs font-medium">Transport:</span>
                 <label className="flex items-center gap-1.5">
                   <input type="radio" value="BUYER" checked={logisticsBy === 'BUYER'} onChange={e => setLogisticsBy(e.target.value)} className="w-3.5 h-3.5" />
-                  <span className="text-xs">Buyer</span>
+                  <span className="text-xs">Buyer arranges</span>
                 </label>
                 <label className="flex items-center gap-1.5">
                   <input type="radio" value="SELLER" checked={logisticsBy === 'SELLER'} onChange={e => setLogisticsBy(e.target.value)} className="w-3.5 h-3.5" />
-                  <span className="text-xs">We arrange</span>
+                  <span className="text-xs">MSPIL arranges</span>
                 </label>
                 {logisticsBy === 'SELLER' && (
-                  <input type="number" value={freightRate} onChange={e => setFreightRate(e.target.value)}
-                    placeholder="₹/MT" className="input-field w-24 text-xs" />
+                  <span className="text-[10px] text-orange-600 font-medium">→ Logistics team will set rate</span>
                 )}
               </div>
 
