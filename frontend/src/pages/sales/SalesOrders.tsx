@@ -151,7 +151,7 @@ export default function SalesOrders() {
         unit: line?.unit || 'MT',
         remarks: order.remarks || '',
       });
-      flash('ok', `Dispatch request sent to factory for Order #${order.orderNo}`);
+      flash('ok', `Sent to logistics for Order #${order.orderNo}`);
       loadAll();
     } catch (e: any) {
       flash('err', e.response?.data?.error || 'Failed to send to factory');
@@ -475,8 +475,8 @@ export default function SalesOrders() {
                         <div className={`h-1.5 flex-1 rounded-full ${pipe.hasInvoice ? 'bg-green-500' : 'bg-gray-200'}`} />
                         <div className={`h-1.5 flex-1 rounded-full ${pipe.latestInvoice?.status === 'PAID' ? 'bg-green-500' : 'bg-gray-200'}`} />
                         <div className="text-[9px] text-gray-400 ml-1 whitespace-nowrap">
-                          {!pipe.hasDR ? 'Pending dispatch' :
-                           !pipe.latestShipment ? 'Awaiting truck' :
+                          {!pipe.hasDR ? 'Send to logistics' :
+                           !pipe.latestShipment ? 'Trucks scheduled' :
                            !pipe.shipmentDone ? `Truck: ${pipe.latestShipment.status}` :
                            !pipe.hasInvoice ? 'Ready to invoice' :
                            pipe.latestInvoice?.status === 'PAID' ? 'Complete' :
@@ -554,7 +554,7 @@ export default function SalesOrders() {
                           <button onClick={() => sendToFactory(order)} disabled={!!actionLoading}
                             className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50">
                             {actionLoading === order.id + '_send' ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-                            Send to Factory
+                            Send to Logistics
                           </button>
                         )}
 
