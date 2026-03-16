@@ -5,7 +5,8 @@ import {
   Wheat, CogIcon, Droplets, Beaker, Flame, Wind,
   Fuel, Waves, BarChart3,
   Settings, Users, Truck, Package, LayoutDashboard,
-  Warehouse, AlertCircle, ShoppingCart
+  Warehouse, AlertCircle, ShoppingCart,
+  UserCheck, ClipboardList, Send, FileText, IndianRupee
 } from 'lucide-react';
 
 export interface ModuleDef {
@@ -13,7 +14,7 @@ export interface ModuleDef {
   label: string;
   to: string;
   icon: any;
-  group: 'process' | 'admin';
+  group: 'process' | 'admin' | 'sales';
   adminOnly?: boolean;
 }
 
@@ -37,6 +38,13 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'ethanol-stock', label: 'Ethanol Stock', to: '/process/ethanol-stock', icon: Fuel, group: 'process' },
   { key: 'ethanol-dispatch', label: 'Ethanol Dispatch', to: '/process/ethanol-dispatch', icon: Truck, group: 'process' },
   { key: 'water-utility', label: 'Water Utility', to: '/process/water-utility', icon: Waves, group: 'process' },
+  // Sales & Distribution
+  { key: 'customers', label: 'Customers', to: '/sales/customers', icon: UserCheck, group: 'sales' },
+  { key: 'sales-orders', label: 'Sales Orders', to: '/sales/orders', icon: ClipboardList, group: 'sales' },
+  { key: 'dispatch-requests', label: 'Dispatch Req', to: '/sales/dispatch-requests', icon: Send, group: 'sales' },
+  { key: 'shipments', label: 'Gate Register', to: '/sales/shipments', icon: Truck, group: 'sales' },
+  { key: 'invoices', label: 'Invoices', to: '/sales/invoices', icon: FileText, group: 'sales' },
+  { key: 'payments', label: 'Payments', to: '/sales/payments', icon: IndianRupee, group: 'sales' },
   // Store & Maintenance
   { key: 'inventory', label: 'Inventory', to: '/inventory', icon: Warehouse, group: 'admin' },
   { key: 'plant-issues', label: 'Plant Issues', to: '/plant-issues', icon: AlertCircle, group: 'admin' },
@@ -54,6 +62,10 @@ export const ALL_MODULES = MODULE_DEFS
 
 // For Layout sidebar
 export const processNav = MODULE_DEFS.filter(m => m.group === 'process').map(m => ({
+  to: m.to, label: m.label, icon: m.icon, moduleKey: m.key,
+}));
+
+export const salesNav = MODULE_DEFS.filter(m => m.group === 'sales').map(m => ({
   to: m.to, label: m.label, icon: m.icon, moduleKey: m.key,
 }));
 

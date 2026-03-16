@@ -30,6 +30,13 @@ import DosingRecipes from './pages/process/DosingRecipes';
 import Inventory from './pages/Inventory';
 import PlantIssues from './pages/PlantIssues';
 import PurchaseRequisition from './pages/PurchaseRequisition';
+// Sales & Distribution
+import Customers from './pages/sales/Customers';
+import SalesOrders from './pages/sales/SalesOrders';
+import DispatchRequests from './pages/sales/DispatchRequests';
+import Shipments from './pages/sales/Shipments';
+import Invoices from './pages/sales/Invoices';
+import Payments from './pages/sales/Payments';
 import { useToast } from './components/common/Toast';
 import { setupApiToast } from './services/apiToast';
 
@@ -85,6 +92,13 @@ export default function App() {
         <Route path="inventory" element={<Inventory />} />
         <Route path="plant-issues" element={<PlantIssues />} />
         <Route path="purchase-requisition" element={<PurchaseRequisition />} />
+        {/* Sales & Distribution */}
+        <Route path="sales/customers" element={<Customers />} />
+        <Route path="sales/orders" element={<SalesOrders />} />
+        <Route path="sales/dispatch-requests" element={<DispatchRequests />} />
+        <Route path="sales/shipments" element={<Shipments />} />
+        <Route path="sales/invoices" element={<Invoices />} />
+        <Route path="sales/payments" element={<Payments />} />
         <Route path="reports" element={<Reports />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="users" element={<UsersPage />} />

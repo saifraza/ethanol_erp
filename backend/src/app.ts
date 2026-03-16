@@ -29,6 +29,15 @@ import dosingRecipeRoutes from './routes/dosingRecipes';
 import inventoryRoutes from './routes/inventory';
 import issueRoutes from './routes/issues';
 import purchaseRequisitionRoutes from './routes/purchaseRequisition';
+// Sales & Distribution module
+import customerRoutes from './routes/customers';
+import productRoutes from './routes/products';
+import transporterRoutes from './routes/transporters';
+import salesOrderRoutes from './routes/salesOrders';
+import dispatchRequestRoutes from './routes/dispatchRequests';
+import shipmentRoutes from './routes/shipments';
+import invoiceRoutes from './routes/invoices';
+import paymentRoutes from './routes/payments';
 
 const app = express();
 
@@ -68,6 +77,15 @@ app.use('/api/dosing-recipes', dosingRecipeRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/issues', issueRoutes);
 app.use('/api/purchase-requisition', purchaseRequisitionRoutes);
+// Sales & Distribution
+app.use('/api/customers', customerRoutes);
+app.use('/api/products', productRoutes);
+app.use('/api/transporters', transporterRoutes);
+app.use('/api/sales-orders', salesOrderRoutes);
+app.use('/api/dispatch-requests', dispatchRequestRoutes);
+app.use('/api/shipments', shipmentRoutes);
+app.use('/api/invoices', invoiceRoutes);
+app.use('/api/payments', paymentRoutes);
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
