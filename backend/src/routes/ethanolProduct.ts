@@ -107,14 +107,12 @@ router.get('/total-production', authenticate, async (req: AuthRequest, res: Resp
     const sumProd = totalProduction._sum.productionBL || 0;
 
     // Add the opening stock from the FIRST entry (base stock when ERP started)
+    // The first entry's totalStock represents all ethanol in tanks when tracking began
     const firstEntry = await prisma.ethanolProductEntry.findFirst({
       orderBy: { date: 'asc' },
       select: { totalStock: true, productionBL: true },
     });
-    // If the first entry has production=0, its totalStock is the opening balance
-    const openingStock = (firstEntry && (firstEntry.productionBL === 0 || firstEntry.productionBL === null))
-      ? (firstEntry.totalStock || 0)
-      : 0;
+    const openingStock = firstEntry?.totalStock || 0;
 
     res.json({ totalProduced: sumProd + openingStock });
   } catch (err: any) {
