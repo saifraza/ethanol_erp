@@ -33,6 +33,7 @@ import PurchaseRequisition from './pages/PurchaseRequisition';
 // Sales & Distribution
 import Customers from './pages/sales/Customers';
 import SalesOrders from './pages/sales/SalesOrders';
+import SalesDashboard from './pages/sales/SalesDashboard';
 import DispatchRequests from './pages/sales/DispatchRequests';
 import Transporters from './pages/sales/Transporters';
 import Shipments from './pages/sales/Shipments';
@@ -105,7 +106,8 @@ export default function App() {
         <Route path="purchase-requisition" element={<PurchaseRequisition />} />
         {/* Sales & Distribution */}
         <Route path="sales/customers" element={<Customers />} />
-        <Route path="sales/orders" element={<SalesOrders />} />
+        <Route path="sales/pipeline" element={<SalesDashboard />} />
+        <Route path="sales/orders" element={<SalesDashboard />} />
         <Route path="sales/dispatch-requests" element={<DispatchRequests />} />
         <Route path="sales/transporters" element={<Transporters />} />
         <Route path="sales/shipments" element={<Shipments />} />

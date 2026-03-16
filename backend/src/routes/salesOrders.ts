@@ -289,20 +289,19 @@ router.delete('/:id', async (req: Request, res: Response) => {
       return;
     }
 
-    if (['COMPLETED', 'IN_PROGRESS'].includes(order.status)) {
-      // Check if there are active dispatch requests
-      const activeDRs = await prisma.dispatchRequest.count({
-        where: { orderId: req.params.id, status: { notIn: ['CANCELLED'] } },
-      });
-      if (activeDRs > 0) {
-        res.status(400).json({ error: 'Cannot delete order with active dispatch requests. Cancel them first.' });
-        return;
-      }
+    // Delete related records first (cascade)
+    // Delete shipments under dispatch requests
+    const drs = await prisma.dispatchRequest.findMany({
+      where: { orderId: req.params.id },
+      select: { id: true },
+    });
+    const drIds = drs.map(d => d.id);
+    if (drIds.length > 0) {
+      await prisma.shipment.deleteMany({ where: { dispatchRequestId: { in: drIds } } });
     }
-
-    // Delete related records first
+    await prisma.dispatchRequest.deleteMany({ where: { orderId: req.params.id } });
+    await prisma.invoice.deleteMany({ where: { orderId: req.params.id } });
     await prisma.salesOrderLine.deleteMany({ where: { orderId: req.params.id } });
-    await prisma.dispatchRequest.deleteMany({ where: { orderId: req.params.id, status: 'CANCELLED' } });
 
     // Delete order
     await prisma.salesOrder.delete({ where: { id: req.params.id } });

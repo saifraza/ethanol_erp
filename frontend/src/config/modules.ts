@@ -42,10 +42,10 @@ export const MODULE_DEFS: ModuleDef[] = [
 
   // ── SALES (DDGS + Ethanol outward) ──
   { key: 'customers', label: 'Buyers', to: '/sales/customers', icon: UserCheck, group: 'sales' },
-  { key: 'sales-orders', label: 'Sale Orders', to: '/sales/orders', icon: ClipboardList, group: 'sales' },
-  { key: 'dispatch-requests', label: 'Dispatch', to: '/sales/dispatch-requests', icon: Send, group: 'sales' },
+  { key: 'sales-orders', label: 'Sales Pipeline', to: '/sales/pipeline', icon: ClipboardList, group: 'sales' },
+  { key: 'dispatch-requests', label: 'Logistics', to: '/sales/dispatch-requests', icon: Send, group: 'sales' },
   { key: 'transporters', label: 'Transporters', to: '/sales/transporters', icon: Truck, group: 'sales' },
-  { key: 'shipments', label: 'Weighbridge', to: '/sales/shipments', icon: Scale, group: 'sales' },
+  { key: 'shipments', label: 'Gate Register', to: '/sales/shipments', icon: Scale, group: 'sales' },
   { key: 'invoices', label: 'Billing', to: '/sales/invoices', icon: FileText, group: 'sales' },
   { key: 'payments', label: 'Collections', to: '/sales/payments', icon: IndianRupee, group: 'sales' },
 
