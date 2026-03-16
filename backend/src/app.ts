@@ -26,6 +26,9 @@ import labSampleRoutes from './routes/labSample';
 import ddgsStockRoutes from './routes/ddgsStock';
 import ddgsDispatchRoutes from './routes/ddgsDispatch';
 import dosingRecipeRoutes from './routes/dosingRecipes';
+import inventoryRoutes from './routes/inventory';
+import issueRoutes from './routes/issues';
+import purchaseRequisitionRoutes from './routes/purchaseRequisition';
 
 const app = express();
 
@@ -62,6 +65,9 @@ app.use('/api/lab-sample', labSampleRoutes);
 app.use('/api/ddgs-stock', ddgsStockRoutes);
 app.use('/api/ddgs-dispatch', ddgsDispatchRoutes);
 app.use('/api/dosing-recipes', dosingRecipeRoutes);
+app.use('/api/inventory', inventoryRoutes);
+app.use('/api/issues', issueRoutes);
+app.use('/api/purchase-requisition', purchaseRequisitionRoutes);
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));

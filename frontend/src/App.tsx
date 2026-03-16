@@ -27,6 +27,9 @@ import LabSampling from './pages/process/LabSampling';
 import DDGSStock from './pages/process/DDGSStock';
 import DDGSDispatch from './pages/process/DDGSDispatch';
 import DosingRecipes from './pages/process/DosingRecipes';
+import Inventory from './pages/Inventory';
+import PlantIssues from './pages/PlantIssues';
+import PurchaseRequisition from './pages/PurchaseRequisition';
 import { useToast } from './components/common/Toast';
 import { setupApiToast } from './services/apiToast';
 
@@ -79,6 +82,9 @@ export default function App() {
         <Route path="process/water-utility" element={<WaterUtility />} />
         <Route path="process/lab-sampling" element={<LabSampling />} />
         <Route path="process/dosing-recipes" element={<DosingRecipes />} />
+        <Route path="inventory" element={<Inventory />} />
+        <Route path="plant-issues" element={<PlantIssues />} />
+        <Route path="purchase-requisition" element={<PurchaseRequisition />} />
         <Route path="reports" element={<Reports />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="users" element={<UsersPage />} />
