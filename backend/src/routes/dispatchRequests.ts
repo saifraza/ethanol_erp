@@ -174,15 +174,15 @@ router.post('/', async (req: Request, res: Response) => {
     // Create dispatch request
     const dr = await prisma.dispatchRequest.create({
       data: {
-        orderId: b.orderId,
-        orderLineId: autoLineId,
+        order: { connect: { id: b.orderId } },
+        ...(autoLineId ? { orderLine: { connect: { id: autoLineId } } } : {}),
         productName: b.productName || '',
         quantity: parseFloat(b.requestedQty || b.quantity) || 0,
         unit: autoUnit,
         customerName: autoCustomerName,
         destination: autoDestination,
         deliveryDate: b.deliveryDate ? new Date(b.deliveryDate) : null,
-        logisticsBy: b.logisticsBy || null,
+        logisticsBy: b.logisticsBy || 'BUYER',
         transporterName: b.transporterName || null,
         vehicleCount: parseInt(b.vehicleCount) || 0,
         remarks: b.remarks || null,
