@@ -339,8 +339,14 @@ router.put('/:id', async (req: Request, res: Response) => {
       updateData.logisticsBy = req.body.logisticsBy;
     if (req.body.transporterName !== undefined)
       updateData.transporterName = req.body.transporterName;
+    if (req.body.transporterId !== undefined)
+      updateData.transporterId = req.body.transporterId;
     if (req.body.vehicleCount !== undefined)
       updateData.vehicleCount = parseInt(req.body.vehicleCount);
+    if (req.body.freightRate !== undefined)
+      updateData.freightRate = parseFloat(req.body.freightRate) || null;
+    if (req.body.distanceKm !== undefined)
+      updateData.distanceKm = parseFloat(req.body.distanceKm) || null;
     if (req.body.remarks !== undefined) updateData.remarks = req.body.remarks;
 
     const updated = await prisma.dispatchRequest.update({
