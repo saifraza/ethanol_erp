@@ -880,3 +880,237 @@ model PurchaseRequisition {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
+
+// ═══════════════════════════════════════════════
+// SALES & DISTRIBUTION MODULE
+// ═══════════════════════════════════════════════
+
+// Master: Customer (buyer parties)
+model Customer {
+  id              String   @id @default(uuid())
+  name            String
+  shortName       String?                  // display name for lists
+  address         String?
+  city            String?
+  state           String?
+  pincode         String?
+  gstNo           String?                  // GSTIN
+  panNo           String?
+  contactPerson   String?
+  phone           String?
+  email           String?
+  creditLimit     Float    @default(0)     // max outstanding allowed (Rs)
+  defaultTerms    String   @default("ADVANCE") // ADVANCE, COD, NET7, NET15, NET30
+  isActive        Boolean  @default(true)
+  remarks         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  salesOrders     SalesOrder[]
+  invoices        Invoice[]
+  payments        Payment[]
+}
+
+// Master: Product catalogue
+model Product {
+  id              String   @id @default(uuid())
+  name            String   @unique         // DDGS, ETHANOL, LFO, HFO, RS
+  unit            String   @default("TON") // TON, KL, LTR
+  hsnCode         String?                  // GST HSN code
+  defaultRate     Float    @default(0)     // Rs per unit
+  gstPercent      Float    @default(18)    // GST %
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// Master: Transporter
+model Transporter {
+  id              String   @id @default(uuid())
+  name            String
+  contactPerson   String?
+  phone           String?
+  vehicleCount    Int?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ── Sales Order (HQ creates) ──
+model SalesOrder {
+  id              String   @id @default(uuid())
+  orderNo         Int      @default(autoincrement())
+  customerId      String
+  customer        Customer @relation(fields: [customerId], references: [id])
+  orderDate       DateTime @default(now())
+  deliveryDate    DateTime?
+  poNumber        String?                  // customer PO reference
+  paymentTerms    String   @default("ADVANCE") // ADVANCE, COD, NET7, NET15, NET30
+  logisticsBy     String   @default("BUYER")   // BUYER or SELLER
+  transporterId   String?                  // if SELLER arranges
+  freightRate     Float?                   // Rs per ton/KL if seller pays
+  status          String   @default("DRAFT") // DRAFT, CONFIRMED, IN_PROGRESS, COMPLETED, CANCELLED
+  remarks         String?
+  // Totals (computed from lines)
+  totalAmount     Float    @default(0)
+  totalGst        Float    @default(0)
+  grandTotal      Float    @default(0)
+  userId          String                   // created by
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lines           SalesOrderLine[]
+  dispatchRequests DispatchRequest[]
+  invoices        Invoice[]
+}
+
+// ── Sales Order Line Items ──
+model SalesOrderLine {
+  id              String     @id @default(uuid())
+  orderId         String
+  order           SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productName     String                   // DDGS, ETHANOL, LFO, HFO, RS
+  quantity        Float                    // ordered qty
+  unit            String     @default("TON")
+  rate            Float                    // Rs per unit
+  gstPercent      Float      @default(18)
+  amount          Float      @default(0)   // qty × rate
+  gstAmount       Float      @default(0)
+  totalAmount     Float      @default(0)   // amount + gst
+  dispatchedQty   Float      @default(0)   // how much already dispatched
+  pendingQty      Float      @default(0)   // quantity - dispatchedQty
+  createdAt       DateTime   @default(now())
+  dispatchRequests DispatchRequest[]
+}
+
+// ── Dispatch Request (HQ → Factory) ──
+model DispatchRequest {
+  id              String          @id @default(uuid())
+  drNo            Int             @default(autoincrement())
+  orderId         String
+  order           SalesOrder      @relation(fields: [orderId], references: [id])
+  orderLineId     String?
+  orderLine       SalesOrderLine? @relation(fields: [orderLineId], references: [id])
+  productName     String                   // DDGS, ETHANOL etc
+  quantity        Float                    // qty to dispatch
+  unit            String          @default("TON")
+  customerName    String          @default("") // denormalized for factory display
+  destination     String?
+  deliveryDate    DateTime?
+  // Logistics
+  logisticsBy     String          @default("BUYER")
+  transporterName String?
+  vehicleCount    Int?                     // expected trucks
+  // Status flow
+  status          String          @default("PENDING")
+  // PENDING → ACCEPTED → VEHICLE_ASSIGNED → LOADING → DISPATCHED → COMPLETED
+  acceptedAt      DateTime?
+  acceptedBy      String?
+  remarks         String?
+  userId          String                   // created by (HQ user)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  shipments       Shipment[]
+}
+
+// ── Shipment (Factory: one truck = one shipment) ──
+model Shipment {
+  id              String           @id @default(uuid())
+  shipmentNo      Int              @default(autoincrement())
+  dispatchRequestId String?
+  dispatchRequest DispatchRequest? @relation(fields: [dispatchRequestId], references: [id])
+  productName     String                   // DDGS, ETHANOL, LFO, HFO, RS
+  customerName    String           @default("")
+  destination     String?
+  // Vehicle
+  vehicleNo       String           @default("")
+  vehicleType     String?                  // TRUCK, TANKER, TRAILER
+  capacityTon     Float?
+  driverName      String?
+  driverMobile    String?
+  transporterName String?
+  // Weighbridge
+  weightTare      Float?                   // kg
+  weightGross     Float?                   // kg
+  weightNet       Float?                   // kg (gross - tare)
+  // For liquids (Ethanol, LFO, HFO, RS)
+  quantityKL      Float?                   // kilolitres
+  quantityBL      Float?                   // bulk litres
+  strength        Float?                   // % alcohol (ethanol)
+  // Bags (DDGS)
+  bags            Int?
+  weightPerBag    Float?                   // kg
+  // Documents
+  challanNo       String?
+  challanDate     String?
+  ewayBill        String?
+  gatePassNo      String?
+  invoiceRef      String?                  // linked invoice
+  // Status flow
+  status          String           @default("GATE_IN")
+  // GATE_IN → TARE_WEIGHED → LOADING → GROSS_WEIGHED → RELEASED → EXITED
+  gateInTime      String?                  // HH:MM
+  tareTime        String?
+  loadStartTime   String?
+  grossTime       String?
+  releaseTime     String?
+  exitTime        String?
+  date            DateTime         @default(now())
+  remarks         String?
+  userId          String?                  // factory user
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ── Invoice (auto-generated from shipment) ──
+model Invoice {
+  id              String     @id @default(uuid())
+  invoiceNo       Int        @default(autoincrement())
+  customerId      String
+  customer        Customer   @relation(fields: [customerId], references: [id])
+  orderId         String?
+  order           SalesOrder? @relation(fields: [orderId], references: [id])
+  invoiceDate     DateTime   @default(now())
+  dueDate         DateTime?
+  // Line items
+  productName     String
+  quantity        Float
+  unit            String     @default("TON")
+  rate            Float
+  amount          Float      @default(0)   // qty × rate
+  gstPercent      Float      @default(18)
+  gstAmount       Float      @default(0)
+  freightCharge   Float      @default(0)
+  totalAmount     Float      @default(0)   // amount + gst + freight
+  // Payment tracking
+  paidAmount      Float      @default(0)
+  balanceAmount   Float      @default(0)   // total - paid
+  status          String     @default("UNPAID") // UNPAID, PARTIAL, PAID, CANCELLED
+  // Document refs
+  shipmentId      String?                  // which shipment
+  challanNo       String?
+  ewayBill        String?
+  remarks         String?
+  userId          String
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  payments        Payment[]
+}
+
+// ── Payment (against invoices) ──
+model Payment {
+  id              String   @id @default(uuid())
+  paymentNo       Int      @default(autoincrement())
+  customerId      String
+  customer        Customer @relation(fields: [customerId], references: [id])
+  invoiceId       String?
+  invoice         Invoice? @relation(fields: [invoiceId], references: [id])
+  paymentDate     DateTime @default(now())
+  amount          Float
+  mode            String   @default("BANK_TRANSFER") // CASH, CHEQUE, BANK_TRANSFER, UPI, NEFT, RTGS
+  reference       String?                  // UTR / cheque no / UPI ref
+  confirmedBy     String?                  // who confirmed receipt
+  confirmedAt     DateTime?
+  remarks         String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
