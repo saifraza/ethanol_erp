@@ -104,7 +104,7 @@ router.post('/', async (req: Request, res: Response) => {
       const product = productMap[line.productId];
       const quantity = parseFloat(line.quantity) || 0;
       const rate = parseFloat(line.rate) || (product?.defaultRate || 0);
-      const gstPercent = parseFloat(line.gstPercent) ?? (product?.gstPercent || 0);
+      const gstPercent = !isNaN(parseFloat(line.gstPercent)) ? parseFloat(line.gstPercent) : (product?.gstPercent || 0);
 
       const amount = quantity * rate;
       const gstAmount = (amount * gstPercent) / 100;
@@ -132,26 +132,26 @@ router.post('/', async (req: Request, res: Response) => {
       (sum: number, line: any) => sum + line.gstAmount,
       0
     );
-    const freight = b.freightRate ? parseFloat(b.freightRate) * processedLines.reduce((s: number, l: any) => s + l.quantity, 0) : 0;
+    const freight = parseFloat(b.freight) || (b.freightRate ? parseFloat(b.freightRate) * processedLines.reduce((s: number, l: any) => s + l.quantity, 0) : 0);
     const totalAmount = subtotal;
     const grandTotal = subtotal + totalGst + freight;
 
     // Create order with lines in transaction
     const order = await prisma.salesOrder.create({
       data: {
-        customerId: b.customerId,
+        customer: { connect: { id: b.customerId } },
         orderDate: b.orderDate ? new Date(b.orderDate) : new Date(),
         deliveryDate: b.deliveryDate ? new Date(b.deliveryDate) : null,
         poNumber: b.poNumber || null,
-        paymentTerms: b.paymentTerms || null,
-        logisticsBy: b.logisticsBy || null,
+        paymentTerms: b.paymentTerms || 'ADVANCE',
+        logisticsBy: b.logisticsBy || 'BUYER',
         transporterId: b.transporterId || null,
         freightRate: b.freightRate ? parseFloat(b.freightRate) : 0,
         remarks: b.remarks || null,
         status: 'DRAFT',
         totalGst,
         totalAmount,
-        grandTotal: totalAmount,
+        grandTotal,
         userId: (req as any).user.id,
         lines: {
           create: processedLines,

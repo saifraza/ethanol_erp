@@ -72,7 +72,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     const shipment = await prisma.shipment.create({
       data: {
-        dispatchRequestId: b.dispatchRequestId,
+        dispatchRequest: { connect: { id: b.dispatchRequestId } },
         productName: b.productName || '',
         customerName: b.customerName || '',
         destination: b.destination || '',
