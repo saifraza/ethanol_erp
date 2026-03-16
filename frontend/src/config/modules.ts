@@ -43,7 +43,8 @@ export const MODULE_DEFS: ModuleDef[] = [
   // Sales & Distribution
   { key: 'customers', label: 'Customers', to: '/sales/customers', icon: UserCheck, group: 'sales' },
   { key: 'sales-orders', label: 'Sales Orders', to: '/sales/orders', icon: ClipboardList, group: 'sales' },
-  { key: 'dispatch-requests', label: 'Dispatch Req', to: '/sales/dispatch-requests', icon: Send, group: 'sales' },
+  { key: 'dispatch-requests', label: 'Logistics', to: '/sales/dispatch-requests', icon: Send, group: 'sales' },
+  { key: 'transporters', label: 'Transporters', to: '/sales/transporters', icon: Truck, group: 'sales' },
   { key: 'shipments', label: 'Gate Register', to: '/sales/shipments', icon: Truck, group: 'sales' },
   { key: 'invoices', label: 'Invoices', to: '/sales/invoices', icon: FileText, group: 'sales' },
   { key: 'payments', label: 'Payments', to: '/sales/payments', icon: IndianRupee, group: 'sales' },

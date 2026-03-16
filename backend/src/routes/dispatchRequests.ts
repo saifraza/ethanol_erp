@@ -364,4 +364,34 @@ router.put('/:id', async (req: Request, res: Response) => {
   }
 });
 
+// DELETE /:id — Delete dispatch request (only if no shipments started)
+router.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    const dr = await prisma.dispatchRequest.findUnique({
+      where: { id: req.params.id },
+      include: { _count: { select: { shipments: true } } },
+    });
+
+    if (!dr) {
+      res.status(404).json({ error: 'Dispatch request not found' });
+      return;
+    }
+
+    if (['DISPATCHED', 'COMPLETED'].includes(dr.status)) {
+      res.status(400).json({ error: 'Cannot delete dispatched/completed requests' });
+      return;
+    }
+
+    // Delete any GATE_IN shipments first
+    await prisma.shipment.deleteMany({
+      where: { dispatchRequestId: dr.id, status: 'GATE_IN' },
+    });
+
+    await prisma.dispatchRequest.delete({ where: { id: req.params.id } });
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;
