@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Truck, Plus, X, Share2, Save, Loader2, Trash2, ChevronDown } from 'lucide-react';
+import { Truck, Plus, X, Share2, Save, Loader2, Trash2, AlertTriangle } from 'lucide-react';
 import ProcessPage from './ProcessPage';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
@@ -7,7 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 interface DDGSTruck {
   id: string; date: string; vehicleNo: string; partyName: string; destination: string;
   bags: number; weightPerBag: number; weightGross: number; weightTare: number; weightNet: number;
-  remarks: string | null;
+  remarks: string | null; createdAt: string;
 }
 
 export default function DDGSDispatch() {
@@ -22,7 +22,6 @@ export default function DDGSDispatch() {
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
-  const [showHistory, setShowHistory] = useState(false);
 
   // Form fields
   const [vehicleNo, setVehicleNo] = useState('');
@@ -34,9 +33,18 @@ export default function DDGSDispatch() {
   const [weightTare, setWeightTare] = useState('');
   const [remarks, setRemarks] = useState('');
 
-  const netWeight = (parseFloat(weightGross) || 0) - (parseFloat(weightTare) || 0);
+  const grossVal = parseFloat(weightGross) || 0;
+  const tareVal = parseFloat(weightTare) || 0;
+  const netWeight = grossVal > 0 && tareVal > 0 ? grossVal - tareVal : 0;
   const bagsWeight = ((parseInt(bags) || 0) * (parseFloat(weightPerBag) || 50)) / 1000; // tonnes
+  // Final weight = gross-tare if available, else fallback to bags×weight
+  const finalWeight = netWeight > 0 ? netWeight : bagsWeight;
+  // Difference between the two methods
+  const hasBothWeights = netWeight > 0 && bagsWeight > 0;
+  const weightDiff = hasBothWeights ? Math.abs(netWeight - bagsWeight) : 0;
+  const weightDiffPct = hasBothWeights && bagsWeight > 0 ? (weightDiff / bagsWeight) * 100 : 0;
 
+  // FIX: use UTC date to match backend query
   const loadTrucks = () => api.get(`/ddgs-dispatch?date=${date}`).then(r => setTrucks(r.data.trucks || [])).catch(() => {});
   useEffect(() => { loadTrucks(); }, [date]);
 
@@ -54,12 +62,13 @@ export default function DDGSDispatch() {
     setSaving(true); setMsg(null);
     try {
       await api.post('/ddgs-dispatch', {
-        date: new Date(date + 'T00:00:00').toISOString(),
+        // FIX: send as UTC midnight so backend date query matches
+        date: date + 'T00:00:00.000Z',
         vehicleNo, partyName, destination,
         bags: parseInt(bags) || 0,
         weightPerBag: parseFloat(weightPerBag) || 50,
-        weightGross: parseFloat(weightGross) || 0,
-        weightTare: parseFloat(weightTare) || 0,
+        weightGross: grossVal,
+        weightTare: tareVal,
         remarks,
       });
       setMsg({ type: 'ok', text: 'Truck added!' });
@@ -80,6 +89,18 @@ export default function DDGSDispatch() {
     else window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
   };
 
+  const shareAll = () => {
+    const lines = [`*DDGS Dispatch — ${date}*`, `Trucks: ${trucks.length} | Total: ${totalDispatched.toFixed(2)} T | Bags: ${totalBags}`, ''];
+    trucks.forEach((t, i) => {
+      lines.push(`${i + 1}. ${t.vehicleNo} → ${t.destination || '-'} | ${t.weightNet.toFixed(2)}T | ${t.bags} bags | ${t.partyName}`);
+    });
+    const text = lines.join('\n');
+    if (navigator.share) navigator.share({ text }).catch(() => {});
+    else window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+  };
+
+  const fmtTime = (d: string) => new Date(d).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+
   return (
     <ProcessPage title="DDGS Dispatch" icon={<Truck size={28} />}
       description="Log each DDGS dispatch truck as it leaves"
@@ -88,7 +109,7 @@ export default function DDGSDispatch() {
       {/* Date + Summary */}
       <div className="mb-4">
         <div className="mb-2">
-          <label className="text-xs text-gray-500">Date</label>
+          <label className="text-xs text-gray-500">Shift Date</label>
           <input type="date" value={date} onChange={e => setDate(e.target.value)}
             className="input-field" />
         </div>
@@ -148,114 +169,131 @@ export default function DDGSDispatch() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3 mb-3">
-            <div>
-              <label className="text-[10px] md:text-xs text-gray-500">Bags</label>
-              <input type="number" value={bags} onChange={e => setBags(e.target.value)}
-                className="input-field w-full text-xs md:text-sm" placeholder="0" />
+          {/* Weight Section */}
+          <div className="bg-gray-50 rounded-lg p-3 mb-3">
+            <div className="text-xs font-semibold text-gray-600 mb-2">Weight (Final = Gross − Tare)</div>
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              <div>
+                <label className="text-[10px] text-gray-500">Gross (Ton)</label>
+                <input type="number" step="0.01" value={weightGross} onChange={e => setWeightGross(e.target.value)}
+                  className="input-field w-full text-xs md:text-sm font-medium" placeholder="0.00" />
+              </div>
+              <div>
+                <label className="text-[10px] text-gray-500">Tare (Ton)</label>
+                <input type="number" step="0.01" value={weightTare} onChange={e => setWeightTare(e.target.value)}
+                  className="input-field w-full text-xs md:text-sm font-medium" placeholder="0.00" />
+              </div>
             </div>
-            <div>
-              <label className="text-[10px] md:text-xs text-gray-500">Wt/Bag (kg)</label>
-              <input type="number" value={weightPerBag} onChange={e => setWeightPerBag(e.target.value)}
-                className="input-field w-full text-xs md:text-sm" />
+
+            {/* Bags row */}
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              <div>
+                <label className="text-[10px] text-gray-500">Bags</label>
+                <input type="number" value={bags} onChange={e => setBags(e.target.value)}
+                  className="input-field w-full text-xs md:text-sm" placeholder="0" />
+              </div>
+              <div>
+                <label className="text-[10px] text-gray-500">Wt/Bag (kg)</label>
+                <input type="number" value={weightPerBag} onChange={e => setWeightPerBag(e.target.value)}
+                  className="input-field w-full text-xs md:text-sm" />
+              </div>
             </div>
-            <div>
-              <label className="text-[10px] md:text-xs text-gray-500">Gross (T)</label>
-              <input type="number" step="0.01" value={weightGross} onChange={e => setWeightGross(e.target.value)}
-                className="input-field w-full text-xs md:text-sm" placeholder="0" />
-            </div>
-            <div>
-              <label className="text-[10px] md:text-xs text-gray-500">Tare (T)</label>
-              <input type="number" step="0.01" value={weightTare} onChange={e => setWeightTare(e.target.value)}
-                className="input-field w-full text-xs md:text-sm" placeholder="0" />
+
+            {/* Net Weight Display */}
+            <div className="bg-red-50 border border-red-200 rounded-lg p-2.5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] text-gray-500">Net Weight (Final)</div>
+                  <div className="text-xl font-bold text-red-700">{finalWeight.toFixed(2)} T</div>
+                  <div className="text-[10px] text-gray-400">
+                    {netWeight > 0 ? `Gross ${grossVal.toFixed(2)} − Tare ${tareVal.toFixed(2)}` : bagsWeight > 0 ? `${bags} bags × ${weightPerBag}kg (no weigh bridge)` : '—'}
+                  </div>
+                </div>
+                {bagsWeight > 0 && (
+                  <div className="text-right text-[10px] text-gray-400">
+                    <div>Bags wt: {bagsWeight.toFixed(2)} T</div>
+                    {netWeight > 0 && <div>Bridge wt: {netWeight.toFixed(2)} T</div>}
+                  </div>
+                )}
+              </div>
+
+              {/* Weight difference warning */}
+              {hasBothWeights && weightDiff > 0.01 && (
+                <div className={`mt-2 flex items-start gap-1.5 text-xs rounded p-2 ${weightDiffPct > 5 ? 'bg-red-100 text-red-700' : 'bg-amber-50 text-amber-700'}`}>
+                  <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                  <div>
+                    <b>Difference: {weightDiff.toFixed(2)} T ({weightDiffPct.toFixed(1)}%)</b>
+                    <div className="text-[10px] mt-0.5">
+                      Bags count says {bagsWeight.toFixed(2)} T but weigh bridge says {netWeight.toFixed(2)} T.
+                      Final dispatch uses <b>weigh bridge (Gross − Tare)</b>, not bag count.
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3 mb-3">
-            <div className="bg-red-50 border border-red-200 rounded-lg p-2">
-              <div className="text-[10px] text-gray-500">Net Weight</div>
-              <div className="text-lg font-bold text-red-700">{netWeight > 0 ? netWeight.toFixed(2) : bagsWeight.toFixed(2)} T</div>
-              {netWeight <= 0 && bagsWeight > 0 && <div className="text-[10px] text-gray-400">from bags × weight</div>}
-            </div>
-            <div className="col-span-2">
-              <label className="text-xs text-gray-500">Remarks</label>
-              <input value={remarks} onChange={e => setRemarks(e.target.value)}
-                className="input-field w-full" placeholder="Optional" />
-            </div>
+          {/* Remarks */}
+          <div className="mb-3">
+            <label className="text-[10px] md:text-xs text-gray-500">Remarks</label>
+            <input value={remarks} onChange={e => setRemarks(e.target.value)}
+              className="input-field w-full text-xs md:text-sm" placeholder="Optional" />
           </div>
 
           <button onClick={saveTruck} disabled={saving}
-            className="px-5 py-2 bg-red-600 text-white rounded-lg font-medium text-sm hover:bg-red-700 flex items-center gap-2 disabled:opacity-50">
+            className="w-full py-2.5 bg-red-600 text-white rounded-lg font-medium text-sm hover:bg-red-700 flex items-center justify-center gap-2 disabled:opacity-50">
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save Truck
           </button>
         </div>
       )}
 
-      {/* Today's Trucks */}
+      {/* Truck List — card style like grain unloading */}
       {trucks.length > 0 && (
-        <div className="card !p-0 overflow-hidden mb-4">
-          <div className="px-3 md:px-4 py-2 bg-gray-50 text-xs text-gray-500 font-medium">
-            Today's Dispatch — {trucks.length} truck{trucks.length > 1 ? 's' : ''}, {totalDispatched.toFixed(2)} T
+        <div className="space-y-2 mb-4">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-gray-500 uppercase">
+              Today's Trucks — {trucks.length} truck{trucks.length > 1 ? 's' : ''}, {totalDispatched.toFixed(2)} T
+            </span>
+            <button onClick={shareAll}
+              className="text-xs bg-green-600 text-white px-2.5 py-1 rounded flex items-center gap-1 font-medium">
+              <Share2 size={11} /> Share All
+            </button>
           </div>
-          {/* Mobile: card view */}
-          <div className="md:hidden divide-y">
-            {trucks.map((t, i) => (
-              <div key={t.id} className="px-3 py-2">
-                <div className="flex items-center justify-between mb-1">
+          {trucks.map((t, i) => {
+            const bagWt = (t.bags * t.weightPerBag) / 1000;
+            const bridgeWt = t.weightGross > 0 ? t.weightGross - t.weightTare : 0;
+            const diff = bridgeWt > 0 && bagWt > 0 ? Math.abs(bridgeWt - bagWt) : 0;
+            return (
+              <div key={t.id} className="bg-white border rounded-xl p-3 shadow-sm">
+                <div className="flex items-start justify-between mb-1.5">
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-gray-400">#{i + 1}</span>
-                    <span className="font-medium text-xs">{t.vehicleNo || '—'}</span>
-                    <span className="text-[10px] text-gray-500">{t.partyName || ''}</span>
+                    <span className="text-[10px] bg-red-100 text-red-600 font-bold px-1.5 py-0.5 rounded">#{i + 1}</span>
+                    <span className="font-bold text-sm">{t.vehicleNo || '—'}</span>
+                    {t.destination && <span className="text-xs text-gray-400">→ {t.destination}</span>}
                   </div>
-                  <span className="font-bold text-red-700 text-sm">{t.weightNet.toFixed(2)} T</span>
+                  <span className="font-bold text-red-700 text-lg">{t.weightNet.toFixed(2)} T</span>
                 </div>
-                <div className="flex items-center justify-between text-[10px] text-gray-500">
-                  <div className="flex gap-3">
-                    <span>Bags: {t.bags}</span>
-                    {t.destination && <span>→ {t.destination}</span>}
+                <div className="flex items-center gap-3 text-[11px] text-gray-500 mb-1">
+                  {t.partyName && <span>{t.partyName}</span>}
+                  <span>{t.bags} bags × {t.weightPerBag}kg</span>
+                  {t.weightGross > 0 && <span>G:{t.weightGross} T:{t.weightTare}</span>}
+                </div>
+                {diff > 0.01 && (
+                  <div className="text-[10px] text-amber-600 flex items-center gap-1 mb-1">
+                    <AlertTriangle size={10} /> Bag wt {bagWt.toFixed(2)}T vs Bridge {bridgeWt.toFixed(2)}T (diff {diff.toFixed(2)}T)
                   </div>
+                )}
+                <div className="flex items-center justify-between pt-1 border-t border-gray-100">
+                  <span className="text-[10px] text-gray-400">{t.createdAt ? fmtTime(t.createdAt) : ''}</span>
                   <div className="flex items-center gap-2">
-                    <button onClick={() => shareTruck(t)} className="text-green-500"><Share2 size={11} /></button>
-                    {isAdmin && <button onClick={() => deleteTruck(t.id)} className="text-red-400"><Trash2 size={11} /></button>}
+                    <button onClick={() => shareTruck(t)} className="text-green-500 hover:text-green-700 p-1"><Share2 size={13} /></button>
+                    {isAdmin && <button onClick={() => deleteTruck(t.id)} className="text-red-400 hover:text-red-600 p-1"><Trash2 size={13} /></button>}
                   </div>
                 </div>
+                {t.remarks && <div className="text-[10px] text-gray-400 mt-1 italic">{t.remarks}</div>}
               </div>
-            ))}
-          </div>
-          {/* Desktop: table view */}
-          <table className="w-full text-xs hidden md:table">
-            <thead>
-              <tr className="bg-gray-50 text-gray-400 border-t">
-                <th className="text-left px-4 py-1.5 font-medium">#</th>
-                <th className="text-left px-2 py-1.5 font-medium">Vehicle</th>
-                <th className="text-left px-2 py-1.5 font-medium">Party</th>
-                <th className="text-center px-2 py-1.5 font-medium">Bags</th>
-                <th className="text-center px-2 py-1.5 font-medium">Gross</th>
-                <th className="text-center px-2 py-1.5 font-medium">Tare</th>
-                <th className="text-center px-2 py-1.5 font-medium">Net</th>
-                <th className="text-right px-4 py-1.5 font-medium"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {trucks.map((t, i) => (
-                <tr key={t.id} className="border-t hover:bg-gray-50">
-                  <td className="px-4 py-2 text-gray-400">{i + 1}</td>
-                  <td className="px-2 py-2 font-medium">{t.vehicleNo || '—'}</td>
-                  <td className="px-2 py-2">{t.partyName || '—'}</td>
-                  <td className="text-center px-2 py-2">{t.bags}</td>
-                  <td className="text-center px-2 py-2">{t.weightGross || '—'}</td>
-                  <td className="text-center px-2 py-2">{t.weightTare || '—'}</td>
-                  <td className="text-center px-2 py-2 font-bold text-red-700">{t.weightNet.toFixed(2)}</td>
-                  <td className="text-right px-4 py-2">
-                    <div className="flex items-center justify-end gap-2">
-                      <button onClick={() => shareTruck(t)} className="text-green-500 hover:text-green-700"><Share2 size={12} /></button>
-                      {isAdmin && <button onClick={() => deleteTruck(t.id)} className="text-red-400 hover:text-red-600"><Trash2 size={12} /></button>}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+            );
+          })}
         </div>
       )}
 
