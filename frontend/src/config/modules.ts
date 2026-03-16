@@ -4,7 +4,8 @@
 import {
   Wheat, CogIcon, Droplets, Beaker, Flame, Wind,
   Fuel, Waves, BarChart3,
-  Settings, Users, Truck, Package, LayoutDashboard
+  Settings, Users, Truck, Package, LayoutDashboard,
+  Warehouse, AlertCircle, ShoppingCart
 } from 'lucide-react';
 
 export interface ModuleDef {
@@ -36,6 +37,10 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'ethanol-stock', label: 'Ethanol Stock', to: '/process/ethanol-stock', icon: Fuel, group: 'process' },
   { key: 'ethanol-dispatch', label: 'Ethanol Dispatch', to: '/process/ethanol-dispatch', icon: Truck, group: 'process' },
   { key: 'water-utility', label: 'Water Utility', to: '/process/water-utility', icon: Waves, group: 'process' },
+  // Store & Maintenance
+  { key: 'inventory', label: 'Inventory', to: '/inventory', icon: Warehouse, group: 'admin' },
+  { key: 'plant-issues', label: 'Plant Issues', to: '/plant-issues', icon: AlertCircle, group: 'admin' },
+  { key: 'purchase-req', label: 'Purchase Req', to: '/purchase-requisition', icon: ShoppingCart, group: 'admin' },
   // Admin modules
   { key: 'reports', label: 'Reports', to: '/reports', icon: BarChart3, group: 'admin' },
   { key: 'settings', label: 'Settings', to: '/settings', icon: Settings, group: 'admin', adminOnly: true },

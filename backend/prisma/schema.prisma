@@ -766,3 +766,101 @@ model AuditLog {
   userId    String
   createdAt DateTime @default(now())
 }
+
+// ═══════════════════════════════════════════════
+// INVENTORY & STORE
+// ═══════════════════════════════════════════════
+model InventoryItem {
+  id              String   @id @default(uuid())
+  name            String
+  code            String   @unique            // SKU / part code
+  category        String   @default("RAW_MATERIAL") // RAW_MATERIAL, SPARE_PART, CONSUMABLE, CHEMICAL, FINISHED_GOOD, OTHER
+  unit            String   @default("kg")     // kg, ltr, nos, mtr, set
+  currentStock    Float    @default(0)
+  minStock        Float    @default(0)        // reorder point
+  maxStock        Float?                      // max storage
+  costPerUnit     Float    @default(0)
+  location        String?                     // bin/rack location
+  supplier        String?
+  leadTimeDays    Int?
+  isActive        Boolean  @default(true)
+  remarks         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  transactions    InventoryTransaction[]
+}
+
+model InventoryTransaction {
+  id          String   @id @default(uuid())
+  itemId      String
+  item        InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  type        String   // IN, OUT, ADJUST
+  quantity    Float
+  reference   String?  // PO number, issue ID, batch number, etc.
+  remarks     String?
+  userId      String
+  createdAt   DateTime @default(now())
+}
+
+// ═══════════════════════════════════════════════
+// PLANT ISSUES (Maintenance / Breakdown)
+// ═══════════════════════════════════════════════
+model PlantIssue {
+  id              String   @id @default(uuid())
+  issueNo         Int      @default(autoincrement())
+  title           String
+  description     String
+  issueType       String   @default("MECHANICAL") // MECHANICAL, ELECTRICAL, INSTRUMENTATION, CIVIL, SAFETY, OTHER
+  severity        String   @default("MEDIUM")      // CRITICAL, HIGH, MEDIUM, LOW
+  equipment       String?                          // which equipment/area
+  location        String?                          // plant area
+  status          String   @default("OPEN")        // OPEN, ASSIGNED, IN_PROGRESS, RESOLVED, CLOSED
+  assignedTo      String?                          // user name or ID
+  resolvedAt      DateTime?
+  resolution      String?
+  partsUsed       String?                          // JSON or comma-separated
+  downtimeHours   Float?
+  photoUrl        String?
+  reportedBy      String
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  comments        IssueComment[]
+}
+
+model IssueComment {
+  id        String     @id @default(uuid())
+  issueId   String
+  issue     PlantIssue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  message   String
+  userId    String
+  userName  String
+  createdAt DateTime   @default(now())
+}
+
+// ═══════════════════════════════════════════════
+// PURCHASE REQUISITION
+// ═══════════════════════════════════════════════
+model PurchaseRequisition {
+  id              String   @id @default(uuid())
+  reqNo           Int      @default(autoincrement())
+  title           String
+  itemName        String
+  quantity        Float    @default(1)
+  unit            String   @default("nos")
+  estimatedCost   Float    @default(0)
+  urgency         String   @default("ROUTINE") // ROUTINE, SOON, URGENT, EMERGENCY
+  category        String   @default("GENERAL") // SPARE_PART, RAW_MATERIAL, CONSUMABLE, TOOL, SAFETY, GENERAL
+  justification   String?
+  linkedIssueId   String?                      // optional link to PlantIssue
+  supplier        String?                      // preferred supplier
+  status          String   @default("DRAFT")   // DRAFT, SUBMITTED, APPROVED, REJECTED, ORDERED, RECEIVED
+  approvedBy      String?
+  approvedAt      DateTime?
+  rejectionReason String?
+  remarks         String?
+  requestedBy     String
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
