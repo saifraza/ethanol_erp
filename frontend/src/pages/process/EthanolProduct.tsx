@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Fuel, Save, ChevronDown, ChevronUp, Eye, X, Share2, Loader2, TrendingUp, Droplets, Gauge, Truck, Clock, Activity, Package, Factory } from 'lucide-react';
+import { Fuel, Save, ChevronDown, ChevronUp, Eye, X, Share2, Loader2, TrendingUp, Droplets, Gauge, Truck, Clock, Activity, Package, Factory, Pause } from 'lucide-react';
 import api from '../../services/api';
 
 const TANKS = [
@@ -28,6 +28,7 @@ export default function EthanolProduct() {
   const [todayDispatch, setTodayDispatch] = useState(0);
   const [dispatchList, setDispatchList] = useState<any[]>([]);
   const [fuelOpen, setFuelOpen] = useState(false);
+  const [plantNotRunning, setPlantNotRunning] = useState(false);
   const [lastEntry, setLastEntry] = useState<any>(null);
   const [lastPrevDate, setLastPrevDate] = useState<string | null>(null);
   const [lastPrevStock, setLastPrevStock] = useState<number | null>(null);
@@ -129,13 +130,17 @@ export default function EthanolProduct() {
   // Use sum of tank volumes if available, otherwise fall back to totalStock (for spreadsheet-imported entries)
   const prevTankSum = prev ? TANKS.reduce((s, t) => s + (prev[`${t.key}Volume`] || 0), 0) : 0;
   const prevStock = prevTankSum > 0 ? prevTankSum : (prev?.totalStock || 0);
-  const productionBL = totalStock - prevStock + todayDispatch;
-  const productionAL = productionBL * avgStrength / 100;
+  const rawProductionBL = totalStock - prevStock + todayDispatch;
+  const rawProductionAL = rawProductionBL * avgStrength / 100;
   // KLPD: production per day in kilolitres
   const prevDate = prev?.date ? new Date(prev.date) : null;
   const curDate = buildEntryDate();
   const hoursBetween = prevDate ? (curDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60) : 0;
-  const klpd = hoursBetween > 0 ? (productionBL / hoursBetween) * 24 / 1000 : 0;
+  const rawKlpd = hoursBetween > 0 ? (rawProductionBL / hoursBetween) * 24 / 1000 : 0;
+  // Override to zero when plant not running
+  const productionBL = plantNotRunning ? 0 : rawProductionBL;
+  const productionAL = plantNotRunning ? 0 : rawProductionAL;
+  const klpd = plantNotRunning ? 0 : rawKlpd;
 
   useEffect(() => { loadLatest(); loadEntries(); }, []);
 
@@ -163,7 +168,7 @@ export default function EthanolProduct() {
     if (!date) { setMsg({ type: 'err', text: 'Date is required' }); return; }
     setSaving(true); setMsg(null);
     try {
-      const payload = { date: buildEntryDate().toISOString(), ...form, remarks, trucks: [] };
+      const payload = { date: buildEntryDate().toISOString(), ...form, remarks, trucks: [], plantNotRunning };
       if (editId) await api.put(`/ethanol-product/${editId}`, payload);
       else await api.post('/ethanol-product', payload);
       const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -332,22 +337,46 @@ export default function EthanolProduct() {
         </div>
       </div>
 
-      {/* Copy Previous — for days when plant didn't run */}
-      {prev && (
+      {/* Plant Not Running toggle + Copy Previous */}
+      <div className="mb-4 space-y-2">
         <button type="button" onClick={() => {
-          const f: any = {};
-          for (const t of TANKS) {
-            for (const suffix of ['Dip', 'Lt', 'Strength', 'Volume']) {
-              f[`${t.key}${suffix}`] = prev[`${t.key}${suffix}`] ?? null;
+          const next = !plantNotRunning;
+          setPlantNotRunning(next);
+          // When toggling on, also copy previous values
+          if (next && prev) {
+            const f: any = {};
+            for (const t of TANKS) {
+              for (const suffix of ['Dip', 'Lt', 'Strength', 'Volume']) {
+                f[`${t.key}${suffix}`] = prev[`${t.key}${suffix}`] ?? null;
+              }
+              f[`${t.key}Empty`] = (prev[`${t.key}Volume`] || 0) === 0 && !prev[`${t.key}Dip`];
             }
-            f[`${t.key}Empty`] = (prev[`${t.key}Volume`] || 0) === 0 && !prev[`${t.key}Dip`];
+            f.rsLevel = prev.rsLevel; f.hfoLevel = prev.hfoLevel; f.lfoLevel = prev.lfoLevel;
+            setForm(f);
           }
-          f.rsLevel = prev.rsLevel; f.hfoLevel = prev.hfoLevel; f.lfoLevel = prev.lfoLevel;
-          setForm(f);
-        }} className="mb-4 w-full flex items-center justify-center gap-2 border-2 border-dashed border-gray-300 text-gray-500 py-2.5 rounded-lg text-sm font-medium hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
-          <Clock size={16} /> Copy Previous (Plant Not Running)
+        }} className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+          plantNotRunning
+            ? 'bg-orange-100 border-2 border-orange-400 text-orange-700'
+            : 'border-2 border-dashed border-gray-300 text-gray-500 hover:border-orange-400 hover:text-orange-600 hover:bg-orange-50'
+        }`}>
+          <Pause size={16} /> {plantNotRunning ? 'Plant Not Running (Production = 0)' : 'Plant Not Running? Tap here'}
         </button>
-      )}
+        {prev && !plantNotRunning && (
+          <button type="button" onClick={() => {
+            const f: any = {};
+            for (const t of TANKS) {
+              for (const suffix of ['Dip', 'Lt', 'Strength', 'Volume']) {
+                f[`${t.key}${suffix}`] = prev[`${t.key}${suffix}`] ?? null;
+              }
+              f[`${t.key}Empty`] = (prev[`${t.key}Volume`] || 0) === 0 && !prev[`${t.key}Dip`];
+            }
+            f.rsLevel = prev.rsLevel; f.hfoLevel = prev.hfoLevel; f.lfoLevel = prev.lfoLevel;
+            setForm(f);
+          }} className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-gray-300 text-gray-500 py-2.5 rounded-lg text-sm font-medium hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+            <Clock size={16} /> Copy Previous Values
+          </button>
+        )}
+      </div>
 
       {/* Tank Readings */}
       {groups.map(g => (

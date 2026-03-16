@@ -148,7 +148,7 @@ async function getStandaloneDispatch(afterDate: Date | null, upToDate: Date): Pr
 // POST /api/ethanol-product
 router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const { date, trucks, remarks } = req.body;
+    const { date, trucks, remarks, plantNotRunning } = req.body;
     // Frontend sends full ISO datetime (already timezone-correct)
     const entryDate = new Date(date);
     const yearStart = entryDate.getFullYear();
@@ -172,13 +172,20 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     const summary = calcSummary(tankData, prevEntry, totalDispatch);
     const klpd = calcKLPD(summary.productionBL, prevEntry?.date || null, entryDate);
 
+    // Override production to 0 when plant not running
+    if (plantNotRunning) {
+      summary.productionBL = 0;
+      summary.productionAL = 0;
+    }
+    const finalKlpd = plantNotRunning ? 0 : klpd;
+
     const entry = await prisma.ethanolProductEntry.create({
       data: {
         date: entryDate,
         yearStart,
         ...tankData,
         ...summary,
-        klpd,
+        klpd: finalKlpd,
         remarks: remarks || null,
         userId: req.user!.id,
         trucks: {
@@ -205,7 +212,7 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
     const existing = await prisma.ethanolProductEntry.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: 'Entry not found' });
 
-    const { trucks, remarks, date: newDate } = req.body;
+    const { trucks, remarks, date: newDate, plantNotRunning: pnr } = req.body;
     const tankData = parseTankData(req.body);
 
     // Frontend sends full ISO datetime (already timezone-correct)
@@ -226,6 +233,13 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
     const summary = calcSummary(tankData, prevEntry, totalDispatch);
     const klpd = calcKLPD(summary.productionBL, prevEntry?.date || null, entryDate);
 
+    // Override production to 0 when plant not running
+    if (pnr) {
+      summary.productionBL = 0;
+      summary.productionAL = 0;
+    }
+    const finalKlpd = pnr ? 0 : klpd;
+
     // Delete old trucks, recreate
     await prisma.dispatchTruck.deleteMany({ where: { entryId: req.params.id } });
 
@@ -235,7 +249,7 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
         date: entryDate,
         ...tankData,
         ...summary,
-        klpd,
+        klpd: finalKlpd,
         remarks: remarks || null,
         trucks: {
           create: truckList.map(t => ({
