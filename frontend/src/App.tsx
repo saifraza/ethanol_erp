@@ -44,6 +44,9 @@ import PurchaseOrders from './pages/procurement/PurchaseOrders';
 import GoodsReceipts from './pages/procurement/GoodsReceipts';
 import VendorInvoices from './pages/procurement/VendorInvoices';
 import VendorPayments from './pages/procurement/VendorPayments';
+// Direct Trade
+import DirectPurchases from './pages/trade/DirectPurchases';
+import DirectSales from './pages/trade/DirectSales';
 import { useToast } from './components/common/Toast';
 import { setupApiToast } from './services/apiToast';
 
@@ -113,6 +116,9 @@ export default function App() {
         <Route path="procurement/goods-receipts" element={<GoodsReceipts />} />
         <Route path="procurement/vendor-invoices" element={<VendorInvoices />} />
         <Route path="procurement/vendor-payments" element={<VendorPayments />} />
+        {/* Direct Trade */}
+        <Route path="trade/purchases" element={<DirectPurchases />} />
+        <Route path="trade/sales" element={<DirectSales />} />
         <Route path="reports" element={<Reports />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="users" element={<UsersPage />} />

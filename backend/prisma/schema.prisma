@@ -1426,3 +1426,74 @@ model VendorPayment {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
+
+// ══════════════════════════════════════════════════════════════
+// DIRECT TRADE — Cash purchases from farmers / cash sales without paperwork
+// ══════════════════════════════════════════════════════════════
+
+model DirectPurchase {
+  id              String   @id @default(uuid())
+  entryNo         Int      @default(autoincrement())
+  date            DateTime @default(now())
+  // Seller (farmer) — not a registered vendor
+  sellerName      String
+  sellerPhone     String?
+  sellerVillage   String?
+  sellerAadhaar   String?                   // optional ID proof
+  // What was bought
+  materialName    String                    // Maize, Broken Rice, etc.
+  quantity        Float
+  unit            String   @default("KG")  // KG, MT, QTL, LTR
+  rate            Float
+  amount          Float                     // qty × rate
+  // Weighbridge / vehicle
+  vehicleNo       String?
+  weightSlipNo    String?
+  grossWeight     Float?
+  tareWeight      Float?
+  netWeight       Float?
+  // Payment
+  paymentMode     String   @default("CASH") // CASH, UPI, BANK_TRANSFER
+  paymentRef      String?                   // UPI ref / cheque no
+  isPaid          Boolean  @default(true)
+  // Deductions (moisture, foreign matter, etc.)
+  deductions      Float    @default(0)
+  deductionReason String?
+  netPayable      Float    @default(0)      // amount - deductions
+  //
+  remarks         String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model DirectSale {
+  id              String   @id @default(uuid())
+  entryNo         Int      @default(autoincrement())
+  date            DateTime @default(now())
+  // Buyer — not a registered customer
+  buyerName       String
+  buyerPhone      String?
+  buyerAddress    String?
+  // What was sold
+  productName     String                    // DDGS, Spent Wash, etc.
+  quantity        Float
+  unit            String   @default("KG")
+  rate            Float
+  amount          Float                     // qty × rate
+  // Vehicle
+  vehicleNo       String?
+  weightSlipNo    String?
+  grossWeight     Float?
+  tareWeight      Float?
+  netWeight       Float?
+  // Payment
+  paymentMode     String   @default("CASH") // CASH, UPI, BANK_TRANSFER, CHEQUE
+  paymentRef      String?
+  isPaid          Boolean  @default(true)
+  //
+  remarks         String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
