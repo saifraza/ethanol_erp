@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Truck, Share2, Loader2, ChevronDown, Check, Package, MapPin, Clock, ArrowRight, Plus, X, Trash2 } from 'lucide-react';
+import { Truck, Share2, Loader2, ChevronDown, Check, Package, MapPin, Clock, ArrowRight, Plus, X, Trash2, ArrowDown, ArrowUp } from 'lucide-react';
 import api from '../../services/api';
 
 interface Shipment {
@@ -20,13 +20,20 @@ interface DR {
   _count?: { shipments: number };
 }
 
+interface GrainTruck {
+  id: string; vehicleNo: string; vendorName?: string; weightGross: number; weightTare: number; weightNet: number;
+  createdAt: string; quarantineWeight?: number; status?: string;
+}
+
 export default function DispatchRequests() {
   const [drs, setDrs] = useState<DR[]>([]);
+  const [grainTrucks, setGrainTrucks] = useState<GrainTruck[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [filterTab, setFilterTab] = useState('ACTIVE');
+  const [direction, setDirection] = useState<'OUTBOUND' | 'INBOUND'>('OUTBOUND');
 
   // Truck assignment form
   const [showTruckForm, setShowTruckForm] = useState<string | null>(null);
@@ -38,9 +45,12 @@ export default function DispatchRequests() {
   const load = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/dispatch-requests/factory');
-      const all = res.data.dispatchRequests || res.data || [];
-      setDrs(all);
+      const [drRes, grainRes] = await Promise.all([
+        api.get('/dispatch-requests/factory'),
+        api.get('/grain-truck').catch(() => ({ data: { trucks: [] } })),
+      ]);
+      setDrs(drRes.data.dispatchRequests || drRes.data || []);
+      setGrainTrucks(grainRes.data.trucks || grainRes.data || []);
     } catch {
       setMsg({ type: 'err', text: 'Failed to load' });
     } finally {
@@ -153,34 +163,67 @@ export default function DispatchRequests() {
     filterTab === 'LOADING' ? loadingDrs :
     filterTab === 'DISPATCHED' ? dispatched : drs;
 
+  const inboundToday = grainTrucks.length;
+  const inboundTotalNet = grainTrucks.reduce((s, t) => s + (t.weightNet || 0), 0);
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-gradient-to-r from-orange-600 to-orange-700 text-white">
+      <div className={`bg-gradient-to-r ${direction === 'OUTBOUND' ? 'from-orange-600 to-orange-700' : 'from-teal-600 to-teal-700'} text-white`}>
         <div className="max-w-6xl mx-auto px-4 py-4">
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Truck size={28} /> Logistics & Dispatch
-          </h1>
-
-          {/* Summary Cards */}
-          <div className="grid grid-cols-4 gap-3 mt-3">
-            <div className="bg-white/15 rounded-lg p-2.5 text-center">
-              <div className="text-2xl font-bold">{scheduled.length}</div>
-              <div className="text-[10px] text-orange-100">Scheduled</div>
-            </div>
-            <div className="bg-white/15 rounded-lg p-2.5 text-center">
-              <div className="text-2xl font-bold">{trucksOnWay}</div>
-              <div className="text-[10px] text-orange-100">Trucks Expected</div>
-            </div>
-            <div className="bg-white/15 rounded-lg p-2.5 text-center">
-              <div className="text-2xl font-bold">{loadingDrs.length}</div>
-              <div className="text-[10px] text-orange-100">Loading</div>
-            </div>
-            <div className="bg-white/15 rounded-lg p-2.5 text-center">
-              <div className="text-2xl font-bold">{totalQtyScheduled}</div>
-              <div className="text-[10px] text-orange-100">{scheduled[0]?.unit || 'MT'} Pending</div>
+          <div className="flex items-center justify-between mb-3">
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <Truck size={28} /> Logistics
+            </h1>
+            {/* Direction Toggle */}
+            <div className="flex bg-white/20 rounded-lg p-0.5">
+              <button onClick={() => setDirection('OUTBOUND')}
+                className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1 transition ${direction === 'OUTBOUND' ? 'bg-white text-orange-700' : 'text-white/80 hover:text-white'}`}>
+                <ArrowUp size={14} /> Outbound
+              </button>
+              <button onClick={() => setDirection('INBOUND')}
+                className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1 transition ${direction === 'INBOUND' ? 'bg-white text-teal-700' : 'text-white/80 hover:text-white'}`}>
+                <ArrowDown size={14} /> Inbound
+              </button>
             </div>
           </div>
+
+          {/* Summary Cards */}
+          {direction === 'OUTBOUND' ? (
+            <div className="grid grid-cols-4 gap-3">
+              <div className="bg-white/15 rounded-lg p-2.5 text-center">
+                <div className="text-2xl font-bold">{scheduled.length}</div>
+                <div className="text-[10px] text-orange-100">Scheduled</div>
+              </div>
+              <div className="bg-white/15 rounded-lg p-2.5 text-center">
+                <div className="text-2xl font-bold">{trucksOnWay}</div>
+                <div className="text-[10px] text-orange-100">Trucks Expected</div>
+              </div>
+              <div className="bg-white/15 rounded-lg p-2.5 text-center">
+                <div className="text-2xl font-bold">{loadingDrs.length}</div>
+                <div className="text-[10px] text-orange-100">Loading</div>
+              </div>
+              <div className="bg-white/15 rounded-lg p-2.5 text-center">
+                <div className="text-2xl font-bold">{totalQtyScheduled}</div>
+                <div className="text-[10px] text-orange-100">{scheduled[0]?.unit || 'MT'} Pending</div>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-white/15 rounded-lg p-2.5 text-center">
+                <div className="text-2xl font-bold">{inboundToday}</div>
+                <div className="text-[10px] text-teal-100">Trucks Today</div>
+              </div>
+              <div className="bg-white/15 rounded-lg p-2.5 text-center">
+                <div className="text-2xl font-bold">{(inboundTotalNet / 1000).toFixed(1)}</div>
+                <div className="text-[10px] text-teal-100">MT Received</div>
+              </div>
+              <div className="bg-white/15 rounded-lg p-2.5 text-center">
+                <div className="text-2xl font-bold">{grainTrucks.filter(t => t.quarantineWeight).length}</div>
+                <div className="text-[10px] text-teal-100">Quarantine</div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -191,6 +234,8 @@ export default function DispatchRequests() {
           </div>
         )}
 
+        {/* ── OUTBOUND (Sales Dispatch) ── */}
+        {direction === 'OUTBOUND' && (<>
         {/* Filter Tabs */}
         <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
           {['ACTIVE', 'SCHEDULED', 'LOADING', 'DISPATCHED', 'ALL'].map(tab => (
@@ -420,6 +465,70 @@ export default function DispatchRequests() {
               );
             })}
           </div>
+        )}
+        </>)}
+
+        {/* ── INBOUND (Grain Procurement) ── */}
+        {direction === 'INBOUND' && (
+          <>
+            {loading ? (
+              <div className="text-center py-12 text-gray-400">
+                <Loader2 size={32} className="animate-spin mx-auto mb-2" />
+              </div>
+            ) : grainTrucks.length === 0 ? (
+              <div className="text-center py-12">
+                <Truck size={48} className="mx-auto text-gray-300 mb-3" />
+                <p className="text-gray-500 text-sm">No grain trucks today</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold text-gray-700 mb-2">
+                  Today's Grain Trucks ({grainTrucks.length})
+                </h3>
+                {grainTrucks.map(t => (
+                  <div key={t.id} className="bg-white rounded-lg border p-3 hover:shadow-sm transition">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="font-bold text-sm">{t.vehicleNo}</span>
+                        {t.vendorName && <span className="text-xs text-gray-500 ml-2">{t.vendorName}</span>}
+                      </div>
+                      <span className="text-sm font-bold text-teal-700">
+                        {(t.weightNet / 1000).toFixed(2)} MT
+                      </span>
+                    </div>
+                    <div className="flex gap-4 mt-1 text-xs text-gray-500">
+                      <span>Gross: {(t.weightGross / 1000).toFixed(2)} MT</span>
+                      <span>Tare: {(t.weightTare / 1000).toFixed(2)} MT</span>
+                      {t.quarantineWeight ? (
+                        <span className="text-red-600">Quarantine: {(t.quarantineWeight / 1000).toFixed(2)} MT</span>
+                      ) : null}
+                      <span>{new Date(t.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                  </div>
+                ))}
+
+                {/* Inbound Summary */}
+                <div className="bg-teal-50 rounded-lg border border-teal-200 p-3 mt-3">
+                  <div className="grid grid-cols-3 gap-3 text-center text-xs">
+                    <div>
+                      <div className="text-lg font-bold text-teal-700">{grainTrucks.length}</div>
+                      <div className="text-teal-600">Total Trucks</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-bold text-teal-700">{(inboundTotalNet / 1000).toFixed(1)} MT</div>
+                      <div className="text-teal-600">Net Received</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-bold text-teal-700">
+                        {(grainTrucks.reduce((s, t) => s + (t.quarantineWeight || 0), 0) / 1000).toFixed(1)} MT
+                      </div>
+                      <div className="text-teal-600">Quarantine</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

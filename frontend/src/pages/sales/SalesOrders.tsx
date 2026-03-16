@@ -118,17 +118,31 @@ export default function SalesOrders() {
     if (!lineItems.some(i => i.quantity > 0)) { flash('err', 'Add quantity'); return; }
     setSaving(true);
     try {
-      // Create SO — backend creates as DRAFT, we immediately confirm
+      const validLines = lineItems.filter(i => i.quantity > 0);
+      // Create SO
       const res = await api.post('/sales-orders', {
         customerId, orderDate: new Date().toISOString().split('T')[0], deliveryDate,
         paymentTerms, logisticsBy,
         freightRate: logisticsBy === 'SELLER' ? parseFloat(freightRate) : undefined,
-        lineItems: lineItems.filter(i => i.quantity > 0), remarks,
+        lineItems: validLines, remarks,
       });
       const soId = res.data.id;
+      const orderNo = res.data.orderNo;
       // Auto-confirm
       await api.put(`/sales-orders/${soId}/status`, { status: 'CONFIRMED' });
-      flash('ok', `Order #${res.data.orderNo} created & confirmed`);
+      // Auto-send to logistics (create dispatch request)
+      const line = validLines[0];
+      await api.post('/dispatch-requests', {
+        orderId: soId,
+        customerId,
+        productName: line?.productName || 'DDGS',
+        quantity: line?.quantity || 0,
+        unit: line?.unit || 'MT',
+        logisticsBy,
+        deliveryDate,
+        remarks: remarks || '',
+      });
+      flash('ok', `Order #${orderNo} created → sent to logistics`);
       resetForm();
       loadAll();
     } catch (e: any) {
@@ -489,7 +503,7 @@ export default function SalesOrders() {
                         <div className={`h-1.5 flex-1 rounded-full ${pipe.hasInvoice ? 'bg-green-500' : 'bg-gray-200'}`} />
                         <div className={`h-1.5 flex-1 rounded-full ${pipe.latestInvoice?.status === 'PAID' ? 'bg-green-500' : 'bg-gray-200'}`} />
                         <div className="text-[9px] text-gray-400 ml-1 whitespace-nowrap">
-                          {!pipe.hasDR ? 'Send to logistics' :
+                          {!pipe.hasDR ? 'Awaiting logistics' :
                            !pipe.latestShipment ? 'Trucks scheduled' :
                            !pipe.shipmentDone ? `Truck: ${pipe.latestShipment.status}` :
                            !pipe.hasInvoice ? 'Ready to invoice' :
@@ -563,15 +577,6 @@ export default function SalesOrders() {
 
                       {/* ── Action Buttons ── */}
                       <div className="flex gap-2 flex-wrap pt-2 border-t">
-                        {/* Send to Factory */}
-                        {soConfirmed && !pipe.hasDR && order.status !== 'CANCELLED' && (
-                          <button onClick={() => sendToFactory(order)} disabled={!!actionLoading}
-                            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50">
-                            {actionLoading === order.id + '_send' ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-                            Send to Logistics
-                          </button>
-                        )}
-
                         {/* Create Invoice from completed shipment */}
                         {pipe.shipmentDone && !pipe.hasInvoice && (
                           <button onClick={() => createInvoice(order, pipe.latestShipment)} disabled={!!actionLoading}
