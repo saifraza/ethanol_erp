@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, authorize } from '../middleware/auth';
+import { generateInvoicePdf } from '../utils/pdfGenerator';
 
 const router = Router();
 
@@ -290,6 +291,43 @@ router.put('/:id', async (req: Request, res: Response) => {
       },
     });
     res.json(updated);
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /:id/pdf — Generate Invoice PDF with letterhead
+router.get('/:id/pdf', async (req: Request, res: Response) => {
+  try {
+    const invoice = await prisma.invoice.findUnique({
+      where: { id: req.params.id },
+      include: { customer: true },
+    });
+
+    if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
+
+    const pdfBuffer = await generateInvoicePdf({
+      invoiceNo: invoice.invoiceNo,
+      invoiceDate: invoice.invoiceDate,
+      dueDate: invoice.dueDate,
+      customer: invoice.customer,
+      productName: invoice.productName,
+      quantity: invoice.quantity,
+      unit: invoice.unit,
+      rate: invoice.rate,
+      amount: invoice.amount,
+      gstPercent: invoice.gstPercent,
+      gstAmount: invoice.gstAmount,
+      freightCharge: invoice.freightCharge,
+      totalAmount: invoice.totalAmount,
+      challanNo: invoice.challanNo,
+      ewayBill: invoice.ewayBill,
+      remarks: invoice.remarks,
+      orderId: invoice.orderId,
+      shipmentId: invoice.shipmentId,
+    });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="INV-${invoice.invoiceNo}.pdf"`);
+    res.send(pdfBuffer);
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 

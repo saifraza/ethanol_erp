@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FileText, Plus, X, Loader2, Save, ChevronDown } from 'lucide-react';
+import { FileText, Plus, X, Loader2, Save, ChevronDown, Printer } from 'lucide-react';
 import api from '../../services/api';
 
 interface Invoice {
@@ -443,6 +443,22 @@ export default function Invoices() {
                         </div>
                       </div>
                     )}
+
+                    <button
+                      onClick={async () => {
+                        try {
+                          const resp = await api.get(`/invoices/${inv.id}/pdf`, { responseType: 'blob' });
+                          const url = window.URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
+                          window.open(url, '_blank');
+                        } catch (e) {
+                          alert('Failed to generate PDF');
+                        }
+                      }}
+                      className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium text-sm flex items-center justify-center gap-2"
+                    >
+                      <Printer size={16} />
+                      Print Invoice PDF
+                    </button>
 
                     {inv.payments && inv.payments.length > 0 && (
                       <div>
