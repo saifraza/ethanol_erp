@@ -1153,7 +1153,7 @@ model FreightQuotation {
   id              String   @id @default(uuid())
   inquiryId       String
   inquiry         FreightInquiry @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
-  transporterId   String
+  transporterId   String?
   transporterName String
   // Rate
   ratePerMT       Float?                   // Rs per metric ton

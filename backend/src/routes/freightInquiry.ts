@@ -99,7 +99,7 @@ router.post('/:id/quotations', async (req: Request, res: Response) => {
     const quotation = await prisma.freightQuotation.create({
       data: {
         inquiryId: req.params.id,
-        transporterId: b.transporterId,
+        transporterId: b.transporterId || null,
         transporterName: b.transporterName,
         ratePerMT: b.ratePerMT ? parseFloat(b.ratePerMT) : null,
         ratePerTrip: b.ratePerTrip ? parseFloat(b.ratePerTrip) : null,
