@@ -12,7 +12,7 @@ interface Shipment {
   driverName: string; driverMobile: string; transporterName: string;
   capacityTon: number; vehicleType: string; gateInTime: string;
   weightTare?: number; weightGross?: number; weightNet?: number;
-  dispatchRequestId?: string; challanNo?: string; ewayBill?: string; gatePassNo?: string;
+  dispatchRequestId?: string; challanNo?: string; ewayBill?: string; ewayBillStatus?: string; gatePassNo?: string;
   tareTime?: string; grossTime?: string; releaseTime?: string; exitTime?: string;
   dispatchRequest?: { drNo?: number; customerName?: string; productName?: string; quantity?: number; unit?: string };
 }
@@ -77,6 +77,20 @@ export default function Shipments() {
       setWeighId(null); setWeighVal('');
       loadShipments();
     } catch { flash('err', 'Failed'); }
+    setSaving(false);
+  };
+
+  const generateEwayBill = async (id: string) => {
+    setSaving(true);
+    try {
+      const r = await api.post(`/shipments/${id}/eway-bill`);
+      const ewbNo = r.data.ewayBillNo;
+      flash('ok', `E-Way Bill generated: ${ewbNo}`);
+      setRelEway(ewbNo); // auto-fill in release form
+      loadShipments();
+    } catch (e: any) {
+      flash('err', e.response?.data?.error || 'E-Way Bill generation failed');
+    }
     setSaving(false);
   };
 
@@ -282,14 +296,16 @@ export default function Shipments() {
                       )}
                     </div>
 
-                    {/* Time */}
+                    {/* Time / Docs */}
                     <div className="col-span-1 text-[10px] text-gray-500">
-                      {s.gateInTime && (
+                      {s.ewayBill ? (
+                        <div className="text-indigo-600 font-medium" title="E-Way Bill">EWB: {s.ewayBill}</div>
+                      ) : s.gateInTime ? (
                         <div>In: {typeof s.gateInTime === 'string' && s.gateInTime.includes('T')
                           ? new Date(s.gateInTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
                           : s.gateInTime
                         }</div>
-                      )}
+                      ) : null}
                     </div>
 
                     {/* Action */}
@@ -311,8 +327,15 @@ export default function Shipments() {
                         <div className="flex gap-1 items-center flex-1 flex-wrap">
                           <input value={relChallan} onChange={e => setRelChallan(e.target.value)}
                             placeholder="Challan" className="input-field text-xs w-20" autoFocus />
-                          <input value={relEway} onChange={e => setRelEway(e.target.value)}
-                            placeholder="E-Way" className="input-field text-xs w-20" />
+                          <div className="flex gap-0.5 items-center">
+                            <input value={relEway} onChange={e => setRelEway(e.target.value)}
+                              placeholder="E-Way Bill" className="input-field text-xs w-24" />
+                            <button onClick={() => generateEwayBill(s.id)} disabled={saving || !s.weightNet}
+                              className="px-1.5 py-1.5 bg-indigo-600 text-white text-[9px] rounded font-medium hover:bg-indigo-700 disabled:opacity-50 whitespace-nowrap"
+                              title={!s.weightNet ? 'Complete weighbridge first' : 'Auto-generate e-way bill'}>
+                              {saving ? <Loader2 size={10} className="animate-spin" /> : '⚡ Auto'}
+                            </button>
+                          </div>
                           <input value={relGatePass} onChange={e => setRelGatePass(e.target.value)}
                             placeholder="Gate Pass" className="input-field text-xs w-20" />
                           <button onClick={() => doStatus(s.id, 'RELEASED', {
@@ -425,7 +448,11 @@ export default function Shipments() {
                       <div className="space-y-1.5">
                         <div className="grid grid-cols-3 gap-1.5">
                           <input value={relChallan} onChange={e => setRelChallan(e.target.value)} placeholder="Challan" className="input-field text-xs" />
-                          <input value={relEway} onChange={e => setRelEway(e.target.value)} placeholder="E-Way" className="input-field text-xs" />
+                          <div className="flex gap-0.5">
+                            <input value={relEway} onChange={e => setRelEway(e.target.value)} placeholder="E-Way" className="input-field text-xs flex-1" />
+                            <button onClick={() => generateEwayBill(s.id)} disabled={saving || !s.weightNet}
+                              className="px-2 py-1 bg-indigo-600 text-white text-[9px] rounded font-medium disabled:opacity-50">⚡</button>
+                          </div>
                           <input value={relGatePass} onChange={e => setRelGatePass(e.target.value)} placeholder="Gate Pass" className="input-field text-xs" />
                         </div>
                         <div className="flex gap-1.5">

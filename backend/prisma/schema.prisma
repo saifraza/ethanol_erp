@@ -1048,7 +1048,10 @@ model Shipment {
   // Documents
   challanNo       String?
   challanDate     String?
-  ewayBill        String?
+  ewayBill        String?                  // e-way bill number
+  ewayBillDate    DateTime?                // e-way bill generation date
+  ewayBillValid   DateTime?                // e-way bill validity date
+  ewayBillStatus  String?                  // GENERATED, CANCELLED, EXPIRED
   gatePassNo      String?
   invoiceRef      String?                  // linked invoice
   // Status flow
