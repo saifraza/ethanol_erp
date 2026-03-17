@@ -8,6 +8,7 @@ import { MODULE_DEFS } from './config/modules';
 import Reports from './pages/Reports';
 import SettingsPage from './pages/SettingsPage';
 import UsersPage from './pages/UsersPage';
+import DocumentTemplates from './pages/DocumentTemplates';
 import GrainUnloading from './pages/process/GrainUnloading';
 import GrainUnloadingTrucks from './pages/process/GrainUnloadingTrucks';
 import Milling from './pages/process/Milling';
@@ -127,6 +128,7 @@ export default function App() {
         <Route path="trade/sales" element={<DirectSales />} />
         <Route path="reports" element={<Reports />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="document-templates" element={<DocumentTemplates />} />
         <Route path="users" element={<UsersPage />} />
       </Route>
     </Routes>

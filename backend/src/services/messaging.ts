@@ -78,6 +78,7 @@ export async function sendEmail(opts: EmailOptions): Promise<{ success: boolean;
 export interface WhatsAppOptions {
   phone: string;   // Indian mobile: 10 digits or with +91
   message: string;
+  mediaUrl?: string;  // URL to a PDF/image to attach (must be publicly accessible)
 }
 
 export interface WhatsAppResult {
@@ -136,6 +137,11 @@ async function sendViaTwilio(opts: WhatsAppOptions): Promise<WhatsAppResult> {
       To: toNumber,
       Body: opts.message,
     });
+
+    // Attach media (PDF, image) if provided
+    if (opts.mediaUrl) {
+      body.append('MediaUrl', opts.mediaUrl);
+    }
 
     const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
       method: 'POST',

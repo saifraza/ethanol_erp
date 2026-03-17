@@ -42,6 +42,7 @@ import freightInquiryRoutes from './routes/freightInquiry';
 import transporterPaymentRoutes from './routes/transporterPayments';
 import shipmentDocumentRoutes from './routes/shipmentDocuments';
 import messagingRoutes from './routes/messaging';
+import documentTemplateRoutes from './routes/documentTemplates';
 // Procurement (P2P) module
 import vendorRoutes from './routes/vendors';
 import materialRoutes from './routes/materials';
@@ -104,6 +105,7 @@ app.use('/api/freight-inquiries', freightInquiryRoutes);
 app.use('/api/transporter-payments', transporterPaymentRoutes);
 app.use('/api/shipment-documents', shipmentDocumentRoutes);
 app.use('/api/messaging', messagingRoutes);
+app.use('/api/document-templates', documentTemplateRoutes);
 // Procurement (P2P)
 app.use('/api/vendors', vendorRoutes);
 app.use('/api/materials', materialRoutes);
