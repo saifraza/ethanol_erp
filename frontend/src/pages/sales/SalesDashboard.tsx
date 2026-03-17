@@ -7,7 +7,7 @@ import {
 import api from '../../services/api';
 
 // ── Types ──
-interface Customer { id: string; name: string; }
+interface Customer { id: string; name: string; address?: string; city?: string; state?: string; pincode?: string; }
 interface Product { id: string; name: string; defaultRate: number; gstPercent: number; unit: string; }
 interface LineItem {
   productName: string; productId?: string; quantity: number; unit: string; rate: number; gstPercent: number;
@@ -104,6 +104,7 @@ export default function SalesDashboard() {
     { productName: 'DDGS', quantity: 0, unit: 'MT', rate: 0, gstPercent: 5 }
   ]);
   const [remarks, setRemarks] = useState('');
+  const [deliveryAddress, setDeliveryAddress] = useState('');
 
   // Truck form (inline)
   const [truckFormDR, setTruckFormDR] = useState<string | null>(null);
@@ -163,7 +164,7 @@ export default function SalesDashboard() {
   // ── Create Order ──
   const resetForm = () => {
     setCustomerId(''); setPaymentTerms('NET15'); setLogisticsBy('BUYER');
-    setFreightRate(''); setRemarks('');
+    setFreightRate(''); setRemarks(''); setDeliveryAddress('');
     setLineItems([{ productName: 'DDGS', quantity: 0, unit: 'MT', rate: 0, gstPercent: 5 }]);
     const d = new Date(); d.setDate(d.getDate() + 7);
     setDeliveryDate(d.toISOString().split('T')[0]);
@@ -191,7 +192,7 @@ export default function SalesDashboard() {
       const validLines = lineItems.filter(i => i.quantity > 0);
       const res = await api.post('/sales-orders', {
         customerId, orderDate: new Date().toISOString().split('T')[0], deliveryDate,
-        paymentTerms, logisticsBy,
+        paymentTerms, logisticsBy, deliveryAddress: deliveryAddress || undefined,
         freightRate: logisticsBy === 'SELLER' ? parseFloat(freightRate) : undefined,
         lineItems: validLines, remarks,
       });
@@ -207,6 +208,7 @@ export default function SalesDashboard() {
         quantity: line?.quantity || 0,
         unit: line?.unit || 'MT',
         logisticsBy, deliveryDate,
+        destination: deliveryAddress || '',
         remarks: remarks || '',
       });
       flash('ok', `Order #${orderNo} created & sent to logistics`);
@@ -436,7 +438,14 @@ export default function SalesDashboard() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
                   <label className="text-xs text-gray-500 font-medium">Customer *</label>
-                  <select value={customerId} onChange={e => setCustomerId(e.target.value)}
+                  <select value={customerId} onChange={e => {
+                      setCustomerId(e.target.value);
+                      const cust = customers.find(c => c.id === e.target.value);
+                      if (cust && !deliveryAddress) {
+                        const addr = [cust.address, cust.city, cust.state, cust.pincode].filter(Boolean).join(', ');
+                        if (addr) setDeliveryAddress(addr);
+                      }
+                    }}
                     className="input-field w-full text-sm mt-1">
                     <option value="">Select</option>
                     {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -500,6 +509,13 @@ export default function SalesDashboard() {
                   </div>
                 </div>
               ))}
+
+              <div>
+                <label className="text-xs text-gray-500 font-medium">Delivery Address *</label>
+                <input value={deliveryAddress} onChange={e => setDeliveryAddress(e.target.value)}
+                  placeholder="Full delivery address — city, state, pincode"
+                  className="input-field w-full text-sm mt-1" />
+              </div>
 
               <div className="flex items-center gap-4 text-sm">
                 <span className="text-gray-500 text-xs font-medium">Transport:</span>

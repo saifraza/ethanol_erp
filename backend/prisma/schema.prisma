@@ -950,6 +950,7 @@ model SalesOrder {
   poNumber        String?                  // customer PO reference
   paymentTerms    String   @default("ADVANCE") // ADVANCE, COD, NET7, NET15, NET30
   logisticsBy     String   @default("BUYER")   // BUYER or SELLER
+  deliveryAddress String?                  // delivery location / full address
   transporterId   String?                  // if SELLER arranges
   freightRate     Float?                   // Rs per ton/KL if seller pays
   status          String   @default("DRAFT") // DRAFT, CONFIRMED, IN_PROGRESS, COMPLETED, CANCELLED
