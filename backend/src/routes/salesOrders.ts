@@ -157,6 +157,7 @@ router.post('/', async (req: Request, res: Response) => {
         poNumber: b.poNumber || null,
         paymentTerms: b.paymentTerms || 'ADVANCE',
         logisticsBy: b.logisticsBy || 'BUYER',
+        deliveryAddress: b.deliveryAddress || null,
         transporterId: b.transporterId || null,
         freightRate: b.freightRate ? parseFloat(b.freightRate) : 0,
         remarks: b.remarks || null,

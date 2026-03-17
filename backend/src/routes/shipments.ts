@@ -178,6 +178,9 @@ router.put('/:id/status', async (req: Request, res: Response) => {
       updateData.exitTime = b.exitTime || null;
     }
 
+    // Fetch existing shipment for stock deduction
+    const existing = await prisma.shipment.findUnique({ where: { id: req.params.id } });
+
     // Save extra fields from body
     if (b.quantityKL) updateData.quantityKL = parseFloat(b.quantityKL);
     if (b.quantityBL) updateData.quantityBL = parseFloat(b.quantityBL);
@@ -193,6 +196,57 @@ router.put('/:id/status', async (req: Request, res: Response) => {
         dispatchRequest: true,
       },
     });
+
+    // ── Auto-deduct DDGS stock when truck is RELEASED ──
+    if (newStatus === 'RELEASED' && existing && existing.weightNet && existing.weightNet > 0) {
+      const productName = (existing.productName || '').toUpperCase();
+      if (productName.includes('DDGS')) {
+        try {
+          const netMT = existing.weightNet / 1000; // kg → MT
+
+          // 1. Create DDGSDispatchTruck entry
+          await prisma.dDGSDispatchTruck.create({
+            data: {
+              date: new Date(),
+              vehicleNo: existing.vehicleNo || '',
+              partyName: existing.customerName || '',
+              destination: existing.destination || '',
+              bags: existing.bags || 0,
+              weightPerBag: existing.weightPerBag || 50,
+              weightGross: existing.weightGross || 0,
+              weightTare: existing.weightTare || 0,
+              weightNet: existing.weightNet,
+              remarks: `Auto from shipment #${existing.shipmentNo}`,
+              userId: (req as any).user?.id || null,
+            },
+          });
+
+          // 2. Update today's DDGSStockEntry dispatch total
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const yearStart = today.getFullYear();
+
+          const todayEntry = await prisma.dDGSStockEntry.findFirst({
+            where: { date: today, yearStart },
+          });
+
+          if (todayEntry) {
+            const newDispatch = (todayEntry.dispatchToday || 0) + netMT;
+            const newClosing = (todayEntry.openingStock || 0) + (todayEntry.productionToday || 0) - newDispatch;
+            await prisma.dDGSStockEntry.update({
+              where: { id: todayEntry.id },
+              data: { dispatchToday: newDispatch, closingStock: newClosing },
+            });
+          }
+
+          console.log(`[Stock] DDGS deducted: ${netMT.toFixed(3)} MT for ${existing.vehicleNo}`);
+        } catch (stockErr) {
+          console.error('[Stock] DDGS deduction failed:', stockErr);
+          // Don't fail the shipment release if stock update fails
+        }
+      }
+    }
+
     res.json(shipment);
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
