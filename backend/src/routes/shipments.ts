@@ -6,6 +6,9 @@ import {
   getStateCode, getHsnCode, getUnitCode, formatDateDDMMYYYY,
   EwayBillInput,
 } from '../services/ewayBill';
+import PDFDocument from 'pdfkit';
+import path from 'path';
+import fs from 'fs';
 
 const router = Router();
 
@@ -32,6 +35,8 @@ router.get('/', async (req: Request, res: Response) => {
       where,
       include: {
         dispatchRequest: true,
+        documents: { orderBy: { createdAt: 'desc' } },
+        transporterPayments: { orderBy: { createdAt: 'desc' } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -210,9 +215,15 @@ router.put('/:id', async (req: Request, res: Response) => {
     if (b.weightPerBag !== undefined) updateData.weightPerBag = parseFloat(b.weightPerBag);
 
     // Copy string fields
-    ['productName', 'customerName', 'destination', 'vehicleNo', 'vehicleType', 'driverName', 'driverMobile', 'transporterName', 'remarks', 'challanNo', 'ewayBill', 'gatePassNo', 'invoiceRef', 'status'].forEach(field => {
+    ['productName', 'customerName', 'destination', 'vehicleNo', 'vehicleType', 'driverName', 'driverMobile', 'transporterName', 'remarks', 'challanNo', 'ewayBill', 'gatePassNo', 'invoiceRef', 'status',
+     'grBiltyNo', 'deliveryStatus', 'receivedByName', 'receivedByPhone', 'podRemarks', 'insuranceBy', 'insuranceNo', 'insuranceProvider'].forEach(field => {
       if (b[field] !== undefined) updateData[field] = b[field];
     });
+    // Date fields
+    if (b.grBiltyDate !== undefined) updateData.grBiltyDate = b.grBiltyDate ? new Date(b.grBiltyDate) : null;
+    if (b.grReceivedBack !== undefined) updateData.grReceivedBack = !!b.grReceivedBack;
+    if (b.grReceivedDate !== undefined) updateData.grReceivedDate = b.grReceivedDate ? new Date(b.grReceivedDate) : null;
+    if (b.deliveredAt !== undefined) updateData.deliveredAt = b.deliveredAt ? new Date(b.deliveredAt) : null;
 
     const shipment = await prisma.shipment.update({
       where: { id: req.params.id },
@@ -418,6 +429,136 @@ router.post('/:id/eway-bill/preview', async (req: Request, res: Response) => {
       mode: process.env.EWAY_BILL_MODE || 'sandbox',
       ready: !!(shipment.weightNet && shipment.weightNet > 0 && customer),
     });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /:id/challan-pdf — Generate Delivery Challan PDF
+router.get('/:id/challan-pdf', async (req: Request, res: Response) => {
+  try {
+    const shipment = await prisma.shipment.findUnique({
+      where: { id: req.params.id },
+      include: {
+        dispatchRequest: {
+          include: {
+            order: { include: { customer: true, lines: true } },
+          },
+        },
+      },
+    });
+    if (!shipment) { res.status(404).json({ error: 'Shipment not found' }); return; }
+
+    const dr = shipment.dispatchRequest;
+    const order = dr?.order;
+    const customer = order?.customer;
+
+    const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename=Challan-${shipment.shipmentNo}.pdf`);
+    doc.pipe(res);
+
+    const pageW = doc.page.width;
+    const mL = 40;
+    const cW = pageW - 80;
+
+    // Letterhead
+    const letterheadPath = path.resolve(__dirname, '../../../assets/letterhead_img_0.jpeg');
+    if (fs.existsSync(letterheadPath)) {
+      doc.image(letterheadPath, mL, 30, { width: cW, height: 70 });
+      doc.y = 110;
+    } else {
+      doc.fontSize(14).font('Helvetica-Bold').text('Mahakaushal Sugar and Power Industries Ltd.', mL, 30, { align: 'center', width: cW });
+      doc.fontSize(8).font('Helvetica').text('GSTIN: 23AAECM3666P1Z1 | Village Bachai, Narsinghpur, MP - 487001', { align: 'center', width: cW });
+      doc.y = 70;
+    }
+
+    // Divider
+    doc.moveTo(mL, doc.y).lineTo(pageW - 40, doc.y).lineWidth(1.5).strokeColor('#4a7c3f').stroke();
+    doc.y += 10;
+
+    // Title
+    doc.fontSize(14).font('Helvetica-Bold').fillColor('#333').text('DELIVERY CHALLAN', mL, doc.y, { align: 'center', width: cW });
+    doc.moveDown(0.5);
+
+    // Info grid
+    const y0 = doc.y;
+    const col2 = pageW / 2 + 20;
+    const lf = 'Helvetica-Bold';
+    const vf = 'Helvetica';
+
+    const info = (label: string, val: string, x: number, y: number) => {
+      doc.fontSize(9).font(lf).fillColor('#555').text(label, x, y);
+      doc.font(vf).fillColor('#333').text(val, x + 100, y);
+    };
+
+    info('Challan No:', shipment.challanNo || `DC-${shipment.shipmentNo}`, mL, y0);
+    info('Date:', new Date(shipment.date).toLocaleDateString('en-IN'), col2, y0);
+    info('Vehicle No:', shipment.vehicleNo, mL, y0 + 16);
+    info('Driver:', shipment.driverName || '—', col2, y0 + 16);
+    info('Driver Mobile:', shipment.driverMobile || '—', mL, y0 + 32);
+    info('Transporter:', shipment.transporterName || '—', col2, y0 + 32);
+    if (shipment.ewayBill) info('E-Way Bill:', shipment.ewayBill, mL, y0 + 48);
+    if (shipment.grBiltyNo) info('GR/Bilty No:', shipment.grBiltyNo, col2, y0 + 48);
+    doc.y = y0 + 70;
+
+    // Customer box
+    const cy = doc.y;
+    doc.rect(mL, cy, cW, 55).lineWidth(0.5).strokeColor('#ccc').stroke();
+    doc.fontSize(10).font(lf).fillColor('#4a7c3f').text('CONSIGNEE', mL + 10, cy + 6);
+    doc.fontSize(9).font(lf).fillColor('#333').text(customer?.name || shipment.customerName, mL + 10, cy + 20);
+    const addr = customer ? [customer.address, customer.city, customer.state, customer.pincode].filter(Boolean).join(', ') : (shipment.destination || '');
+    doc.font(vf).fontSize(8).fillColor('#555').text(addr, mL + 10, cy + 33, { width: cW / 2 - 20 });
+    if (customer?.gstNo) doc.text(`GSTIN: ${customer.gstNo}`, col2, cy + 20);
+    if (customer?.phone) doc.text(`Phone: ${customer.phone}`, col2, cy + 33);
+    doc.y = cy + 65;
+
+    // Items table
+    const tY = doc.y;
+    const cols = [30, 180, 80, 60, 80, 85];
+    const hdrs = ['#', 'Product', 'Quantity', 'Unit', 'Net Wt (MT)', 'Bags'];
+    doc.rect(mL, tY, cW, 20).fill('#4a7c3f');
+    let cx = mL + 4;
+    hdrs.forEach((h, i) => {
+      doc.fontSize(8).font(lf).fillColor('#fff').text(h, cx, tY + 5, { width: cols[i], align: i > 1 ? 'right' : 'left' });
+      cx += cols[i];
+    });
+
+    let rY = tY + 22;
+    const netMT = shipment.weightNet ? (shipment.weightNet / 1000).toFixed(3) : '—';
+    const rowData = ['1', shipment.productName, order?.lines?.[0]?.quantity?.toFixed(2) || '—', order?.lines?.[0]?.unit || 'TON', netMT, shipment.bags?.toString() || '—'];
+    cx = mL + 4;
+    rowData.forEach((v, i) => {
+      doc.fontSize(8).font(vf).fillColor('#333').text(v, cx, rY, { width: cols[i], align: i > 1 ? 'right' : 'left' });
+      cx += cols[i];
+    });
+    rY += 20;
+    doc.moveTo(mL, rY).lineTo(pageW - 40, rY).lineWidth(0.5).strokeColor('#ccc').stroke();
+    rY += 15;
+
+    // Weights summary
+    doc.fontSize(9).font(lf).fillColor('#333').text('Weight Summary:', mL, rY);
+    rY += 16;
+    doc.font(vf).fontSize(9);
+    doc.text(`Tare Weight: ${shipment.weightTare ? shipment.weightTare.toLocaleString() + ' kg' : '—'}`, mL, rY);
+    doc.text(`Gross Weight: ${shipment.weightGross ? shipment.weightGross.toLocaleString() + ' kg' : '—'}`, col2, rY);
+    rY += 16;
+    doc.font(lf).text(`Net Weight: ${shipment.weightNet ? shipment.weightNet.toLocaleString() + ' kg (' + netMT + ' MT)' : '—'}`, mL, rY);
+    rY += 30;
+
+    // Signatures
+    doc.fontSize(8).font(vf).fillColor('#555');
+    doc.text('________________________', mL, rY, { width: 150, align: 'center' });
+    doc.text('Authorized by MSPIL', mL, rY + 12, { width: 150, align: 'center' });
+    doc.text('________________________', pageW / 2 - 75, rY, { width: 150, align: 'center' });
+    doc.text('Transporter / Driver', pageW / 2 - 75, rY + 12, { width: 150, align: 'center' });
+    doc.text('________________________', pageW - 40 - 150, rY, { width: 150, align: 'center' });
+    doc.text('Received by (Consignee)', pageW - 40 - 150, rY + 12, { width: 150, align: 'center' });
+
+    // Footer
+    const fY = doc.page.height - 50;
+    doc.moveTo(mL, fY).lineTo(pageW - 40, fY).lineWidth(0.5).strokeColor('#ccc').stroke();
+    doc.fontSize(7).fillColor('#888').text('This is a system-generated delivery challan from MSPIL ERP.', mL, fY + 6, { align: 'center', width: cW });
+
+    doc.end();
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 

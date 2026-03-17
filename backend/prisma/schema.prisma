@@ -1054,9 +1054,24 @@ model Shipment {
   ewayBillStatus  String?                  // GENERATED, CANCELLED, EXPIRED
   gatePassNo      String?
   invoiceRef      String?                  // linked invoice
+  // GR / Bilty (from transporter)
+  grBiltyNo       String?                  // GR/Bilty number from transporter
+  grBiltyDate     DateTime?
+  grReceivedBack  Boolean          @default(false) // signed GR received back from buyer
+  grReceivedDate  DateTime?
+  // Delivery confirmation
+  deliveryStatus  String?                  // IN_TRANSIT, DELIVERED, CONFIRMED
+  deliveredAt     DateTime?
+  receivedByName  String?                  // person at buyer who received
+  receivedByPhone String?
+  podRemarks      String?                  // proof of delivery remarks
+  // Insurance
+  insuranceBy     String?                  // BUYER, SELLER, NONE
+  insuranceNo     String?
+  insuranceProvider String?
   // Status flow
   status          String           @default("GATE_IN")
-  // GATE_IN → TARE_WEIGHED → LOADING → GROSS_WEIGHED → RELEASED → EXITED
+  // GATE_IN → TARE_WEIGHED → LOADING → GROSS_WEIGHED → RELEASED → EXITED → DELIVERED → GR_RECEIVED
   gateInTime      String?                  // HH:MM
   tareTime        String?
   loadStartTime   String?
@@ -1066,6 +1081,103 @@ model Shipment {
   date            DateTime         @default(now())
   remarks         String?
   userId          String?                  // factory user
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  documents       ShipmentDocument[]
+  transporterPayments TransporterPayment[]
+}
+
+// ── Shipment Documents (uploaded files: GR, Bilty, POD, Insurance, etc.) ──
+model ShipmentDocument {
+  id              String   @id @default(uuid())
+  shipmentId      String
+  shipment        Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  docType         String                   // GR_BILTY, POD, INSURANCE, CHALLAN, EWAY_BILL, INVOICE, INQUIRY, QUOTATION, OTHER
+  fileName        String
+  filePath        String                   // relative path to uploads/
+  fileSize        Int?                     // bytes
+  mimeType        String?
+  uploadedBy      String?
+  remarks         String?
+  createdAt       DateTime @default(now())
+}
+
+// ── Transporter Inquiry (MSPIL asks transporters for quotes) ──
+model FreightInquiry {
+  id              String   @id @default(uuid())
+  inquiryNo       Int      @default(autoincrement())
+  dispatchRequestId String?
+  orderId         String?
+  // Route
+  origin          String   @default("MSPIL, Village Bachai, Narsinghpur, MP - 487001")
+  destination     String
+  distanceKm      Float?
+  // Cargo
+  productName     String
+  quantity        Float
+  unit            String   @default("TON")
+  vehicleType     String?                  // TRUCK, TRAILER, TANKER
+  vehicleCount    Int      @default(1)
+  // Dates
+  loadingDate     DateTime?
+  inquiryDate     DateTime @default(now())
+  validTill       DateTime?
+  // Status
+  status          String   @default("OPEN") // OPEN, QUOTES_RECEIVED, AWARDED, CANCELLED
+  remarks         String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  quotations      FreightQuotation[]
+}
+
+// ── Freight Quotation (Transporter responds to inquiry) ──
+model FreightQuotation {
+  id              String   @id @default(uuid())
+  inquiryId       String
+  inquiry         FreightInquiry @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
+  transporterId   String
+  transporterName String
+  // Rate
+  ratePerMT       Float?                   // Rs per metric ton
+  ratePerTrip     Float?                   // or flat rate per trip
+  ratePerKm       Float?                   // or per km
+  totalAmount     Float?
+  // Vehicle offered
+  vehicleType     String?
+  vehicleCount    Int      @default(1)
+  estimatedDays   Int?                     // transit time
+  // Status
+  status          String   @default("RECEIVED") // RECEIVED, ACCEPTED, REJECTED
+  remarks         String?
+  quotedAt        DateTime @default(now())
+  createdAt       DateTime @default(now())
+}
+
+// ── Transporter Payment (50% advance + balance after GR) ──
+model TransporterPayment {
+  id              String   @id @default(uuid())
+  paymentNo       Int      @default(autoincrement())
+  shipmentId      String
+  shipment        Shipment @relation(fields: [shipmentId], references: [id])
+  transporterId   String?
+  transporterName String
+  // Amount
+  paymentType     String                   // ADVANCE, BALANCE, FULL, DEDUCTION
+  amount          Float
+  // Payment details
+  paymentDate     DateTime @default(now())
+  mode            String   @default("BANK_TRANSFER") // CASH, CHEQUE, BANK_TRANSFER, UPI, NEFT, RTGS
+  reference       String?                  // UTR / cheque no
+  // Freight reference
+  freightRate     Float?                   // Rs per MT
+  freightTotal    Float?                   // total freight for this shipment
+  // Status
+  status          String   @default("PENDING") // PENDING, PAID, CANCELLED
+  paidAt          DateTime?
+  approvedBy      String?
+  remarks         String?
+  userId          String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }

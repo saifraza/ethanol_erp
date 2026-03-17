@@ -38,6 +38,9 @@ import dispatchRequestRoutes from './routes/dispatchRequests';
 import shipmentRoutes from './routes/shipments';
 import invoiceRoutes from './routes/invoices';
 import paymentRoutes from './routes/payments';
+import freightInquiryRoutes from './routes/freightInquiry';
+import transporterPaymentRoutes from './routes/transporterPayments';
+import shipmentDocumentRoutes from './routes/shipmentDocuments';
 // Procurement (P2P) module
 import vendorRoutes from './routes/vendors';
 import materialRoutes from './routes/materials';
@@ -96,6 +99,9 @@ app.use('/api/dispatch-requests', dispatchRequestRoutes);
 app.use('/api/shipments', shipmentRoutes);
 app.use('/api/invoices', invoiceRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/freight-inquiries', freightInquiryRoutes);
+app.use('/api/transporter-payments', transporterPaymentRoutes);
+app.use('/api/shipment-documents', shipmentDocumentRoutes);
 // Procurement (P2P)
 app.use('/api/vendors', vendorRoutes);
 app.use('/api/materials', materialRoutes);
