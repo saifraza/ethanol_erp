@@ -37,6 +37,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'dryer', label: 'Dryer', to: '/process/dryer', icon: Flame, group: 'process' },
   { key: 'evaporation', label: 'Evaporation', to: '/process/evaporation', icon: Wind, group: 'process' },
   { key: 'ethanol-stock', label: 'Ethanol Tank', to: '/process/ethanol-stock', icon: Fuel, group: 'process' },
+  { key: 'ethanol-dispatch', label: 'Ethanol Dispatch', to: '/process/ethanol-dispatch', icon: Truck, group: 'process' },
   { key: 'ddgs-stock', label: 'DDGS Godown', to: '/process/ddgs-stock', icon: Package, group: 'process' },
   { key: 'water-utility', label: 'Utilities', to: '/process/water-utility', icon: Waves, group: 'process' },
 
