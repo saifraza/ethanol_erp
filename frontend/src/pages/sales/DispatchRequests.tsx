@@ -28,6 +28,7 @@ interface Shipment {
   gateInTime?: string; tareTime?: string; grossTime?: string; releaseTime?: string; exitTime?: string;
   documents?: { id: string; docType: string; fileName: string; mimeType?: string }[];
   ewayBillStatus?: string; ewayBill?: string; challanNo?: string;
+  gatePassNo?: string; invoiceRef?: string; grBiltyNo?: string; grBiltyDate?: string;
 }
 
 interface OrderLine {
@@ -1204,199 +1205,289 @@ export default function DispatchRequests() {
                           );
                         })()}
 
-                        {/* ── Trucks ── */}
-                        {shipments.length > 0 && (
-                          <div>
-                            <div className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1">
-                              <Truck size={12} /> Trucks ({shipments.length})
-                            </div>
-                            <div className="space-y-2">
-                              {shipments.map(s => {
-                                const netKg = s.weightNet || (s.weightGross && s.weightTare ? s.weightGross - s.weightTare : null);
-                                const isExpTruck = expandedTruck === s.id;
-                                const docs = (s as any).documents || [];
-                                const DOC_TYPES = [
-                                  { key: 'GR_BILTY', label: 'GR / Bilty', icon: '📄' },
-                                  { key: 'CHALLAN', label: 'Challan', icon: '📋', auto: true },
-                                  { key: 'EWAY_BILL', label: 'E-Way Bill', icon: '🚛', auto: true },
-                                  { key: 'INVOICE', label: 'Invoice', icon: '💰' },
-                                  { key: 'INSURANCE', label: 'Insurance', icon: '🛡️' },
-                                  { key: 'POD', label: 'POD', icon: '✅' },
-                                  { key: 'OTHER', label: 'Other', icon: '📎' },
-                                ];
-                                return (
-                                  <div key={s.id} className="bg-white rounded-lg border">
-                                    {/* Header */}
-                                    <div className="p-3 cursor-pointer" onClick={() => setExpandedTruck(isExpTruck ? null : s.id)}>
-                                      <div className="flex items-center justify-between mb-1">
-                                        <div className="flex items-center gap-2">
-                                          <span className="font-bold text-sm">{s.vehicleNo}</span>
-                                          {s.driverName && <span className="text-xs text-gray-500">{s.driverName}</span>}
-                                          {s.driverMobile && (
-                                            <a href={`tel:${s.driverMobile}`} onClick={e => e.stopPropagation()} className="text-blue-600"><Phone size={10} /></a>
-                                          )}
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                          {netKg && <span className="text-xs font-bold text-green-700">{(netKg / 1000).toFixed(2)} MT</span>}
-                                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                                            ['RELEASED', 'EXITED'].includes(s.status) ? 'bg-green-100 text-green-700' :
-                                            s.status === 'LOADING' ? 'bg-amber-100 text-amber-700' :
-                                            s.status === 'GROSS_WEIGHED' ? 'bg-orange-100 text-orange-700' :
-                                            'bg-blue-100 text-blue-700'
-                                          }`}>{s.status.replace(/_/g, ' ')}</span>
-                                          <ChevronDown size={14} className={`text-gray-400 transition ${isExpTruck ? 'rotate-180' : ''}`} />
-                                        </div>
-                                      </div>
-                                      <div className="flex gap-0.5 mt-1">
-                                        {['GATE_IN', 'TARE_WEIGHED', 'LOADING', 'GROSS_WEIGHED', 'RELEASED', 'EXITED'].map((st, i) => {
-                                          const idx = ['GATE_IN', 'TARE_WEIGHED', 'LOADING', 'GROSS_WEIGHED', 'RELEASED', 'EXITED'].indexOf(s.status);
-                                          return <div key={st} className={`h-1 flex-1 rounded-full ${i <= idx ? 'bg-green-500' : 'bg-gray-200'}`} />;
-                                        })}
-                                      </div>
-                                    </div>
+                        {/* ── Trucks & Dispatch Progress ── */}
+                        {(() => {
+                          const totalQty = dr.quantity;
+                          const dispatchedMT = shipments.reduce((sum, s) => {
+                            const net = s.weightNet || (s.weightGross && s.weightTare ? s.weightGross - s.weightTare : 0);
+                            return sum + (net ? net / 1000 : 0);
+                          }, 0);
+                          const remainingMT = Math.max(0, totalQty - dispatchedMT);
+                          const pctDispatched = totalQty > 0 ? Math.min(100, (dispatchedMT / totalQty) * 100) : 0;
 
-                                    {/* Documents section (expanded) */}
-                                    {isExpTruck && (
-                                      <div className="border-t px-3 pb-3 pt-2">
-                                        {/* Auto-generated docs: Challan + E-Way Bill */}
-                                        <div className="flex gap-2 mb-2 flex-wrap">
-                                          <button onClick={(e) => { e.stopPropagation(); const token = localStorage.getItem('token'); window.open(`/api/shipments/${s.id}/challan-pdf?token=${token}`, '_blank'); }}
-                                            className="px-2 py-1 text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 flex items-center gap-1">
-                                            <FileText size={10} /> Challan
-                                          </button>
-                                          {(s.driverMobile || dr.transporterId) && (
-                                            <button onClick={(e) => {
-                                                e.stopPropagation();
-                                                const phone = s.driverMobile || transporters.find(t => t.id === dr.transporterId)?.phone || '';
-                                                if (!phone) { flash('err', 'No phone number'); return; }
-                                                sendDocWhatsApp(s.id, phone, 'CHALLAN', dr);
-                                              }}
-                                              disabled={!!actionLoading}
-                                              className="px-2 py-1 text-[11px] font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 flex items-center gap-1">
-                                              {actionLoading === s.id + '_wa_CHALLAN' ? <Loader2 size={10} className="animate-spin" /> : <MessageCircle size={10} />} WA Challan
-                                            </button>
-                                          )}
-                                          {s.ewayBill ? (
-                                            <span className="px-2 py-1 text-[11px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg">
-                                              EWB: {s.ewayBill}
-                                            </span>
-                                          ) : (
-                                            <button onClick={async (e) => {
-                                                e.stopPropagation();
-                                                try {
-                                                  setActionLoading(s.id + '_ewb');
-                                                  const r = await api.post(`/shipments/${s.id}/eway-bill`);
-                                                  flash('ok', `E-Way Bill: ${r.data.ewayBillNo}`);
-                                                  load();
-                                                } catch (e: any) { flash('err', e.response?.data?.error || 'E-Way Bill failed'); }
-                                                finally { setActionLoading(null); }
-                                              }}
-                                              disabled={!!actionLoading}
-                                              className="px-2 py-1 text-[11px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg hover:bg-indigo-100 flex items-center gap-1">
-                                              {actionLoading === s.id + '_ewb' ? <Loader2 size={10} className="animate-spin" /> : <Truck size={10} />} E-Way Bill
-                                            </button>
-                                          )}
+                          return (
+                            <div className="bg-white rounded-xl border p-4">
+                              {/* Header with dispatch progress */}
+                              <div className="flex items-center justify-between mb-3">
+                                <span className="text-sm font-bold text-gray-800 flex items-center gap-1.5">
+                                  <Truck size={14} /> Trucks ({shipments.length})
+                                </span>
+                                <div className="text-right text-xs">
+                                  <span className="font-bold text-green-700">{dispatchedMT.toFixed(1)} MT</span>
+                                  <span className="text-gray-400"> / {totalQty} {dr.unit}</span>
+                                  <span className={`ml-2 font-bold ${pctDispatched >= 100 ? 'text-green-600' : 'text-orange-600'}`}>
+                                    {pctDispatched.toFixed(0)}%
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Dispatch progress bar */}
+                              <div className="w-full h-2.5 bg-gray-100 rounded-full mb-3 overflow-hidden">
+                                <div className={`h-full rounded-full transition-all ${pctDispatched >= 100 ? 'bg-green-500' : 'bg-orange-500'}`}
+                                  style={{ width: `${pctDispatched}%` }} />
+                              </div>
+
+                              {remainingMT > 0 && (
+                                <p className="text-xs text-orange-600 font-medium mb-3">
+                                  Remaining: {remainingMT.toFixed(1)} MT to dispatch
+                                </p>
+                              )}
+
+                              {/* Existing trucks */}
+                              {shipments.length > 0 && (
+                                <div className="space-y-2 mb-3">
+                                  {shipments.map(s => {
+                                    const netKg = s.weightNet || (s.weightGross && s.weightTare ? s.weightGross - s.weightTare : null);
+                                    const isExpTruck = expandedTruck === s.id;
+                                    const docs = (s as any).documents || [];
+                                    const DOC_TYPES = [
+                                      { key: 'GR_BILTY', label: 'GR / Bilty', icon: '📄' },
+                                      { key: 'CHALLAN', label: 'Challan', icon: '📋' },
+                                      { key: 'EWAY_BILL', label: 'E-Way Bill', icon: '🚛' },
+                                      { key: 'INVOICE', label: 'Invoice', icon: '💰' },
+                                      { key: 'GATE_PASS', label: 'Gate Pass', icon: '🚧' },
+                                      { key: 'INSURANCE', label: 'Insurance', icon: '🛡️' },
+                                      { key: 'POD', label: 'POD', icon: '✅' },
+                                      { key: 'OTHER', label: 'Other', icon: '📎' },
+                                    ];
+                                    return (
+                                      <div key={s.id} className="bg-gray-50 rounded-lg border">
+                                        {/* Truck header */}
+                                        <div className="p-3 cursor-pointer" onClick={() => setExpandedTruck(isExpTruck ? null : s.id)}>
+                                          <div className="flex items-center justify-between mb-1">
+                                            <div className="flex items-center gap-2">
+                                              <span className="font-bold text-sm">{s.vehicleNo}</span>
+                                              {s.driverName && <span className="text-xs text-gray-500">{s.driverName}</span>}
+                                              {s.driverMobile && (
+                                                <a href={`tel:${s.driverMobile}`} onClick={e => e.stopPropagation()} className="text-blue-600"><Phone size={10} /></a>
+                                              )}
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                              {netKg != null && netKg > 0 && <span className="text-xs font-bold text-green-700">{(netKg / 1000).toFixed(2)} MT</span>}
+                                              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                                                ['RELEASED', 'EXITED'].includes(s.status) ? 'bg-green-100 text-green-700' :
+                                                s.status === 'LOADING' ? 'bg-amber-100 text-amber-700' :
+                                                s.status === 'GROSS_WEIGHED' ? 'bg-orange-100 text-orange-700' :
+                                                'bg-blue-100 text-blue-700'
+                                              }`}>{s.status.replace(/_/g, ' ')}</span>
+                                              <ChevronDown size={14} className={`text-gray-400 transition ${isExpTruck ? 'rotate-180' : ''}`} />
+                                            </div>
+                                          </div>
+
+                                          {/* Doc number badges */}
+                                          <div className="flex gap-1.5 flex-wrap mt-1">
+                                            {s.challanNo && <span className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-medium">Bill: {s.challanNo}</span>}
+                                            {s.ewayBill && <span className="text-[10px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded font-medium">E-Way: {s.ewayBill}</span>}
+                                            {s.gatePassNo && <span className="text-[10px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded font-medium">Gate: {s.gatePassNo}</span>}
+                                            {s.grBiltyNo && <span className="text-[10px] bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded font-medium">Bilty: {s.grBiltyNo}</span>}
+                                          </div>
+
+                                          <div className="flex gap-0.5 mt-1.5">
+                                            {['GATE_IN', 'TARE_WEIGHED', 'LOADING', 'GROSS_WEIGHED', 'RELEASED', 'EXITED'].map((st, i) => {
+                                              const idx = ['GATE_IN', 'TARE_WEIGHED', 'LOADING', 'GROSS_WEIGHED', 'RELEASED', 'EXITED'].indexOf(s.status);
+                                              return <div key={st} className={`h-1 flex-1 rounded-full ${i <= idx ? 'bg-green-500' : 'bg-gray-200'}`} />;
+                                            })}
+                                          </div>
                                         </div>
 
-                                        {/* Uploaded documents */}
-                                        {docs.length > 0 && (
-                                          <div className="space-y-1 mb-2">
-                                            {docs.map((d: any) => (
-                                              <div key={d.id} className="flex items-center justify-between bg-gray-50 rounded px-2 py-1.5">
-                                                <div className="flex items-center gap-2">
-                                                  <span className="text-[10px] font-semibold text-gray-500 uppercase bg-gray-200 px-1.5 py-0.5 rounded">{d.docType.replace(/_/g, ' ')}</span>
-                                                  <span className="text-xs text-gray-700 truncate max-w-[150px]">{d.fileName}</span>
+                                        {/* Expanded: gate entry docs + uploads */}
+                                        {isExpTruck && (
+                                          <div className="border-t px-3 pb-3 pt-3 space-y-3">
+                                            {/* Gate Entry Document Numbers */}
+                                            <div>
+                                              <p className="text-xs font-bold text-gray-700 mb-2">Gate Entry Details</p>
+                                              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                                <div>
+                                                  <label className="text-[10px] text-gray-500 font-semibold block mb-0.5">Bill No</label>
+                                                  <input defaultValue={s.challanNo || ''} onBlur={async (e) => {
+                                                    if (e.target.value !== (s.challanNo || '')) {
+                                                      try { await api.put(`/shipments/${s.id}`, { challanNo: e.target.value || null }); flash('ok', 'Bill No saved'); load(); }
+                                                      catch { flash('err', 'Save failed'); }
+                                                    }
+                                                  }} placeholder="Bill/Challan No" className="input-field text-xs w-full" onClick={e => e.stopPropagation()} />
                                                 </div>
-                                                <div className="flex items-center gap-2">
-                                                  <button onClick={(e) => { e.stopPropagation(); const token = localStorage.getItem('token'); window.open(`/api/shipment-documents/file/${d.id}?token=${token}`, '_blank'); }}
-                                                    className="text-blue-600 text-[10px] font-medium hover:underline">View</button>
-                                                  {(s.driverMobile || dr.transporterId) && (
-                                                    <button onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        const phone = s.driverMobile || transporters.find(t => t.id === dr.transporterId)?.phone || '';
-                                                        if (!phone) { flash('err', 'No phone number'); return; }
-                                                        const token = localStorage.getItem('token');
-                                                        const docUrl = `${window.location.origin}/api/shipment-documents/file/${d.id}?token=${token}`;
-                                                        api.post('/messaging/send-document', {
-                                                          phone, message: `MSPIL — ${d.docType.replace(/_/g, ' ')} for ${s.vehicleNo}`, documentUrl: docUrl, documentType: d.docType,
-                                                        }).then(r => {
-                                                          if (r.data.provider === 'web' && r.data.webUrl) { window.open(r.data.webUrl, '_blank'); flash('ok', 'WhatsApp opened'); }
-                                                          else if (r.data.success) flash('ok', 'Sent via WhatsApp');
-                                                          else flash('err', r.data.error || 'Failed');
-                                                        }).catch(() => flash('err', 'Send failed'));
-                                                      }}
-                                                      className="text-green-600 text-[10px] font-medium hover:underline flex items-center gap-0.5">
-                                                      <MessageCircle size={8} /> WA
-                                                    </button>
-                                                  )}
+                                                <div>
+                                                  <label className="text-[10px] text-gray-500 font-semibold block mb-0.5">E-Way No</label>
+                                                  <input defaultValue={s.ewayBill || ''} onBlur={async (e) => {
+                                                    if (e.target.value !== (s.ewayBill || '')) {
+                                                      try { await api.put(`/shipments/${s.id}`, { ewayBill: e.target.value || null }); flash('ok', 'E-Way No saved'); load(); }
+                                                      catch { flash('err', 'Save failed'); }
+                                                    }
+                                                  }} placeholder="E-Way Bill No" className="input-field text-xs w-full" onClick={e => e.stopPropagation()} />
+                                                </div>
+                                                <div>
+                                                  <label className="text-[10px] text-gray-500 font-semibold block mb-0.5">Gate Pass No</label>
+                                                  <input defaultValue={s.gatePassNo || ''} onBlur={async (e) => {
+                                                    if (e.target.value !== (s.gatePassNo || '')) {
+                                                      try { await api.put(`/shipments/${s.id}`, { gatePassNo: e.target.value || null }); flash('ok', 'Gate Pass saved'); load(); }
+                                                      catch { flash('err', 'Save failed'); }
+                                                    }
+                                                  }} placeholder="Gate Pass No" className="input-field text-xs w-full" onClick={e => e.stopPropagation()} />
+                                                </div>
+                                                <div>
+                                                  <label className="text-[10px] text-gray-500 font-semibold block mb-0.5">Bilty No / Date</label>
+                                                  <input defaultValue={s.grBiltyNo || ''} onBlur={async (e) => {
+                                                    if (e.target.value !== (s.grBiltyNo || '')) {
+                                                      try { await api.put(`/shipments/${s.id}`, { grBiltyNo: e.target.value || null }); flash('ok', 'Bilty No saved'); load(); }
+                                                      catch { flash('err', 'Save failed'); }
+                                                    }
+                                                  }} placeholder="GR/Bilty No" className="input-field text-xs w-full" onClick={e => e.stopPropagation()} />
                                                 </div>
                                               </div>
-                                            ))}
+                                            </div>
+
+                                            {/* Auto-generated docs */}
+                                            <div className="flex gap-2 flex-wrap">
+                                              <button onClick={(e) => { e.stopPropagation(); const token = localStorage.getItem('token'); window.open(`/api/shipments/${s.id}/challan-pdf?token=${token}`, '_blank'); }}
+                                                className="px-2.5 py-1 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 flex items-center gap-1">
+                                                <FileText size={11} /> Challan PDF
+                                              </button>
+                                              {(s.driverMobile || dr.transporterId) && (
+                                                <button onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    const phone = s.driverMobile || transporters.find(t => t.id === dr.transporterId)?.phone || '';
+                                                    if (!phone) { flash('err', 'No phone number'); return; }
+                                                    sendDocWhatsApp(s.id, phone, 'CHALLAN', dr);
+                                                  }}
+                                                  disabled={!!actionLoading}
+                                                  className="px-2.5 py-1 text-xs font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 flex items-center gap-1">
+                                                  {actionLoading === s.id + '_wa_CHALLAN' ? <Loader2 size={10} className="animate-spin" /> : <MessageCircle size={10} />} WA Challan
+                                                </button>
+                                              )}
+                                              {!s.ewayBill && (
+                                                <button onClick={async (e) => {
+                                                    e.stopPropagation();
+                                                    try {
+                                                      setActionLoading(s.id + '_ewb');
+                                                      const r = await api.post(`/shipments/${s.id}/eway-bill`);
+                                                      flash('ok', `E-Way Bill: ${r.data.ewayBillNo}`);
+                                                      load();
+                                                    } catch (e: any) { flash('err', e.response?.data?.error || 'E-Way Bill failed'); }
+                                                    finally { setActionLoading(null); }
+                                                  }}
+                                                  disabled={!!actionLoading}
+                                                  className="px-2.5 py-1 text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg hover:bg-indigo-100 flex items-center gap-1">
+                                                  {actionLoading === s.id + '_ewb' ? <Loader2 size={10} className="animate-spin" /> : <Truck size={10} />} Generate E-Way Bill
+                                                </button>
+                                              )}
+                                            </div>
+
+                                            {/* Uploaded documents */}
+                                            {docs.length > 0 && (
+                                              <div className="space-y-1">
+                                                <p className="text-xs font-bold text-gray-700">Uploaded Documents</p>
+                                                {docs.map((d: any) => (
+                                                  <div key={d.id} className="flex items-center justify-between bg-white rounded-lg px-2.5 py-1.5 border">
+                                                    <div className="flex items-center gap-2">
+                                                      <span className="text-[10px] font-bold text-gray-500 uppercase bg-gray-100 px-1.5 py-0.5 rounded">{d.docType.replace(/_/g, ' ')}</span>
+                                                      <span className="text-xs text-gray-700 truncate max-w-[150px]">{d.fileName}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                      <button onClick={(e) => { e.stopPropagation(); const token = localStorage.getItem('token'); window.open(`/api/shipment-documents/file/${d.id}?token=${token}`, '_blank'); }}
+                                                        className="text-blue-600 text-xs font-medium hover:underline">View</button>
+                                                      {(s.driverMobile || dr.transporterId) && (
+                                                        <button onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            const phone = s.driverMobile || transporters.find(t => t.id === dr.transporterId)?.phone || '';
+                                                            if (!phone) { flash('err', 'No phone number'); return; }
+                                                            const token = localStorage.getItem('token');
+                                                            const docUrl = `${window.location.origin}/api/shipment-documents/file/${d.id}?token=${token}`;
+                                                            api.post('/messaging/send-document', {
+                                                              phone, message: `MSPIL — ${d.docType.replace(/_/g, ' ')} for ${s.vehicleNo}`, documentUrl: docUrl, documentType: d.docType,
+                                                            }).then(r => {
+                                                              if (r.data.provider === 'web' && r.data.webUrl) { window.open(r.data.webUrl, '_blank'); flash('ok', 'WhatsApp opened'); }
+                                                              else if (r.data.success) flash('ok', 'Sent via WhatsApp');
+                                                              else flash('err', r.data.error || 'Failed');
+                                                            }).catch(() => flash('err', 'Send failed'));
+                                                          }}
+                                                          className="text-green-600 text-xs font-medium hover:underline flex items-center gap-0.5">
+                                                          <MessageCircle size={9} /> WA
+                                                        </button>
+                                                      )}
+                                                    </div>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            )}
+
+                                            {/* Upload documents — 3 options per doc type */}
+                                            <div>
+                                              <p className="text-xs font-bold text-gray-700 mb-2">Upload Documents</p>
+                                              <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5">
+                                                {DOC_TYPES.map(dt => {
+                                                  const hasDoc = docs.some((d: any) => d.docType === dt.key);
+                                                  const isUploading = uploadingDoc === s.id + '_' + dt.key;
+                                                  return (
+                                                    <div key={dt.key} className={`rounded-lg border p-2 ${hasDoc ? 'bg-green-50 border-green-200' : 'bg-white'}`}>
+                                                      <div className="flex items-center justify-between mb-1.5">
+                                                        <span className="text-[10px] font-bold text-gray-700">{dt.icon} {dt.label}</span>
+                                                        {hasDoc && <CheckCircle size={10} className="text-green-600" />}
+                                                      </div>
+                                                      <div className="flex gap-1">
+                                                        <button onClick={(e) => { e.stopPropagation(); uploadDoc(s.id, dt.key); }}
+                                                          disabled={!!uploadingDoc}
+                                                          className="flex-1 py-1 text-[9px] font-medium bg-gray-100 text-gray-600 rounded hover:bg-gray-200 flex items-center justify-center gap-0.5"
+                                                          title="Upload from files">
+                                                          {isUploading ? <Loader2 size={9} className="animate-spin" /> : <Upload size={9} />} File
+                                                        </button>
+                                                        <button onClick={(e) => { e.stopPropagation(); uploadDoc(s.id, dt.key, true); }}
+                                                          disabled={!!uploadingDoc}
+                                                          className="flex-1 py-1 text-[9px] font-medium bg-gray-100 text-gray-600 rounded hover:bg-gray-200 flex items-center justify-center gap-0.5"
+                                                          title="Take photo with camera">
+                                                          <Camera size={9} /> Photo
+                                                        </button>
+                                                      </div>
+                                                    </div>
+                                                  );
+                                                })}
+                                              </div>
+                                            </div>
                                           </div>
                                         )}
-
-                                        {/* Upload: file + camera for each doc type */}
-                                        <div className="text-[10px] text-gray-500 font-medium mb-1">Upload Documents</div>
-                                        <div className="flex gap-1 flex-wrap">
-                                          {DOC_TYPES.map(dt => {
-                                            const isUploading = uploadingDoc === s.id + '_' + dt.key;
-                                            return (
-                                              <div key={dt.key} className="flex rounded border overflow-hidden">
-                                                <button onClick={(e) => { e.stopPropagation(); uploadDoc(s.id, dt.key); }}
-                                                  disabled={!!uploadingDoc}
-                                                  className="px-1.5 py-1 text-[10px] font-medium bg-gray-50 text-gray-600 hover:bg-gray-100 flex items-center gap-0.5 border-r">
-                                                  {isUploading ? <Loader2 size={9} className="animate-spin" /> : <Upload size={9} />} {dt.label}
-                                                </button>
-                                                <button onClick={(e) => { e.stopPropagation(); uploadDoc(s.id, dt.key, true); }}
-                                                  disabled={!!uploadingDoc}
-                                                  className="px-1.5 py-1 text-[10px] bg-gray-50 text-gray-500 hover:bg-gray-100"
-                                                  title={`Take photo for ${dt.label}`}>
-                                                  <Camera size={10} />
-                                                </button>
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
                                       </div>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
+                                    );
+                                  })}
+                                </div>
+                              )}
 
-                        {/* Add truck */}
-                        {!['DISPATCHED', 'COMPLETED', 'CANCELLED'].includes(dr.status) && (
-                          truckFormDR === dr.id ? (
-                            <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
-                              <div className="flex items-center justify-between mb-1">
-                                <span className="text-xs font-bold text-blue-800">Add Truck Details</span>
-                                <button onClick={() => setTruckFormDR(null)} className="text-gray-400"><X size={14} /></button>
-                              </div>
-                              <p className="text-[10px] text-gray-500 mb-2">Transporter provides vehicle/driver details ~1hr before arrival at factory</p>
-                              <div className="grid grid-cols-3 gap-2 mb-2">
-                                <input value={truckVehicle} onChange={e => setTruckVehicle(e.target.value)}
-                                  placeholder="Vehicle No *" className="input-field text-xs" autoFocus />
-                                <input value={truckDriver} onChange={e => setTruckDriver(e.target.value)}
-                                  placeholder="Driver Name" className="input-field text-xs" />
-                                <input value={truckMobile} onChange={e => setTruckMobile(e.target.value)}
-                                  placeholder="Driver Mobile" className="input-field text-xs" />
-                              </div>
-                              <button onClick={() => assignTruck(dr.id)}
-                                disabled={!!actionLoading}
-                                className="w-full py-2 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-1">
-                                {actionLoading === dr.id + '_truck' ? <Loader2 size={12} className="animate-spin" /> : <Truck size={12} />}
-                                Register for Gate Entry
-                              </button>
+                              {/* Add truck — always visible */}
+                              {!['DISPATCHED', 'COMPLETED', 'CANCELLED'].includes(dr.status) && (
+                                <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+                                  <p className="text-xs font-bold text-blue-800 mb-2 flex items-center gap-1.5">
+                                    <Plus size={12} /> Add Truck
+                                  </p>
+                                  <div className="grid grid-cols-3 gap-2 mb-2">
+                                    <input value={truckFormDR === dr.id ? truckVehicle : ''} onChange={e => { setTruckFormDR(dr.id); setTruckVehicle(e.target.value); }}
+                                      onFocus={() => setTruckFormDR(dr.id)}
+                                      placeholder="Vehicle No *" className="input-field text-sm" />
+                                    <input value={truckFormDR === dr.id ? truckDriver : ''} onChange={e => { setTruckFormDR(dr.id); setTruckDriver(e.target.value); }}
+                                      onFocus={() => setTruckFormDR(dr.id)}
+                                      placeholder="Driver Name" className="input-field text-sm" />
+                                    <input value={truckFormDR === dr.id ? truckMobile : ''} onChange={e => { setTruckFormDR(dr.id); setTruckMobile(e.target.value); }}
+                                      onFocus={() => setTruckFormDR(dr.id)}
+                                      placeholder="Driver Mobile" className="input-field text-sm" />
+                                  </div>
+                                  <button onClick={() => assignTruck(dr.id)}
+                                    disabled={!!actionLoading || !truckVehicle.trim() || truckFormDR !== dr.id}
+                                    className="w-full py-2 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-1.5">
+                                    {actionLoading === dr.id + '_truck' ? <Loader2 size={12} className="animate-spin" /> : <Truck size={12} />}
+                                    Register for Gate Entry
+                                  </button>
+                                </div>
+                              )}
                             </div>
-                          ) : (
-                            <button onClick={() => setTruckFormDR(dr.id)}
-                              className="w-full py-2 border-2 border-dashed border-blue-300 rounded-lg text-blue-600 text-xs font-medium hover:bg-blue-50 flex items-center justify-center gap-1">
-                              <Plus size={14} /> Add Truck (from transporter, ~1hr before arrival)
-                            </button>
-                          )
-                        )}
+                          );
+                        })()}
 
                         {/* Bottom actions */}
                         <div className="flex gap-2 flex-wrap pt-2 border-t">
