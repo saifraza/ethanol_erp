@@ -1,11 +1,29 @@
 /**
- * Messaging Service — Email (SMTP) + WhatsApp (Business API + Web fallback)
+ * Messaging Service — Email (SMTP) + WhatsApp (Multi-provider)
+ *
+ * WHATSAPP PROVIDERS (set WHATSAPP_PROVIDER env var):
+ *   "twilio"  — Twilio WhatsApp API (sandbox or production)
+ *   "meta"    — Meta Cloud API (direct)
+ *   "wapi"    — WAPI.in WhatsApp API
+ *   "gupshup" — Gupshup WhatsApp API
+ *   "web"     — Fallback: returns wa.me link for manual send
  *
  * ENV VARS:
  *   SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM
- *   WHATSAPP_MODE=web|api  (default: web)
- *   WHATSAPP_TOKEN         (Meta Cloud API token — for api mode)
- *   WHATSAPP_PHONE_ID      (Meta phone number ID — for api mode)
+ *
+ *   WHATSAPP_PROVIDER=twilio|meta|wapi|gupshup|web  (default: web)
+ *
+ *   # Twilio
+ *   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM (e.g. whatsapp:+14155238886)
+ *
+ *   # Meta Cloud API
+ *   META_WHATSAPP_TOKEN, META_WHATSAPP_PHONE_ID
+ *
+ *   # WAPI
+ *   WAPI_API_KEY, WAPI_SENDER (your registered WhatsApp number)
+ *
+ *   # Gupshup
+ *   GUPSHUP_API_KEY, GUPSHUP_APP_NAME, GUPSHUP_SENDER
  */
 
 import nodemailer from 'nodemailer';
@@ -55,11 +73,19 @@ export async function sendEmail(opts: EmailOptions): Promise<{ success: boolean;
   }
 }
 
-// ── WhatsApp Business Cloud API ──
+// ── WhatsApp Multi-Provider ──
 
 export interface WhatsAppOptions {
   phone: string;   // Indian mobile: 10 digits or with +91
   message: string;
+}
+
+export interface WhatsAppResult {
+  success: boolean;
+  error?: string;
+  provider: string;
+  messageId?: string;
+  webUrl?: string; // for web mode
 }
 
 /** Normalize Indian phone to 91XXXXXXXXXX */
@@ -71,72 +97,203 @@ function normalizePhone(phone: string): string {
   return digits;
 }
 
-export async function sendWhatsApp(opts: WhatsAppOptions): Promise<{ success: boolean; error?: string; mode: string }> {
-  const mode = process.env.WHATSAPP_MODE || 'web';
+/** Main WhatsApp send function — routes to correct provider */
+export async function sendWhatsApp(opts: WhatsAppOptions): Promise<WhatsAppResult> {
+  const provider = (process.env.WHATSAPP_PROVIDER || 'web').toLowerCase();
 
-  if (mode === 'api') {
-    return sendWhatsAppAPI(opts);
+  switch (provider) {
+    case 'twilio':
+      return sendViaTwilio(opts);
+    case 'meta':
+      return sendViaMeta(opts);
+    case 'wapi':
+      return sendViaWapi(opts);
+    case 'gupshup':
+      return sendViaGupshup(opts);
+    case 'web':
+    default:
+      return sendViaWeb(opts);
   }
-
-  // Web mode — return the WhatsApp Web URL for frontend to open
-  const phone = normalizePhone(opts.phone);
-  const url = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(opts.message)}`;
-  return { success: true, mode: 'web', error: url }; // error field carries the URL in web mode
 }
 
-async function sendWhatsAppAPI(opts: WhatsAppOptions & { template?: string }): Promise<{ success: boolean; error?: string; mode: string; apiResponse?: any }> {
-  const token = process.env.WHATSAPP_TOKEN;
-  const phoneId = process.env.WHATSAPP_PHONE_ID;
+// ── Provider: Twilio ──
 
-  if (!token || !phoneId) {
-    return { success: false, error: 'WhatsApp API not configured. Set WHATSAPP_TOKEN and WHATSAPP_PHONE_ID.', mode: 'api' };
+async function sendViaTwilio(opts: WhatsAppOptions): Promise<WhatsAppResult> {
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  const fromNumber = process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886'; // sandbox default
+
+  if (!accountSid || !authToken) {
+    return { success: false, error: 'Twilio not configured. Set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN.', provider: 'twilio' };
   }
 
   try {
     const phone = normalizePhone(opts.phone);
+    const toNumber = `whatsapp:+${phone}`;
 
-    // Build message payload — use template if specified, otherwise free-form text
-    let messagePayload: any;
-    if (opts.template) {
-      messagePayload = {
-        messaging_product: 'whatsapp',
-        to: phone,
-        type: 'template',
-        template: {
-          name: opts.template,
-          language: { code: 'en_US' },
-        },
-      };
+    const body = new URLSearchParams({
+      From: fromNumber,
+      To: toNumber,
+      Body: opts.message,
+    });
+
+    const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from(`${accountSid}:${authToken}`).toString('base64'),
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: body.toString(),
+    });
+
+    const data: any = await res.json();
+    if (res.ok && data.sid) {
+      console.log(`[Twilio] Sent to ${phone}: ${data.sid}`);
+      return { success: true, provider: 'twilio', messageId: data.sid };
     } else {
-      messagePayload = {
-        messaging_product: 'whatsapp',
-        to: phone,
-        type: 'text',
-        text: { body: opts.message },
-      };
+      console.error('[Twilio] Error:', JSON.stringify(data));
+      return { success: false, error: data.message || 'Twilio error', provider: 'twilio' };
     }
+  } catch (err: any) {
+    console.error('[Twilio] Failed:', err.message);
+    return { success: false, error: err.message, provider: 'twilio' };
+  }
+}
 
+// ── Provider: Meta Cloud API ──
+
+async function sendViaMeta(opts: WhatsAppOptions): Promise<WhatsAppResult> {
+  const token = process.env.META_WHATSAPP_TOKEN || process.env.WHATSAPP_TOKEN;
+  const phoneId = process.env.META_WHATSAPP_PHONE_ID || process.env.WHATSAPP_PHONE_ID;
+
+  if (!token || !phoneId) {
+    return { success: false, error: 'Meta WhatsApp not configured. Set META_WHATSAPP_TOKEN and META_WHATSAPP_PHONE_ID.', provider: 'meta' };
+  }
+
+  try {
+    const phone = normalizePhone(opts.phone);
     const res = await fetch(`https://graph.facebook.com/v18.0/${phoneId}/messages`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(messagePayload),
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: phone,
+        type: 'text',
+        text: { body: opts.message },
+      }),
     });
 
     const data: any = await res.json();
-    if (res.ok) {
-      console.log(`[WhatsApp API] Sent to ${phone}`, data);
-      return { success: true, mode: 'api', apiResponse: data };
+    if (res.ok && data.messages?.[0]?.id) {
+      console.log(`[Meta] Sent to ${phone}: ${data.messages[0].id}`);
+      return { success: true, provider: 'meta', messageId: data.messages[0].id };
     } else {
-      console.error('[WhatsApp API] Error:', JSON.stringify(data));
-      return { success: false, error: data.error?.message || JSON.stringify(data.error) || 'WhatsApp API error', mode: 'api', apiResponse: data };
+      console.error('[Meta] Error:', JSON.stringify(data));
+      return { success: false, error: data.error?.message || 'Meta API error', provider: 'meta' };
     }
   } catch (err: any) {
-    console.error('[WhatsApp API] Failed:', err.message);
-    return { success: false, error: err.message, mode: 'api' };
+    console.error('[Meta] Failed:', err.message);
+    return { success: false, error: err.message, provider: 'meta' };
   }
+}
+
+// ── Provider: WAPI ──
+
+async function sendViaWapi(opts: WhatsAppOptions): Promise<WhatsAppResult> {
+  const apiKey = process.env.WAPI_API_KEY;
+  const sender = process.env.WAPI_SENDER;
+
+  if (!apiKey) {
+    return { success: false, error: 'WAPI not configured. Set WAPI_API_KEY.', provider: 'wapi' };
+  }
+
+  try {
+    const phone = normalizePhone(opts.phone);
+
+    // WAPI.in API — send text message
+    const res = await fetch('https://api.wapi.in/v1/messages/text', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        to: phone,
+        from: sender || undefined,
+        text: opts.message,
+      }),
+    });
+
+    const data: any = await res.json();
+    if (res.ok && (data.success || data.messageId || data.id)) {
+      console.log(`[WAPI] Sent to ${phone}`);
+      return { success: true, provider: 'wapi', messageId: data.messageId || data.id };
+    } else {
+      console.error('[WAPI] Error:', JSON.stringify(data));
+      return { success: false, error: data.message || data.error || 'WAPI error', provider: 'wapi' };
+    }
+  } catch (err: any) {
+    console.error('[WAPI] Failed:', err.message);
+    return { success: false, error: err.message, provider: 'wapi' };
+  }
+}
+
+// ── Provider: Gupshup ──
+
+async function sendViaGupshup(opts: WhatsAppOptions): Promise<WhatsAppResult> {
+  const apiKey = process.env.GUPSHUP_API_KEY;
+  const appName = process.env.GUPSHUP_APP_NAME;
+  const sender = process.env.GUPSHUP_SENDER;
+
+  if (!apiKey) {
+    return { success: false, error: 'Gupshup not configured. Set GUPSHUP_API_KEY, GUPSHUP_APP_NAME, GUPSHUP_SENDER.', provider: 'gupshup' };
+  }
+
+  try {
+    const phone = normalizePhone(opts.phone);
+
+    // Gupshup API — send text message
+    const body = new URLSearchParams({
+      channel: 'whatsapp',
+      source: sender || '',
+      destination: phone,
+      'message.type': 'text',
+      'message.text': opts.message,
+      'src.name': appName || '',
+    });
+
+    const res = await fetch('https://api.gupshup.io/wa/api/v1/msg', {
+      method: 'POST',
+      headers: {
+        'apikey': apiKey,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: body.toString(),
+    });
+
+    const data: any = await res.json();
+    if (res.ok && data.status === 'submitted') {
+      console.log(`[Gupshup] Sent to ${phone}: ${data.messageId}`);
+      return { success: true, provider: 'gupshup', messageId: data.messageId };
+    } else {
+      console.error('[Gupshup] Error:', JSON.stringify(data));
+      return { success: false, error: data.message || 'Gupshup error', provider: 'gupshup' };
+    }
+  } catch (err: any) {
+    console.error('[Gupshup] Failed:', err.message);
+    return { success: false, error: err.message, provider: 'gupshup' };
+  }
+}
+
+// ── Provider: Web (fallback — opens wa.me link) ──
+
+async function sendViaWeb(opts: WhatsAppOptions): Promise<WhatsAppResult> {
+  const phone = normalizePhone(opts.phone);
+  const url = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(opts.message)}`;
+  return { success: true, provider: 'web', webUrl: url };
 }
 
 // ── Build Rate Request Message ──
