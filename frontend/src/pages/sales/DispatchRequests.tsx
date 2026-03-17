@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Truck, Loader2, ChevronDown, Check, Package, MapPin, Clock, Plus, X,
   Trash2, ArrowDown, ArrowUp, Phone, Navigation, IndianRupee, Save,
-  CheckCircle, AlertCircle, Share2, Route, User, MessageCircle,
+  CheckCircle, AlertCircle, Share2, Route, User, MessageCircle, Mail,
   FileText, Calendar, CreditCard, Building2
 } from 'lucide-react';
 import api from '../../services/api';
@@ -363,18 +363,54 @@ export default function DispatchRequests() {
     finally { setActionLoading(null); }
   };
 
-  // ── Share rate request via WhatsApp ──
+  // ── Send rate request to transporter ──
+  const [sendingTo, setSendingTo] = useState<string | null>(null);
+  const [showSendForm, setShowSendForm] = useState<string | null>(null);
+  const [sendPhone, setSendPhone] = useState('');
+  const [sendEmail, setSendEmail] = useState('');
+
+  const sendRateRequest = async (inquiryId: string, channels: string[], phone?: string, email?: string, transporterId?: string, transporterName?: string) => {
+    setSendingTo(inquiryId);
+    try {
+      const res = await api.post('/messaging/send-rate-request', {
+        inquiryId,
+        transporterId,
+        name: transporterName,
+        phone,
+        email,
+        channels,
+      });
+
+      const results = res.data.results;
+
+      // If WhatsApp web mode — open the URL
+      if (results.whatsapp?.mode === 'web' && results.whatsapp?.error?.startsWith('https://')) {
+        window.open(results.whatsapp.error, '_blank');
+      }
+
+      const msgs: string[] = [];
+      if (results.email?.success) msgs.push('Email sent');
+      else if (results.email && !results.email.success) msgs.push(`Email: ${results.email.error}`);
+      if (results.whatsapp?.success && results.whatsapp.mode === 'api') msgs.push('WhatsApp sent');
+      else if (results.whatsapp?.success && results.whatsapp.mode === 'web') msgs.push('WhatsApp opened');
+
+      if (msgs.length) flash('ok', msgs.join(' | '));
+      setShowSendForm(null);
+    } catch (e: any) { flash('err', e.response?.data?.error || 'Send failed'); }
+    finally { setSendingTo(null); }
+  };
+
   const shareRateRequest = (dr: DR) => {
     const inq = (dr as any).freightInquiry;
-    const text = `*MSPIL — Rate Request*\n` +
-      `Inquiry: FI-${inq?.inquiryNo || 'N/A'}\n` +
+    if (!inq) return;
+    // Quick WhatsApp Web share (no specific transporter)
+    const text = `*MSPIL — Rate Request FI-${inq.inquiryNo}*\n` +
       `━━━━━━━━━━━━━━\n` +
       `Product: ${dr.productName}\n` +
       `Quantity: ${dr.quantity} ${dr.unit}\n` +
       `From: MSPIL, Narsinghpur MP\n` +
       `To: ${dr.destination || 'TBD'}\n` +
       `Distance: ${dr.distanceKm ? dr.distanceKm + ' km' : 'TBD'}\n` +
-      `Loading Date: ${dr.deliveryDate ? new Date(dr.deliveryDate).toLocaleDateString('en-IN') : 'TBD'}\n` +
       `Trucks: ${dr.vehicleCount || 'TBD'}\n` +
       `━━━━━━━━━━━━━━\n` +
       `*Terms:*\n` +
@@ -383,7 +419,7 @@ export default function DispatchRequests() {
       `3. 50% advance after bill, balance after delivery\n` +
       `4. Insurance by purchaser\n` +
       `━━━━━━━━━━━━━━\n` +
-      `Please reply with your rate per MT.\n` +
+      `Reply with rate per MT.\n` +
       `MSPIL, Narsinghpur`;
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
   };
@@ -826,6 +862,10 @@ export default function DispatchRequests() {
                                   }`}>{inq.status}</span>
                                 </div>
                                 <div className="flex gap-1.5">
+                                  <button onClick={() => setShowSendForm(showSendForm === dr.id ? null : dr.id)}
+                                    className="px-2 py-1 text-[10px] font-medium bg-orange-100 text-orange-700 rounded hover:bg-orange-200 flex items-center gap-1">
+                                    <Share2 size={10} /> Send to Transporter
+                                  </button>
                                   <button onClick={() => shareRateRequest(dr)}
                                     className="px-2 py-1 text-[10px] font-medium bg-green-100 text-green-700 rounded hover:bg-green-200 flex items-center gap-1">
                                     <MessageCircle size={10} /> WhatsApp
@@ -839,6 +879,72 @@ export default function DispatchRequests() {
                                   </button>
                                 </div>
                               </div>
+
+                              {/* Send to specific transporter form */}
+                              {showSendForm === dr.id && (
+                                <div className="bg-white rounded border p-2 mb-2 space-y-2">
+                                  <p className="text-[10px] font-semibold text-gray-600">Send rate request directly to transporter:</p>
+
+                                  {/* Quick send to registered transporters */}
+                                  {transporters.filter(t => t.phone || t.email).length > 0 && (
+                                    <div className="space-y-1">
+                                      {transporters.filter(t => t.phone || t.email).map(t => (
+                                        <div key={t.id} className="flex items-center justify-between bg-gray-50 rounded px-2 py-1.5">
+                                          <div className="text-xs">
+                                            <span className="font-semibold">{t.name}</span>
+                                            {t.phone && <span className="text-gray-400 ml-1">{t.phone}</span>}
+                                          </div>
+                                          <div className="flex gap-1">
+                                            {t.phone && (
+                                              <button onClick={() => sendRateRequest(inq.id, ['whatsapp'], t.phone!, undefined, t.id, t.name)}
+                                                disabled={!!sendingTo}
+                                                className="px-2 py-0.5 text-[10px] font-medium bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-0.5">
+                                                {sendingTo === inq.id ? <Loader2 size={8} className="animate-spin" /> : <MessageCircle size={8} />} WA
+                                              </button>
+                                            )}
+                                            {t.email && (
+                                              <button onClick={() => sendRateRequest(inq.id, ['email'], undefined, t.email!, t.id, t.name)}
+                                                disabled={!!sendingTo}
+                                                className="px-2 py-0.5 text-[10px] font-medium bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-0.5">
+                                                {sendingTo === inq.id ? <Loader2 size={8} className="animate-spin" /> : <FileText size={8} />} Email
+                                              </button>
+                                            )}
+                                            {t.phone && t.email && (
+                                              <button onClick={() => sendRateRequest(inq.id, ['email', 'whatsapp'], t.phone!, t.email!, t.id, t.name)}
+                                                disabled={!!sendingTo}
+                                                className="px-2 py-0.5 text-[10px] font-medium bg-purple-600 text-white rounded hover:bg-purple-700">
+                                                Both
+                                              </button>
+                                            )}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {/* Manual entry */}
+                                  <div className="border-t pt-2">
+                                    <p className="text-[10px] text-gray-400 mb-1">Or send to a new number/email:</p>
+                                    <div className="flex gap-1.5">
+                                      <input value={sendPhone} onChange={e => setSendPhone(e.target.value)}
+                                        placeholder="Phone (10 digits)" className="input-field text-xs flex-1" />
+                                      <input value={sendEmail} onChange={e => setSendEmail(e.target.value)}
+                                        placeholder="Email" className="input-field text-xs flex-1" />
+                                      <button onClick={() => {
+                                        const ch: string[] = [];
+                                        if (sendPhone) ch.push('whatsapp');
+                                        if (sendEmail) ch.push('email');
+                                        if (ch.length === 0) { flash('err', 'Enter phone or email'); return; }
+                                        sendRateRequest(inq.id, ch, sendPhone || undefined, sendEmail || undefined);
+                                      }}
+                                        disabled={!!sendingTo}
+                                        className="px-3 py-1.5 bg-orange-600 text-white text-xs rounded font-medium hover:bg-orange-700 flex items-center gap-1 whitespace-nowrap">
+                                        {sendingTo ? <Loader2 size={10} className="animate-spin" /> : <Share2 size={10} />} Send
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
 
                               {/* Existing quotations */}
                               {quotes.length > 0 && (
