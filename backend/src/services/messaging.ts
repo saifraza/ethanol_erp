@@ -84,7 +84,7 @@ export async function sendWhatsApp(opts: WhatsAppOptions): Promise<{ success: bo
   return { success: true, mode: 'web', error: url }; // error field carries the URL in web mode
 }
 
-async function sendWhatsAppAPI(opts: WhatsAppOptions): Promise<{ success: boolean; error?: string; mode: string }> {
+async function sendWhatsAppAPI(opts: WhatsAppOptions & { template?: string }): Promise<{ success: boolean; error?: string; mode: string; apiResponse?: any }> {
   const token = process.env.WHATSAPP_TOKEN;
   const phoneId = process.env.WHATSAPP_PHONE_ID;
 
@@ -94,27 +94,44 @@ async function sendWhatsAppAPI(opts: WhatsAppOptions): Promise<{ success: boolea
 
   try {
     const phone = normalizePhone(opts.phone);
+
+    // Build message payload — use template if specified, otherwise free-form text
+    let messagePayload: any;
+    if (opts.template) {
+      messagePayload = {
+        messaging_product: 'whatsapp',
+        to: phone,
+        type: 'template',
+        template: {
+          name: opts.template,
+          language: { code: 'en_US' },
+        },
+      };
+    } else {
+      messagePayload = {
+        messaging_product: 'whatsapp',
+        to: phone,
+        type: 'text',
+        text: { body: opts.message },
+      };
+    }
+
     const res = await fetch(`https://graph.facebook.com/v18.0/${phoneId}/messages`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to: phone,
-        type: 'text',
-        text: { body: opts.message },
-      }),
+      body: JSON.stringify(messagePayload),
     });
 
     const data: any = await res.json();
     if (res.ok) {
-      console.log(`[WhatsApp API] Sent to ${phone}`);
-      return { success: true, mode: 'api' };
+      console.log(`[WhatsApp API] Sent to ${phone}`, data);
+      return { success: true, mode: 'api', apiResponse: data };
     } else {
-      console.error('[WhatsApp API] Error:', data);
-      return { success: false, error: data.error?.message || 'WhatsApp API error', mode: 'api' };
+      console.error('[WhatsApp API] Error:', JSON.stringify(data));
+      return { success: false, error: data.error?.message || JSON.stringify(data.error) || 'WhatsApp API error', mode: 'api', apiResponse: data };
     }
   } catch (err: any) {
     console.error('[WhatsApp API] Failed:', err.message);
