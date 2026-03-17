@@ -29,6 +29,8 @@ interface Shipment {
   documents?: { id: string; docType: string; fileName: string; mimeType?: string }[];
   ewayBillStatus?: string; ewayBill?: string; challanNo?: string;
   gatePassNo?: string; invoiceRef?: string; grBiltyNo?: string; grBiltyDate?: string;
+  deliveryStatus?: string; grReceivedBack?: boolean; grReceivedDate?: string;
+  receivedByName?: string; receivedByPhone?: string; podRemarks?: string;
 }
 
 interface OrderLine {
@@ -1452,6 +1454,140 @@ export default function DispatchRequests() {
                                                 })}
                                               </div>
                                             </div>
+
+                                            {/* ── Delivery Confirmation ── */}
+                                            {['RELEASED', 'EXITED'].includes(s.status) && (
+                                              <div className={`rounded-lg border p-3 ${s.deliveryStatus === 'DELIVERED' ? 'bg-green-50 border-green-300' : 'bg-amber-50 border-amber-200'}`}>
+                                                <p className="text-xs font-bold text-gray-700 mb-2 flex items-center gap-1.5">
+                                                  {s.deliveryStatus === 'DELIVERED' ? <CheckCircle size={12} className="text-green-600" /> : <Clock size={12} className="text-amber-600" />}
+                                                  {s.deliveryStatus === 'DELIVERED' ? 'Delivered' : 'Delivery Status'}
+                                                </p>
+
+                                                <div className="flex flex-wrap gap-2 items-center mb-2">
+                                                  {/* Mark as delivered / in transit buttons */}
+                                                  {s.deliveryStatus !== 'DELIVERED' ? (
+                                                    <>
+                                                      <button onClick={async (e) => {
+                                                        e.stopPropagation();
+                                                        try {
+                                                          setActionLoading(s.id + '_deliver');
+                                                          await api.put(`/shipments/${s.id}`, { deliveryStatus: 'IN_TRANSIT' });
+                                                          flash('ok', 'Marked as In Transit');
+                                                          load();
+                                                        } catch { flash('err', 'Failed'); }
+                                                        finally { setActionLoading(null); }
+                                                      }}
+                                                        disabled={!!actionLoading || s.deliveryStatus === 'IN_TRANSIT'}
+                                                        className={`px-3 py-1.5 text-xs font-medium rounded-lg flex items-center gap-1 ${
+                                                          s.deliveryStatus === 'IN_TRANSIT' ? 'bg-amber-200 text-amber-800 border border-amber-300' : 'bg-white border text-gray-600 hover:bg-gray-50'
+                                                        }`}>
+                                                        <Truck size={11} /> In Transit
+                                                      </button>
+                                                      <button onClick={async (e) => {
+                                                        e.stopPropagation();
+                                                        try {
+                                                          setActionLoading(s.id + '_deliver');
+                                                          await api.put(`/shipments/${s.id}`, { deliveryStatus: 'DELIVERED' });
+                                                          flash('ok', 'Marked as Delivered!');
+                                                          load();
+                                                        } catch { flash('err', 'Failed'); }
+                                                        finally { setActionLoading(null); }
+                                                      }}
+                                                        disabled={!!actionLoading}
+                                                        className="px-3 py-1.5 text-xs font-bold rounded-lg bg-green-600 text-white hover:bg-green-700 flex items-center gap-1">
+                                                        {actionLoading === s.id + '_deliver' ? <Loader2 size={11} className="animate-spin" /> : <CheckCircle size={11} />}
+                                                        Mark Delivered
+                                                      </button>
+                                                    </>
+                                                  ) : (
+                                                    <span className="text-xs text-green-700 font-bold flex items-center gap-1">
+                                                      <CheckCircle size={12} /> Delivered
+                                                      {s.grReceivedBack && <span className="ml-2 text-purple-700">· Signed Bilty Received</span>}
+                                                    </span>
+                                                  )}
+                                                </div>
+
+                                                {/* Receiver details (show after delivery or when in transit) */}
+                                                {(s.deliveryStatus === 'DELIVERED' || s.deliveryStatus === 'IN_TRANSIT') && (
+                                                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-2">
+                                                    <div>
+                                                      <label className="text-[10px] text-gray-500 font-semibold block mb-0.5">Received By</label>
+                                                      <input defaultValue={s.receivedByName || ''} onBlur={async (e) => {
+                                                        if (e.target.value !== (s.receivedByName || '')) {
+                                                          try { await api.put(`/shipments/${s.id}`, { receivedByName: e.target.value || null }); load(); }
+                                                          catch { flash('err', 'Save failed'); }
+                                                        }
+                                                      }} placeholder="Name at buyer" className="input-field text-xs w-full" onClick={e => e.stopPropagation()} />
+                                                    </div>
+                                                    <div>
+                                                      <label className="text-[10px] text-gray-500 font-semibold block mb-0.5">Receiver Phone</label>
+                                                      <input defaultValue={s.receivedByPhone || ''} onBlur={async (e) => {
+                                                        if (e.target.value !== (s.receivedByPhone || '')) {
+                                                          try { await api.put(`/shipments/${s.id}`, { receivedByPhone: e.target.value || null }); load(); }
+                                                          catch { flash('err', 'Save failed'); }
+                                                        }
+                                                      }} placeholder="Phone" className="input-field text-xs w-full" onClick={e => e.stopPropagation()} />
+                                                    </div>
+                                                    <div>
+                                                      <label className="text-[10px] text-gray-500 font-semibold block mb-0.5">POD Remarks</label>
+                                                      <input defaultValue={s.podRemarks || ''} onBlur={async (e) => {
+                                                        if (e.target.value !== (s.podRemarks || '')) {
+                                                          try { await api.put(`/shipments/${s.id}`, { podRemarks: e.target.value || null }); load(); }
+                                                          catch { flash('err', 'Save failed'); }
+                                                        }
+                                                      }} placeholder="Notes" className="input-field text-xs w-full" onClick={e => e.stopPropagation()} />
+                                                    </div>
+                                                  </div>
+                                                )}
+
+                                                {/* Signed Bilty upload */}
+                                                <div className="flex gap-2 flex-wrap">
+                                                  {(() => {
+                                                    const signedBilty = docs.find((d: any) => d.docType === 'SIGNED_BILTY');
+                                                    const isUploadingBilty = uploadingDoc === s.id + '_SIGNED_BILTY';
+                                                    return (
+                                                      <>
+                                                        {signedBilty ? (
+                                                          <div className="flex items-center gap-2 bg-white rounded-lg border border-green-200 px-2.5 py-1.5">
+                                                            <CheckCircle size={11} className="text-green-600" />
+                                                            <span className="text-xs text-green-700 font-medium">Signed Bilty uploaded</span>
+                                                            <button onClick={(e) => { e.stopPropagation(); const token = localStorage.getItem('token'); window.open(`/api/shipment-documents/file/${signedBilty.id}?token=${token}`, '_blank'); }}
+                                                              className="text-blue-600 text-xs font-medium hover:underline">View</button>
+                                                          </div>
+                                                        ) : (
+                                                          <>
+                                                            <button onClick={(e) => { e.stopPropagation(); uploadDoc(s.id, 'SIGNED_BILTY'); }}
+                                                              disabled={!!uploadingDoc}
+                                                              className="px-3 py-1.5 text-xs font-medium bg-purple-100 text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-200 flex items-center gap-1">
+                                                              {isUploadingBilty ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
+                                                              Upload Signed Bilty
+                                                            </button>
+                                                            <button onClick={(e) => { e.stopPropagation(); uploadDoc(s.id, 'SIGNED_BILTY', true); }}
+                                                              disabled={!!uploadingDoc}
+                                                              className="px-3 py-1.5 text-xs font-medium bg-purple-100 text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-200 flex items-center gap-1">
+                                                              <Camera size={11} /> Photo of Signed Bilty
+                                                            </button>
+                                                          </>
+                                                        )}
+                                                        {!s.grReceivedBack && signedBilty && (
+                                                          <button onClick={async (e) => {
+                                                            e.stopPropagation();
+                                                            try {
+                                                              await api.put(`/shipments/${s.id}`, { grReceivedBack: true, grReceivedDate: new Date().toISOString() });
+                                                              flash('ok', 'Signed Bilty marked as received');
+                                                              load();
+                                                            } catch { flash('err', 'Failed'); }
+                                                          }}
+                                                            className="px-3 py-1.5 text-xs font-bold bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-1">
+                                                            <Check size={11} /> Confirm Bilty Received
+                                                          </button>
+                                                        )}
+                                                      </>
+                                                    );
+                                                  })()}
+                                                </div>
+                                              </div>
+                                            )}
                                           </div>
                                         )}
                                       </div>
