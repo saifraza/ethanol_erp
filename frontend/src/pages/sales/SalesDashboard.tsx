@@ -681,13 +681,22 @@ export default function SalesDashboard() {
                           </div>
                           {drs.map(dr => {
                             const drShipments = dr.shipments || [];
-                            const isScheduled = ['SCHEDULED', 'PENDING', 'ACCEPTED', 'VEHICLE_ASSIGNED'].includes(dr.status);
+                            const totalQty = dr.quantity || 0;
+                            const dispatchedMT = drShipments.reduce((sum: number, s: any) => {
+                              const net = s.weightNet || (s.weightGross && s.weightTare ? s.weightGross - s.weightTare : 0);
+                              return sum + (net ? net / 1000 : 0);
+                            }, 0);
+                            const pctDispatched = totalQty > 0 ? Math.min(100, (dispatchedMT / totalQty) * 100) : 0;
+                            const remainingMT = Math.max(0, totalQty - dispatchedMT);
+
                             return (
                               <div key={dr.id} className="bg-white rounded-lg border p-3 mb-2">
                                 <div className="flex items-center justify-between mb-2">
                                   <div className="flex items-center gap-2">
                                     <span className="font-bold text-xs">DR #{dr.drNo}</span>
                                     <span className="text-[10px] text-gray-500">{dr.quantity} {dr.unit || 'MT'}</span>
+                                    {dr.transporterName && <span className="text-[10px] text-indigo-600">{dr.transporterName}</span>}
+                                    {dr.freightRate && <span className="text-[10px] text-green-600 font-medium">₹{dr.freightRate}/MT</span>}
                                   </div>
                                   <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
                                     ['DISPATCHED', 'COMPLETED'].includes(dr.status) ? 'bg-green-100 text-green-700' :
@@ -696,148 +705,48 @@ export default function SalesDashboard() {
                                   }`}>{dr.status.replace(/_/g, ' ')}</span>
                                 </div>
 
-                                {/* Trucks under this DR */}
-                                {drShipments.map(s => {
-                                  const netKg = s.weightNet || (s.weightGross && s.weightTare ? s.weightGross - s.weightTare : null);
-                                  return (
-                                    <div key={s.id} className="bg-gray-50 rounded border p-2 mb-1.5">
-                                      <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-2">
-                                          <span className="font-bold text-xs">{s.vehicleNo}</span>
-                                          {s.driverName && <span className="text-[10px] text-gray-500">{s.driverName}</span>}
-                                          {s.transporterName && <span className="text-[10px] text-gray-400">({s.transporterName})</span>}
+                                {/* Dispatch progress */}
+                                <div className="mb-2">
+                                  <div className="flex items-center justify-between text-[10px] mb-1">
+                                    <span className="text-gray-500">Dispatched: <span className="font-bold text-green-700">{dispatchedMT.toFixed(1)} MT</span> / {totalQty} {dr.unit || 'MT'}</span>
+                                    <span className={`font-bold ${pctDispatched >= 100 ? 'text-green-600' : 'text-orange-600'}`}>{pctDispatched.toFixed(0)}%</span>
+                                  </div>
+                                  <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                                    <div className={`h-full rounded-full transition-all ${pctDispatched >= 100 ? 'bg-green-500' : 'bg-orange-500'}`}
+                                      style={{ width: `${pctDispatched}%` }} />
+                                  </div>
+                                  {remainingMT > 0 && pctDispatched > 0 && (
+                                    <p className="text-[10px] text-orange-600 mt-0.5">Remaining: {remainingMT.toFixed(1)} MT</p>
+                                  )}
+                                </div>
+
+                                {/* Trucks — compact read-only view */}
+                                {drShipments.length > 0 && (
+                                  <div className="space-y-1">
+                                    {drShipments.map((s: any) => {
+                                      const netKg = s.weightNet || (s.weightGross && s.weightTare ? s.weightGross - s.weightTare : null);
+                                      return (
+                                        <div key={s.id} className="flex items-center justify-between bg-gray-50 rounded px-2 py-1.5 text-xs">
+                                          <div className="flex items-center gap-2">
+                                            <span className="font-bold">{s.vehicleNo}</span>
+                                            {s.driverName && <span className="text-gray-500">{s.driverName}</span>}
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            {netKg != null && netKg > 0 && <span className="font-bold text-green-700">{(netKg / 1000).toFixed(2)} MT</span>}
+                                            <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${
+                                              ['RELEASED', 'EXITED'].includes(s.status) ? 'bg-green-100 text-green-700' :
+                                              s.status === 'LOADING' ? 'bg-amber-100 text-amber-700' :
+                                              s.status === 'GROSS_WEIGHED' ? 'bg-orange-100 text-orange-700' :
+                                              'bg-blue-100 text-blue-700'
+                                            }`}>{s.status.replace(/_/g, ' ')}</span>
+                                          </div>
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                          {netKg && <span className="text-xs font-bold text-green-700">{(netKg / 1000).toFixed(2)} MT</span>}
-                                          <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${
-                                            ['RELEASED', 'EXITED'].includes(s.status) ? 'bg-green-100 text-green-700' :
-                                            s.status === 'LOADING' ? 'bg-amber-100 text-amber-700' :
-                                            s.status === 'GROSS_WEIGHED' ? 'bg-orange-100 text-orange-700' :
-                                            'bg-blue-100 text-blue-700'
-                                          }`}>{s.status.replace(/_/g, ' ')}</span>
-                                        </div>
-                                      </div>
-
-                                      {/* Weighbridge progress */}
-                                      <div className="flex gap-0.5 mt-1.5">
-                                        {['GATE_IN', 'TARE_WEIGHED', 'LOADING', 'GROSS_WEIGHED', 'RELEASED', 'EXITED'].map((step, i) => {
-                                          const stepIdx = ['GATE_IN', 'TARE_WEIGHED', 'LOADING', 'GROSS_WEIGHED', 'RELEASED', 'EXITED'].indexOf(s.status);
-                                          return <div key={step} className={`h-1 flex-1 rounded-full ${i <= stepIdx ? 'bg-green-500' : 'bg-gray-200'}`} />;
-                                        })}
-                                      </div>
-
-                                      {/* Inline actions per shipment status */}
-                                      <div className="flex gap-1.5 mt-2 flex-wrap">
-                                        {s.status === 'GATE_IN' && (
-                                          weighFormShipment === s.id ? (
-                                            <div className="flex gap-1 items-center w-full">
-                                              <input type="number" step="0.01" value={weighValue} onChange={e => setWeighValue(e.target.value)}
-                                                placeholder="Tare weight (kg)" className="input-field text-xs flex-1" autoFocus />
-                                              <button onClick={() => { setWeighType('tare'); recordWeigh(s.id); }}
-                                                disabled={!!actionLoading}
-                                                className="px-3 py-1.5 bg-blue-600 text-white text-xs rounded font-medium hover:bg-blue-700 disabled:opacity-50">
-                                                {actionLoading === s.id ? <Loader2 size={12} className="animate-spin" /> : 'Save Tare'}
-                                              </button>
-                                              <button onClick={() => setWeighFormShipment(null)} className="text-gray-400"><X size={14} /></button>
-                                            </div>
-                                          ) : (
-                                            <button onClick={() => { setWeighFormShipment(s.id); setWeighType('tare'); setWeighValue(''); }}
-                                              className="px-2 py-1 bg-gray-100 text-gray-700 text-[10px] rounded font-medium hover:bg-gray-200">
-                                              ⚖️ Weigh Tare
-                                            </button>
-                                          )
-                                        )}
-                                        {s.status === 'TARE_WEIGHED' && (
-                                          <button onClick={() => updateShipmentStatus(s.id, 'LOADING', { loadStartTime: new Date().toISOString() })}
-                                            disabled={!!actionLoading}
-                                            className="px-2 py-1 bg-blue-100 text-blue-700 text-[10px] rounded font-medium hover:bg-blue-200">
-                                            {actionLoading === s.id ? <Loader2 size={10} className="animate-spin" /> : '▶️'} Start Loading
-                                          </button>
-                                        )}
-                                        {s.status === 'LOADING' && (
-                                          weighFormShipment === s.id ? (
-                                            <div className="flex gap-1 items-center w-full">
-                                              <input type="number" step="0.01" value={weighValue} onChange={e => setWeighValue(e.target.value)}
-                                                placeholder="Gross weight (kg)" className="input-field text-xs flex-1" autoFocus />
-                                              <button onClick={() => { setWeighType('gross'); recordWeigh(s.id); }}
-                                                disabled={!!actionLoading}
-                                                className="px-3 py-1.5 bg-amber-600 text-white text-xs rounded font-medium hover:bg-amber-700 disabled:opacity-50">
-                                                {actionLoading === s.id ? <Loader2 size={12} className="animate-spin" /> : 'Save Gross'}
-                                              </button>
-                                              <button onClick={() => setWeighFormShipment(null)} className="text-gray-400"><X size={14} /></button>
-                                            </div>
-                                          ) : (
-                                            <button onClick={() => { setWeighFormShipment(s.id); setWeighType('gross'); setWeighValue(''); }}
-                                              className="px-2 py-1 bg-amber-100 text-amber-700 text-[10px] rounded font-medium hover:bg-amber-200">
-                                              ⚖️ Weigh Gross
-                                            </button>
-                                          )
-                                        )}
-                                        {s.status === 'GROSS_WEIGHED' && (
-                                          releaseFormShipment === s.id ? (
-                                            <div className="flex gap-1 items-center w-full flex-wrap">
-                                              <input value={releaseChallan} onChange={e => setReleaseChallan(e.target.value)}
-                                                placeholder="Challan No" className="input-field text-xs flex-1 min-w-[100px]" />
-                                              <input value={releaseEway} onChange={e => setReleaseEway(e.target.value)}
-                                                placeholder="E-Way Bill" className="input-field text-xs flex-1 min-w-[100px]" />
-                                              <button onClick={() => updateShipmentStatus(s.id, 'RELEASED', {
-                                                challanNo: releaseChallan, ewayBill: releaseEway, releaseTime: new Date().toISOString()
-                                              })}
-                                                disabled={!!actionLoading}
-                                                className="px-3 py-1.5 bg-orange-600 text-white text-xs rounded font-medium hover:bg-orange-700 disabled:opacity-50">
-                                                {actionLoading === s.id ? <Loader2 size={12} className="animate-spin" /> : 'Release'}
-                                              </button>
-                                              <button onClick={() => setReleaseFormShipment(null)} className="text-gray-400"><X size={14} /></button>
-                                            </div>
-                                          ) : (
-                                            <button onClick={() => setReleaseFormShipment(s.id)}
-                                              className="px-2 py-1 bg-orange-100 text-orange-700 text-[10px] rounded font-medium hover:bg-orange-200">
-                                              🔓 Release
-                                            </button>
-                                          )
-                                        )}
-                                        {s.status === 'RELEASED' && (
-                                          <button onClick={() => updateShipmentStatus(s.id, 'EXITED', { exitTime: new Date().toISOString() })}
-                                            disabled={!!actionLoading}
-                                            className="px-2 py-1 bg-green-100 text-green-700 text-[10px] rounded font-medium hover:bg-green-200">
-                                            {actionLoading === s.id ? <Loader2 size={10} className="animate-spin" /> : '🚗'} Gate Exit
-                                          </button>
-                                        )}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-
-                                {/* Add truck button */}
-                                {isScheduled && (
-                                  truckFormDR === dr.id ? (
-                                    <div className="bg-blue-50 rounded-lg p-2 border border-blue-200 mt-1">
-                                      <div className="grid grid-cols-2 gap-2 mb-2">
-                                        <input value={truckVehicle} onChange={e => setTruckVehicle(e.target.value)}
-                                          placeholder="Vehicle No *" className="input-field text-xs" autoFocus />
-                                        <input value={truckDriver} onChange={e => setTruckDriver(e.target.value)}
-                                          placeholder="Driver" className="input-field text-xs" />
-                                        <input value={truckMobile} onChange={e => setTruckMobile(e.target.value)}
-                                          placeholder="Mobile" className="input-field text-xs" />
-                                        <input value={truckTransporter} onChange={e => setTruckTransporter(e.target.value)}
-                                          placeholder="Transporter" className="input-field text-xs" />
-                                      </div>
-                                      <div className="flex gap-2">
-                                        <button onClick={() => assignTruck(dr.id)}
-                                          disabled={!!actionLoading}
-                                          className="flex-1 py-1.5 bg-blue-600 text-white text-xs rounded font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-1">
-                                          {actionLoading === dr.id ? <Loader2 size={12} className="animate-spin" /> : <Truck size={12} />}
-                                          Gate In
-                                        </button>
-                                        <button onClick={() => setTruckFormDR(null)} className="px-3 py-1.5 text-gray-500 text-xs">Cancel</button>
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <button onClick={() => setTruckFormDR(dr.id)}
-                                      className="w-full py-1.5 border border-dashed border-blue-300 rounded text-blue-600 text-xs font-medium hover:bg-blue-50 flex items-center justify-center gap-1 mt-1">
-                                      <Plus size={12} /> Add Truck
-                                    </button>
-                                  )
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                                {drShipments.length === 0 && (
+                                  <p className="text-[10px] text-gray-400 italic">No trucks assigned yet — manage in Logistics page</p>
                                 )}
                               </div>
                             );
