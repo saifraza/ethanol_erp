@@ -3,7 +3,7 @@ import {
   Truck, Loader2, ChevronDown, Check, Package, MapPin, Clock, Plus, X,
   Trash2, ArrowDown, ArrowUp, Phone, Navigation, IndianRupee, Save,
   CheckCircle, AlertCircle, Share2, Route, User, MessageCircle, Mail,
-  FileText, Calendar, CreditCard, Building2
+  FileText, Calendar, CreditCard, Building2, Camera, Upload
 } from 'lucide-react';
 import api from '../../services/api';
 
@@ -164,7 +164,10 @@ export default function DispatchRequests() {
 
   // Quotation form
   const [showQuoteForm, setShowQuoteForm] = useState<string | null>(null);
+  const [quoteTransporterId, setQuoteTransporterId] = useState('');
   const [quoteTransporter, setQuoteTransporter] = useState('');
+  const [quotePhone, setQuotePhone] = useState('');
+  const [quoteEmail, setQuoteEmail] = useState('');
   const [quoteRate, setQuoteRate] = useState('');
   const [quoteTotal, setQuoteTotal] = useState('');
   const [quoteDays, setQuoteDays] = useState('');
@@ -221,15 +224,20 @@ export default function DispatchRequests() {
     setCalcLoading(null);
   }, []);
 
-  // ── Upload document ──
-  const uploadDoc = async (shipmentId: string, docType: string) => {
+  // ── Upload document (file or camera) ──
+  const uploadDoc = async (shipmentId: string, docType: string, useCamera = false) => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx';
+    if (useCamera) {
+      input.accept = 'image/*';
+      input.setAttribute('capture', 'environment');
+    } else {
+      input.accept = '.pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx';
+    }
     input.onchange = async (e: any) => {
       const file = e.target.files?.[0];
       if (!file) return;
-      setUploadingDoc(shipmentId);
+      setUploadingDoc(shipmentId + '_' + docType);
       try {
         const fd = new FormData();
         fd.append('file', file);
@@ -324,7 +332,27 @@ export default function DispatchRequests() {
   };
 
   // ── Add transporter quotation ──
-  const addQuotation = async (inquiryId: string, drId: string) => {
+  const selectQuoteTransporter = (transporterId: string) => {
+    setQuoteTransporterId(transporterId);
+    const t = transporters.find(tr => tr.id === transporterId);
+    if (t) {
+      setQuoteTransporter(t.name);
+      setQuotePhone(t.phone || '');
+      setQuoteEmail(t.email || '');
+    } else {
+      setQuoteTransporter('');
+      setQuotePhone('');
+      setQuoteEmail('');
+    }
+  };
+
+  const resetQuoteForm = () => {
+    setShowQuoteForm(null);
+    setQuoteTransporterId(''); setQuoteTransporter(''); setQuotePhone(''); setQuoteEmail('');
+    setQuoteRate(''); setQuoteTotal(''); setQuoteDays(''); setQuoteRemarks('');
+  };
+
+  const addQuotation = async (inquiryId: string, drId: string, alsoSend?: boolean) => {
     if (!quoteTransporter || !quoteRate) { flash('err', 'Enter transporter and rate'); return; }
     setActionLoading(drId + '_quote');
     try {
@@ -338,11 +366,48 @@ export default function DispatchRequests() {
         remarks: quoteRemarks || null,
       });
       flash('ok', 'Quotation recorded');
-      setShowQuoteForm(null);
-      setQuoteTransporter(''); setQuoteRate(''); setQuoteTotal(''); setQuoteDays(''); setQuoteRemarks('');
+
+      // Also send rate request to this transporter if requested
+      if (alsoSend && (quotePhone || quoteEmail)) {
+        const channels: string[] = [];
+        if (quotePhone) channels.push('whatsapp');
+        if (quoteEmail) channels.push('email');
+        if (channels.length > 0) {
+          await sendRateRequest(inquiryId, channels, quotePhone || undefined, quoteEmail || undefined, quoteTransporterId || undefined, quoteTransporter);
+        }
+      }
+
+      resetQuoteForm();
       load();
     } catch (e: any) { flash('err', e.response?.data?.error || 'Failed'); }
     finally { setActionLoading(null); }
+  };
+
+  // Upload quotation document for an accepted quote
+  const uploadQuotationDoc = async (inquiryId: string, quotationId: string) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.pdf,.jpg,.jpeg,.png,.webp,.doc,.docx';
+    input.onchange = async (e: any) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      setActionLoading(quotationId + '_upload');
+      try {
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('inquiryId', inquiryId);
+        fd.append('quotationId', quotationId);
+        fd.append('docType', 'QUOTATION');
+        await api.post('/shipment-documents/upload-general', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        flash('ok', 'Quotation document uploaded');
+        load();
+      } catch (e: any) {
+        flash('err', e.response?.data?.error || 'Upload failed');
+      } finally {
+        setActionLoading(null);
+      }
+    };
+    input.click();
   };
 
   // ── Accept quotation & auto-fill transporter ──
@@ -928,9 +993,9 @@ export default function DispatchRequests() {
                               {/* Send to specific transporter form */}
                               {showSendForm === dr.id && (
                                 <div className="bg-white rounded border p-2 mb-2 space-y-2">
-                                  <p className="text-[10px] font-semibold text-gray-600">Send rate request directly to transporter:</p>
+                                  <p className="text-[10px] font-semibold text-gray-600">Send rate request to transporter — pick or enter details:</p>
 
-                                  {/* Quick send to registered transporters */}
+                                  {/* Quick send: registered transporters (one-click) */}
                                   {transporters.filter(t => t.phone || t.email).length > 0 && (
                                     <div className="space-y-1">
                                       {transporters.filter(t => t.phone || t.email).map(t => (
@@ -938,6 +1003,7 @@ export default function DispatchRequests() {
                                           <div className="text-xs">
                                             <span className="font-semibold">{t.name}</span>
                                             {t.phone && <span className="text-gray-400 ml-1">{t.phone}</span>}
+                                            {t.email && <span className="text-gray-400 ml-1">{t.email}</span>}
                                           </div>
                                           <div className="flex gap-1">
                                             {t.phone && (
@@ -951,7 +1017,7 @@ export default function DispatchRequests() {
                                               <button onClick={() => sendRateRequest(inq.id, ['email'], undefined, t.email!, t.id, t.name)}
                                                 disabled={!!sendingTo}
                                                 className="px-2 py-0.5 text-[10px] font-medium bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-0.5">
-                                                {sendingTo === inq.id ? <Loader2 size={8} className="animate-spin" /> : <FileText size={8} />} Email
+                                                {sendingTo === inq.id ? <Loader2 size={8} className="animate-spin" /> : <Mail size={8} />} Email
                                               </button>
                                             )}
                                             {t.phone && t.email && (
@@ -967,9 +1033,9 @@ export default function DispatchRequests() {
                                     </div>
                                   )}
 
-                                  {/* Manual entry */}
+                                  {/* Manual entry with select */}
                                   <div className="border-t pt-2">
-                                    <p className="text-[10px] text-gray-400 mb-1">Or send to a new number/email:</p>
+                                    <p className="text-[10px] text-gray-400 mb-1">Or enter manually:</p>
                                     <div className="flex gap-1.5">
                                       <input value={sendPhone} onChange={e => setSendPhone(e.target.value)}
                                         placeholder="Phone (10 digits)" className="input-field text-xs flex-1" />
@@ -995,28 +1061,51 @@ export default function DispatchRequests() {
                               {quotes.length > 0 && (
                                 <div className="space-y-1.5 mb-2">
                                   {quotes.map((q: any) => (
-                                    <div key={q.id} className={`flex items-center justify-between rounded px-2 py-1.5 text-xs ${
+                                    <div key={q.id} className={`rounded px-2 py-1.5 text-xs ${
                                       q.status === 'ACCEPTED' ? 'bg-green-100 border border-green-300' :
                                       q.status === 'REJECTED' ? 'bg-gray-100 text-gray-400 line-through' :
                                       'bg-white border'
                                     }`}>
-                                      <div>
-                                        <span className="font-semibold">{q.transporterName}</span>
-                                        {q.ratePerMT && <span className="ml-2 text-green-700 font-bold">₹{q.ratePerMT.toLocaleString('en-IN')}/MT</span>}
-                                        {q.totalAmount && <span className="ml-1 text-gray-500">(₹{q.totalAmount.toLocaleString('en-IN', { maximumFractionDigits: 0 })} total)</span>}
-                                        {q.estimatedDays && <span className="ml-1 text-gray-400">{q.estimatedDays}d</span>}
-                                        {q.remarks && <span className="ml-1 text-gray-400">— {q.remarks}</span>}
+                                      <div className="flex items-center justify-between">
+                                        <div>
+                                          <span className="font-semibold">{q.transporterName}</span>
+                                          {q.ratePerMT && <span className="ml-2 text-green-700 font-bold">₹{q.ratePerMT.toLocaleString('en-IN')}/MT</span>}
+                                          {q.totalAmount && <span className="ml-1 text-gray-500">(₹{q.totalAmount.toLocaleString('en-IN', { maximumFractionDigits: 0 })} total)</span>}
+                                          {q.estimatedDays && <span className="ml-1 text-gray-400">{q.estimatedDays}d</span>}
+                                          {q.remarks && <span className="ml-1 text-gray-400">— {q.remarks}</span>}
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                          {q.status === 'ACCEPTED' && <span className="text-green-700 font-bold">✓ Selected</span>}
+                                          {q.status === 'RECEIVED' && !hasAccepted && (
+                                            <button onClick={() => acceptQuotation(q.id, dr.id, q.transporterName, q.ratePerMT)}
+                                              disabled={!!actionLoading}
+                                              className="px-2 py-0.5 bg-green-600 text-white text-[10px] rounded font-medium hover:bg-green-700">
+                                              {actionLoading === dr.id + '_accept' ? '...' : 'Accept'}
+                                            </button>
+                                          )}
+                                        </div>
                                       </div>
-                                      <div className="flex items-center gap-1">
-                                        {q.status === 'ACCEPTED' && <span className="text-green-700 font-bold">✓ Selected</span>}
-                                        {q.status === 'RECEIVED' && !hasAccepted && (
-                                          <button onClick={() => acceptQuotation(q.id, dr.id, q.transporterName, q.ratePerMT)}
+                                      {/* After accepting: upload quotation doc + send WhatsApp */}
+                                      {q.status === 'ACCEPTED' && (
+                                        <div className="flex gap-1.5 mt-1.5 pt-1.5 border-t border-green-200">
+                                          <button onClick={() => uploadQuotationDoc(inq.id, q.id)}
                                             disabled={!!actionLoading}
-                                            className="px-2 py-0.5 bg-green-600 text-white text-[10px] rounded font-medium hover:bg-green-700">
-                                            {actionLoading === dr.id + '_accept' ? '...' : 'Accept'}
+                                            className="px-2 py-0.5 text-[10px] font-medium bg-white text-green-700 border border-green-300 rounded hover:bg-green-50 flex items-center gap-0.5">
+                                            {actionLoading === q.id + '_upload' ? <Loader2 size={8} className="animate-spin" /> : <Upload size={8} />}
+                                            Upload Quotation Doc
                                           </button>
-                                        )}
-                                      </div>
+                                          {(() => {
+                                            const t = transporters.find(tr => tr.name.toLowerCase() === q.transporterName.toLowerCase());
+                                            return t?.phone ? (
+                                              <button onClick={() => sendDocWhatsApp('', t.phone!, 'RATE_REQUEST', dr)}
+                                                disabled={!!actionLoading}
+                                                className="px-2 py-0.5 text-[10px] font-medium bg-white text-green-700 border border-green-300 rounded hover:bg-green-50 flex items-center gap-0.5">
+                                                <MessageCircle size={8} /> WA Confirmation
+                                              </button>
+                                            ) : null;
+                                          })()}
+                                        </div>
+                                      )}
                                     </div>
                                   ))}
                                 </div>
@@ -1025,28 +1114,74 @@ export default function DispatchRequests() {
                               {/* Add quotation form */}
                               {!hasAccepted && (
                                 showQuoteForm === dr.id ? (
-                                  <div className="bg-white rounded border p-2 space-y-1.5">
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5">
-                                      <input value={quoteTransporter} onChange={e => setQuoteTransporter(e.target.value)}
-                                        placeholder="Transporter name *" className="input-field text-xs" />
-                                      <input type="number" value={quoteRate} onChange={e => setQuoteRate(e.target.value)}
-                                        placeholder="Rate ₹/MT *" className="input-field text-xs" />
-                                      <input type="number" value={quoteDays} onChange={e => setQuoteDays(e.target.value)}
-                                        placeholder="Days" className="input-field text-xs" />
-                                      <input value={quoteRemarks} onChange={e => setQuoteRemarks(e.target.value)}
-                                        placeholder="Remarks" className="input-field text-xs" />
+                                  <div className="bg-white rounded border p-2.5 space-y-2">
+                                    {/* Select transporter or type new */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                      <div>
+                                        <label className="text-[10px] text-gray-500 font-medium">Select Transporter</label>
+                                        <select value={quoteTransporterId} onChange={e => selectQuoteTransporter(e.target.value)}
+                                          className="input-field text-xs w-full">
+                                          <option value="">— Select or type below —</option>
+                                          {transporters.map(t => (
+                                            <option key={t.id} value={t.id}>{t.name} {t.phone ? `(${t.phone})` : ''}</option>
+                                          ))}
+                                        </select>
+                                        {!quoteTransporterId && (
+                                          <input value={quoteTransporter} onChange={e => setQuoteTransporter(e.target.value)}
+                                            placeholder="Or type new transporter name" className="input-field text-xs w-full mt-1" />
+                                        )}
+                                      </div>
+                                      <div className="grid grid-cols-2 gap-1.5">
+                                        <div>
+                                          <label className="text-[10px] text-gray-500 font-medium">Phone</label>
+                                          <input value={quotePhone} onChange={e => setQuotePhone(e.target.value)}
+                                            placeholder="10 digits" className="input-field text-xs w-full" />
+                                        </div>
+                                        <div>
+                                          <label className="text-[10px] text-gray-500 font-medium">Email</label>
+                                          <input value={quoteEmail} onChange={e => setQuoteEmail(e.target.value)}
+                                            placeholder="email@..." className="input-field text-xs w-full" />
+                                        </div>
+                                      </div>
+                                    </div>
+                                    {/* Rate + Days + Remarks */}
+                                    <div className="grid grid-cols-3 gap-1.5">
+                                      <div>
+                                        <label className="text-[10px] text-gray-500 font-medium">Rate ₹/MT *</label>
+                                        <input type="number" value={quoteRate} onChange={e => setQuoteRate(e.target.value)}
+                                          placeholder="Rate" className="input-field text-xs w-full" />
+                                      </div>
+                                      <div>
+                                        <label className="text-[10px] text-gray-500 font-medium">Days</label>
+                                        <input type="number" value={quoteDays} onChange={e => setQuoteDays(e.target.value)}
+                                          placeholder="Est. days" className="input-field text-xs w-full" />
+                                      </div>
+                                      <div>
+                                        <label className="text-[10px] text-gray-500 font-medium">Remarks</label>
+                                        <input value={quoteRemarks} onChange={e => setQuoteRemarks(e.target.value)}
+                                          placeholder="Notes" className="input-field text-xs w-full" />
+                                      </div>
                                     </div>
                                     {quoteRate && dr.quantity > 0 && (
-                                      <p className="text-[10px] text-green-700">Total: ₹{(parseFloat(quoteRate) * dr.quantity).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+                                      <p className="text-[10px] text-green-700 font-medium">Total freight: ₹{(parseFloat(quoteRate) * dr.quantity).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
                                     )}
-                                    <div className="flex gap-1.5">
+                                    {/* Buttons: Save / Save & Send / Cancel */}
+                                    <div className="flex gap-1.5 flex-wrap">
                                       <button onClick={() => addQuotation(inq.id, dr.id)}
                                         disabled={!!actionLoading}
                                         className="px-3 py-1.5 bg-purple-600 text-white text-xs rounded font-medium hover:bg-purple-700 flex items-center gap-1">
-                                        {actionLoading === dr.id + '_quote' ? <Loader2 size={10} className="animate-spin" /> : <Plus size={10} />}
+                                        {actionLoading === dr.id + '_quote' ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />}
                                         Save Quote
                                       </button>
-                                      <button onClick={() => setShowQuoteForm(null)}
+                                      {(quotePhone || quoteEmail) && (
+                                        <button onClick={() => addQuotation(inq.id, dr.id, true)}
+                                          disabled={!!actionLoading}
+                                          className="px-3 py-1.5 bg-green-600 text-white text-xs rounded font-medium hover:bg-green-700 flex items-center gap-1">
+                                          {actionLoading === dr.id + '_quote' ? <Loader2 size={10} className="animate-spin" /> : <Share2 size={10} />}
+                                          Save & Send Rate Request
+                                        </button>
+                                      )}
+                                      <button onClick={resetQuoteForm}
                                         className="px-3 py-1.5 text-gray-500 text-xs rounded border hover:bg-gray-50">Cancel</button>
                                     </div>
                                   </div>
@@ -1115,26 +1250,22 @@ export default function DispatchRequests() {
                                     {/* Documents section (expanded) */}
                                     {isExpTruck && (
                                       <div className="border-t px-3 pb-3 pt-2">
-                                        <div className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1">
-                                          <FileText size={12} /> Documents & Actions
-                                        </div>
-
-                                        {/* Quick action buttons for auto-generated docs */}
-                                        <div className="flex gap-2 mb-3 flex-wrap">
+                                        {/* Auto-generated docs: Challan + E-Way Bill */}
+                                        <div className="flex gap-2 mb-2 flex-wrap">
                                           <button onClick={(e) => { e.stopPropagation(); const token = localStorage.getItem('token'); window.open(`/api/shipments/${s.id}/challan-pdf?token=${token}`, '_blank'); }}
                                             className="px-2 py-1 text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 flex items-center gap-1">
-                                            <FileText size={10} /> View Challan
+                                            <FileText size={10} /> Challan
                                           </button>
                                           {(s.driverMobile || dr.transporterId) && (
                                             <button onClick={(e) => {
                                                 e.stopPropagation();
                                                 const phone = s.driverMobile || transporters.find(t => t.id === dr.transporterId)?.phone || '';
-                                                if (!phone) { flash('err', 'No phone number available'); return; }
+                                                if (!phone) { flash('err', 'No phone number'); return; }
                                                 sendDocWhatsApp(s.id, phone, 'CHALLAN', dr);
                                               }}
                                               disabled={!!actionLoading}
                                               className="px-2 py-1 text-[11px] font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 flex items-center gap-1">
-                                              {actionLoading === s.id + '_wa_CHALLAN' ? <Loader2 size={10} className="animate-spin" /> : <MessageCircle size={10} />} WhatsApp Challan
+                                              {actionLoading === s.id + '_wa_CHALLAN' ? <Loader2 size={10} className="animate-spin" /> : <MessageCircle size={10} />} WA Challan
                                             </button>
                                           )}
                                           {s.ewayBill ? (
@@ -1149,21 +1280,17 @@ export default function DispatchRequests() {
                                                   const r = await api.post(`/shipments/${s.id}/eway-bill`);
                                                   flash('ok', `E-Way Bill: ${r.data.ewayBillNo}`);
                                                   load();
-                                                } catch (e: any) {
-                                                  flash('err', e.response?.data?.error || 'E-Way Bill failed');
-                                                }
-                                                finally {
-                                                  setActionLoading(null);
-                                                }
+                                                } catch (e: any) { flash('err', e.response?.data?.error || 'E-Way Bill failed'); }
+                                                finally { setActionLoading(null); }
                                               }}
                                               disabled={!!actionLoading}
                                               className="px-2 py-1 text-[11px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg hover:bg-indigo-100 flex items-center gap-1">
-                                              {actionLoading === s.id + '_ewb' ? <Loader2 size={10} className="animate-spin" /> : <Truck size={10} />} Generate E-Way Bill
+                                              {actionLoading === s.id + '_ewb' ? <Loader2 size={10} className="animate-spin" /> : <Truck size={10} />} E-Way Bill
                                             </button>
                                           )}
                                         </div>
 
-                                        {/* Document list */}
+                                        {/* Uploaded documents */}
                                         {docs.length > 0 && (
                                           <div className="space-y-1 mb-2">
                                             {docs.map((d: any) => (
@@ -1200,15 +1327,27 @@ export default function DispatchRequests() {
                                           </div>
                                         )}
 
-                                        {/* Upload buttons by doc type */}
-                                        <div className="flex gap-1.5 flex-wrap">
-                                          {DOC_TYPES.map(dt => (
-                                            <button key={dt.key} onClick={(e) => { e.stopPropagation(); uploadDoc(s.id, dt.key); }}
-                                              disabled={uploadingDoc === s.id}
-                                              className="px-2 py-1 text-[10px] font-medium bg-gray-100 text-gray-600 rounded hover:bg-gray-200 border flex items-center gap-1">
-                                              {uploadingDoc === s.id ? <Loader2 size={10} className="animate-spin" /> : <Plus size={10} />} {dt.label}
-                                            </button>
-                                          ))}
+                                        {/* Upload: file + camera for each doc type */}
+                                        <div className="text-[10px] text-gray-500 font-medium mb-1">Upload Documents</div>
+                                        <div className="flex gap-1 flex-wrap">
+                                          {DOC_TYPES.map(dt => {
+                                            const isUploading = uploadingDoc === s.id + '_' + dt.key;
+                                            return (
+                                              <div key={dt.key} className="flex rounded border overflow-hidden">
+                                                <button onClick={(e) => { e.stopPropagation(); uploadDoc(s.id, dt.key); }}
+                                                  disabled={!!uploadingDoc}
+                                                  className="px-1.5 py-1 text-[10px] font-medium bg-gray-50 text-gray-600 hover:bg-gray-100 flex items-center gap-0.5 border-r">
+                                                  {isUploading ? <Loader2 size={9} className="animate-spin" /> : <Upload size={9} />} {dt.label}
+                                                </button>
+                                                <button onClick={(e) => { e.stopPropagation(); uploadDoc(s.id, dt.key, true); }}
+                                                  disabled={!!uploadingDoc}
+                                                  className="px-1.5 py-1 text-[10px] bg-gray-50 text-gray-500 hover:bg-gray-100"
+                                                  title={`Take photo for ${dt.label}`}>
+                                                  <Camera size={10} />
+                                                </button>
+                                              </div>
+                                            );
+                                          })}
                                         </div>
                                       </div>
                                     )}
