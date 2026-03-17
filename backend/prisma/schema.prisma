@@ -1017,6 +1017,7 @@ model DispatchRequest {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   shipments       Shipment[]
+  freightInquiry  FreightInquiry?
 }
 
 // ── Shipment (Factory: one truck = one shipment) ──
@@ -1107,7 +1108,8 @@ model ShipmentDocument {
 model FreightInquiry {
   id              String   @id @default(uuid())
   inquiryNo       Int      @default(autoincrement())
-  dispatchRequestId String?
+  dispatchRequestId String?  @unique
+  dispatchRequest DispatchRequest? @relation(fields: [dispatchRequestId], references: [id])
   orderId         String?
   // Route
   origin          String   @default("MSPIL, Village Bachai, Narsinghpur, MP - 487001")

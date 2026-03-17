@@ -51,6 +51,14 @@ interface DR {
     lines?: OrderLine[];
   };
   shipments?: Shipment[];
+  freightInquiry?: {
+    id: string; inquiryNo: number; status: string;
+    quotations: {
+      id: string; transporterName: string; ratePerMT?: number; ratePerTrip?: number;
+      totalAmount?: number; vehicleType?: string; vehicleCount?: number; estimatedDays?: number;
+      status: string; remarks?: string;
+    }[];
+  };
   _count?: { shipments: number };
 }
 
@@ -153,6 +161,14 @@ export default function DispatchRequests() {
   const [truckVehicle, setTruckVehicle] = useState('');
   const [truckDriver, setTruckDriver] = useState('');
   const [truckMobile, setTruckMobile] = useState('');
+
+  // Quotation form
+  const [showQuoteForm, setShowQuoteForm] = useState<string | null>(null);
+  const [quoteTransporter, setQuoteTransporter] = useState('');
+  const [quoteRate, setQuoteRate] = useState('');
+  const [quoteTotal, setQuoteTotal] = useState('');
+  const [quoteDays, setQuoteDays] = useState('');
+  const [quoteRemarks, setQuoteRemarks] = useState('');
 
   // Document management
   const [expandedTruck, setExpandedTruck] = useState<string | null>(null);
@@ -305,6 +321,71 @@ export default function DispatchRequests() {
       `Trucks: ${trucks}`;
     if (navigator.share) navigator.share({ text }).catch(() => {});
     else window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+  };
+
+  // ── Add transporter quotation ──
+  const addQuotation = async (inquiryId: string, drId: string) => {
+    if (!quoteTransporter || !quoteRate) { flash('err', 'Enter transporter and rate'); return; }
+    setActionLoading(drId + '_quote');
+    try {
+      const dr = drs.find(d => d.id === drId);
+      const total = parseFloat(quoteRate) * (dr?.quantity || 0);
+      await api.post(`/freight-inquiries/${inquiryId}/quotations`, {
+        transporterName: quoteTransporter,
+        ratePerMT: parseFloat(quoteRate),
+        totalAmount: total,
+        estimatedDays: quoteDays ? parseInt(quoteDays) : null,
+        remarks: quoteRemarks || null,
+      });
+      flash('ok', 'Quotation recorded');
+      setShowQuoteForm(null);
+      setQuoteTransporter(''); setQuoteRate(''); setQuoteTotal(''); setQuoteDays(''); setQuoteRemarks('');
+      load();
+    } catch (e: any) { flash('err', e.response?.data?.error || 'Failed'); }
+    finally { setActionLoading(null); }
+  };
+
+  // ── Accept quotation & auto-fill transporter ──
+  const acceptQuotation = async (quotationId: string, drId: string, transporterName: string, rate: number) => {
+    setActionLoading(drId + '_accept');
+    try {
+      await api.put(`/freight-inquiries/quotations/${quotationId}/accept`);
+      // Auto-save transporter + rate to DR
+      const transporter = transporters.find(t => t.name.toLowerCase() === transporterName.toLowerCase());
+      await api.put(`/dispatch-requests/${drId}`, {
+        transporterId: transporter?.id || null,
+        transporterName: transporterName,
+        freightRate: rate,
+      });
+      flash('ok', `${transporterName} selected @ ₹${rate}/MT`);
+      load();
+    } catch (e: any) { flash('err', e.response?.data?.error || 'Failed'); }
+    finally { setActionLoading(null); }
+  };
+
+  // ── Share rate request via WhatsApp ──
+  const shareRateRequest = (dr: DR) => {
+    const inq = (dr as any).freightInquiry;
+    const text = `*MSPIL — Rate Request*\n` +
+      `Inquiry: FI-${inq?.inquiryNo || 'N/A'}\n` +
+      `━━━━━━━━━━━━━━\n` +
+      `Product: ${dr.productName}\n` +
+      `Quantity: ${dr.quantity} ${dr.unit}\n` +
+      `From: MSPIL, Narsinghpur MP\n` +
+      `To: ${dr.destination || 'TBD'}\n` +
+      `Distance: ${dr.distanceKm ? dr.distanceKm + ' km' : 'TBD'}\n` +
+      `Loading Date: ${dr.deliveryDate ? new Date(dr.deliveryDate).toLocaleDateString('en-IN') : 'TBD'}\n` +
+      `Trucks: ${dr.vehicleCount || 'TBD'}\n` +
+      `━━━━━━━━━━━━━━\n` +
+      `*Terms:*\n` +
+      `1. Vehicle in good condition with fitness cert\n` +
+      `2. GR (Bilty) at loading\n` +
+      `3. 50% advance after bill, balance after delivery\n` +
+      `4. Insurance by purchaser\n` +
+      `━━━━━━━━━━━━━━\n` +
+      `Please reply with your rate per MT.\n` +
+      `MSPIL, Narsinghpur`;
+    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
   };
 
   // ── Filters ──
@@ -726,6 +807,108 @@ export default function DispatchRequests() {
                             ✏️ {step === 'NEW' ? 'Set logistics details' : 'Edit logistics details'}
                           </button>
                         )}
+
+                        {/* ── Transporter Quotations ── */}
+                        {(() => {
+                          const inq = (dr as any).freightInquiry;
+                          if (!inq) return null;
+                          const quotes = inq.quotations || [];
+                          const hasAccepted = quotes.some((q: any) => q.status === 'ACCEPTED');
+                          return (
+                            <div className="bg-purple-50 rounded-lg border border-purple-200 p-3">
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="text-xs font-semibold text-purple-800 flex items-center gap-1">
+                                  <IndianRupee size={12} /> Rate Request FI-{inq.inquiryNo}
+                                  <span className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                                    inq.status === 'AWARDED' ? 'bg-green-100 text-green-700' :
+                                    inq.status === 'QUOTES_RECEIVED' ? 'bg-amber-100 text-amber-700' :
+                                    'bg-blue-100 text-blue-700'
+                                  }`}>{inq.status}</span>
+                                </div>
+                                <div className="flex gap-1.5">
+                                  <button onClick={() => shareRateRequest(dr)}
+                                    className="px-2 py-1 text-[10px] font-medium bg-green-100 text-green-700 rounded hover:bg-green-200 flex items-center gap-1">
+                                    <MessageCircle size={10} /> WhatsApp
+                                  </button>
+                                  <button onClick={() => {
+                                    const token = localStorage.getItem('token');
+                                    window.open(`/api/freight-inquiries/${inq.id}/pdf?token=${token}`, '_blank');
+                                  }}
+                                    className="px-2 py-1 text-[10px] font-medium bg-blue-100 text-blue-700 rounded hover:bg-blue-200 flex items-center gap-1">
+                                    <FileText size={10} /> PDF
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Existing quotations */}
+                              {quotes.length > 0 && (
+                                <div className="space-y-1.5 mb-2">
+                                  {quotes.map((q: any) => (
+                                    <div key={q.id} className={`flex items-center justify-between rounded px-2 py-1.5 text-xs ${
+                                      q.status === 'ACCEPTED' ? 'bg-green-100 border border-green-300' :
+                                      q.status === 'REJECTED' ? 'bg-gray-100 text-gray-400 line-through' :
+                                      'bg-white border'
+                                    }`}>
+                                      <div>
+                                        <span className="font-semibold">{q.transporterName}</span>
+                                        {q.ratePerMT && <span className="ml-2 text-green-700 font-bold">₹{q.ratePerMT.toLocaleString('en-IN')}/MT</span>}
+                                        {q.totalAmount && <span className="ml-1 text-gray-500">(₹{q.totalAmount.toLocaleString('en-IN', { maximumFractionDigits: 0 })} total)</span>}
+                                        {q.estimatedDays && <span className="ml-1 text-gray-400">{q.estimatedDays}d</span>}
+                                        {q.remarks && <span className="ml-1 text-gray-400">— {q.remarks}</span>}
+                                      </div>
+                                      <div className="flex items-center gap-1">
+                                        {q.status === 'ACCEPTED' && <span className="text-green-700 font-bold">✓ Selected</span>}
+                                        {q.status === 'RECEIVED' && !hasAccepted && (
+                                          <button onClick={() => acceptQuotation(q.id, dr.id, q.transporterName, q.ratePerMT)}
+                                            disabled={!!actionLoading}
+                                            className="px-2 py-0.5 bg-green-600 text-white text-[10px] rounded font-medium hover:bg-green-700">
+                                            {actionLoading === dr.id + '_accept' ? '...' : 'Accept'}
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* Add quotation form */}
+                              {!hasAccepted && (
+                                showQuoteForm === dr.id ? (
+                                  <div className="bg-white rounded border p-2 space-y-1.5">
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5">
+                                      <input value={quoteTransporter} onChange={e => setQuoteTransporter(e.target.value)}
+                                        placeholder="Transporter name *" className="input-field text-xs" />
+                                      <input type="number" value={quoteRate} onChange={e => setQuoteRate(e.target.value)}
+                                        placeholder="Rate ₹/MT *" className="input-field text-xs" />
+                                      <input type="number" value={quoteDays} onChange={e => setQuoteDays(e.target.value)}
+                                        placeholder="Days" className="input-field text-xs" />
+                                      <input value={quoteRemarks} onChange={e => setQuoteRemarks(e.target.value)}
+                                        placeholder="Remarks" className="input-field text-xs" />
+                                    </div>
+                                    {quoteRate && dr.quantity > 0 && (
+                                      <p className="text-[10px] text-green-700">Total: ₹{(parseFloat(quoteRate) * dr.quantity).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+                                    )}
+                                    <div className="flex gap-1.5">
+                                      <button onClick={() => addQuotation(inq.id, dr.id)}
+                                        disabled={!!actionLoading}
+                                        className="px-3 py-1.5 bg-purple-600 text-white text-xs rounded font-medium hover:bg-purple-700 flex items-center gap-1">
+                                        {actionLoading === dr.id + '_quote' ? <Loader2 size={10} className="animate-spin" /> : <Plus size={10} />}
+                                        Save Quote
+                                      </button>
+                                      <button onClick={() => setShowQuoteForm(null)}
+                                        className="px-3 py-1.5 text-gray-500 text-xs rounded border hover:bg-gray-50">Cancel</button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <button onClick={() => setShowQuoteForm(dr.id)}
+                                    className="w-full py-1.5 text-purple-600 text-xs font-medium rounded border border-dashed border-purple-300 hover:bg-purple-100 flex items-center justify-center gap-1">
+                                    <Plus size={12} /> Add Transporter Quotation
+                                  </button>
+                                )
+                              )}
+                            </div>
+                          );
+                        })()}
 
                         {/* ── Trucks ── */}
                         {shipments.length > 0 && (
