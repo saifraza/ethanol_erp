@@ -72,7 +72,11 @@ router.get('/factory', async (req: Request, res: Response) => {
             lines: true,
           },
         },
-        shipments: true,
+        shipments: {
+          include: {
+            documents: { select: { id: true, docType: true, fileName: true, mimeType: true }, orderBy: { createdAt: 'desc' as const } },
+          },
+        },
       },
       orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
     });
@@ -96,7 +100,11 @@ router.get('/:id', async (req: Request, res: Response) => {
           },
         },
         orderLine: true,
-        shipments: true,
+        shipments: {
+          include: {
+            documents: { select: { id: true, docType: true, fileName: true, mimeType: true }, orderBy: { createdAt: 'desc' as const } },
+          },
+        },
       },
     });
 

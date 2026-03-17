@@ -26,6 +26,8 @@ interface Shipment {
   weightTare?: number; weightGross?: number; weightNet?: number;
   transporterName?: string; capacityTon?: number;
   gateInTime?: string; tareTime?: string; grossTime?: string; releaseTime?: string; exitTime?: string;
+  documents?: { id: string; docType: string; fileName: string; mimeType?: string }[];
+  ewayBillStatus?: string; ewayBill?: string; challanNo?: string;
 }
 
 interface OrderLine {
@@ -152,6 +154,10 @@ export default function DispatchRequests() {
   const [truckDriver, setTruckDriver] = useState('');
   const [truckMobile, setTruckMobile] = useState('');
 
+  // Document management
+  const [expandedTruck, setExpandedTruck] = useState<string | null>(null);
+  const [uploadingDoc, setUploadingDoc] = useState<string | null>(null);
+
   const load = async () => {
     try {
       setLoading(true);
@@ -198,6 +204,32 @@ export default function DispatchRequests() {
     }
     setCalcLoading(null);
   }, []);
+
+  // ── Upload document ──
+  const uploadDoc = async (shipmentId: string, docType: string) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx';
+    input.onchange = async (e: any) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      setUploadingDoc(shipmentId);
+      try {
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('shipmentId', shipmentId);
+        fd.append('docType', docType);
+        await api.post('/shipment-documents/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        flash('ok', `${docType.replace(/_/g, ' ')} uploaded`);
+        load();
+      } catch (e: any) {
+        flash('err', e.response?.data?.error || 'Upload failed');
+      } finally {
+        setUploadingDoc(null);
+      }
+    };
+    input.click();
+  };
 
   // ── Start editing a DR ──
   const startEditDR = (dr: DR) => {
@@ -704,32 +736,115 @@ export default function DispatchRequests() {
                             <div className="space-y-2">
                               {shipments.map(s => {
                                 const netKg = s.weightNet || (s.weightGross && s.weightTare ? s.weightGross - s.weightTare : null);
+                                const isExpTruck = expandedTruck === s.id;
+                                const docs = (s as any).documents || [];
+                                const DOC_TYPES = [
+                                  { key: 'GR_BILTY', label: 'GR / Bilty', icon: '📄' },
+                                  { key: 'CHALLAN', label: 'Challan', icon: '📋', auto: true },
+                                  { key: 'EWAY_BILL', label: 'E-Way Bill', icon: '🚛', auto: true },
+                                  { key: 'INVOICE', label: 'Invoice', icon: '💰' },
+                                  { key: 'INSURANCE', label: 'Insurance', icon: '🛡️' },
+                                  { key: 'POD', label: 'POD', icon: '✅' },
+                                  { key: 'OTHER', label: 'Other', icon: '📎' },
+                                ];
                                 return (
-                                  <div key={s.id} className="bg-white rounded-lg border p-3">
-                                    <div className="flex items-center justify-between mb-1">
-                                      <div className="flex items-center gap-2">
-                                        <span className="font-bold text-sm">{s.vehicleNo}</span>
-                                        {s.driverName && <span className="text-xs text-gray-500">{s.driverName}</span>}
-                                        {s.driverMobile && (
-                                          <a href={`tel:${s.driverMobile}`} className="text-blue-600"><Phone size={10} /></a>
+                                  <div key={s.id} className="bg-white rounded-lg border">
+                                    {/* Header */}
+                                    <div className="p-3 cursor-pointer" onClick={() => setExpandedTruck(isExpTruck ? null : s.id)}>
+                                      <div className="flex items-center justify-between mb-1">
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-bold text-sm">{s.vehicleNo}</span>
+                                          {s.driverName && <span className="text-xs text-gray-500">{s.driverName}</span>}
+                                          {s.driverMobile && (
+                                            <a href={`tel:${s.driverMobile}`} onClick={e => e.stopPropagation()} className="text-blue-600"><Phone size={10} /></a>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          {netKg && <span className="text-xs font-bold text-green-700">{(netKg / 1000).toFixed(2)} MT</span>}
+                                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                                            ['RELEASED', 'EXITED'].includes(s.status) ? 'bg-green-100 text-green-700' :
+                                            s.status === 'LOADING' ? 'bg-amber-100 text-amber-700' :
+                                            s.status === 'GROSS_WEIGHED' ? 'bg-orange-100 text-orange-700' :
+                                            'bg-blue-100 text-blue-700'
+                                          }`}>{s.status.replace(/_/g, ' ')}</span>
+                                          <ChevronDown size={14} className={`text-gray-400 transition ${isExpTruck ? 'rotate-180' : ''}`} />
+                                        </div>
+                                      </div>
+                                      <div className="flex gap-0.5 mt-1">
+                                        {['GATE_IN', 'TARE_WEIGHED', 'LOADING', 'GROSS_WEIGHED', 'RELEASED', 'EXITED'].map((st, i) => {
+                                          const idx = ['GATE_IN', 'TARE_WEIGHED', 'LOADING', 'GROSS_WEIGHED', 'RELEASED', 'EXITED'].indexOf(s.status);
+                                          return <div key={st} className={`h-1 flex-1 rounded-full ${i <= idx ? 'bg-green-500' : 'bg-gray-200'}`} />;
+                                        })}
+                                      </div>
+                                    </div>
+
+                                    {/* Documents section (expanded) */}
+                                    {isExpTruck && (
+                                      <div className="border-t px-3 pb-3 pt-2">
+                                        <div className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1">
+                                          <FileText size={12} /> Documents & Actions
+                                        </div>
+
+                                        {/* Quick action buttons for auto-generated docs */}
+                                        <div className="flex gap-2 mb-3 flex-wrap">
+                                          <button onClick={(e) => { e.stopPropagation(); const token = localStorage.getItem('token'); window.open(`/api/shipments/${s.id}/challan-pdf?token=${token}`, '_blank'); }}
+                                            className="px-2 py-1 text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 flex items-center gap-1">
+                                            <FileText size={10} /> View Challan
+                                          </button>
+                                          {s.ewayBill ? (
+                                            <span className="px-2 py-1 text-[11px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg">
+                                              EWB: {s.ewayBill}
+                                            </span>
+                                          ) : (
+                                            <button onClick={async (e) => {
+                                                e.stopPropagation();
+                                                try {
+                                                  setActionLoading(s.id + '_ewb');
+                                                  const r = await api.post(`/shipments/${s.id}/eway-bill`);
+                                                  flash('ok', `E-Way Bill: ${r.data.ewayBillNo}`);
+                                                  load();
+                                                } catch (e: any) {
+                                                  flash('err', e.response?.data?.error || 'E-Way Bill failed');
+                                                }
+                                                finally {
+                                                  setActionLoading(null);
+                                                }
+                                              }}
+                                              disabled={!!actionLoading}
+                                              className="px-2 py-1 text-[11px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg hover:bg-indigo-100 flex items-center gap-1">
+                                              {actionLoading === s.id + '_ewb' ? <Loader2 size={10} className="animate-spin" /> : <Truck size={10} />} Generate E-Way Bill
+                                            </button>
+                                          )}
+                                        </div>
+
+                                        {/* Document list */}
+                                        {docs.length > 0 && (
+                                          <div className="space-y-1 mb-2">
+                                            {docs.map((d: any) => (
+                                              <div key={d.id} className="flex items-center justify-between bg-gray-50 rounded px-2 py-1.5">
+                                                <div className="flex items-center gap-2">
+                                                  <span className="text-[10px] font-semibold text-gray-500 uppercase bg-gray-200 px-1.5 py-0.5 rounded">{d.docType.replace(/_/g, ' ')}</span>
+                                                  <span className="text-xs text-gray-700 truncate max-w-[150px]">{d.fileName}</span>
+                                                </div>
+                                                <button onClick={(e) => { e.stopPropagation(); const token = localStorage.getItem('token'); window.open(`/api/shipment-documents/file/${d.id}?token=${token}`, '_blank'); }}
+                                                  className="text-blue-600 text-[10px] font-medium hover:underline">View</button>
+                                              </div>
+                                            ))}
+                                          </div>
                                         )}
+
+                                        {/* Upload buttons by doc type */}
+                                        <div className="flex gap-1.5 flex-wrap">
+                                          {DOC_TYPES.map(dt => (
+                                            <button key={dt.key} onClick={(e) => { e.stopPropagation(); uploadDoc(s.id, dt.key); }}
+                                              disabled={uploadingDoc === s.id}
+                                              className="px-2 py-1 text-[10px] font-medium bg-gray-100 text-gray-600 rounded hover:bg-gray-200 border flex items-center gap-1">
+                                              {uploadingDoc === s.id ? <Loader2 size={10} className="animate-spin" /> : <Plus size={10} />} {dt.label}
+                                            </button>
+                                          ))}
+                                        </div>
                                       </div>
-                                      <div className="flex items-center gap-2">
-                                        {netKg && <span className="text-xs font-bold text-green-700">{(netKg / 1000).toFixed(2)} MT</span>}
-                                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                                          ['RELEASED', 'EXITED'].includes(s.status) ? 'bg-green-100 text-green-700' :
-                                          s.status === 'LOADING' ? 'bg-amber-100 text-amber-700' :
-                                          s.status === 'GROSS_WEIGHED' ? 'bg-orange-100 text-orange-700' :
-                                          'bg-blue-100 text-blue-700'
-                                        }`}>{s.status.replace(/_/g, ' ')}</span>
-                                      </div>
-                                    </div>
-                                    <div className="flex gap-0.5 mt-1">
-                                      {['GATE_IN', 'TARE_WEIGHED', 'LOADING', 'GROSS_WEIGHED', 'RELEASED', 'EXITED'].map((st, i) => {
-                                        const idx = ['GATE_IN', 'TARE_WEIGHED', 'LOADING', 'GROSS_WEIGHED', 'RELEASED', 'EXITED'].indexOf(s.status);
-                                        return <div key={st} className={`h-1 flex-1 rounded-full ${i <= idx ? 'bg-green-500' : 'bg-gray-200'}`} />;
-                                      })}
-                                    </div>
+                                    )}
                                   </div>
                                 );
                               })}

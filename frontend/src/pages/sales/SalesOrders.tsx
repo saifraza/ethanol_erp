@@ -605,11 +605,9 @@ export default function SalesOrders() {
 
                         {/* Print Invoice PDF */}
                         {pipe.hasInvoice && (
-                          <button onClick={async () => {
-                            try {
-                              const resp = await api.get(`/invoices/${pipe.latestInvoice!.id}/pdf`, { responseType: 'blob' });
-                              window.open(window.URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' })), '_blank');
-                            } catch { flash('err', 'PDF failed'); }
+                          <button onClick={() => {
+                              const token = localStorage.getItem('token');
+                              window.open(`/api/invoices/${pipe.latestInvoice!.id}/pdf?token=${token}`, '_blank');
                           }}
                             className="px-3 py-2 bg-white text-green-700 text-sm font-medium rounded-lg border border-green-300 hover:bg-green-50 flex items-center gap-1">
                             <FileText size={14} /> Print Invoice

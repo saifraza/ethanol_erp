@@ -48,7 +48,6 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'shipments', label: 'Gate Register', to: '/sales/shipments', icon: Scale, group: 'sales' },
   { key: 'invoices', label: 'Billing', to: '/sales/invoices', icon: FileText, group: 'sales' },
   { key: 'payments', label: 'Collections', to: '/sales/payments', icon: IndianRupee, group: 'sales' },
-  { key: 'freight', label: 'Freight', to: '/sales/freight', icon: Truck, group: 'sales' },
 
   // ── PROCUREMENT (Grain + Chemicals inward) ──
   { key: 'vendors', label: 'Suppliers', to: '/procurement/vendors', icon: Building2, group: 'procurement' },
