@@ -626,6 +626,18 @@ export default function SalesDashboard() {
                       )}
                     </button>
 
+                    {/* Download SO PDF */}
+                    <button onClick={async () => {
+                        try {
+                          const resp = await api.get(`/sales-orders/${order.id}/pdf`, { responseType: 'blob' });
+                          window.open(window.URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' })), '_blank');
+                        } catch { flash('err', 'PDF generation failed'); }
+                      }}
+                      className="text-gray-300 hover:text-blue-500 transition shrink-0 p-1"
+                      title="Download SO Document">
+                      <FileText size={14} />
+                    </button>
+
                     {/* Quick delete */}
                     <button onClick={() => deleteOrder(order)}
                       disabled={!!actionLoading}
