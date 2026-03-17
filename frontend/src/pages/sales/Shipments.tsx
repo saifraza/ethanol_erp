@@ -45,10 +45,7 @@ export default function Shipments() {
   const [weighId, setWeighId] = useState<string | null>(null);
   const [weighVal, setWeighVal] = useState('');
   const [weighType, setWeighType] = useState<'tare' | 'gross'>('tare');
-  const [releaseId, setReleaseId] = useState<string | null>(null);
-  const [relChallan, setRelChallan] = useState('');
-  const [relEway, setRelEway] = useState('');
-  const [relGatePass, setRelGatePass] = useState('');
+  // Old release form removed — docs handled via 4-doc fields inline
   const [filterStatus, setFilterStatus] = useState('ALL');
   const [uploadingDoc, setUploadingDoc] = useState<string | null>(null);
 
@@ -120,7 +117,7 @@ export default function Shipments() {
     try {
       await api.put(`/shipments/${id}/status`, { status, ...extra });
       flash('ok', status.replace(/_/g, ' '));
-      if (status === 'RELEASED') { setReleaseId(null); setRelChallan(''); setRelEway(''); setRelGatePass(''); }
+      // Release is now one-click, no form to clear
       loadShipments();
     } catch { flash('err', 'Failed'); }
     setSaving(false);
@@ -145,7 +142,8 @@ export default function Shipments() {
         const fd = new FormData();
         fd.append('file', file);
         fd.append('docType', docType);
-        await api.post(`/shipments/${shipmentId}/documents`, fd);
+        fd.append('shipmentId', shipmentId);
+        await api.post('/shipment-documents/upload', fd);
         flash('ok', `${docType} uploaded`);
         loadShipments();
       } catch { flash('err', 'Upload failed'); }
@@ -254,11 +252,18 @@ export default function Shipments() {
               const dr = group.dr;
               const orderQty = dr?.quantity || 0;
               const orderUnit = dr?.unit || 'MT';
+              // Only count EXITED trucks for dispatch %
+              const exitedNetMT = group.shipments
+                .filter(s => s.status === 'EXITED')
+                .reduce((sum, s) => {
+                  const net = s.weightNet || (s.weightGross && s.weightTare ? s.weightGross - s.weightTare : 0);
+                  return sum + (net ? net / 1000 : 0);
+                }, 0);
               const totalNetMT = group.shipments.reduce((sum, s) => {
                 const net = s.weightNet || (s.weightGross && s.weightTare ? s.weightGross - s.weightTare : 0);
                 return sum + (net ? net / 1000 : 0);
               }, 0);
-              const pct = orderQty > 0 ? Math.min(100, (totalNetMT / orderQty) * 100) : 0;
+              const pct = orderQty > 0 ? Math.min(100, (exitedNetMT / orderQty) * 100) : 0;
 
               return (
                 <div key={drId} className="bg-white rounded-xl border shadow-sm overflow-hidden">
@@ -278,7 +283,8 @@ export default function Shipments() {
                       </div>
                       <div className="text-right">
                         <div className="text-sm">
-                          <span className="font-bold text-green-700">{totalNetMT.toFixed(1)} MT</span>
+                          <span className="font-bold text-green-700">{exitedNetMT.toFixed(1)}</span>
+                          {totalNetMT > exitedNetMT && <span className="text-blue-600"> (+{(totalNetMT - exitedNetMT).toFixed(1)} loading)</span>}
                           <span className="text-gray-400"> / {orderQty} {orderUnit}</span>
                         </div>
                         <span className={`text-xs font-bold ${pct >= 100 ? 'text-green-600' : 'text-orange-600'}`}>
@@ -357,8 +363,8 @@ export default function Shipments() {
                           ))}
                         </div>
 
-                        {/* 4 Document fields */}
-                        {['GROSS_WEIGHED', 'RELEASED', 'EXITED'].includes(s.status) && (
+                        {/* 4 Document fields — always visible */}
+                        {['TARE_WEIGHED', 'LOADING', 'GROSS_WEIGHED', 'RELEASED', 'EXITED'].includes(s.status) && (
                           <div className="grid grid-cols-2 gap-2 mb-3">
                             {DOC_TYPES.map(dt => {
                               const hasDoc = docUploaded(dt.key);
@@ -440,24 +446,6 @@ export default function Shipments() {
                               </button>
                               <button onClick={() => setWeighId(null)} className="text-gray-400 p-2"><X size={16} /></button>
                             </div>
-                          ) : releaseId === s.id ? (
-                            <div className="flex-1 space-y-1.5">
-                              <div className="grid grid-cols-3 gap-1.5">
-                                <input value={relChallan} onChange={e => setRelChallan(e.target.value)} placeholder="Challan No" className="input-field text-xs" />
-                                <div className="flex gap-0.5">
-                                  <input value={relEway} onChange={e => setRelEway(e.target.value)} placeholder="E-Way Bill" className="input-field text-xs flex-1" />
-                                  <button onClick={() => generateEwayBill(s.id)} disabled={saving || !s.weightNet}
-                                    className="px-2 py-1 bg-indigo-600 text-white text-[9px] rounded font-medium disabled:opacity-50">⚡</button>
-                                </div>
-                                <input value={relGatePass} onChange={e => setRelGatePass(e.target.value)} placeholder="Gate Pass" className="input-field text-xs" />
-                              </div>
-                              <div className="flex gap-1.5">
-                                <button onClick={() => doStatus(s.id, 'RELEASED', {
-                                  challanNo: relChallan, ewayBill: relEway, gatePassNo: relGatePass, releaseTime: new Date().toISOString()
-                                })} className="flex-1 py-2 bg-orange-600 text-white text-sm rounded-lg font-medium">Release</button>
-                                <button onClick={() => setReleaseId(null)} className="px-3 py-2 text-gray-500"><X size={16} /></button>
-                              </div>
-                            </div>
                           ) : (
                             <>
                               {s.status === 'GATE_IN' && (
@@ -470,7 +458,7 @@ export default function Shipments() {
                                 <button onClick={() => doStatus(s.id, 'LOADING', { loadStartTime: new Date().toISOString() })}
                                   disabled={saving}
                                   className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg font-medium text-sm">
-                                  {saving ? <Loader2 size={14} className="animate-spin" /> : '▶ Start Loading'}
+                                  {saving ? <Loader2 size={14} className="animate-spin" /> : 'Start Loading'}
                                 </button>
                               )}
                               {s.status === 'LOADING' && (
@@ -480,20 +468,21 @@ export default function Shipments() {
                                 </button>
                               )}
                               {s.status === 'GROSS_WEIGHED' && (
-                                <button onClick={() => setReleaseId(s.id)}
+                                <button onClick={() => doStatus(s.id, 'RELEASED', { releaseTime: new Date().toISOString() })}
+                                  disabled={saving}
                                   className="flex-1 py-2.5 bg-orange-600 text-white rounded-lg font-medium text-sm">
-                                  🔓 Release
+                                  {saving ? <Loader2 size={14} className="animate-spin" /> : 'Release Truck'}
                                 </button>
                               )}
                               {s.status === 'RELEASED' && (
                                 <button onClick={() => doStatus(s.id, 'EXITED', { exitTime: new Date().toISOString() })}
                                   disabled={saving}
                                   className="flex-1 py-2.5 bg-green-600 text-white rounded-lg font-medium text-sm">
-                                  {saving ? <Loader2 size={14} className="animate-spin" /> : '🚗 Gate Exit'}
+                                  {saving ? <Loader2 size={14} className="animate-spin" /> : 'Gate Exit'}
                                 </button>
                               )}
                               {s.status === 'EXITED' && (
-                                <span className="text-emerald-600 text-sm font-medium">✓ Complete</span>
+                                <span className="text-emerald-600 text-sm font-medium flex items-center gap-1"><CheckCircle size={14} /> Dispatched</span>
                               )}
                               <button onClick={() => shareStatus(s)}
                                 className="px-3 py-2.5 bg-green-100 text-green-700 rounded-lg"><Share2 size={14} /></button>

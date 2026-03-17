@@ -44,15 +44,23 @@ router.get('/', async (req: Request, res: Response) => {
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-// GET /active — All shipments NOT yet EXITED
+// GET /active — All active shipments + today's EXITED (for dispatch % calc)
 router.get('/active', async (req: Request, res: Response) => {
   try {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
     const shipments = await prisma.shipment.findMany({
       where: {
-        status: { notIn: ['EXITED', 'CANCELLED'] },
+        OR: [
+          { status: { notIn: ['EXITED', 'CANCELLED'] } },
+          { status: 'EXITED', exitTime: { gte: todayStart.toISOString() } },
+          { status: 'EXITED', updatedAt: { gte: todayStart.toISOString() } },
+        ],
       },
       include: {
         dispatchRequest: true,
+        documents: { orderBy: { createdAt: 'desc' } },
       },
       orderBy: { createdAt: 'desc' },
     });
