@@ -1,648 +1,474 @@
 import { useState, useEffect } from 'react';
-import { Truck, Plus, X, Share2, Save, Loader2, MessageCircle, Phone } from 'lucide-react';
+import {
+  Truck, Plus, X, Save, Loader2, Share2, MessageCircle, Phone,
+  Scale, CheckCircle, AlertCircle, Clock, Package, MapPin, User, FileText
+} from 'lucide-react';
 import api from '../../services/api';
 
 interface Shipment {
-  id: string;
-  vehicleNo: string;
+  id: string; vehicleNo: string;
   status: 'GATE_IN' | 'TARE_WEIGHED' | 'LOADING' | 'GROSS_WEIGHED' | 'RELEASED' | 'EXITED';
-  customerName: string;
-  productName: string;
-  destination: string;
-  driverName: string;
-  driverMobile: string;
-  transporterName: string;
-  capacityTon: number;
-  vehicleType: string;
-  gateInTime: string;
-  weightTare?: number;
-  weightGross?: number;
-  dispatchRequestId?: string;
-  challanNo?: string;
-  ewayBill?: string;
-  gatePassNo?: string;
+  customerName: string; productName: string; destination: string;
+  driverName: string; driverMobile: string; transporterName: string;
+  capacityTon: number; vehicleType: string; gateInTime: string;
+  weightTare?: number; weightGross?: number; weightNet?: number;
+  dispatchRequestId?: string; challanNo?: string; ewayBill?: string; gatePassNo?: string;
+  tareTime?: string; grossTime?: string; releaseTime?: string; exitTime?: string;
+  dispatchRequest?: { drNo?: number; customerName?: string; productName?: string; quantity?: number; unit?: string };
 }
 
-interface DispatchRequest {
-  id: string;
-  vehicleNo?: string;
-  customerName: string;
-}
+const STATUS_FLOW = ['GATE_IN', 'TARE_WEIGHED', 'LOADING', 'GROSS_WEIGHED', 'RELEASED', 'EXITED'] as const;
 
-const PRODUCTS = ['DDGS', 'ETHANOL', 'LFO', 'HFO', 'RS'];
-const VEHICLE_TYPES = ['TANKER', 'TRUCK', 'TRAILER', 'WAGON'];
+const STATUS_CONFIG: Record<string, { label: string; color: string; badge: string; short: string }> = {
+  GATE_IN:        { label: 'At Gate',  color: 'gray',   badge: 'bg-gray-100 text-gray-700',     short: 'Gate' },
+  TARE_WEIGHED:   { label: 'Tare OK',  color: 'blue',   badge: 'bg-blue-100 text-blue-700',     short: 'Tare' },
+  LOADING:        { label: 'Loading',  color: 'amber',  badge: 'bg-amber-100 text-amber-700',   short: 'Load' },
+  GROSS_WEIGHED:  { label: 'Loaded',   color: 'orange', badge: 'bg-orange-100 text-orange-700', short: 'Gross' },
+  RELEASED:       { label: 'Released', color: 'green',  badge: 'bg-green-100 text-green-700',   short: 'Out' },
+  EXITED:         { label: 'Exited',   color: 'emerald',badge: 'bg-emerald-100 text-emerald-700',short: 'Done' },
+};
 
 export default function Shipments() {
   const [shipments, setShipments] = useState<Shipment[]>([]);
-  const [dispatchRequests, setDispatchRequests] = useState<DispatchRequest[]>([]);
-  const [showForm, setShowForm] = useState(false);
-  const [weighFormOpen, setWeighFormOpen] = useState<string | null>(null);
-  const [releaseFormOpen, setReleaseFormOpen] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
-  // New vehicle entry form
-  const [vehicleNo, setVehicleNo] = useState('');
-  const [product, setProduct] = useState('DDGS');
-  const [customerName, setCustomerName] = useState('');
-  const [destination, setDestination] = useState('');
-  const [driverName, setDriverName] = useState('');
-  const [driverMobile, setDriverMobile] = useState('');
-  const [transporter, setTransporter] = useState('');
-  const [capacityTon, setCapacityTon] = useState('');
-  const [vehicleType, setVehicleType] = useState('TANKER');
-  const [dispatchRequestId, setDispatchRequestId] = useState('');
-  const [gateInTime, setGateInTime] = useState(() => {
-    const now = new Date();
-    return now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
-  });
-
-  // Weigh form
-  const [weighWeight, setWeighWeight] = useState('');
+  // Inline action states (keyed by shipment id)
+  const [weighId, setWeighId] = useState<string | null>(null);
+  const [weighVal, setWeighVal] = useState('');
   const [weighType, setWeighType] = useState<'tare' | 'gross'>('tare');
+  const [releaseId, setReleaseId] = useState<string | null>(null);
+  const [relChallan, setRelChallan] = useState('');
+  const [relEway, setRelEway] = useState('');
+  const [relGatePass, setRelGatePass] = useState('');
+  const [filterStatus, setFilterStatus] = useState('ALL');
 
-  // Release form
-  const [releaseChallanNo, setReleaseChallanNo] = useState('');
-  const [releaseEwayBill, setReleaseEwayBill] = useState('');
-  const [releaseGatePassNo, setReleaseGatePassNo] = useState('');
-
-  // Load shipments and compute stats
-  const loadShipments = () => {
-    api.get('/shipments/active')
-      .then(r => {
-        setShipments(r.data.shipments || []);
-      })
-      .catch(() => setMsg({ type: 'err', text: 'Failed to load shipments' }));
-  };
-
-  // Load dispatch requests for dropdown
-  const loadDispatchRequests = () => {
-    api.get('/dispatch-requests/factory')
-      .then(r => setDispatchRequests(Array.isArray(r.data) ? r.data : []))
-      .catch(() => {});
-  };
-
-  useEffect(() => {
-    loadShipments();
-    loadDispatchRequests();
-  }, []);
-
-  const resetForm = () => {
-    setVehicleNo('');
-    setProduct('DDGS');
-    setCustomerName('');
-    setDestination('');
-    setDriverName('');
-    setDriverMobile('');
-    setTransporter('');
-    setCapacityTon('');
-    setVehicleType('TANKER');
-    setDispatchRequestId('');
-    setShowForm(false);
-    const now = new Date();
-    setGateInTime(now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }));
-  };
-
-  async function saveNewVehicle() {
-    if (!vehicleNo.trim()) {
-      setMsg({ type: 'err', text: 'Vehicle No required' });
-      return;
-    }
-    setSaving(true);
-    setMsg(null);
+  const loadShipments = async () => {
     try {
-      await api.post('/shipments', {
-        vehicleNo,
-        productName: product,
-        customerName,
-        destination,
-        driverName,
-        driverMobile,
-        transporterName: transporter,
-        capacityTon: parseFloat(capacityTon) || 0,
-        vehicleType,
-        gateInTime,
-        dispatchRequestId: dispatchRequestId || null,
-      });
-      setMsg({ type: 'ok', text: 'Vehicle entry recorded!' });
-      resetForm();
-      loadShipments();
+      setLoading(true);
+      const r = await api.get('/shipments/active');
+      setShipments(r.data.shipments || []);
     } catch {
-      setMsg({ type: 'err', text: 'Save failed' });
+      flash('err', 'Failed to load');
+    } finally {
+      setLoading(false);
     }
-    setSaving(false);
-  }
+  };
 
-  async function recordWeigh(shipmentId: string) {
-    if (!weighWeight.trim()) {
-      setMsg({ type: 'err', text: 'Weight required' });
-      return;
-    }
+  useEffect(() => { loadShipments(); }, []);
+
+  const flash = (type: 'ok' | 'err', text: string) => {
+    setMsg({ type, text });
+    setTimeout(() => setMsg(null), 4000);
+  };
+
+  // ── Actions ──
+  const doWeigh = async (id: string) => {
+    if (!weighVal) { flash('err', 'Enter weight'); return; }
     setSaving(true);
     try {
-      const weight = parseFloat(weighWeight);
+      const w = parseFloat(weighVal);
       const body = weighType === 'tare'
-        ? { weightTare: weight, tareTime: new Date().toISOString() }
-        : { weightGross: weight, grossTime: new Date().toISOString() };
-      await api.put(`/shipments/${shipmentId}/weighbridge`, body);
-      setMsg({ type: 'ok', text: `${weighType.toUpperCase()} recorded!` });
-      setWeighWeight('');
-      setWeighFormOpen(null);
+        ? { weightTare: w, tareTime: new Date().toISOString() }
+        : { weightGross: w, grossTime: new Date().toISOString() };
+      await api.put(`/shipments/${id}/weighbridge`, body);
+      flash('ok', `${weighType === 'tare' ? 'Tare' : 'Gross'} recorded: ${w} kg`);
+      setWeighId(null); setWeighVal('');
       loadShipments();
-    } catch {
-      setMsg({ type: 'err', text: 'Weigh recording failed' });
-    }
+    } catch { flash('err', 'Failed'); }
     setSaving(false);
-  }
+  };
 
-  async function recordRelease(shipmentId: string) {
+  const doStatus = async (id: string, status: string, extra?: any) => {
     setSaving(true);
     try {
-      await api.put(`/shipments/${shipmentId}/status`, {
-        status: 'RELEASED',
-        challanNo: releaseChallanNo,
-        ewayBill: releaseEwayBill,
-        gatePassNo: releaseGatePassNo,
-        releaseTime: new Date().toISOString(),
-      });
-      setMsg({ type: 'ok', text: 'Vehicle released!' });
-      setReleaseChallanNo('');
-      setReleaseEwayBill('');
-      setReleaseGatePassNo('');
-      setReleaseFormOpen(null);
+      await api.put(`/shipments/${id}/status`, { status, ...extra });
+      flash('ok', status.replace(/_/g, ' '));
+      if (status === 'RELEASED') { setReleaseId(null); setRelChallan(''); setRelEway(''); setRelGatePass(''); }
       loadShipments();
-    } catch {
-      setMsg({ type: 'err', text: 'Release failed' });
-    }
+    } catch { flash('err', 'Failed'); }
     setSaving(false);
-  }
-
-  async function recordExit(shipmentId: string) {
-    setSaving(true);
-    try {
-      await api.put(`/shipments/${shipmentId}/status`, {
-        status: 'EXITED',
-        exitTime: new Date().toISOString(),
-      });
-      setMsg({ type: 'ok', text: 'Exit recorded!' });
-      loadShipments();
-    } catch {
-      setMsg({ type: 'err', text: 'Exit recording failed' });
-    }
-    setSaving(false);
-  }
+  };
 
   const shareStatus = (s: Shipment) => {
-    const netWeight = s.weightGross && s.weightTare ? (s.weightGross - s.weightTare).toFixed(2) : null;
-    const text = `🚛 Vehicle: ${s.vehicleNo}\nProduct: ${s.productName}\nCustomer: ${s.customerName}\nStatus: ${s.status}\n${netWeight ? `Weight: ${netWeight} T\n` : ''}Gate In: ${s.gateInTime}`;
+    const net = s.weightNet || (s.weightGross && s.weightTare ? s.weightGross - s.weightTare : null);
+    const text = `🚛 ${s.vehicleNo}\n${s.productName} → ${s.customerName}\n${s.destination}\nStatus: ${STATUS_CONFIG[s.status]?.label}\n${net ? `Net: ${(net / 1000).toFixed(2)} MT\n` : ''}${s.driverName ? `Driver: ${s.driverName}` : ''}`;
     if (navigator.share) navigator.share({ text }).catch(() => {});
     else window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
   };
 
-  const statusConfig = {
-    GATE_IN: { border: 'border-l-4 border-l-gray-400', bg: 'bg-gray-50', label: 'At Gate', action: 'Weigh Tare', type: 'tare' },
-    TARE_WEIGHED: { border: 'border-l-4 border-l-blue-500', bg: 'bg-blue-50', label: 'Tare Done', action: 'Start Loading', type: null },
-    LOADING: { border: 'border-l-4 border-l-amber-400', bg: 'bg-amber-50', label: 'Loading', action: 'Weigh Gross', type: 'gross' },
-    GROSS_WEIGHED: { border: 'border-l-4 border-l-orange-500', bg: 'bg-orange-50', label: 'Loaded', action: 'Release', type: null },
-    RELEASED: { border: 'border-l-4 border-l-green-500', bg: 'bg-green-50', label: 'Released', action: 'Exit', type: null },
-    EXITED: { border: 'border-l-4 border-l-emerald-600', bg: 'bg-emerald-50', label: 'Exited', action: null, type: null },
+  // ── Stats ──
+  const stats = {
+    total: shipments.length,
+    atGate: shipments.filter(s => s.status === 'GATE_IN').length,
+    tared: shipments.filter(s => s.status === 'TARE_WEIGHED').length,
+    loading: shipments.filter(s => s.status === 'LOADING').length,
+    loaded: shipments.filter(s => s.status === 'GROSS_WEIGHED').length,
+    released: shipments.filter(s => s.status === 'RELEASED').length,
   };
 
-  const config = statusConfig[shipments[0]?.status || 'GATE_IN'];
+  const filtered = filterStatus === 'ALL' ? shipments : shipments.filter(s => s.status === filterStatus);
 
-  // Compute stats from shipments
-  const computeStats = () => {
-    const inside = shipments.filter(s => ['GATE_IN', 'TARE_WEIGHED', 'LOADING'].includes(s.status)).length;
-    const loading = shipments.filter(s => s.status === 'LOADING').length;
-    const loaded = shipments.filter(s => s.status === 'GROSS_WEIGHED').length;
-    const ready = shipments.filter(s => ['RELEASED', 'EXITED'].includes(s.status)).length;
-    return { inside, loading, loaded, ready };
+  // ── Next action for each shipment ──
+  const getNextAction = (s: Shipment) => {
+    switch (s.status) {
+      case 'GATE_IN': return { label: 'Weigh Tare', type: 'weigh-tare' as const };
+      case 'TARE_WEIGHED': return { label: 'Start Loading', type: 'loading' as const };
+      case 'LOADING': return { label: 'Weigh Gross', type: 'weigh-gross' as const };
+      case 'GROSS_WEIGHED': return { label: 'Release', type: 'release' as const };
+      case 'RELEASED': return { label: 'Gate Exit', type: 'exit' as const };
+      default: return null;
+    }
   };
-
-  const stats = computeStats();
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white max-w-5xl mx-auto">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="sticky top-0 bg-white border-b border-gray-200 z-20">
-        <div className="px-4 py-4 flex items-center gap-3">
-          <Truck size={32} className="text-blue-600" />
-          <div>
-            <h1 className="text-xl md:text-2xl font-bold text-gray-900">Gate Register</h1>
-            <p className="text-xs md:text-sm text-gray-500">Factory vehicle tracking</p>
+      <div className="bg-gradient-to-r from-blue-700 to-blue-800 text-white">
+        <div className="max-w-7xl mx-auto px-4 py-4">
+          <div className="flex items-center justify-between mb-3">
+            <h1 className="text-xl font-bold flex items-center gap-2">
+              <Scale size={24} /> Gate Register
+            </h1>
+            <span className="text-sm text-blue-200">
+              {new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}
+            </span>
           </div>
-        </div>
 
-        {/* Stats Bar */}
-        <div className="grid grid-cols-4 gap-2 px-4 pb-4">
-          <div className="text-center bg-gray-100 rounded-lg p-2">
-            <div className="text-xs text-gray-600">Inside</div>
-            <div className="text-lg md:text-2xl font-bold text-gray-900">{stats.inside}</div>
-          </div>
-          <div className="text-center bg-amber-100 rounded-lg p-2">
-            <div className="text-xs text-gray-600">Loading</div>
-            <div className="text-lg md:text-2xl font-bold text-amber-700">{stats.loading}</div>
-          </div>
-          <div className="text-center bg-orange-100 rounded-lg p-2">
-            <div className="text-xs text-gray-600">Loaded</div>
-            <div className="text-lg md:text-2xl font-bold text-orange-700">{stats.loaded}</div>
-          </div>
-          <div className="text-center bg-green-100 rounded-lg p-2">
-            <div className="text-xs text-gray-600">Ready</div>
-            <div className="text-lg md:text-2xl font-bold text-green-700">{stats.ready}</div>
+          {/* Stats row */}
+          <div className="grid grid-cols-6 gap-2">
+            {[
+              { label: 'At Gate', count: stats.atGate, bg: 'bg-gray-500/30' },
+              { label: 'Tare Done', count: stats.tared, bg: 'bg-blue-500/30' },
+              { label: 'Loading', count: stats.loading, bg: 'bg-amber-500/30' },
+              { label: 'Loaded', count: stats.loaded, bg: 'bg-orange-500/30' },
+              { label: 'Released', count: stats.released, bg: 'bg-green-500/30' },
+              { label: 'Total', count: stats.total, bg: 'bg-white/15' },
+            ].map(s => (
+              <div key={s.label} className={`${s.bg} rounded-lg p-2 text-center`}>
+                <div className="text-xl font-bold">{s.count}</div>
+                <div className="text-[9px] text-blue-100">{s.label}</div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
 
-      <div className="p-4">
+      <div className="max-w-7xl mx-auto px-4 py-4">
         {msg && (
-          <div className={`rounded-lg p-3 mb-4 text-sm ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-            {msg.text}
+          <div className={`rounded-lg p-3 mb-3 text-sm flex items-center gap-2 ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+            {msg.type === 'ok' ? <CheckCircle size={16} /> : <AlertCircle size={16} />} {msg.text}
           </div>
         )}
 
-        {/* New Vehicle Entry Button */}
-        {!showForm && (
-          <button
-            onClick={() => setShowForm(true)}
-            className="w-full border-2 border-dashed border-blue-300 rounded-lg py-4 text-blue-600 hover:bg-blue-50 flex items-center justify-center gap-2 mb-4 font-bold text-lg touch-target"
-          >
-            <Plus size={24} /> New Vehicle Entry
-          </button>
-        )}
-
-        {/* New Vehicle Form */}
-        {showForm && (
-          <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-gray-900">Vehicle Entry</h3>
-              <button onClick={resetForm} className="text-gray-400 hover:text-gray-600">
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Vehicle No */}
-            <div className="mb-3">
-              <label className="block text-xs font-semibold text-gray-700 mb-1">Vehicle No *</label>
-              <input
-                value={vehicleNo}
-                onChange={e => setVehicleNo(e.target.value)}
-                placeholder="MP09HH3213"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base font-bold text-gray-900 placeholder-gray-400"
-                autoFocus
-              />
-            </div>
-
-            {/* Product */}
-            <div className="mb-3">
-              <label className="block text-xs font-semibold text-gray-700 mb-1">Product *</label>
-              <select
-                value={product}
-                onChange={e => setProduct(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base"
-              >
-                {PRODUCTS.map(p => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Customer & Destination */}
-            <div className="grid grid-cols-2 gap-3 mb-3">
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">Customer</label>
-                <input
-                  value={customerName}
-                  onChange={e => setCustomerName(e.target.value)}
-                  placeholder="Name"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">Destination</label>
-                <input
-                  value={destination}
-                  onChange={e => setDestination(e.target.value)}
-                  placeholder="City"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base"
-                />
-              </div>
-            </div>
-
-            {/* Driver Info */}
-            <div className="mb-3">
-              <label className="block text-xs font-semibold text-gray-700 mb-1">Driver Name</label>
-              <input
-                value={driverName}
-                onChange={e => setDriverName(e.target.value)}
-                placeholder="Driver name"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base mb-3"
-              />
-              <label className="block text-xs font-semibold text-gray-700 mb-1">Driver Mobile</label>
-              <input
-                value={driverMobile}
-                onChange={e => setDriverMobile(e.target.value)}
-                placeholder="10-digit mobile"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base"
-              />
-            </div>
-
-            {/* Transporter & Capacity */}
-            <div className="grid grid-cols-2 gap-3 mb-3">
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">Transporter</label>
-                <input
-                  value={transporter}
-                  onChange={e => setTransporter(e.target.value)}
-                  placeholder="Name"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">Capacity (Ton)</label>
-                <input
-                  type="number"
-                  value={capacityTon}
-                  onChange={e => setCapacityTon(e.target.value)}
-                  placeholder="0"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base"
-                />
-              </div>
-            </div>
-
-            {/* Vehicle Type */}
-            <div className="mb-3">
-              <label className="block text-xs font-semibold text-gray-700 mb-1">Vehicle Type</label>
-              <select
-                value={vehicleType}
-                onChange={e => setVehicleType(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base"
-              >
-                {VEHICLE_TYPES.map(v => (
-                  <option key={v} value={v}>{v}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Gate In Time */}
-            <div className="mb-3">
-              <label className="block text-xs font-semibold text-gray-700 mb-1">Gate In Time</label>
-              <input
-                type="time"
-                value={gateInTime}
-                onChange={e => setGateInTime(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base"
-              />
-            </div>
-
-            {/* Dispatch Request */}
-            <div className="mb-4">
-              <label className="block text-xs font-semibold text-gray-700 mb-1">Dispatch Request (Optional)</label>
-              <select
-                value={dispatchRequestId}
-                onChange={e => setDispatchRequestId(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base"
-              >
-                <option value="">— None —</option>
-                {dispatchRequests.map(dr => (
-                  <option key={dr.id} value={dr.id}>{dr.customerName}</option>
-                ))}
-              </select>
-            </div>
-
-            <button
-              onClick={saveNewVehicle}
-              disabled={saving}
-              className="w-full py-3 bg-blue-600 text-white rounded-lg font-bold text-base hover:bg-blue-700 flex items-center justify-center gap-2 disabled:opacity-50 touch-target"
-            >
-              {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-              Save Entry
+        {/* Filter tabs */}
+        <div className="flex gap-1.5 mb-3 overflow-x-auto pb-1">
+          {[
+            { key: 'ALL', label: `All (${shipments.length})` },
+            { key: 'GATE_IN', label: `Gate (${stats.atGate})` },
+            { key: 'TARE_WEIGHED', label: `Tare (${stats.tared})` },
+            { key: 'LOADING', label: `Loading (${stats.loading})` },
+            { key: 'GROSS_WEIGHED', label: `Loaded (${stats.loaded})` },
+            { key: 'RELEASED', label: `Released (${stats.released})` },
+          ].map(tab => (
+            <button key={tab.key} onClick={() => setFilterStatus(tab.key)}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition ${
+                filterStatus === tab.key ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 border hover:bg-gray-50'
+              }`}>
+              {tab.label}
             </button>
+          ))}
+        </div>
+
+        {/* ── TABLE VIEW ── */}
+        {loading ? (
+          <div className="text-center py-12 text-gray-400">
+            <Loader2 size={32} className="animate-spin mx-auto mb-2" />
           </div>
-        )}
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-12">
+            <Scale size={48} className="mx-auto text-gray-300 mb-3" />
+            <p className="text-gray-500 text-sm">No active vehicles</p>
+          </div>
+        ) : (
+          <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
+            {/* Table header */}
+            <div className="hidden md:grid grid-cols-12 gap-2 px-4 py-2 bg-gray-50 border-b text-[10px] font-semibold text-gray-500 uppercase">
+              <div className="col-span-2">Vehicle</div>
+              <div className="col-span-1">Status</div>
+              <div className="col-span-2">Customer / Product</div>
+              <div className="col-span-1">Tare</div>
+              <div className="col-span-1">Gross</div>
+              <div className="col-span-1">Net</div>
+              <div className="col-span-1">Time</div>
+              <div className="col-span-3">Action</div>
+            </div>
 
-        {/* Shipments List */}
-        <div className="space-y-3">
-          {shipments.length > 0 ? (
-            shipments.map(s => {
-              const sConfig = statusConfig[s.status];
-              const netWeight = s.weightGross && s.weightTare ? (s.weightGross - s.weightTare).toFixed(2) : null;
+            {/* Rows */}
+            {filtered.map(s => {
+              const cfg = STATUS_CONFIG[s.status];
+              const net = s.weightNet || (s.weightGross && s.weightTare ? s.weightGross - s.weightTare : null);
+              const nextAction = getNextAction(s);
+              const stepIdx = STATUS_FLOW.indexOf(s.status);
+
               return (
-                <div key={s.id} className={`${sConfig.bg} ${sConfig.border} rounded-lg p-4 shadow-sm`}>
-                  {/* Header */}
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <div className="text-2xl md:text-3xl font-bold text-gray-900">{s.vehicleNo}</div>
-                      <div className="text-sm text-gray-600 mt-1">{s.customerName}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-xs font-semibold text-gray-500 uppercase">{sConfig.label}</div>
-                      {netWeight && <div className="text-2xl font-bold text-gray-900 mt-1">{netWeight} T</div>}
-                    </div>
-                  </div>
-
-                  {/* Details */}
-                  <div className="bg-white/60 rounded-lg p-3 mb-3 space-y-1">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Product:</span>
-                      <span className="font-semibold text-gray-900">{s.productName}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Destination:</span>
-                      <span className="font-semibold text-gray-900">{s.destination || '—'}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Gate In:</span>
-                      <span className="font-semibold text-gray-900">{s.gateInTime}</span>
-                    </div>
-                    {s.weightTare && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">Tare:</span>
-                        <span className="font-semibold text-gray-900">{s.weightTare} T</span>
+                <div key={s.id} className="border-b last:border-b-0 hover:bg-gray-50/50 transition">
+                  {/* ── Desktop row ── */}
+                  <div className="hidden md:grid grid-cols-12 gap-2 px-4 py-3 items-center">
+                    {/* Vehicle */}
+                    <div className="col-span-2">
+                      <div className="font-bold text-sm text-gray-900">{s.vehicleNo}</div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        {s.driverName && <span className="text-[10px] text-gray-500">{s.driverName}</span>}
+                        {s.driverMobile && (
+                          <a href={`tel:${s.driverMobile}`} className="text-blue-600"><Phone size={9} /></a>
+                        )}
+                        {s.transporterName && <span className="text-[10px] text-gray-400">({s.transporterName})</span>}
                       </div>
-                    )}
-                    {s.weightGross && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">Gross:</span>
-                        <span className="font-semibold text-gray-900">{s.weightGross} T</span>
+                    </div>
+
+                    {/* Status */}
+                    <div className="col-span-1">
+                      <span className={`text-[10px] font-semibold px-2 py-1 rounded-full ${cfg.badge}`}>
+                        {cfg.label}
+                      </span>
+                      {/* Mini progress */}
+                      <div className="flex gap-0.5 mt-1.5">
+                        {STATUS_FLOW.map((st, i) => (
+                          <div key={st} className={`h-1 flex-1 rounded-full ${
+                            i <= stepIdx ? 'bg-green-500' : 'bg-gray-200'
+                          } ${i === stepIdx && stepIdx < 5 ? 'animate-pulse' : ''}`} />
+                        ))}
                       </div>
-                    )}
-                  </div>
+                    </div>
 
-                  {/* Action Buttons */}
-                  <div className="space-y-2">
-                    {s.status === 'GATE_IN' && (
-                      <button
-                        onClick={() => {
-                          setWeighFormOpen(s.id);
-                          setWeighType('tare');
-                        }}
-                        className="w-full py-3 bg-gray-500 text-white rounded-lg font-bold text-base hover:bg-gray-600 touch-target"
-                      >
-                        📏 Weigh Tare
-                      </button>
-                    )}
+                    {/* Customer / Product */}
+                    <div className="col-span-2">
+                      <div className="text-xs font-medium text-gray-800 truncate">{s.customerName || '—'}</div>
+                      <div className="text-[10px] text-gray-500 flex items-center gap-1">
+                        <Package size={9} /> {s.productName}
+                        {s.destination && <span className="ml-1 truncate">→ {s.destination}</span>}
+                      </div>
+                    </div>
 
-                    {s.status === 'TARE_WEIGHED' && (
-                      <button
-                        onClick={async () => {
-                          setSaving(true);
-                          try {
-                            await api.put(`/shipments/${s.id}/status`, { status: 'LOADING', loadStartTime: new Date().toISOString() });
-                            setMsg({ type: 'ok', text: 'Loading started!' });
-                            loadShipments();
-                          } catch {
-                            setMsg({ type: 'err', text: 'Failed' });
-                          }
-                          setSaving(false);
-                        }}
-                        className="w-full py-3 bg-blue-600 text-white rounded-lg font-bold text-base hover:bg-blue-700 touch-target"
-                      >
-                        ▶️ Start Loading
-                      </button>
-                    )}
+                    {/* Tare */}
+                    <div className="col-span-1">
+                      {s.weightTare ? (
+                        <span className="text-xs font-medium text-gray-700">{s.weightTare.toLocaleString()} kg</span>
+                      ) : (
+                        <span className="text-[10px] text-gray-400">—</span>
+                      )}
+                    </div>
 
-                    {s.status === 'LOADING' && (
-                      <button
-                        onClick={() => {
-                          setWeighFormOpen(s.id);
-                          setWeighType('gross');
-                        }}
-                        className="w-full py-3 bg-amber-600 text-white rounded-lg font-bold text-base hover:bg-amber-700 touch-target"
-                      >
-                        📏 Weigh Gross
-                      </button>
-                    )}
+                    {/* Gross */}
+                    <div className="col-span-1">
+                      {s.weightGross ? (
+                        <span className="text-xs font-medium text-gray-700">{s.weightGross.toLocaleString()} kg</span>
+                      ) : (
+                        <span className="text-[10px] text-gray-400">—</span>
+                      )}
+                    </div>
 
-                    {s.status === 'GROSS_WEIGHED' && (
-                      <button
-                        onClick={() => setReleaseFormOpen(s.id)}
-                        className="w-full py-3 bg-orange-600 text-white rounded-lg font-bold text-base hover:bg-orange-700 touch-target"
-                      >
-                        🔓 Release
-                      </button>
-                    )}
+                    {/* Net */}
+                    <div className="col-span-1">
+                      {net ? (
+                        <div>
+                          <span className="text-sm font-bold text-green-700">{(net / 1000).toFixed(2)}</span>
+                          <span className="text-[10px] text-gray-500 ml-0.5">MT</span>
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-gray-400">—</span>
+                      )}
+                    </div>
 
-                    {s.status === 'RELEASED' && (
-                      <button
-                        onClick={() => recordExit(s.id)}
-                        className="w-full py-3 bg-green-600 text-white rounded-lg font-bold text-base hover:bg-green-700 touch-target"
-                      >
-                        🚗 Exit
-                      </button>
-                    )}
+                    {/* Time */}
+                    <div className="col-span-1 text-[10px] text-gray-500">
+                      {s.gateInTime && (
+                        <div>In: {typeof s.gateInTime === 'string' && s.gateInTime.includes('T')
+                          ? new Date(s.gateInTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+                          : s.gateInTime
+                        }</div>
+                      )}
+                    </div>
 
-                    {/* Share & Contact */}
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        onClick={() => shareStatus(s)}
-                        className="py-2 bg-green-600 text-white rounded-lg font-semibold text-sm hover:bg-green-700 flex items-center justify-center gap-1 touch-target"
-                      >
-                        <Share2 size={16} /> Share
+                    {/* Action */}
+                    <div className="col-span-3 flex items-center gap-1.5">
+                      {/* Inline weigh form */}
+                      {weighId === s.id ? (
+                        <div className="flex gap-1 items-center flex-1">
+                          <input type="number" value={weighVal} onChange={e => setWeighVal(e.target.value)}
+                            placeholder={`${weighType === 'tare' ? 'Tare' : 'Gross'} weight (kg)`}
+                            className="input-field text-xs w-28" autoFocus
+                            onKeyDown={e => e.key === 'Enter' && doWeigh(s.id)} />
+                          <button onClick={() => doWeigh(s.id)} disabled={saving}
+                            className="px-2 py-1.5 bg-blue-600 text-white text-[10px] rounded font-medium hover:bg-blue-700 disabled:opacity-50">
+                            {saving ? <Loader2 size={10} className="animate-spin" /> : 'Save'}
+                          </button>
+                          <button onClick={() => setWeighId(null)} className="text-gray-400"><X size={12} /></button>
+                        </div>
+                      ) : releaseId === s.id ? (
+                        <div className="flex gap-1 items-center flex-1 flex-wrap">
+                          <input value={relChallan} onChange={e => setRelChallan(e.target.value)}
+                            placeholder="Challan" className="input-field text-xs w-20" autoFocus />
+                          <input value={relEway} onChange={e => setRelEway(e.target.value)}
+                            placeholder="E-Way" className="input-field text-xs w-20" />
+                          <input value={relGatePass} onChange={e => setRelGatePass(e.target.value)}
+                            placeholder="Gate Pass" className="input-field text-xs w-20" />
+                          <button onClick={() => doStatus(s.id, 'RELEASED', {
+                            challanNo: relChallan, ewayBill: relEway, gatePassNo: relGatePass, releaseTime: new Date().toISOString()
+                          })} disabled={saving}
+                            className="px-2 py-1.5 bg-orange-600 text-white text-[10px] rounded font-medium hover:bg-orange-700 disabled:opacity-50">
+                            {saving ? <Loader2 size={10} className="animate-spin" /> : 'Release'}
+                          </button>
+                          <button onClick={() => setReleaseId(null)} className="text-gray-400"><X size={12} /></button>
+                        </div>
+                      ) : nextAction ? (
+                        <>
+                          {nextAction.type === 'weigh-tare' && (
+                            <button onClick={() => { setWeighId(s.id); setWeighType('tare'); setWeighVal(''); }}
+                              className="px-3 py-1.5 bg-gray-600 text-white text-xs rounded font-medium hover:bg-gray-700 flex items-center gap-1">
+                              <Scale size={12} /> Weigh Tare
+                            </button>
+                          )}
+                          {nextAction.type === 'loading' && (
+                            <button onClick={() => doStatus(s.id, 'LOADING', { loadStartTime: new Date().toISOString() })}
+                              disabled={saving}
+                              className="px-3 py-1.5 bg-blue-600 text-white text-xs rounded font-medium hover:bg-blue-700 flex items-center gap-1">
+                              {saving ? <Loader2 size={12} className="animate-spin" /> : <>▶ Start Loading</>}
+                            </button>
+                          )}
+                          {nextAction.type === 'weigh-gross' && (
+                            <button onClick={() => { setWeighId(s.id); setWeighType('gross'); setWeighVal(''); }}
+                              className="px-3 py-1.5 bg-amber-600 text-white text-xs rounded font-medium hover:bg-amber-700 flex items-center gap-1">
+                              <Scale size={12} /> Weigh Gross
+                            </button>
+                          )}
+                          {nextAction.type === 'release' && (
+                            <button onClick={() => setReleaseId(s.id)}
+                              className="px-3 py-1.5 bg-orange-600 text-white text-xs rounded font-medium hover:bg-orange-700 flex items-center gap-1">
+                              🔓 Release
+                            </button>
+                          )}
+                          {nextAction.type === 'exit' && (
+                            <button onClick={() => doStatus(s.id, 'EXITED', { exitTime: new Date().toISOString() })}
+                              disabled={saving}
+                              className="px-3 py-1.5 bg-green-600 text-white text-xs rounded font-medium hover:bg-green-700 flex items-center gap-1">
+                              {saving ? <Loader2 size={12} className="animate-spin" /> : <>🚗 Gate Exit</>}
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-[10px] text-emerald-600 font-medium">✓ Complete</span>
+                      )}
+
+                      {/* Quick share */}
+                      <button onClick={() => shareStatus(s)}
+                        className="p-1.5 text-green-600 hover:bg-green-50 rounded" title="Share">
+                        <Share2 size={12} />
                       </button>
                       {s.driverMobile && (
-                        <a
-                          href={`https://api.whatsapp.com/send?phone=${s.driverMobile}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="py-2 bg-green-500 text-white rounded-lg font-semibold text-sm hover:bg-green-600 flex items-center justify-center gap-1 touch-target"
-                        >
-                          <MessageCircle size={16} /> Chat
+                        <a href={`https://api.whatsapp.com/send?phone=91${s.driverMobile.replace(/\D/g, '').slice(-10)}`}
+                          target="_blank" rel="noopener"
+                          className="p-1.5 text-green-600 hover:bg-green-50 rounded" title="WhatsApp Driver">
+                          <MessageCircle size={12} />
                         </a>
                       )}
                     </div>
                   </div>
 
-                  {/* Weigh Form Inline */}
-                  {weighFormOpen === s.id && (
-                    <div className="mt-3 bg-white rounded-lg p-3 border-2 border-blue-300">
-                      <label className="block text-xs font-semibold text-gray-700 mb-2">
-                        Weight ({weighType.toUpperCase()}) in Tons
-                      </label>
-                      <div className="flex gap-2">
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={weighWeight}
-                          onChange={e => setWeighWeight(e.target.value)}
-                          placeholder="0.00"
-                          className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-base font-bold"
-                          autoFocus
-                        />
-                        <button
-                          onClick={() => recordWeigh(s.id)}
-                          disabled={saving}
-                          className="px-6 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50"
-                        >
-                          Save
-                        </button>
-                        <button
-                          onClick={() => setWeighFormOpen(null)}
-                          className="px-4 py-3 text-gray-600 hover:text-gray-900"
-                        >
-                          <X size={18} />
-                        </button>
+                  {/* ── Mobile card ── */}
+                  <div className="md:hidden p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <span className="font-bold text-lg text-gray-900">{s.vehicleNo}</span>
+                        <span className={`ml-2 text-[10px] font-semibold px-2 py-0.5 rounded-full ${cfg.badge}`}>{cfg.label}</span>
                       </div>
+                      {net && <span className="text-lg font-bold text-green-700">{(net / 1000).toFixed(2)} MT</span>}
                     </div>
-                  )}
 
-                  {/* Release Form Inline */}
-                  {releaseFormOpen === s.id && (
-                    <div className="mt-3 bg-white rounded-lg p-3 border-2 border-orange-300 space-y-2">
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-700 mb-1">Challan No</label>
-                        <input
-                          value={releaseChallanNo}
-                          onChange={e => setReleaseChallanNo(e.target.value)}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg text-base"
-                          placeholder="CHN-2026-001"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-700 mb-1">E-Way Bill</label>
-                        <input
-                          value={releaseEwayBill}
-                          onChange={e => setReleaseEwayBill(e.target.value)}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg text-base"
-                          placeholder="EWB-2026-001"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-700 mb-1">Gate Pass No</label>
-                        <input
-                          value={releaseGatePassNo}
-                          onChange={e => setReleaseGatePassNo(e.target.value)}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg text-base"
-                          placeholder="GP-2026-001"
-                        />
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => recordRelease(s.id)}
-                          disabled={saving}
-                          className="flex-1 py-2 bg-orange-600 text-white rounded-lg font-bold hover:bg-orange-700 disabled:opacity-50"
-                        >
-                          Release Vehicle
-                        </button>
-                        <button
-                          onClick={() => setReleaseFormOpen(null)}
-                          className="px-4 py-2 text-gray-600 hover:text-gray-900"
-                        >
-                          <X size={18} />
-                        </button>
-                      </div>
+                    <div className="grid grid-cols-3 gap-2 text-xs text-gray-600 mb-2">
+                      <div><span className="text-gray-400">Customer</span><br/><span className="font-medium">{s.customerName || '—'}</span></div>
+                      <div><span className="text-gray-400">Product</span><br/><span className="font-medium">{s.productName}</span></div>
+                      <div><span className="text-gray-400">Driver</span><br/><span className="font-medium">{s.driverName || '—'}</span></div>
                     </div>
-                  )}
+
+                    <div className="grid grid-cols-3 gap-2 text-xs mb-2">
+                      <div><span className="text-gray-400">Tare</span><br/><span className="font-medium">{s.weightTare ? `${s.weightTare.toLocaleString()} kg` : '—'}</span></div>
+                      <div><span className="text-gray-400">Gross</span><br/><span className="font-medium">{s.weightGross ? `${s.weightGross.toLocaleString()} kg` : '—'}</span></div>
+                      <div><span className="text-gray-400">Destination</span><br/><span className="font-medium truncate">{s.destination || '—'}</span></div>
+                    </div>
+
+                    {/* Progress */}
+                    <div className="flex gap-0.5 mb-2">
+                      {STATUS_FLOW.map((st, i) => (
+                        <div key={st} className={`h-1.5 flex-1 rounded-full ${
+                          i <= stepIdx ? 'bg-green-500' : 'bg-gray-200'
+                        } ${i === stepIdx && stepIdx < 5 ? 'animate-pulse' : ''}`} />
+                      ))}
+                    </div>
+
+                    {/* Mobile action */}
+                    {weighId === s.id ? (
+                      <div className="flex gap-1.5 items-center">
+                        <input type="number" value={weighVal} onChange={e => setWeighVal(e.target.value)}
+                          placeholder={`${weighType === 'tare' ? 'Tare' : 'Gross'} (kg)`}
+                          className="input-field text-sm flex-1" autoFocus
+                          onKeyDown={e => e.key === 'Enter' && doWeigh(s.id)} />
+                        <button onClick={() => doWeigh(s.id)} disabled={saving}
+                          className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg font-medium">
+                          {saving ? <Loader2 size={14} className="animate-spin" /> : 'Save'}
+                        </button>
+                        <button onClick={() => setWeighId(null)} className="text-gray-400 p-2"><X size={16} /></button>
+                      </div>
+                    ) : releaseId === s.id ? (
+                      <div className="space-y-1.5">
+                        <div className="grid grid-cols-3 gap-1.5">
+                          <input value={relChallan} onChange={e => setRelChallan(e.target.value)} placeholder="Challan" className="input-field text-xs" />
+                          <input value={relEway} onChange={e => setRelEway(e.target.value)} placeholder="E-Way" className="input-field text-xs" />
+                          <input value={relGatePass} onChange={e => setRelGatePass(e.target.value)} placeholder="Gate Pass" className="input-field text-xs" />
+                        </div>
+                        <div className="flex gap-1.5">
+                          <button onClick={() => doStatus(s.id, 'RELEASED', {
+                            challanNo: relChallan, ewayBill: relEway, gatePassNo: relGatePass, releaseTime: new Date().toISOString()
+                          })} className="flex-1 py-2 bg-orange-600 text-white text-sm rounded-lg font-medium">Release</button>
+                          <button onClick={() => setReleaseId(null)} className="px-3 py-2 text-gray-500"><X size={16} /></button>
+                        </div>
+                      </div>
+                    ) : nextAction ? (
+                      <div className="flex gap-2">
+                        {nextAction.type === 'weigh-tare' && (
+                          <button onClick={() => { setWeighId(s.id); setWeighType('tare'); setWeighVal(''); }}
+                            className="flex-1 py-2.5 bg-gray-600 text-white rounded-lg font-medium text-sm">⚖️ Weigh Tare</button>
+                        )}
+                        {nextAction.type === 'loading' && (
+                          <button onClick={() => doStatus(s.id, 'LOADING', { loadStartTime: new Date().toISOString() })}
+                            className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg font-medium text-sm">▶ Start Loading</button>
+                        )}
+                        {nextAction.type === 'weigh-gross' && (
+                          <button onClick={() => { setWeighId(s.id); setWeighType('gross'); setWeighVal(''); }}
+                            className="flex-1 py-2.5 bg-amber-600 text-white rounded-lg font-medium text-sm">⚖️ Weigh Gross</button>
+                        )}
+                        {nextAction.type === 'release' && (
+                          <button onClick={() => setReleaseId(s.id)}
+                            className="flex-1 py-2.5 bg-orange-600 text-white rounded-lg font-medium text-sm">🔓 Release</button>
+                        )}
+                        {nextAction.type === 'exit' && (
+                          <button onClick={() => doStatus(s.id, 'EXITED', { exitTime: new Date().toISOString() })}
+                            className="flex-1 py-2.5 bg-green-600 text-white rounded-lg font-medium text-sm">🚗 Gate Exit</button>
+                        )}
+                        <button onClick={() => shareStatus(s)}
+                          className="px-3 py-2.5 bg-green-100 text-green-700 rounded-lg"><Share2 size={14} /></button>
+                      </div>
+                    ) : (
+                      <div className="text-center text-emerald-600 text-sm font-medium py-2">✓ Complete</div>
+                    )}
+                  </div>
                 </div>
               );
-            })
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              <Truck size={48} className="mx-auto mb-2 opacity-30" />
-              <p className="text-sm">No active shipments</p>
-            </div>
-          )}
-        </div>
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
