@@ -177,89 +177,75 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
 
     // Divider
     doc.moveTo(mL, doc.y).lineTo(pageW - 40, doc.y).lineWidth(1.5).strokeColor('#4a7c3f').stroke();
-    doc.y += 10;
+    doc.y += 6;
 
-    // Title
-    doc.fontSize(14).font('Helvetica-Bold').fillColor('#333').text('FREIGHT INQUIRY', mL, doc.y, { align: 'center', width: cW });
-    doc.moveDown(0.3);
-    doc.fontSize(10).font('Helvetica').fillColor('#666').text(`Inquiry No: FI-${inquiry.inquiryNo}`, mL, doc.y, { align: 'center', width: cW });
-    doc.moveDown(0.3);
-    doc.fontSize(8).fillColor('#888').text(`Date: ${new Date(inquiry.createdAt).toLocaleDateString('en-IN')}`, mL, doc.y, { align: 'center', width: cW });
-    doc.moveDown(1);
+    // Title + Inquiry No on same line
+    doc.fontSize(12).font('Helvetica-Bold').fillColor('#333').text('FREIGHT INQUIRY', mL, doc.y, { continued: true, width: cW });
+    doc.fontSize(9).font('Helvetica').fillColor('#666').text(`   FI-${inquiry.inquiryNo}  |  ${new Date(inquiry.createdAt).toLocaleDateString('en-IN')}`, { align: 'right' });
+    doc.y += 6;
 
-    // Status badge
-    const statusColors: Record<string, string> = { OPEN: '#2563eb', QUOTES_RECEIVED: '#d97706', AWARDED: '#16a34a', CANCELLED: '#dc2626' };
-    doc.fontSize(9).font('Helvetica-Bold').fillColor(statusColors[inquiry.status] || '#333').text(`Status: ${inquiry.status}`, mL, doc.y);
-    doc.moveDown(0.8);
-
-    // Details box
+    // Details box — compact
     const boxY = doc.y;
-    doc.rect(mL, boxY, cW, 100).lineWidth(0.5).strokeColor('#ccc').stroke();
-    doc.fontSize(10).font('Helvetica-Bold').fillColor('#4a7c3f').text('SHIPMENT DETAILS', mL + 10, boxY + 8);
+    doc.rect(mL, boxY, cW, 75).lineWidth(0.5).strokeColor('#ccc').stroke();
+    doc.fontSize(9).font('Helvetica-Bold').fillColor('#4a7c3f').text('SHIPMENT DETAILS', mL + 8, boxY + 5);
 
     const col2 = pageW / 2 + 20;
-    const detailY = boxY + 26;
+    const detailY = boxY + 18;
     const labelFont = 'Helvetica-Bold';
     const valFont = 'Helvetica';
 
     const detail = (label: string, val: string, x: number, y: number) => {
-      doc.fontSize(9).font(labelFont).fillColor('#555').text(label, x, y);
-      doc.font(valFont).fillColor('#333').text(val, x + 90, y);
+      doc.fontSize(8).font(labelFont).fillColor('#555').text(label, x, y);
+      doc.font(valFont).fillColor('#333').text(val, x + 80, y);
     };
 
-    detail('Origin:', inquiry.origin || 'MSPIL, Narsinghpur', mL + 10, detailY);
+    detail('Origin:', inquiry.origin || 'MSPIL, Narsinghpur', mL + 8, detailY);
     detail('Destination:', inquiry.destination, col2, detailY);
-    detail('Product:', inquiry.productName, mL + 10, detailY + 16);
-    detail('Quantity:', `${inquiry.quantity} ${inquiry.unit}`, col2, detailY + 16);
-    detail('Distance:', inquiry.distanceKm ? `${inquiry.distanceKm} km` : 'TBD', mL + 10, detailY + 32);
-    detail('Vehicle Type:', inquiry.vehicleType || 'Open', col2, detailY + 32);
-    detail('Vehicles:', `${inquiry.vehicleCount}`, mL + 10, detailY + 48);
-    if (inquiry.loadingDate) detail('Loading Date:', new Date(inquiry.loadingDate).toLocaleDateString('en-IN'), col2, detailY + 48);
-    doc.y = boxY + 110;
+    detail('Product:', inquiry.productName, mL + 8, detailY + 14);
+    detail('Quantity:', `${inquiry.quantity} ${inquiry.unit}`, col2, detailY + 14);
+    detail('Distance:', inquiry.distanceKm ? `${inquiry.distanceKm} km` : 'TBD', mL + 8, detailY + 28);
+    detail('Vehicles:', `${inquiry.vehicleCount} (${inquiry.vehicleType || 'Open'})`, col2, detailY + 28);
+    if (inquiry.loadingDate) detail('Loading:', new Date(inquiry.loadingDate).toLocaleDateString('en-IN'), mL + 8, detailY + 42);
+    doc.y = boxY + 82;
 
-    // Requirements section
-    doc.fontSize(10).font('Helvetica-Bold').fillColor('#333').text('REQUIREMENTS', mL, doc.y);
-    doc.moveDown(0.3);
-    doc.fontSize(9).font('Helvetica').fillColor('#555');
-    doc.text('1. Vehicle must be in good condition with valid fitness certificate.', mL + 10, doc.y);
-    doc.moveDown(0.2);
-    doc.text('2. Driver must carry valid license and vehicle documents.', mL + 10, doc.y);
-    doc.moveDown(0.2);
-    doc.text('3. Transporter to provide GR (Bilty) at the time of loading.', mL + 10, doc.y);
-    doc.moveDown(0.2);
-    doc.text('4. 50% advance payment after bill generation; balance after delivery confirmation.', mL + 10, doc.y);
-    doc.moveDown(0.2);
-    doc.text('5. Transporter is not responsible for insurance unless specifically agreed.', mL + 10, doc.y);
-    doc.moveDown(1);
+    // Requirements — compact single block
+    doc.fontSize(8).font('Helvetica-Bold').fillColor('#333').text('Terms:', mL, doc.y);
+    doc.y += 10;
+    doc.fontSize(7).font('Helvetica').fillColor('#555');
+    const terms = [
+      'Vehicle in good condition with valid fitness.',
+      'Driver must carry valid license & docs.',
+      'GR (Bilty) required at loading.',
+      '50% advance after bill; balance after delivery.',
+    ];
+    terms.forEach((t, i) => {
+      doc.text(`${i + 1}. ${t}`, mL + 8, doc.y);
+      doc.y += 10;
+    });
+    doc.y += 4;
 
-    // Remarks
+    // Remarks (compact)
     if (inquiry.remarks) {
-      doc.fontSize(9).font('Helvetica-Bold').fillColor('#333').text('Remarks:', mL, doc.y);
-      doc.font('Helvetica').fillColor('#555').text(inquiry.remarks, mL + 10, doc.y + 14, { width: cW - 20 });
-      doc.moveDown(1);
+      doc.fontSize(8).font('Helvetica-Bold').fillColor('#333').text('Remarks: ', mL, doc.y, { continued: true });
+      doc.font('Helvetica').fillColor('#555').text(inquiry.remarks);
+      doc.y += 6;
     }
 
-    // Quotation response section
-    doc.moveDown(0.5);
-    doc.fontSize(10).font('Helvetica-Bold').fillColor('#333').text('QUOTATION RESPONSE', mL, doc.y);
-    doc.moveDown(0.3);
-    doc.fontSize(9).font('Helvetica').fillColor('#555');
-    doc.text('Please submit your quotation with the following:', mL + 10, doc.y);
-    doc.moveDown(0.2);
-    doc.text('- Rate per MT / Rate per trip / Rate per km', mL + 20, doc.y);
-    doc.moveDown(0.2);
-    doc.text('- Vehicle type and number of vehicles available', mL + 20, doc.y);
-    doc.moveDown(0.2);
-    doc.text('- Estimated transit days', mL + 20, doc.y);
-    doc.moveDown(0.2);
-    doc.text('- Any terms and conditions', mL + 20, doc.y);
-    doc.moveDown(1.5);
+    // Quotation response — compact
+    doc.fontSize(8).font('Helvetica-Bold').fillColor('#333').text('Please quote:', mL, doc.y);
+    doc.y += 10;
+    doc.fontSize(7).font('Helvetica').fillColor('#555');
+    ['Rate per MT / trip / km', 'Vehicle type & count available', 'Estimated transit days', 'Terms & conditions'].forEach(t => {
+      doc.text(`• ${t}`, mL + 8, doc.y);
+      doc.y += 10;
+    });
+    doc.y += 15;
 
     // Signatures
     doc.fontSize(8).font('Helvetica').fillColor('#555');
     doc.text('________________________', mL, doc.y, { width: 200, align: 'center' });
-    doc.text('For MSPIL', mL, doc.y + 12, { width: 200, align: 'center' });
-    doc.text('________________________', pageW - 40 - 200, doc.y - 12, { width: 200, align: 'center' });
+    doc.text('For MSPIL', mL, doc.y + 10, { width: 200, align: 'center' });
+    doc.text('________________________', pageW - 40 - 200, doc.y - 10, { width: 200, align: 'center' });
     doc.text('Transporter', pageW - 40 - 200, doc.y, { width: 200, align: 'center' });
 
     // Footer

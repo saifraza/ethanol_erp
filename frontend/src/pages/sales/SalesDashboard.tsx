@@ -682,10 +682,13 @@ export default function SalesDashboard() {
                           {drs.map(dr => {
                             const drShipments = dr.shipments || [];
                             const totalQty = dr.quantity || 0;
-                            const dispatchedMT = drShipments.reduce((sum: number, s: any) => {
-                              const net = s.weightNet || (s.weightGross && s.weightTare ? s.weightGross - s.weightTare : 0);
-                              return sum + (net ? net / 1000 : 0);
-                            }, 0);
+                            // Only count EXITED trucks for dispatch %
+                            const dispatchedMT = drShipments
+                              .filter((s: any) => s.status === 'EXITED')
+                              .reduce((sum: number, s: any) => {
+                                const net = s.weightNet || (s.weightGross && s.weightTare ? s.weightGross - s.weightTare : 0);
+                                return sum + (net ? net / 1000 : 0);
+                              }, 0);
                             const pctDispatched = totalQty > 0 ? Math.min(100, (dispatchedMT / totalQty) * 100) : 0;
                             const remainingMT = Math.max(0, totalQty - dispatchedMT);
 

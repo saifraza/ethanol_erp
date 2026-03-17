@@ -75,14 +75,16 @@ type LogisticsStep = 'NEW' | 'TRANSPORTER_SET' | 'TRUCKS_ASSIGNED' | 'AT_FACTORY
 
 function getDRStep(dr: DR): { step: LogisticsStep; label: string; action: string; stepIdx: number } {
   const shipments = dr.shipments || [];
-  const hasExited = shipments.some(s => ['RELEASED', 'EXITED'].includes(s.status));
-  const hasActive = shipments.some(s => ['GATE_IN', 'TARE_WEIGHED', 'LOADING', 'GROSS_WEIGHED'].includes(s.status));
+  const hasExited = shipments.some(s => s.status === 'EXITED');
+  const hasActive = shipments.some(s => ['GATE_IN', 'TARE_WEIGHED', 'LOADING', 'GROSS_WEIGHED', 'RELEASED'].includes(s.status));
   const hasTrucks = shipments.length > 0;
+  const allExited = hasTrucks && shipments.every(s => s.status === 'EXITED');
 
-  if (['DISPATCHED', 'COMPLETED'].includes(dr.status) || hasExited)
+  // Only fully dispatched if DR status says so AND all trucks exited
+  if (['COMPLETED'].includes(dr.status) || (allExited && dr.status === 'DISPATCHED'))
     return { step: 'DISPATCHED', label: 'Dispatched', action: '', stepIdx: 4 };
-  if (hasActive)
-    return { step: 'AT_FACTORY', label: 'At Factory', action: 'Track weighbridge', stepIdx: 3 };
+  if (hasActive || (hasExited && !allExited))
+    return { step: 'AT_FACTORY', label: hasExited ? 'Partially Dispatched' : 'At Factory', action: 'Track weighbridge', stepIdx: 3 };
   if (hasTrucks)
     return { step: 'TRUCKS_ASSIGNED', label: 'Trucks Assigned', action: 'Waiting for arrival', stepIdx: 2 };
   if (dr.transporterName || dr.transporterId)
@@ -164,6 +166,7 @@ export default function DispatchRequests() {
   const [truckVehicle, setTruckVehicle] = useState('');
   const [truckDriver, setTruckDriver] = useState('');
   const [truckMobile, setTruckMobile] = useState('');
+  const [truckEtaDays, setTruckEtaDays] = useState('0'); // 0=same day, 1,2,3,4+
 
   // Quotation form
   const [showQuoteForm, setShowQuoteForm] = useState<string | null>(null);
@@ -303,6 +306,7 @@ export default function DispatchRequests() {
       const dr = drs.find(d => d.id === drId);
       // Support comma-separated vehicle numbers for batch entry
       const vehicles = truckVehicle.split(',').map(v => v.trim().toUpperCase()).filter(Boolean);
+      const etaLabel = truckEtaDays === '0' ? 'Same day' : truckEtaDays === '4' ? '4+ days' : `${truckEtaDays} day${truckEtaDays === '1' ? '' : 's'}`;
       for (const veh of vehicles) {
         await api.post('/shipments', {
           dispatchRequestId: drId,
@@ -314,10 +318,11 @@ export default function DispatchRequests() {
           productName: dr?.productName || '',
           customerName: dr?.customerName || '',
           destination: dr?.destination || '',
+          remarks: `ETA: ${etaLabel}`,
         });
       }
       flash('ok', `${vehicles.length} truck${vehicles.length > 1 ? 's' : ''} registered`);
-      setTruckFormDR(null); setTruckVehicle(''); setTruckDriver(''); setTruckMobile('');
+      setTruckFormDR(null); setTruckVehicle(''); setTruckDriver(''); setTruckMobile(''); setTruckEtaDays('0');
       load();
     } catch (e: any) {
       flash('err', e.response?.data?.error || 'Failed');
@@ -1627,7 +1632,7 @@ export default function DispatchRequests() {
                                   <div className="grid grid-cols-3 gap-2 mb-1">
                                     <input value={truckFormDR === dr.id ? truckVehicle : ''} onChange={e => { setTruckFormDR(dr.id); setTruckVehicle(e.target.value); }}
                                       onFocus={() => setTruckFormDR(dr.id)}
-                                      placeholder="Vehicle No(s) *" className="input-field text-sm" />
+                                      placeholder="Vehicle No(s) — comma separated" className="input-field text-sm" />
                                     <input value={truckFormDR === dr.id ? truckDriver : ''} onChange={e => { setTruckFormDR(dr.id); setTruckDriver(e.target.value); }}
                                       onFocus={() => setTruckFormDR(dr.id)}
                                       placeholder="Driver Name" className="input-field text-sm" />
@@ -1635,7 +1640,19 @@ export default function DispatchRequests() {
                                       onFocus={() => setTruckFormDR(dr.id)}
                                       placeholder="Driver Mobile" className="input-field text-sm" />
                                   </div>
-                                  <p className="text-[10px] text-gray-400 mb-2">Tip: Enter multiple vehicle numbers separated by commas for batch entry</p>
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <span className="text-[10px] text-gray-500 font-medium">ETA:</span>
+                                    {['0', '1', '2', '3', '4'].map(d => (
+                                      <button key={d} onClick={() => { setTruckFormDR(dr.id); setTruckEtaDays(d); }}
+                                        className={`px-2 py-1 text-[10px] rounded-full font-medium border ${
+                                          truckFormDR === dr.id && truckEtaDays === d
+                                            ? 'bg-blue-600 text-white border-blue-600'
+                                            : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                                        }`}>
+                                        {d === '0' ? 'Today' : d === '4' ? '4+' : `${d}d`}
+                                      </button>
+                                    ))}
+                                  </div>
                                   <button onClick={() => assignTruck(dr.id)}
                                     disabled={!!actionLoading || !truckVehicle.trim() || truckFormDR !== dr.id}
                                     className="w-full py-2 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-1.5">
