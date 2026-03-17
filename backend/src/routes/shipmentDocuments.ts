@@ -65,6 +65,29 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
+// POST /upload-general — Upload general document (quotation, etc.) not tied to shipment
+router.post('/upload-general', upload.single('file'), async (req: Request, res: Response) => {
+  try {
+    if (!req.file) { res.status(400).json({ error: 'No file uploaded' }); return; }
+
+    const b = req.body;
+    // Store as a shipment doc with optional metadata in remarks
+    const doc = await prisma.shipmentDocument.create({
+      data: {
+        shipmentId: b.shipmentId || 'general',
+        docType: b.docType || 'OTHER',
+        fileName: req.file.originalname,
+        filePath: `shipment-docs/${req.file.filename}`,
+        fileSize: req.file.size,
+        mimeType: req.file.mimetype,
+        uploadedBy: (req as any).user.id,
+        remarks: [b.inquiryId ? `FI:${b.inquiryId}` : '', b.quotationId ? `Q:${b.quotationId}` : '', b.remarks || ''].filter(Boolean).join(' | ') || null,
+      },
+    });
+    res.status(201).json(doc);
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
 // GET /file/:id — Serve document file (inline for PDF/images)
 router.get('/file/:id', async (req: Request, res: Response) => {
   try {
