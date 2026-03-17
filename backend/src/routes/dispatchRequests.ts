@@ -31,6 +31,7 @@ router.get('/', async (req: Request, res: Response) => {
             },
           },
           orderLine: true,
+          freightInquiry: true,
           _count: { select: { shipments: true } },
         },
         orderBy: { createdAt: 'desc' },
@@ -75,6 +76,11 @@ router.get('/factory', async (req: Request, res: Response) => {
         shipments: {
           include: {
             documents: { select: { id: true, docType: true, fileName: true, mimeType: true }, orderBy: { createdAt: 'desc' as const } },
+          },
+        },
+        freightInquiry: {
+          include: {
+            quotations: { orderBy: { createdAt: 'desc' as const } },
           },
         },
       },
@@ -220,6 +226,23 @@ router.post('/', async (req: Request, res: Response) => {
         data: { status: 'IN_PROGRESS' },
       });
     }
+
+    // Auto-create FreightInquiry for the dispatch request
+    await prisma.freightInquiry.create({
+      data: {
+        dispatchRequestId: dr.id,
+        orderId: dr.orderId,
+        origin: 'MSPIL, Village Bachai, Narsinghpur, MP - 487001',
+        destination: dr.destination || '',
+        productName: dr.productName,
+        quantity: dr.quantity,
+        unit: dr.unit,
+        vehicleCount: dr.vehicleCount || 1,
+        loadingDate: dr.deliveryDate || null,
+        status: 'OPEN',
+        userId: (req as any).user.id,
+      },
+    });
 
     res.status(201).json(dr);
   } catch (err: any) {
@@ -377,6 +400,30 @@ router.put('/:id', async (req: Request, res: Response) => {
     });
 
     res.json(updated);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /by-dr/:drId — Get freight inquiry for a dispatch request with quotations
+router.get('/by-dr/:drId', async (req: Request, res: Response) => {
+  try {
+    const freightInquiry = await prisma.freightInquiry.findFirst({
+      where: { dispatchRequestId: req.params.drId },
+      include: {
+        dispatchRequest: true,
+        quotations: {
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+
+    if (!freightInquiry) {
+      res.status(404).json({ error: 'Freight inquiry not found for this dispatch request' });
+      return;
+    }
+
+    res.json(freightInquiry);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
