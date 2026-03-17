@@ -17,7 +17,7 @@ const FACTORY = {
 
 // ── Types ──
 interface Transporter {
-  id: string; name: string; contactPerson?: string; phone?: string;
+  id: string; name: string; contactPerson?: string; phone?: string; email?: string;
   vehicleCount?: number; address?: string;
 }
 
@@ -384,20 +384,65 @@ export default function DispatchRequests() {
       const results = res.data.results;
 
       // If WhatsApp web mode — open the URL
-      if (results.whatsapp?.mode === 'web' && results.whatsapp?.error?.startsWith('https://')) {
-        window.open(results.whatsapp.error, '_blank');
+      if (results.whatsapp?.provider === 'web' && results.whatsapp?.webUrl) {
+        window.open(results.whatsapp.webUrl, '_blank');
       }
 
       const msgs: string[] = [];
       if (results.email?.success) msgs.push('Email sent');
       else if (results.email && !results.email.success) msgs.push(`Email: ${results.email.error}`);
-      if (results.whatsapp?.success && results.whatsapp.mode === 'api') msgs.push('WhatsApp sent');
-      else if (results.whatsapp?.success && results.whatsapp.mode === 'web') msgs.push('WhatsApp opened');
+      if (results.whatsapp?.success && results.whatsapp.provider !== 'web') msgs.push('WhatsApp sent');
+      else if (results.whatsapp?.success && results.whatsapp.provider === 'web') msgs.push('WhatsApp opened');
+      else if (results.whatsapp && !results.whatsapp.success) msgs.push(`WhatsApp: ${results.whatsapp.error}`);
 
       if (msgs.length) flash('ok', msgs.join(' | '));
       setShowSendForm(null);
     } catch (e: any) { flash('err', e.response?.data?.error || 'Send failed'); }
     finally { setSendingTo(null); }
+  };
+
+  // Send document (challan PDF, etc.) via WhatsApp to driver/transporter
+  const sendDocWhatsApp = async (shipmentId: string, phone: string, docType: string, dr: DR) => {
+    setActionLoading(shipmentId + '_wa_' + docType);
+    try {
+      const token = localStorage.getItem('token');
+      const baseUrl = window.location.origin;
+      let documentUrl = '';
+      let message = '';
+
+      if (docType === 'CHALLAN') {
+        documentUrl = `${baseUrl}/api/shipments/${shipmentId}/challan-pdf?token=${token}`;
+        message = `MSPIL — Challan for DR-${dr.drNo} | ${dr.productName} ${dr.quantity} ${dr.unit} to ${dr.destination || dr.customerName}`;
+      } else if (docType === 'RATE_REQUEST') {
+        const inq = (dr as any).freightInquiry;
+        if (inq) {
+          documentUrl = `${baseUrl}/api/freight-inquiries/${inq.id}/pdf?token=${token}`;
+          message = `MSPIL — Rate Request FI-${inq.inquiryNo} | ${dr.productName} ${dr.quantity} ${dr.unit} to ${dr.destination || 'TBD'}`;
+        }
+      } else {
+        message = `MSPIL — ${docType.replace(/_/g, ' ')} for DR-${dr.drNo}`;
+      }
+
+      const res = await api.post('/messaging/send-document', {
+        phone,
+        message,
+        documentUrl,
+        documentType: docType.replace(/_/g, ' '),
+      });
+
+      if (res.data.provider === 'web' && res.data.webUrl) {
+        window.open(res.data.webUrl, '_blank');
+        flash('ok', 'WhatsApp opened');
+      } else if (res.data.success) {
+        flash('ok', `${docType.replace(/_/g, ' ')} sent via WhatsApp`);
+      } else {
+        flash('err', res.data.error || 'Send failed');
+      }
+    } catch (e: any) {
+      flash('err', e.response?.data?.error || 'Send failed');
+    } finally {
+      setActionLoading(null);
+    }
   };
 
   const shareRateRequest = (dr: DR) => {
@@ -1080,6 +1125,18 @@ export default function DispatchRequests() {
                                             className="px-2 py-1 text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 flex items-center gap-1">
                                             <FileText size={10} /> View Challan
                                           </button>
+                                          {(s.driverMobile || dr.transporterId) && (
+                                            <button onClick={(e) => {
+                                                e.stopPropagation();
+                                                const phone = s.driverMobile || transporters.find(t => t.id === dr.transporterId)?.phone || '';
+                                                if (!phone) { flash('err', 'No phone number available'); return; }
+                                                sendDocWhatsApp(s.id, phone, 'CHALLAN', dr);
+                                              }}
+                                              disabled={!!actionLoading}
+                                              className="px-2 py-1 text-[11px] font-medium bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 flex items-center gap-1">
+                                              {actionLoading === s.id + '_wa_CHALLAN' ? <Loader2 size={10} className="animate-spin" /> : <MessageCircle size={10} />} WhatsApp Challan
+                                            </button>
+                                          )}
                                           {s.ewayBill ? (
                                             <span className="px-2 py-1 text-[11px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg">
                                               EWB: {s.ewayBill}
@@ -1115,8 +1172,29 @@ export default function DispatchRequests() {
                                                   <span className="text-[10px] font-semibold text-gray-500 uppercase bg-gray-200 px-1.5 py-0.5 rounded">{d.docType.replace(/_/g, ' ')}</span>
                                                   <span className="text-xs text-gray-700 truncate max-w-[150px]">{d.fileName}</span>
                                                 </div>
-                                                <button onClick={(e) => { e.stopPropagation(); const token = localStorage.getItem('token'); window.open(`/api/shipment-documents/file/${d.id}?token=${token}`, '_blank'); }}
-                                                  className="text-blue-600 text-[10px] font-medium hover:underline">View</button>
+                                                <div className="flex items-center gap-2">
+                                                  <button onClick={(e) => { e.stopPropagation(); const token = localStorage.getItem('token'); window.open(`/api/shipment-documents/file/${d.id}?token=${token}`, '_blank'); }}
+                                                    className="text-blue-600 text-[10px] font-medium hover:underline">View</button>
+                                                  {(s.driverMobile || dr.transporterId) && (
+                                                    <button onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        const phone = s.driverMobile || transporters.find(t => t.id === dr.transporterId)?.phone || '';
+                                                        if (!phone) { flash('err', 'No phone number'); return; }
+                                                        const token = localStorage.getItem('token');
+                                                        const docUrl = `${window.location.origin}/api/shipment-documents/file/${d.id}?token=${token}`;
+                                                        api.post('/messaging/send-document', {
+                                                          phone, message: `MSPIL — ${d.docType.replace(/_/g, ' ')} for ${s.vehicleNo}`, documentUrl: docUrl, documentType: d.docType,
+                                                        }).then(r => {
+                                                          if (r.data.provider === 'web' && r.data.webUrl) { window.open(r.data.webUrl, '_blank'); flash('ok', 'WhatsApp opened'); }
+                                                          else if (r.data.success) flash('ok', 'Sent via WhatsApp');
+                                                          else flash('err', r.data.error || 'Failed');
+                                                        }).catch(() => flash('err', 'Send failed'));
+                                                      }}
+                                                      className="text-green-600 text-[10px] font-medium hover:underline flex items-center gap-0.5">
+                                                      <MessageCircle size={8} /> WA
+                                                    </button>
+                                                  )}
+                                                </div>
                                               </div>
                                             ))}
                                           </div>
