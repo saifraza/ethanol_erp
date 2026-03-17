@@ -829,8 +829,8 @@ export default function DispatchRequests() {
                               <p className="text-[10px] text-gray-400 mt-1">From: {FACTORY.name}</p>
                             </div>
 
-                            {/* Row 2: Distance / Trucks / Transporter */}
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            {/* Row 2: Distance / Trucks */}
+                            <div className="grid grid-cols-2 gap-3">
                               <div>
                                 <label className="text-[11px] text-gray-600 font-semibold mb-1 block">Distance (km)</label>
                                 <input type="number" value={editDistanceKm} onChange={e => setEditDistanceKm(e.target.value)}
@@ -842,68 +842,29 @@ export default function DispatchRequests() {
                                 <input type="number" value={editVehicleCount} onChange={e => setEditVehicleCount(e.target.value)}
                                   placeholder="1" className="input-field text-sm w-full" />
                               </div>
-                              <div className="col-span-2">
-                                <label className="text-[11px] text-gray-600 font-semibold mb-1 block">Transporter</label>
-                                <select value={editTransporterId} onChange={e => {
-                                  setEditTransporterId(e.target.value);
-                                  const t = transporters.find(t => t.id === e.target.value);
-                                  if (t) setEditTransporterName(t.name);
-                                }}
-                                  className="input-field text-sm w-full">
-                                  <option value="">Select transporter</option>
-                                  {transporters.map(t => (
-                                    <option key={t.id} value={t.id}>
-                                      {t.name} {t.vehicleCount ? `(${t.vehicleCount} vehicles)` : ''} {t.contactPerson ? `— ${t.contactPerson}` : ''}
-                                    </option>
-                                  ))}
-                                </select>
-                                {editTransporterId && (() => {
-                                  const t = transporters.find(tr => tr.id === editTransporterId);
-                                  return t ? (
-                                    <div className="flex items-center gap-3 mt-1.5 text-xs">
-                                      {t.phone && (
-                                        <>
-                                          <a href={`tel:${t.phone}`} className="text-blue-600 flex items-center gap-1">
-                                            <Phone size={11} /> {t.phone}
-                                          </a>
-                                          <a href={`https://api.whatsapp.com/send?phone=91${t.phone.replace(/\D/g, '').slice(-10)}`}
-                                            target="_blank" rel="noopener"
-                                            className="text-green-600 flex items-center gap-1 hover:underline">
-                                            <MessageCircle size={11} /> WhatsApp
-                                          </a>
-                                        </>
-                                      )}
-                                    </div>
-                                  ) : null;
-                                })()}
-                              </div>
                             </div>
 
-                            {/* Row 3: Freight Rate — highlighted */}
-                            <div className="bg-white rounded-lg border border-orange-200 p-3">
-                              <label className="text-[11px] text-gray-600 font-semibold mb-1 block">Freight Rate (₹/MT)</label>
-                              <div className="flex items-center gap-3">
-                                <div className="flex items-center gap-1">
-                                  <span className="text-lg font-bold text-gray-400">₹</span>
-                                  <input type="number" value={editFreightRate} onChange={e => setEditFreightRate(e.target.value)}
-                                    placeholder="0" className="input-field text-lg font-bold w-32" />
-                                  <span className="text-sm text-gray-400">/MT</span>
-                                </div>
-                                {editFreightRate && dr.quantity > 0 && (
-                                  <div className="text-sm">
-                                    <span className="text-green-700 font-bold">
-                                      Total: ₹{(parseFloat(editFreightRate) * dr.quantity).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                            {/* Transporter & Rate — set via quotations */}
+                            {(dr.transporterName || dr.freightRate) && (
+                              <div className="bg-white rounded-lg border border-green-200 p-3 flex items-center justify-between">
+                                <div className="flex items-center gap-4 text-sm">
+                                  {dr.transporterName && (
+                                    <span className="flex items-center gap-1.5 text-indigo-700 font-semibold">
+                                      <Truck size={14} /> {dr.transporterName}
                                     </span>
-                                    <span className="text-gray-400 ml-1">({dr.quantity} {dr.unit})</span>
-                                    {editDistanceKm && (
-                                      <span className="text-gray-400 ml-2">
-                                        · ₹{(parseFloat(editFreightRate) / parseFloat(editDistanceKm) * 1000).toFixed(0)}/MT/1000km
-                                      </span>
-                                    )}
-                                  </div>
-                                )}
+                                  )}
+                                  {dr.freightRate && (
+                                    <span className="text-green-700 font-bold">₹{dr.freightRate}/MT</span>
+                                  )}
+                                  {dr.freightRate && dr.quantity > 0 && (
+                                    <span className="text-gray-500 text-xs">
+                                      Total: ₹{(dr.freightRate * dr.quantity).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-[10px] text-gray-400">Set via Rate Quotes below</span>
                               </div>
-                            </div>
+                            )}
 
                             <button onClick={() => saveLogistics(dr.id)}
                               disabled={!!actionLoading}
@@ -1124,11 +1085,10 @@ export default function DispatchRequests() {
                                 </div>
                               )}
 
-                              {/* Add quotation form */}
+                              {/* Add quotation form — always visible when no accepted quote */}
                               {!hasAccepted && (
-                                showQuoteForm === dr.id ? (
                                   <div className="bg-white rounded-lg border p-3 space-y-3">
-                                    <p className="text-xs font-bold text-purple-800">Add Transporter Quote</p>
+                                    <p className="text-xs font-bold text-purple-800">{quotes.length === 0 ? 'Assign Transporter' : 'Add Another Quote'}</p>
                                     {/* Transporter select */}
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                                       <div>
@@ -1193,15 +1153,9 @@ export default function DispatchRequests() {
                                         </button>
                                       )}
                                       <button onClick={resetQuoteForm}
-                                        className="px-4 py-2 text-gray-500 text-xs rounded-lg border hover:bg-gray-50 font-medium">Cancel</button>
+                                        className="px-4 py-2 text-gray-500 text-xs rounded-lg border hover:bg-gray-50 font-medium">Clear</button>
                                     </div>
                                   </div>
-                                ) : (
-                                  <button onClick={() => setShowQuoteForm(dr.id)}
-                                    className="w-full py-2 text-purple-600 text-xs font-bold rounded-lg border-2 border-dashed border-purple-300 hover:bg-purple-100 flex items-center justify-center gap-1.5">
-                                    <Plus size={14} /> Add Transporter Quote
-                                  </button>
-                                )
                               )}
                             </div>
                           );
