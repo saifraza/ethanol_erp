@@ -317,7 +317,23 @@ export interface RateRequestData {
   pdfUrl?: string;
 }
 
-export function buildRateRequestMessage(data: RateRequestData): string {
+export async function buildRateRequestMessage(data: RateRequestData): Promise<string> {
+  // Load terms from DB template
+  let terms: string[];
+  try {
+    const { getTemplate } = await import('../utils/templateHelper');
+    const tmpl = await getTemplate('RATE_REQUEST');
+    terms = tmpl.terms;
+  } catch {
+    terms = [
+      'Vehicle with valid fitness certificate',
+      'Driver with valid license & documents',
+      'GR (Bilty) at time of loading',
+      '50% advance after bill; balance after delivery',
+      'Insurance by purchaser (not transporter)',
+    ];
+  }
+
   const lines = [
     `*MSPIL — Freight Rate Request*`,
     `Inquiry No: FI-${data.inquiryNo}`,
@@ -330,11 +346,7 @@ export function buildRateRequestMessage(data: RateRequestData): string {
     data.loadingDate ? `*Loading Date:* ${data.loadingDate}` : '',
     ``,
     `*Terms:*`,
-    `1. Vehicle with valid fitness certificate`,
-    `2. Driver with valid license & documents`,
-    `3. GR (Bilty) at time of loading`,
-    `4. 50% advance after bill; balance after delivery`,
-    `5. Insurance by purchaser (not transporter)`,
+    ...terms.map((t, i) => `${i + 1}. ${t}`),
     ``,
     `Please share your rate (₹/MT) and availability.`,
     data.pdfUrl ? `\nView full inquiry: ${data.pdfUrl}` : '',
@@ -346,7 +358,28 @@ export function buildRateRequestMessage(data: RateRequestData): string {
   return lines.filter(Boolean).join('\n');
 }
 
-export function buildRateRequestHTML(data: RateRequestData): string {
+export async function buildRateRequestHTML(data: RateRequestData): Promise<string> {
+  // Load terms from DB template
+  let terms: string[];
+  let footer: string;
+  try {
+    const { getTemplate } = await import('../utils/templateHelper');
+    const tmpl = await getTemplate('RATE_REQUEST');
+    terms = tmpl.terms;
+    footer = tmpl.footer || 'MSPIL, Narsinghpur';
+  } catch {
+    terms = [
+      'Vehicle in good condition with valid fitness certificate.',
+      'Driver must carry valid license and vehicle documents.',
+      'GR (Bilty) to be provided at loading point.',
+      '50% advance after bill submission, balance after delivery confirmation.',
+      'Insurance of goods by purchaser.',
+    ];
+    footer = 'MSPIL, Narsinghpur';
+  }
+
+  const termsHtml = terms.map(t => `<li>${t}</li>`).join('\n          ');
+
   return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
       <div style="background: #4a7c3f; color: white; padding: 16px 20px; border-radius: 8px 8px 0 0;">
@@ -366,11 +399,7 @@ export function buildRateRequestHTML(data: RateRequestData): string {
 
         <h3 style="color: #333;">Terms & Conditions</h3>
         <ol style="color: #555; padding-left: 20px;">
-          <li>Vehicle must be in good condition with valid fitness certificate.</li>
-          <li>Driver must carry valid license and vehicle documents.</li>
-          <li>Transporter to provide GR (Bilty) at the time of loading.</li>
-          <li>50% advance payment after bill generation; balance after delivery confirmation.</li>
-          <li>Transporter is not responsible for insurance unless specifically agreed.</li>
+          ${termsHtml}
         </ol>
 
         <div style="background: #f3f4f6; padding: 12px; border-radius: 6px; margin-top: 16px;">
