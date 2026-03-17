@@ -445,14 +445,9 @@ export default function Invoices() {
                     )}
 
                     <button
-                      onClick={async () => {
-                        try {
-                          const resp = await api.get(`/invoices/${inv.id}/pdf`, { responseType: 'blob' });
-                          const url = window.URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
-                          window.open(url, '_blank');
-                        } catch (e) {
-                          alert('Failed to generate PDF');
-                        }
+                      onClick={() => {
+                        const token = localStorage.getItem('token');
+                        window.open(`/api/invoices/${inv.id}/pdf?token=${token}`, '_blank');
                       }}
                       className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium text-sm flex items-center justify-center gap-2"
                     >

@@ -963,14 +963,9 @@ const PurchaseOrders: React.FC = () => {
                   <div className="border-t pt-4">
                     <div className="flex gap-2 flex-wrap">
                       <button
-                        onClick={async () => {
-                          try {
-                            const resp = await api.get(`/purchase-orders/${po.id}/pdf`, { responseType: 'blob' });
-                            const url = window.URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
-                            window.open(url, '_blank');
-                          } catch (e: any) {
-                            setError('Failed to generate PDF');
-                          }
+                        onClick={() => {
+                          const token = localStorage.getItem('token');
+                          window.open(`/api/purchase-orders/${po.id}/pdf?token=${token}`, '_blank');
                         }}
                         className="px-4 py-2 rounded-lg font-medium text-sm transition bg-green-50 text-green-700 border border-green-300 hover:bg-green-100 flex items-center gap-1"
                       >

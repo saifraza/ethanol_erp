@@ -626,15 +626,13 @@ export default function SalesDashboard() {
                       )}
                     </button>
 
-                    {/* Download SO PDF */}
-                    <button onClick={async () => {
-                        try {
-                          const resp = await api.get(`/sales-orders/${order.id}/pdf`, { responseType: 'blob' });
-                          window.open(window.URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' })), '_blank');
-                        } catch { flash('err', 'PDF generation failed'); }
+                    {/* View SO PDF */}
+                    <button onClick={() => {
+                        const token = localStorage.getItem('token');
+                        window.open(`/api/sales-orders/${order.id}/pdf?token=${token}`, '_blank');
                       }}
                       className="text-gray-300 hover:text-blue-500 transition shrink-0 p-1"
-                      title="Download SO Document">
+                      title="View SO Document">
                       <FileText size={14} />
                     </button>
 
@@ -874,12 +872,10 @@ export default function SalesDashboard() {
                                 <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
                                   inv.status === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
                                 }`}>{inv.status}</span>
-                                <button onClick={async () => {
-                                  try {
-                                    const resp = await api.get(`/invoices/${inv.id}/pdf`, { responseType: 'blob' });
-                                    window.open(window.URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' })), '_blank');
-                                  } catch { flash('err', 'PDF failed'); }
-                                }}
+                                <button onClick={() => {
+                                    const token = localStorage.getItem('token');
+                                    window.open(`/api/invoices/${inv.id}/pdf?token=${token}`, '_blank');
+                                  }}
                                   className="text-blue-600 text-[10px] font-medium hover:underline">
                                   Print
                                 </button>
