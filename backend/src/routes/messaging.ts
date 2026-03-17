@@ -72,8 +72,8 @@ router.post('/send-rate-request', async (req: Request, res: Response) => {
         results.email = await sendEmail({
           to: transporterEmail,
           subject: `MSPIL Freight Rate Request — FI-${inquiry.inquiryNo} | ${inquiry.productName} ${inquiry.quantity} ${inquiry.unit} to ${inquiry.destination}`,
-          text: buildRateRequestMessage(data),
-          html: buildRateRequestHTML(data),
+          text: await buildRateRequestMessage(data),
+          html: await buildRateRequestHTML(data),
         });
       }
     }
@@ -83,7 +83,7 @@ router.post('/send-rate-request', async (req: Request, res: Response) => {
       if (!transporterPhone) {
         results.whatsapp = { success: false, error: 'No phone number for this transporter' };
       } else {
-        const message = buildRateRequestMessage(data);
+        const message = await buildRateRequestMessage(data);
         results.whatsapp = await sendWhatsApp({ phone: transporterPhone, message, mediaUrl: pdfUrl });
       }
     }

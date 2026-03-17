@@ -1,6 +1,7 @@
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import * as fs from 'fs';
 import * as path from 'path';
+import { getTemplate, generateBarcode } from './templateHelper';
 
 const LETTERHEAD_PATH = path.join(__dirname, '../../assets/MSPIL_Letterhead_Template.pdf');
 
@@ -263,24 +264,27 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
     y -= 20;
   }
 
-  // ── Terms & Conditions ──
+  // ── Terms & Conditions (from template) ──
+  const tmpl = await getTemplate('PURCHASE_ORDER');
   drawLine(y, 0.5);
   y -= 15;
   drawText('Terms & Conditions:', marginL, y, 8, fontBold);
   y -= 12;
-  const terms = [
-    '1. All goods must conform to the specifications mentioned above.',
-    '2. Delivery must be made on or before the delivery date mentioned.',
-    '3. GST invoice must be provided along with delivery challan.',
-    '4. Payment will be made as per the payment terms mentioned above.',
-    '5. Quality inspection will be done at the time of receipt.',
-  ];
-  terms.forEach(t => {
-    drawText(t, marginL, y, 7);
+  tmpl.terms.forEach((t, i) => {
+    drawText(`${i + 1}. ${t}`, marginL, y, 7);
     y -= 11;
   });
 
-  y -= 20;
+  y -= 15;
+
+  // ── Barcode ──
+  try {
+    const barcodeImg = await generateBarcode(`PO-${po.poNo}`);
+    const bcImage = await pdfDoc.embedPng(barcodeImg);
+    page.drawImage(bcImage, { x: marginR - 140, y: y - 5, width: 130, height: 25 });
+  } catch { /* barcode failed */ }
+
+  y -= 15;
 
   // ── Signatures ──
   drawText('Prepared By', marginL, y, 8, fontBold);
@@ -290,7 +294,7 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
   drawLine(y, 0.3);
 
   // ── Footer ──
-  drawText('This is a computer-generated document.', width / 2 - 80, 25, 7, font, gray);
+  drawText(tmpl.footer, width / 2 - 80, 25, 7, font, gray);
 
   const pdfBytes = await pdfDoc.save();
   return Buffer.from(pdfBytes);
@@ -455,19 +459,39 @@ export async function generateInvoicePdf(inv: InvoiceData): Promise<Buffer> {
   drawText(numberToWords(inv.totalAmount), marginL, y, 8, fontBold);
   y -= 30;
 
-  // Bank details
+  // Bank details + Terms (from template)
+  const invTmpl = await getTemplate('INVOICE');
   drawLine(y, 0.5);
   y -= 15;
-  drawText('Bank Details:', marginL, y, 8, fontBold);
-  y -= 12;
-  drawText('Bank: [Company Bank Name]  |  A/c: [Account Number]  |  IFSC: [IFSC Code]', marginL, y, 7);
+  if (invTmpl.bankDetails) {
+    drawText('Bank Details:', marginL, y, 8, fontBold);
+    y -= 12;
+    drawText(invTmpl.bankDetails, marginL, y, 7);
+    y -= 15;
+  }
+  if (invTmpl.terms.length > 0) {
+    drawText('Terms:', marginL, y, 8, fontBold);
+    y -= 12;
+    invTmpl.terms.forEach((t, i) => {
+      drawText(`${i + 1}. ${t}`, marginL, y, 7);
+      y -= 10;
+    });
+    y -= 5;
+  }
+
+  // Barcode
+  try {
+    const barcodeImg = await generateBarcode(`INV-${inv.invoiceNo}`);
+    const bcImage = await pdfDoc.embedPng(barcodeImg);
+    page.drawImage(bcImage, { x: marginR - 140, y: y, width: 130, height: 25 });
+  } catch { /* barcode failed */ }
   y -= 20;
 
   // Signatures
   drawText('Prepared By', marginL, y, 8, fontBold);
   drawText('Authorized Signatory', marginR - 120, y, 8, fontBold);
 
-  drawText('This is a computer-generated document.', width / 2 - 80, 25, 7, font, gray);
+  drawText(invTmpl.footer, width / 2 - 80, 25, 7, font, gray);
 
   const pdfBytes = await pdfDoc.save();
   return Buffer.from(pdfBytes);
