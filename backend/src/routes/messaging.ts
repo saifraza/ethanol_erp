@@ -119,6 +119,45 @@ router.post('/send-custom', async (req: Request, res: Response) => {
   }
 });
 
+// POST /test-whatsapp — Send a hello_world template message (works with test numbers)
+router.post('/test-whatsapp', async (req: Request, res: Response) => {
+  try {
+    const { phone } = req.body;
+    if (!phone) { res.status(400).json({ error: 'Phone number required' }); return; }
+
+    const token = process.env.WHATSAPP_TOKEN;
+    const phoneId = process.env.WHATSAPP_PHONE_ID;
+
+    if (!token || !phoneId) {
+      res.status(500).json({ error: 'WhatsApp API not configured' });
+      return;
+    }
+
+    // Normalize phone
+    const digits = phone.replace(/\D/g, '');
+    const normalized = digits.length === 10 ? '91' + digits : digits;
+
+    const apiRes = await fetch(`https://graph.facebook.com/v18.0/${phoneId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: normalized,
+        type: 'template',
+        template: { name: 'hello_world', language: { code: 'en_US' } },
+      }),
+    });
+
+    const data = await apiRes.json();
+    res.json({ success: apiRes.ok, status: apiRes.status, data });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /config — Check messaging configuration status
 router.get('/config', async (_req: Request, res: Response) => {
   res.json({
