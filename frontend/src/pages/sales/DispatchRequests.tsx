@@ -3,7 +3,7 @@ import {
   Truck, Loader2, ChevronDown, Check, Package, MapPin, Clock, Plus, X,
   Trash2, ArrowDown, ArrowUp, Phone, Navigation, IndianRupee, Save,
   CheckCircle, AlertCircle, Share2, Route, User, MessageCircle, Mail,
-  FileText, Calendar, CreditCard, Building2, Camera, Upload
+  FileText, Calendar, CreditCard, Building2, Camera, Upload, Image
 } from 'lucide-react';
 import api from '../../services/api';
 
@@ -227,13 +227,15 @@ export default function DispatchRequests() {
     setCalcLoading(null);
   }, []);
 
-  // ── Upload document (file or camera) ──
-  const uploadDoc = async (shipmentId: string, docType: string, useCamera = false) => {
+  // ── Upload document (file, camera, or gallery) ──
+  const uploadDoc = async (shipmentId: string, docType: string, source: 'file' | 'camera' | 'gallery' = 'file') => {
     const input = document.createElement('input');
     input.type = 'file';
-    if (useCamera) {
+    if (source === 'camera') {
       input.accept = 'image/*';
       input.setAttribute('capture', 'environment');
+    } else if (source === 'gallery') {
+      input.accept = 'image/*';
     } else {
       input.accept = '.pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx';
     }
@@ -295,22 +297,26 @@ export default function DispatchRequests() {
   };
 
   const assignTruck = async (drId: string) => {
-    if (!truckVehicle.trim()) { flash('err', 'Enter vehicle number'); return; }
+    if (!truckVehicle.trim()) { flash('err', 'Enter vehicle number(s)'); return; }
     setActionLoading(drId + '_truck');
     try {
       const dr = drs.find(d => d.id === drId);
-      await api.post('/shipments', {
-        dispatchRequestId: drId,
-        vehicleNo: truckVehicle.trim().toUpperCase(),
-        driverName: truckDriver || null,
-        driverMobile: truckMobile || null,
-        transporterName: dr?.transporterName || '',
-        gateInTime: new Date().toISOString(),
-        productName: dr?.productName || '',
-        customerName: dr?.customerName || '',
-        destination: dr?.destination || '',
-      });
-      flash('ok', `Truck ${truckVehicle} registered`);
+      // Support comma-separated vehicle numbers for batch entry
+      const vehicles = truckVehicle.split(',').map(v => v.trim().toUpperCase()).filter(Boolean);
+      for (const veh of vehicles) {
+        await api.post('/shipments', {
+          dispatchRequestId: drId,
+          vehicleNo: veh,
+          driverName: vehicles.length === 1 ? (truckDriver || null) : null,
+          driverMobile: vehicles.length === 1 ? (truckMobile || null) : null,
+          transporterName: dr?.transporterName || '',
+          gateInTime: new Date().toISOString(),
+          productName: dr?.productName || '',
+          customerName: dr?.customerName || '',
+          destination: dr?.destination || '',
+        });
+      }
+      flash('ok', `${vehicles.length} truck${vehicles.length > 1 ? 's' : ''} registered`);
       setTruckFormDR(null); setTruckVehicle(''); setTruckDriver(''); setTruckMobile('');
       load();
     } catch (e: any) {
@@ -361,7 +367,7 @@ export default function DispatchRequests() {
     try {
       const dr = drs.find(d => d.id === drId);
       const total = parseFloat(quoteRate) * (dr?.quantity || 0);
-      await api.post(`/freight-inquiries/${inquiryId}/quotations`, {
+      const res = await api.post(`/freight-inquiries/${inquiryId}/quotations`, {
         transporterId: quoteTransporterId || null,
         transporterName: quoteTransporter,
         ratePerMT: parseFloat(quoteRate),
@@ -369,7 +375,6 @@ export default function DispatchRequests() {
         estimatedDays: quoteDays ? parseInt(quoteDays) : null,
         remarks: quoteRemarks || null,
       });
-      flash('ok', 'Quotation recorded');
 
       // Also send rate request to this transporter if requested
       if (alsoSend && (quotePhone || quoteEmail)) {
@@ -381,6 +386,41 @@ export default function DispatchRequests() {
         }
       }
 
+      flash('ok', 'Quotation recorded');
+      resetQuoteForm();
+      load();
+    } catch (e: any) { flash('err', e.response?.data?.error || 'Failed'); }
+    finally { setActionLoading(null); }
+  };
+
+  // ── One-step assign: save quote + accept + set DR transporter ──
+  const quickAssignTransporter = async (inquiryId: string, drId: string) => {
+    if (!quoteTransporter || !quoteRate) { flash('err', 'Select transporter and enter rate'); return; }
+    setActionLoading(drId + '_assign');
+    try {
+      const dr = drs.find(d => d.id === drId);
+      const total = parseFloat(quoteRate) * (dr?.quantity || 0);
+      // 1. Save quotation
+      const res = await api.post(`/freight-inquiries/${inquiryId}/quotations`, {
+        transporterId: quoteTransporterId || null,
+        transporterName: quoteTransporter,
+        ratePerMT: parseFloat(quoteRate),
+        totalAmount: total,
+        estimatedDays: quoteDays ? parseInt(quoteDays) : null,
+        remarks: quoteRemarks || null,
+      });
+      // 2. Accept it
+      const quotationId = res.data?.id || res.data?.quotation?.id;
+      if (quotationId) {
+        await api.put(`/freight-inquiries/quotations/${quotationId}/accept`);
+      }
+      // 3. Set DR transporter + rate
+      await api.put(`/dispatch-requests/${drId}`, {
+        transporterId: quoteTransporterId || null,
+        transporterName: quoteTransporter,
+        freightRate: parseFloat(quoteRate),
+      });
+      flash('ok', `${quoteTransporter} assigned @ ₹${quoteRate}/MT`);
       resetQuoteForm();
       load();
     } catch (e: any) { flash('err', e.response?.data?.error || 'Failed'); }
@@ -719,6 +759,26 @@ export default function DispatchRequests() {
                             )}
                           </div>
 
+                          {/* Doc upload status */}
+                          {(() => {
+                            const allDocs = shipments.flatMap(s => (s as any).documents || []);
+                            const docTypes = ['INVOICE', 'EWAY_BILL', 'GATE_PASS', 'GR_BILTY'];
+                            const uploaded = docTypes.filter(dt => allDocs.some((d: any) => d.docType === dt));
+                            if (uploaded.length > 0) {
+                              return (
+                                <div className="flex gap-1 mt-1 flex-wrap">
+                                  {uploaded.map(dt => (
+                                    <span key={dt} className="text-[9px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded-full font-medium flex items-center gap-0.5">
+                                      <CheckCircle size={8} /> {dt.replace(/_/g, ' ')}
+                                    </span>
+                                  ))}
+                                  {uploaded.length === 4 && <span className="text-[9px] text-green-600 font-bold ml-1">All docs complete</span>}
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
+
                           {/* Action hint */}
                           {action && (
                             <div className="mt-1.5 text-xs font-medium text-orange-600">
@@ -727,7 +787,10 @@ export default function DispatchRequests() {
                           )}
                         </div>
                         <div className="text-right ml-4 shrink-0">
-                          <div className="text-sm font-bold text-orange-600">
+                          <div className="text-lg font-bold text-gray-800">
+                            {dr.quantity} <span className="text-xs text-gray-500">{dr.unit}</span>
+                          </div>
+                          <div className="text-[10px] text-orange-600 font-medium">
                             {shipments.length} truck{shipments.length !== 1 ? 's' : ''}
                           </div>
                           <ChevronDown size={16} className={`text-gray-400 ml-auto transition ${isExpanded ? 'rotate-180' : ''}`} />
@@ -1136,24 +1199,22 @@ export default function DispatchRequests() {
                                       )}
                                     </div>
 
-                                    {/* Buttons */}
-                                    <div className="flex gap-2">
+                                    {/* Buttons — primary is one-step assign */}
+                                    <div className="flex gap-2 flex-wrap">
+                                      <button onClick={() => quickAssignTransporter(inq.id, dr.id)}
+                                        disabled={!!actionLoading}
+                                        className="px-5 py-2.5 bg-green-600 text-white text-sm rounded-lg font-bold hover:bg-green-700 flex items-center gap-1.5 shadow-sm">
+                                        {actionLoading === dr.id + '_assign' ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                                        Assign Transporter
+                                      </button>
                                       <button onClick={() => addQuotation(inq.id, dr.id)}
                                         disabled={!!actionLoading}
-                                        className="px-4 py-2 bg-purple-600 text-white text-xs rounded-lg font-bold hover:bg-purple-700 flex items-center gap-1.5">
+                                        className="px-4 py-2 bg-purple-100 text-purple-700 text-xs rounded-lg font-medium hover:bg-purple-200 flex items-center gap-1.5">
                                         {actionLoading === dr.id + '_quote' ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-                                        Save Quote
+                                        Save as Quote Only
                                       </button>
-                                      {(quotePhone || quoteEmail) && (
-                                        <button onClick={() => addQuotation(inq.id, dr.id, true)}
-                                          disabled={!!actionLoading}
-                                          className="px-4 py-2 bg-green-600 text-white text-xs rounded-lg font-bold hover:bg-green-700 flex items-center gap-1.5">
-                                          {actionLoading === dr.id + '_quote' ? <Loader2 size={12} className="animate-spin" /> : <Share2 size={12} />}
-                                          Save & Send
-                                        </button>
-                                      )}
                                       <button onClick={resetQuoteForm}
-                                        className="px-4 py-2 text-gray-500 text-xs rounded-lg border hover:bg-gray-50 font-medium">Clear</button>
+                                        className="px-3 py-2 text-gray-400 text-xs rounded-lg hover:bg-gray-50 font-medium">Clear</button>
                                     </div>
                                   </div>
                               )}
@@ -1390,17 +1451,20 @@ export default function DispatchRequests() {
                                                         {hasDoc && <CheckCircle size={10} className="text-green-600" />}
                                                       </div>
                                                       <div className="flex gap-1">
-                                                        <button onClick={(e) => { e.stopPropagation(); uploadDoc(s.id, dt.key); }}
+                                                        <button onClick={(e) => { e.stopPropagation(); uploadDoc(s.id, dt.key, 'camera'); }}
                                                           disabled={!!uploadingDoc}
-                                                          className="flex-1 py-1 text-[9px] font-medium bg-gray-100 text-gray-600 rounded hover:bg-gray-200 flex items-center justify-center gap-0.5"
-                                                          title="Upload from files">
-                                                          {isUploading ? <Loader2 size={9} className="animate-spin" /> : <Upload size={9} />} File
+                                                          className="flex-1 py-1 text-[9px] font-medium bg-blue-100 text-blue-700 rounded hover:bg-blue-200 flex items-center justify-center gap-0.5">
+                                                          {isUploading ? <Loader2 size={9} className="animate-spin" /> : <Camera size={9} />} Camera
                                                         </button>
-                                                        <button onClick={(e) => { e.stopPropagation(); uploadDoc(s.id, dt.key, true); }}
+                                                        <button onClick={(e) => { e.stopPropagation(); uploadDoc(s.id, dt.key, 'gallery'); }}
                                                           disabled={!!uploadingDoc}
-                                                          className="flex-1 py-1 text-[9px] font-medium bg-gray-100 text-gray-600 rounded hover:bg-gray-200 flex items-center justify-center gap-0.5"
-                                                          title="Take photo with camera">
-                                                          <Camera size={9} /> Photo
+                                                          className="flex-1 py-1 text-[9px] font-medium bg-purple-100 text-purple-700 rounded hover:bg-purple-200 flex items-center justify-center gap-0.5">
+                                                          <Image size={9} /> Gallery
+                                                        </button>
+                                                        <button onClick={(e) => { e.stopPropagation(); uploadDoc(s.id, dt.key, 'file'); }}
+                                                          disabled={!!uploadingDoc}
+                                                          className="flex-1 py-1 text-[9px] font-medium bg-gray-100 text-gray-600 rounded hover:bg-gray-200 flex items-center justify-center gap-0.5">
+                                                          <Upload size={9} /> File
                                                         </button>
                                                       </div>
                                                     </div>
@@ -1509,19 +1573,23 @@ export default function DispatchRequests() {
                                                               className="text-blue-600 text-xs font-medium hover:underline">View</button>
                                                           </div>
                                                         ) : (
-                                                          <>
-                                                            <button onClick={(e) => { e.stopPropagation(); uploadDoc(s.id, 'SIGNED_BILTY'); }}
+                                                          <div className="flex gap-1.5 flex-wrap">
+                                                            <button onClick={(e) => { e.stopPropagation(); uploadDoc(s.id, 'SIGNED_BILTY', 'camera'); }}
                                                               disabled={!!uploadingDoc}
-                                                              className="px-3 py-1.5 text-xs font-medium bg-purple-100 text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-200 flex items-center gap-1">
-                                                              {isUploadingBilty ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
-                                                              Upload Signed Bilty
+                                                              className="px-3 py-1.5 text-xs font-medium bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 flex items-center gap-1">
+                                                              {isUploadingBilty ? <Loader2 size={11} className="animate-spin" /> : <Camera size={11} />} Camera
                                                             </button>
-                                                            <button onClick={(e) => { e.stopPropagation(); uploadDoc(s.id, 'SIGNED_BILTY', true); }}
+                                                            <button onClick={(e) => { e.stopPropagation(); uploadDoc(s.id, 'SIGNED_BILTY', 'gallery'); }}
                                                               disabled={!!uploadingDoc}
-                                                              className="px-3 py-1.5 text-xs font-medium bg-purple-100 text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-200 flex items-center gap-1">
-                                                              <Camera size={11} /> Photo of Signed Bilty
+                                                              className="px-3 py-1.5 text-xs font-medium bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 flex items-center gap-1">
+                                                              <Image size={11} /> Gallery
                                                             </button>
-                                                          </>
+                                                            <button onClick={(e) => { e.stopPropagation(); uploadDoc(s.id, 'SIGNED_BILTY', 'file'); }}
+                                                              disabled={!!uploadingDoc}
+                                                              className="px-3 py-1.5 text-xs font-medium bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 flex items-center gap-1">
+                                                              <Upload size={11} /> File
+                                                            </button>
+                                                          </div>
                                                         )}
                                                         {!s.grReceivedBack && signedBilty && (
                                                           <button onClick={async (e) => {
@@ -1556,10 +1624,10 @@ export default function DispatchRequests() {
                                   <p className="text-xs font-bold text-blue-800 mb-2 flex items-center gap-1.5">
                                     <Plus size={12} /> Add Truck
                                   </p>
-                                  <div className="grid grid-cols-3 gap-2 mb-2">
+                                  <div className="grid grid-cols-3 gap-2 mb-1">
                                     <input value={truckFormDR === dr.id ? truckVehicle : ''} onChange={e => { setTruckFormDR(dr.id); setTruckVehicle(e.target.value); }}
                                       onFocus={() => setTruckFormDR(dr.id)}
-                                      placeholder="Vehicle No *" className="input-field text-sm" />
+                                      placeholder="Vehicle No(s) *" className="input-field text-sm" />
                                     <input value={truckFormDR === dr.id ? truckDriver : ''} onChange={e => { setTruckFormDR(dr.id); setTruckDriver(e.target.value); }}
                                       onFocus={() => setTruckFormDR(dr.id)}
                                       placeholder="Driver Name" className="input-field text-sm" />
@@ -1567,6 +1635,7 @@ export default function DispatchRequests() {
                                       onFocus={() => setTruckFormDR(dr.id)}
                                       placeholder="Driver Mobile" className="input-field text-sm" />
                                   </div>
+                                  <p className="text-[10px] text-gray-400 mb-2">Tip: Enter multiple vehicle numbers separated by commas for batch entry</p>
                                   <button onClick={() => assignTruck(dr.id)}
                                     disabled={!!actionLoading || !truckVehicle.trim() || truckFormDR !== dr.id}
                                     className="w-full py-2 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-1.5">

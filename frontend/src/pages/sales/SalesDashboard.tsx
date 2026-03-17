@@ -720,26 +720,39 @@ export default function SalesDashboard() {
                                   )}
                                 </div>
 
-                                {/* Trucks — compact read-only view */}
+                                {/* Trucks — compact read-only view with doc badges */}
                                 {drShipments.length > 0 && (
                                   <div className="space-y-1">
                                     {drShipments.map((s: any) => {
                                       const netKg = s.weightNet || (s.weightGross && s.weightTare ? s.weightGross - s.weightTare : null);
+                                      const docs = s.documents || [];
                                       return (
-                                        <div key={s.id} className="flex items-center justify-between bg-gray-50 rounded px-2 py-1.5 text-xs">
-                                          <div className="flex items-center gap-2">
-                                            <span className="font-bold">{s.vehicleNo}</span>
-                                            {s.driverName && <span className="text-gray-500">{s.driverName}</span>}
+                                        <div key={s.id} className="bg-gray-50 rounded px-2 py-1.5 text-xs">
+                                          <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                              <span className="font-bold">{s.vehicleNo}</span>
+                                              {s.driverName && <span className="text-gray-500">{s.driverName}</span>}
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                              {netKg != null && netKg > 0 && <span className="font-bold text-green-700">{(netKg / 1000).toFixed(2)} MT</span>}
+                                              <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${
+                                                ['RELEASED', 'EXITED'].includes(s.status) ? 'bg-green-100 text-green-700' :
+                                                s.status === 'LOADING' ? 'bg-amber-100 text-amber-700' :
+                                                s.status === 'GROSS_WEIGHED' ? 'bg-orange-100 text-orange-700' :
+                                                'bg-blue-100 text-blue-700'
+                                              }`}>{s.status.replace(/_/g, ' ')}</span>
+                                            </div>
                                           </div>
-                                          <div className="flex items-center gap-2">
-                                            {netKg != null && netKg > 0 && <span className="font-bold text-green-700">{(netKg / 1000).toFixed(2)} MT</span>}
-                                            <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${
-                                              ['RELEASED', 'EXITED'].includes(s.status) ? 'bg-green-100 text-green-700' :
-                                              s.status === 'LOADING' ? 'bg-amber-100 text-amber-700' :
-                                              s.status === 'GROSS_WEIGHED' ? 'bg-orange-100 text-orange-700' :
-                                              'bg-blue-100 text-blue-700'
-                                            }`}>{s.status.replace(/_/g, ' ')}</span>
-                                          </div>
+                                          {/* Doc badges */}
+                                          {(s.challanNo || s.ewayBill || s.gatePassNo || s.grBiltyNo || docs.length > 0) && (
+                                            <div className="flex gap-1 mt-1 flex-wrap">
+                                              {s.challanNo && <span className="text-[8px] bg-blue-50 text-blue-600 px-1 py-0.5 rounded">Bill</span>}
+                                              {s.ewayBill && <span className="text-[8px] bg-indigo-50 text-indigo-600 px-1 py-0.5 rounded">E-Way</span>}
+                                              {s.gatePassNo && <span className="text-[8px] bg-amber-50 text-amber-600 px-1 py-0.5 rounded">Gate</span>}
+                                              {s.grBiltyNo && <span className="text-[8px] bg-purple-50 text-purple-600 px-1 py-0.5 rounded">Bilty</span>}
+                                              {docs.length > 0 && <span className="text-[8px] text-green-600 font-medium">{docs.length} doc{docs.length > 1 ? 's' : ''} uploaded</span>}
+                                            </div>
+                                          )}
                                         </div>
                                       );
                                     })}
