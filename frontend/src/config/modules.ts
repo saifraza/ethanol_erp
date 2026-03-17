@@ -66,6 +66,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'plant-issues', label: 'Maintenance', to: '/plant-issues', icon: AlertCircle, group: 'admin' },
   { key: 'purchase-req', label: 'Indent', to: '/purchase-requisition', icon: ShoppingCart, group: 'admin' },
   { key: 'reports', label: 'Reports', to: '/reports', icon: BarChart3, group: 'admin' },
+  { key: 'doc-templates', label: 'Doc Templates', to: '/document-templates', icon: FileText, group: 'admin', adminOnly: true },
   { key: 'settings', label: 'Settings', to: '/settings', icon: Settings, group: 'admin', adminOnly: true },
   { key: 'users', label: 'Users', to: '/users', icon: Users, group: 'admin', adminOnly: true },
 ];

@@ -84,7 +84,7 @@ router.post('/send-rate-request', async (req: Request, res: Response) => {
         results.whatsapp = { success: false, error: 'No phone number for this transporter' };
       } else {
         const message = buildRateRequestMessage(data);
-        results.whatsapp = await sendWhatsApp({ phone: transporterPhone, message });
+        results.whatsapp = await sendWhatsApp({ phone: transporterPhone, message, mediaUrl: pdfUrl });
       }
     }
 
@@ -114,6 +114,24 @@ router.post('/send-custom', async (req: Request, res: Response) => {
     } else {
       res.status(400).json({ error: 'Invalid channel. Use "email" or "whatsapp".' });
     }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /send-document — Send a document (PDF, image) via WhatsApp
+router.post('/send-document', async (req: Request, res: Response) => {
+  try {
+    const { phone, message, documentUrl, documentType } = req.body;
+    if (!phone) { res.status(400).json({ error: 'Phone number required' }); return; }
+    if (!documentUrl) { res.status(400).json({ error: 'Document URL required' }); return; }
+
+    const result = await sendWhatsApp({
+      phone,
+      message: message || `MSPIL ERP — ${documentType || 'Document'}`,
+      mediaUrl: documentUrl,
+    });
+    res.json(result);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

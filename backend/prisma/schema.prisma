@@ -90,6 +90,20 @@ model Settings {
   updatedAt             DateTime @updatedAt
 }
 
+// Document templates for auto-generated PDFs (challan, PO, invoice, rate request, etc.)
+model DocumentTemplate {
+  id          String   @id @default(cuid())
+  docType     String   @unique   // CHALLAN, PURCHASE_ORDER, INVOICE, RATE_REQUEST, SALE_ORDER
+  title       String?            // e.g. "DELIVERY CHALLAN"
+  terms       String?            // JSON array of term strings
+  footer      String?            // Footer text
+  bankDetails String?            // Bank details text
+  companyInfo String?            // JSON with company overrides
+  remarks     String?            // Default remarks
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 model GrainEntry {
   id                 String   @id @default(uuid())
   date               DateTime
