@@ -359,6 +359,7 @@ export default function DispatchRequests() {
       const dr = drs.find(d => d.id === drId);
       const total = parseFloat(quoteRate) * (dr?.quantity || 0);
       await api.post(`/freight-inquiries/${inquiryId}/quotations`, {
+        transporterId: quoteTransporterId || null,
         transporterName: quoteTransporter,
         ratePerMT: parseFloat(quoteRate),
         totalAmount: total,
@@ -793,69 +794,59 @@ export default function DispatchRequests() {
                           )}
                         </div>
 
-                        {/* ── Logistics Edit Form ── */}
+                        {/* ── Logistics & Rate Section ── */}
                         {isEditing ? (
-                          <div className="bg-orange-50 rounded-lg p-3 border border-orange-200 space-y-3">
+                          <div className="bg-orange-50 rounded-xl p-4 border border-orange-200 space-y-4">
                             <div className="flex items-center justify-between">
-                              <span className="text-xs font-bold text-orange-800">Set Logistics Details</span>
-                              <button onClick={() => setEditingDR(null)} className="text-gray-400"><X size={14} /></button>
+                              <span className="text-sm font-bold text-orange-800 flex items-center gap-1.5">
+                                <Truck size={14} /> Logistics Details
+                              </span>
+                              <button onClick={() => setEditingDR(null)} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
                             </div>
 
-                            {/* Destination + auto distance */}
+                            {/* Row 1: Destination */}
                             <div>
-                              <label className="text-[10px] text-gray-500 font-medium">Delivery Destination</label>
-                              <div className="flex gap-1.5 mt-0.5">
+                              <label className="text-[11px] text-gray-600 font-semibold mb-1 block">Delivery Destination</label>
+                              <div className="flex gap-2">
                                 <input value={editDestination} onChange={e => setEditDestination(e.target.value)}
-                                  placeholder="Full address — city, state, pincode" className="input-field text-xs flex-1" />
+                                  placeholder="Full address — city, state, pincode" className="input-field text-sm flex-1" />
                                 <button onClick={() => autoCalcDistance(dr.id, editDestination)}
                                   disabled={!!calcLoading}
-                                  className="px-3 py-1.5 bg-blue-600 text-white text-[10px] rounded font-medium hover:bg-blue-700 flex items-center gap-1 whitespace-nowrap disabled:opacity-50"
-                                  title="Auto-calculate distance from Agariya factory">
-                                  {calcLoading === dr.id ? <Loader2 size={10} className="animate-spin" /> : <Route size={10} />}
+                                  className="px-3 py-2 bg-blue-600 text-white text-xs rounded-lg font-medium hover:bg-blue-700 flex items-center gap-1.5 whitespace-nowrap disabled:opacity-50">
+                                  {calcLoading === dr.id ? <Loader2 size={12} className="animate-spin" /> : <Route size={12} />}
                                   Calc Distance
                                 </button>
                                 {editDestination && (
                                   <a href={getMapUrl(editDestination)} target="_blank" rel="noopener"
-                                    className="px-2 py-1.5 bg-green-600 text-white text-[10px] rounded font-medium hover:bg-green-700 flex items-center gap-1 whitespace-nowrap">
-                                    <Navigation size={10} /> Google Maps
+                                    className="px-3 py-2 bg-green-600 text-white text-xs rounded-lg font-medium hover:bg-green-700 flex items-center gap-1.5 whitespace-nowrap">
+                                    <Navigation size={12} /> Maps
                                   </a>
                                 )}
                               </div>
-                              <p className="text-[9px] text-gray-400 mt-0.5">
-                                From: {FACTORY.name}
-                              </p>
+                              <p className="text-[10px] text-gray-400 mt-1">From: {FACTORY.name}</p>
                             </div>
 
-                            {/* Distance + Duration (auto-filled) */}
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                            {/* Row 2: Distance / Trucks / Transporter */}
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                               <div>
-                                <label className="text-[10px] text-gray-500 font-medium">Distance (km)</label>
+                                <label className="text-[11px] text-gray-600 font-semibold mb-1 block">Distance (km)</label>
                                 <input type="number" value={editDistanceKm} onChange={e => setEditDistanceKm(e.target.value)}
-                                  placeholder="Auto or manual" className="input-field text-xs w-full" />
+                                  placeholder="Auto or manual" className="input-field text-sm w-full" />
+                                {editDuration && <p className="text-[10px] text-blue-600 mt-1">~{editDuration} hrs drive</p>}
                               </div>
-                              {editDuration && (
-                                <div>
-                                  <label className="text-[10px] text-gray-500 font-medium">Est. Travel Time</label>
-                                  <div className="input-field text-xs bg-gray-50 text-gray-600">{editDuration} hrs</div>
-                                </div>
-                              )}
                               <div>
-                                <label className="text-[10px] text-gray-500 font-medium">Trucks Needed</label>
+                                <label className="text-[11px] text-gray-600 font-semibold mb-1 block">Trucks Needed</label>
                                 <input type="number" value={editVehicleCount} onChange={e => setEditVehicleCount(e.target.value)}
-                                  placeholder="1" className="input-field text-xs w-full" />
+                                  placeholder="1" className="input-field text-sm w-full" />
                               </div>
-                            </div>
-
-                            {/* Transporter selection */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                              <div>
-                                <label className="text-[10px] text-gray-500 font-medium">Transporter</label>
+                              <div className="col-span-2">
+                                <label className="text-[11px] text-gray-600 font-semibold mb-1 block">Transporter</label>
                                 <select value={editTransporterId} onChange={e => {
                                   setEditTransporterId(e.target.value);
                                   const t = transporters.find(t => t.id === e.target.value);
                                   if (t) setEditTransporterName(t.name);
                                 }}
-                                  className="input-field text-xs w-full">
+                                  className="input-field text-sm w-full">
                                   <option value="">Select transporter</option>
                                   {transporters.map(t => (
                                     <option key={t.id} value={t.id}>
@@ -863,20 +854,19 @@ export default function DispatchRequests() {
                                     </option>
                                   ))}
                                 </select>
-                                {/* Transporter contact */}
                                 {editTransporterId && (() => {
                                   const t = transporters.find(tr => tr.id === editTransporterId);
                                   return t ? (
-                                    <div className="flex items-center gap-2 mt-1 text-xs">
+                                    <div className="flex items-center gap-3 mt-1.5 text-xs">
                                       {t.phone && (
                                         <>
-                                          <a href={`tel:${t.phone}`} className="text-blue-600 flex items-center gap-0.5">
-                                            <Phone size={10} /> {t.phone}
+                                          <a href={`tel:${t.phone}`} className="text-blue-600 flex items-center gap-1">
+                                            <Phone size={11} /> {t.phone}
                                           </a>
                                           <a href={`https://api.whatsapp.com/send?phone=91${t.phone.replace(/\D/g, '').slice(-10)}`}
                                             target="_blank" rel="noopener"
-                                            className="text-green-600 flex items-center gap-0.5 hover:underline">
-                                            <MessageCircle size={10} /> WhatsApp
+                                            className="text-green-600 flex items-center gap-1 hover:underline">
+                                            <MessageCircle size={11} /> WhatsApp
                                           </a>
                                         </>
                                       )}
@@ -884,74 +874,84 @@ export default function DispatchRequests() {
                                   ) : null;
                                 })()}
                               </div>
-                              <div>
-                                <label className="text-[10px] text-gray-500 font-medium">Freight Rate (₹/MT)</label>
-                                <input type="number" value={editFreightRate} onChange={e => setEditFreightRate(e.target.value)}
-                                  placeholder="Negotiated rate" className="input-field text-xs w-full" />
+                            </div>
+
+                            {/* Row 3: Freight Rate — highlighted */}
+                            <div className="bg-white rounded-lg border border-orange-200 p-3">
+                              <label className="text-[11px] text-gray-600 font-semibold mb-1 block">Freight Rate (₹/MT)</label>
+                              <div className="flex items-center gap-3">
+                                <div className="flex items-center gap-1">
+                                  <span className="text-lg font-bold text-gray-400">₹</span>
+                                  <input type="number" value={editFreightRate} onChange={e => setEditFreightRate(e.target.value)}
+                                    placeholder="0" className="input-field text-lg font-bold w-32" />
+                                  <span className="text-sm text-gray-400">/MT</span>
+                                </div>
                                 {editFreightRate && dr.quantity > 0 && (
-                                  <p className="text-[10px] text-green-700 font-medium mt-0.5">
-                                    Total freight: ₹{(parseFloat(editFreightRate) * dr.quantity).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                                    <span className="text-gray-400"> ({dr.quantity} {dr.unit} × ₹{editFreightRate})</span>
-                                  </p>
-                                )}
-                                {editDistanceKm && editFreightRate && (
-                                  <p className="text-[10px] text-gray-400 mt-0.5">
-                                    ₹{(parseFloat(editFreightRate) / parseFloat(editDistanceKm) * 1000).toFixed(1)}/MT/1000km
-                                  </p>
+                                  <div className="text-sm">
+                                    <span className="text-green-700 font-bold">
+                                      Total: ₹{(parseFloat(editFreightRate) * dr.quantity).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                                    </span>
+                                    <span className="text-gray-400 ml-1">({dr.quantity} {dr.unit})</span>
+                                    {editDistanceKm && (
+                                      <span className="text-gray-400 ml-2">
+                                        · ₹{(parseFloat(editFreightRate) / parseFloat(editDistanceKm) * 1000).toFixed(0)}/MT/1000km
+                                      </span>
+                                    )}
+                                  </div>
                                 )}
                               </div>
                             </div>
 
                             <button onClick={() => saveLogistics(dr.id)}
                               disabled={!!actionLoading}
-                              className="w-full py-2 bg-orange-600 text-white text-sm font-medium rounded-lg hover:bg-orange-700 disabled:opacity-50 flex items-center justify-center gap-2">
-                              {actionLoading === dr.id ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                              className="w-full py-2.5 bg-orange-600 text-white text-sm font-bold rounded-lg hover:bg-orange-700 disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm">
+                              {actionLoading === dr.id ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                               Save Logistics Details
                             </button>
                           </div>
                         ) : (
-                          /* View mode */
-                          <div className="bg-white rounded-lg border p-3">
-                            <div className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1">
-                              <Truck size={12} /> Logistics Details
+                          /* View mode — compact card */
+                          <div className="bg-white rounded-xl border p-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs font-semibold text-gray-600 flex items-center gap-1">
+                                <Truck size={12} /> Logistics
+                              </span>
+                              {!['DISPATCHED', 'COMPLETED'].includes(dr.status) && (
+                                <button onClick={() => startEditDR(dr)}
+                                  className="text-[11px] text-orange-600 font-semibold hover:text-orange-700 flex items-center gap-1">
+                                  ✏️ {step === 'NEW' ? 'Set Details' : 'Edit'}
+                                </button>
+                              )}
                             </div>
                             <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
                               <div>
-                                <span className="text-gray-400">Destination</span>
+                                <span className="text-gray-400 block">Destination</span>
                                 <p className="font-medium">{dr.destination || customerAddr || '—'}</p>
                                 {(dr.destination || customerAddr) && (
                                   <a href={getMapUrl(dr.destination || customerAddr)} target="_blank" rel="noopener"
                                     className="text-blue-600 text-[10px] hover:underline flex items-center gap-0.5 mt-0.5">
-                                    <Navigation size={9} /> View on Maps
+                                    <Navigation size={9} /> Maps
                                   </a>
                                 )}
                               </div>
                               <div>
-                                <span className="text-gray-400">Distance</span>
+                                <span className="text-gray-400 block">Distance</span>
                                 <p className="font-medium">{dr.distanceKm ? `${dr.distanceKm} km` : '—'}</p>
                               </div>
                               <div>
-                                <span className="text-gray-400">Transporter</span>
+                                <span className="text-gray-400 block">Transporter</span>
                                 <p className="font-medium">{dr.transporterName || '—'}</p>
                               </div>
                               <div>
-                                <span className="text-gray-400">Rate</span>
-                                <p className="font-medium">{dr.freightRate ? `₹${dr.freightRate}/MT` : '—'}</p>
+                                <span className="text-gray-400 block">Rate</span>
+                                <p className="font-semibold text-green-700">{dr.freightRate ? `₹${dr.freightRate}/MT` : '—'}</p>
                               </div>
                               <div>
-                                <span className="text-gray-400">Total Freight</span>
-                                <p className="font-bold">{dr.freightRate && dr.quantity ? `₹${(dr.freightRate * dr.quantity).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '—'}</p>
+                                <span className="text-gray-400 block">Total Freight</span>
+                                <p className="font-bold text-green-700">{dr.freightRate && dr.quantity ? `₹${(dr.freightRate * dr.quantity).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '—'}</p>
                               </div>
                             </div>
                           </div>
-                        )}
-
-                        {/* Edit button */}
-                        {!isEditing && !['DISPATCHED', 'COMPLETED'].includes(dr.status) && (
-                          <button onClick={() => startEditDR(dr)}
-                            className="text-xs text-orange-600 font-medium hover:underline flex items-center gap-1">
-                            ✏️ {step === 'NEW' ? 'Set logistics details' : 'Edit logistics details'}
-                          </button>
                         )}
 
                         {/* ── Transporter Quotations ── */}
@@ -961,11 +961,15 @@ export default function DispatchRequests() {
                           const quotes = inq.quotations || [];
                           const hasAccepted = quotes.some((q: any) => q.status === 'ACCEPTED');
                           return (
-                            <div className="bg-purple-50 rounded-lg border border-purple-200 p-3">
-                              <div className="flex items-center justify-between mb-2">
-                                <div className="text-xs font-semibold text-purple-800 flex items-center gap-1">
-                                  <IndianRupee size={12} /> Rate Request FI-{inq.inquiryNo}
-                                  <span className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                            <div className="bg-purple-50 rounded-xl border border-purple-200 p-4">
+                              {/* Header */}
+                              <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-bold text-purple-800 flex items-center gap-1.5">
+                                    <IndianRupee size={14} /> Rate Quotes
+                                  </span>
+                                  <span className="text-xs text-gray-400">FI-{inq.inquiryNo}</span>
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                                     inq.status === 'AWARDED' ? 'bg-green-100 text-green-700' :
                                     inq.status === 'QUOTES_RECEIVED' ? 'bg-amber-100 text-amber-700' :
                                     'bg-blue-100 text-blue-700'
@@ -973,57 +977,56 @@ export default function DispatchRequests() {
                                 </div>
                                 <div className="flex gap-1.5">
                                   <button onClick={() => setShowSendForm(showSendForm === dr.id ? null : dr.id)}
-                                    className="px-2 py-1 text-[10px] font-medium bg-orange-100 text-orange-700 rounded hover:bg-orange-200 flex items-center gap-1">
-                                    <Share2 size={10} /> Send to Transporter
+                                    className="px-2.5 py-1 text-xs font-medium bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 flex items-center gap-1">
+                                    <Share2 size={11} /> Send Request
                                   </button>
                                   <button onClick={() => shareRateRequest(dr)}
-                                    className="px-2 py-1 text-[10px] font-medium bg-green-100 text-green-700 rounded hover:bg-green-200 flex items-center gap-1">
-                                    <MessageCircle size={10} /> WhatsApp
+                                    className="px-2.5 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-lg hover:bg-green-200 flex items-center gap-1">
+                                    <MessageCircle size={11} /> WA
                                   </button>
                                   <button onClick={() => {
                                     const token = localStorage.getItem('token');
                                     window.open(`/api/freight-inquiries/${inq.id}/pdf?token=${token}`, '_blank');
                                   }}
-                                    className="px-2 py-1 text-[10px] font-medium bg-blue-100 text-blue-700 rounded hover:bg-blue-200 flex items-center gap-1">
-                                    <FileText size={10} /> PDF
+                                    className="px-2.5 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 flex items-center gap-1">
+                                    <FileText size={11} /> PDF
                                   </button>
                                 </div>
                               </div>
 
-                              {/* Send to specific transporter form */}
+                              {/* Send to transporter panel */}
                               {showSendForm === dr.id && (
-                                <div className="bg-white rounded border p-2 mb-2 space-y-2">
-                                  <p className="text-[10px] font-semibold text-gray-600">Send rate request to transporter — pick or enter details:</p>
+                                <div className="bg-white rounded-lg border p-3 mb-3 space-y-2.5">
+                                  <p className="text-xs font-semibold text-gray-700">Send rate request to transporter</p>
 
-                                  {/* Quick send: registered transporters (one-click) */}
+                                  {/* Quick-send list */}
                                   {transporters.filter(t => t.phone || t.email).length > 0 && (
                                     <div className="space-y-1">
                                       {transporters.filter(t => t.phone || t.email).map(t => (
-                                        <div key={t.id} className="flex items-center justify-between bg-gray-50 rounded px-2 py-1.5">
+                                        <div key={t.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
                                           <div className="text-xs">
                                             <span className="font-semibold">{t.name}</span>
-                                            {t.phone && <span className="text-gray-400 ml-1">{t.phone}</span>}
-                                            {t.email && <span className="text-gray-400 ml-1">{t.email}</span>}
+                                            {t.phone && <span className="text-gray-400 ml-2">{t.phone}</span>}
                                           </div>
-                                          <div className="flex gap-1">
+                                          <div className="flex gap-1.5">
                                             {t.phone && (
                                               <button onClick={() => sendRateRequest(inq.id, ['whatsapp'], t.phone!, undefined, t.id, t.name)}
                                                 disabled={!!sendingTo}
-                                                className="px-2 py-0.5 text-[10px] font-medium bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-0.5">
-                                                {sendingTo === inq.id ? <Loader2 size={8} className="animate-spin" /> : <MessageCircle size={8} />} WA
+                                                className="px-2 py-1 text-[11px] font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-1">
+                                                {sendingTo === inq.id ? <Loader2 size={10} className="animate-spin" /> : <MessageCircle size={10} />} WA
                                               </button>
                                             )}
                                             {t.email && (
                                               <button onClick={() => sendRateRequest(inq.id, ['email'], undefined, t.email!, t.id, t.name)}
                                                 disabled={!!sendingTo}
-                                                className="px-2 py-0.5 text-[10px] font-medium bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-0.5">
-                                                {sendingTo === inq.id ? <Loader2 size={8} className="animate-spin" /> : <Mail size={8} />} Email
+                                                className="px-2 py-1 text-[11px] font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-1">
+                                                {sendingTo === inq.id ? <Loader2 size={10} className="animate-spin" /> : <Mail size={10} />} Email
                                               </button>
                                             )}
                                             {t.phone && t.email && (
                                               <button onClick={() => sendRateRequest(inq.id, ['email', 'whatsapp'], t.phone!, t.email!, t.id, t.name)}
                                                 disabled={!!sendingTo}
-                                                className="px-2 py-0.5 text-[10px] font-medium bg-purple-600 text-white rounded hover:bg-purple-700">
+                                                className="px-2 py-1 text-[11px] font-medium bg-purple-600 text-white rounded-lg hover:bg-purple-700">
                                                 Both
                                               </button>
                                             )}
@@ -1033,10 +1036,10 @@ export default function DispatchRequests() {
                                     </div>
                                   )}
 
-                                  {/* Manual entry with select */}
+                                  {/* Manual send */}
                                   <div className="border-t pt-2">
-                                    <p className="text-[10px] text-gray-400 mb-1">Or enter manually:</p>
-                                    <div className="flex gap-1.5">
+                                    <p className="text-[11px] text-gray-400 mb-1.5">Or enter manually:</p>
+                                    <div className="flex gap-2">
                                       <input value={sendPhone} onChange={e => setSendPhone(e.target.value)}
                                         placeholder="Phone (10 digits)" className="input-field text-xs flex-1" />
                                       <input value={sendEmail} onChange={e => setSendEmail(e.target.value)}
@@ -1049,49 +1052,56 @@ export default function DispatchRequests() {
                                         sendRateRequest(inq.id, ch, sendPhone || undefined, sendEmail || undefined);
                                       }}
                                         disabled={!!sendingTo}
-                                        className="px-3 py-1.5 bg-orange-600 text-white text-xs rounded font-medium hover:bg-orange-700 flex items-center gap-1 whitespace-nowrap">
-                                        {sendingTo ? <Loader2 size={10} className="animate-spin" /> : <Share2 size={10} />} Send
+                                        className="px-4 py-2 bg-orange-600 text-white text-xs rounded-lg font-medium hover:bg-orange-700 flex items-center gap-1 whitespace-nowrap">
+                                        {sendingTo ? <Loader2 size={12} className="animate-spin" /> : <Share2 size={12} />} Send
                                       </button>
                                     </div>
                                   </div>
                                 </div>
                               )}
 
-                              {/* Existing quotations */}
+                              {/* Quotations list */}
                               {quotes.length > 0 && (
-                                <div className="space-y-1.5 mb-2">
+                                <div className="space-y-2 mb-3">
                                   {quotes.map((q: any) => (
-                                    <div key={q.id} className={`rounded px-2 py-1.5 text-xs ${
-                                      q.status === 'ACCEPTED' ? 'bg-green-100 border border-green-300' :
+                                    <div key={q.id} className={`rounded-lg p-3 text-xs ${
+                                      q.status === 'ACCEPTED' ? 'bg-green-100 border-2 border-green-400' :
                                       q.status === 'REJECTED' ? 'bg-gray-100 text-gray-400 line-through' :
                                       'bg-white border'
                                     }`}>
                                       <div className="flex items-center justify-between">
-                                        <div>
-                                          <span className="font-semibold">{q.transporterName}</span>
-                                          {q.ratePerMT && <span className="ml-2 text-green-700 font-bold">₹{q.ratePerMT.toLocaleString('en-IN')}/MT</span>}
-                                          {q.totalAmount && <span className="ml-1 text-gray-500">(₹{q.totalAmount.toLocaleString('en-IN', { maximumFractionDigits: 0 })} total)</span>}
-                                          {q.estimatedDays && <span className="ml-1 text-gray-400">{q.estimatedDays}d</span>}
-                                          {q.remarks && <span className="ml-1 text-gray-400">— {q.remarks}</span>}
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <span className="font-bold text-sm">{q.transporterName}</span>
+                                          {q.ratePerMT != null && (
+                                            <span className="text-green-700 font-bold text-sm">₹{q.ratePerMT.toLocaleString('en-IN')}/MT</span>
+                                          )}
+                                          {q.totalAmount != null && (
+                                            <span className="text-gray-500">(₹{q.totalAmount.toLocaleString('en-IN', { maximumFractionDigits: 0 })} total)</span>
+                                          )}
+                                          {q.estimatedDays && <span className="text-gray-400">{q.estimatedDays} days</span>}
+                                          {q.remarks && <span className="text-gray-400 italic">— {q.remarks}</span>}
                                         </div>
-                                        <div className="flex items-center gap-1">
-                                          {q.status === 'ACCEPTED' && <span className="text-green-700 font-bold">✓ Selected</span>}
+                                        <div className="flex items-center gap-2">
+                                          {q.status === 'ACCEPTED' && (
+                                            <span className="text-green-700 font-bold flex items-center gap-1"><CheckCircle size={14} /> Selected</span>
+                                          )}
                                           {q.status === 'RECEIVED' && !hasAccepted && (
                                             <button onClick={() => acceptQuotation(q.id, dr.id, q.transporterName, q.ratePerMT)}
                                               disabled={!!actionLoading}
-                                              className="px-2 py-0.5 bg-green-600 text-white text-[10px] rounded font-medium hover:bg-green-700">
-                                              {actionLoading === dr.id + '_accept' ? '...' : 'Accept'}
+                                              className="px-3 py-1 bg-green-600 text-white text-xs rounded-lg font-medium hover:bg-green-700">
+                                              {actionLoading === dr.id + '_accept' ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />}
+                                              {actionLoading === dr.id + '_accept' ? ' ...' : ' Accept'}
                                             </button>
                                           )}
                                         </div>
                                       </div>
-                                      {/* After accepting: upload quotation doc + send WhatsApp */}
+                                      {/* Post-acceptance actions */}
                                       {q.status === 'ACCEPTED' && (
-                                        <div className="flex gap-1.5 mt-1.5 pt-1.5 border-t border-green-200">
+                                        <div className="flex gap-2 mt-2 pt-2 border-t border-green-300">
                                           <button onClick={() => uploadQuotationDoc(inq.id, q.id)}
                                             disabled={!!actionLoading}
-                                            className="px-2 py-0.5 text-[10px] font-medium bg-white text-green-700 border border-green-300 rounded hover:bg-green-50 flex items-center gap-0.5">
-                                            {actionLoading === q.id + '_upload' ? <Loader2 size={8} className="animate-spin" /> : <Upload size={8} />}
+                                            className="px-3 py-1 text-xs font-medium bg-white text-green-700 border border-green-300 rounded-lg hover:bg-green-50 flex items-center gap-1">
+                                            {actionLoading === q.id + '_upload' ? <Loader2 size={10} className="animate-spin" /> : <Upload size={10} />}
                                             Upload Quotation Doc
                                           </button>
                                           {(() => {
@@ -1099,8 +1109,8 @@ export default function DispatchRequests() {
                                             return t?.phone ? (
                                               <button onClick={() => sendDocWhatsApp('', t.phone!, 'RATE_REQUEST', dr)}
                                                 disabled={!!actionLoading}
-                                                className="px-2 py-0.5 text-[10px] font-medium bg-white text-green-700 border border-green-300 rounded hover:bg-green-50 flex items-center gap-0.5">
-                                                <MessageCircle size={8} /> WA Confirmation
+                                                className="px-3 py-1 text-xs font-medium bg-white text-green-700 border border-green-300 rounded-lg hover:bg-green-50 flex items-center gap-1">
+                                                <MessageCircle size={10} /> WA Confirmation
                                               </button>
                                             ) : null;
                                           })()}
@@ -1114,81 +1124,79 @@ export default function DispatchRequests() {
                               {/* Add quotation form */}
                               {!hasAccepted && (
                                 showQuoteForm === dr.id ? (
-                                  <div className="bg-white rounded border p-2.5 space-y-2">
-                                    {/* Select transporter or type new */}
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                  <div className="bg-white rounded-lg border p-3 space-y-3">
+                                    <p className="text-xs font-bold text-purple-800">Add Transporter Quote</p>
+                                    {/* Transporter select */}
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                                       <div>
-                                        <label className="text-[10px] text-gray-500 font-medium">Select Transporter</label>
+                                        <label className="text-[11px] text-gray-600 font-semibold mb-1 block">Transporter</label>
                                         <select value={quoteTransporterId} onChange={e => selectQuoteTransporter(e.target.value)}
-                                          className="input-field text-xs w-full">
-                                          <option value="">— Select or type below —</option>
+                                          className="input-field text-sm w-full">
+                                          <option value="">— Select —</option>
                                           {transporters.map(t => (
                                             <option key={t.id} value={t.id}>{t.name} {t.phone ? `(${t.phone})` : ''}</option>
                                           ))}
                                         </select>
                                         {!quoteTransporterId && (
                                           <input value={quoteTransporter} onChange={e => setQuoteTransporter(e.target.value)}
-                                            placeholder="Or type new transporter name" className="input-field text-xs w-full mt-1" />
+                                            placeholder="Or type name" className="input-field text-xs w-full mt-1" />
                                         )}
                                       </div>
-                                      <div className="grid grid-cols-2 gap-1.5">
-                                        <div>
-                                          <label className="text-[10px] text-gray-500 font-medium">Phone</label>
-                                          <input value={quotePhone} onChange={e => setQuotePhone(e.target.value)}
-                                            placeholder="10 digits" className="input-field text-xs w-full" />
-                                        </div>
-                                        <div>
-                                          <label className="text-[10px] text-gray-500 font-medium">Email</label>
-                                          <input value={quoteEmail} onChange={e => setQuoteEmail(e.target.value)}
-                                            placeholder="email@..." className="input-field text-xs w-full" />
-                                        </div>
+                                      <div>
+                                        <label className="text-[11px] text-gray-600 font-semibold mb-1 block">Phone</label>
+                                        <input value={quotePhone} onChange={e => setQuotePhone(e.target.value)}
+                                          placeholder="10 digits" className="input-field text-sm w-full" />
+                                      </div>
+                                      <div>
+                                        <label className="text-[11px] text-gray-600 font-semibold mb-1 block">Email</label>
+                                        <input value={quoteEmail} onChange={e => setQuoteEmail(e.target.value)}
+                                          placeholder="email@..." className="input-field text-sm w-full" />
                                       </div>
                                     </div>
-                                    {/* Rate + Days + Remarks */}
-                                    <div className="grid grid-cols-3 gap-1.5">
-                                      <div>
-                                        <label className="text-[10px] text-gray-500 font-medium">Rate ₹/MT *</label>
+
+                                    {/* Rate row — prominent */}
+                                    <div className="bg-purple-50 rounded-lg p-2.5 flex items-center gap-3 flex-wrap">
+                                      <div className="flex items-center gap-1">
+                                        <span className="text-lg font-bold text-gray-400">₹</span>
                                         <input type="number" value={quoteRate} onChange={e => setQuoteRate(e.target.value)}
-                                          placeholder="Rate" className="input-field text-xs w-full" />
+                                          placeholder="Rate" className="input-field text-lg font-bold w-28" />
+                                        <span className="text-sm text-gray-400">/MT</span>
                                       </div>
-                                      <div>
-                                        <label className="text-[10px] text-gray-500 font-medium">Days</label>
-                                        <input type="number" value={quoteDays} onChange={e => setQuoteDays(e.target.value)}
-                                          placeholder="Est. days" className="input-field text-xs w-full" />
-                                      </div>
-                                      <div>
-                                        <label className="text-[10px] text-gray-500 font-medium">Remarks</label>
-                                        <input value={quoteRemarks} onChange={e => setQuoteRemarks(e.target.value)}
-                                          placeholder="Notes" className="input-field text-xs w-full" />
-                                      </div>
+                                      <input type="number" value={quoteDays} onChange={e => setQuoteDays(e.target.value)}
+                                        placeholder="Days" className="input-field text-sm w-20" />
+                                      <input value={quoteRemarks} onChange={e => setQuoteRemarks(e.target.value)}
+                                        placeholder="Remarks" className="input-field text-sm flex-1" />
+                                      {quoteRate && dr.quantity > 0 && (
+                                        <span className="text-sm text-green-700 font-bold">
+                                          = ₹{(parseFloat(quoteRate) * dr.quantity).toLocaleString('en-IN', { maximumFractionDigits: 0 })} total
+                                        </span>
+                                      )}
                                     </div>
-                                    {quoteRate && dr.quantity > 0 && (
-                                      <p className="text-[10px] text-green-700 font-medium">Total freight: ₹{(parseFloat(quoteRate) * dr.quantity).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
-                                    )}
-                                    {/* Buttons: Save / Save & Send / Cancel */}
-                                    <div className="flex gap-1.5 flex-wrap">
+
+                                    {/* Buttons */}
+                                    <div className="flex gap-2">
                                       <button onClick={() => addQuotation(inq.id, dr.id)}
                                         disabled={!!actionLoading}
-                                        className="px-3 py-1.5 bg-purple-600 text-white text-xs rounded font-medium hover:bg-purple-700 flex items-center gap-1">
-                                        {actionLoading === dr.id + '_quote' ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />}
+                                        className="px-4 py-2 bg-purple-600 text-white text-xs rounded-lg font-bold hover:bg-purple-700 flex items-center gap-1.5">
+                                        {actionLoading === dr.id + '_quote' ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
                                         Save Quote
                                       </button>
                                       {(quotePhone || quoteEmail) && (
                                         <button onClick={() => addQuotation(inq.id, dr.id, true)}
                                           disabled={!!actionLoading}
-                                          className="px-3 py-1.5 bg-green-600 text-white text-xs rounded font-medium hover:bg-green-700 flex items-center gap-1">
-                                          {actionLoading === dr.id + '_quote' ? <Loader2 size={10} className="animate-spin" /> : <Share2 size={10} />}
-                                          Save & Send Rate Request
+                                          className="px-4 py-2 bg-green-600 text-white text-xs rounded-lg font-bold hover:bg-green-700 flex items-center gap-1.5">
+                                          {actionLoading === dr.id + '_quote' ? <Loader2 size={12} className="animate-spin" /> : <Share2 size={12} />}
+                                          Save & Send
                                         </button>
                                       )}
                                       <button onClick={resetQuoteForm}
-                                        className="px-3 py-1.5 text-gray-500 text-xs rounded border hover:bg-gray-50">Cancel</button>
+                                        className="px-4 py-2 text-gray-500 text-xs rounded-lg border hover:bg-gray-50 font-medium">Cancel</button>
                                     </div>
                                   </div>
                                 ) : (
                                   <button onClick={() => setShowQuoteForm(dr.id)}
-                                    className="w-full py-1.5 text-purple-600 text-xs font-medium rounded border border-dashed border-purple-300 hover:bg-purple-100 flex items-center justify-center gap-1">
-                                    <Plus size={12} /> Add Transporter Quotation
+                                    className="w-full py-2 text-purple-600 text-xs font-bold rounded-lg border-2 border-dashed border-purple-300 hover:bg-purple-100 flex items-center justify-center gap-1.5">
+                                    <Plus size={14} /> Add Transporter Quote
                                   </button>
                                 )
                               )}
