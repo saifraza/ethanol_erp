@@ -13,11 +13,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.80.0",
-    "@google/generative-ai": "^0.24.1",
     "@prisma/client": "^5.7.0",
     "@types/multer": "^2.1.0",
-    "@whiskeysockets/baileys": "^7.0.0-rc.9",
     "bcryptjs": "^2.4.3",
     "bwip-js": "^4.8.0",
     "cors": "^2.8.5",
