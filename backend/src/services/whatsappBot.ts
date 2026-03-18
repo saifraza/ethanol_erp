@@ -1,18 +1,13 @@
 /**
  * WhatsApp Bot using Baileys (QR scan, free)
+ * Uses dynamic import() since Baileys v7 is ESM-only
  */
-import makeWASocket, {
-  useMultiFileAuthState,
-  DisconnectReason,
-  WASocket,
-  proto,
-} from '@whiskeysockets/baileys';
 import path from 'path';
 import fs from 'fs';
 import { chat } from './aiChat';
 
 // ── State ──
-let sock: WASocket | null = null;
+let sock: any = null;
 let qrCode: string | null = null;
 let connectionStatus: 'disconnected' | 'connecting' | 'qr' | 'connected' = 'disconnected';
 let statusMessage = 'Not started';
@@ -20,7 +15,7 @@ let statusMessage = 'Not started';
 // Conversation history per chat (last 10 messages)
 const conversations = new Map<string, { role: string; content: string }[]>();
 
-// Allowed phone numbers (empty = allow all). Set WHATSAPP_ALLOWED_NUMBERS=91xxxxxxxxxx,91yyyyyyyyyy
+// Allowed phone numbers (empty = allow all)
 const allowedNumbers = (process.env.WHATSAPP_ALLOWED_NUMBERS || '').split(',').filter(Boolean);
 
 const AUTH_DIR = path.resolve(__dirname, '../../whatsapp-auth');
@@ -35,6 +30,11 @@ export async function startBot() {
     return;
   }
 
+  // Dynamic import for ESM module
+  const baileys = await import('@whiskeysockets/baileys');
+  const makeWASocket = baileys.default;
+  const { useMultiFileAuthState, DisconnectReason } = baileys;
+
   // Ensure auth directory exists
   if (!fs.existsSync(AUTH_DIR)) fs.mkdirSync(AUTH_DIR, { recursive: true });
 
@@ -47,18 +47,18 @@ export async function startBot() {
   sock = makeWASocket({
     auth: state,
     printQRInTerminal: true,
-    browser: ['MSPIL ERP', 'Chrome', '1.0'],
+    browser: ['MSPIL ERP', 'Chrome', '1.0'] as any,
   });
 
   // ── Connection events ──
-  sock.ev.on('connection.update', (update) => {
+  sock.ev.on('connection.update', (update: any) => {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
       qrCode = qr;
       connectionStatus = 'qr';
       statusMessage = 'Scan QR code with WhatsApp';
-      console.log('[WA Bot] QR code generated — scan it from the ERP dashboard');
+      console.log('[WA Bot] QR code generated — scan from ERP dashboard');
     }
 
     if (connection === 'close') {
@@ -68,7 +68,6 @@ export async function startBot() {
 
       if (reason === DisconnectReason.loggedOut) {
         statusMessage = 'Logged out. Clear session and reconnect.';
-        // Clear auth files on logout
         if (fs.existsSync(AUTH_DIR)) {
           fs.rmSync(AUTH_DIR, { recursive: true, force: true });
         }
@@ -91,7 +90,7 @@ export async function startBot() {
   sock.ev.on('creds.update', saveCreds);
 
   // ── Message handler ──
-  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+  sock.ev.on('messages.upsert', async ({ messages, type }: any) => {
     if (type !== 'notify') return;
 
     for (const msg of messages) {
@@ -100,12 +99,12 @@ export async function startBot() {
       const chatId = msg.key.remoteJid!;
       const senderNumber = chatId.replace('@s.whatsapp.net', '').replace('@g.us', '');
 
-      // Skip group messages (only respond to DMs)
+      // Skip group messages
       if (chatId.endsWith('@g.us')) continue;
 
       // Check allowed numbers
       if (allowedNumbers.length > 0 && !allowedNumbers.includes(senderNumber)) {
-        console.log(`[WA Bot] Blocked message from ${senderNumber} (not in allowed list)`);
+        console.log(`[WA Bot] Blocked: ${senderNumber}`);
         continue;
       }
 
@@ -119,13 +118,10 @@ export async function startBot() {
       console.log(`[WA Bot] ${senderNumber}: ${text}`);
 
       try {
-        // Get conversation history
         const history = conversations.get(chatId) || [];
 
-        // Mark as read
+        // Mark as read + typing
         await sock!.readMessages([msg.key]);
-
-        // Send typing indicator
         await sock!.sendPresenceUpdate('composing', chatId);
 
         // Get AI response
@@ -135,7 +131,7 @@ export async function startBot() {
         await sock!.sendMessage(chatId, { text: reply });
         await sock!.sendPresenceUpdate('paused', chatId);
 
-        // Update conversation history (keep last 10 exchanges)
+        // Update history (keep last 10 exchanges)
         history.push({ role: 'user', content: text });
         history.push({ role: 'assistant', content: reply });
         if (history.length > 20) history.splice(0, 2);
@@ -143,10 +139,10 @@ export async function startBot() {
 
         console.log(`[WA Bot] → ${reply.slice(0, 100)}...`);
       } catch (err: any) {
-        console.error(`[WA Bot] Error handling message:`, err.message);
+        console.error(`[WA Bot] Error:`, err.message);
         try {
-          await sock!.sendMessage(chatId, { text: 'Sorry, I ran into an error. Try again in a moment.' });
-        } catch { /* ignore send errors */ }
+          await sock!.sendMessage(chatId, { text: 'Sorry, error. Try again.' });
+        } catch { /* ignore */ }
       }
     }
   });
@@ -159,7 +155,6 @@ export async function stopBot() {
     connectionStatus = 'disconnected';
     statusMessage = 'Stopped';
     qrCode = null;
-    // Clear auth
     if (fs.existsSync(AUTH_DIR)) {
       fs.rmSync(AUTH_DIR, { recursive: true, force: true });
     }
