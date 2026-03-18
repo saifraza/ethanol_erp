@@ -30,8 +30,9 @@ export async function startBot() {
     return;
   }
 
-  // Dynamic import for ESM module
-  const baileys = await import('@whiskeysockets/baileys');
+  // Dynamic import for ESM module — use Function to bypass TypeScript's require() conversion
+  const importDynamic = new Function('modulePath', 'return import(modulePath)');
+  const baileys = await importDynamic('@whiskeysockets/baileys');
   const makeWASocket = baileys.default;
   const { useMultiFileAuthState, DisconnectReason } = baileys;
 
