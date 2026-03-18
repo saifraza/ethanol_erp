@@ -31,6 +31,9 @@ const emptyForm: MillForm = {
 function calcTotalFine(s1mm: number | null, s850: number | null, s600: number | null, s300: number | null): number {
   return Math.round((100 - ((s1mm || 0) + (s850 || 0) + (s600 || 0) + (s300 || 0))) * 100) / 100;
 }
+function calcTotalCoarse(s1mm: number | null, s850: number | null): number {
+  return Math.round(((s1mm || 0) + (s850 || 0)) * 100) / 100;
+}
 
 // ─── Chart ───────────────────
 type ChartView = 'fine' | 'sieve' | 'rpm' | 'load' | 'particle';
@@ -137,29 +140,19 @@ function MillingChartInner({ entries }: { entries: any[] }) {
         </ResponsiveContainer>
       )}
 
-      {/* Coarse & Fines historian */}
+      {/* Coarse & Fines — Bar histogram */}
       {view === 'particle' && (
         <>
           <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+            <BarChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }} barCategoryGap="20%">
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
               <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} domain={['auto', 'auto']} unit="%" />
+              <YAxis tick={{ fontSize: 11 }} domain={[0, 'auto']} unit="%" />
               <Tooltip content={<CustomTooltip />} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <ReferenceLine
-                y={Math.round(entries.reduce((s: number, e: any) => s + ((e.sieve_1mm || 0) + (e.sieve_850 || 0)), 0) / entries.length * 100) / 100}
-                stroke="#f97316" strokeDasharray="5 5" strokeOpacity={0.5}
-                label={{ value: `avg ${(Math.round(entries.reduce((s: number, e: any) => s + ((e.sieve_1mm || 0) + (e.sieve_850 || 0)), 0) / entries.length * 100) / 100).toFixed(1)}%`, fontSize: 10, fill: '#f97316' }}
-              />
-              <ReferenceLine
-                y={Math.round(entries.reduce((s: number, e: any) => s + e.totalFine, 0) / entries.length * 100) / 100}
-                stroke="#8b5cf6" strokeDasharray="5 5" strokeOpacity={0.5}
-                label={{ value: `avg ${(Math.round(entries.reduce((s: number, e: any) => s + e.totalFine, 0) / entries.length * 100) / 100).toFixed(1)}%`, fontSize: 10, fill: '#8b5cf6' }}
-              />
-              <Line type="monotone" dataKey="coarse" name="Coarse (>0.85mm)" stroke="#f97316" strokeWidth={2.5} dot={{ r: 4, fill: '#f97316' }} activeDot={{ r: 6 }} />
-              <Line type="monotone" dataKey="fine" name="Fines (<0.3mm)" stroke="#8b5cf6" strokeWidth={2.5} dot={{ r: 4, fill: '#8b5cf6' }} activeDot={{ r: 6 }} />
-            </LineChart>
+              <Bar dataKey="coarse" name="Coarse (>0.85mm)" fill="#f97316" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="fine" name="Fines (<0.3mm)" fill="#8b5cf6" radius={[3, 3, 0, 0]} />
+            </BarChart>
           </ResponsiveContainer>
           {entries.length >= 2 && (() => {
             const coarseVals = entries.map((e: any) => Math.round(((e.sieve_1mm || 0) + (e.sieve_850 || 0)) * 100) / 100);
@@ -292,6 +285,7 @@ export default function Milling() {
   }
 
   const totalFine = calcTotalFine(form.sieve_1mm, form.sieve_850, form.sieve_600, form.sieve_300);
+  const totalCoarse = calcTotalCoarse(form.sieve_1mm, form.sieve_850);
 
   return (
     <ProcessPage title="Milling" icon={<CogIcon size={28} />} description="Grain milling analysis — sieve distribution, RPM & load for Mill A, B, C" flow={{ from: 'Grain Silo', to: 'Slurry Tank' }} color="bg-stone-600">
@@ -332,7 +326,23 @@ export default function Milling() {
         <Field label="0.850 mm" name="sieve_850" value={form.sieve_850} onChange={update} unit="%" placeholder="Retained on 0.850mm" />
         <Field label="0.600 mm" name="sieve_600" value={form.sieve_600} onChange={update} unit="%" placeholder="Retained on 0.600mm" />
         <Field label="0.300 mm" name="sieve_300" value={form.sieve_300} onChange={update} unit="%" placeholder="Passing 0.300mm" />
-        <Field label="Total Fine" value={totalFine} auto unit="%" />
+        {/* Summary row */}
+        <div className="grid grid-cols-2 gap-3 mt-2 pt-3 border-t border-dashed border-gray-200">
+          <div className="flex items-center justify-between bg-orange-50 border border-orange-200 rounded-lg px-4 py-2.5">
+            <div>
+              <p className="text-[10px] text-orange-500 font-semibold uppercase tracking-wide">Total Coarse</p>
+              <p className="text-xs text-gray-400">&gt;0.85mm (1mm + 850µm)</p>
+            </div>
+            <p className="text-2xl font-bold text-orange-600">{totalCoarse}<span className="text-sm font-normal ml-0.5">%</span></p>
+          </div>
+          <div className="flex items-center justify-between bg-purple-50 border border-purple-200 rounded-lg px-4 py-2.5">
+            <div>
+              <p className="text-[10px] text-purple-500 font-semibold uppercase tracking-wide">Total Fine</p>
+              <p className="text-xs text-gray-400">&lt;0.3mm (passing 300µm)</p>
+            </div>
+            <p className="text-2xl font-bold text-purple-600">{totalFine}<span className="text-sm font-normal ml-0.5">%</span></p>
+          </div>
+        </div>
       </InputCard>
 
       {/* Per-mill RPM & Load in one card */}
@@ -392,7 +402,8 @@ export default function Milling() {
                   {form.sieve_850 != null && <div className="flex justify-between"><span className="text-gray-500">0.850mm</span><span>{form.sieve_850}%</span></div>}
                   {form.sieve_600 != null && <div className="flex justify-between"><span className="text-gray-500">0.600mm</span><span>{form.sieve_600}%</span></div>}
                   {form.sieve_300 != null && <div className="flex justify-between"><span className="text-gray-500">0.300mm</span><span>{form.sieve_300}%</span></div>}
-                  <div className="flex justify-between font-semibold text-purple-700 col-span-2 border-t pt-1"><span>Total Fine</span><span>{totalFine}%</span></div>
+                  <div className="flex justify-between font-semibold text-orange-600 col-span-2 border-t pt-1"><span>Total Coarse (&gt;0.85mm)</span><span>{totalCoarse}%</span></div>
+                  <div className="flex justify-between font-semibold text-purple-700 col-span-2"><span>Total Fine (&lt;0.3mm)</span><span>{totalFine}%</span></div>
                 </div>
               </div>
               <div className="border-t pt-3">
@@ -434,7 +445,8 @@ export default function Milling() {
                 <tr className="border-b text-left text-gray-500">
                   <th className="py-2 pr-3">Date</th>
                   <th className="py-2 pr-3">Time</th>
-                  <th className="py-2 pr-3">Fine%</th>
+                  <th className="py-2 pr-3 text-orange-600">Coarse%</th>
+                  <th className="py-2 pr-3 text-purple-600">Fine%</th>
                   <th className="py-2 pr-3">0.6mm</th>
                   <th className="py-2 pr-3">A rpm</th>
                   <th className="py-2 pr-3">B rpm</th>
@@ -448,6 +460,7 @@ export default function Milling() {
                   <tr key={e.id} className="border-b hover:bg-gray-50 cursor-pointer" onClick={() => editEntry(e)}>
                     <td className="py-2 pr-3 font-medium">{e.date.split('T')[0]}</td>
                     <td className="py-2 pr-3">{e.analysisTime || '—'}</td>
+                    <td className="py-2 pr-3 font-semibold text-orange-500">{((e.sieve_1mm || 0) + (e.sieve_850 || 0)).toFixed(2)}</td>
                     <td className="py-2 pr-3 font-semibold text-purple-600">{e.totalFine?.toFixed(2)}</td>
                     <td className="py-2 pr-3">{e.sieve_600?.toFixed(1)}</td>
                     <td className="py-2 pr-3">{e.millA_rpm}</td>
