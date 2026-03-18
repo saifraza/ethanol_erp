@@ -53,8 +53,7 @@ import vendorPaymentRoutes from './routes/vendorPayments';
 // Direct Trade (cash purchases/sales without paperwork)
 import directPurchaseRoutes from './routes/directPurchases';
 import directSaleRoutes from './routes/directSales';
-// WhatsApp AI Bot
-import whatsappBotRoutes from './routes/whatsappBot';
+
 
 const app = express();
 
@@ -118,8 +117,7 @@ app.use('/api/vendor-payments', vendorPaymentRoutes);
 // Direct Trade
 app.use('/api/direct-purchases', directPurchaseRoutes);
 app.use('/api/direct-sales', directSaleRoutes);
-// WhatsApp AI Bot
-app.use('/api/whatsapp-bot', whatsappBotRoutes);
+
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
