@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
-  Truck, X, Loader2, Share2, MessageCircle, Phone,
-  Scale, CheckCircle, AlertCircle, Package, MapPin, FileText, Camera, Upload, Image
+  Truck, X, Loader2, Share2, MessageCircle, Phone, ChevronDown,
+  Scale, CheckCircle, AlertCircle, Package, FileText, Camera, Upload, Image
 } from 'lucide-react';
 import api from '../../services/api';
 
@@ -45,9 +45,9 @@ export default function Shipments() {
   const [weighId, setWeighId] = useState<string | null>(null);
   const [weighVal, setWeighVal] = useState('');
   const [weighType, setWeighType] = useState<'tare' | 'gross'>('tare');
-  // Old release form removed — docs handled via 4-doc fields inline
   const [filterStatus, setFilterStatus] = useState('ALL');
   const [uploadingDoc, setUploadingDoc] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const loadShipments = async () => {
     try {
@@ -87,7 +87,7 @@ export default function Shipments() {
     if (!weighVal) { flash('err', 'Enter weight'); return; }
     setSaving(true);
     try {
-      const w = parseFloat(weighVal) * 1000; // Input in tons, store in kg
+      const w = parseFloat(weighVal) * 1000;
       const body = weighType === 'tare'
         ? { weightTare: w, tareTime: new Date().toISOString() }
         : { weightGross: w, grossTime: new Date().toISOString() };
@@ -99,25 +99,11 @@ export default function Shipments() {
     setSaving(false);
   };
 
-  const generateEwayBill = async (id: string) => {
-    setSaving(true);
-    try {
-      const r = await api.post(`/shipments/${id}/eway-bill`);
-      flash('ok', `E-Way Bill: ${r.data.ewayBillNo}`);
-      setRelEway(r.data.ewayBillNo);
-      loadShipments();
-    } catch (e: any) {
-      flash('err', e.response?.data?.error || 'E-Way Bill failed');
-    }
-    setSaving(false);
-  };
-
   const doStatus = async (id: string, status: string, extra?: any) => {
     setSaving(true);
     try {
       await api.put(`/shipments/${id}/status`, { status, ...extra });
       flash('ok', status.replace(/_/g, ' '));
-      // Release is now one-click, no form to clear
       loadShipments();
     } catch { flash('err', 'Failed'); }
     setSaving(false);
@@ -181,39 +167,38 @@ export default function Shipments() {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-gradient-to-r from-blue-700 to-blue-800 text-white">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between mb-3">
-            <h1 className="text-xl font-bold flex items-center gap-2">
-              <Scale size={24} /> Weighbridge & Gate
+        <div className="max-w-7xl mx-auto px-4 py-3">
+          <div className="flex items-center justify-between mb-2">
+            <h1 className="text-lg font-bold flex items-center gap-2">
+              <Scale size={20} /> Weighbridge & Gate
             </h1>
-            <span className="text-sm text-blue-200">
+            <span className="text-xs text-blue-200">
               {new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}
             </span>
           </div>
-
-          {/* Stats */}
-          <div className="grid grid-cols-6 gap-2">
+          {/* Stats — compact */}
+          <div className="grid grid-cols-6 gap-1.5">
             {[
-              { label: 'At Gate', count: stats.atGate, bg: 'bg-gray-500/30' },
-              { label: 'Tare Done', count: stats.tared, bg: 'bg-blue-500/30' },
+              { label: 'Gate', count: stats.atGate, bg: 'bg-gray-500/30' },
+              { label: 'Tare', count: stats.tared, bg: 'bg-blue-500/30' },
               { label: 'Loading', count: stats.loading, bg: 'bg-amber-500/30' },
               { label: 'Loaded', count: stats.loaded, bg: 'bg-orange-500/30' },
               { label: 'Released', count: stats.released, bg: 'bg-green-500/30' },
               { label: 'Total', count: stats.total, bg: 'bg-white/15' },
             ].map(s => (
-              <div key={s.label} className={`${s.bg} rounded-lg p-2 text-center`}>
-                <div className="text-xl font-bold">{s.count}</div>
-                <div className="text-[9px] text-blue-100">{s.label}</div>
+              <div key={s.label} className={`${s.bg} rounded-lg px-2 py-1.5 text-center`}>
+                <div className="text-lg font-bold leading-tight">{s.count}</div>
+                <div className="text-[8px] text-blue-100">{s.label}</div>
               </div>
             ))}
           </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 py-4">
+      <div className="max-w-7xl mx-auto px-4 py-3">
         {msg && (
-          <div className={`rounded-lg p-3 mb-3 text-sm flex items-center gap-2 ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-            {msg.type === 'ok' ? <CheckCircle size={16} /> : <AlertCircle size={16} />} {msg.text}
+          <div className={`rounded-lg p-2.5 mb-3 text-sm flex items-center gap-2 ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+            {msg.type === 'ok' ? <CheckCircle size={14} /> : <AlertCircle size={14} />} {msg.text}
           </div>
         )}
 
@@ -228,7 +213,7 @@ export default function Shipments() {
             { key: 'RELEASED', label: `Released (${stats.released})` },
           ].map(tab => (
             <button key={tab.key} onClick={() => setFilterStatus(tab.key)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition ${
+              className={`px-2.5 py-1 rounded-full text-[11px] font-medium whitespace-nowrap transition ${
                 filterStatus === tab.key ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 border hover:bg-gray-50'
               }`}>
               {tab.label}
@@ -247,12 +232,11 @@ export default function Shipments() {
             <p className="text-gray-500 text-sm">No active vehicles</p>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {grouped.map(([drId, group]) => {
               const dr = group.dr;
               const orderQty = dr?.quantity || 0;
               const orderUnit = dr?.unit || 'MT';
-              // Only count EXITED trucks for dispatch %
               const exitedNetMT = group.shipments
                 .filter(s => s.status === 'EXITED')
                 .reduce((sum, s) => {
@@ -266,40 +250,28 @@ export default function Shipments() {
               const pct = orderQty > 0 ? Math.min(100, (exitedNetMT / orderQty) * 100) : 0;
 
               return (
-                <div key={drId} className="bg-white rounded-xl border shadow-sm overflow-hidden">
-                  {/* Order Header */}
-                  <div className="bg-gradient-to-r from-indigo-50 to-blue-50 border-b px-4 py-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3 flex-wrap">
-                        {dr?.drNo && (
-                          <span className="bg-indigo-600 text-white text-xs font-bold px-2.5 py-1 rounded-lg">
-                            DR #{dr.drNo}
-                          </span>
-                        )}
-                        <span className="font-bold text-gray-800">{dr?.customerName || 'Unlinked'}</span>
-                        <span className="flex items-center gap-1 text-sm text-gray-600">
-                          <Package size={14} /> {dr?.productName} · <span className="font-bold text-indigo-700">{orderQty} {orderUnit}</span>
-                        </span>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-sm">
-                          <span className="font-bold text-green-700">{exitedNetMT.toFixed(1)}</span>
-                          {totalNetMT > exitedNetMT && <span className="text-blue-600"> (+{(totalNetMT - exitedNetMT).toFixed(1)} loading)</span>}
-                          <span className="text-gray-400"> / {orderQty} {orderUnit}</span>
-                        </div>
-                        <span className={`text-xs font-bold ${pct >= 100 ? 'text-green-600' : 'text-orange-600'}`}>
-                          {pct.toFixed(0)}% dispatched
-                        </span>
-                      </div>
+                <div key={drId} className="bg-white rounded-lg border shadow-sm overflow-hidden">
+                  {/* Order Header — compact */}
+                  <div className="bg-gradient-to-r from-indigo-50 to-blue-50 border-b px-3 py-2">
+                    <div className="flex items-center gap-2 text-sm">
+                      {dr?.drNo && (
+                        <span className="bg-indigo-600 text-white text-[10px] font-bold px-2 py-0.5 rounded">DR #{dr.drNo}</span>
+                      )}
+                      <span className="font-semibold text-gray-800 truncate">{dr?.customerName || 'Unlinked'}</span>
+                      <span className="text-xs text-gray-500">{dr?.productName}</span>
+                      <span className="ml-auto text-xs shrink-0">
+                        <span className="font-bold text-green-700">{exitedNetMT.toFixed(1)}</span>
+                        <span className="text-gray-400">/{orderQty} {orderUnit}</span>
+                        <span className={`ml-1 font-bold ${pct >= 100 ? 'text-green-600' : 'text-orange-600'}`}>{pct.toFixed(0)}%</span>
+                      </span>
                     </div>
-                    {/* Progress bar */}
-                    <div className="w-full h-2 bg-gray-200 rounded-full mt-2 overflow-hidden">
+                    <div className="w-full h-1 bg-gray-200 rounded-full mt-1.5 overflow-hidden">
                       <div className={`h-full rounded-full transition-all ${pct >= 100 ? 'bg-green-500' : 'bg-indigo-500'}`}
                         style={{ width: `${pct}%` }} />
                     </div>
                   </div>
 
-                  {/* Vehicles */}
+                  {/* Vehicles — compact rows */}
                   {group.shipments.map(s => {
                     const cfg = STATUS_CONFIG[s.status];
                     const net = s.weightNet || (s.weightGross && s.weightTare ? s.weightGross - s.weightTare : null);
@@ -309,133 +281,78 @@ export default function Shipments() {
                     const netTon = net ? (net / 1000).toFixed(2) : null;
                     const docs = s.documents || [];
                     const docUploaded = (type: string) => docs.some(d => d.docType === type);
+                    const isExpanded = expandedId === s.id;
+                    const docCount = docs.length;
 
                     return (
-                      <div key={s.id} className="border-b last:border-b-0 p-4 hover:bg-gray-50/50">
-                        {/* Vehicle row */}
-                        <div className="flex items-start justify-between mb-2">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-lg text-gray-900">{s.vehicleNo}</span>
-                              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${cfg.badge}`}>{cfg.label}</span>
-                            </div>
-                            <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500">
-                              {s.driverName && <span>{s.driverName}</span>}
-                              {s.driverMobile && (
-                                <a href={`tel:${s.driverMobile}`} className="text-blue-600 flex items-center gap-0.5">
-                                  <Phone size={10} /> {s.driverMobile}
-                                </a>
+                      <div key={s.id} className="border-b last:border-b-0">
+                        {/* ── Compact row: vehicle, status, weights, action ── */}
+                        <div className="px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            {/* Vehicle + status */}
+                            <button onClick={() => setExpandedId(isExpanded ? null : s.id)} className="flex items-center gap-2 min-w-0 flex-1 text-left">
+                              <span className="font-bold text-sm text-gray-900">{s.vehicleNo}</span>
+                              <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${cfg.badge}`}>{cfg.label}</span>
+                              {s.driverName && <span className="text-[11px] text-gray-400 truncate hidden sm:inline">{s.driverName}</span>}
+                              {docCount > 0 && (
+                                <span className="text-[9px] text-green-600 font-medium shrink-0">{docCount} doc{docCount > 1 ? 's' : ''}</span>
                               )}
-                              {s.transporterName && <span className="text-gray-400">({s.transporterName})</span>}
+                              <ChevronDown size={12} className={`text-gray-400 shrink-0 transition ${isExpanded ? 'rotate-180' : ''}`} />
+                            </button>
+
+                            {/* Weights inline */}
+                            <div className="flex items-center gap-2 text-xs shrink-0">
+                              {tareTon && <span className="text-gray-500">T:{tareTon}</span>}
+                              {grossTon && <span className="text-gray-500">G:{grossTon}</span>}
+                              {netTon && <span className="font-bold text-green-700">N:{netTon}T</span>}
                             </div>
-                          </div>
-                          <div className="text-right">
-                            {netTon && (
-                              <div className="text-xl font-bold text-green-700">{netTon} <span className="text-sm">T</span></div>
+
+                            {/* Inline action button */}
+                            {weighId === s.id ? null : (
+                              <div className="shrink-0">
+                                {s.status === 'GATE_IN' && (
+                                  <button onClick={() => { setWeighId(s.id); setWeighType('tare'); setWeighVal(''); }}
+                                    className="px-2.5 py-1.5 bg-gray-600 text-white rounded-lg font-medium text-[11px] flex items-center gap-1">
+                                    <Scale size={12} /> Tare
+                                  </button>
+                                )}
+                                {s.status === 'TARE_WEIGHED' && (
+                                  <button onClick={() => doStatus(s.id, 'LOADING', { loadStartTime: new Date().toISOString() })}
+                                    disabled={saving}
+                                    className="px-2.5 py-1.5 bg-blue-600 text-white rounded-lg font-medium text-[11px]">
+                                    {saving ? <Loader2 size={12} className="animate-spin" /> : 'Load'}
+                                  </button>
+                                )}
+                                {s.status === 'LOADING' && (
+                                  <button onClick={() => { setWeighId(s.id); setWeighType('gross'); setWeighVal(''); }}
+                                    className="px-2.5 py-1.5 bg-amber-600 text-white rounded-lg font-medium text-[11px] flex items-center gap-1">
+                                    <Scale size={12} /> Gross
+                                  </button>
+                                )}
+                                {s.status === 'GROSS_WEIGHED' && (
+                                  <button onClick={() => doStatus(s.id, 'RELEASED', { releaseTime: new Date().toISOString() })}
+                                    disabled={saving}
+                                    className="px-2.5 py-1.5 bg-orange-600 text-white rounded-lg font-medium text-[11px]">
+                                    {saving ? <Loader2 size={12} className="animate-spin" /> : 'Release'}
+                                  </button>
+                                )}
+                                {s.status === 'RELEASED' && (
+                                  <button onClick={() => doStatus(s.id, 'EXITED', { exitTime: new Date().toISOString() })}
+                                    disabled={saving}
+                                    className="px-2.5 py-1.5 bg-green-600 text-white rounded-lg font-medium text-[11px]">
+                                    {saving ? <Loader2 size={12} className="animate-spin" /> : 'Exit'}
+                                  </button>
+                                )}
+                                {s.status === 'EXITED' && (
+                                  <span className="text-emerald-600 text-[11px] font-medium flex items-center gap-0.5"><CheckCircle size={12} /> Done</span>
+                                )}
+                              </div>
                             )}
                           </div>
-                        </div>
 
-                        {/* Weights in tons */}
-                        <div className="grid grid-cols-3 gap-3 mb-3 text-sm">
-                          <div className="bg-blue-50 rounded-lg p-2 text-center">
-                            <div className="text-[10px] text-gray-500 mb-0.5">Tare</div>
-                            <div className="font-bold text-gray-700">{tareTon ? `${tareTon} T` : '—'}</div>
-                          </div>
-                          <div className="bg-amber-50 rounded-lg p-2 text-center">
-                            <div className="text-[10px] text-gray-500 mb-0.5">Gross</div>
-                            <div className="font-bold text-gray-700">{grossTon ? `${grossTon} T` : '—'}</div>
-                          </div>
-                          <div className={`rounded-lg p-2 text-center ${netTon ? 'bg-green-50' : 'bg-gray-50'}`}>
-                            <div className="text-[10px] text-gray-500 mb-0.5">Net</div>
-                            <div className={`font-bold ${netTon ? 'text-green-700' : 'text-gray-400'}`}>
-                              {netTon ? `${netTon} T` : '—'}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Progress dots */}
-                        <div className="flex gap-0.5 mb-3">
-                          {STATUS_FLOW.map((st, i) => (
-                            <div key={st} className={`h-1.5 flex-1 rounded-full ${
-                              i <= stepIdx ? 'bg-green-500' : 'bg-gray-200'
-                            } ${i === stepIdx && stepIdx < 5 ? 'animate-pulse' : ''}`} />
-                          ))}
-                        </div>
-
-                        {/* 4 Document fields — always visible */}
-                        {['TARE_WEIGHED', 'LOADING', 'GROSS_WEIGHED', 'RELEASED', 'EXITED'].includes(s.status) && (
-                          <div className="grid grid-cols-2 gap-2 mb-3">
-                            {DOC_TYPES.map(dt => {
-                              const hasDoc = docUploaded(dt.key);
-                              const fieldVal = (s as any)[dt.field] || '';
-                              return (
-                                <div key={dt.key} className={`rounded-lg border p-2 ${hasDoc ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
-                                  <div className="flex items-center justify-between mb-1">
-                                    <span className="text-[10px] font-semibold text-gray-600">{dt.label}</span>
-                                    {hasDoc && <CheckCircle size={12} className="text-green-600" />}
-                                  </div>
-                                  <input
-                                    defaultValue={fieldVal}
-                                    placeholder={`${dt.label} No.`}
-                                    className="w-full px-2 py-1 text-xs border rounded bg-white mb-1"
-                                    onBlur={(e) => {
-                                      if (e.target.value !== fieldVal) {
-                                        saveField(s.id, dt.field, e.target.value);
-                                      }
-                                    }}
-                                  />
-                                  {dt.key === 'GR_BILTY' && (
-                                    <input
-                                      type="date"
-                                      defaultValue={s.grBiltyDate || ''}
-                                      className="w-full px-2 py-1 text-xs border rounded bg-white mb-1"
-                                      onBlur={(e) => {
-                                        if (e.target.value !== (s.grBiltyDate || '')) {
-                                          saveField(s.id, 'grBiltyDate', e.target.value);
-                                        }
-                                      }}
-                                    />
-                                  )}
-                                  {/* Upload buttons */}
-                                  <div className="flex gap-1">
-                                    <button onClick={() => uploadDoc(s.id, dt.key, 'camera')}
-                                      disabled={uploadingDoc === `${s.id}_${dt.key}`}
-                                      className="flex-1 py-1 text-[9px] font-medium bg-blue-100 text-blue-700 rounded flex items-center justify-center gap-0.5 hover:bg-blue-200">
-                                      {uploadingDoc === `${s.id}_${dt.key}` ? <Loader2 size={9} className="animate-spin" /> : <Camera size={9} />} Camera
-                                    </button>
-                                    <button onClick={() => uploadDoc(s.id, dt.key, 'gallery')}
-                                      disabled={uploadingDoc === `${s.id}_${dt.key}`}
-                                      className="flex-1 py-1 text-[9px] font-medium bg-purple-100 text-purple-700 rounded flex items-center justify-center gap-0.5 hover:bg-purple-200">
-                                      <Image size={9} /> Gallery
-                                    </button>
-                                    <button onClick={() => uploadDoc(s.id, dt.key, 'file')}
-                                      disabled={uploadingDoc === `${s.id}_${dt.key}`}
-                                      className="flex-1 py-1 text-[9px] font-medium bg-gray-100 text-gray-700 rounded flex items-center justify-center gap-0.5 hover:bg-gray-200">
-                                      <Upload size={9} /> File
-                                    </button>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-
-                        {/* Doc badges for non-loaded states */}
-                        {!['GROSS_WEIGHED', 'RELEASED', 'EXITED'].includes(s.status) && docs.length > 0 && (
-                          <div className="flex gap-1 mb-2">
-                            {docs.map(d => (
-                              <span key={d.id} className="text-[9px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded-full font-medium">
-                                {d.docType.replace(/_/g, ' ')}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Action buttons */}
-                        <div className="flex gap-2 items-center">
-                          {weighId === s.id ? (
-                            <div className="flex gap-1.5 items-center flex-1">
+                          {/* Weigh input — inline when active */}
+                          {weighId === s.id && (
+                            <div className="flex gap-1.5 items-center mt-2">
                               <input type="number" step="0.01" value={weighVal} onChange={e => setWeighVal(e.target.value)}
                                 placeholder={`${weighType === 'tare' ? 'Tare' : 'Gross'} weight (Tons)`}
                                 className="input-field text-sm flex-1" autoFocus
@@ -444,58 +361,131 @@ export default function Shipments() {
                                 className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50">
                                 {saving ? <Loader2 size={14} className="animate-spin" /> : 'Save'}
                               </button>
-                              <button onClick={() => setWeighId(null)} className="text-gray-400 p-2"><X size={16} /></button>
+                              <button onClick={() => setWeighId(null)} className="text-gray-400 p-1"><X size={16} /></button>
                             </div>
-                          ) : (
-                            <>
-                              {s.status === 'GATE_IN' && (
-                                <button onClick={() => { setWeighId(s.id); setWeighType('tare'); setWeighVal(''); }}
-                                  className="flex-1 py-2.5 bg-gray-600 text-white rounded-lg font-medium text-sm flex items-center justify-center gap-1.5">
-                                  <Scale size={14} /> Weigh Tare (Tons)
-                                </button>
-                              )}
-                              {s.status === 'TARE_WEIGHED' && (
-                                <button onClick={() => doStatus(s.id, 'LOADING', { loadStartTime: new Date().toISOString() })}
-                                  disabled={saving}
-                                  className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg font-medium text-sm">
-                                  {saving ? <Loader2 size={14} className="animate-spin" /> : 'Start Loading'}
-                                </button>
-                              )}
-                              {s.status === 'LOADING' && (
-                                <button onClick={() => { setWeighId(s.id); setWeighType('gross'); setWeighVal(''); }}
-                                  className="flex-1 py-2.5 bg-amber-600 text-white rounded-lg font-medium text-sm flex items-center justify-center gap-1.5">
-                                  <Scale size={14} /> Weigh Gross (Tons)
-                                </button>
-                              )}
-                              {s.status === 'GROSS_WEIGHED' && (
-                                <button onClick={() => doStatus(s.id, 'RELEASED', { releaseTime: new Date().toISOString() })}
-                                  disabled={saving}
-                                  className="flex-1 py-2.5 bg-orange-600 text-white rounded-lg font-medium text-sm">
-                                  {saving ? <Loader2 size={14} className="animate-spin" /> : 'Release Truck'}
-                                </button>
-                              )}
-                              {s.status === 'RELEASED' && (
-                                <button onClick={() => doStatus(s.id, 'EXITED', { exitTime: new Date().toISOString() })}
-                                  disabled={saving}
-                                  className="flex-1 py-2.5 bg-green-600 text-white rounded-lg font-medium text-sm">
-                                  {saving ? <Loader2 size={14} className="animate-spin" /> : 'Gate Exit'}
-                                </button>
-                              )}
-                              {s.status === 'EXITED' && (
-                                <span className="text-emerald-600 text-sm font-medium flex items-center gap-1"><CheckCircle size={14} /> Dispatched</span>
-                              )}
-                              <button onClick={() => shareStatus(s)}
-                                className="px-3 py-2.5 bg-green-100 text-green-700 rounded-lg"><Share2 size={14} /></button>
+                          )}
+
+                          {/* Progress dots — thin */}
+                          <div className="flex gap-0.5 mt-1.5">
+                            {STATUS_FLOW.map((st, i) => (
+                              <div key={st} className={`h-0.5 flex-1 rounded-full ${
+                                i <= stepIdx ? 'bg-green-500' : 'bg-gray-200'
+                              } ${i === stepIdx && stepIdx < 5 ? 'animate-pulse' : ''}`} />
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* ── Expanded: docs, driver, share ── */}
+                        {isExpanded && (
+                          <div className="bg-gray-50 border-t px-3 py-2.5 space-y-2.5">
+                            {/* Driver info & share */}
+                            <div className="flex items-center gap-3 text-xs text-gray-600">
+                              {s.driverName && <span className="font-medium">{s.driverName}</span>}
                               {s.driverMobile && (
-                                <a href={`https://api.whatsapp.com/send?phone=91${s.driverMobile.replace(/\D/g, '').slice(-10)}`}
-                                  target="_blank" rel="noopener"
-                                  className="px-3 py-2.5 bg-green-100 text-green-700 rounded-lg">
-                                  <MessageCircle size={14} />
+                                <a href={`tel:${s.driverMobile}`} className="text-blue-600 flex items-center gap-0.5">
+                                  <Phone size={10} /> {s.driverMobile}
                                 </a>
                               )}
-                            </>
-                          )}
-                        </div>
+                              {s.transporterName && <span className="text-gray-400">{s.transporterName}</span>}
+                              <div className="ml-auto flex gap-1.5">
+                                <button onClick={() => shareStatus(s)}
+                                  className="px-2 py-1 bg-green-100 text-green-700 rounded text-[10px] font-medium flex items-center gap-0.5">
+                                  <Share2 size={10} /> Share
+                                </button>
+                                {s.driverMobile && (
+                                  <a href={`https://api.whatsapp.com/send?phone=91${s.driverMobile.replace(/\D/g, '').slice(-10)}`}
+                                    target="_blank" rel="noopener"
+                                    className="px-2 py-1 bg-green-100 text-green-700 rounded text-[10px] font-medium flex items-center gap-0.5">
+                                    <MessageCircle size={10} /> WA
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Weights detail row */}
+                            <div className="flex gap-3 text-xs">
+                              <div className="bg-blue-50 rounded px-2 py-1">
+                                <span className="text-gray-400">Tare:</span> <span className="font-bold">{tareTon ? `${tareTon} T` : '—'}</span>
+                              </div>
+                              <div className="bg-amber-50 rounded px-2 py-1">
+                                <span className="text-gray-400">Gross:</span> <span className="font-bold">{grossTon ? `${grossTon} T` : '—'}</span>
+                              </div>
+                              <div className={`rounded px-2 py-1 ${netTon ? 'bg-green-50' : 'bg-gray-50'}`}>
+                                <span className="text-gray-400">Net:</span> <span className={`font-bold ${netTon ? 'text-green-700' : ''}`}>{netTon ? `${netTon} T` : '—'}</span>
+                              </div>
+                            </div>
+
+                            {/* Document fields — compact 2x2 grid */}
+                            {['TARE_WEIGHED', 'LOADING', 'GROSS_WEIGHED', 'RELEASED', 'EXITED'].includes(s.status) && (
+                              <div className="grid grid-cols-2 gap-1.5">
+                                {DOC_TYPES.map(dt => {
+                                  const hasDoc = docUploaded(dt.key);
+                                  const fieldVal = (s as any)[dt.field] || '';
+                                  return (
+                                    <div key={dt.key} className={`rounded border p-1.5 ${hasDoc ? 'bg-green-50 border-green-200' : 'bg-white border-gray-200'}`}>
+                                      <div className="flex items-center justify-between mb-0.5">
+                                        <span className="text-[9px] font-semibold text-gray-600">{dt.label}</span>
+                                        {hasDoc && <CheckCircle size={10} className="text-green-600" />}
+                                      </div>
+                                      <input
+                                        defaultValue={fieldVal}
+                                        placeholder={`${dt.label} No.`}
+                                        className="w-full px-1.5 py-0.5 text-[11px] border rounded bg-white mb-0.5"
+                                        onBlur={(e) => {
+                                          if (e.target.value !== fieldVal) saveField(s.id, dt.field, e.target.value);
+                                        }}
+                                      />
+                                      {dt.key === 'GR_BILTY' && (
+                                        <input type="date" defaultValue={s.grBiltyDate || ''}
+                                          className="w-full px-1.5 py-0.5 text-[11px] border rounded bg-white mb-0.5"
+                                          onBlur={(e) => {
+                                            if (e.target.value !== (s.grBiltyDate || '')) saveField(s.id, 'grBiltyDate', e.target.value);
+                                          }}
+                                        />
+                                      )}
+                                      <div className="flex gap-0.5">
+                                        <button onClick={() => uploadDoc(s.id, dt.key, 'camera')}
+                                          disabled={uploadingDoc === `${s.id}_${dt.key}`}
+                                          className="flex-1 py-0.5 text-[8px] font-medium bg-blue-100 text-blue-700 rounded flex items-center justify-center gap-0.5">
+                                          {uploadingDoc === `${s.id}_${dt.key}` ? <Loader2 size={8} className="animate-spin" /> : <Camera size={8} />} Cam
+                                        </button>
+                                        <button onClick={() => uploadDoc(s.id, dt.key, 'gallery')}
+                                          disabled={uploadingDoc === `${s.id}_${dt.key}`}
+                                          className="flex-1 py-0.5 text-[8px] font-medium bg-purple-100 text-purple-700 rounded flex items-center justify-center gap-0.5">
+                                          <Image size={8} /> Pic
+                                        </button>
+                                        <button onClick={() => uploadDoc(s.id, dt.key, 'file')}
+                                          disabled={uploadingDoc === `${s.id}_${dt.key}`}
+                                          className="flex-1 py-0.5 text-[8px] font-medium bg-gray-100 text-gray-700 rounded flex items-center justify-center gap-0.5">
+                                          <Upload size={8} /> File
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {/* Doc badges for early states */}
+                            {!['TARE_WEIGHED', 'LOADING', 'GROSS_WEIGHED', 'RELEASED', 'EXITED'].includes(s.status) && docs.length > 0 && (
+                              <div className="flex gap-1">
+                                {docs.map(d => (
+                                  <span key={d.id} className="text-[9px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded-full font-medium">
+                                    {d.docType.replace(/_/g, ' ')}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Challan PDF */}
+                            <div className="flex gap-1.5">
+                              <button onClick={() => { const token = localStorage.getItem('token'); window.open(`/api/shipments/${s.id}/challan-pdf?token=${token}`, '_blank'); }}
+                                className="px-2 py-1 text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded flex items-center gap-0.5">
+                                <FileText size={10} /> Challan PDF
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
