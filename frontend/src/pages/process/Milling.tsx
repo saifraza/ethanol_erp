@@ -33,10 +33,11 @@ function calcTotalFine(s1mm: number | null, s850: number | null, s600: number | 
 }
 
 // ─── Chart ───────────────────
-type ChartView = 'fine' | 'sieve' | 'rpm' | 'load';
+type ChartView = 'fine' | 'sieve' | 'rpm' | 'load' | 'particle';
 const CHART_VIEWS: { key: ChartView; label: string }[] = [
   { key: 'fine', label: 'Total Fine %' },
   { key: 'sieve', label: 'Sieve Breakdown' },
+  { key: 'particle', label: 'Coarse & Fines' },
   { key: 'rpm', label: 'Mill RPM' },
   { key: 'load', label: 'Mill Load' },
 ];
@@ -51,6 +52,7 @@ function MillingChartInner({ entries }: { entries: any[] }) {
     fullDate: e.date.split('T')[0],
     time: e.analysisTime || '',
     fine: e.totalFine,
+    coarse: Math.round(((e.sieve_1mm || 0) + (e.sieve_850 || 0)) * 100) / 100,
     s1mm: e.sieve_1mm, s850: e.sieve_850, s600: e.sieve_600, s300: e.sieve_300,
     aRpm: e.millA_rpm, bRpm: e.millB_rpm, cRpm: e.millC_rpm,
     aLoad: e.millA_load, bLoad: e.millB_load, cLoad: e.millC_load,
@@ -133,6 +135,60 @@ function MillingChartInner({ entries }: { entries: any[] }) {
             <Line type="monotone" dataKey="s1mm" name="1.00mm" stroke="#ef4444" strokeWidth={2} dot={{ r: 3, fill: '#ef4444' }} />
           </LineChart>
         </ResponsiveContainer>
+      )}
+
+      {/* Coarse & Fines historian */}
+      {view === 'particle' && (
+        <>
+          <ResponsiveContainer width="100%" height={280}>
+            <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} domain={['auto', 'auto']} unit="%" />
+              <Tooltip content={<CustomTooltip />} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <ReferenceLine
+                y={Math.round(entries.reduce((s: number, e: any) => s + ((e.sieve_1mm || 0) + (e.sieve_850 || 0)), 0) / entries.length * 100) / 100}
+                stroke="#f97316" strokeDasharray="5 5" strokeOpacity={0.5}
+                label={{ value: `avg ${(Math.round(entries.reduce((s: number, e: any) => s + ((e.sieve_1mm || 0) + (e.sieve_850 || 0)), 0) / entries.length * 100) / 100).toFixed(1)}%`, fontSize: 10, fill: '#f97316' }}
+              />
+              <ReferenceLine
+                y={Math.round(entries.reduce((s: number, e: any) => s + e.totalFine, 0) / entries.length * 100) / 100}
+                stroke="#8b5cf6" strokeDasharray="5 5" strokeOpacity={0.5}
+                label={{ value: `avg ${(Math.round(entries.reduce((s: number, e: any) => s + e.totalFine, 0) / entries.length * 100) / 100).toFixed(1)}%`, fontSize: 10, fill: '#8b5cf6' }}
+              />
+              <Line type="monotone" dataKey="coarse" name="Coarse (>0.85mm)" stroke="#f97316" strokeWidth={2.5} dot={{ r: 4, fill: '#f97316' }} activeDot={{ r: 6 }} />
+              <Line type="monotone" dataKey="fine" name="Fines (<0.3mm)" stroke="#8b5cf6" strokeWidth={2.5} dot={{ r: 4, fill: '#8b5cf6' }} activeDot={{ r: 6 }} />
+            </LineChart>
+          </ResponsiveContainer>
+          {entries.length >= 2 && (() => {
+            const coarseVals = entries.map((e: any) => Math.round(((e.sieve_1mm || 0) + (e.sieve_850 || 0)) * 100) / 100);
+            const fineVals = entries.map((e: any) => e.totalFine);
+            const avgCoarse = coarseVals.reduce((s: number, v: number) => s + v, 0) / coarseVals.length;
+            const avgFines = fineVals.reduce((s: number, v: number) => s + v, 0) / fineVals.length;
+            return (
+              <div className="flex items-start justify-center gap-10 mt-3 pt-3 border-t">
+                <div>
+                  <p className="text-xs font-semibold text-orange-500 text-center mb-2">Coarse (&gt;0.85mm)</p>
+                  <div className="flex gap-6">
+                    <div className="text-center"><p className="text-xs text-gray-400">Average</p><p className="text-xl font-bold text-orange-500">{avgCoarse.toFixed(2)}%</p></div>
+                    <div className="text-center"><p className="text-xs text-gray-400">Min</p><p className="text-lg font-semibold text-green-600">{Math.min(...coarseVals).toFixed(2)}%</p></div>
+                    <div className="text-center"><p className="text-xs text-gray-400">Max</p><p className="text-lg font-semibold text-red-500">{Math.max(...coarseVals).toFixed(2)}%</p></div>
+                  </div>
+                </div>
+                <div className="w-px bg-gray-200 self-stretch" />
+                <div>
+                  <p className="text-xs font-semibold text-purple-600 text-center mb-2">Fines (&lt;0.3mm)</p>
+                  <div className="flex gap-6">
+                    <div className="text-center"><p className="text-xs text-gray-400">Average</p><p className="text-xl font-bold text-purple-600">{avgFines.toFixed(2)}%</p></div>
+                    <div className="text-center"><p className="text-xs text-gray-400">Min</p><p className="text-lg font-semibold text-green-600">{Math.min(...fineVals).toFixed(2)}%</p></div>
+                    <div className="text-center"><p className="text-xs text-gray-400">Max</p><p className="text-lg font-semibold text-red-500">{Math.max(...fineVals).toFixed(2)}%</p></div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+        </>
       )}
 
       {/* RPM per mill */}
