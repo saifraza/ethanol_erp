@@ -184,6 +184,8 @@ export default function DispatchRequests() {
   // Document management
   const [expandedTruck, setExpandedTruck] = useState<string | null>(null);
   const [uploadingDoc, setUploadingDoc] = useState<string | null>(null);
+  // Tab for expanded DR view
+  const [activeTab, setActiveTab] = useState<Record<string, string>>({});
 
   const load = async () => {
     try {
@@ -696,7 +698,7 @@ export default function DispatchRequests() {
               <p className="text-gray-500 text-sm">No dispatch requests</p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {filtered.map(({ dr, step, label, action, stepIdx }) => {
                 const isExpanded = expandedId === dr.id;
                 const shipments = dr.shipments || [];
@@ -705,162 +707,120 @@ export default function DispatchRequests() {
                 const customer = order?.customer;
                 const lines = order?.lines || [];
                 const customerAddr = getCustomerAddress(customer);
+                const curTab = activeTab[dr.id] || 'details';
 
                 return (
-                  <div key={dr.id} className={`bg-white rounded-lg border shadow-sm hover:shadow-md transition ${step === 'NEW' ? 'border-l-4 border-l-red-400' : ''}`}>
-                    {/* Card Header */}
-                    <button onClick={() => setExpandedId(isExpanded ? null : dr.id)} className="w-full p-4 text-left">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1 flex-wrap">
-                            <span className="font-bold text-gray-900">DR #{dr.drNo}</span>
-                            <span className="text-xs text-gray-400">SO #{order?.orderNo}</span>
-                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${STEP_BADGES[step]}`}>
-                              {label}
-                            </span>
-                            {dr.logisticsBy === 'SELLER' && (
-                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-orange-50 text-orange-600 border border-orange-200">
-                                MSPIL Transport
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Customer & Product */}
-                          <p className="text-sm text-gray-800 font-semibold">{dr.customerName}</p>
-                          <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 flex-wrap">
-                            <span className="flex items-center gap-1 font-medium text-gray-700">
-                              <Package size={12} /> {dr.productName} · {dr.quantity} {dr.unit}
-                            </span>
-                            {lines[0]?.rate > 0 && (
-                              <span>@ ₹{lines[0].rate.toLocaleString('en-IN')}/{lines[0].unit}</span>
-                            )}
-                            {order?.grandTotal && (
-                              <span className="font-medium text-gray-700">
-                                SO Value: ₹{order.grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Location & logistics summary */}
-                          <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 flex-wrap">
-                            {dr.destination && (
-                              <span className="flex items-center gap-1">
-                                <MapPin size={11} /> {dr.destination.length > 50 ? dr.destination.slice(0, 50) + '...' : dr.destination}
-                              </span>
-                            )}
-                            {dr.distanceKm && (
-                              <span className="flex items-center gap-1 text-blue-600 font-medium">
-                                <Route size={11} /> {dr.distanceKm} km
-                              </span>
-                            )}
-                            {dr.transporterName && (
-                              <span className="flex items-center gap-1 text-indigo-600">
-                                <Truck size={11} /> {dr.transporterName}
-                              </span>
-                            )}
-                            {dr.freightRate && (
-                              <span className="flex items-center gap-1 text-green-600 font-medium">
-                                ₹{dr.freightRate}/MT
-                              </span>
-                            )}
-                            {dr.deliveryDate && (
-                              <span className="flex items-center gap-1">
-                                <Calendar size={11} /> {new Date(dr.deliveryDate).toLocaleDateString('en-IN')}
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Doc upload status */}
-                          {(() => {
-                            const allDocs = shipments.flatMap(s => (s as any).documents || []);
-                            const docTypes = ['INVOICE', 'EWAY_BILL', 'GATE_PASS', 'GR_BILTY'];
-                            const uploaded = docTypes.filter(dt => allDocs.some((d: any) => d.docType === dt));
-                            if (uploaded.length > 0) {
-                              return (
-                                <div className="flex gap-1 mt-1 flex-wrap">
-                                  {uploaded.map(dt => (
-                                    <span key={dt} className="text-[9px] px-1.5 py-0.5 bg-green-100 text-green-700 rounded-full font-medium flex items-center gap-0.5">
-                                      <CheckCircle size={8} /> {dt.replace(/_/g, ' ')}
-                                    </span>
-                                  ))}
-                                  {uploaded.length === 4 && <span className="text-[9px] text-green-600 font-bold ml-1">All docs complete</span>}
-                                </div>
-                              );
-                            }
-                            return null;
-                          })()}
-
-                          {/* Action hint */}
-                          {action && (
-                            <div className="mt-1.5 text-xs font-medium text-orange-600">
-                              → {action}
-                            </div>
-                          )}
-                        </div>
-                        <div className="text-right ml-4 shrink-0">
-                          <div className="text-lg font-bold text-gray-800">
-                            {dr.quantity} <span className="text-xs text-gray-500">{dr.unit}</span>
-                          </div>
-                          <div className="text-[10px] text-orange-600 font-medium">
-                            {shipments.length} truck{shipments.length !== 1 ? 's' : ''}
-                          </div>
-                          <ChevronDown size={16} className={`text-gray-400 ml-auto transition ${isExpanded ? 'rotate-180' : ''}`} />
-                        </div>
+                  <div key={dr.id} className={`bg-white rounded-lg border shadow-sm transition ${step === 'NEW' ? 'border-l-4 border-l-red-400' : ''}`}>
+                    {/* ── Compact Card Header ── */}
+                    <button onClick={() => { setExpandedId(isExpanded ? null : dr.id); if (!activeTab[dr.id]) setActiveTab(prev => ({ ...prev, [dr.id]: 'details' })); }} className="w-full px-3 py-2.5 text-left">
+                      {/* Row 1: DR#, customer, status, qty */}
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-sm text-gray-900 shrink-0">#{dr.drNo}</span>
+                        <span className="text-sm font-semibold text-gray-700 truncate">{dr.customerName}</span>
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${STEP_BADGES[step]}`}>{label}</span>
+                        {dr.logisticsBy === 'SELLER' && (
+                          <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-orange-50 text-orange-600 border border-orange-200 shrink-0">MSPIL</span>
+                        )}
+                        <span className="ml-auto text-sm font-bold text-gray-800 shrink-0">{dr.quantity} {dr.unit}</span>
+                        <ChevronDown size={14} className={`text-gray-400 shrink-0 transition ${isExpanded ? 'rotate-180' : ''}`} />
                       </div>
-
-                      {/* Progress */}
-                      <div className="flex gap-1 mt-2.5">
-                        {['Transporter', 'Trucks', 'At Gate', 'Weigh', 'Dispatch'].map((s, i) => (
-                          <div key={s} className="flex-1 flex flex-col items-center">
-                            <div className={`w-full h-1.5 rounded-full ${
-                              i <= stepIdx ? STEP_COLORS[stepIdx] : 'bg-gray-200'
-                            } ${i === stepIdx && stepIdx < 4 ? 'animate-pulse' : ''}`} />
-                            <span className={`text-[7px] mt-0.5 ${i <= stepIdx ? 'text-gray-600 font-medium' : 'text-gray-400'}`}>{s}</span>
-                          </div>
+                      {/* Row 2: Key details inline */}
+                      <div className="flex items-center gap-2 mt-1 text-[11px] text-gray-500 flex-wrap">
+                        <span className="font-medium text-gray-600">{dr.productName}</span>
+                        <span className="text-gray-300">|</span>
+                        {dr.transporterName ? (
+                          <span className="text-indigo-600 font-medium">{dr.transporterName}</span>
+                        ) : (
+                          <span className="text-red-500 font-medium">No transporter</span>
+                        )}
+                        {dr.freightRate && <span className="text-green-600 font-medium">₹{dr.freightRate}/MT</span>}
+                        {dr.destination && (
+                          <span className="truncate max-w-[120px]"><MapPin size={9} className="inline" /> {dr.destination.split(',')[0]}</span>
+                        )}
+                        {dr.distanceKm && <span className="text-blue-600">{dr.distanceKm}km</span>}
+                        {shipments.length > 0 && (
+                          <span className="text-orange-600 font-medium">{shipments.length} truck{shipments.length !== 1 ? 's' : ''}</span>
+                        )}
+                      </div>
+                      {/* Progress bar — thin */}
+                      <div className="flex gap-0.5 mt-1.5">
+                        {[0,1,2,3,4].map(i => (
+                          <div key={i} className={`h-1 flex-1 rounded-full ${i <= stepIdx ? STEP_COLORS[stepIdx] : 'bg-gray-200'} ${i === stepIdx && stepIdx < 4 ? 'animate-pulse' : ''}`} />
                         ))}
                       </div>
                     </button>
 
-                    {/* ── Expanded ── */}
+                    {/* ── Expanded: Tabbed View ── */}
                     {isExpanded && (
-                      <div className="border-t bg-gray-50 p-4 space-y-3">
+                      <div className="border-t">
+                        {/* Tab bar */}
+                        <div className="flex bg-gray-50 border-b">
+                          {[
+                            { key: 'details', label: 'Details' },
+                            { key: 'quotes', label: `Quotes${(dr as any).freightInquiry?.quotations?.length ? ` (${(dr as any).freightInquiry.quotations.length})` : ''}` },
+                            { key: 'trucks', label: `Trucks (${shipments.length})` },
+                          ].map(tab => (
+                            <button key={tab.key} onClick={() => setActiveTab(prev => ({ ...prev, [dr.id]: tab.key }))}
+                              className={`flex-1 px-3 py-2 text-xs font-semibold text-center transition border-b-2 ${
+                                curTab === tab.key ? 'border-orange-500 text-orange-700 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'
+                              }`}>
+                              {tab.label}
+                            </button>
+                          ))}
+                        </div>
 
-                        {/* ── Order Details Card ── */}
-                        <div className="bg-white rounded-lg border p-3">
-                          <div className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1">
-                            <FileText size={12} /> Sale Order Details
-                          </div>
-                          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
+                        <div className="p-3 space-y-3">
+
+                        {/* ── TAB: Details ── */}
+                        {curTab === 'details' && (<>
+                          {/* Order + Logistics combined compact view */}
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2 text-xs">
                             <div>
-                              <span className="text-gray-400">Customer</span>
+                              <span className="text-gray-400 text-[10px]">Customer</span>
                               <p className="font-semibold text-gray-800">{customer?.name}</p>
-                              {customer?.contactPerson && <p className="text-gray-500">{customer.contactPerson}</p>}
                               {customer?.phone && (
-                                <a href={`tel:${customer.phone}`} className="text-blue-600 flex items-center gap-0.5 mt-0.5">
-                                  <Phone size={10} /> {customer.phone}
+                                <a href={`tel:${customer.phone}`} className="text-blue-600 flex items-center gap-0.5"><Phone size={9} /> {customer.phone}</a>
+                              )}
+                            </div>
+                            <div>
+                              <span className="text-gray-400 text-[10px]">Destination</span>
+                              <p className="font-medium text-gray-700 text-[11px]">{dr.destination || customerAddr || '—'}</p>
+                              {(dr.destination || customerAddr) && (
+                                <a href={getMapUrl(dr.destination || customerAddr)} target="_blank" rel="noopener"
+                                  className="text-blue-600 text-[10px] hover:underline flex items-center gap-0.5">
+                                  <Navigation size={8} /> Maps
                                 </a>
                               )}
                             </div>
                             <div>
-                              <span className="text-gray-400">Delivery Address</span>
-                              <p className="font-medium text-gray-700">{customerAddr || '—'}</p>
+                              <span className="text-gray-400 text-[10px]">Order Value</span>
+                              <p className="font-bold text-gray-800">₹{(order?.grandTotal || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+                              <p className="text-[10px] text-gray-400">{order?.paymentTerms || ''}</p>
                             </div>
                             <div>
-                              <span className="text-gray-400">Payment</span>
-                              <p className="font-medium">{order?.paymentTerms || '—'}</p>
-                            </div>
-                            <div>
-                              <span className="text-gray-400">Delivery Date</span>
+                              <span className="text-gray-400 text-[10px]">Delivery</span>
                               <p className="font-medium">{dr.deliveryDate ? new Date(dr.deliveryDate).toLocaleDateString('en-IN') : '—'}</p>
                             </div>
                             <div>
-                              <span className="text-gray-400">Order Value</span>
-                              <p className="font-bold text-gray-800">₹{(order?.grandTotal || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+                              <span className="text-gray-400 text-[10px]">Distance</span>
+                              <p className="font-medium">{dr.distanceKm ? `${dr.distanceKm} km` : '—'}</p>
+                            </div>
+                            <div>
+                              <span className="text-gray-400 text-[10px]">Transporter</span>
+                              <p className="font-medium">{dr.transporterName || '—'}</p>
+                            </div>
+                            <div>
+                              <span className="text-gray-400 text-[10px]">Rate</span>
+                              <p className="font-semibold text-green-700">{dr.freightRate ? `₹${dr.freightRate}/MT` : '—'}</p>
+                            </div>
+                            <div>
+                              <span className="text-gray-400 text-[10px]">Total Freight</span>
+                              <p className="font-bold text-green-700">{dr.freightRate && dr.quantity ? `₹${(dr.freightRate * dr.quantity).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '—'}</p>
                             </div>
                           </div>
-                          {/* Line items */}
+                          {/* Line items compact */}
                           {lines.length > 0 && (
-                            <div className="mt-2 pt-2 border-t">
+                            <div className="border-t pt-2 space-y-0.5">
                               {lines.map((line, i) => (
                                 <div key={i} className="flex items-center justify-between text-xs text-gray-600">
                                   <span>{line.productName} — {line.quantity} {line.unit} @ ₹{line.rate?.toLocaleString('en-IN')}</span>
@@ -869,9 +829,76 @@ export default function DispatchRequests() {
                               ))}
                             </div>
                           )}
-                        </div>
 
-                        {/* ── 1. Rate Quotes (FIRST) ── */}
+                          {/* Logistics edit form */}
+                          {isEditing ? (
+                            <div className="bg-orange-50 rounded-lg p-3 border border-orange-200 space-y-3">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-bold text-orange-800 flex items-center gap-1"><Truck size={12} /> Edit Logistics</span>
+                                <button onClick={() => setEditingDR(null)} className="text-gray-400 hover:text-gray-600"><X size={14} /></button>
+                              </div>
+                              <div>
+                                <label className="text-[10px] text-gray-600 font-semibold mb-0.5 block">Destination</label>
+                                <div className="flex gap-1.5">
+                                  <input value={editDestination} onChange={e => setEditDestination(e.target.value)}
+                                    placeholder="Full address" className="input-field text-xs flex-1" />
+                                  <button onClick={() => autoCalcDistance(dr.id, editDestination)} disabled={!!calcLoading}
+                                    className="px-2 py-1.5 bg-blue-600 text-white text-[10px] rounded-lg font-medium hover:bg-blue-700 flex items-center gap-1 whitespace-nowrap disabled:opacity-50">
+                                    {calcLoading === dr.id ? <Loader2 size={10} className="animate-spin" /> : <Route size={10} />} Calc
+                                  </button>
+                                  {editDestination && (
+                                    <a href={getMapUrl(editDestination)} target="_blank" rel="noopener"
+                                      className="px-2 py-1.5 bg-green-600 text-white text-[10px] rounded-lg font-medium hover:bg-green-700 flex items-center gap-1 whitespace-nowrap">
+                                      <Navigation size={10} /> Map
+                                    </a>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="text-[10px] text-gray-600 font-semibold mb-0.5 block">Distance (km)</label>
+                                  <input type="number" value={editDistanceKm} onChange={e => setEditDistanceKm(e.target.value)} className="input-field text-xs w-full" />
+                                </div>
+                                <div>
+                                  <label className="text-[10px] text-gray-600 font-semibold mb-0.5 block">Trucks Needed</label>
+                                  <input type="number" value={editVehicleCount} onChange={e => setEditVehicleCount(e.target.value)} className="input-field text-xs w-full" />
+                                </div>
+                              </div>
+                              <button onClick={() => saveLogistics(dr.id)} disabled={!!actionLoading}
+                                className="w-full py-2 bg-orange-600 text-white text-xs font-bold rounded-lg hover:bg-orange-700 disabled:opacity-50 flex items-center justify-center gap-1.5">
+                                {actionLoading === dr.id ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save
+                              </button>
+                            </div>
+                          ) : (
+                            !['DISPATCHED', 'COMPLETED'].includes(dr.status) && (
+                              <button onClick={() => startEditDR(dr)}
+                                className="w-full py-2 text-xs text-orange-600 font-semibold border border-orange-200 rounded-lg hover:bg-orange-50 flex items-center justify-center gap-1.5">
+                                ✏️ {step === 'NEW' ? 'Set Logistics Details' : 'Edit Logistics'}
+                              </button>
+                            )
+                          )}
+
+                          {/* Actions row */}
+                          <div className="flex gap-2 pt-1 border-t">
+                            <button onClick={() => shareDR(dr)}
+                              className="px-2.5 py-1 text-green-700 text-[11px] font-medium rounded-lg border border-green-300 hover:bg-green-50 flex items-center gap-1">
+                              <Share2 size={11} /> Share
+                            </button>
+                            {!['DISPATCHED', 'COMPLETED'].includes(dr.status) && (
+                              <button onClick={async () => {
+                                if (!confirm(`Delete DR #${dr.drNo}?`)) return;
+                                try { await api.delete(`/dispatch-requests/${dr.id}`); flash('ok', `DR #${dr.drNo} deleted`); load(); }
+                                catch (e: any) { flash('err', e.response?.data?.error || 'Failed'); }
+                              }}
+                                className="px-2.5 py-1 text-red-600 text-[11px] font-medium rounded-lg border border-red-200 hover:bg-red-50 flex items-center gap-1 ml-auto">
+                                <Trash2 size={11} /> Delete
+                              </button>
+                            )}
+                          </div>
+                        </>)}
+
+                        {/* ── TAB: Quotes ── */}
+                        {curTab === 'quotes' && (<>
                         {(() => {
                           const inq = (dr as any).freightInquiry;
                           if (!inq) return null;
@@ -1105,130 +1132,10 @@ export default function DispatchRequests() {
                             </div>
                           );
                         })()}
+                        </>)}
 
-                        {/* ── 2. Logistics Details (AFTER quotes) ── */}
-                        {isEditing ? (
-                          <div className="bg-orange-50 rounded-xl p-4 border border-orange-200 space-y-4">
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm font-bold text-orange-800 flex items-center gap-1.5">
-                                <Truck size={14} /> Logistics Details
-                              </span>
-                              <button onClick={() => setEditingDR(null)} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
-                            </div>
-
-                            {/* Row 1: Destination */}
-                            <div>
-                              <label className="text-[11px] text-gray-600 font-semibold mb-1 block">Delivery Destination</label>
-                              <div className="flex gap-2">
-                                <input value={editDestination} onChange={e => setEditDestination(e.target.value)}
-                                  placeholder="Full address — city, state, pincode" className="input-field text-sm flex-1" />
-                                <button onClick={() => autoCalcDistance(dr.id, editDestination)}
-                                  disabled={!!calcLoading}
-                                  className="px-3 py-2 bg-blue-600 text-white text-xs rounded-lg font-medium hover:bg-blue-700 flex items-center gap-1.5 whitespace-nowrap disabled:opacity-50">
-                                  {calcLoading === dr.id ? <Loader2 size={12} className="animate-spin" /> : <Route size={12} />}
-                                  Calc Distance
-                                </button>
-                                {editDestination && (
-                                  <a href={getMapUrl(editDestination)} target="_blank" rel="noopener"
-                                    className="px-3 py-2 bg-green-600 text-white text-xs rounded-lg font-medium hover:bg-green-700 flex items-center gap-1.5 whitespace-nowrap">
-                                    <Navigation size={12} /> Maps
-                                  </a>
-                                )}
-                              </div>
-                              <p className="text-[10px] text-gray-400 mt-1">From: {FACTORY.name}</p>
-                            </div>
-
-                            {/* Row 2: Distance / Trucks */}
-                            <div className="grid grid-cols-2 gap-3">
-                              <div>
-                                <label className="text-[11px] text-gray-600 font-semibold mb-1 block">Distance (km)</label>
-                                <input type="number" value={editDistanceKm} onChange={e => setEditDistanceKm(e.target.value)}
-                                  placeholder="Auto or manual" className="input-field text-sm w-full" />
-                                {editDuration && <p className="text-[10px] text-blue-600 mt-1">~{editDuration} hrs drive</p>}
-                              </div>
-                              <div>
-                                <label className="text-[11px] text-gray-600 font-semibold mb-1 block">Trucks Needed</label>
-                                <input type="number" value={editVehicleCount} onChange={e => setEditVehicleCount(e.target.value)}
-                                  placeholder="1" className="input-field text-sm w-full" />
-                              </div>
-                            </div>
-
-                            {/* Transporter & Rate — set via quotations */}
-                            {(dr.transporterName || dr.freightRate) && (
-                              <div className="bg-white rounded-lg border border-green-200 p-3 flex items-center justify-between">
-                                <div className="flex items-center gap-4 text-sm">
-                                  {dr.transporterName && (
-                                    <span className="flex items-center gap-1.5 text-indigo-700 font-semibold">
-                                      <Truck size={14} /> {dr.transporterName}
-                                    </span>
-                                  )}
-                                  {dr.freightRate && (
-                                    <span className="text-green-700 font-bold">₹{dr.freightRate}/MT</span>
-                                  )}
-                                  {dr.freightRate && dr.quantity > 0 && (
-                                    <span className="text-gray-500 text-xs">
-                                      Total: ₹{(dr.freightRate * dr.quantity).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                                    </span>
-                                  )}
-                                </div>
-                                <span className="text-[10px] text-gray-400">Set via Rate Quotes below</span>
-                              </div>
-                            )}
-
-                            <button onClick={() => saveLogistics(dr.id)}
-                              disabled={!!actionLoading}
-                              className="w-full py-2.5 bg-orange-600 text-white text-sm font-bold rounded-lg hover:bg-orange-700 disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm">
-                              {actionLoading === dr.id ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                              Save Logistics Details
-                            </button>
-                          </div>
-                        ) : (
-                          /* View mode — compact card */
-                          <div className="bg-white rounded-xl border p-3">
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="text-xs font-semibold text-gray-600 flex items-center gap-1">
-                                <Truck size={12} /> Logistics
-                              </span>
-                              {!['DISPATCHED', 'COMPLETED'].includes(dr.status) && (
-                                <button onClick={() => startEditDR(dr)}
-                                  className="text-[11px] text-orange-600 font-semibold hover:text-orange-700 flex items-center gap-1">
-                                  ✏️ {step === 'NEW' ? 'Set Details' : 'Edit'}
-                                </button>
-                              )}
-                            </div>
-                            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
-                              <div>
-                                <span className="text-gray-400 block">Destination</span>
-                                <p className="font-medium">{dr.destination || customerAddr || '—'}</p>
-                                {(dr.destination || customerAddr) && (
-                                  <a href={getMapUrl(dr.destination || customerAddr)} target="_blank" rel="noopener"
-                                    className="text-blue-600 text-[10px] hover:underline flex items-center gap-0.5 mt-0.5">
-                                    <Navigation size={9} /> Maps
-                                  </a>
-                                )}
-                              </div>
-                              <div>
-                                <span className="text-gray-400 block">Distance</span>
-                                <p className="font-medium">{dr.distanceKm ? `${dr.distanceKm} km` : '—'}</p>
-                              </div>
-                              <div>
-                                <span className="text-gray-400 block">Transporter</span>
-                                <p className="font-medium">{dr.transporterName || '—'}</p>
-                              </div>
-                              <div>
-                                <span className="text-gray-400 block">Rate</span>
-                                <p className="font-semibold text-green-700">{dr.freightRate ? `₹${dr.freightRate}/MT` : '—'}</p>
-                              </div>
-                              <div>
-                                <span className="text-gray-400 block">Total Freight</span>
-                                <p className="font-bold text-green-700">{dr.freightRate && dr.quantity ? `₹${(dr.freightRate * dr.quantity).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '—'}</p>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Old Rate Quotes section removed — now above Logistics */}
-
+                        {/* ── TAB: Trucks ── */}
+                        {curTab === 'trucks' && (<>
                         {/* ── Trucks & Dispatch Progress ── */}
                         {(() => {
                           const totalQty = dr.quantity;
@@ -1698,25 +1605,8 @@ export default function DispatchRequests() {
                           );
                         })()}
 
-                        {/* Bottom actions */}
-                        <div className="flex gap-2 flex-wrap pt-2 border-t">
-                          <button onClick={() => shareDR(dr)}
-                            className="px-3 py-1.5 text-green-700 text-xs font-medium rounded-lg border border-green-300 hover:bg-green-50 flex items-center gap-1">
-                            <Share2 size={12} /> Share
-                          </button>
-                          {!['DISPATCHED', 'COMPLETED'].includes(dr.status) && (
-                            <button onClick={async () => {
-                              if (!confirm(`Delete DR #${dr.drNo}?`)) return;
-                              try {
-                                await api.delete(`/dispatch-requests/${dr.id}`);
-                                flash('ok', `DR #${dr.drNo} deleted`);
-                                load();
-                              } catch (e: any) { flash('err', e.response?.data?.error || 'Failed'); }
-                            }}
-                              className="px-3 py-1.5 text-red-600 text-xs font-medium rounded-lg border border-red-200 hover:bg-red-50 flex items-center gap-1 ml-auto">
-                              <Trash2 size={12} /> Delete
-                            </button>
-                          )}
+                        </>)}
+
                         </div>
                       </div>
                     )}
