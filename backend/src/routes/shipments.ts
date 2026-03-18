@@ -653,7 +653,7 @@ router.get('/:id/challan-pdf', async (req: Request, res: Response) => {
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-// DELETE /:id — Delete (ADMIN only, only if GATE_IN status)
+// DELETE /:id — Delete (ADMIN only; unlinked trucks any status, linked only GATE_IN)
 router.delete('/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
   try {
     const shipment = await prisma.shipment.findUnique({
@@ -661,8 +661,13 @@ router.delete('/:id', authorize('ADMIN') as any, async (req: Request, res: Respo
     });
 
     if (!shipment) { res.status(404).json({ error: 'Shipment not found' }); return; }
-    if (shipment.status !== 'GATE_IN') { res.status(400).json({ error: 'Can only delete GATE_IN shipments' }); return; }
+    // Linked shipments can only be deleted at GATE_IN; unlinked can be deleted at any status
+    if (shipment.dispatchRequestId && shipment.status !== 'GATE_IN') {
+      res.status(400).json({ error: 'Linked shipments can only be deleted at GATE_IN' }); return;
+    }
 
+    // Delete related documents first
+    await prisma.shipmentDocument.deleteMany({ where: { shipmentId: req.params.id } });
     await prisma.shipment.delete({ where: { id: req.params.id } });
     res.json({ ok: true });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
