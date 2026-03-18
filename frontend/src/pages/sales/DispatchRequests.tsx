@@ -161,12 +161,14 @@ export default function DispatchRequests() {
   const [editDestination, setEditDestination] = useState('');
   const [editVehicleCount, setEditVehicleCount] = useState('');
 
-  // Truck form
+  // Truck form — multi-row
   const [truckFormDR, setTruckFormDR] = useState<string | null>(null);
-  const [truckVehicle, setTruckVehicle] = useState('');
-  const [truckDriver, setTruckDriver] = useState('');
-  const [truckMobile, setTruckMobile] = useState('');
-  const [truckEtaDays, setTruckEtaDays] = useState('0'); // 0=same day, 1,2,3,4+
+  const [truckRows, setTruckRows] = useState<{ vehicle: string; driver: string; mobile: string }[]>([{ vehicle: '', driver: '', mobile: '' }]);
+  const [truckEtaDays, setTruckEtaDays] = useState('0');
+  // Backward compat — single string aliases
+  const truckVehicle = truckRows.map(r => r.vehicle).filter(Boolean).join(',');
+  const truckDriver = truckRows[0]?.driver || '';
+  const truckMobile = truckRows[0]?.mobile || '';
 
   // Quotation form
   const [showQuoteForm, setShowQuoteForm] = useState<string | null>(null);
@@ -300,29 +302,33 @@ export default function DispatchRequests() {
   };
 
   const assignTruck = async (drId: string) => {
-    if (!truckVehicle.trim()) { flash('err', 'Enter vehicle number(s)'); return; }
+    const validRows = truckRows.filter(r => r.vehicle.trim());
+    if (validRows.length === 0) { flash('err', 'Enter at least one vehicle number'); return; }
     setActionLoading(drId + '_truck');
     try {
       const dr = drs.find(d => d.id === drId);
-      // Support comma-separated vehicle numbers for batch entry
-      const vehicles = truckVehicle.split(',').map(v => v.trim().toUpperCase()).filter(Boolean);
       const etaLabel = truckEtaDays === '0' ? 'Same day' : truckEtaDays === '4' ? '4+ days' : `${truckEtaDays} day${truckEtaDays === '1' ? '' : 's'}`;
-      for (const veh of vehicles) {
-        await api.post('/shipments', {
-          dispatchRequestId: drId,
-          vehicleNo: veh,
-          driverName: vehicles.length === 1 ? (truckDriver || null) : null,
-          driverMobile: vehicles.length === 1 ? (truckMobile || null) : null,
-          transporterName: dr?.transporterName || '',
-          gateInTime: new Date().toISOString(),
-          productName: dr?.productName || '',
-          customerName: dr?.customerName || '',
-          destination: dr?.destination || '',
-          remarks: `ETA: ${etaLabel}`,
-        });
+      for (const row of validRows) {
+        // Each row can also have comma-separated vehicles
+        const vehicles = row.vehicle.split(',').map(v => v.trim().toUpperCase()).filter(Boolean);
+        for (const veh of vehicles) {
+          await api.post('/shipments', {
+            dispatchRequestId: drId,
+            vehicleNo: veh,
+            driverName: row.driver || null,
+            driverMobile: row.mobile || null,
+            transporterName: dr?.transporterName || '',
+            gateInTime: new Date().toISOString(),
+            productName: dr?.productName || '',
+            customerName: dr?.customerName || '',
+            destination: dr?.destination || '',
+            remarks: `ETA: ${etaLabel}`,
+          });
+        }
       }
-      flash('ok', `${vehicles.length} truck${vehicles.length > 1 ? 's' : ''} registered`);
-      setTruckFormDR(null); setTruckVehicle(''); setTruckDriver(''); setTruckMobile(''); setTruckEtaDays('0');
+      const totalVehicles = validRows.reduce((sum, r) => sum + r.vehicle.split(',').filter(v => v.trim()).length, 0);
+      flash('ok', `${totalVehicles} truck${totalVehicles > 1 ? 's' : ''} registered`);
+      setTruckFormDR(null); setTruckRows([{ vehicle: '', driver: '', mobile: '' }]); setTruckEtaDays('0');
       load();
     } catch (e: any) {
       flash('err', e.response?.data?.error || 'Failed');
@@ -865,7 +871,242 @@ export default function DispatchRequests() {
                           )}
                         </div>
 
-                        {/* ── Logistics & Rate Section ── */}
+                        {/* ── 1. Rate Quotes (FIRST) ── */}
+                        {(() => {
+                          const inq = (dr as any).freightInquiry;
+                          if (!inq) return null;
+                          const quotes = inq.quotations || [];
+                          const hasAccepted = quotes.some((q: any) => q.status === 'ACCEPTED');
+                          return (
+                            <div className="bg-purple-50 rounded-xl border border-purple-200 p-4">
+                              {/* Header */}
+                              <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-bold text-purple-800 flex items-center gap-1.5">
+                                    <IndianRupee size={14} /> Rate Quotes
+                                  </span>
+                                  <span className="text-xs text-gray-400">FI-{inq.inquiryNo}</span>
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                    inq.status === 'AWARDED' ? 'bg-green-100 text-green-700' :
+                                    inq.status === 'QUOTES_RECEIVED' ? 'bg-amber-100 text-amber-700' :
+                                    'bg-blue-100 text-blue-700'
+                                  }`}>{inq.status}</span>
+                                </div>
+                                <div className="flex gap-2">
+                                  <button onClick={() => setShowSendForm(showSendForm === dr.id ? null : dr.id)}
+                                    className="px-4 py-2 text-sm font-semibold bg-orange-500 text-white rounded-lg hover:bg-orange-600 flex items-center gap-1.5 shadow-sm">
+                                    <Share2 size={13} /> Send Request
+                                  </button>
+                                  <button onClick={() => shareRateRequest(dr)}
+                                    className="px-4 py-2 text-sm font-semibold bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center gap-1.5 shadow-sm">
+                                    <MessageCircle size={13} /> WA
+                                  </button>
+                                  <button onClick={() => {
+                                    const token = localStorage.getItem('token');
+                                    window.open(`/api/freight-inquiries/${inq.id}/pdf?token=${token}`, '_blank');
+                                  }}
+                                    className="px-4 py-2 text-sm font-semibold bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center gap-1.5 shadow-sm">
+                                    <FileText size={13} /> PDF
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Send to transporter panel */}
+                              {showSendForm === dr.id && (
+                                <div className="bg-white rounded-lg border p-3 mb-3 space-y-2.5">
+                                  <p className="text-xs font-semibold text-gray-700">Send rate request to transporter</p>
+                                  {transporters.filter(t => t.phone || t.email).length > 0 && (
+                                    <div className="space-y-1">
+                                      {transporters.filter(t => t.phone || t.email).map(t => (
+                                        <div key={t.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+                                          <div className="text-xs">
+                                            <span className="font-semibold">{t.name}</span>
+                                            {t.phone && <span className="text-gray-400 ml-2">{t.phone}</span>}
+                                          </div>
+                                          <div className="flex gap-1.5">
+                                            {t.phone && (
+                                              <button onClick={() => sendRateRequest(inq.id, ['whatsapp'], t.phone!, undefined, t.id, t.name)}
+                                                disabled={!!sendingTo}
+                                                className="px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-1">
+                                                {sendingTo === inq.id ? <Loader2 size={10} className="animate-spin" /> : <MessageCircle size={10} />} WA
+                                              </button>
+                                            )}
+                                            {t.email && (
+                                              <button onClick={() => sendRateRequest(inq.id, ['email'], undefined, t.email!, t.id, t.name)}
+                                                disabled={!!sendingTo}
+                                                className="px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-1">
+                                                {sendingTo === inq.id ? <Loader2 size={10} className="animate-spin" /> : <Mail size={10} />} Email
+                                              </button>
+                                            )}
+                                            {t.phone && t.email && (
+                                              <button onClick={() => sendRateRequest(inq.id, ['email', 'whatsapp'], t.phone!, t.email!, t.id, t.name)}
+                                                disabled={!!sendingTo}
+                                                className="px-3 py-1.5 text-xs font-medium bg-purple-600 text-white rounded-lg hover:bg-purple-700">
+                                                Both
+                                              </button>
+                                            )}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                  <div className="border-t pt-2">
+                                    <p className="text-[11px] text-gray-400 mb-1.5">Or enter manually:</p>
+                                    <div className="flex gap-2">
+                                      <input value={sendPhone} onChange={e => setSendPhone(e.target.value)}
+                                        placeholder="Phone (10 digits)" className="input-field text-xs flex-1" />
+                                      <input value={sendEmail} onChange={e => setSendEmail(e.target.value)}
+                                        placeholder="Email" className="input-field text-xs flex-1" />
+                                      <button onClick={() => {
+                                        const ch: string[] = [];
+                                        if (sendPhone) ch.push('whatsapp');
+                                        if (sendEmail) ch.push('email');
+                                        if (ch.length === 0) { flash('err', 'Enter phone or email'); return; }
+                                        sendRateRequest(inq.id, ch, sendPhone || undefined, sendEmail || undefined);
+                                      }}
+                                        disabled={!!sendingTo}
+                                        className="px-4 py-2 bg-orange-600 text-white text-xs rounded-lg font-medium hover:bg-orange-700 flex items-center gap-1 whitespace-nowrap">
+                                        {sendingTo ? <Loader2 size={12} className="animate-spin" /> : <Share2 size={12} />} Send
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Quotations list */}
+                              {quotes.length > 0 && (
+                                <div className="space-y-2 mb-3">
+                                  {quotes.map((q: any) => (
+                                    <div key={q.id} className={`rounded-lg p-3 text-xs ${
+                                      q.status === 'ACCEPTED' ? 'bg-green-100 border-2 border-green-400' :
+                                      q.status === 'REJECTED' ? 'bg-gray-100 text-gray-400 line-through' :
+                                      'bg-white border'
+                                    }`}>
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <span className="font-bold text-sm">{q.transporterName}</span>
+                                          {q.ratePerMT != null && (
+                                            <span className="text-green-700 font-bold text-sm">₹{q.ratePerMT.toLocaleString('en-IN')}/MT</span>
+                                          )}
+                                          {q.totalAmount != null && (
+                                            <span className="text-gray-500">(₹{q.totalAmount.toLocaleString('en-IN', { maximumFractionDigits: 0 })} total)</span>
+                                          )}
+                                          {q.estimatedDays && <span className="text-gray-400">{q.estimatedDays} days</span>}
+                                          {q.remarks && <span className="text-gray-400 italic">— {q.remarks}</span>}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          {/* Upload quotation doc — available on RECEIVED quotes too */}
+                                          {q.status !== 'REJECTED' && (
+                                            <button onClick={() => uploadQuotationDoc(inq.id, q.id)}
+                                              disabled={!!actionLoading}
+                                              className="px-3 py-1.5 text-xs font-medium bg-purple-100 text-purple-700 border border-purple-200 rounded-lg hover:bg-purple-200 flex items-center gap-1">
+                                              {actionLoading === q.id + '_upload' ? <Loader2 size={10} className="animate-spin" /> : <Upload size={10} />}
+                                              Upload Doc
+                                            </button>
+                                          )}
+                                          {q.status === 'ACCEPTED' && (
+                                            <span className="text-green-700 font-bold flex items-center gap-1"><CheckCircle size={14} /> Selected</span>
+                                          )}
+                                          {q.status === 'RECEIVED' && !hasAccepted && (
+                                            <button onClick={() => acceptQuotation(q.id, dr.id, q.transporterName, q.ratePerMT)}
+                                              disabled={!!actionLoading}
+                                              className="px-4 py-1.5 bg-green-600 text-white text-xs rounded-lg font-bold hover:bg-green-700 flex items-center gap-1">
+                                              {actionLoading === dr.id + '_accept' ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />}
+                                              Accept
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+                                      {/* Post-acceptance actions */}
+                                      {q.status === 'ACCEPTED' && (
+                                        <div className="flex gap-2 mt-2 pt-2 border-t border-green-300">
+                                          {(() => {
+                                            const t = transporters.find(tr => tr.name.toLowerCase() === q.transporterName.toLowerCase());
+                                            return t?.phone ? (
+                                              <button onClick={() => sendDocWhatsApp('', t.phone!, 'RATE_REQUEST', dr)}
+                                                disabled={!!actionLoading}
+                                                className="px-3 py-1.5 text-xs font-medium bg-white text-green-700 border border-green-300 rounded-lg hover:bg-green-50 flex items-center gap-1">
+                                                <MessageCircle size={10} /> WA Confirmation
+                                              </button>
+                                            ) : null;
+                                          })()}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* Add quotation form — always visible when no accepted quote */}
+                              {!hasAccepted && (
+                                  <div className="bg-white rounded-lg border p-3 space-y-3">
+                                    <p className="text-xs font-bold text-purple-800">{quotes.length === 0 ? 'Assign Transporter' : 'Add Another Quote'}</p>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                                      <div>
+                                        <label className="text-[11px] text-gray-600 font-semibold mb-1 block">Transporter</label>
+                                        <select value={quoteTransporterId} onChange={e => selectQuoteTransporter(e.target.value)}
+                                          className="input-field text-sm w-full">
+                                          <option value="">— Select —</option>
+                                          {transporters.map(t => (
+                                            <option key={t.id} value={t.id}>{t.name} {t.phone ? `(${t.phone})` : ''}</option>
+                                          ))}
+                                        </select>
+                                        {!quoteTransporterId && (
+                                          <input value={quoteTransporter} onChange={e => setQuoteTransporter(e.target.value)}
+                                            placeholder="Or type name" className="input-field text-xs w-full mt-1" />
+                                        )}
+                                      </div>
+                                      <div>
+                                        <label className="text-[11px] text-gray-600 font-semibold mb-1 block">Phone</label>
+                                        <input value={quotePhone} onChange={e => setQuotePhone(e.target.value)}
+                                          placeholder="10 digits" className="input-field text-sm w-full" />
+                                      </div>
+                                      <div>
+                                        <label className="text-[11px] text-gray-600 font-semibold mb-1 block">Email</label>
+                                        <input value={quoteEmail} onChange={e => setQuoteEmail(e.target.value)}
+                                          placeholder="email@..." className="input-field text-sm w-full" />
+                                      </div>
+                                    </div>
+                                    <div className="bg-purple-50 rounded-lg p-2.5 flex items-center gap-3 flex-wrap">
+                                      <div className="flex items-center gap-1">
+                                        <span className="text-lg font-bold text-gray-400">₹</span>
+                                        <input type="number" value={quoteRate} onChange={e => setQuoteRate(e.target.value)}
+                                          placeholder="Rate" className="input-field text-lg font-bold w-28" />
+                                        <span className="text-sm text-gray-400">/MT</span>
+                                      </div>
+                                      <input type="number" value={quoteDays} onChange={e => setQuoteDays(e.target.value)}
+                                        placeholder="Days" className="input-field text-sm w-20" />
+                                      <input value={quoteRemarks} onChange={e => setQuoteRemarks(e.target.value)}
+                                        placeholder="Remarks" className="input-field text-sm flex-1" />
+                                      {quoteRate && dr.quantity > 0 && (
+                                        <span className="text-sm text-green-700 font-bold">
+                                          = ₹{(parseFloat(quoteRate) * dr.quantity).toLocaleString('en-IN', { maximumFractionDigits: 0 })} total
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex gap-2 flex-wrap">
+                                      <button onClick={() => quickAssignTransporter(inq.id, dr.id)}
+                                        disabled={!!actionLoading}
+                                        className="px-6 py-3 bg-green-600 text-white text-sm rounded-lg font-bold hover:bg-green-700 flex items-center gap-2 shadow-sm">
+                                        {actionLoading === dr.id + '_assign' ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                                        Assign Transporter
+                                      </button>
+                                      <button onClick={() => addQuotation(inq.id, dr.id)}
+                                        disabled={!!actionLoading}
+                                        className="px-4 py-2.5 bg-purple-100 text-purple-700 text-sm rounded-lg font-medium hover:bg-purple-200 flex items-center gap-1.5">
+                                        {actionLoading === dr.id + '_quote' ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                                        Save as Quote Only
+                                      </button>
+                                      <button onClick={resetQuoteForm}
+                                        className="px-3 py-2 text-gray-400 text-sm rounded-lg hover:bg-gray-50 font-medium">Clear</button>
+                                    </div>
+                                  </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+
+                        {/* ── 2. Logistics Details (AFTER quotes) ── */}
                         {isEditing ? (
                           <div className="bg-orange-50 rounded-xl p-4 border border-orange-200 space-y-4">
                             <div className="flex items-center justify-between">
@@ -986,246 +1227,7 @@ export default function DispatchRequests() {
                           </div>
                         )}
 
-                        {/* ── Transporter Quotations ── */}
-                        {(() => {
-                          const inq = (dr as any).freightInquiry;
-                          if (!inq) return null;
-                          const quotes = inq.quotations || [];
-                          const hasAccepted = quotes.some((q: any) => q.status === 'ACCEPTED');
-                          return (
-                            <div className="bg-purple-50 rounded-xl border border-purple-200 p-4">
-                              {/* Header */}
-                              <div className="flex items-center justify-between mb-3">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm font-bold text-purple-800 flex items-center gap-1.5">
-                                    <IndianRupee size={14} /> Rate Quotes
-                                  </span>
-                                  <span className="text-xs text-gray-400">FI-{inq.inquiryNo}</span>
-                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                    inq.status === 'AWARDED' ? 'bg-green-100 text-green-700' :
-                                    inq.status === 'QUOTES_RECEIVED' ? 'bg-amber-100 text-amber-700' :
-                                    'bg-blue-100 text-blue-700'
-                                  }`}>{inq.status}</span>
-                                </div>
-                                <div className="flex gap-1.5">
-                                  <button onClick={() => setShowSendForm(showSendForm === dr.id ? null : dr.id)}
-                                    className="px-2.5 py-1 text-xs font-medium bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 flex items-center gap-1">
-                                    <Share2 size={11} /> Send Request
-                                  </button>
-                                  <button onClick={() => shareRateRequest(dr)}
-                                    className="px-2.5 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-lg hover:bg-green-200 flex items-center gap-1">
-                                    <MessageCircle size={11} /> WA
-                                  </button>
-                                  <button onClick={() => {
-                                    const token = localStorage.getItem('token');
-                                    window.open(`/api/freight-inquiries/${inq.id}/pdf?token=${token}`, '_blank');
-                                  }}
-                                    className="px-2.5 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 flex items-center gap-1">
-                                    <FileText size={11} /> PDF
-                                  </button>
-                                </div>
-                              </div>
-
-                              {/* Send to transporter panel */}
-                              {showSendForm === dr.id && (
-                                <div className="bg-white rounded-lg border p-3 mb-3 space-y-2.5">
-                                  <p className="text-xs font-semibold text-gray-700">Send rate request to transporter</p>
-
-                                  {/* Quick-send list */}
-                                  {transporters.filter(t => t.phone || t.email).length > 0 && (
-                                    <div className="space-y-1">
-                                      {transporters.filter(t => t.phone || t.email).map(t => (
-                                        <div key={t.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
-                                          <div className="text-xs">
-                                            <span className="font-semibold">{t.name}</span>
-                                            {t.phone && <span className="text-gray-400 ml-2">{t.phone}</span>}
-                                          </div>
-                                          <div className="flex gap-1.5">
-                                            {t.phone && (
-                                              <button onClick={() => sendRateRequest(inq.id, ['whatsapp'], t.phone!, undefined, t.id, t.name)}
-                                                disabled={!!sendingTo}
-                                                className="px-2 py-1 text-[11px] font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-1">
-                                                {sendingTo === inq.id ? <Loader2 size={10} className="animate-spin" /> : <MessageCircle size={10} />} WA
-                                              </button>
-                                            )}
-                                            {t.email && (
-                                              <button onClick={() => sendRateRequest(inq.id, ['email'], undefined, t.email!, t.id, t.name)}
-                                                disabled={!!sendingTo}
-                                                className="px-2 py-1 text-[11px] font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-1">
-                                                {sendingTo === inq.id ? <Loader2 size={10} className="animate-spin" /> : <Mail size={10} />} Email
-                                              </button>
-                                            )}
-                                            {t.phone && t.email && (
-                                              <button onClick={() => sendRateRequest(inq.id, ['email', 'whatsapp'], t.phone!, t.email!, t.id, t.name)}
-                                                disabled={!!sendingTo}
-                                                className="px-2 py-1 text-[11px] font-medium bg-purple-600 text-white rounded-lg hover:bg-purple-700">
-                                                Both
-                                              </button>
-                                            )}
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-
-                                  {/* Manual send */}
-                                  <div className="border-t pt-2">
-                                    <p className="text-[11px] text-gray-400 mb-1.5">Or enter manually:</p>
-                                    <div className="flex gap-2">
-                                      <input value={sendPhone} onChange={e => setSendPhone(e.target.value)}
-                                        placeholder="Phone (10 digits)" className="input-field text-xs flex-1" />
-                                      <input value={sendEmail} onChange={e => setSendEmail(e.target.value)}
-                                        placeholder="Email" className="input-field text-xs flex-1" />
-                                      <button onClick={() => {
-                                        const ch: string[] = [];
-                                        if (sendPhone) ch.push('whatsapp');
-                                        if (sendEmail) ch.push('email');
-                                        if (ch.length === 0) { flash('err', 'Enter phone or email'); return; }
-                                        sendRateRequest(inq.id, ch, sendPhone || undefined, sendEmail || undefined);
-                                      }}
-                                        disabled={!!sendingTo}
-                                        className="px-4 py-2 bg-orange-600 text-white text-xs rounded-lg font-medium hover:bg-orange-700 flex items-center gap-1 whitespace-nowrap">
-                                        {sendingTo ? <Loader2 size={12} className="animate-spin" /> : <Share2 size={12} />} Send
-                                      </button>
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Quotations list */}
-                              {quotes.length > 0 && (
-                                <div className="space-y-2 mb-3">
-                                  {quotes.map((q: any) => (
-                                    <div key={q.id} className={`rounded-lg p-3 text-xs ${
-                                      q.status === 'ACCEPTED' ? 'bg-green-100 border-2 border-green-400' :
-                                      q.status === 'REJECTED' ? 'bg-gray-100 text-gray-400 line-through' :
-                                      'bg-white border'
-                                    }`}>
-                                      <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-2 flex-wrap">
-                                          <span className="font-bold text-sm">{q.transporterName}</span>
-                                          {q.ratePerMT != null && (
-                                            <span className="text-green-700 font-bold text-sm">₹{q.ratePerMT.toLocaleString('en-IN')}/MT</span>
-                                          )}
-                                          {q.totalAmount != null && (
-                                            <span className="text-gray-500">(₹{q.totalAmount.toLocaleString('en-IN', { maximumFractionDigits: 0 })} total)</span>
-                                          )}
-                                          {q.estimatedDays && <span className="text-gray-400">{q.estimatedDays} days</span>}
-                                          {q.remarks && <span className="text-gray-400 italic">— {q.remarks}</span>}
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                          {q.status === 'ACCEPTED' && (
-                                            <span className="text-green-700 font-bold flex items-center gap-1"><CheckCircle size={14} /> Selected</span>
-                                          )}
-                                          {q.status === 'RECEIVED' && !hasAccepted && (
-                                            <button onClick={() => acceptQuotation(q.id, dr.id, q.transporterName, q.ratePerMT)}
-                                              disabled={!!actionLoading}
-                                              className="px-3 py-1 bg-green-600 text-white text-xs rounded-lg font-medium hover:bg-green-700">
-                                              {actionLoading === dr.id + '_accept' ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />}
-                                              {actionLoading === dr.id + '_accept' ? ' ...' : ' Accept'}
-                                            </button>
-                                          )}
-                                        </div>
-                                      </div>
-                                      {/* Post-acceptance actions */}
-                                      {q.status === 'ACCEPTED' && (
-                                        <div className="flex gap-2 mt-2 pt-2 border-t border-green-300">
-                                          <button onClick={() => uploadQuotationDoc(inq.id, q.id)}
-                                            disabled={!!actionLoading}
-                                            className="px-3 py-1 text-xs font-medium bg-white text-green-700 border border-green-300 rounded-lg hover:bg-green-50 flex items-center gap-1">
-                                            {actionLoading === q.id + '_upload' ? <Loader2 size={10} className="animate-spin" /> : <Upload size={10} />}
-                                            Upload Quotation Doc
-                                          </button>
-                                          {(() => {
-                                            const t = transporters.find(tr => tr.name.toLowerCase() === q.transporterName.toLowerCase());
-                                            return t?.phone ? (
-                                              <button onClick={() => sendDocWhatsApp('', t.phone!, 'RATE_REQUEST', dr)}
-                                                disabled={!!actionLoading}
-                                                className="px-3 py-1 text-xs font-medium bg-white text-green-700 border border-green-300 rounded-lg hover:bg-green-50 flex items-center gap-1">
-                                                <MessageCircle size={10} /> WA Confirmation
-                                              </button>
-                                            ) : null;
-                                          })()}
-                                        </div>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-
-                              {/* Add quotation form — always visible when no accepted quote */}
-                              {!hasAccepted && (
-                                  <div className="bg-white rounded-lg border p-3 space-y-3">
-                                    <p className="text-xs font-bold text-purple-800">{quotes.length === 0 ? 'Assign Transporter' : 'Add Another Quote'}</p>
-                                    {/* Transporter select */}
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                                      <div>
-                                        <label className="text-[11px] text-gray-600 font-semibold mb-1 block">Transporter</label>
-                                        <select value={quoteTransporterId} onChange={e => selectQuoteTransporter(e.target.value)}
-                                          className="input-field text-sm w-full">
-                                          <option value="">— Select —</option>
-                                          {transporters.map(t => (
-                                            <option key={t.id} value={t.id}>{t.name} {t.phone ? `(${t.phone})` : ''}</option>
-                                          ))}
-                                        </select>
-                                        {!quoteTransporterId && (
-                                          <input value={quoteTransporter} onChange={e => setQuoteTransporter(e.target.value)}
-                                            placeholder="Or type name" className="input-field text-xs w-full mt-1" />
-                                        )}
-                                      </div>
-                                      <div>
-                                        <label className="text-[11px] text-gray-600 font-semibold mb-1 block">Phone</label>
-                                        <input value={quotePhone} onChange={e => setQuotePhone(e.target.value)}
-                                          placeholder="10 digits" className="input-field text-sm w-full" />
-                                      </div>
-                                      <div>
-                                        <label className="text-[11px] text-gray-600 font-semibold mb-1 block">Email</label>
-                                        <input value={quoteEmail} onChange={e => setQuoteEmail(e.target.value)}
-                                          placeholder="email@..." className="input-field text-sm w-full" />
-                                      </div>
-                                    </div>
-
-                                    {/* Rate row — prominent */}
-                                    <div className="bg-purple-50 rounded-lg p-2.5 flex items-center gap-3 flex-wrap">
-                                      <div className="flex items-center gap-1">
-                                        <span className="text-lg font-bold text-gray-400">₹</span>
-                                        <input type="number" value={quoteRate} onChange={e => setQuoteRate(e.target.value)}
-                                          placeholder="Rate" className="input-field text-lg font-bold w-28" />
-                                        <span className="text-sm text-gray-400">/MT</span>
-                                      </div>
-                                      <input type="number" value={quoteDays} onChange={e => setQuoteDays(e.target.value)}
-                                        placeholder="Days" className="input-field text-sm w-20" />
-                                      <input value={quoteRemarks} onChange={e => setQuoteRemarks(e.target.value)}
-                                        placeholder="Remarks" className="input-field text-sm flex-1" />
-                                      {quoteRate && dr.quantity > 0 && (
-                                        <span className="text-sm text-green-700 font-bold">
-                                          = ₹{(parseFloat(quoteRate) * dr.quantity).toLocaleString('en-IN', { maximumFractionDigits: 0 })} total
-                                        </span>
-                                      )}
-                                    </div>
-
-                                    {/* Buttons — primary is one-step assign */}
-                                    <div className="flex gap-2 flex-wrap">
-                                      <button onClick={() => quickAssignTransporter(inq.id, dr.id)}
-                                        disabled={!!actionLoading}
-                                        className="px-5 py-2.5 bg-green-600 text-white text-sm rounded-lg font-bold hover:bg-green-700 flex items-center gap-1.5 shadow-sm">
-                                        {actionLoading === dr.id + '_assign' ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                                        Assign Transporter
-                                      </button>
-                                      <button onClick={() => addQuotation(inq.id, dr.id)}
-                                        disabled={!!actionLoading}
-                                        className="px-4 py-2 bg-purple-100 text-purple-700 text-xs rounded-lg font-medium hover:bg-purple-200 flex items-center gap-1.5">
-                                        {actionLoading === dr.id + '_quote' ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-                                        Save as Quote Only
-                                      </button>
-                                      <button onClick={resetQuoteForm}
-                                        className="px-3 py-2 text-gray-400 text-xs rounded-lg hover:bg-gray-50 font-medium">Clear</button>
-                                    </div>
-                                  </div>
-                              )}
-                            </div>
-                          );
-                        })()}
+                        {/* Old Rate Quotes section removed — now above Logistics */}
 
                         {/* ── Trucks & Dispatch Progress ── */}
                         {(() => {
@@ -1623,28 +1625,59 @@ export default function DispatchRequests() {
                                 </div>
                               )}
 
-                              {/* Add truck — always visible */}
+                              {/* Add trucks — multi-row */}
                               {!['DISPATCHED', 'COMPLETED', 'CANCELLED'].includes(dr.status) && (
                                 <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
-                                  <p className="text-xs font-bold text-blue-800 mb-2 flex items-center gap-1.5">
-                                    <Plus size={12} /> Add Truck
-                                  </p>
-                                  <div className="grid grid-cols-3 gap-2 mb-1">
-                                    <input value={truckFormDR === dr.id ? truckVehicle : ''} onChange={e => { setTruckFormDR(dr.id); setTruckVehicle(e.target.value); }}
-                                      onFocus={() => setTruckFormDR(dr.id)}
-                                      placeholder="Vehicle No(s) — comma separated" className="input-field text-sm" />
-                                    <input value={truckFormDR === dr.id ? truckDriver : ''} onChange={e => { setTruckFormDR(dr.id); setTruckDriver(e.target.value); }}
-                                      onFocus={() => setTruckFormDR(dr.id)}
-                                      placeholder="Driver Name" className="input-field text-sm" />
-                                    <input value={truckFormDR === dr.id ? truckMobile : ''} onChange={e => { setTruckFormDR(dr.id); setTruckMobile(e.target.value); }}
-                                      onFocus={() => setTruckFormDR(dr.id)}
-                                      placeholder="Driver Mobile" className="input-field text-sm" />
+                                  <div className="flex items-center justify-between mb-2">
+                                    <p className="text-xs font-bold text-blue-800 flex items-center gap-1.5">
+                                      <Plus size={12} /> Add Trucks
+                                    </p>
+                                    <button onClick={() => { setTruckFormDR(dr.id); setTruckRows(prev => [...prev, { vehicle: '', driver: '', mobile: '' }]); }}
+                                      className="text-[11px] text-blue-600 font-semibold hover:text-blue-700 flex items-center gap-0.5">
+                                      <Plus size={11} /> Add Row
+                                    </button>
                                   </div>
-                                  <div className="flex items-center gap-2 mb-2">
+                                  {/* Column headers */}
+                                  <div className="grid grid-cols-[1fr_1fr_1fr_28px] gap-2 mb-1">
+                                    <span className="text-[10px] text-gray-500 font-semibold">Vehicle No *</span>
+                                    <span className="text-[10px] text-gray-500 font-semibold">Driver Name</span>
+                                    <span className="text-[10px] text-gray-500 font-semibold">Driver Mobile</span>
+                                    <span></span>
+                                  </div>
+                                  {/* Rows */}
+                                  {(truckFormDR === dr.id ? truckRows : [{ vehicle: '', driver: '', mobile: '' }]).map((row, idx) => (
+                                    <div key={idx} className="grid grid-cols-[1fr_1fr_1fr_28px] gap-2 mb-1.5">
+                                      <input value={row.vehicle} onChange={e => {
+                                        setTruckFormDR(dr.id);
+                                        setTruckRows(prev => { const n = [...prev]; n[idx] = { ...n[idx], vehicle: e.target.value }; return n; });
+                                      }}
+                                        onFocus={() => setTruckFormDR(dr.id)}
+                                        placeholder="MP09XX1234" className="input-field text-sm" />
+                                      <input value={row.driver} onChange={e => {
+                                        setTruckFormDR(dr.id);
+                                        setTruckRows(prev => { const n = [...prev]; n[idx] = { ...n[idx], driver: e.target.value }; return n; });
+                                      }}
+                                        onFocus={() => setTruckFormDR(dr.id)}
+                                        placeholder="Driver" className="input-field text-sm" />
+                                      <input value={row.mobile} onChange={e => {
+                                        setTruckFormDR(dr.id);
+                                        setTruckRows(prev => { const n = [...prev]; n[idx] = { ...n[idx], mobile: e.target.value }; return n; });
+                                      }}
+                                        onFocus={() => setTruckFormDR(dr.id)}
+                                        placeholder="Mobile" className="input-field text-sm" />
+                                      {truckRows.length > 1 && (
+                                        <button onClick={() => setTruckRows(prev => prev.filter((_, i) => i !== idx))}
+                                          className="text-red-400 hover:text-red-600 flex items-center justify-center">
+                                          <X size={14} />
+                                        </button>
+                                      )}
+                                    </div>
+                                  ))}
+                                  <div className="flex items-center gap-2 mb-2 mt-2">
                                     <span className="text-[10px] text-gray-500 font-medium">ETA:</span>
                                     {['0', '1', '2', '3', '4'].map(d => (
                                       <button key={d} onClick={() => { setTruckFormDR(dr.id); setTruckEtaDays(d); }}
-                                        className={`px-2 py-1 text-[10px] rounded-full font-medium border ${
+                                        className={`px-2.5 py-1 text-[10px] rounded-full font-medium border ${
                                           truckFormDR === dr.id && truckEtaDays === d
                                             ? 'bg-blue-600 text-white border-blue-600'
                                             : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
@@ -1654,10 +1687,10 @@ export default function DispatchRequests() {
                                     ))}
                                   </div>
                                   <button onClick={() => assignTruck(dr.id)}
-                                    disabled={!!actionLoading || !truckVehicle.trim() || truckFormDR !== dr.id}
-                                    className="w-full py-2 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-1.5">
-                                    {actionLoading === dr.id + '_truck' ? <Loader2 size={12} className="animate-spin" /> : <Truck size={12} />}
-                                    Register for Gate Entry
+                                    disabled={!!actionLoading || truckRows.every(r => !r.vehicle.trim()) || truckFormDR !== dr.id}
+                                    className="w-full py-2.5 bg-blue-600 text-white text-sm font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2">
+                                    {actionLoading === dr.id + '_truck' ? <Loader2 size={14} className="animate-spin" /> : <Truck size={14} />}
+                                    Register {truckRows.filter(r => r.vehicle.trim()).length > 1 ? `${truckRows.filter(r => r.vehicle.trim()).length} Trucks` : 'Truck'} for Gate Entry
                                   </button>
                                 </div>
                               )}
