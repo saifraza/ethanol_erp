@@ -29,7 +29,7 @@ router.get('/qr', (_req: Request, res: Response) => {
   .btn-red{background:#dc2626;color:#fff}
   .btn:hover{opacity:.9}
 </style>
-${status === 'qr' ? '<meta http-equiv="refresh" content="30">' : status !== 'connected' ? '<meta http-equiv="refresh" content="5">' : ''}
+${status !== 'connected' ? '<meta http-equiv="refresh" content="3">' : ''}
 </head><body>
 <div class="card">
   <h1>MSPIL WhatsApp Bot</h1>
@@ -55,13 +55,33 @@ ${status === 'qr' ? '<meta http-equiv="refresh" content="30">' : status !== 'con
 });
 
 // Start bot
-router.post('/start', (_req: Request, res: Response) => {
-  startBot();
-  res.redirect('/api/whatsapp-bot/qr');
+router.post('/start', async (_req: Request, res: Response) => {
+  try {
+    await startBot();
+  } catch (err: any) {
+    console.error('[WA Bot] Start error:', err);
+  }
+  // Wait a moment for QR to generate, then redirect
+  setTimeout(() => res.redirect('/api/whatsapp-bot/qr'), 3000);
+});
+
+// Also support GET for easy browser access
+router.get('/start', async (_req: Request, res: Response) => {
+  try {
+    await startBot();
+  } catch (err: any) {
+    console.error('[WA Bot] Start error:', err);
+  }
+  setTimeout(() => res.redirect('/api/whatsapp-bot/qr'), 3000);
 });
 
 // Stop bot
 router.post('/stop', (_req: Request, res: Response) => {
+  stopBot();
+  res.redirect('/api/whatsapp-bot/qr');
+});
+
+router.get('/stop', (_req: Request, res: Response) => {
   stopBot();
   res.redirect('/api/whatsapp-bot/qr');
 });
