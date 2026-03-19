@@ -619,9 +619,9 @@ router.get('/:id/challan-pdf', async (req: Request, res: Response) => {
     doc.fontSize(9).font(lf).fillColor('#4a7c3f').text('WEIGHT SUMMARY', mL + 10, rY + 6);
     rY += 20;
     doc.fontSize(9).font(vf).fillColor('#333');
-    doc.text(`Tare: ${shipment.weightTare ? shipment.weightTare.toLocaleString() + ' kg' : '—'}`, mL + 10, rY);
-    doc.text(`Gross: ${shipment.weightGross ? shipment.weightGross.toLocaleString() + ' kg' : '—'}`, mL + 170, rY);
-    doc.font(lf).fillColor('#1a3a1a').text(`Net: ${shipment.weightNet ? shipment.weightNet.toLocaleString() + ' kg (' + netMT + ' MT)' : '—'}`, mL + 340, rY);
+    doc.text(`Tare: ${shipment.weightTare ? shipment.weightTare.toLocaleString('en-IN') + ' kg' : '—'}`, mL + 10, rY);
+    doc.text(`Gross: ${shipment.weightGross ? shipment.weightGross.toLocaleString('en-IN') + ' kg' : '—'}`, mL + 170, rY);
+    doc.font(lf).fillColor('#1a3a1a').text(`Net: ${shipment.weightNet ? shipment.weightNet.toLocaleString('en-IN') + ' kg (' + netMT + ' MT)' : '—'}`, mL + 340, rY);
     rY += 35;
 
     // Terms & Conditions (from template)

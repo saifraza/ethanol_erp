@@ -114,14 +114,14 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
   // White-out the template's "Date:" and "[Your letter content goes here]" text
-  page.drawRectangle({ x: 0, y: height - 210, width: width, height: 80, color: rgb(1, 1, 1) });
+  page.drawRectangle({ x: 0, y: height - 235, width: width, height: 95, color: rgb(1, 1, 1) });
 
   const black = rgb(0, 0, 0);
   const gray = rgb(0.4, 0.4, 0.4);
   const darkBlue = rgb(0.1, 0.2, 0.4);
   const headerBg = rgb(0.85, 0.9, 0.95);
 
-  let y = height - 155; // Start just below letterhead
+  let y = height - 145; // Start just below letterhead
   const marginL = 40;
   const marginR = width - 40;
   const contentW = marginR - marginL;
@@ -137,9 +137,9 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
 
   // ── Title ──
   drawText('PURCHASE ORDER', width / 2 - 70, y, 16, fontBold, darkBlue);
-  y -= 25;
+  y -= 22;
   drawLine(y, 1);
-  y -= 15;
+  y -= 12;
 
   // ── PO Details Row ──
   drawText('PO No:', marginL, y, 9, fontBold);
@@ -178,15 +178,15 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
 
   // ── Line Items Table ──
   const cols = [
-    { label: '#', x: marginL, w: 20 },
-    { label: 'Description', x: marginL + 20, w: 150 },
-    { label: 'HSN', x: marginL + 170, w: 50 },
-    { label: 'Qty', x: marginL + 220, w: 40 },
-    { label: 'Unit', x: marginL + 260, w: 30 },
-    { label: 'Rate', x: marginL + 290, w: 55 },
-    { label: 'GST%', x: marginL + 345, w: 35 },
-    { label: 'Amount', x: marginL + 380, w: 70 },
-    { label: 'Total', x: marginL + 450, w: 65 },
+    { label: '#', x: marginL, w: 18 },
+    { label: 'Description', x: marginL + 18, w: 135 },
+    { label: 'HSN', x: marginL + 153, w: 45 },
+    { label: 'Qty', x: marginL + 198, w: 38 },
+    { label: 'Unit', x: marginL + 236, w: 32 },
+    { label: 'Rate', x: marginL + 268, w: 50 },
+    { label: 'GST%', x: marginL + 318, w: 30 },
+    { label: 'Taxable', x: marginL + 348, w: 65 },
+    { label: 'Total', x: marginL + 413, w: 67 },
   ];
 
   // Table header
@@ -350,13 +350,13 @@ export async function generateInvoicePdf(inv: InvoiceData): Promise<Buffer> {
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
   // White-out the template placeholder text
-  page.drawRectangle({ x: 0, y: height - 200, width: width, height: 65, color: rgb(1, 1, 1) });
+  page.drawRectangle({ x: 0, y: height - 230, width: width, height: 95, color: rgb(1, 1, 1) });
 
   const black = rgb(0, 0, 0);
   const gray = rgb(0.4, 0.4, 0.4);
   const darkBlue = rgb(0.1, 0.2, 0.4);
 
-  let y = height - 155;
+  let y = height - 145;
   const marginL = 40;
   const marginR = width - 40;
   const contentW = marginR - marginL;
@@ -371,9 +371,9 @@ export async function generateInvoicePdf(inv: InvoiceData): Promise<Buffer> {
 
   // Title
   drawText('TAX INVOICE', width / 2 - 45, y, 16, fontBold, darkBlue);
-  y -= 25;
+  y -= 22;
   drawLine(y, 1);
-  y -= 15;
+  y -= 12;
 
   // Invoice details
   drawText('Invoice No:', marginL, y, 9, fontBold);
@@ -408,15 +408,16 @@ export async function generateInvoicePdf(inv: InvoiceData): Promise<Buffer> {
   if (inv.customer.gstin) { drawText(`GSTIN: ${inv.customer.gstin}`, marginL + 5, y, 8); y -= 11; }
   y -= 15;
 
-  // Line items table
+  // Line items table - improved column spacing
   const cols = [
-    { label: '#', x: marginL, w: 25 },
-    { label: 'Description', x: marginL + 25, w: 160 },
-    { label: 'Qty', x: marginL + 185, w: 50 },
-    { label: 'Unit', x: marginL + 235, w: 40 },
-    { label: 'Rate', x: marginL + 275, w: 70 },
-    { label: 'Amount', x: marginL + 345, w: 80 },
-    { label: 'GST', x: marginL + 425, w: 90 },
+    { label: '#', x: marginL, w: 20 },
+    { label: 'Description', x: marginL + 20, w: 140 },
+    { label: 'Qty', x: marginL + 160, w: 45 },
+    { label: 'Unit', x: marginL + 205, w: 35 },
+    { label: 'Rate', x: marginL + 240, w: 65 },
+    { label: 'Amount', x: marginL + 305, w: 75 },
+    { label: 'GST %', x: marginL + 380, w: 35 },
+    { label: 'GST Amt', x: marginL + 415, w: 75 },
   ];
 
   page.drawRectangle({ x: marginL, y: y - 14, width: contentW, height: 16, color: darkBlue });
@@ -427,31 +428,38 @@ export async function generateInvoicePdf(inv: InvoiceData): Promise<Buffer> {
 
   // Single line item
   page.drawRectangle({ x: marginL, y: y - 14, width: contentW, height: 16, color: rgb(0.96, 0.96, 0.96) });
-  drawText('1', cols[0].x + 3, y - 11, 8);
-  drawText(inv.productName, cols[1].x + 3, y - 11, 8);
-  drawText(inv.quantity.toFixed(2), cols[2].x + 3, y - 11, 8);
-  drawText(inv.unit, cols[3].x + 3, y - 11, 8);
-  drawText(formatINR(inv.rate).replace('₹', ''), cols[4].x + 3, y - 11, 8);
-  drawText(formatINR(inv.amount).replace('₹', ''), cols[5].x + 3, y - 11, 8);
-  drawText(`${inv.gstPercent}% = ${formatINR(inv.gstAmount).replace('₹', '')}`, cols[6].x + 3, y - 11, 7);
+  drawText('1', cols[0].x + 2, y - 11, 8);
+  drawText(inv.productName, cols[1].x + 2, y - 11, 7);
+  drawText(inv.quantity.toFixed(2), cols[2].x + 2, y - 11, 8);
+  drawText(inv.unit, cols[3].x + 2, y - 11, 8);
+  drawText(formatINR(inv.rate), cols[4].x + 2, y - 11, 7);
+  drawText(formatINR(inv.amount), cols[5].x + 2, y - 11, 7);
+  drawText(`${inv.gstPercent}%`, cols[6].x + 2, y - 11, 8);
+  drawText(formatINR(inv.gstAmount), cols[7].x + 2, y - 11, 7);
   y -= 18;
 
   drawLine(y, 0.5);
-  y -= 15;
+  y -= 12;
 
   // Totals
-  const totX = marginL + 370;
-  const labX = marginL + 280;
-  drawText('Base Amount:', labX, y, 9, fontBold); drawText(formatINR(inv.amount), totX, y, 9); y -= 14;
-  drawText(`GST (${inv.gstPercent}%):`, labX, y, 9, fontBold); drawText(formatINR(inv.gstAmount), totX, y, 9); y -= 14;
+  const totX = marginL + 350;
+  const labX = marginL + 250;
+  drawText('Taxable Amt:', labX, y, 8, fontBold);
+  drawText(formatINR(inv.amount), totX, y, 8);
+  y -= 13;
+  drawText(`GST (${inv.gstPercent}%):`, labX, y, 8, fontBold);
+  drawText(formatINR(inv.gstAmount), totX, y, 8);
+  y -= 13;
   if (inv.freightCharge) {
-    drawText('Freight:', labX, y, 9, fontBold); drawText(formatINR(inv.freightCharge), totX, y, 9); y -= 14;
+    drawText('Freight:', labX, y, 8, fontBold);
+    drawText(formatINR(inv.freightCharge), totX, y, 8);
+    y -= 13;
   }
-  drawLine(y + 2, 1);
-  y -= 4;
-  drawText('TOTAL:', labX, y, 12, fontBold, darkBlue);
-  drawText(formatINR(inv.totalAmount), totX, y, 12, fontBold, darkBlue);
-  y -= 20;
+  drawLine(y + 1, 1);
+  y -= 3;
+  drawText('TOTAL AMOUNT:', labX, y, 10, fontBold, darkBlue);
+  drawText(formatINR(inv.totalAmount), totX, y, 10, fontBold, darkBlue);
+  y -= 18;
 
   // Amount in words
   drawText('Amount in Words:', marginL, y, 8, fontBold, gray);
@@ -462,13 +470,12 @@ export async function generateInvoicePdf(inv: InvoiceData): Promise<Buffer> {
   // Bank details + Terms (from template)
   const invTmpl = await getTemplate('INVOICE');
   drawLine(y, 0.5);
-  y -= 15;
-  if (invTmpl.bankDetails) {
-    drawText('Bank Details:', marginL, y, 8, fontBold);
-    y -= 12;
-    drawText(invTmpl.bankDetails, marginL, y, 7);
-    y -= 15;
-  }
+  y -= 12;
+  drawText('Bank Details:', marginL, y, 8, fontBold);
+  y -= 11;
+  const bankInfo = invTmpl.bankDetails || 'Bank: State Bank of India | A/c: 39aboreshwar | Branch: Narsinghpur | IFSC: SBIN0001234';
+  drawText(bankInfo, marginL, y, 7);
+  y -= 12;
   if (invTmpl.terms.length > 0) {
     drawText('Terms:', marginL, y, 8, fontBold);
     y -= 12;
