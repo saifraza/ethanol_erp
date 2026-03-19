@@ -1,975 +1,666 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Plus, Beaker, FlaskConical, RefreshCw, ArrowRight, Pencil, Check, X, Send, CheckCircle, AlertTriangle, ChevronDown, ChevronUp, Share2, Cylinder } from 'lucide-react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import {
+  FlaskConical, Beaker, Cylinder, RefreshCw, Loader2, CheckCircle, AlertCircle,
+  Plus, Trash2, Send, ChevronDown, Clock, Play, X, MessageCircle
+} from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
 import api from '../../services/api';
-import { useAuth } from '../../context/AuthContext';
 
-/* ═══════ TYPES ═══════ */
-interface PFBatch {
-  id: string; batchNo: number; fermenterNo: number; phase: string;
-  setupTime: string | null; slurryGravity: number | null; slurryTemp: number | null;
-  slurryVolume: number | null; dosingEndTime: string | null; transferTime: string | null;
-  dosings: any[]; labReadings: any[]; createdAt: string;
-  lastGravity: number | null; readyToTransfer: boolean; gravityTarget: number;
-}
-interface FermBatch {
-  id: string; batchNo: number; fermenterNo: number; phase: string;
-  fermLevel: number | null; volume: number | null; setupGravity: number | null;
-  dosings: any[]; createdAt: string; lastLab: any | null; labReadings: any[];
-  fillingStartTime: string | null;
-}
+/* ═══════════════════════════════════════════════════════════════
+   TYPES
+   ═══════════════════════════════════════════════════════════════ */
+interface LabReading { id: string; analysisTime: string; spGravity?: number; ph?: number; rs?: number; rst?: number; alcohol?: number; ds?: number; vfaPpa?: number; temp?: number; level?: number; remarks?: string; status?: string; createdAt: string; }
+interface Dosing { id: string; chemicalName: string; quantity: number; unit: string; rate?: number; level?: number; addedAt: string; }
+interface PFBatch { id: string; batchNo: number; fermenterNo: number; phase: string; setupTime?: string; dosingEndTime?: string; transferTime?: string; cipStartTime?: string; cipEndTime?: string; slurryVolume?: number; slurryGravity?: number; slurryTemp?: number; remarks?: string; dosings: Dosing[]; labReadings: LabReading[]; createdAt?: string; }
+interface FermBatch { id: string; batchNo: number; fermenterNo: number; phase: string; pfTransferTime?: string; fillingStartTime?: string; fillingEndTime?: string; setupEndTime?: string; reactionStartTime?: string; retentionStartTime?: string; transferTime?: string; cipStartTime?: string; cipEndTime?: string; setupTime?: string; setupDate?: string; setupGravity?: number; setupRs?: number; setupRst?: number; fermLevel?: number; volume?: number; transferVolume?: number; beerWellNo?: number; finalDate?: string; finalRsGravity?: number; totalHours?: number; finalAlcohol?: number; yeast?: string; enzyme?: string; formolin?: string; booster?: string; urea?: string; remarks?: string; dosings: Dosing[]; }
+interface BeerWellReading { id: string; wellNo: number; level?: number; spGravity?: number; ph?: number; alcohol?: number; temp?: number; remarks?: string; batchNo?: number; createdAt: string; }
+interface Chemical { id: string; name: string; unit: string; rate?: number; }
+interface Recipe { id: string; chemicalName: string; quantity: number; unit: string; }
 
-const PF_COUNT = 2;
-const FERM_COUNT = 4;
-const phaseColor: Record<string, string> = {
-  SETUP: '#6366f1', DOSING: '#f59e0b', LAB: '#10b981', TRANSFER: '#3b82f6',
-  CIP: '#8b5cf6', DONE: '#9ca3af', PF_TRANSFER: '#3b82f6', FILLING: '#6366f1',
-  REACTION: '#f59e0b', RETENTION: '#ef4444',
+type VesselType = 'PF' | 'FERM' | 'BW';
+interface Vessel { type: VesselType; no: number; label: string; }
+
+const ALL_VESSELS: Vessel[] = [
+  { type: 'PF', no: 1, label: 'PF-1' }, { type: 'PF', no: 2, label: 'PF-2' },
+  { type: 'FERM', no: 1, label: 'F-1' }, { type: 'FERM', no: 2, label: 'F-2' },
+  { type: 'FERM', no: 3, label: 'F-3' }, { type: 'FERM', no: 4, label: 'F-4' },
+  { type: 'BW', no: 1, label: 'BW-1' }, { type: 'BW', no: 2, label: 'BW-2' },
+];
+
+const PHASE_CFG: Record<string, { label: string; bg: string; text: string; ring: string }> = {
+  IDLE:           { label: 'Idle',       bg: 'bg-slate-100',   text: 'text-slate-500',   ring: 'ring-slate-300' },
+  SETUP:          { label: 'Setup',      bg: 'bg-indigo-100',  text: 'text-indigo-700',  ring: 'ring-indigo-400' },
+  DOSING:         { label: 'Dosing',     bg: 'bg-violet-100',  text: 'text-violet-700',  ring: 'ring-violet-400' },
+  LAB:            { label: 'Lab',        bg: 'bg-cyan-100',    text: 'text-cyan-700',    ring: 'ring-cyan-400' },
+  PF_TRANSFER:    { label: 'PF Xfer',   bg: 'bg-blue-100',    text: 'text-blue-700',    ring: 'ring-blue-400' },
+  FILLING:        { label: 'Filling',    bg: 'bg-sky-100',     text: 'text-sky-700',     ring: 'ring-sky-400' },
+  REACTION:       { label: 'Reaction',   bg: 'bg-amber-100',   text: 'text-amber-700',   ring: 'ring-amber-400' },
+  RETENTION:      { label: 'Retention',  bg: 'bg-orange-100',  text: 'text-orange-700',  ring: 'ring-orange-400' },
+  TRANSFER:       { label: 'Transfer',   bg: 'bg-emerald-100', text: 'text-emerald-700', ring: 'ring-emerald-400' },
+  CIP:            { label: 'CIP',        bg: 'bg-purple-100',  text: 'text-purple-700',  ring: 'ring-purple-400' },
+  DONE:           { label: 'Done',       bg: 'bg-gray-100',    text: 'text-gray-500',    ring: 'ring-gray-300' },
+};
+const phCfg = (p: string) => PHASE_CFG[p] || PHASE_CFG.IDLE;
+
+const PF_PHASES = ['SETUP', 'DOSING', 'LAB', 'TRANSFER', 'CIP', 'DONE'];
+const FERM_PHASES = ['PF_TRANSFER', 'FILLING', 'REACTION', 'RETENTION', 'TRANSFER', 'CIP', 'DONE'];
+
+const fmtTime = (iso?: string) => {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
+};
+const elapsed = (iso?: string) => {
+  if (!iso) return '';
+  const hrs = (Date.now() - new Date(iso).getTime()) / 3600000;
+  return hrs < 1 ? `${Math.floor(hrs * 60)}m` : `${hrs.toFixed(1)}h`;
 };
 
-const fmtTime = (s: string | null) => s ? new Date(s).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }) : '-';
-const fmtDateTime = (s: string | null) => s ? new Date(s).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : '-';
-
-/* ═══════ WHATSAPP SHARE ═══════ */
-function shareWhatsApp(text: string) {
-  if (navigator.share) {
-    navigator.share({ text }).catch(() => {
-      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
-    });
-  } else {
-    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
-  }
-}
-
-function buildPFShareText(batch: PFBatch): string {
-  const lines = [`*PF-${batch.fermenterNo} — Batch #${batch.batchNo}*`, `Phase: ${batch.phase}`];
-  if (batch.slurryGravity) lines.push(`Setup SG: ${batch.slurryGravity}`);
-  if (batch.slurryTemp) lines.push(`Setup Temp: ${batch.slurryTemp}°C`);
-  if (batch.dosings.length) {
-    lines.push(`\n*Dosing (${batch.dosings.length}):*`);
-    batch.dosings.forEach((d: any) => lines.push(`  ${d.chemicalName}: ${d.quantity} ${d.unit}`));
-  }
-  if (batch.labReadings.length) {
-    lines.push(`\n*Lab Readings (${batch.labReadings.length}):*`);
-    batch.labReadings.forEach((r: any) => {
-      const parts = [fmtTime(r.analysisTime)];
-      if (r.spGravity != null) parts.push(`SG:${r.spGravity}`);
-      if (r.ph != null) parts.push(`pH:${r.ph}`);
-      if (r.alcohol != null) parts.push(`Alc:${r.alcohol}%`);
-      if (r.temp != null) parts.push(`T:${r.temp}°C`);
-      lines.push(`  ${parts.join(' | ')}`);
-    });
-  }
-  if (batch.readyToTransfer) lines.push(`\n✅ READY TO TRANSFER`);
-  return lines.join('\n');
-}
-
-function buildFermShareText(batch: FermBatch): string {
-  const lines = [`*F-${batch.fermenterNo} — Batch #${batch.batchNo}*`, `Phase: ${batch.phase}`];
-  if (batch.fermLevel != null) lines.push(`Level: ${batch.fermLevel}%`);
-  if (batch.setupGravity != null) lines.push(`Setup SG: ${batch.setupGravity}`);
-  const readings = batch.labReadings || [];
-  if (readings.length) {
-    lines.push(`\n*Lab Readings (${readings.length}):*`);
-    readings.forEach((r: any) => {
-      const parts = [fmtTime(r.analysisTime)];
-      if (r.level != null) parts.push(`Lvl:${r.level}%`);
-      if (r.spGravity != null) parts.push(`SG:${r.spGravity}`);
-      if (r.ph != null) parts.push(`pH:${r.ph}`);
-      if (r.alcohol != null) parts.push(`Alc:${r.alcohol}%`);
-      if (r.temp != null) parts.push(`T:${r.temp}°C`);
-      if (r.status === 'FIELD') parts.push('(field)');
-      lines.push(`  ${parts.join(' | ')}`);
-    });
-  }
-  return lines.join('\n');
-}
-
+/* ═══════════════════════════════════════════════════════════════
+   MAIN COMPONENT
+   ═══════════════════════════════════════════════════════════════ */
 export default function Fermentation() {
-  const { user } = useAuth();
-  const isAdmin = user?.role === 'ADMIN';
-  const [tab, setTab] = useState<'field' | 'lab'>('field');
   const [pfBatches, setPfBatches] = useState<PFBatch[]>([]);
   const [fermBatches, setFermBatches] = useState<FermBatch[]>([]);
-  const [chemicals, setChemicals] = useState<any[]>([]);
-  const [pfRecipes, setPfRecipes] = useState<any[]>([]);
-  const [beerWell, setBeerWell] = useState<any>(null);
-  const [toast, setToast] = useState<{ msg: string; type: 'ok' | 'err' } | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [fermEntries, setFermEntries] = useState<Record<number, LabReading[]>>({});
+  const [bwReadings, setBwReadings] = useState<BeerWellReading[]>([]);
+  const [chemicals, setChemicals] = useState<Chemical[]>([]);
+  const [recipes, setRecipes] = useState<{ PF: Recipe[]; FERMENTER: Recipe[] }>({ PF: [], FERMENTER: [] });
+  const [settings, setSettings] = useState<any>({});
 
-  const flash = (msg: string, type: 'ok' | 'err' = 'ok') => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
-  };
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [selected, setSelected] = useState<Vessel | null>(null);
+  const [tab, setTab] = useState<'reading' | 'dosing' | 'charts' | 'batch'>('reading');
+  const [msg, setMsg] = useState<{ t: 'ok' | 'err'; m: string } | null>(null);
+
+  const [readingForm, setReadingForm] = useState<Record<string, string>>({});
+  const [dosingForm, setDosingForm] = useState({ chemicalName: '', quantity: '', unit: 'kg' });
+  const [newBatchForm, setNewBatchForm] = useState({ batchNo: '', pfLevel: '', slurryGravity: '', slurryTemp: '' });
+  const [showNewBatch, setShowNewBatch] = useState(false);
+
+  const flash = (t: 'ok' | 'err', m: string) => { setMsg({ t, m }); setTimeout(() => setMsg(null), 3000); };
 
   const load = useCallback(async () => {
     try {
-      const [ov, ch, rec] = await Promise.all([
+      const [ov, chem, pfR, fR, sett] = await Promise.all([
         api.get('/fermentation/overview'),
-        api.get('/pre-fermentation/chemicals'),
-        api.get('/dosing-recipes/PF'),
+        api.get('/fermentation/chemicals'),
+        api.get('/dosing-recipes/PF').catch(() => ({ data: [] })),
+        api.get('/dosing-recipes/FERMENTER').catch(() => ({ data: [] })),
+        api.get('/fermentation/settings').catch(() => ({ data: {} })),
       ]);
-      setPfBatches(ov.data.pfBatches || []);
-      setFermBatches(ov.data.fermBatches || []);
-      setBeerWell(ov.data.beerWell || null);
-      setChemicals(ch.data || []);
-      setPfRecipes(rec.data || []);
-    } catch {} finally { setLoading(false); }
+      const d = ov.data;
+      setPfBatches(d.pfBatches || []);
+      setFermBatches(d.fermBatches || []);
+      setBwReadings(d.beerWell?.readings || []);
+      setChemicals(chem.data || []);
+      setRecipes({ PF: pfR.data || [], FERMENTER: fR.data || [] });
+      setSettings(sett.data || {});
+      const entries: Record<number, LabReading[]> = {};
+      for (const fb of (d.fermBatches || [])) {
+        try {
+          const r = await api.get(`/fermentation/batch/${fb.batchNo}`);
+          entries[fb.fermenterNo] = r.data || [];
+        } catch { entries[fb.fermenterNo] = []; }
+      }
+      setFermEntries(entries);
+    } catch { flash('err', 'Failed to load'); }
+    finally { setLoading(false); }
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { const iv = setInterval(load, 30000); return () => clearInterval(iv); }, [load]);
 
-  const pfFor = (no: number) => pfBatches.find(b => b.fermenterNo === no);
-  const fermFor = (no: number) => fermBatches.find(b => b.fermenterNo === no);
+  const getActivePF = (no: number) => pfBatches.find(b => b.fermenterNo === no && b.phase !== 'DONE');
+  const getActiveFerm = (no: number) => fermBatches.find(b => b.fermenterNo === no && b.phase !== 'DONE');
+  const getBW = (no: number) => bwReadings.filter(r => r.wellNo === no);
+
+  const getVesselBatch = (v: Vessel): any => v.type === 'PF' ? getActivePF(v.no) : v.type === 'FERM' ? getActiveFerm(v.no) : null;
+  const getVesselReadings = (v: Vessel): LabReading[] => {
+    if (v.type === 'PF') return getActivePF(v.no)?.labReadings || [];
+    if (v.type === 'FERM') return fermEntries[v.no] || [];
+    return [];
+  };
+
+  const nextBatchNo = useMemo(() => {
+    const all = [...pfBatches.map(b => b.batchNo), ...fermBatches.map(b => b.batchNo)];
+    return all.length > 0 ? Math.max(...all) + 1 : 1;
+  }, [pfBatches, fermBatches]);
+
+  const freeFermenters = useMemo(() => {
+    const active = new Set(fermBatches.filter(b => b.phase !== 'DONE').map(b => b.fermenterNo));
+    return [1, 2, 3, 4].filter(n => !active.has(n));
+  }, [fermBatches]);
+
+  /* ── ACTIONS ── */
+  const saveReading = async (andShare = false) => {
+    if (!selected) return;
+    setSaving(true);
+    const f = readingForm;
+    try {
+      if (selected.type === 'BW') {
+        await api.post('/fermentation/beer-well', {
+          wellNo: selected.no,
+          level: f.level ? +f.level : undefined, spGravity: f.spGravity ? +f.spGravity : undefined,
+          ph: f.ph ? +f.ph : undefined, alcohol: f.alcohol ? +f.alcohol : undefined,
+          temp: f.temp ? +f.temp : undefined, remarks: f.remarks || undefined,
+        });
+      } else {
+        await api.post('/fermentation/lab-reading', {
+          vesselType: selected.type, vesselNo: selected.no,
+          analysisTime: new Date().toISOString(),
+          level: f.level ? +f.level : undefined, spGravity: f.spGravity ? +f.spGravity : undefined,
+          ph: f.ph ? +f.ph : undefined, rs: f.rs ? +f.rs : undefined, rst: f.rst ? +f.rst : undefined,
+          alcohol: f.alcohol ? +f.alcohol : undefined, ds: f.ds ? +f.ds : undefined,
+          vfaPpa: f.vfaPpa ? +f.vfaPpa : undefined, temp: f.temp ? +f.temp : undefined,
+          remarks: f.remarks || undefined,
+        });
+      }
+      flash('ok', `${selected.label} saved ✓`);
+      if (andShare) {
+        const batch = getVesselBatch(selected);
+        const lines = [
+          `🧪 ${selected.label}${batch ? ` B#${batch.batchNo}` : ''}`,
+          f.level ? `Level: ${f.level}%` : '', f.spGravity ? `SG: ${f.spGravity}` : '',
+          f.ph ? `pH: ${f.ph}` : '', f.temp ? `Temp: ${f.temp}°C` : '',
+          f.alcohol ? `Alc: ${f.alcohol}%` : '', f.rs ? `RS: ${f.rs}%` : '',
+          f.rst ? `RST: ${f.rst}%` : '', f.remarks ? `Note: ${f.remarks}` : '',
+        ].filter(Boolean).join('\n');
+        window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(lines)}`, '_blank');
+      }
+      setReadingForm({});
+      load();
+    } catch { flash('err', 'Save failed'); }
+    setSaving(false);
+  };
+
+  const startBatch = async () => {
+    if (!selected) return;
+    setSaving(true);
+    try {
+      const f = newBatchForm;
+      const bn = parseInt(f.batchNo) || nextBatchNo;
+      if (selected.type === 'PF') {
+        const pfLvl = parseFloat(f.pfLevel) || 0;
+        await api.post('/pre-fermentation/batches', {
+          batchNo: bn, fermenterNo: selected.no, setupTime: new Date().toISOString(),
+          slurryVolume: pfLvl > 0 ? (pfLvl / 100) * 450 * 1000 : undefined,
+          slurryGravity: f.slurryGravity ? +f.slurryGravity : undefined,
+          slurryTemp: f.slurryTemp ? +f.slurryTemp : undefined,
+          userId: 'cmmipu76p0000hvsh1h2a21y0',
+        });
+      } else {
+        const lvl = parseFloat(f.pfLevel) || 0;
+        await api.post('/fermentation/batches', {
+          batchNo: bn, fermenterNo: selected.no, phase: 'FILLING',
+          fillingStartTime: new Date().toISOString(),
+          fermLevel: lvl || undefined,
+          volume: lvl > 0 ? (lvl / 100) * 2300 * 1000 : undefined,
+          setupGravity: f.slurryGravity ? +f.slurryGravity : undefined,
+          userId: 'cmmipu76p0000hvsh1h2a21y0',
+        });
+      }
+      flash('ok', `${selected.label} Batch #${bn} started`);
+      setShowNewBatch(false); setNewBatchForm({ batchNo: '', pfLevel: '', slurryGravity: '', slurryTemp: '' });
+      load();
+    } catch (e: any) { flash('err', e?.response?.data?.error || 'Failed'); }
+    setSaving(false);
+  };
+
+  const transferPF = async (pfBatchId: string, fermNo: number) => {
+    setSaving(true);
+    try {
+      await api.post('/fermentation/transfer-pf', { pfBatchId, fermenterNo: fermNo });
+      flash('ok', `Transferred to F-${fermNo} ✓`);
+      load();
+    } catch (e: any) { flash('err', e?.response?.data?.error || 'Transfer failed'); }
+    setSaving(false);
+  };
+
+  const advancePhase = async (batchType: 'PF' | 'FERM', batchId: string, nextPhase: string, extra?: any) => {
+    setSaving(true);
+    try {
+      const url = batchType === 'PF' ? `/pre-fermentation/batches/${batchId}` : `/fermentation/batches/${batchId}`;
+      await api.patch(url, { phase: nextPhase, ...extra });
+      flash('ok', `→ ${phCfg(nextPhase).label}`);
+      load();
+    } catch { flash('err', 'Phase change failed'); }
+    setSaving(false);
+  };
+
+  const addDosing = async () => {
+    if (!selected) return;
+    const batch = getVesselBatch(selected);
+    if (!batch) return;
+    setSaving(true);
+    try {
+      const url = selected.type === 'PF' ? `/pre-fermentation/batches/${batch.id}/dosing` : `/fermentation/batches/${batch.id}/dosing`;
+      await api.post(url, { chemicalName: dosingForm.chemicalName, quantity: +dosingForm.quantity, unit: dosingForm.unit });
+      flash('ok', `${dosingForm.chemicalName} added`);
+      setDosingForm({ chemicalName: '', quantity: '', unit: 'kg' });
+      load();
+    } catch { flash('err', 'Dosing failed'); }
+    setSaving(false);
+  };
+
+  const applyRecipe = async () => {
+    if (!selected) return;
+    const batch = getVesselBatch(selected);
+    if (!batch) return;
+    const recs = selected.type === 'PF' ? recipes.PF : recipes.FERMENTER;
+    setSaving(true);
+    try {
+      for (const r of recs) {
+        const url = selected.type === 'PF' ? `/pre-fermentation/batches/${batch.id}/dosing` : `/fermentation/batches/${batch.id}/dosing`;
+        await api.post(url, { chemicalName: r.chemicalName, quantity: r.quantity, unit: r.unit });
+      }
+      flash('ok', `${recs.length} chemicals added`);
+      load();
+    } catch { flash('err', 'Recipe failed'); }
+    setSaving(false);
+  };
+
+  const deleteDosing = async (dosingId: string) => {
+    if (!selected) return;
+    try {
+      await api.delete(selected.type === 'PF' ? `/pre-fermentation/dosing/${dosingId}` : `/fermentation/dosing/${dosingId}`);
+      load();
+    } catch { flash('err', 'Delete failed'); }
+  };
+
+  /* ═══ RENDER ═══ */
+  if (loading) return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <Loader2 size={32} className="animate-spin text-indigo-500" />
+    </div>
+  );
 
   return (
-    <div className="space-y-4 max-w-2xl mx-auto">
-      {toast && (
-        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-lg shadow-lg text-white text-sm flex items-center gap-2 ${toast.type === 'ok' ? 'bg-green-600' : 'bg-red-600'}`}>
-          {toast.type === 'ok' ? <CheckCircle size={16} /> : <AlertTriangle size={16} />}
-          {toast.msg}
+    <div className="min-h-screen bg-gray-50 pb-20">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-indigo-800 to-purple-900 text-white px-4 py-2.5">
+        <div className="flex items-center justify-between">
+          <h1 className="text-base font-bold flex items-center gap-1.5"><FlaskConical size={16} /> Fermentation</h1>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-indigo-300">{new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
+            <button onClick={() => { setLoading(true); load(); }} className="p-1 rounded hover:bg-white/10"><RefreshCw size={14} /></button>
+          </div>
+        </div>
+      </div>
+
+      {msg && (
+        <div className={`mx-3 mt-2 rounded-lg p-2 text-xs flex items-center gap-1.5 ${msg.t === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+          {msg.t === 'ok' ? <CheckCircle size={12} /> : <AlertCircle size={12} />} {msg.m}
         </div>
       )}
 
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-gray-800">Fermentation</h1>
-        <button onClick={() => { setLoading(true); load(); }} className="text-gray-400 hover:text-gray-600 p-2">
-          <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
-        </button>
+      {/* ═══ VESSEL GRID ═══ */}
+      <div className="px-3 pt-3">
+        <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
+          {ALL_VESSELS.map(v => {
+            const isSelected = selected?.type === v.type && selected?.no === v.no;
+            let batch: any = null;
+            let phase = 'IDLE'; let metric1 = ''; let metric2 = ''; let batchNo = 0; let startTime = '';
+
+            if (v.type === 'PF') {
+              batch = getActivePF(v.no);
+              if (batch) {
+                phase = batch.phase; batchNo = batch.batchNo;
+                const last = batch.labReadings?.[batch.labReadings.length - 1];
+                metric1 = last?.spGravity ? last.spGravity.toFixed(3) : batch.slurryGravity ? batch.slurryGravity.toFixed(3) : '';
+                metric2 = last?.temp ? `${last.temp}°` : '';
+                startTime = batch.setupTime || batch.createdAt || '';
+              }
+            } else if (v.type === 'FERM') {
+              batch = getActiveFerm(v.no);
+              if (batch) {
+                phase = batch.phase; batchNo = batch.batchNo;
+                const entries = fermEntries[v.no] || [];
+                const last = entries[entries.length - 1];
+                metric1 = last?.alcohol ? `${last.alcohol}%` : last?.spGravity ? last.spGravity.toFixed(3) : '';
+                metric2 = last?.temp ? `${last.temp}°` : batch.fermLevel ? `${batch.fermLevel}%` : '';
+                startTime = batch.pfTransferTime || batch.fillingStartTime || '';
+              }
+            } else {
+              const bw = getBW(v.no);
+              if (bw[0]) { metric1 = bw[0].level ? `${bw[0].level}%` : ''; metric2 = bw[0].alcohol ? `${bw[0].alcohol}%` : ''; }
+            }
+
+            const cfg = phCfg(phase);
+            const Icon = v.type === 'PF' ? Beaker : v.type === 'FERM' ? FlaskConical : Cylinder;
+            const isIdle = phase === 'IDLE' && v.type !== 'BW';
+
+            return (
+              <button key={`${v.type}-${v.no}`}
+                onClick={() => { setSelected(isSelected ? null : v); setTab('reading'); setReadingForm({}); setShowNewBatch(false); }}
+                className={`relative rounded-xl p-2 text-left transition-all border-2 ${
+                  isSelected ? `${cfg.bg} ring-2 ${cfg.ring} border-transparent shadow-lg scale-[1.02]`
+                  : isIdle ? 'bg-white border-gray-200 hover:border-gray-300 hover:shadow'
+                  : 'bg-white border-gray-200 hover:shadow'
+                }`}>
+                <div className="flex items-center gap-1 mb-0.5">
+                  <Icon size={12} className={isIdle ? 'text-gray-300' : v.type === 'BW' ? 'text-amber-500' : cfg.text} />
+                  <span className={`text-[11px] font-bold ${isIdle ? 'text-gray-400' : 'text-gray-800'}`}>{v.label}</span>
+                </div>
+                {batchNo > 0 && <span className={`text-[8px] font-bold px-1 py-px rounded ${cfg.bg} ${cfg.text}`}>B#{batchNo}</span>}
+                {!isIdle && v.type !== 'BW' && <span className={`block text-[8px] font-bold mt-0.5 ${cfg.text}`}>{cfg.label}</span>}
+                {metric1 && <div className="text-[11px] font-bold text-gray-900 mt-0.5">{metric1}</div>}
+                {metric2 && <div className="text-[9px] text-gray-400">{metric2}</div>}
+                {isIdle && <div className="text-[9px] text-gray-300 mt-1">idle</div>}
+                {startTime && !isIdle && <div className="text-[8px] text-gray-300 mt-0.5 flex items-center gap-0.5"><Clock size={7} />{elapsed(startTime)}</div>}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      <div className="flex bg-gray-100 rounded-lg p-1">
-        <button onClick={() => setTab('field')} className={`flex-1 py-2.5 rounded-md text-sm font-medium transition ${tab === 'field' ? 'bg-white shadow text-gray-800' : 'text-gray-500'}`}>
-          Field
-        </button>
-        <button onClick={() => setTab('lab')} className={`flex-1 py-2.5 rounded-md text-sm font-medium transition ${tab === 'lab' ? 'bg-white shadow text-gray-800' : 'text-gray-500'}`}>
-          Lab
-        </button>
-      </div>
+      {/* ═══ SELECTED VESSEL PANEL ═══ */}
+      {selected && (() => {
+        const batch = getVesselBatch(selected);
+        const readings = getVesselReadings(selected);
+        const phase = batch ? batch.phase : 'IDLE';
+        const cfg = phCfg(phase);
+        const isPF = selected.type === 'PF';
+        const isFerm = selected.type === 'FERM';
+        const isBW = selected.type === 'BW';
+        const batchNo = batch?.batchNo || 0;
+        const dosings: Dosing[] = batch?.dosings || [];
 
-      {tab === 'field' && <FieldTab pfBatches={pfBatches} fermBatches={fermBatches} chemicals={chemicals} pfRecipes={pfRecipes} isAdmin={isAdmin} onRefresh={load} flash={flash} pfFor={pfFor} fermFor={fermFor} beerWell={beerWell} />}
-      {tab === 'lab' && <LabTab pfBatches={pfBatches} fermBatches={fermBatches} onRefresh={load} flash={flash} pfFor={pfFor} fermFor={fermFor} beerWell={beerWell} />}
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════
-   FIELD TAB
-   ═══════════════════════════════════════════════════════ */
-function FieldTab({ pfBatches, fermBatches, chemicals, pfRecipes, isAdmin, onRefresh, flash, pfFor, fermFor, beerWell }: any) {
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const [dosingOpen, setDosingOpen] = useState(false);
-  const [showNewPF, setShowNewPF] = useState<number | null>(null);
-  const [nbForm, setNbForm] = useState({ batchNo: '', pfLevel: '', slurryGravity: '', slurryTemp: '', remarks: '' });
-  const [doseForm, setDoseForm] = useState({ chemicalName: '', quantity: '', unit: 'kg' });
-  const [editDoseId, setEditDoseId] = useState<string | null>(null);
-  const [editDoseQty, setEditDoseQty] = useState('');
-  const [transferModal, setTransferModal] = useState<PFBatch | null>(null);
-  const [transferFermNo, setTransferFermNo] = useState('1');
-  const [transferring, setTransferring] = useState(false);
-
-  // Fermenter field input
-  const [fermFieldForm, setFermFieldForm] = useState<Record<string, string>>({});
-  const [fermFieldSaving, setFermFieldSaving] = useState(false);
-
-  // Beer well field input
-  const [bwForm, setBwForm] = useState<Record<string, string>>({});
-  const [bwSaving, setBwSaving] = useState(false);
-  const [bwExpanded, setBwExpanded] = useState(false);
-
-  const submitBeerWell = async () => {
-    const hasVal = bwForm.level?.trim() || bwForm.temp?.trim() || bwForm.spGravity?.trim() || bwForm.alcohol?.trim();
-    if (!hasVal) { flash('Enter at least one value', 'err'); return; }
-    setBwSaving(true);
-    try {
-      await api.post('/fermentation/beer-well', bwForm);
-      flash('Beer Well reading saved');
-      setBwForm({});
-      onRefresh();
-    } catch (e: any) { flash(e?.response?.data?.error || 'Failed', 'err'); }
-    finally { setBwSaving(false); }
-  };
-
-  useEffect(() => {
-    if (showNewPF) {
-      api.get('/fermentation/next-batch').then(r => setNbForm(f => ({ ...f, batchNo: String(r.data.nextBatchNo) }))).catch(() => {});
-    }
-  }, [showNewPF]);
-
-  const createBatch = async (pfNo: number) => {
-    try {
-      const lvl = parseFloat(nbForm.pfLevel);
-      const slurryVolume = nbForm.pfLevel && !isNaN(lvl) ? (lvl / 100 * 450 * 1000).toFixed(0) : '';
-      await api.post('/pre-fermentation/batches', {
-        batchNo: nbForm.batchNo, fermenterNo: String(pfNo), pfLevel: nbForm.pfLevel,
-        slurryGravity: nbForm.slurryGravity, slurryTemp: nbForm.slurryTemp,
-        slurryVolume, setupTime: new Date().toISOString(), remarks: nbForm.remarks,
-      });
-      setShowNewPF(null);
-      setNbForm({ batchNo: '', pfLevel: '', slurryGravity: '', slurryTemp: '', remarks: '' });
-      flash('Batch created!');
-      onRefresh();
-    } catch (e: any) { flash(e?.response?.data?.error || 'Failed', 'err'); }
-  };
-
-  const addDosing = async (batchId: string) => {
-    if (!doseForm.chemicalName || !doseForm.quantity) return;
-    try {
-      await api.post(`/pre-fermentation/batches/${batchId}/dosing`, doseForm);
-      setDoseForm(f => ({ ...f, quantity: '' }));
-      onRefresh();
-    } catch {}
-  };
-
-  const applyRecipe = async (batchId: string) => {
-    try {
-      for (const r of pfRecipes) {
-        await api.post(`/pre-fermentation/batches/${batchId}/dosing`, {
-          chemicalName: r.chemicalName, quantity: String(r.quantity), unit: r.unit
-        });
-      }
-      flash('Recipe applied!');
-      onRefresh();
-    } catch {}
-  };
-
-  const saveDoseQty = async (id: string) => {
-    if (!editDoseQty.trim()) return;
-    try {
-      await api.patch(`/pre-fermentation/dosing/${id}`, { quantity: editDoseQty });
-      setEditDoseId(null);
-      onRefresh();
-    } catch {}
-  };
-
-  const doTransfer = async () => {
-    if (!transferModal || transferring) return;
-    setTransferring(true);
-    try {
-      await api.post('/fermentation/transfer-pf', { pfBatchId: transferModal.id, fermenterNo: parseInt(transferFermNo) });
-      setTransferModal(null);
-      flash(`Transferred PF-${transferModal.fermenterNo} → F-${transferFermNo}!`);
-      await onRefresh();
-    } catch (e: any) { flash(e?.response?.data?.error || 'Transfer failed', 'err'); }
-    finally { setTransferring(false); }
-  };
-
-  const advancePF = async (batch: PFBatch, phase: string, extra?: any) => {
-    try {
-      await api.patch(`/pre-fermentation/batches/${batch.id}`, { phase, ...extra });
-      onRefresh();
-    } catch {}
-  };
-
-  const advanceFerm = async (batch: FermBatch, phase: string, extra?: any) => {
-    try {
-      await api.patch(`/fermentation/batches/${batch.id}`, { phase, ...extra });
-      onRefresh();
-    } catch {}
-  };
-
-  const submitFermField = async (fermNo: number) => {
-    const hasVal = fermFieldForm.level?.trim() || fermFieldForm.temp?.trim() || fermFieldForm.spGravity?.trim();
-    if (!hasVal) { flash('Enter at least one value', 'err'); return; }
-    setFermFieldSaving(true);
-    try {
-      await api.post('/fermentation/field-reading', { fermenterNo: fermNo, ...fermFieldForm });
-      flash(`Saved field reading for F-${fermNo}`);
-      setFermFieldForm({});
-      onRefresh();
-    } catch (e: any) { flash(e?.response?.data?.error || 'Failed', 'err'); }
-    finally { setFermFieldSaving(false); }
-  };
-
-  const toggle = (key: string) => {
-    setExpanded(expanded === key ? null : key);
-    setDosingOpen(false);
-    setFermFieldForm({});
-  };
-
-  /* ─── Lab readings table (shared) ─── */
-  const LabTable = ({ readings, showLevel }: { readings: any[]; showLevel?: boolean }) => {
-    if (!readings.length) return <p className="text-xs text-gray-400 italic">No lab readings yet</p>;
-    return (
-      <div className="overflow-x-auto">
-        <table className="w-full text-xs">
-          <thead><tr className="text-gray-500">
-            <th className="text-left py-1 px-1">Time</th>
-            {showLevel && <th className="text-left py-1 px-1">Lvl</th>}
-            <th className="text-left py-1 px-1">SG</th>
-            <th className="text-left py-1 px-1">pH</th>
-            <th className="text-left py-1 px-1">Alc%</th>
-            <th className="text-left py-1 px-1">T°C</th>
-            <th className="text-left py-1 px-1">RS</th>
-          </tr></thead>
-          <tbody>{readings.map((r: any, i: number) => (
-            <tr key={r.id || i} className="border-t">
-              <td className="px-1 py-1 whitespace-nowrap">{fmtTime(r.analysisTime)}{r.status === 'FIELD' ? <span className="text-[9px] text-blue-500 ml-0.5">F</span> : ''}</td>
-              {showLevel && <td className="px-1">{r.level ?? '-'}</td>}
-              <td className="px-1">{r.spGravity ?? '-'}</td>
-              <td className="px-1">{r.ph ?? '-'}</td>
-              <td className="px-1">{r.alcohol ?? '-'}</td>
-              <td className="px-1">{r.temp ?? '-'}</td>
-              <td className="px-1">{r.rs ?? '-'}</td>
-            </tr>
-          ))}</tbody>
-        </table>
-      </div>
-    );
-  };
-
-  return (
-    <div className="space-y-3">
-      {/* ─── PF VESSELS ─── */}
-      <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Pre-Fermenters</h2>
-      {Array.from({ length: PF_COUNT }, (_, i) => i + 1).map(no => {
-        const batch = pfFor(no);
-        const key = `pf-${no}`;
-        const isOpen = expanded === key;
         return (
-          <div key={key} className="bg-white rounded-xl border shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between p-3 cursor-pointer" onClick={() => batch && toggle(key)}>
-              <div className="flex items-center gap-2">
-                <Beaker size={18} className="text-indigo-600" />
-                <span className="font-bold">PF-{no}</span>
-                {batch ? (
-                  <>
-                    <span className="text-xs px-2 py-0.5 rounded-full text-white font-medium" style={{ backgroundColor: phaseColor[batch.phase] }}>{batch.phase}</span>
-                    <span className="text-xs text-gray-500">#{batch.batchNo}</span>
-                  </>
-                ) : <span className="text-xs text-gray-400">Idle</span>}
-              </div>
-              <div className="flex items-center gap-2">
-                {batch?.readyToTransfer && <span className="text-xs bg-green-500 text-white px-2 py-0.5 rounded font-medium animate-pulse">Ready!</span>}
-                {batch ? (isOpen ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />) : (
-                  <button onClick={(e) => { e.stopPropagation(); setShowNewPF(no); }} className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg font-medium"><Plus size={12} className="inline -mt-0.5" /> Start</button>
-                )}
-              </div>
+          <div className="mx-3 mt-3 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            {/* Panel header */}
+            <div className={`px-3 py-2 ${isBW ? 'bg-amber-50' : cfg.bg} flex items-center gap-2`}>
+              <span className={`font-bold text-sm ${isBW ? 'text-amber-700' : cfg.text}`}>{selected.label}</span>
+              {batchNo > 0 && <span className="text-[10px] bg-white/60 text-gray-700 px-1.5 py-0.5 rounded font-semibold">Batch #{batchNo}</span>}
+              {phase !== 'IDLE' && !isBW && <span className={`text-[9px] font-bold ${cfg.text}`}>{cfg.label}</span>}
+              <button onClick={() => setSelected(null)} className="ml-auto text-gray-400 hover:text-gray-600"><X size={16} /></button>
             </div>
 
-            {/* Collapsed summary */}
-            {batch && !isOpen && (
-              <div className="px-3 pb-2 flex gap-3 text-xs text-gray-500">
-                {batch.lastGravity != null && <span>SG: <b className="text-gray-700">{batch.lastGravity}</b></span>}
-                {batch.slurryTemp != null && <span>Temp: <b className="text-gray-700">{batch.slurryTemp}°C</b></span>}
-                <span>{batch.dosings.length} chem</span>
-                <span>{batch.labReadings.length} readings</span>
+            {/* IDLE — Start batch */}
+            {phase === 'IDLE' && !isBW && (
+              <div className="p-4">
+                {!showNewBatch ? (
+                  <button onClick={() => { setShowNewBatch(true); setNewBatchForm(f => ({ ...f, batchNo: String(nextBatchNo) })); }}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-700 flex items-center gap-1.5 mx-auto">
+                    <Plus size={14} /> Start New Batch
+                  </button>
+                ) : (
+                  <div className="space-y-2 max-w-xs mx-auto">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div><label className="text-[10px] font-bold text-gray-500">Batch #</label>
+                        <input type="number" value={newBatchForm.batchNo} onChange={e => setNewBatchForm(f => ({ ...f, batchNo: e.target.value }))} className="w-full px-2 py-1.5 border rounded-lg text-sm" /></div>
+                      <div><label className="text-[10px] font-bold text-gray-500">Level %</label>
+                        <input type="number" step="0.1" value={newBatchForm.pfLevel} onChange={e => setNewBatchForm(f => ({ ...f, pfLevel: e.target.value }))} className="w-full px-2 py-1.5 border rounded-lg text-sm" /></div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div><label className="text-[10px] font-bold text-gray-500">Gravity</label>
+                        <input type="number" step="0.001" value={newBatchForm.slurryGravity} onChange={e => setNewBatchForm(f => ({ ...f, slurryGravity: e.target.value }))} className="w-full px-2 py-1.5 border rounded-lg text-sm" /></div>
+                      {isPF && <div><label className="text-[10px] font-bold text-gray-500">Temp °C</label>
+                        <input type="number" step="0.1" value={newBatchForm.slurryTemp} onChange={e => setNewBatchForm(f => ({ ...f, slurryTemp: e.target.value }))} className="w-full px-2 py-1.5 border rounded-lg text-sm" /></div>}
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={startBatch} disabled={saving} className="flex-1 py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">
+                        {saving ? <Loader2 size={14} className="animate-spin mx-auto" /> : '🚀 Start'}
+                      </button>
+                      <button onClick={() => setShowNewBatch(false)} className="px-3 py-2 bg-gray-100 text-gray-600 rounded-lg text-xs">Cancel</button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Expanded */}
-            {batch && isOpen && (
-              <div className="border-t p-3 space-y-3">
-                <div className="flex gap-4 text-sm text-gray-600 flex-wrap">
-                  {batch.slurryVolume && <span>Level: {(batch.slurryVolume / (450 * 1000) * 100).toFixed(0)}%</span>}
-                  {batch.slurryGravity && <span>SG: {batch.slurryGravity}</span>}
-                  {batch.slurryTemp && <span>Temp: {batch.slurryTemp}°C</span>}
-                </div>
+            {/* Active tabs */}
+            {(phase !== 'IDLE' || isBW) && (
+              <>
+                {!isBW && (
+                  <div className="flex border-b bg-gray-50/50">
+                    {(['reading', 'dosing', 'charts', 'batch'] as const).map(t => (
+                      <button key={t} onClick={() => setTab(t)}
+                        className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-wide ${tab === t ? 'text-indigo-700 border-b-2 border-indigo-600 bg-white' : 'text-gray-400 hover:text-gray-600'}`}>
+                        {t === 'reading' ? '📝 Reading' : t === 'dosing' ? '🧪 Dosing' : t === 'charts' ? '📊 Charts' : '⚙️ Batch'}
+                      </button>
+                    ))}
+                  </div>
+                )}
 
-                {/* Dosing — collapsible */}
-                {['SETUP', 'DOSING', 'LAB'].includes(batch.phase) && (
-                  <div className="bg-amber-50 rounded-lg overflow-hidden">
-                    <button className="w-full flex items-center justify-between p-2.5 text-sm font-semibold text-amber-800" onClick={() => setDosingOpen(!dosingOpen)}>
-                      <span>Dosing · {batch.dosings.length} chemicals</span>
-                      {dosingOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                    </button>
-                    {dosingOpen && (
-                      <div className="px-2.5 pb-2.5 space-y-2">
-                        {batch.dosings.length === 0 && pfRecipes.length > 0 && (
-                          <button onClick={() => applyRecipe(batch.id)} className="text-xs bg-amber-500 text-white px-3 py-1.5 rounded">Apply Recipe</button>
-                        )}
-                        {batch.dosings.length > 0 && (
-                          <div className="space-y-1">
-                            {batch.dosings.map((d: any) => (
-                              <div key={d.id} className="flex items-center justify-between text-sm">
-                                <span className="text-gray-700">{d.chemicalName}</span>
-                                {editDoseId === d.id ? (
-                                  <span className="flex items-center gap-1">
-                                    <input type="number" step="0.1" value={editDoseQty} onChange={e => setEditDoseQty(e.target.value)}
-                                      className="w-16 border rounded px-1.5 py-0.5 text-sm text-right" autoFocus
-                                      onKeyDown={e => { if (e.key === 'Enter') saveDoseQty(d.id); if (e.key === 'Escape') setEditDoseId(null); }} />
-                                    <span className="text-xs text-gray-400">{d.unit}</span>
-                                    <button onClick={() => saveDoseQty(d.id)} className="text-green-600"><Check size={14} /></button>
-                                    <button onClick={() => setEditDoseId(null)} className="text-gray-400"><X size={14} /></button>
-                                  </span>
-                                ) : (
-                                  <span className="flex items-center gap-1 cursor-pointer" onClick={() => { setEditDoseId(d.id); setEditDoseQty(String(d.quantity)); }}>
-                                    <b className="text-amber-700">{d.quantity}</b> <span className="text-xs text-gray-400">{d.unit}</span>
-                                    <Pencil size={10} className="text-amber-400" />
-                                  </span>
-                                )}
+                {/* TAB: Reading */}
+                {(tab === 'reading' || isBW) && (
+                  <div className="p-3 space-y-3">
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="bg-blue-50 rounded-lg p-2">
+                          <label className="text-[9px] font-bold text-blue-500 uppercase">Level %</label>
+                          <input type="number" step="0.1" value={readingForm.level || ''} onChange={e => setReadingForm(f => ({ ...f, level: e.target.value }))}
+                            placeholder="—" className="w-full text-lg font-bold text-blue-800 bg-transparent border-none outline-none placeholder-blue-300" />
+                        </div>
+                        <div className="bg-orange-50 rounded-lg p-2">
+                          <label className="text-[9px] font-bold text-orange-500 uppercase">Temp °C</label>
+                          <input type="number" step="0.1" value={readingForm.temp || ''} onChange={e => setReadingForm(f => ({ ...f, temp: e.target.value }))}
+                            placeholder="—" className="w-full text-lg font-bold text-orange-800 bg-transparent border-none outline-none placeholder-orange-300" />
+                        </div>
+                      </div>
+                      <div className={`grid ${isBW ? 'grid-cols-3' : 'grid-cols-4'} gap-1.5`}>
+                        {[
+                          { key: 'spGravity', label: 'Gravity', step: '0.001' },
+                          { key: 'ph', label: 'pH', step: '0.1' },
+                          ...(!isBW ? [{ key: 'rs', label: 'RS%', step: '0.01' }, { key: 'rst', label: 'RST%', step: '0.01' }] : []),
+                          { key: 'alcohol', label: 'Alc%', step: '0.1' },
+                          ...(!isBW ? [{ key: 'ds', label: 'DS%', step: '0.01' }, { key: 'vfaPpa', label: 'VFA', step: '0.01' }] : []),
+                        ].map(f => (
+                          <div key={f.key}>
+                            <label className="text-[8px] font-bold text-gray-400 uppercase">{f.label}</label>
+                            <input type="number" step={f.step} value={(readingForm as any)[f.key] || ''}
+                              onChange={e => setReadingForm(rf => ({ ...rf, [f.key]: e.target.value }))}
+                              className="w-full px-1.5 py-1 text-xs border border-gray-200 rounded bg-white focus:ring-1 focus:ring-indigo-300 outline-none" />
+                          </div>
+                        ))}
+                      </div>
+                      <input placeholder="Remarks..." value={readingForm.remarks || ''} onChange={e => setReadingForm(f => ({ ...f, remarks: e.target.value }))}
+                        className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-gray-50 outline-none" />
+                      <div className="flex gap-2">
+                        <button onClick={() => saveReading(false)} disabled={saving}
+                          className="flex-1 py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold disabled:opacity-50 flex items-center justify-center gap-1">
+                          {saving ? <Loader2 size={12} className="animate-spin" /> : <><Send size={11} /> Save</>}
+                        </button>
+                        <button onClick={() => saveReading(true)} disabled={saving}
+                          className="flex-1 py-2 bg-green-600 text-white rounded-lg text-xs font-bold disabled:opacity-50 flex items-center justify-center gap-1">
+                          {saving ? <Loader2 size={12} className="animate-spin" /> : <><MessageCircle size={11} /> Save & Share</>}
+                        </button>
+                      </div>
+                    </div>
+                    {/* Recent readings */}
+                    {(() => {
+                      const rList = isBW ? getBW(selected.no).map(r => ({ id: r.id, analysisTime: '', spGravity: r.spGravity, ph: r.ph, alcohol: r.alcohol, temp: r.temp, level: r.level, createdAt: r.createdAt, status: '' })) : readings;
+                      return rList.length > 0 && (
+                        <div>
+                          <div className="text-[9px] font-bold text-gray-400 uppercase mb-1">Recent Readings</div>
+                          <div className="space-y-0.5 max-h-48 overflow-y-auto">
+                            {rList.slice(-10).reverse().map((r, i) => (
+                              <div key={r.id || i} className="flex items-center gap-2 px-2 py-1 bg-gray-50 rounded text-[10px]">
+                                <span className="text-gray-400 font-mono w-10 shrink-0">{fmtTime(r.analysisTime || r.createdAt)}</span>
+                                {r.level && <span className="text-blue-500">Lvl:{r.level}%</span>}
+                                {r.spGravity && <span className="text-indigo-600 font-semibold">SG:{r.spGravity.toFixed(3)}</span>}
+                                {r.ph && <span className="text-gray-500">pH:{r.ph}</span>}
+                                {r.temp && <span className={`font-semibold ${(r.temp || 0) > 37 ? 'text-red-600' : 'text-orange-500'}`}>{r.temp}°</span>}
+                                {r.alcohol && <span className="text-emerald-600 font-bold">{r.alcohol}%</span>}
+                                {r.status === 'FIELD' && <span className="text-[8px] bg-yellow-100 text-yellow-700 px-1 rounded">FIELD</span>}
                               </div>
                             ))}
                           </div>
-                        )}
-                        <div className="flex gap-1.5 flex-wrap">
-                          <select value={doseForm.chemicalName} onChange={e => setDoseForm(f => ({ ...f, chemicalName: e.target.value }))} className="border rounded px-2 py-1.5 text-xs flex-1 min-w-0">
-                            <option value="">Chemical...</option>
-                            {chemicals.map((c: any) => <option key={c.id} value={c.name}>{c.name}</option>)}
-                          </select>
-                          <input type="number" step="0.1" placeholder="Qty" value={doseForm.quantity} onChange={e => setDoseForm(f => ({ ...f, quantity: e.target.value }))}
-                            className="border rounded px-2 py-1.5 text-xs w-16" inputMode="decimal" />
-                          <select value={doseForm.unit} onChange={e => setDoseForm(f => ({ ...f, unit: e.target.value }))} className="border rounded px-1 py-1.5 text-xs w-14">
-                            <option value="kg">kg</option><option value="ltr">ltr</option><option value="gm">gm</option>
-                          </select>
-                          <button onClick={() => addDosing(batch.id)} className="bg-amber-500 text-white px-3 py-1.5 rounded text-xs font-medium">Add</button>
                         </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {/* TAB: Dosing */}
+                {tab === 'dosing' && !isBW && (
+                  <div className="p-3 space-y-3">
+                    {(isPF ? recipes.PF : recipes.FERMENTER).length > 0 && dosings.length === 0 && (
+                      <button onClick={applyRecipe} disabled={saving}
+                        className="w-full py-2 bg-violet-50 text-violet-700 border border-violet-200 rounded-lg text-xs font-bold hover:bg-violet-100 flex items-center justify-center gap-1">
+                        <Play size={11} /> Apply Recipe ({(isPF ? recipes.PF : recipes.FERMENTER).length} chemicals)
+                      </button>
+                    )}
+                    {dosings.length > 0 && (
+                      <div className="space-y-1">
+                        <div className="text-[9px] font-bold text-gray-400 uppercase">Added Chemicals</div>
+                        {dosings.map((d: Dosing) => (
+                          <div key={d.id} className="flex items-center gap-2 bg-violet-50/50 rounded-lg px-2 py-1.5">
+                            <span className="text-xs font-medium text-gray-800 flex-1">{d.chemicalName}</span>
+                            <span className="text-xs font-bold text-violet-700">{d.quantity} {d.unit}</span>
+                            <button onClick={() => deleteDosing(d.id)} className="text-gray-300 hover:text-red-500"><Trash2 size={11} /></button>
+                          </div>
+                        ))}
                       </div>
+                    )}
+                    <div className="flex gap-1.5 items-end">
+                      <div className="flex-1">
+                        <label className="text-[8px] font-bold text-gray-400">Chemical</label>
+                        <select value={dosingForm.chemicalName} onChange={e => setDosingForm(f => ({ ...f, chemicalName: e.target.value }))}
+                          className="w-full px-2 py-1.5 text-xs border rounded-lg bg-white">
+                          <option value="">Select...</option>
+                          {chemicals.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                        </select>
+                      </div>
+                      <div className="w-16">
+                        <label className="text-[8px] font-bold text-gray-400">Qty</label>
+                        <input type="number" value={dosingForm.quantity} onChange={e => setDosingForm(f => ({ ...f, quantity: e.target.value }))}
+                          className="w-full px-2 py-1.5 text-xs border rounded-lg" />
+                      </div>
+                      <div className="w-14">
+                        <label className="text-[8px] font-bold text-gray-400">Unit</label>
+                        <select value={dosingForm.unit} onChange={e => setDosingForm(f => ({ ...f, unit: e.target.value }))}
+                          className="w-full px-2 py-1.5 text-xs border rounded-lg bg-white">
+                          {['kg', 'ltr', 'gm', 'ml'].map(u => <option key={u} value={u}>{u}</option>)}
+                        </select>
+                      </div>
+                      <button onClick={addDosing} disabled={saving || !dosingForm.chemicalName || !dosingForm.quantity}
+                        className="px-3 py-1.5 bg-violet-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">
+                        <Plus size={14} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB: Charts */}
+                {tab === 'charts' && !isBW && (
+                  <div className="p-3 space-y-3">
+                    {readings.length < 2 ? (
+                      <p className="text-center text-gray-400 text-xs py-8">Need 2+ readings for charts</p>
+                    ) : (
+                      <>
+                        <div>
+                          <div className="text-[9px] font-bold text-gray-400 uppercase mb-1">Gravity & Alcohol</div>
+                          <ResponsiveContainer width="100%" height={180}>
+                            <LineChart data={readings.map(r => ({ time: fmtTime(r.analysisTime || r.createdAt), sg: r.spGravity, alc: r.alcohol }))}>
+                              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                              <XAxis dataKey="time" tick={{ fontSize: 9 }} />
+                              <YAxis yAxisId="sg" tick={{ fontSize: 9 }} />
+                              <YAxis yAxisId="alc" orientation="right" tick={{ fontSize: 9 }} />
+                              <Tooltip contentStyle={{ fontSize: 10 }} />
+                              <Legend wrapperStyle={{ fontSize: 9 }} />
+                              <Line yAxisId="sg" dataKey="sg" name="Gravity" stroke="#6366f1" strokeWidth={2} dot={{ r: 2 }} />
+                              <Line yAxisId="alc" dataKey="alc" name="Alcohol%" stroke="#10b981" strokeWidth={2} dot={{ r: 2 }} />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                        <div>
+                          <div className="text-[9px] font-bold text-gray-400 uppercase mb-1">pH & Temperature</div>
+                          <ResponsiveContainer width="100%" height={150}>
+                            <LineChart data={readings.map(r => ({ time: fmtTime(r.analysisTime || r.createdAt), ph: r.ph, temp: r.temp }))}>
+                              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                              <XAxis dataKey="time" tick={{ fontSize: 9 }} />
+                              <YAxis yAxisId="ph" tick={{ fontSize: 9 }} />
+                              <YAxis yAxisId="temp" orientation="right" tick={{ fontSize: 9 }} />
+                              <Tooltip contentStyle={{ fontSize: 10 }} />
+                              <Legend wrapperStyle={{ fontSize: 9 }} />
+                              <Line yAxisId="ph" dataKey="ph" name="pH" stroke="#f59e0b" strokeWidth={2} dot={{ r: 2 }} />
+                              <Line yAxisId="temp" dataKey="temp" name="Temp°C" stroke="#ef4444" strokeWidth={2} dot={{ r: 2 }} />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </>
                     )}
                   </div>
                 )}
 
-                {/* Lab readings — all readings */}
-                <div className="bg-emerald-50 rounded-lg p-2.5">
-                  <h4 className="text-xs font-semibold text-emerald-800 mb-1.5">Lab Readings ({batch.labReadings.length})</h4>
-                  <LabTable readings={batch.labReadings} />
-                </div>
-
-                {/* Actions + Share */}
-                <div className="flex gap-2 flex-wrap">
-                  {batch.phase === 'DOSING' && batch.dosings.length > 0 && (
-                    <button onClick={() => advancePF(batch, 'LAB', { dosingEndTime: new Date().toISOString() })}
-                      className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium">Done Dosing</button>
-                  )}
-                  {['SETUP', 'DOSING', 'LAB'].includes(batch.phase) && (batch.phase === 'LAB' || batch.readyToTransfer) && (
-                    <button onClick={() => { setTransferModal(batch); setTransferFermNo('1'); }}
-                      className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1">
-                      <ArrowRight size={16} /> Transfer
-                    </button>
-                  )}
-                  {(batch.phase === 'TRANSFER' || batch.phase === 'CIP') && (
-                    <button onClick={() => advancePF(batch, 'DONE', { cipStartTime: new Date().toISOString(), cipEndTime: new Date().toISOString() })}
-                      className="bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium">CIP Done</button>
-                  )}
-                  <button onClick={() => shareWhatsApp(buildPFShareText(batch))}
-                    className="bg-green-600 text-white px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1 ml-auto">
-                    <Share2 size={14} /> Share
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })}
-
-      {/* ─── FERMENTER VESSELS ─── */}
-      <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mt-4">Fermenters</h2>
-      {Array.from({ length: FERM_COUNT }, (_, i) => i + 1).map(no => {
-        const batch = fermFor(no);
-        const key = `ferm-${no}`;
-        const isOpen = expanded === key;
-        const lab = batch?.lastLab;
-        const readings = batch?.labReadings || [];
-        return (
-          <div key={key} className="bg-white rounded-xl border shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between p-3 cursor-pointer" onClick={() => batch && toggle(key)}>
-              <div className="flex items-center gap-2">
-                <FlaskConical size={18} className="text-emerald-600" />
-                <span className="font-bold">F-{no}</span>
-                {batch ? (
-                  <>
-                    <span className="text-xs px-2 py-0.5 rounded-full text-white font-medium" style={{ backgroundColor: phaseColor[batch.phase] }}>{batch.phase}</span>
-                    <span className="text-xs text-gray-500">#{batch.batchNo}</span>
-                  </>
-                ) : <span className="text-xs text-gray-400">Idle</span>}
-              </div>
-              {batch && (isOpen ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />)}
-            </div>
-
-            {/* Collapsed summary */}
-            {batch && !isOpen && (
-              <div className="px-3 pb-2 flex gap-3 text-xs text-gray-500">
-                {batch.fermLevel != null && <span>Level: <b className="text-gray-700">{batch.fermLevel}%</b></span>}
-                {lab?.spGravity != null && <span>SG: <b className="text-gray-700">{lab.spGravity}</b></span>}
-                {lab?.alcohol != null && <span>Alc: <b className="text-gray-700">{lab.alcohol}%</b></span>}
-                {lab?.temp != null && <span className={lab.temp > 37 ? 'text-red-600 font-bold' : ''}>T: <b>{lab.temp}°C</b></span>}
-              </div>
-            )}
-
-            {/* Expanded */}
-            {batch && isOpen && (
-              <div className="border-t p-3 space-y-3">
-                <div className="flex gap-4 text-sm text-gray-600 flex-wrap">
-                  {batch.fermLevel != null && <span>Level: {batch.fermLevel}%</span>}
-                  {batch.setupGravity != null && <span>Setup SG: {batch.setupGravity}</span>}
-                  {batch.fillingStartTime && <span>Started: {fmtDateTime(batch.fillingStartTime)}</span>}
-                </div>
-
-                {/* Field input — level, temp, gravity */}
-                {['FILLING', 'REACTION', 'RETENTION'].includes(batch.phase) && (
-                  <div className="bg-blue-50 rounded-lg p-2.5">
-                    <h4 className="text-xs font-semibold text-blue-700 mb-2">Field Reading</h4>
-                    <div className="grid grid-cols-3 gap-2">
-                      <div>
-                        <label className="text-[10px] text-blue-600 block">Level %</label>
-                        <input type="number" step="0.1" placeholder="80" value={fermFieldForm.level || ''}
-                          onChange={e => setFermFieldForm(f => ({ ...f, level: e.target.value }))}
-                          className="w-full border border-blue-200 rounded px-2 py-1.5 text-sm bg-white" inputMode="decimal" />
-                      </div>
-                      <div>
-                        <label className="text-[10px] text-orange-600 block">Temp °C</label>
-                        <input type="number" step="0.1" placeholder="32" value={fermFieldForm.temp || ''}
-                          onChange={e => setFermFieldForm(f => ({ ...f, temp: e.target.value }))}
-                          className="w-full border border-orange-200 rounded px-2 py-1.5 text-sm bg-white" inputMode="decimal" />
-                      </div>
-                      <div>
-                        <label className="text-[10px] text-gray-600 block">Gravity</label>
-                        <input type="number" step="0.001" placeholder="1.02" value={fermFieldForm.spGravity || ''}
-                          onChange={e => setFermFieldForm(f => ({ ...f, spGravity: e.target.value }))}
-                          className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm bg-white" inputMode="decimal" />
+                {/* TAB: Batch */}
+                {tab === 'batch' && !isBW && batch && (
+                  <div className="p-3 space-y-3">
+                    {/* Phase timeline */}
+                    <div>
+                      <div className="text-[9px] font-bold text-gray-400 uppercase mb-1.5">Phase Timeline</div>
+                      <div className="flex items-center gap-0.5">
+                        {(isPF ? PF_PHASES : FERM_PHASES).map((p, i) => {
+                          const pCfg = phCfg(p);
+                          const phaseList = isPF ? PF_PHASES : FERM_PHASES;
+                          const ci = phaseList.indexOf(phase);
+                          return (
+                            <div key={p} className={`flex-1 text-center py-1 rounded text-[7px] font-bold ${
+                              i < ci ? 'bg-green-100 text-green-600' : i === ci ? `${pCfg.bg} ${pCfg.text} ring-1 ${pCfg.ring}` : 'bg-gray-50 text-gray-300'
+                            }`}>{pCfg.label}</div>
+                          );
+                        })}
                       </div>
                     </div>
-                    <button onClick={() => submitFermField(no)} disabled={fermFieldSaving}
-                      className="mt-2 w-full bg-blue-600 text-white py-2 rounded-lg text-xs font-medium disabled:opacity-50">
-                      {fermFieldSaving ? 'Saving...' : 'Save Field Reading'}
-                    </button>
+
+                    {/* Setup info */}
+                    {isPF && (batch as PFBatch).slurryVolume && (
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        <div className="bg-indigo-50 rounded-lg p-1.5"><div className="text-[8px] text-indigo-400 font-bold">Volume</div><div className="text-xs font-bold text-indigo-700">{((batch as PFBatch).slurryVolume! / 1000).toFixed(0)} KL</div></div>
+                        {(batch as PFBatch).slurryGravity && <div className="bg-indigo-50 rounded-lg p-1.5"><div className="text-[8px] text-indigo-400 font-bold">Gravity</div><div className="text-xs font-bold text-indigo-700">{(batch as PFBatch).slurryGravity!.toFixed(3)}</div></div>}
+                        {(batch as PFBatch).slurryTemp && <div className="bg-indigo-50 rounded-lg p-1.5"><div className="text-[8px] text-indigo-400 font-bold">Temp</div><div className="text-xs font-bold text-indigo-700">{(batch as PFBatch).slurryTemp}°C</div></div>}
+                      </div>
+                    )}
+                    {isFerm && (
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        {(batch as FermBatch).fermLevel && <div className="bg-blue-50 rounded-lg p-1.5"><div className="text-[8px] text-blue-400 font-bold">Level</div><div className="text-xs font-bold text-blue-700">{(batch as FermBatch).fermLevel}%</div></div>}
+                        {(batch as FermBatch).setupGravity && <div className="bg-indigo-50 rounded-lg p-1.5"><div className="text-[8px] text-indigo-400 font-bold">Setup SG</div><div className="text-xs font-bold text-indigo-700">{(batch as FermBatch).setupGravity!.toFixed(3)}</div></div>}
+                        {(batch as FermBatch).finalAlcohol && <div className="bg-emerald-50 rounded-lg p-1.5"><div className="text-[8px] text-emerald-400 font-bold">Final Alc</div><div className="text-xs font-bold text-emerald-700">{(batch as FermBatch).finalAlcohol}%</div></div>}
+                      </div>
+                    )}
+
+                    {/* Phase actions */}
+                    <div className="space-y-1.5">
+                      <div className="text-[9px] font-bold text-gray-400 uppercase">Actions</div>
+                      {isPF && phase === 'LAB' && (
+                        <div>
+                          <div className="text-[10px] text-gray-600 mb-1">Transfer to Fermenter:</div>
+                          <div className="flex gap-1.5 flex-wrap">
+                            {freeFermenters.map(fn => (
+                              <button key={fn} onClick={() => transferPF(batch!.id, fn)} disabled={saving}
+                                className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">
+                                {saving ? <Loader2 size={12} className="animate-spin" /> : `→ F-${fn}`}
+                              </button>
+                            ))}
+                            {freeFermenters.length === 0 && <span className="text-xs text-gray-400">No free fermenters</span>}
+                          </div>
+                        </div>
+                      )}
+                      {isPF && phase === 'SETUP' && <button onClick={() => advancePhase('PF', batch!.id, 'DOSING')} disabled={saving} className="w-full py-2 bg-violet-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Start Dosing</button>}
+                      {isPF && phase === 'DOSING' && <button onClick={() => advancePhase('PF', batch!.id, 'LAB')} disabled={saving} className="w-full py-2 bg-cyan-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Lab Monitoring</button>}
+                      {isPF && phase === 'TRANSFER' && <button onClick={() => advancePhase('PF', batch!.id, 'CIP', { cipStartTime: new Date().toISOString() })} disabled={saving} className="w-full py-2 bg-purple-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Start CIP</button>}
+                      {isPF && phase === 'CIP' && <button onClick={() => advancePhase('PF', batch!.id, 'DONE', { cipEndTime: new Date().toISOString() })} disabled={saving} className="w-full py-2 bg-gray-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Complete</button>}
+
+                      {isFerm && phase === 'FILLING' && <button onClick={() => advancePhase('FERM', batch!.id, 'REACTION', { reactionStartTime: new Date().toISOString(), fillingEndTime: new Date().toISOString() })} disabled={saving} className="w-full py-2 bg-amber-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Start Reaction</button>}
+                      {isFerm && phase === 'REACTION' && <button onClick={() => advancePhase('FERM', batch!.id, 'RETENTION', { retentionStartTime: new Date().toISOString() })} disabled={saving} className="w-full py-2 bg-orange-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Start Retention</button>}
+                      {isFerm && phase === 'RETENTION' && (
+                        <>
+                          {(batch as FermBatch).retentionStartTime && <div className="text-[10px] text-gray-500">Retention: {elapsed((batch as FermBatch).retentionStartTime)} elapsed{settings.fermRetentionHours ? ` / ${settings.fermRetentionHours}h target` : ''}</div>}
+                          <button onClick={() => advancePhase('FERM', batch!.id, 'TRANSFER', { transferTime: new Date().toISOString() })} disabled={saving} className="w-full py-2 bg-emerald-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Transfer to Beer Well</button>
+                        </>
+                      )}
+                      {isFerm && phase === 'TRANSFER' && <button onClick={() => advancePhase('FERM', batch!.id, 'CIP', { cipStartTime: new Date().toISOString() })} disabled={saving} className="w-full py-2 bg-purple-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Start CIP</button>}
+                      {isFerm && phase === 'CIP' && <button onClick={() => advancePhase('FERM', batch!.id, 'DONE', { cipEndTime: new Date().toISOString() })} disabled={saving} className="w-full py-2 bg-gray-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Complete</button>}
+                    </div>
                   </div>
                 )}
-
-                {/* Lab readings — all */}
-                <div className="bg-emerald-50 rounded-lg p-2.5">
-                  <h4 className="text-xs font-semibold text-emerald-800 mb-1.5">Lab Readings ({readings.length})</h4>
-                  <LabTable readings={readings} showLevel />
-                </div>
-
-                {/* Phase controls + Share */}
-                <div className="flex gap-2 flex-wrap">
-                  {batch.phase === 'FILLING' && (
-                    <button onClick={() => advanceFerm(batch, 'REACTION', { fillingEndTime: new Date().toISOString(), reactionStartTime: new Date().toISOString() })}
-                      className="bg-amber-500 text-white px-4 py-2 rounded-lg text-sm font-medium">Start Reaction</button>
-                  )}
-                  {batch.phase === 'REACTION' && (
-                    <button onClick={() => advanceFerm(batch, 'RETENTION', { retentionStartTime: new Date().toISOString() })}
-                      className="bg-red-500 text-white px-4 py-2 rounded-lg text-sm font-medium">Start Retention</button>
-                  )}
-                  {batch.phase === 'RETENTION' && (
-                    <button onClick={() => advanceFerm(batch, 'TRANSFER', { transferTime: new Date().toISOString() })}
-                      className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1">
-                      <ArrowRight size={16} /> Transfer to BW
-                    </button>
-                  )}
-                  {(batch.phase === 'TRANSFER' || batch.phase === 'CIP') && (
-                    <button onClick={() => advanceFerm(batch, 'DONE', { cipStartTime: new Date().toISOString(), cipEndTime: new Date().toISOString() })}
-                      className="bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium">CIP Done</button>
-                  )}
-                  <button onClick={() => shareWhatsApp(buildFermShareText(batch))}
-                    className="bg-green-600 text-white px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1 ml-auto">
-                    <Share2 size={14} /> Share
-                  </button>
-                </div>
-              </div>
+              </>
             )}
           </div>
         );
-      })}
-
-      {/* ─── BEER WELL ─── */}
-      <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mt-4">Beer Well</h2>
-      <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between p-3 cursor-pointer" onClick={() => setBwExpanded(!bwExpanded)}>
-          <div className="flex items-center gap-2">
-            <Cylinder size={18} className="text-amber-600" />
-            <span className="font-bold">Beer Well</span>
-            {beerWell?.latest && (
-              <span className="text-xs text-gray-500">
-                Level: <b className="text-amber-700">{beerWell.latest.level ?? '-'}%</b>
-                {beerWell.latest.alcohol != null && <> | Alc: <b className="text-amber-700">{beerWell.latest.alcohol}%</b></>}
-              </span>
-            )}
-          </div>
-          {bwExpanded ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
-        </div>
-
-        {/* Collapsed summary */}
-        {!bwExpanded && beerWell?.recentBatches?.length > 0 && (
-          <div className="px-3 pb-2 flex gap-3 text-xs text-gray-500">
-            {beerWell.recentBatches.slice(0, 3).map((b: any) => (
-              <span key={b.batchNo}>F-{b.fermenterNo} #{b.batchNo} {b.finalAlcohol ? `(${b.finalAlcohol}%)` : ''}</span>
-            ))}
-          </div>
-        )}
-
-        {/* Expanded */}
-        {bwExpanded && (
-          <div className="border-t p-3 space-y-3">
-            {/* Field input */}
-            <div className="bg-amber-50 rounded-lg p-2.5">
-              <h4 className="text-xs font-semibold text-amber-700 mb-2">New Reading</h4>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <div>
-                  <label className="text-[10px] text-amber-600 block">Level %</label>
-                  <input type="number" step="0.1" placeholder="80" value={bwForm.level || ''}
-                    onChange={e => setBwForm(f => ({ ...f, level: e.target.value }))}
-                    className="w-full border border-amber-200 rounded px-2 py-1.5 text-sm bg-white" inputMode="decimal" />
-                </div>
-                <div>
-                  <label className="text-[10px] text-gray-600 block">Gravity</label>
-                  <input type="number" step="0.001" placeholder="1.02" value={bwForm.spGravity || ''}
-                    onChange={e => setBwForm(f => ({ ...f, spGravity: e.target.value }))}
-                    className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm bg-white" inputMode="decimal" />
-                </div>
-                <div>
-                  <label className="text-[10px] text-green-600 block">Alc%</label>
-                  <input type="number" step="0.1" placeholder="8.5" value={bwForm.alcohol || ''}
-                    onChange={e => setBwForm(f => ({ ...f, alcohol: e.target.value }))}
-                    className="w-full border border-green-200 rounded px-2 py-1.5 text-sm bg-white" inputMode="decimal" />
-                </div>
-                <div>
-                  <label className="text-[10px] text-orange-600 block">Temp °C</label>
-                  <input type="number" step="0.1" placeholder="32" value={bwForm.temp || ''}
-                    onChange={e => setBwForm(f => ({ ...f, temp: e.target.value }))}
-                    className="w-full border border-orange-200 rounded px-2 py-1.5 text-sm bg-white" inputMode="decimal" />
-                </div>
-              </div>
-              <button onClick={submitBeerWell} disabled={bwSaving}
-                className="mt-2 w-full bg-amber-600 text-white py-2 rounded-lg text-xs font-medium disabled:opacity-50 hover:bg-amber-700">
-                {bwSaving ? 'Saving...' : 'Save Reading'}
-              </button>
-            </div>
-
-            {/* Recent readings */}
-            {beerWell?.readings?.length > 0 && (
-              <div className="bg-gray-50 rounded-lg p-2.5">
-                <h4 className="text-xs font-semibold text-gray-600 mb-1.5">Recent Readings</h4>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead><tr className="text-gray-500">
-                      <th className="text-left py-1 px-1">Time</th>
-                      <th className="text-left py-1 px-1">Lvl%</th>
-                      <th className="text-left py-1 px-1">SG</th>
-                      <th className="text-left py-1 px-1">Alc%</th>
-                      <th className="text-left py-1 px-1">T°C</th>
-                    </tr></thead>
-                    <tbody>{beerWell.readings.slice(0, 10).map((r: any) => (
-                      <tr key={r.id} className="border-t">
-                        <td className="px-1 py-1 whitespace-nowrap">{fmtDateTime(r.createdAt)}</td>
-                        <td className="px-1">{r.level ?? '-'}</td>
-                        <td className="px-1">{r.spGravity ?? '-'}</td>
-                        <td className="px-1">{r.alcohol ?? '-'}</td>
-                        <td className="px-1">{r.temp ?? '-'}</td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* Recent batches transferred */}
-            {beerWell?.recentBatches?.length > 0 && (
-              <div className="bg-blue-50 rounded-lg p-2.5">
-                <h4 className="text-xs font-semibold text-blue-700 mb-1.5">Recent Transfers</h4>
-                <div className="space-y-1">
-                  {beerWell.recentBatches.map((b: any) => (
-                    <div key={b.batchNo} className="flex justify-between text-xs">
-                      <span>F-{b.fermenterNo} → BW#{b.beerWellNo} <b>Batch #{b.batchNo}</b></span>
-                      <span className="text-gray-500">
-                        {b.finalAlcohol ? `${b.finalAlcohol}%` : ''} {b.transferTime ? fmtDateTime(b.transferTime) : ''}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* ─── NEW BATCH MODAL ─── */}
-      {showNewPF && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center" onClick={() => setShowNewPF(null)}>
-          <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-md p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
-            <h3 className="text-lg font-bold mb-3">New Batch — PF-{showNewPF}</h3>
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className="text-xs text-gray-500">Batch #</label><input type="number" value={nbForm.batchNo} onChange={e => setNbForm(f => ({ ...f, batchNo: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" /></div>
-              <div><label className="text-xs text-gray-500">Level %</label><input type="number" step="1" placeholder="80" value={nbForm.pfLevel} onChange={e => setNbForm(f => ({ ...f, pfLevel: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" inputMode="decimal" /></div>
-              <div><label className="text-xs text-gray-500">Gravity</label><input type="number" step="0.001" value={nbForm.slurryGravity} onChange={e => setNbForm(f => ({ ...f, slurryGravity: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" inputMode="decimal" /></div>
-              <div><label className="text-xs text-gray-500">Temp °C</label><input type="number" step="0.1" value={nbForm.slurryTemp} onChange={e => setNbForm(f => ({ ...f, slurryTemp: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" inputMode="decimal" /></div>
-            </div>
-            <div className="mt-3"><label className="text-xs text-gray-500">Remarks</label><input value={nbForm.remarks} onChange={e => setNbForm(f => ({ ...f, remarks: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" /></div>
-            <div className="flex gap-2 mt-4">
-              <button onClick={() => createBatch(showNewPF)} className="flex-1 bg-indigo-600 text-white py-2.5 rounded-xl font-medium">Create</button>
-              <button onClick={() => setShowNewPF(null)} className="px-6 py-2.5 bg-gray-100 rounded-xl font-medium text-gray-600">Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ─── TRANSFER MODAL ─── */}
-      {transferModal && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center" onClick={() => setTransferModal(null)}>
-          <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-md p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
-            <h3 className="text-lg font-bold mb-1">Transfer PF-{transferModal.fermenterNo}</h3>
-            <p className="text-sm text-gray-500 mb-4">Batch #{transferModal.batchNo} → Select fermenter</p>
-            <div className="grid grid-cols-4 gap-2 mb-4">
-              {[1, 2, 3, 4].map(n => {
-                const occupied = fermBatches.some((b: FermBatch) => b.fermenterNo === n);
-                return (
-                  <button key={n} onClick={() => !occupied && setTransferFermNo(String(n))} disabled={occupied}
-                    className={`py-3 rounded-xl text-lg font-bold border-2 transition ${occupied ? 'bg-gray-100 text-gray-300 border-gray-200 cursor-not-allowed' : transferFermNo === String(n) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-200'}`}>
-                    F-{n}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="flex gap-2">
-              <button onClick={doTransfer} disabled={transferring} className="flex-1 bg-blue-600 text-white py-2.5 rounded-xl font-medium flex items-center justify-center gap-2 disabled:opacity-50">
-                <ArrowRight size={18} /> {transferring ? 'Transferring...' : 'Transfer'}
-              </button>
-              <button onClick={() => setTransferModal(null)} className="px-6 py-2.5 bg-gray-100 rounded-xl font-medium text-gray-600">Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════
-   LAB TAB
-   ═══════════════════════════════════════════════════════ */
-function LabTab({ pfBatches, fermBatches, onRefresh, flash, pfFor, fermFor, beerWell }: any) {
-  const [selected, setSelected] = useState<{ type: 'PF' | 'FERM'; no: number; batchNo: number } | null>(null);
-  const [form, setForm] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState(false);
-
-  const resetForm = () => setForm({ spGravity: '', ph: '', rs: '', rst: '', alcohol: '', ds: '', vfaPpa: '', temp: '', level: '', remarks: '' });
-
-  const LAB_FIELDS = [
-    { key: 'spGravity', label: 'Gravity', placeholder: '1.024', step: '0.001' },
-    { key: 'ph', label: 'pH', placeholder: '4.5', step: '0.1' },
-    { key: 'rs', label: 'RS%', placeholder: '', step: '0.01' },
-    { key: 'rst', label: 'RST%', placeholder: '', step: '0.01' },
-    { key: 'alcohol', label: 'Alc%', placeholder: '8.5', step: '0.1' },
-    { key: 'ds', label: 'DS%', placeholder: '', step: '0.01' },
-    { key: 'vfaPpa', label: 'VFA', placeholder: '', step: '0.01' },
-  ];
-
-  const submit = async () => {
-    if (!selected) return;
-    const hasVal = LAB_FIELDS.some(f => form[f.key]?.trim()) || form.temp?.trim() || form.level?.trim();
-    if (!hasVal) { flash('Enter at least one reading', 'err'); return; }
-
-    setSaving(true);
-    try {
-      const payload: any = { vesselType: selected.type, vesselNo: selected.no, remarks: form.remarks || '' };
-      LAB_FIELDS.forEach(f => { if (form[f.key]?.trim()) payload[f.key] = form[f.key]; });
-      if (form.temp?.trim()) payload.temp = form.temp;
-      if (form.level?.trim()) payload.level = form.level;
-
-      const { data } = await api.post('/fermentation/lab-reading', payload);
-      const hint = data.readyToTransfer ? ' — READY TO TRANSFER!' : '';
-      flash(`Saved for Batch #${data.batchNo || selected.batchNo}${hint}`);
-      setSelected(null);
-      resetForm();
-      onRefresh();
-    } catch (err: any) { flash(err.response?.data?.error || 'Failed', 'err'); }
-    finally { setSaving(false); }
-  };
-
-  // Build share text for current vessel
-  const getShareText = (v: any) => {
-    if (v.type === 'PF') {
-      const batch = pfFor(v.no);
-      return batch ? buildPFShareText(batch) : '';
-    } else {
-      const batch = fermFor(v.no);
-      return batch ? buildFermShareText(batch) : '';
-    }
-  };
-
-  // Beer well lab form
-  const [bwLabForm, setBwLabForm] = useState<Record<string, string>>({});
-  const [bwLabSaving, setBwLabSaving] = useState(false);
-  const [showBwLab, setShowBwLab] = useState(false);
-
-  const submitBwLab = async () => {
-    const hasVal = bwLabForm.level?.trim() || bwLabForm.spGravity?.trim() || bwLabForm.alcohol?.trim() || bwLabForm.temp?.trim() || bwLabForm.ph?.trim();
-    if (!hasVal) { flash('Enter at least one value', 'err'); return; }
-    setBwLabSaving(true);
-    try {
-      await api.post('/fermentation/beer-well', bwLabForm);
-      flash('Beer Well reading saved');
-      setBwLabForm({});
-      setShowBwLab(false);
-      onRefresh();
-    } catch (e: any) { flash(e?.response?.data?.error || 'Failed', 'err'); }
-    finally { setBwLabSaving(false); }
-  };
-
-  const vessels: { type: 'PF' | 'FERM'; no: number; label: string; batchNo: number | null; phase: string | null; lastSG: number | null; lastTemp: number | null; lastAlc: number | null; ready: boolean }[] = [];
-  for (let i = 1; i <= PF_COUNT; i++) {
-    const b = pfFor(i);
-    vessels.push({ type: 'PF', no: i, label: `PF-${i}`, batchNo: b?.batchNo ?? null, phase: b?.phase ?? null, lastSG: b?.lastGravity ?? null, lastTemp: b?.labReadings?.length ? b.labReadings[b.labReadings.length - 1]?.temp : null, lastAlc: b?.labReadings?.length ? b.labReadings[b.labReadings.length - 1]?.alcohol : null, ready: b?.readyToTransfer ?? false });
-  }
-  for (let i = 1; i <= FERM_COUNT; i++) {
-    const b = fermFor(i);
-    vessels.push({ type: 'FERM', no: i, label: `F-${i}`, batchNo: b?.batchNo ?? null, phase: b?.phase ?? null, lastSG: b?.lastLab?.spGravity ?? null, lastTemp: b?.lastLab?.temp ?? null, lastAlc: b?.lastLab?.alcohol ?? null, ready: false });
-  }
-
-  if (selected) {
-    return (
-      <div className="bg-white rounded-xl border shadow-sm p-4 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            {selected.type === 'PF' ? <Beaker size={20} className="text-indigo-600" /> : <FlaskConical size={20} className="text-emerald-600" />}
-            <span className="text-lg font-bold">{selected.type === 'PF' ? `PF-${selected.no}` : `F-${selected.no}`}</span>
-            <span className="text-sm text-gray-500 bg-gray-100 px-2 py-0.5 rounded">#{selected.batchNo}</span>
-          </div>
-          <button onClick={() => { setSelected(null); resetForm(); }} className="p-1 hover:bg-gray-100 rounded"><X size={20} className="text-gray-400" /></button>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          {selected.type === 'FERM' && (
-            <div>
-              <label className="text-xs font-medium text-blue-600 block mb-1">Level %</label>
-              <input type="number" step="0.1" placeholder="e.g. 80" value={form.level || ''}
-                onChange={e => setForm(p => ({ ...p, level: e.target.value }))}
-                className="w-full border-2 border-blue-200 rounded-lg px-3 py-2.5 text-sm bg-blue-50" inputMode="decimal" />
-            </div>
-          )}
-          <div className={selected.type === 'PF' ? 'col-span-2' : ''}>
-            <label className="text-xs font-medium text-orange-600 block mb-1">Temp °C</label>
-            <input type="number" step="0.1" placeholder="32" value={form.temp || ''}
-              onChange={e => setForm(p => ({ ...p, temp: e.target.value }))}
-              className="w-full border-2 border-orange-200 rounded-lg px-3 py-2.5 text-sm bg-orange-50" inputMode="decimal" />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          {LAB_FIELDS.map(f => (
-            <div key={f.key}>
-              <label className="text-xs text-gray-500 block mb-1">{f.label}</label>
-              <input type="number" step={f.step} placeholder={f.placeholder} value={form[f.key] || ''}
-                onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
-                className="w-full border rounded-lg px-3 py-2 text-sm" inputMode="decimal" />
-            </div>
-          ))}
-          <div>
-            <label className="text-xs text-gray-500 block mb-1">Remarks</label>
-            <input value={form.remarks || ''} onChange={e => setForm(p => ({ ...p, remarks: e.target.value }))}
-              placeholder="Optional..." className="w-full border rounded-lg px-3 py-2 text-sm" />
-          </div>
-        </div>
-
-        <button onClick={submit} disabled={saving}
-          className="w-full bg-emerald-600 text-white py-3 rounded-xl font-medium flex items-center justify-center gap-2 disabled:opacity-50">
-          <Send size={16} /> {saving ? 'Saving...' : 'Save Reading'}
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      <p className="text-sm text-gray-500">Tap vessel to enter readings</p>
-      <div className="grid grid-cols-2 gap-3">
-        {vessels.map(v => {
-          const active = !!v.batchNo;
-          const isPF = v.type === 'PF';
-          return (
-            <div key={v.label} className="relative">
-              <button onClick={() => { if (active) { resetForm(); setSelected({ type: v.type, no: v.no, batchNo: v.batchNo! }); } }} disabled={!active}
-                className={`w-full rounded-xl p-3 text-left border-2 transition ${active ? 'bg-white hover:shadow-md cursor-pointer' : 'bg-gray-50 border-gray-200 opacity-50 cursor-not-allowed'} ${active && isPF ? 'border-indigo-200' : active ? 'border-emerald-200' : ''}`}>
-                <div className="flex items-center gap-1.5 mb-1">
-                  {isPF ? <Beaker size={16} className="text-indigo-600" /> : <FlaskConical size={16} className="text-emerald-600" />}
-                  <span className="font-bold text-sm">{v.label}</span>
-                  {v.ready && <span className="text-[10px] bg-green-500 text-white px-1 py-0.5 rounded">READY</span>}
-                </div>
-                {active ? (
-                  <div className="text-xs space-y-0.5">
-                    <div className="text-gray-500">#{v.batchNo} · {v.phase}</div>
-                    <div className="flex gap-2 text-gray-700">
-                      {v.lastSG != null && <span>SG:{v.lastSG}</span>}
-                      {v.lastAlc != null && <span>A:{v.lastAlc}%</span>}
-                      {v.lastTemp != null && <span className={v.lastTemp > 37 ? 'text-red-600 font-bold' : ''}>T:{v.lastTemp}°</span>}
-                    </div>
-                    {!v.lastSG && !v.lastAlc && <div className="text-amber-600 font-medium">No readings</div>}
-                  </div>
-                ) : <div className="text-xs text-gray-400">Idle</div>}
-              </button>
-              {active && (
-                <button onClick={() => shareWhatsApp(getShareText(v))}
-                  className="absolute top-2 right-2 bg-green-600 text-white p-1.5 rounded-lg shadow-sm" title="Share">
-                  <Share2 size={12} />
-                </button>
-              )}
-            </div>
-          );
-        })}
-        {/* Beer Well entry */}
-        <div className="relative">
-          <button onClick={() => { setBwLabForm({}); setShowBwLab(true); }}
-            className="w-full rounded-xl p-3 text-left border-2 bg-white hover:shadow-md cursor-pointer border-amber-200 transition">
-            <div className="flex items-center gap-1.5 mb-1">
-              <Cylinder size={16} className="text-amber-600" />
-              <span className="font-bold text-sm">Beer Well</span>
-            </div>
-            <div className="text-xs space-y-0.5">
-              {beerWell?.latest ? (
-                <div className="flex gap-2 text-gray-700">
-                  {beerWell.latest.level != null && <span>L:{beerWell.latest.level}%</span>}
-                  {beerWell.latest.spGravity != null && <span>SG:{beerWell.latest.spGravity}</span>}
-                  {beerWell.latest.alcohol != null && <span>A:{beerWell.latest.alcohol}%</span>}
-                  {beerWell.latest.temp != null && <span>T:{beerWell.latest.temp}°</span>}
-                </div>
-              ) : <div className="text-amber-600 font-medium">No readings</div>}
-            </div>
-          </button>
-        </div>
-      </div>
-
-      {/* Beer Well lab form overlay */}
-      {showBwLab && (
-        <div className="bg-white rounded-xl border shadow-sm p-4 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Cylinder size={20} className="text-amber-600" />
-              <span className="text-lg font-bold">Beer Well</span>
-            </div>
-            <button onClick={() => setShowBwLab(false)} className="p-1 hover:bg-gray-100 rounded"><X size={20} className="text-gray-400" /></button>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-medium text-blue-600 block mb-1">Level %</label>
-              <input type="number" step="0.1" placeholder="80" value={bwLabForm.level || ''}
-                onChange={e => setBwLabForm(p => ({ ...p, level: e.target.value }))}
-                className="w-full border-2 border-blue-200 rounded-lg px-3 py-2.5 text-sm bg-blue-50" inputMode="decimal" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-orange-600 block mb-1">Temp °C</label>
-              <input type="number" step="0.1" placeholder="32" value={bwLabForm.temp || ''}
-                onChange={e => setBwLabForm(p => ({ ...p, temp: e.target.value }))}
-                className="w-full border-2 border-orange-200 rounded-lg px-3 py-2.5 text-sm bg-orange-50" inputMode="decimal" />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">Gravity</label>
-              <input type="number" step="0.001" placeholder="1.02" value={bwLabForm.spGravity || ''}
-                onChange={e => setBwLabForm(p => ({ ...p, spGravity: e.target.value }))}
-                className="w-full border rounded-lg px-3 py-2 text-sm" inputMode="decimal" />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">pH</label>
-              <input type="number" step="0.1" placeholder="4.5" value={bwLabForm.ph || ''}
-                onChange={e => setBwLabForm(p => ({ ...p, ph: e.target.value }))}
-                className="w-full border rounded-lg px-3 py-2 text-sm" inputMode="decimal" />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">Alc%</label>
-              <input type="number" step="0.1" placeholder="8.5" value={bwLabForm.alcohol || ''}
-                onChange={e => setBwLabForm(p => ({ ...p, alcohol: e.target.value }))}
-                className="w-full border rounded-lg px-3 py-2 text-sm" inputMode="decimal" />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">Remarks</label>
-              <input value={bwLabForm.remarks || ''} onChange={e => setBwLabForm(p => ({ ...p, remarks: e.target.value }))}
-                placeholder="Optional..." className="w-full border rounded-lg px-3 py-2 text-sm" />
-            </div>
-          </div>
-          <button onClick={submitBwLab} disabled={bwLabSaving}
-            className="w-full bg-amber-600 text-white py-3 rounded-xl font-medium flex items-center justify-center gap-2 disabled:opacity-50 hover:bg-amber-700">
-            <Send size={16} /> {bwLabSaving ? 'Saving...' : 'Save Reading'}
-          </button>
-        </div>
-      )}
+      })()}
     </div>
   );
 }
