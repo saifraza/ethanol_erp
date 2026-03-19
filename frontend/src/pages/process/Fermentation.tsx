@@ -325,6 +325,25 @@ function FieldTab({ pfBatches, fermBatches, chemicals, pfRecipes, isAdmin, onRef
     } catch (e: any) { flash(e?.response?.data?.error || 'Delete failed', 'err'); }
   };
 
+  /* ─── Edit lab reading ─── */
+  const [editReadingId, setEditReadingId] = useState<string | null>(null);
+  const [editReadingData, setEditReadingData] = useState<any>({});
+
+  const startEditReading = (r: any) => {
+    setEditReadingId(r.id);
+    setEditReadingData({ level: r.level ?? '', spGravity: r.spGravity ?? '', ph: r.ph ?? '', alcohol: r.alcohol ?? '', temp: r.temp ?? '', rs: r.rs ?? '' });
+  };
+
+  const saveEditReading = async (id: string, type: 'ferm' | 'pf') => {
+    try {
+      const url = type === 'pf' ? `/pre-fermentation/lab/${id}` : `/fermentation/${id}`;
+      await api.put(url, editReadingData);
+      flash('Reading updated');
+      setEditReadingId(null);
+      onRefresh();
+    } catch (e: any) { flash(e?.response?.data?.error || 'Update failed', 'err'); }
+  };
+
   /* ─── Lab readings table (shared) ─── */
   const LabTable = ({ readings, showLevel, type }: { readings: any[]; showLevel?: boolean; type: 'ferm' | 'pf' }) => {
     if (!readings.length) return <p className="text-xs text-gray-400 italic">No lab readings yet</p>;
@@ -339,21 +358,44 @@ function FieldTab({ pfBatches, fermBatches, chemicals, pfRecipes, isAdmin, onRef
             <th className="text-left py-1 px-1">Alc%</th>
             <th className="text-left py-1 px-1">T°C</th>
             <th className="text-left py-1 px-1">RS</th>
-            <th className="py-1 px-1"></th>
+            <th className="text-right py-1 px-1">Actions</th>
           </tr></thead>
           <tbody>{readings.map((r: any, i: number) => (
-            <tr key={r.id || i} className="border-t group">
-              <td className="px-1 py-1 whitespace-nowrap">{fmtTime(r.analysisTime)}{r.status === 'FIELD' ? <span className="text-[9px] text-blue-500 ml-0.5">F</span> : ''}</td>
-              {showLevel && <td className="px-1">{r.level ?? '-'}</td>}
-              <td className="px-1">{r.spGravity ?? '-'}</td>
-              <td className="px-1">{r.ph ?? '-'}</td>
-              <td className="px-1">{r.alcohol ?? '-'}</td>
-              <td className="px-1">{r.temp ?? '-'}</td>
-              <td className="px-1">{r.rs ?? '-'}</td>
-              <td className="px-1">
-                {r.id && <button onClick={() => deleteLabReading(r.id, type)} className="text-red-300 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={12} /></button>}
-              </td>
-            </tr>
+            editReadingId === r.id ? (
+              /* ── Inline edit row ── */
+              <tr key={r.id} className="border-t bg-yellow-50">
+                <td className="px-1 py-1 whitespace-nowrap text-gray-400">{fmtTime(r.analysisTime)}</td>
+                {showLevel && <td className="px-1"><input type="number" step="0.1" value={editReadingData.level} onChange={e => setEditReadingData((d: any) => ({ ...d, level: e.target.value }))} className="w-12 border rounded px-1 py-0.5 text-xs text-center" /></td>}
+                <td className="px-1"><input type="number" step="0.001" value={editReadingData.spGravity} onChange={e => setEditReadingData((d: any) => ({ ...d, spGravity: e.target.value }))} className="w-14 border rounded px-1 py-0.5 text-xs text-center" /></td>
+                <td className="px-1"><input type="number" step="0.1" value={editReadingData.ph} onChange={e => setEditReadingData((d: any) => ({ ...d, ph: e.target.value }))} className="w-12 border rounded px-1 py-0.5 text-xs text-center" /></td>
+                <td className="px-1"><input type="number" step="0.1" value={editReadingData.alcohol} onChange={e => setEditReadingData((d: any) => ({ ...d, alcohol: e.target.value }))} className="w-12 border rounded px-1 py-0.5 text-xs text-center" /></td>
+                <td className="px-1"><input type="number" step="0.1" value={editReadingData.temp} onChange={e => setEditReadingData((d: any) => ({ ...d, temp: e.target.value }))} className="w-12 border rounded px-1 py-0.5 text-xs text-center" /></td>
+                <td className="px-1"><input type="number" step="0.1" value={editReadingData.rs} onChange={e => setEditReadingData((d: any) => ({ ...d, rs: e.target.value }))} className="w-12 border rounded px-1 py-0.5 text-xs text-center" /></td>
+                <td className="px-1 text-right whitespace-nowrap">
+                  <button onClick={() => saveEditReading(r.id, type)} className="text-green-600 hover:text-green-800 p-1"><Check size={14} /></button>
+                  <button onClick={() => setEditReadingId(null)} className="text-gray-400 hover:text-gray-600 p-1"><X size={14} /></button>
+                </td>
+              </tr>
+            ) : (
+              /* ── Normal row ── */
+              <tr key={r.id || i} className="border-t">
+                <td className="px-1 py-1 whitespace-nowrap">{fmtTime(r.analysisTime)}{r.status === 'FIELD' ? <span className="text-[9px] text-blue-500 ml-0.5">F</span> : ''}</td>
+                {showLevel && <td className="px-1">{r.level ?? '-'}</td>}
+                <td className="px-1">{r.spGravity ?? '-'}</td>
+                <td className="px-1">{r.ph ?? '-'}</td>
+                <td className="px-1">{r.alcohol ?? '-'}</td>
+                <td className="px-1">{r.temp ?? '-'}</td>
+                <td className="px-1">{r.rs ?? '-'}</td>
+                <td className="px-1 text-right whitespace-nowrap">
+                  {r.id && (
+                    <>
+                      <button onClick={() => startEditReading(r)} className="text-blue-400 hover:text-blue-600 p-1" title="Edit"><Pencil size={12} /></button>
+                      <button onClick={() => deleteLabReading(r.id, type)} className="text-red-400 hover:text-red-600 p-1" title="Delete"><Trash2 size={12} /></button>
+                    </>
+                  )}
+                </td>
+              </tr>
+            )
           ))}</tbody>
         </table>
       </div>

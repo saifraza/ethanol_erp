@@ -169,6 +169,21 @@ router.post('/batches/:id/lab', async (req: Request, res: Response) => {
   }
 });
 
+// PUT /lab/:id — Update individual PF lab reading
+router.put('/lab/:id', async (req: Request, res: Response) => {
+  try {
+    const b = req.body;
+    const data: any = {};
+    if (b.spGravity !== undefined) data.spGravity = b.spGravity !== null && b.spGravity !== '' ? parseFloat(b.spGravity) : null;
+    if (b.ph !== undefined) data.ph = b.ph !== null && b.ph !== '' ? parseFloat(b.ph) : null;
+    if (b.rs !== undefined) data.rs = b.rs !== null && b.rs !== '' ? parseFloat(b.rs) : null;
+    if (b.alcohol !== undefined) data.alcohol = b.alcohol !== null && b.alcohol !== '' ? parseFloat(b.alcohol) : null;
+    if (b.temp !== undefined) data.temp = b.temp !== null && b.temp !== '' ? parseFloat(b.temp) : null;
+    const reading = await prisma.pFLabReading.update({ where: { id: req.params.id }, data });
+    res.json(reading);
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
 router.delete('/lab/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
   await prisma.pFLabReading.delete({ where: { id: req.params.id } });
   res.json({ ok: true });
