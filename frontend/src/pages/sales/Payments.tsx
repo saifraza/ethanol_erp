@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { IndianRupee, Save, Loader2, AlertTriangle } from 'lucide-react';
+import { IndianRupee, Save, Loader2, AlertTriangle, RotateCcw } from 'lucide-react';
 import api from '../../services/api';
 
 interface Payment {
@@ -171,26 +171,33 @@ export default function Payments() {
   const agingRows = Object.entries(agingByCustomer).map(([name, d]) => ({ customerName: name, ...d }));
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white max-w-5xl mx-auto">
-      <div className="sticky top-0 bg-white border-b border-gray-200 z-20">
-        <div className="px-4 py-4 flex items-center gap-3">
-          <IndianRupee size={32} className="text-green-600" />
-          <div>
-            <h1 className="text-xl md:text-2xl font-bold text-gray-900">Payments & Ledger</h1>
-            <p className="text-xs md:text-sm text-gray-500">AR management & tracking</p>
-          </div>
-        </div>
-        <div className="flex border-t border-gray-200">
-          {(['record', 'ledger', 'aging'] as const).map(tab => (
-            <button key={tab} onClick={() => setActiveTab(tab)}
-              className={`flex-1 py-3 text-sm font-semibold text-center ${activeTab === tab ? 'border-b-2 border-green-600 text-green-600' : 'text-gray-600 hover:text-gray-900'}`}>
-              {tab === 'record' ? 'Record Payment' : tab === 'ledger' ? 'Ledger' : 'Aging'}
+    <div className="min-h-screen bg-gray-50">
+      <div className="bg-gradient-to-r from-green-700 to-green-800 text-white">
+        <div className="max-w-7xl mx-auto px-4 py-5">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h1 className="text-xl font-bold flex items-center gap-2">
+                <IndianRupee size={24} /> Payments & Ledger
+              </h1>
+              <p className="text-xs text-green-200 mt-1">{new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+            </div>
+            <button onClick={() => { loadRecentPayments(); loadAgingReport(); }} className="p-2 hover:bg-green-600 rounded-lg transition text-sm text-green-100" title="Refresh">
+              <RotateCcw size={18} />
             </button>
-          ))}
+          </div>
         </div>
       </div>
 
-      <div className="p-4">
+      <div className="max-w-7xl mx-auto px-4 py-6">
+        {/* Tabs */}
+        <div className="flex gap-2 mb-6 border-b border-gray-200 overflow-x-auto">
+          {(['record', 'ledger', 'aging'] as const).map(tab => (
+            <button key={tab} onClick={() => setActiveTab(tab)}
+              className={`px-4 py-3 text-sm font-semibold whitespace-nowrap transition border-b-2 ${activeTab === tab ? 'border-green-600 text-green-600' : 'border-transparent text-gray-600 hover:text-gray-900'}`}>
+              {tab === 'record' ? 'Record Payment' : tab === 'ledger' ? 'Ledger' : 'Aging Report'}
+            </button>
+          ))}
+        </div>
         {msg && (
           <div className={`rounded-lg p-3 mb-4 text-sm ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
             {msg.text}
@@ -199,13 +206,13 @@ export default function Payments() {
 
         {activeTab === 'record' && (
           <div className="space-y-4">
-            <div className="bg-white border border-gray-200 rounded-lg p-4">
+            <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4">
               <h3 className="text-lg font-bold text-gray-900 mb-4">New Payment</h3>
               <div className="space-y-3">
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-2">Customer *</label>
                   <select value={selectedCustomerId} onChange={e => handleCustomerChange(e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base">
+                    className="input-field w-full text-sm">
                     <option value="">— Select Customer —</option>
                     {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
@@ -213,7 +220,7 @@ export default function Payments() {
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-2">Invoice *</label>
                   <select value={selectedInvoiceId} onChange={e => setSelectedInvoiceId(e.target.value)}
-                    disabled={!selectedCustomerId} className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base disabled:bg-gray-100">
+                    disabled={!selectedCustomerId} className="input-field w-full text-sm disabled:bg-gray-100">
                     <option value="">— Select Invoice —</option>
                     {customerInvoices.map(inv => (
                       <option key={inv.id} value={inv.id}>INV-{inv.invoiceNo} · ₹{inv.balanceAmount.toLocaleString('en-IN')} due</option>
@@ -223,50 +230,50 @@ export default function Payments() {
                 {selectedInvoiceId && (() => {
                   const inv = customerInvoices.find(i => i.id === selectedInvoiceId);
                   return inv ? (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2 text-sm">
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-3 space-y-2 text-sm">
                       <div className="flex justify-between"><span className="text-gray-600">Invoice Total:</span><span className="font-bold">₹{inv.totalAmount.toLocaleString('en-IN')}</span></div>
                       <div className="flex justify-between"><span className="text-gray-600">Already Paid:</span><span className="font-bold">₹{inv.paidAmount.toLocaleString('en-IN')}</span></div>
-                      <div className="flex justify-between border-t border-blue-200 pt-2"><span className="text-gray-600">Balance Due:</span><span className="font-bold text-blue-700">₹{inv.balanceAmount.toLocaleString('en-IN')}</span></div>
+                      <div className="flex justify-between border-t border-green-200 pt-2"><span className="text-gray-600">Balance Due:</span><span className="font-bold text-green-700">₹{inv.balanceAmount.toLocaleString('en-IN')}</span></div>
                     </div>
                   ) : null;
                 })()}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">Amount *</label>
+                    <label className="text-xs text-gray-500 font-medium">Amount *</label>
                     <input type="number" step="0.01" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)}
-                      placeholder="0" className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base font-bold" />
+                      placeholder="0" className="input-field w-full text-sm mt-1" />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">Date *</label>
+                    <label className="text-xs text-gray-500 font-medium">Date *</label>
                     <input type="date" value={paymentDate} onChange={e => setPaymentDate(e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base" />
+                      className="input-field w-full text-sm mt-1" />
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-2">Mode *</label>
+                  <label className="text-xs text-gray-500 font-medium">Mode *</label>
                   <select value={paymentMode} onChange={e => setPaymentMode(e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base">
+                    className="input-field w-full text-sm mt-1">
                     {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">Reference (UTR/Cheque No)</label>
+                  <label className="text-xs text-gray-500 font-medium">Reference (UTR/Cheque No)</label>
                   <input value={paymentReference} onChange={e => setPaymentReference(e.target.value)}
-                    placeholder="Optional" className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base" />
+                    placeholder="Optional" className="input-field w-full text-sm mt-1" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">Confirmed By</label>
+                  <label className="text-xs text-gray-500 font-medium">Confirmed By</label>
                   <input value={paymentConfirmedBy} onChange={e => setPaymentConfirmedBy(e.target.value)}
-                    placeholder="Your name" className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base" />
+                    placeholder="Your name" className="input-field w-full text-sm mt-1" />
                 </div>
                 <button onClick={recordPayment} disabled={saving || !selectedInvoiceId || !paymentAmount}
-                  className="w-full py-3 bg-green-600 text-white rounded-lg font-bold text-base hover:bg-green-700 flex items-center justify-center gap-2 disabled:opacity-50 touch-target">
+                  className="w-full px-6 py-3 bg-green-600 text-white rounded-lg font-bold text-sm hover:bg-green-700 flex items-center justify-center gap-2 disabled:opacity-50 shadow-md transition">
                   {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />} Record Payment
                 </button>
               </div>
             </div>
             {recentPayments.length > 0 && (
-              <div className="bg-white border border-gray-200 rounded-lg p-4">
+              <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4">
                 <h4 className="font-bold text-gray-900 mb-3">Recent Payments</h4>
                 <div className="space-y-2">
                   {recentPayments.slice(0, 5).map(p => (
@@ -289,10 +296,10 @@ export default function Payments() {
 
         {activeTab === 'ledger' && (
           <div className="space-y-4">
-            <div className="bg-white border border-gray-200 rounded-lg p-4">
+            <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4">
               <label className="block text-xs font-semibold text-gray-700 mb-2">Select Customer</label>
               <select value={ledgerCustomerId} onChange={e => handleLedgerCustomerChange(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base">
+                className="input-field w-full text-sm">
                 <option value="">— Select Customer —</option>
                 {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
@@ -300,21 +307,21 @@ export default function Payments() {
             {ledgerCustomerId && (
               <>
                 <div className="grid grid-cols-3 gap-3">
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
                     <div className="text-xs text-gray-600 mb-1">Total Invoiced</div>
                     <div className="text-lg md:text-xl font-bold text-blue-700">₹{ledgerSummary.totalInvoiced.toLocaleString('en-IN')}</div>
                   </div>
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                  <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3">
                     <div className="text-xs text-gray-600 mb-1">Total Paid</div>
                     <div className="text-lg md:text-xl font-bold text-green-700">₹{ledgerSummary.totalPaid.toLocaleString('en-IN')}</div>
                   </div>
-                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                  <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3">
                     <div className="text-xs text-gray-600 mb-1">Outstanding</div>
                     <div className="text-lg md:text-xl font-bold text-red-700">₹{ledgerOutstanding.toLocaleString('en-IN')}</div>
                   </div>
                 </div>
                 {ledgerTimeline.length > 0 ? (
-                  <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-2">
+                  <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 space-y-2">
                     {ledgerTimeline.map((entry, i) => (
                       <div key={i} className="flex items-start gap-3 pb-3 border-b border-gray-100 last:border-0">
                         <div className={`w-2 h-2 rounded-full mt-2 ${entry.type === 'INVOICE' ? 'bg-red-500' : 'bg-green-500'}`} />
@@ -343,16 +350,16 @@ export default function Payments() {
 
         {activeTab === 'aging' && (
           <div className="space-y-4">
-            <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
+            <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-gray-100 border-b border-gray-200">
+                <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="text-left px-4 py-3 font-bold text-gray-900">Customer</th>
-                    <th className="text-right px-2 py-3 font-bold text-gray-900">0-7d</th>
-                    <th className="text-right px-2 py-3 font-bold text-gray-900">8-15d</th>
-                    <th className="text-right px-2 py-3 font-bold text-gray-900">16-30d</th>
-                    <th className="text-right px-2 py-3 font-bold text-gray-900">30+d</th>
-                    <th className="text-right px-4 py-3 font-bold text-gray-900">Total</th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-700 text-xs">Customer</th>
+                    <th className="text-right px-2 py-3 font-semibold text-gray-700 text-xs">0-7d</th>
+                    <th className="text-right px-2 py-3 font-semibold text-gray-700 text-xs">8-15d</th>
+                    <th className="text-right px-2 py-3 font-semibold text-gray-700 text-xs">16-30d</th>
+                    <th className="text-right px-2 py-3 font-semibold text-gray-700 text-xs">30+d</th>
+                    <th className="text-right px-4 py-3 font-semibold text-gray-700 text-xs">Total</th>
                   </tr>
                 </thead>
                 <tbody>

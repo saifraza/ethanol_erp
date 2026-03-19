@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Users, Plus, X, Save, Loader2, Trash2, Search, ChevronDown } from 'lucide-react';
+import { Users, Plus, X, Save, Loader2, Trash2, Search, ChevronDown, RotateCcw } from 'lucide-react';
 import api from '../../services/api';
 
 interface Customer {
@@ -162,18 +162,44 @@ export default function Customers() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white">
-        <div className="max-w-5xl mx-auto px-4 py-4 md:py-6">
-          <div className="flex items-center gap-3 mb-2">
-            <Users size={32} />
-            <h1 className="text-2xl md:text-3xl font-bold">Customers</h1>
+      <div className="bg-gradient-to-r from-blue-700 to-blue-800 text-white">
+        <div className="max-w-7xl mx-auto px-4 py-5">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h1 className="text-xl font-bold flex items-center gap-2">
+                <Users size={24} /> Customers
+              </h1>
+              <p className="text-xs text-blue-200 mt-1">{new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <button onClick={loadCustomers} className="p-2 hover:bg-blue-600 rounded-lg transition text-sm text-blue-100" title="Refresh">
+                <RotateCcw size={18} />
+              </button>
+              {!showForm && (
+                <button onClick={() => openForm()}
+                  className="bg-white text-blue-700 px-4 py-2 rounded-lg font-semibold text-sm hover:bg-blue-50 flex items-center gap-2 shadow-md transition">
+                  <Plus size={16} /> New Customer
+                </button>
+              )}
+            </div>
           </div>
-          <p className="text-blue-100">Manage customer accounts and credit terms</p>
+
+          {/* Stats Bar */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-blue-600 bg-opacity-40 rounded-lg px-4 py-3 backdrop-blur-sm">
+              <p className="text-blue-100 text-xs font-medium">Total Customers</p>
+              <p className="text-white text-xl font-bold">{customers.length}</p>
+            </div>
+            <div className="bg-blue-600 bg-opacity-40 rounded-lg px-4 py-3 backdrop-blur-sm">
+              <p className="text-blue-100 text-xs font-medium">Active</p>
+              <p className="text-white text-xl font-bold">{customers.filter(c => c.active !== false).length}</p>
+            </div>
+          </div>
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="max-w-5xl mx-auto px-4 py-6">
+      <div className="max-w-7xl mx-auto px-4 py-6">
         {msg && (
           <div className={`rounded-lg p-3 mb-4 text-sm ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
             {msg.text}
@@ -194,27 +220,15 @@ export default function Customers() {
           </div>
         </div>
 
-        {/* Add Customer Button */}
-        {!showForm && (
-          <button
-            onClick={() => openForm()}
-            className="w-full border-2 border-dashed border-blue-300 rounded-lg py-3 text-blue-600 hover:bg-blue-50 flex items-center justify-center gap-2 mb-4 font-medium text-sm"
-          >
-            <Plus size={18} /> Add New Customer
-          </button>
-        )}
-
         {/* Customer Form */}
         {showForm && (
-          <div className="card mb-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="section-title !mb-0 flex items-center gap-2">
-                <Users size={16} className="text-blue-600" /> {editId ? 'Edit Customer' : 'New Customer'}
-              </h3>
-              <button onClick={resetForm} className="text-gray-400 hover:text-gray-600">
-                <X size={18} />
-              </button>
+          <div className="bg-white rounded-xl border border-blue-200 shadow-lg mb-6 overflow-hidden">
+            <div className="bg-gradient-to-r from-blue-700 to-blue-800 px-4 py-3 flex items-center justify-between">
+              <h3 className="font-bold text-white text-sm">{editId ? 'Edit Customer' : 'New Customer'}</h3>
+              <button onClick={resetForm} className="text-blue-200 hover:text-white"><X size={18} /></button>
             </div>
+
+            <div className="p-4">
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
               <div>
@@ -361,11 +375,12 @@ export default function Customers() {
             <button
               onClick={saveCustomer}
               disabled={saving}
-              className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium text-sm hover:bg-blue-700 flex items-center justify-center gap-2 disabled:opacity-50"
+              className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg font-bold text-sm hover:bg-blue-700 flex items-center justify-center gap-2 disabled:opacity-50 shadow-md transition"
             >
               {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
               {editId ? 'Update Customer' : 'Create Customer'}
             </button>
+            </div>
           </div>
         )}
 
@@ -383,7 +398,7 @@ export default function Customers() {
             {filteredCustomers.map(customer => (
               <div
                 key={customer.id}
-                className="bg-white border rounded-lg shadow-sm hover:shadow-md transition-shadow"
+                className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition"
               >
                 {/* Card Header - Collapsed View */}
                 <button
@@ -447,7 +462,7 @@ export default function Customers() {
                       {customer.defaultTerms && (
                         <div>
                           <p className="text-xs text-gray-500">Default Terms</p>
-                          <span className="inline-block px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium mt-1">
+                          <span className="inline-block px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-[10px] font-bold mt-1">
                             {customer.defaultTerms}
                           </span>
                         </div>

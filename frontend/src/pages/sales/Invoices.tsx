@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FileText, Plus, X, Loader2, Save, ChevronDown, Printer } from 'lucide-react';
+import { FileText, Plus, X, Loader2, Save, ChevronDown, Printer, RotateCcw } from 'lucide-react';
 import api from '../../services/api';
 
 interface Invoice {
@@ -157,31 +157,45 @@ export default function Invoices() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white max-w-5xl mx-auto">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="sticky top-0 bg-white border-b border-gray-200 z-20">
-        <div className="px-4 py-4 flex items-center gap-3">
-          <FileText size={32} className="text-amber-600" />
-          <div>
-            <h1 className="text-xl md:text-2xl font-bold text-gray-900">Invoices</h1>
-            <p className="text-xs md:text-sm text-gray-500">Sales invoices & billing</p>
+      <div className="bg-gradient-to-r from-emerald-700 to-emerald-800 text-white">
+        <div className="max-w-7xl mx-auto px-4 py-5">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h1 className="text-xl font-bold flex items-center gap-2">
+                <FileText size={24} /> Invoices
+              </h1>
+              <p className="text-xs text-emerald-200 mt-1">{new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <button onClick={() => { loadInvoices(filters); }} className="p-2 hover:bg-emerald-600 rounded-lg transition text-sm text-emerald-100" title="Refresh">
+                <RotateCcw size={18} />
+              </button>
+              {!showCreateForm && (
+                <button onClick={() => setShowCreateForm(true)}
+                  className="bg-white text-emerald-700 px-4 py-2 rounded-lg font-semibold text-sm hover:bg-emerald-50 flex items-center gap-2 shadow-md transition">
+                  <Plus size={16} /> New Invoice
+                </button>
+              )}
+            </div>
           </div>
-        </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-2 gap-2 px-4 pb-4">
-          <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-            <div className="text-xs text-gray-600">Outstanding</div>
-            <div className="text-2xl md:text-3xl font-bold text-red-700">₹{totalOutstanding.toLocaleString('en-IN')}</div>
-          </div>
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <div className="text-xs text-gray-600">This Month</div>
-            <div className="text-2xl md:text-3xl font-bold text-blue-700">₹{thisMonthBilled.toLocaleString('en-IN')}</div>
+          {/* Stats Bar */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-emerald-600 bg-opacity-40 rounded-lg px-4 py-3 backdrop-blur-sm">
+              <p className="text-emerald-100 text-xs font-medium">Outstanding</p>
+              <p className="text-white text-xl font-bold">₹{(totalOutstanding / 100000).toFixed(1)}L</p>
+            </div>
+            <div className="bg-emerald-600 bg-opacity-40 rounded-lg px-4 py-3 backdrop-blur-sm">
+              <p className="text-emerald-100 text-xs font-medium">This Month</p>
+              <p className="text-white text-xl font-bold">₹{(thisMonthBilled / 100000).toFixed(1)}L</p>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="p-4">
+      <div className="max-w-7xl mx-auto px-4 py-6">
         {msg && (
           <div className={`rounded-lg p-3 mb-4 text-sm ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
             {msg.text}
@@ -189,87 +203,78 @@ export default function Invoices() {
         )}
 
         {/* Filters */}
-        <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4 space-y-3">
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-2">Customer</label>
-            <select
-              value={filters.customerId || ''}
-              onChange={e => handleFilterChange({ customerId: e.target.value || undefined })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg text-base"
+        <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
+          {['ALL', 'UNPAID', 'PARTIAL', 'PAID'].map(s => (
+            <button
+              key={s}
+              onClick={() => handleFilterChange({ status: s as any })}
+              className={`px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition ${filters.status === s ? 'bg-emerald-600 text-white shadow-md' : 'bg-white text-gray-600 border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50'}`}
             >
+              {s}
+            </button>
+          ))}
+        </div>
+
+        {/* Filters Panel */}
+        <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6 shadow-sm">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-2">Customer</label>
+              <select
+                value={filters.customerId || ''}
+                onChange={e => handleFilterChange({ customerId: e.target.value || undefined })}
+                className="input-field w-full text-sm"
+              >
               <option value="">All Customers</option>
               {customers.map(c => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-2">Status</label>
-            <div className="grid grid-cols-4 gap-2">
-              {['ALL', 'UNPAID', 'PARTIAL', 'PAID'].map(s => (
-                <button
-                  key={s}
-                  onClick={() => handleFilterChange({ status: s as any })}
-                  className={`py-2 rounded-lg text-xs font-semibold ${filters.status === s ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-                >
-                  {s}
-                </button>
-              ))}
             </div>
-          </div>
 
-          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">From</label>
-              <input
-                type="date"
-                value={filters.dateFrom || ''}
-                onChange={e => handleFilterChange({ dateFrom: e.target.value || undefined })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg text-base"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">To</label>
-              <input
-                type="date"
-                value={filters.dateTo || ''}
-                onChange={e => handleFilterChange({ dateTo: e.target.value || undefined })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg text-base"
-              />
+              <label className="block text-xs font-semibold text-gray-700 mb-2">Date Range</label>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] text-gray-500">From</label>
+                  <input
+                    type="date"
+                    value={filters.dateFrom || ''}
+                    onChange={e => handleFilterChange({ dateFrom: e.target.value || undefined })}
+                    className="input-field w-full text-sm mt-1"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-500">To</label>
+                  <input
+                    type="date"
+                    value={filters.dateTo || ''}
+                    onChange={e => handleFilterChange({ dateTo: e.target.value || undefined })}
+                    className="input-field w-full text-sm mt-1"
+                  />
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Create Invoice Button */}
-        {!showCreateForm && (
-          <button
-            onClick={() => setShowCreateForm(true)}
-            className="w-full border-2 border-dashed border-amber-300 rounded-lg py-4 text-amber-600 hover:bg-amber-50 flex items-center justify-center gap-2 mb-4 font-bold text-lg touch-target"
-          >
-            <Plus size={24} /> Create Invoice
-          </button>
-        )}
-
         {/* Create Invoice Form */}
         {showCreateForm && (
-          <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-gray-900">New Invoice</h3>
-              <button onClick={resetCreateForm} className="text-gray-400 hover:text-gray-600">
-                <X size={20} />
-              </button>
+          <div className="bg-white rounded-xl border border-emerald-200 shadow-lg mb-6 overflow-hidden">
+            <div className="bg-gradient-to-r from-emerald-700 to-emerald-800 px-4 py-3 flex items-center justify-between">
+              <h3 className="font-bold text-white text-sm">New Invoice</h3>
+              <button onClick={resetCreateForm} className="text-emerald-200 hover:text-white"><X size={18} /></button>
             </div>
 
-            <div className="space-y-3">
+            <div className="p-4 space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">Customer *</label>
+                <label className="text-xs text-gray-500 font-medium">Customer *</label>
                 <select
                   value={formCustomerId}
                   onChange={e => setFormCustomerId(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base"
+                  className="input-field w-full text-sm mt-1"
                 >
-                  <option value="">— Select Customer —</option>
+                  <option value="">Select Customer</option>
                   {customers.map(c => (
                     <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
@@ -277,11 +282,11 @@ export default function Invoices() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">Product</label>
+                <label className="text-xs text-gray-500 font-medium">Product</label>
                 <select
                   value={formProduct}
                   onChange={e => setFormProduct(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base"
+                  className="input-field w-full text-sm mt-1"
                 >
                   {['DDGS', 'ETHANOL', 'LFO', 'HFO', 'RS'].map(p => (
                     <option key={p} value={p}>{p}</option>
@@ -291,58 +296,58 @@ export default function Invoices() {
 
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">Qty *</label>
+                  <label className="text-xs text-gray-500 font-medium">Qty *</label>
                   <input
                     type="number"
                     step="0.01"
                     value={formQty}
                     onChange={e => setFormQty(e.target.value)}
                     placeholder="0"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base font-bold"
+                    className="input-field w-full text-sm mt-1"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">Rate *</label>
+                  <label className="text-xs text-gray-500 font-medium">Rate *</label>
                   <input
                     type="number"
                     step="0.01"
                     value={formRate}
                     onChange={e => setFormRate(e.target.value)}
                     placeholder="0"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base font-bold"
+                    className="input-field w-full text-sm mt-1"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">GST %</label>
+                  <label className="text-xs text-gray-500 font-medium">GST %</label>
                   <input
                     type="number"
                     step="0.01"
                     value={formGst}
                     onChange={e => setFormGst(e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base font-bold"
+                    className="input-field w-full text-sm mt-1"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">Freight</label>
+                  <label className="text-xs text-gray-500 font-medium">Freight</label>
                   <input
                     type="number"
                     step="0.01"
                     value={formFreight}
                     onChange={e => setFormFreight(e.target.value)}
                     placeholder="0"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base"
+                    className="input-field w-full text-sm mt-1"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">Challan No</label>
+                  <label className="text-xs text-gray-500 font-medium">Challan No</label>
                   <input
                     value={formChallanNo}
                     onChange={e => setFormChallanNo(e.target.value)}
                     placeholder="Optional"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base"
+                    className="input-field w-full text-sm mt-1"
                   />
                 </div>
               </div>
@@ -350,7 +355,7 @@ export default function Invoices() {
               <button
                 onClick={saveInvoice}
                 disabled={saving}
-                className="w-full py-3 bg-amber-600 text-white rounded-lg font-bold text-base hover:bg-amber-700 flex items-center justify-center gap-2 disabled:opacity-50 touch-target"
+                className="px-6 py-3 bg-emerald-600 text-white rounded-lg font-bold text-sm hover:bg-emerald-700 flex items-center justify-center gap-2 disabled:opacity-50 w-full shadow-md transition"
               >
                 {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
                 Create Invoice
@@ -363,7 +368,7 @@ export default function Invoices() {
         <div className="space-y-3">
           {invoices.length > 0 ? (
             invoices.map(inv => (
-              <div key={inv.id} className="bg-white border border-gray-200 rounded-lg shadow-sm">
+              <div key={inv.id} className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition">
                 {/* Summary Row */}
                 <button
                   onClick={() => setExpandedId(expandedId === inv.id ? null : inv.id)}
@@ -376,9 +381,9 @@ export default function Invoices() {
                   </div>
                   <div className="text-right">
                     <div className="font-bold text-lg text-gray-900">₹{inv.totalAmount.toLocaleString('en-IN')}</div>
-                    <div className={`text-xs font-semibold px-2 py-1 rounded mt-1 ${statusColor(inv.status)}`}>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full mt-1 inline-block ${statusColor(inv.status)}`}>
                       {inv.status}
-                    </div>
+                    </span>
                   </div>
                   <ChevronDown
                     size={20}
