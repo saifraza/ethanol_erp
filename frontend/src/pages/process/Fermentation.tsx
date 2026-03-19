@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Beaker, FlaskConical, RefreshCw, ArrowRight, Pencil, Check, X, Send, CheckCircle, AlertTriangle, ChevronDown, ChevronUp, Share2, Cylinder } from 'lucide-react';
+import { Plus, Beaker, FlaskConical, RefreshCw, ArrowRight, Pencil, Check, X, Send, CheckCircle, AlertTriangle, ChevronDown, ChevronUp, Share2, Cylinder, Trash2 } from 'lucide-react';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 
@@ -267,6 +267,24 @@ function FieldTab({ pfBatches, fermBatches, chemicals, pfRecipes, isAdmin, onRef
     } catch {}
   };
 
+  const deletePFBatch = async (batch: PFBatch) => {
+    if (!confirm(`Delete PF-${batch.fermenterNo} Batch #${batch.batchNo}?`)) return;
+    try {
+      await api.delete(`/pre-fermentation/batches/${batch.id}`);
+      flash(`PF Batch #${batch.batchNo} deleted`);
+      onRefresh();
+    } catch (e: any) { flash(e?.response?.data?.error || 'Delete failed', 'err'); }
+  };
+
+  const deleteFermBatch = async (batch: FermBatch) => {
+    if (!confirm(`Delete F-${batch.fermenterNo} Batch #${batch.batchNo}?`)) return;
+    try {
+      await api.delete(`/fermentation/batches/${batch.id}`);
+      flash(`Ferm Batch #${batch.batchNo} deleted`);
+      onRefresh();
+    } catch (e: any) { flash(e?.response?.data?.error || 'Delete failed', 'err'); }
+  };
+
   const submitFermField = async (fermNo: number) => {
     const hasVal = fermFieldForm.level?.trim() || fermFieldForm.temp?.trim() || fermFieldForm.spGravity?.trim();
     if (!hasVal) { flash('Enter at least one value', 'err'); return; }
@@ -444,6 +462,10 @@ function FieldTab({ pfBatches, fermBatches, chemicals, pfRecipes, isAdmin, onRef
                     className="bg-green-600 text-white px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1 ml-auto">
                     <Share2 size={14} /> Share
                   </button>
+                  <button onClick={() => deletePFBatch(batch)}
+                    className="bg-red-100 text-red-600 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1 hover:bg-red-200">
+                    <Trash2 size={14} /> Delete
+                  </button>
                 </div>
               </div>
             )}
@@ -554,6 +576,10 @@ function FieldTab({ pfBatches, fermBatches, chemicals, pfRecipes, isAdmin, onRef
                   <button onClick={() => shareWhatsApp(buildFermShareText(batch))}
                     className="bg-green-600 text-white px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1 ml-auto">
                     <Share2 size={14} /> Share
+                  </button>
+                  <button onClick={() => deleteFermBatch(batch)}
+                    className="bg-red-100 text-red-600 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1 hover:bg-red-200">
+                    <Trash2 size={14} /> Delete
                   </button>
                 </div>
               </div>
