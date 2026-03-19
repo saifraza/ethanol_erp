@@ -1,5 +1,5 @@
-import React from 'react';
-import { Save, Loader2, X, Share2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { Save, Loader2, X, Share2, Check } from 'lucide-react';
 
 interface PreviewField {
   label: string;
@@ -21,7 +21,7 @@ interface PreviewModalProps {
   time?: string;
   sections: PreviewSection[];
   extraInfo?: string; // e.g. remark
-  onSave: () => void;
+  onSave: () => Promise<void> | void;
   onClose: () => void;
   saving: boolean;
   whatsappText: string;
@@ -31,8 +31,33 @@ export default function PreviewModal({
   title, headerColor, date, time, sections, extraInfo,
   onSave, onClose, saving, whatsappText
 }: PreviewModalProps) {
+  const [saved, setSaved] = useState(false);
+
   const shareWhatsApp = () => {
-    window.open(`https://wa.me/?text=${encodeURIComponent(whatsappText)}`, '_blank');
+    if (navigator.share) {
+      navigator.share({ text: whatsappText }).catch(() => {
+        window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(whatsappText)}`, '_blank');
+      });
+    } else {
+      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(whatsappText)}`, '_blank');
+    }
+  };
+
+  // Save first, then share
+  const handleSaveAndShare = async () => {
+    try {
+      await onSave();
+      setSaved(true);
+      shareWhatsApp();
+    } catch { /* onSave handles its own errors */ }
+  };
+
+  // Save only
+  const handleSaveOnly = async () => {
+    try {
+      await onSave();
+      setSaved(true);
+    } catch { /* onSave handles its own errors */ }
   };
 
   return (
@@ -68,16 +93,23 @@ export default function PreviewModal({
           {extraInfo && <div className="text-gray-600 italic">{extraInfo}</div>}
         </div>
 
-        {/* Footer */}
-        <div className="sticky bottom-0 bg-gray-50 p-4 rounded-b-xl flex gap-3 border-t">
-          <button onClick={onSave} disabled={saving}
-            className={`flex-1 flex items-center justify-center gap-2 ${headerColor} text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 transition`}>
-            {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save Entry
-          </button>
-          <button onClick={shareWhatsApp}
-            className="flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 transition">
-            <Share2 size={16} /> WhatsApp
-          </button>
+        {/* Footer — Save & Share (primary), Save only (secondary) */}
+        <div className="sticky bottom-0 bg-gray-50 p-4 rounded-b-xl border-t space-y-2">
+          {saved && (
+            <div className="flex items-center justify-center gap-1.5 text-green-600 text-xs font-medium pb-1">
+              <Check size={14} /> Saved successfully
+            </div>
+          )}
+          <div className="flex gap-2">
+            <button onClick={handleSaveAndShare} disabled={saving}
+              className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-green-700 disabled:opacity-50 transition">
+              {saving ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />} Save & Share
+            </button>
+            <button onClick={handleSaveOnly} disabled={saving}
+              className={`flex items-center justify-center gap-2 ${headerColor} text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 transition`}>
+              {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save
+            </button>
+          </div>
         </div>
       </div>
     </div>
