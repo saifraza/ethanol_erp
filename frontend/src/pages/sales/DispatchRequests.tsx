@@ -1223,28 +1223,38 @@ export default function DispatchRequests() {
                                             })}
                                           </div>
 
-                                          {/* Document trail — 4 step tracker */}
+                                          {/* Document trail — clear 4 step tracker */}
                                           {(() => {
                                             const docTrail = [
-                                              { label: 'Bill', has: !!(s.challanNo || s.invoiceRef || docs.some((d: any) => d.docType === 'INVOICE')) },
-                                              { label: 'E-Way', has: !!(s.ewayBill || docs.some((d: any) => d.docType === 'EWAY_BILL')) },
-                                              { label: 'Gate', has: !!(s.gatePassNo || docs.some((d: any) => d.docType === 'GATE_PASS')) },
-                                              { label: 'Bilty', has: !!(s.grBiltyNo || docs.some((d: any) => d.docType === 'GR_BILTY')) },
+                                              { label: 'Bill', has: !!(s.challanNo || s.invoiceRef || docs.some((d: any) => d.docType === 'INVOICE')), color: 'blue' },
+                                              { label: 'E-Way', has: !!(s.ewayBill || docs.some((d: any) => d.docType === 'EWAY_BILL')), color: 'indigo' },
+                                              { label: 'Gate Pass', has: !!(s.gatePassNo || docs.some((d: any) => d.docType === 'GATE_PASS')), color: 'amber' },
+                                              { label: 'Bilty', has: !!(s.grBiltyNo || docs.some((d: any) => d.docType === 'GR_BILTY')), color: 'purple' },
                                             ];
                                             const doneCount = docTrail.filter(d => d.has).length;
                                             const hasSignedBilty = docs.some((d: any) => d.docType === 'SIGNED_BILTY');
                                             return (
-                                              <div className="flex items-center gap-0.5 mt-1">
-                                                {docTrail.map((dt, i) => (
-                                                  <div key={i} className="flex items-center gap-0.5 flex-1">
-                                                    <div className={`flex-1 text-center py-0.5 rounded text-[7px] font-bold transition-colors ${
-                                                      dt.has ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-300'
-                                                    }`}>{dt.has ? '✓' : '○'} {dt.label}</div>
-                                                    {i < 3 && <div className={`w-1 h-px ${dt.has ? 'bg-green-300' : 'bg-gray-200'}`} />}
+                                              <div className="mt-2 bg-gray-50 rounded-lg p-2">
+                                                <div className="flex items-center justify-between mb-1.5">
+                                                  <span className="text-[9px] font-bold text-gray-500 uppercase">Documents</span>
+                                                  <span className={`text-[10px] font-bold ${doneCount === 4 ? 'text-green-600' : 'text-orange-500'}`}>{doneCount}/4</span>
+                                                </div>
+                                                <div className="flex gap-1.5">
+                                                  {docTrail.map((dt) => (
+                                                    <div key={dt.label} className={`flex-1 text-center py-1.5 rounded-lg text-[10px] font-bold border ${
+                                                      dt.has
+                                                        ? 'bg-green-100 text-green-700 border-green-300'
+                                                        : 'bg-white text-gray-400 border-gray-200'
+                                                    }`}>
+                                                      {dt.has ? '✓ ' : ''}{dt.label}
+                                                    </div>
+                                                  ))}
+                                                </div>
+                                                {hasSignedBilty && (
+                                                  <div className="mt-1.5 text-center py-1 bg-purple-100 text-purple-700 rounded-lg text-[10px] font-bold border border-purple-300">
+                                                    ✓ Signed Bilty (POD)
                                                   </div>
-                                                ))}
-                                                {hasSignedBilty && <span className="text-[7px] bg-purple-100 text-purple-700 px-1 py-0.5 rounded font-bold ml-0.5">POD ✓</span>}
-                                                {doneCount === 4 && !hasSignedBilty && <span className="text-[7px] text-green-600 font-bold ml-0.5">4/4</span>}
+                                                )}
                                               </div>
                                             );
                                           })()}

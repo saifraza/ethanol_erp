@@ -746,30 +746,27 @@ export default function SalesDashboard() {
                                               }`}>{s.status.replace(/_/g, ' ')}</span>
                                             </div>
                                           </div>
-                                          {/* Document trail — 4 step progress */}
+                                          {/* Document trail */}
                                           {(() => {
                                             const docTrail = [
-                                              { key: 'INVOICE', label: 'Bill', has: !!(s.challanNo || s.invoiceRef || docs.some((d: any) => d.docType === 'INVOICE')) },
-                                              { key: 'EWAY_BILL', label: 'E-Way', has: !!(s.ewayBill || docs.some((d: any) => d.docType === 'EWAY_BILL')) },
-                                              { key: 'GATE_PASS', label: 'Gate', has: !!(s.gatePassNo || docs.some((d: any) => d.docType === 'GATE_PASS')) },
-                                              { key: 'GR_BILTY', label: 'Bilty', has: !!(s.grBiltyNo || docs.some((d: any) => d.docType === 'GR_BILTY')) },
+                                              { label: 'Bill', has: !!(s.challanNo || s.invoiceRef || docs.some((d: any) => d.docType === 'INVOICE')) },
+                                              { label: 'E-Way', has: !!(s.ewayBill || docs.some((d: any) => d.docType === 'EWAY_BILL')) },
+                                              { label: 'Gate', has: !!(s.gatePassNo || docs.some((d: any) => d.docType === 'GATE_PASS')) },
+                                              { label: 'Bilty', has: !!(s.grBiltyNo || docs.some((d: any) => d.docType === 'GR_BILTY')) },
                                             ];
                                             const doneCount = docTrail.filter(d => d.has).length;
                                             return (
-                                              <div className="mt-1.5">
-                                                <div className="flex items-center gap-0.5">
-                                                  {docTrail.map((dt, i) => (
-                                                    <div key={dt.key} className="flex items-center gap-0.5 flex-1">
-                                                      <div className={`flex-1 text-center py-0.5 rounded text-[7px] font-bold ${
-                                                        dt.has ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'
-                                                      }`}>
-                                                        {dt.has ? '✓' : '○'} {dt.label}
-                                                      </div>
-                                                      {i < 3 && <div className={`w-1.5 h-px ${dt.has ? 'bg-green-300' : 'bg-gray-200'}`} />}
-                                                    </div>
-                                                  ))}
-                                                </div>
-                                                {doneCount === 4 && <div className="text-[8px] text-green-600 font-bold mt-0.5 text-center">All documents complete</div>}
+                                              <div className="flex gap-1 mt-1.5">
+                                                {docTrail.map((dt) => (
+                                                  <span key={dt.label} className={`flex-1 text-center py-1 rounded text-[9px] font-bold border ${
+                                                    dt.has
+                                                      ? 'bg-green-50 text-green-700 border-green-200'
+                                                      : 'bg-gray-50 text-gray-300 border-gray-100'
+                                                  }`}>{dt.has ? '✓ ' : ''}{dt.label}</span>
+                                                ))}
+                                                <span className={`text-[9px] font-bold px-1.5 py-1 rounded ${
+                                                  doneCount === 4 ? 'bg-green-100 text-green-700' : 'text-gray-400'
+                                                }`}>{doneCount}/4</span>
                                               </div>
                                             );
                                           })()}
