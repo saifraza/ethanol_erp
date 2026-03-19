@@ -1215,20 +1215,39 @@ export default function DispatchRequests() {
                                             </div>
                                           </div>
 
-                                          {/* Doc number badges */}
-                                          <div className="flex gap-1.5 flex-wrap mt-1">
-                                            {s.challanNo && <span className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-medium">Bill: {s.challanNo}</span>}
-                                            {s.ewayBill && <span className="text-[10px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded font-medium">E-Way: {s.ewayBill}</span>}
-                                            {s.gatePassNo && <span className="text-[10px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded font-medium">Gate: {s.gatePassNo}</span>}
-                                            {s.grBiltyNo && <span className="text-[10px] bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded font-medium">Bilty: {s.grBiltyNo}</span>}
-                                          </div>
-
+                                          {/* Status progress bar */}
                                           <div className="flex gap-0.5 mt-1.5">
                                             {['GATE_IN', 'TARE_WEIGHED', 'LOADING', 'GROSS_WEIGHED', 'RELEASED', 'EXITED'].map((st, i) => {
                                               const idx = ['GATE_IN', 'TARE_WEIGHED', 'LOADING', 'GROSS_WEIGHED', 'RELEASED', 'EXITED'].indexOf(s.status);
                                               return <div key={st} className={`h-1 flex-1 rounded-full ${i <= idx ? 'bg-green-500' : 'bg-gray-200'}`} />;
                                             })}
                                           </div>
+
+                                          {/* Document trail — 4 step tracker */}
+                                          {(() => {
+                                            const docTrail = [
+                                              { label: 'Bill', has: !!(s.challanNo || s.invoiceRef || docs.some((d: any) => d.docType === 'INVOICE')) },
+                                              { label: 'E-Way', has: !!(s.ewayBill || docs.some((d: any) => d.docType === 'EWAY_BILL')) },
+                                              { label: 'Gate', has: !!(s.gatePassNo || docs.some((d: any) => d.docType === 'GATE_PASS')) },
+                                              { label: 'Bilty', has: !!(s.grBiltyNo || docs.some((d: any) => d.docType === 'GR_BILTY')) },
+                                            ];
+                                            const doneCount = docTrail.filter(d => d.has).length;
+                                            const hasSignedBilty = docs.some((d: any) => d.docType === 'SIGNED_BILTY');
+                                            return (
+                                              <div className="flex items-center gap-0.5 mt-1">
+                                                {docTrail.map((dt, i) => (
+                                                  <div key={i} className="flex items-center gap-0.5 flex-1">
+                                                    <div className={`flex-1 text-center py-0.5 rounded text-[7px] font-bold transition-colors ${
+                                                      dt.has ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-300'
+                                                    }`}>{dt.has ? '✓' : '○'} {dt.label}</div>
+                                                    {i < 3 && <div className={`w-1 h-px ${dt.has ? 'bg-green-300' : 'bg-gray-200'}`} />}
+                                                  </div>
+                                                ))}
+                                                {hasSignedBilty && <span className="text-[7px] bg-purple-100 text-purple-700 px-1 py-0.5 rounded font-bold ml-0.5">POD ✓</span>}
+                                                {doneCount === 4 && !hasSignedBilty && <span className="text-[7px] text-green-600 font-bold ml-0.5">4/4</span>}
+                                              </div>
+                                            );
+                                          })()}
                                         </div>
 
                                         {/* Expanded: gate entry docs + uploads */}

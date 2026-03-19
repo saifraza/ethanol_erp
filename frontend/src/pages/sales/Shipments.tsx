@@ -378,6 +378,18 @@ export default function Shipments() {
                               {netTon && <span className="text-[9px] bg-green-50 text-green-700 px-1.5 py-px rounded font-bold ring-1 ring-green-200">{netTon}T</span>}
                             </div>
 
+                            {/* Doc badges on main row */}
+                            {docs.length > 0 && (
+                              <div className="flex items-center gap-0.5 shrink-0">
+                                {DOC_TYPES.map(dt => {
+                                  const has = docs.some(d => d.docType === dt.key);
+                                  return has ? (
+                                    <span key={dt.key} className="text-[7px] font-bold px-1 py-px rounded bg-green-100 text-green-700">{dt.label.split(' ')[0]}</span>
+                                  ) : null;
+                                })}
+                              </div>
+                            )}
+
                             {/* Delete for unlinked */}
                             {isUnlinked && (
                               <button onClick={(e) => { e.stopPropagation(); setDeleteConfirm(s); }}
