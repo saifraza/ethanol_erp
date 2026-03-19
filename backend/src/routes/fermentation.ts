@@ -453,6 +453,25 @@ router.post('/', upload.single('spentLossPhoto'), async (req: Request, res: Resp
   res.status(201).json(entry);
 });
 
+// PUT /:id — Update individual lab reading
+router.put('/:id', async (req: Request, res: Response) => {
+  try {
+    const b = req.body;
+    const data: any = {};
+    if (b.level !== undefined) data.level = b.level !== null && b.level !== '' ? parseFloat(b.level) : null;
+    if (b.spGravity !== undefined) data.spGravity = b.spGravity !== null && b.spGravity !== '' ? parseFloat(b.spGravity) : null;
+    if (b.ph !== undefined) data.ph = b.ph !== null && b.ph !== '' ? parseFloat(b.ph) : null;
+    if (b.rs !== undefined) data.rs = b.rs !== null && b.rs !== '' ? parseFloat(b.rs) : null;
+    if (b.alcohol !== undefined) data.alcohol = b.alcohol !== null && b.alcohol !== '' ? parseFloat(b.alcohol) : null;
+    if (b.temp !== undefined) data.temp = b.temp !== null && b.temp !== '' ? parseFloat(b.temp) : null;
+    if (b.ds !== undefined) data.ds = b.ds !== null && b.ds !== '' ? parseFloat(b.ds) : null;
+    if (b.vfaPpa !== undefined) data.vfaPpa = b.vfaPpa !== null && b.vfaPpa !== '' ? parseFloat(b.vfaPpa) : null;
+    if (b.remarks !== undefined) data.remarks = b.remarks || null;
+    const entry = await prisma.fermentationEntry.update({ where: { id: req.params.id }, data });
+    res.json(entry);
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
 router.delete('/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
   const entry = await prisma.fermentationEntry.findUnique({ where: { id: req.params.id } });
   if (entry?.spentLossPhotoUrl) {
