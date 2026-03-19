@@ -1126,7 +1126,7 @@ export default function GrainUnloading() {
               {form.remarks && <div className="text-gray-600 italic">Remarks: {form.remarks}</div>}
             </div>
             <div className="sticky bottom-0 bg-gray-50 p-4 rounded-b-xl flex gap-3 border-t">
-              <button onClick={() => { handleSave(); setShowPreview(false); }} disabled={saving} className="flex-1 flex items-center justify-center gap-2 bg-amber-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-amber-700 disabled:opacity-50 transition">
+              <button onClick={async () => { await handleSave(); setShowPreview(false); }} disabled={saving} className="flex-1 flex items-center justify-center gap-2 bg-amber-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-amber-700 disabled:opacity-50 transition">
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} {editId ? 'Update' : 'Save'} Entry
               </button>
               <button onClick={() => {
