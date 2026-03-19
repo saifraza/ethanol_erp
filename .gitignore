@@ -12,3 +12,4 @@ uploads/
 backend/ensure-server.sh
 backend/keepalive.sh
 backend/loadHistoricalData.ts
+.claude/worktrees/
