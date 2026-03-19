@@ -304,8 +304,29 @@ function FieldTab({ pfBatches, fermBatches, chemicals, pfRecipes, isAdmin, onRef
     setFermFieldForm({});
   };
 
+  /* ─── Delete helpers ─── */
+  const deleteLabReading = async (id: string, type: 'ferm' | 'pf') => {
+    if (!confirm('Delete this reading?')) return;
+    try {
+      const url = type === 'pf' ? `/pre-fermentation/lab/${id}` : `/fermentation/${id}`;
+      await api.delete(url);
+      flash('Reading deleted');
+      onRefresh();
+    } catch (e: any) { flash(e?.response?.data?.error || 'Delete failed', 'err'); }
+  };
+
+  const deleteDosing = async (id: string, type: 'ferm' | 'pf') => {
+    if (!confirm('Delete this dosing?')) return;
+    try {
+      const url = type === 'pf' ? `/pre-fermentation/dosing/${id}` : `/fermentation/dosing/${id}`;
+      await api.delete(url);
+      flash('Dosing deleted');
+      onRefresh();
+    } catch (e: any) { flash(e?.response?.data?.error || 'Delete failed', 'err'); }
+  };
+
   /* ─── Lab readings table (shared) ─── */
-  const LabTable = ({ readings, showLevel }: { readings: any[]; showLevel?: boolean }) => {
+  const LabTable = ({ readings, showLevel, type }: { readings: any[]; showLevel?: boolean; type: 'ferm' | 'pf' }) => {
     if (!readings.length) return <p className="text-xs text-gray-400 italic">No lab readings yet</p>;
     return (
       <div className="overflow-x-auto">
@@ -318,9 +339,10 @@ function FieldTab({ pfBatches, fermBatches, chemicals, pfRecipes, isAdmin, onRef
             <th className="text-left py-1 px-1">Alc%</th>
             <th className="text-left py-1 px-1">T°C</th>
             <th className="text-left py-1 px-1">RS</th>
+            <th className="py-1 px-1"></th>
           </tr></thead>
           <tbody>{readings.map((r: any, i: number) => (
-            <tr key={r.id || i} className="border-t">
+            <tr key={r.id || i} className="border-t group">
               <td className="px-1 py-1 whitespace-nowrap">{fmtTime(r.analysisTime)}{r.status === 'FIELD' ? <span className="text-[9px] text-blue-500 ml-0.5">F</span> : ''}</td>
               {showLevel && <td className="px-1">{r.level ?? '-'}</td>}
               <td className="px-1">{r.spGravity ?? '-'}</td>
@@ -328,6 +350,9 @@ function FieldTab({ pfBatches, fermBatches, chemicals, pfRecipes, isAdmin, onRef
               <td className="px-1">{r.alcohol ?? '-'}</td>
               <td className="px-1">{r.temp ?? '-'}</td>
               <td className="px-1">{r.rs ?? '-'}</td>
+              <td className="px-1">
+                {r.id && <button onClick={() => deleteLabReading(r.id, type)} className="text-red-300 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={12} /></button>}
+              </td>
             </tr>
           ))}</tbody>
         </table>
@@ -410,9 +435,12 @@ function FieldTab({ pfBatches, fermBatches, chemicals, pfRecipes, isAdmin, onRef
                                     <button onClick={() => setEditDoseId(null)} className="text-gray-400"><X size={14} /></button>
                                   </span>
                                 ) : (
-                                  <span className="flex items-center gap-1 cursor-pointer" onClick={() => { setEditDoseId(d.id); setEditDoseQty(String(d.quantity)); }}>
-                                    <b className="text-amber-700">{d.quantity}</b> <span className="text-xs text-gray-400">{d.unit}</span>
-                                    <Pencil size={10} className="text-amber-400" />
+                                  <span className="flex items-center gap-1.5">
+                                    <span className="flex items-center gap-1 cursor-pointer" onClick={() => { setEditDoseId(d.id); setEditDoseQty(String(d.quantity)); }}>
+                                      <b className="text-amber-700">{d.quantity}</b> <span className="text-xs text-gray-400">{d.unit}</span>
+                                      <Pencil size={10} className="text-amber-400" />
+                                    </span>
+                                    <button onClick={() => deleteDosing(d.id, 'pf')} className="text-red-300 hover:text-red-600"><Trash2 size={11} /></button>
                                   </span>
                                 )}
                               </div>
@@ -439,7 +467,7 @@ function FieldTab({ pfBatches, fermBatches, chemicals, pfRecipes, isAdmin, onRef
                 {/* Lab readings — all readings */}
                 <div className="bg-emerald-50 rounded-lg p-2.5">
                   <h4 className="text-xs font-semibold text-emerald-800 mb-1.5">Lab Readings ({batch.labReadings.length})</h4>
-                  <LabTable readings={batch.labReadings} />
+                  <LabTable readings={batch.labReadings} type="pf" />
                 </div>
 
                 {/* Actions + Share */}
@@ -550,7 +578,7 @@ function FieldTab({ pfBatches, fermBatches, chemicals, pfRecipes, isAdmin, onRef
                 {/* Lab readings — all */}
                 <div className="bg-emerald-50 rounded-lg p-2.5">
                   <h4 className="text-xs font-semibold text-emerald-800 mb-1.5">Lab Readings ({readings.length})</h4>
-                  <LabTable readings={readings} showLevel />
+                  <LabTable readings={readings} showLevel type="ferm" />
                 </div>
 
                 {/* Phase controls + Share */}
