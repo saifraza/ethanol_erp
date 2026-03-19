@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
 import api from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 /* ═══════════════════════════════════════════════════════════════
    TYPES
@@ -59,6 +60,7 @@ const elapsed = (iso?: string) => {
    MAIN COMPONENT
    ═══════════════════════════════════════════════════════════════ */
 export default function Fermentation() {
+  const { user } = useAuth();
   const [pfBatches, setPfBatches] = useState<PFBatch[]>([]);
   const [fermBatches, setFermBatches] = useState<FermBatch[]>([]);
   const [fermEntries, setFermEntries] = useState<Record<number, LabReading[]>>({});
@@ -187,7 +189,7 @@ export default function Fermentation() {
           slurryVolume: pfLvl > 0 ? (pfLvl / 100) * 450 * 1000 : undefined,
           slurryGravity: f.slurryGravity ? +f.slurryGravity : undefined,
           slurryTemp: f.slurryTemp ? +f.slurryTemp : undefined,
-          userId: 'cmmipu76p0000hvsh1h2a21y0',
+          userId: user?.id || '',
         });
       } else {
         const lvl = parseFloat(f.pfLevel) || 0;
@@ -197,7 +199,7 @@ export default function Fermentation() {
           fermLevel: lvl || undefined,
           volume: lvl > 0 ? (lvl / 100) * 2300 * 1000 : undefined,
           setupGravity: f.slurryGravity ? +f.slurryGravity : undefined,
-          userId: 'cmmipu76p0000hvsh1h2a21y0',
+          userId: user?.id || '',
         });
       }
       flash('ok', `${selected.label} Batch #${bn} started`);
@@ -266,6 +268,62 @@ export default function Fermentation() {
       await api.delete(selected.type === 'PF' ? `/pre-fermentation/dosing/${dosingId}` : `/fermentation/dosing/${dosingId}`);
       load();
     } catch { flash('err', 'Delete failed'); }
+  };
+
+  const deleteReading = async (readingId: string) => {
+    if (!selected || !confirm('Delete this reading?')) return;
+    try {
+      const url = selected.type === 'PF' ? `/pre-fermentation/lab/${readingId}` : `/fermentation/${readingId}`;
+      await api.delete(url);
+      flash('ok', 'Deleted');
+      load();
+    } catch { flash('err', 'Delete failed'); }
+  };
+
+  const [editingReading, setEditingReading] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<Record<string, string>>({});
+
+  const startEditReading = (r: LabReading) => {
+    setEditingReading(r.id);
+    setEditForm({
+      level: r.level != null ? String(r.level) : '',
+      spGravity: r.spGravity != null ? String(r.spGravity) : '',
+      ph: r.ph != null ? String(r.ph) : '',
+      alcohol: r.alcohol != null ? String(r.alcohol) : '',
+      temp: r.temp != null ? String(r.temp) : '',
+      rs: r.rs != null ? String(r.rs) : '',
+    });
+  };
+
+  const saveEditReading = async (readingId: string) => {
+    if (!selected) return;
+    try {
+      const url = selected.type === 'PF' ? `/pre-fermentation/lab/${readingId}` : `/fermentation/${readingId}`;
+      await api.put(url, {
+        level: editForm.level ? +editForm.level : null,
+        spGravity: editForm.spGravity ? +editForm.spGravity : null,
+        ph: editForm.ph ? +editForm.ph : null,
+        alcohol: editForm.alcohol ? +editForm.alcohol : null,
+        temp: editForm.temp ? +editForm.temp : null,
+        rs: editForm.rs ? +editForm.rs : null,
+      });
+      flash('ok', 'Updated');
+      setEditingReading(null);
+      load();
+    } catch { flash('err', 'Update failed'); }
+  };
+
+  const deleteBatch = async () => {
+    if (!selected) return;
+    const batch = getVesselBatch(selected);
+    if (!batch || !confirm(`Delete ${selected.label} Batch #${batch.batchNo}?`)) return;
+    try {
+      const url = selected.type === 'PF' ? `/pre-fermentation/batches/${batch.id}` : `/fermentation/batches/${batch.id}`;
+      await api.delete(url);
+      flash('ok', `Batch #${batch.batchNo} deleted`);
+      setSelected(null);
+      load();
+    } catch (e: any) { flash('err', e?.response?.data?.error || 'Delete failed'); }
   };
 
   /* ═══ RENDER ═══ */
@@ -470,21 +528,52 @@ export default function Fermentation() {
                     </div>
                     {/* Recent readings */}
                     {(() => {
-                      const rList = isBW ? getBW(selected.no).map(r => ({ id: r.id, analysisTime: '', spGravity: r.spGravity, ph: r.ph, alcohol: r.alcohol, temp: r.temp, level: r.level, createdAt: r.createdAt, status: '' })) : readings;
+                      const rList = isBW ? getBW(selected.no).map(r => ({ id: r.id, analysisTime: '', spGravity: r.spGravity, ph: r.ph, alcohol: r.alcohol, temp: r.temp, level: r.level, rs: undefined as number | undefined, createdAt: r.createdAt, status: '' })) : readings;
                       return rList.length > 0 && (
                         <div>
                           <div className="text-[9px] font-bold text-gray-400 uppercase mb-1">Recent Readings</div>
-                          <div className="space-y-0.5 max-h-48 overflow-y-auto">
+                          <div className="space-y-0.5 max-h-64 overflow-y-auto">
                             {rList.slice(-10).reverse().map((r, i) => (
-                              <div key={r.id || i} className="flex items-center gap-2 px-2 py-1 bg-gray-50 rounded text-[10px]">
-                                <span className="text-gray-400 font-mono w-10 shrink-0">{fmtTime(r.analysisTime || r.createdAt)}</span>
-                                {r.level && <span className="text-blue-500">Lvl:{r.level}%</span>}
-                                {r.spGravity && <span className="text-indigo-600 font-semibold">SG:{r.spGravity.toFixed(3)}</span>}
-                                {r.ph && <span className="text-gray-500">pH:{r.ph}</span>}
-                                {r.temp && <span className={`font-semibold ${(r.temp || 0) > 37 ? 'text-red-600' : 'text-orange-500'}`}>{r.temp}°</span>}
-                                {r.alcohol && <span className="text-emerald-600 font-bold">{r.alcohol}%</span>}
-                                {r.status === 'FIELD' && <span className="text-[8px] bg-yellow-100 text-yellow-700 px-1 rounded">FIELD</span>}
-                              </div>
+                              editingReading === r.id ? (
+                                /* Inline edit row */
+                                <div key={r.id} className="bg-yellow-50 rounded-lg p-2 border border-yellow-200 space-y-1.5">
+                                  <div className="grid grid-cols-3 gap-1.5">
+                                    {[
+                                      { k: 'level', l: 'Lvl%' }, { k: 'spGravity', l: 'SG' }, { k: 'ph', l: 'pH' },
+                                      { k: 'temp', l: 'Temp' }, { k: 'alcohol', l: 'Alc%' }, { k: 'rs', l: 'RS' },
+                                    ].map(f => (
+                                      <div key={f.k}>
+                                        <label className="text-[7px] font-bold text-gray-400">{f.l}</label>
+                                        <input type="number" step="0.01" value={editForm[f.k] || ''} onChange={e => setEditForm(ef => ({ ...ef, [f.k]: e.target.value }))}
+                                          className="w-full px-1 py-0.5 text-[10px] border rounded" />
+                                      </div>
+                                    ))}
+                                  </div>
+                                  <div className="flex gap-1.5">
+                                    <button onClick={() => saveEditReading(r.id)} className="flex-1 py-1 bg-green-600 text-white text-[10px] font-bold rounded">Save</button>
+                                    <button onClick={() => setEditingReading(null)} className="flex-1 py-1 bg-gray-200 text-gray-600 text-[10px] font-bold rounded">Cancel</button>
+                                  </div>
+                                </div>
+                              ) : (
+                                /* Normal row */
+                                <div key={r.id || i} className="flex items-center gap-2 px-2 py-1.5 bg-gray-50 rounded text-[10px] group">
+                                  <span className="text-gray-400 font-mono w-10 shrink-0">{fmtTime(r.analysisTime || r.createdAt)}</span>
+                                  <div className="flex items-center gap-1.5 flex-1 flex-wrap">
+                                    {r.level && <span className="text-blue-500">Lvl:{r.level}%</span>}
+                                    {r.spGravity && <span className="text-indigo-600 font-semibold">SG:{typeof r.spGravity === 'number' ? r.spGravity.toFixed(3) : r.spGravity}</span>}
+                                    {r.ph && <span className="text-gray-500">pH:{r.ph}</span>}
+                                    {r.temp && <span className={`font-semibold ${(r.temp || 0) > 37 ? 'text-red-600' : 'text-orange-500'}`}>{r.temp}°</span>}
+                                    {r.alcohol && <span className="text-emerald-600 font-bold">{r.alcohol}%</span>}
+                                    {r.status === 'FIELD' && <span className="text-[8px] bg-yellow-100 text-yellow-700 px-1 rounded">FIELD</span>}
+                                  </div>
+                                  {r.id && !isBW && (
+                                    <div className="flex items-center gap-0.5 shrink-0">
+                                      <button onClick={() => startEditReading(r as any)} className="text-blue-400 hover:text-blue-600 p-0.5" title="Edit">✏️</button>
+                                      <button onClick={() => deleteReading(r.id)} className="text-red-300 hover:text-red-600 p-0.5" title="Delete"><Trash2 size={11} /></button>
+                                    </div>
+                                  )}
+                                </div>
+                              )
                             ))}
                           </div>
                         </div>
@@ -654,6 +743,10 @@ export default function Fermentation() {
                       {isFerm && phase === 'TRANSFER' && <button onClick={() => advancePhase('FERM', batch!.id, 'CIP', { cipStartTime: new Date().toISOString() })} disabled={saving} className="w-full py-2 bg-purple-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Start CIP</button>}
                       {isFerm && phase === 'CIP' && <button onClick={() => advancePhase('FERM', batch!.id, 'DONE', { cipEndTime: new Date().toISOString() })} disabled={saving} className="w-full py-2 bg-gray-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Complete</button>}
                     </div>
+                    {/* Delete batch */}
+                    <button onClick={deleteBatch} className="w-full py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg text-xs font-semibold hover:bg-red-100 flex items-center justify-center gap-1.5 mt-2">
+                      <Trash2 size={12} /> Delete Batch #{batchNo}
+                    </button>
                   </div>
                 )}
               </>
