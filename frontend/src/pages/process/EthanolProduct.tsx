@@ -599,7 +599,7 @@ export default function EthanolProduct() {
               }} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
                 <Share2 size={16} /> WhatsApp
               </button>
-              <button onClick={() => { handleSave(); setShowPreview(false); }} disabled={saving}
+              <button onClick={async () => { await handleSave(); setShowPreview(false); }} disabled={saving}
                 className="flex-1 flex items-center justify-center gap-2 bg-purple-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50">
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} {editId ? 'Update' : 'Save'}
               </button>

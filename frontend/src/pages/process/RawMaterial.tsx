@@ -36,6 +36,16 @@ export default function RawMaterial() {
     moisture: '', starch: '', fungus: '', immature: '', damaged: '', waterDamaged: '', tfm: '', remark: ''
   });
 
+  // Total Damage = all bad params (everything except moisture & starch)
+  const totalDamage = useMemo(() => {
+    const vals = [form.damaged, form.tfm, form.fungus, form.immature, form.waterDamaged];
+    const sum = vals.reduce((s, v) => s + (parseFloat(v) || 0), 0);
+    return sum;
+  }, [form.damaged, form.tfm, form.fungus, form.immature, form.waterDamaged]);
+
+  // For entries in history
+  const entryTotalDamage = (e: Entry) => (e.damaged || 0) + (e.tfm || 0) + (e.fungus || 0) + (e.immature || 0) + (e.waterDamaged || 0);
+
   const load = () => api.get('/raw-material').then(r => setEntries(r.data)).catch(() => {});
   useEffect(() => { load(); }, []);
 
@@ -125,7 +135,7 @@ export default function RawMaterial() {
   };
 
   const shareText = (e: Entry) =>
-    `*Lab Analysis - ${e.material || 'Corn'}*\nRST: ${e.vehicleCode}${e.vehicleNo ? '\nVehicle: ' + e.vehicleNo : ''}\n📅 ${new Date(e.date).toLocaleDateString('en-IN')}\n\nMoisture: ${e.moisture}%\nStarch: ${e.starch}%\nDamaged: ${e.damaged}%\nTFM: ${e.tfm}%\nFungus: ${e.fungus}%\nImmature: ${e.immature}%\nWater Dam: ${e.waterDamaged}%${e.remark ? '\n\nRemark: ' + e.remark : ''}`;
+    `*Lab Analysis - ${e.material || 'Corn'}*\nRST: ${e.vehicleCode}${e.vehicleNo ? '\nVehicle: ' + e.vehicleNo : ''}\n📅 ${new Date(e.date).toLocaleDateString('en-IN')}\n\nMoisture: ${e.moisture}%\nStarch: ${e.starch}%\nDamaged: ${e.damaged}%\nTFM: ${e.tfm}%\nFungus: ${e.fungus}%\nImmature: ${e.immature}%\nWater Dam: ${e.waterDamaged}%\n*Total Damage: ${entryTotalDamage(e).toFixed(1)}%*${e.remark ? '\n\nRemark: ' + e.remark : ''}`;
 
   return (
     <ProcessPage title="Raw Material Analysis" icon={<FlaskConical size={28} />}
@@ -195,7 +205,7 @@ export default function RawMaterial() {
           </div>
 
           <div className="text-[10px] text-gray-400 font-medium mb-1">Quality Parameters</div>
-          <div className="grid grid-cols-4 gap-1.5 md:gap-2 mb-3">
+          <div className="grid grid-cols-4 gap-1.5 md:gap-2 mb-2">
             {[
               { k: 'moisture', l: 'Moisture %' }, { k: 'starch', l: 'Starch %' },
               { k: 'damaged', l: 'Damaged %' }, { k: 'tfm', l: 'TFM %' },
@@ -209,6 +219,11 @@ export default function RawMaterial() {
                   className="input-field w-full text-xs" placeholder={k === 'remark' ? '' : '0'} />
               </div>
             ))}
+          </div>
+          {/* Total Damage auto-sum */}
+          <div className={`rounded-lg border-2 px-3 py-1.5 mb-3 flex items-center justify-between ${totalDamage > 10 ? 'bg-red-50 border-red-300' : totalDamage > 5 ? 'bg-amber-50 border-amber-300' : 'bg-green-50 border-green-300'}`}>
+            <span className="text-xs font-medium text-gray-600">Total Damage <span className="text-[9px] text-gray-400">(D + TFM + F + I + WD)</span></span>
+            <span className={`text-lg font-bold ${totalDamage > 10 ? 'text-red-600' : totalDamage > 5 ? 'text-amber-600' : 'text-green-600'}`}>{totalDamage.toFixed(1)}%</span>
           </div>
 
           <div className="flex items-center gap-2">
@@ -246,18 +261,25 @@ export default function RawMaterial() {
                 {form.immature && <div>Immature: <b>{form.immature}%</b></div>}
                 {form.waterDamaged && <div>Water Dam: <b>{form.waterDamaged}%</b></div>}
               </div>
+              {/* Total Damage in preview */}
+              <div className={`border-t pt-2 flex justify-between items-center ${totalDamage > 10 ? 'text-red-600' : totalDamage > 5 ? 'text-amber-600' : 'text-green-600'}`}>
+                <span className="text-xs font-medium">Total Damage</span>
+                <span className="text-base font-bold">{totalDamage.toFixed(1)}%</span>
+              </div>
               {form.remark && <div className="border-t pt-1.5 text-xs text-gray-500">{form.remark}</div>}
             </div>
-            <div className="p-3 border-t flex gap-2">
-              <button onClick={() => {
-                const text = `*Lab Analysis - ${form.material}*\nRST: ${form.vehicleCode}${form.vehicleNo ? '\nVehicle: ' + form.vehicleNo : ''}\n📅 ${form.date}\n\nMoisture: ${form.moisture || '-'}%\nStarch: ${form.starch || '-'}%\nDamaged: ${form.damaged || '-'}%\nTFM: ${form.tfm || '-'}%\nFungus: ${form.fungus || '-'}%\nImmature: ${form.immature || '-'}%\nWater Dam: ${form.waterDamaged || '-'}%${form.remark ? '\n\nRemark: ' + form.remark : ''}`;
+            <div className="p-3 border-t space-y-2">
+              <button onClick={async () => {
+                await save();
+                const text = `*Lab Analysis - ${form.material}*\nRST: ${form.vehicleCode}${form.vehicleNo ? '\nVehicle: ' + form.vehicleNo : ''}\n📅 ${form.date}\n\nMoisture: ${form.moisture || '-'}%\nStarch: ${form.starch || '-'}%\nDamaged: ${form.damaged || '-'}%\nTFM: ${form.tfm || '-'}%\nFungus: ${form.fungus || '-'}%\nImmature: ${form.immature || '-'}%\nWater Dam: ${form.waterDamaged || '-'}%\n*Total Damage: ${totalDamage.toFixed(1)}%*${form.remark ? '\n\nRemark: ' + form.remark : ''}`;
                 doShare(text);
-              }} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-green-700">
-                <Share2 size={14} /> Share
+              }} disabled={saving}
+                className="w-full flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-green-700 disabled:opacity-50">
+                {saving ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />} Save & Share
               </button>
-              <button onClick={() => { save(); setShowPreview(false); }} disabled={saving}
-                className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
-                {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} {editId ? 'Update' : 'Save'}
+              <button onClick={async () => { await save(); }} disabled={saving}
+                className="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
+                {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} {editId ? 'Update Only' : 'Save Only'}
               </button>
             </div>
           </div>
@@ -317,7 +339,7 @@ export default function RawMaterial() {
                           <div className="flex items-center gap-3 text-[10px] text-gray-500">
                             <span>M:{e.moisture}</span>
                             <span className="font-medium">S:{e.starch}</span>
-                            <span className="text-orange-600 font-medium">T:{e.tfm}</span>
+                            <span className={`font-bold ${entryTotalDamage(e) > 10 ? 'text-red-600' : entryTotalDamage(e) > 5 ? 'text-amber-600' : 'text-green-600'}`}>TD:{entryTotalDamage(e).toFixed(1)}</span>
                           </div>
                         </div>
                         {/* Action row when tapped */}
@@ -354,6 +376,7 @@ export default function RawMaterial() {
                         <th className="text-center px-2 py-1 font-medium">S%</th>
                         <th className="text-center px-2 py-1 font-medium">D%</th>
                         <th className="text-center px-2 py-1 font-medium">TFM%</th>
+                        <th className="text-center px-2 py-1 font-medium">Tot.Dam%</th>
                         <th className="text-right px-4 py-1 font-medium"></th>
                       </tr>
                     </thead>
@@ -366,6 +389,7 @@ export default function RawMaterial() {
                           <td className="text-center px-2 py-1.5 font-medium">{e.starch}</td>
                           <td className="text-center px-2 py-1.5">{e.damaged}</td>
                           <td className="text-center px-2 py-1.5 font-medium text-orange-600">{e.tfm}</td>
+                          <td className={`text-center px-2 py-1.5 font-bold ${entryTotalDamage(e) > 10 ? 'text-red-600' : entryTotalDamage(e) > 5 ? 'text-amber-600' : 'text-green-600'}`}>{entryTotalDamage(e).toFixed(1)}</td>
                           <td className="text-right px-4 py-1.5">
                             <div className="flex items-center justify-end gap-2">
                               <button onClick={() => editEntry(e)} className="text-blue-500 hover:text-blue-700"><Pencil size={12} /></button>
@@ -407,6 +431,7 @@ export default function RawMaterial() {
                           <span>F: {e.fungus}%</span>
                           <span>I: {e.immature}%</span>
                           <span>WD: {e.waterDamaged}%</span>
+                          <span className={`font-bold ${entryTotalDamage(e) > 10 ? 'text-red-600' : entryTotalDamage(e) > 5 ? 'text-amber-600' : 'text-green-600'}`}>TD: {entryTotalDamage(e).toFixed(1)}%</span>
                         </div>
                         <div className="flex items-center gap-2">
                           <button onClick={() => editEntry(e)}
@@ -440,6 +465,7 @@ export default function RawMaterial() {
                         <th className="text-center px-2 py-1.5 font-medium">Fungus</th>
                         <th className="text-center px-2 py-1.5 font-medium">Imm</th>
                         <th className="text-center px-2 py-1.5 font-medium">WD</th>
+                        <th className="text-center px-2 py-1.5 font-medium">Tot.Dam%</th>
                         <th className="text-right px-4 py-1.5 font-medium"></th>
                       </tr>
                     </thead>
@@ -455,6 +481,7 @@ export default function RawMaterial() {
                           <td className="text-center px-2 py-2 text-gray-500">{e.fungus}</td>
                           <td className="text-center px-2 py-2 text-gray-500">{e.immature}</td>
                           <td className="text-center px-2 py-2 text-gray-500">{e.waterDamaged}</td>
+                          <td className={`text-center px-2 py-2 font-bold ${entryTotalDamage(e) > 10 ? 'text-red-600' : entryTotalDamage(e) > 5 ? 'text-amber-600' : 'text-green-600'}`}>{entryTotalDamage(e).toFixed(1)}</td>
                           <td className="text-right px-4 py-2">
                             <div className="flex items-center justify-end gap-2">
                               <button onClick={() => editEntry(e)} className="text-blue-500 hover:text-blue-700"><Pencil size={12} /></button>
