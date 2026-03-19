@@ -28,18 +28,18 @@ const ALL_VESSELS: Vessel[] = [
   { type: 'BW', no: 1, label: 'BW-1' }, { type: 'BW', no: 2, label: 'BW-2' },
 ];
 
-const PHASE_CFG: Record<string, { label: string; bg: string; text: string; ring: string }> = {
-  IDLE:           { label: 'Idle',       bg: 'bg-slate-100',   text: 'text-slate-500',   ring: 'ring-slate-300' },
-  SETUP:          { label: 'Setup',      bg: 'bg-indigo-100',  text: 'text-indigo-700',  ring: 'ring-indigo-400' },
-  DOSING:         { label: 'Dosing',     bg: 'bg-violet-100',  text: 'text-violet-700',  ring: 'ring-violet-400' },
-  LAB:            { label: 'Lab',        bg: 'bg-cyan-100',    text: 'text-cyan-700',    ring: 'ring-cyan-400' },
-  PF_TRANSFER:    { label: 'PF Xfer',   bg: 'bg-blue-100',    text: 'text-blue-700',    ring: 'ring-blue-400' },
-  FILLING:        { label: 'Filling',    bg: 'bg-sky-100',     text: 'text-sky-700',     ring: 'ring-sky-400' },
-  REACTION:       { label: 'Reaction',   bg: 'bg-amber-100',   text: 'text-amber-700',   ring: 'ring-amber-400' },
-  RETENTION:      { label: 'Retention',  bg: 'bg-orange-100',  text: 'text-orange-700',  ring: 'ring-orange-400' },
-  TRANSFER:       { label: 'Transfer',   bg: 'bg-emerald-100', text: 'text-emerald-700', ring: 'ring-emerald-400' },
-  CIP:            { label: 'CIP',        bg: 'bg-purple-100',  text: 'text-purple-700',  ring: 'ring-purple-400' },
-  DONE:           { label: 'Done',       bg: 'bg-gray-100',    text: 'text-gray-500',    ring: 'ring-gray-300' },
+const PHASE_CFG: Record<string, { label: string; bg: string; text: string; ring: string; dot: string }> = {
+  IDLE:           { label: 'Idle',       bg: 'bg-slate-50',    text: 'text-slate-400',   ring: 'ring-slate-200',   dot: 'bg-slate-300' },
+  SETUP:          { label: 'Setup',      bg: 'bg-indigo-50',   text: 'text-indigo-700',  ring: 'ring-indigo-400',  dot: 'bg-indigo-500' },
+  DOSING:         { label: 'Dosing',     bg: 'bg-violet-50',   text: 'text-violet-700',  ring: 'ring-violet-400',  dot: 'bg-violet-500' },
+  LAB:            { label: 'Lab',        bg: 'bg-cyan-50',     text: 'text-cyan-700',    ring: 'ring-cyan-400',    dot: 'bg-cyan-500' },
+  PF_TRANSFER:    { label: 'PF Xfer',   bg: 'bg-blue-50',     text: 'text-blue-700',    ring: 'ring-blue-400',    dot: 'bg-blue-500' },
+  FILLING:        { label: 'Filling',    bg: 'bg-sky-50',      text: 'text-sky-700',     ring: 'ring-sky-400',     dot: 'bg-sky-500 animate-pulse' },
+  REACTION:       { label: 'Reaction',   bg: 'bg-amber-50',    text: 'text-amber-800',   ring: 'ring-amber-400',   dot: 'bg-amber-500 animate-pulse' },
+  RETENTION:      { label: 'Retention',  bg: 'bg-orange-50',   text: 'text-orange-800',  ring: 'ring-orange-400',  dot: 'bg-orange-500 animate-pulse' },
+  TRANSFER:       { label: 'Transfer',   bg: 'bg-emerald-50',  text: 'text-emerald-700', ring: 'ring-emerald-400', dot: 'bg-emerald-500' },
+  CIP:            { label: 'CIP',        bg: 'bg-purple-50',   text: 'text-purple-700',  ring: 'ring-purple-400',  dot: 'bg-purple-500' },
+  DONE:           { label: 'Done',       bg: 'bg-gray-50',     text: 'text-gray-500',    ring: 'ring-gray-300',    dot: 'bg-gray-400' },
 };
 const phCfg = (p: string) => PHASE_CFG[p] || PHASE_CFG.IDLE;
 
@@ -336,12 +336,12 @@ export default function Fermentation() {
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       {/* Header */}
-      <div className="bg-gradient-to-r from-indigo-800 to-purple-900 text-white px-4 py-2.5">
+      <div className="bg-gradient-to-br from-indigo-900 via-purple-900 to-violet-900 text-white px-4 py-3">
         <div className="flex items-center justify-between">
-          <h1 className="text-base font-bold flex items-center gap-1.5"><FlaskConical size={16} /> Fermentation</h1>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] text-indigo-300">{new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
-            <button onClick={() => { setLoading(true); load(); }} className="p-1 rounded hover:bg-white/10"><RefreshCw size={14} /></button>
+          <h1 className="text-lg font-extrabold flex items-center gap-2 tracking-tight"><FlaskConical size={20} /> Fermentation</h1>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-indigo-300 font-medium">{new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
+            <button onClick={() => { setLoading(true); load(); }} className="p-1.5 rounded-lg hover:bg-white/10 active:bg-white/20 transition-colors"><RefreshCw size={16} /></button>
           </div>
         </div>
       </div>
@@ -391,21 +391,34 @@ export default function Fermentation() {
             return (
               <button key={`${v.type}-${v.no}`}
                 onClick={() => { setSelected(isSelected ? null : v); setTab('reading'); setReadingForm({}); setShowNewBatch(false); }}
-                className={`relative rounded-xl p-2 text-left transition-all border-2 ${
-                  isSelected ? `${cfg.bg} ring-2 ${cfg.ring} border-transparent shadow-lg scale-[1.02]`
-                  : isIdle ? 'bg-white border-gray-200 hover:border-gray-300 hover:shadow'
-                  : 'bg-white border-gray-200 hover:shadow'
+                className={`relative rounded-xl p-2.5 text-left transition-all duration-200 border-2 ${
+                  isSelected ? `${cfg.bg} ring-2 ${cfg.ring} border-transparent shadow-lg scale-[1.03]`
+                  : isIdle ? 'bg-white border-gray-100 hover:border-gray-300 hover:shadow-md'
+                  : `bg-white border-gray-100 hover:shadow-md hover:border-gray-200`
                 }`}>
-                <div className="flex items-center gap-1 mb-0.5">
-                  <Icon size={12} className={isIdle ? 'text-gray-300' : v.type === 'BW' ? 'text-amber-500' : cfg.text} />
-                  <span className={`text-[11px] font-bold ${isIdle ? 'text-gray-400' : 'text-gray-800'}`}>{v.label}</span>
+                {/* Active dot indicator */}
+                {!isIdle && v.type !== 'BW' && (
+                  <div className={`absolute top-1.5 right-1.5 w-2 h-2 rounded-full ${cfg.dot}`} />
+                )}
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Icon size={14} className={isIdle ? 'text-gray-300' : v.type === 'BW' ? 'text-amber-500' : cfg.text} />
+                  <span className={`text-xs font-extrabold ${isIdle ? 'text-gray-400' : 'text-gray-900'}`}>{v.label}</span>
                 </div>
-                {batchNo > 0 && <span className={`text-[8px] font-bold px-1 py-px rounded ${cfg.bg} ${cfg.text}`}>B#{batchNo}</span>}
-                {!isIdle && v.type !== 'BW' && <span className={`block text-[8px] font-bold mt-0.5 ${cfg.text}`}>{cfg.label}</span>}
-                {metric1 && <div className="text-[11px] font-bold text-gray-900 mt-0.5">{metric1}</div>}
-                {metric2 && <div className="text-[9px] text-gray-400">{metric2}</div>}
-                {isIdle && <div className="text-[9px] text-gray-300 mt-1">idle</div>}
-                {startTime && !isIdle && <div className="text-[8px] text-gray-300 mt-0.5 flex items-center gap-0.5"><Clock size={7} />{elapsed(startTime)}</div>}
+                {batchNo > 0 && (
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md ${cfg.bg} ${cfg.text}`}>{cfg.label}</span>
+                    <span className="text-[9px] text-gray-400 font-semibold">#{batchNo}</span>
+                  </div>
+                )}
+                {metric1 && <div className="text-sm font-black text-gray-900 mt-1 tracking-tight">{metric1}</div>}
+                {metric2 && <div className="text-[10px] font-semibold text-gray-500">{metric2}</div>}
+                {isIdle && v.type !== 'BW' && <div className="text-[10px] text-gray-300 mt-1.5 italic">idle</div>}
+                {v.type === 'BW' && !metric1 && <div className="text-[10px] text-gray-300 mt-1.5 italic">no data</div>}
+                {startTime && !isIdle && (
+                  <div className="text-[9px] text-gray-400 mt-1 flex items-center gap-0.5 font-medium">
+                    <Clock size={8} className="text-gray-300" />{elapsed(startTime)}
+                  </div>
+                )}
               </button>
             );
           })}
@@ -425,13 +438,21 @@ export default function Fermentation() {
         const dosings: Dosing[] = batch?.dosings || [];
 
         return (
-          <div className="mx-3 mt-3 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="mx-3 mt-3 bg-white rounded-2xl border border-gray-200 shadow-lg overflow-hidden animate-[slideUp_0.2s_ease-out]">
+            <style>{`@keyframes slideUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }`}</style>
             {/* Panel header */}
-            <div className={`px-3 py-2 ${isBW ? 'bg-amber-50' : cfg.bg} flex items-center gap-2`}>
-              <span className={`font-bold text-sm ${isBW ? 'text-amber-700' : cfg.text}`}>{selected.label}</span>
-              {batchNo > 0 && <span className="text-[10px] bg-white/60 text-gray-700 px-1.5 py-0.5 rounded font-semibold">Batch #{batchNo}</span>}
-              {phase !== 'IDLE' && !isBW && <span className={`text-[9px] font-bold ${cfg.text}`}>{cfg.label}</span>}
-              <button onClick={() => setSelected(null)} className="ml-auto text-gray-400 hover:text-gray-600"><X size={16} /></button>
+            <div className={`px-4 py-3 ${isBW ? 'bg-gradient-to-r from-amber-50 to-amber-100/50' : `bg-gradient-to-r ${cfg.bg}`} flex items-center gap-2 border-b border-gray-100`}>
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isBW ? 'bg-amber-200' : cfg.bg} shadow-sm`}>
+                {isPF ? <Beaker size={16} className={cfg.text} /> : isFerm ? <FlaskConical size={16} className={cfg.text} /> : <Cylinder size={16} className="text-amber-600" />}
+              </div>
+              <div>
+                <span className={`font-extrabold text-base ${isBW ? 'text-amber-800' : 'text-gray-900'}`}>{selected.label}</span>
+                <div className="flex items-center gap-1.5">
+                  {batchNo > 0 && <span className="text-[10px] text-gray-500 font-semibold">Batch #{batchNo}</span>}
+                  {phase !== 'IDLE' && !isBW && <span className={`text-[10px] font-bold ${cfg.text}`}>· {cfg.label}</span>}
+                </div>
+              </div>
+              <button onClick={() => setSelected(null)} className="ml-auto w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"><X size={14} className="text-gray-500" /></button>
             </div>
 
             {/* IDLE — Start batch */}
@@ -471,11 +492,15 @@ export default function Fermentation() {
             {(phase !== 'IDLE' || isBW) && (
               <>
                 {!isBW && (
-                  <div className="flex border-b bg-gray-50/50">
+                  <div className="flex border-b bg-gray-50/30 px-1 pt-1">
                     {(['reading', 'dosing', 'charts', 'batch'] as const).map(t => (
                       <button key={t} onClick={() => setTab(t)}
-                        className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-wide ${tab === t ? 'text-indigo-700 border-b-2 border-indigo-600 bg-white' : 'text-gray-400 hover:text-gray-600'}`}>
-                        {t === 'reading' ? '📝 Reading' : t === 'dosing' ? '🧪 Dosing' : t === 'charts' ? '📊 Charts' : '⚙️ Batch'}
+                        className={`flex-1 py-2 text-[11px] font-bold tracking-wide rounded-t-lg transition-all duration-150 ${
+                          tab === t
+                            ? 'text-indigo-700 bg-white border-b-2 border-indigo-600 shadow-sm'
+                            : 'text-gray-400 hover:text-gray-600 hover:bg-white/50'
+                        }`}>
+                        {t === 'reading' ? 'Reading' : t === 'dosing' ? 'Dosing' : t === 'charts' ? 'Charts' : 'Batch'}
                       </button>
                     ))}
                   </div>
@@ -484,17 +509,17 @@ export default function Fermentation() {
                 {/* TAB: Reading */}
                 {(tab === 'reading' || isBW) && (
                   <div className="p-3 space-y-3">
-                    <div className="space-y-2">
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="bg-blue-50 rounded-lg p-2">
-                          <label className="text-[9px] font-bold text-blue-500 uppercase">Level %</label>
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <div className="bg-blue-50 rounded-xl p-3 border border-blue-100">
+                          <label className="text-[9px] font-bold text-blue-600 uppercase tracking-wider">Level %</label>
                           <input type="number" step="0.1" value={readingForm.level || ''} onChange={e => setReadingForm(f => ({ ...f, level: e.target.value }))}
-                            placeholder="—" className="w-full text-lg font-bold text-blue-800 bg-transparent border-none outline-none placeholder-blue-300" />
+                            placeholder="—" className="w-full text-2xl font-black text-blue-900 bg-transparent border-none outline-none placeholder-blue-200 mt-0.5" inputMode="decimal" />
                         </div>
-                        <div className="bg-orange-50 rounded-lg p-2">
-                          <label className="text-[9px] font-bold text-orange-500 uppercase">Temp °C</label>
+                        <div className="bg-orange-50 rounded-xl p-3 border border-orange-100">
+                          <label className="text-[9px] font-bold text-orange-600 uppercase tracking-wider">Temp °C</label>
                           <input type="number" step="0.1" value={readingForm.temp || ''} onChange={e => setReadingForm(f => ({ ...f, temp: e.target.value }))}
-                            placeholder="—" className="w-full text-lg font-bold text-orange-800 bg-transparent border-none outline-none placeholder-orange-300" />
+                            placeholder="—" className="w-full text-2xl font-black text-orange-900 bg-transparent border-none outline-none placeholder-orange-200 mt-0.5" inputMode="decimal" />
                         </div>
                       </div>
                       <div className={`grid ${isBW ? 'grid-cols-3' : 'grid-cols-4'} gap-1.5`}>
@@ -506,23 +531,23 @@ export default function Fermentation() {
                           ...(!isBW ? [{ key: 'ds', label: 'DS%', step: '0.01' }, { key: 'vfaPpa', label: 'VFA', step: '0.01' }] : []),
                         ].map(f => (
                           <div key={f.key}>
-                            <label className="text-[8px] font-bold text-gray-400 uppercase">{f.label}</label>
+                            <label className="text-[8px] font-bold text-gray-500 uppercase tracking-wider">{f.label}</label>
                             <input type="number" step={f.step} value={(readingForm as any)[f.key] || ''}
                               onChange={e => setReadingForm(rf => ({ ...rf, [f.key]: e.target.value }))}
-                              className="w-full px-1.5 py-1 text-xs border border-gray-200 rounded bg-white focus:ring-1 focus:ring-indigo-300 outline-none" />
+                              className="w-full px-2 py-1.5 text-sm font-semibold text-gray-900 border border-gray-200 rounded-lg bg-gray-50 focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300 focus:bg-white outline-none transition-all" inputMode="decimal" />
                           </div>
                         ))}
                       </div>
                       <input placeholder="Remarks..." value={readingForm.remarks || ''} onChange={e => setReadingForm(f => ({ ...f, remarks: e.target.value }))}
                         className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-gray-50 outline-none" />
-                      <div className="flex gap-2">
+                      <div className="flex gap-2.5">
                         <button onClick={() => saveReading(false)} disabled={saving}
-                          className="flex-1 py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold disabled:opacity-50 flex items-center justify-center gap-1">
-                          {saving ? <Loader2 size={12} className="animate-spin" /> : <><Send size={11} /> Save</>}
+                          className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-sm hover:bg-indigo-700 active:scale-[0.98] transition-all">
+                          {saving ? <Loader2 size={14} className="animate-spin" /> : <><Send size={13} /> Save</>}
                         </button>
                         <button onClick={() => saveReading(true)} disabled={saving}
-                          className="flex-1 py-2 bg-green-600 text-white rounded-lg text-xs font-bold disabled:opacity-50 flex items-center justify-center gap-1">
-                          {saving ? <Loader2 size={12} className="animate-spin" /> : <><MessageCircle size={11} /> Save & Share</>}
+                          className="flex-1 py-2.5 bg-green-600 text-white rounded-xl text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-sm hover:bg-green-700 active:scale-[0.98] transition-all">
+                          {saving ? <Loader2 size={14} className="animate-spin" /> : <><MessageCircle size={13} /> Save & Share</>}
                         </button>
                       </div>
                     </div>
@@ -556,20 +581,24 @@ export default function Fermentation() {
                                 </div>
                               ) : (
                                 /* Normal row */
-                                <div key={r.id || i} className="flex items-center gap-2 px-2 py-1.5 bg-gray-50 rounded text-[10px] group">
-                                  <span className="text-gray-400 font-mono w-10 shrink-0">{fmtTime(r.analysisTime || r.createdAt)}</span>
-                                  <div className="flex items-center gap-1.5 flex-1 flex-wrap">
-                                    {r.level && <span className="text-blue-500">Lvl:{r.level}%</span>}
-                                    {r.spGravity && <span className="text-indigo-600 font-semibold">SG:{typeof r.spGravity === 'number' ? r.spGravity.toFixed(3) : r.spGravity}</span>}
-                                    {r.ph && <span className="text-gray-500">pH:{r.ph}</span>}
-                                    {r.temp && <span className={`font-semibold ${(r.temp || 0) > 37 ? 'text-red-600' : 'text-orange-500'}`}>{r.temp}°</span>}
-                                    {r.alcohol && <span className="text-emerald-600 font-bold">{r.alcohol}%</span>}
-                                    {r.status === 'FIELD' && <span className="text-[8px] bg-yellow-100 text-yellow-700 px-1 rounded">FIELD</span>}
+                                <div key={r.id || i} className="flex items-center gap-2 px-2.5 py-2 bg-gray-50/80 rounded-lg text-[11px] group hover:bg-gray-100 transition-colors">
+                                  <span className="text-gray-400 font-mono text-[10px] w-11 shrink-0">{fmtTime(r.analysisTime || r.createdAt)}</span>
+                                  <div className="flex items-center gap-2 flex-1 flex-wrap">
+                                    {r.level && <span className="text-blue-700 font-bold bg-blue-50 px-1.5 py-0.5 rounded">Lvl {r.level}%</span>}
+                                    {r.spGravity && <span className="text-indigo-700 font-bold bg-indigo-50 px-1.5 py-0.5 rounded">SG {typeof r.spGravity === 'number' ? r.spGravity.toFixed(3) : r.spGravity}</span>}
+                                    {r.ph && <span className="text-gray-700 font-semibold">pH {r.ph}</span>}
+                                    {r.temp && <span className={`font-bold px-1.5 py-0.5 rounded ${(r.temp || 0) > 37 ? 'text-red-700 bg-red-50' : 'text-orange-700 bg-orange-50'}`}>{r.temp}°C</span>}
+                                    {r.alcohol && <span className="text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded">{r.alcohol}%</span>}
+                                    {r.status === 'FIELD' && <span className="text-[9px] bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded font-bold">FIELD</span>}
                                   </div>
                                   {r.id && !isBW && (
-                                    <div className="flex items-center gap-0.5 shrink-0">
-                                      <button onClick={() => startEditReading(r as any)} className="text-blue-400 hover:text-blue-600 p-0.5" title="Edit">✏️</button>
-                                      <button onClick={() => deleteReading(r.id)} className="text-red-300 hover:text-red-600 p-0.5" title="Delete"><Trash2 size={11} /></button>
+                                    <div className="flex items-center gap-1 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity">
+                                      <button onClick={() => startEditReading(r as any)} className="w-6 h-6 rounded-md bg-blue-50 hover:bg-blue-100 flex items-center justify-center text-blue-600 transition-colors" title="Edit">
+                                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M17 3a2.83 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                                      </button>
+                                      <button onClick={() => deleteReading(r.id)} className="w-6 h-6 rounded-md bg-red-50 hover:bg-red-100 flex items-center justify-center text-red-500 transition-colors" title="Delete">
+                                        <Trash2 size={11} />
+                                      </button>
                                     </div>
                                   )}
                                 </div>
