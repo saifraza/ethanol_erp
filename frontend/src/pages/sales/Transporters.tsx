@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Truck, Plus, X, Save, Loader2, Trash2, Edit2, Phone, User, Hash, CheckCircle } from 'lucide-react';
+import { Truck, Plus, X, Save, Loader2, Trash2, Edit2, Phone, User, Hash, CheckCircle, RotateCcw } from 'lucide-react';
 import api from '../../services/api';
 
 interface Transporter {
@@ -101,26 +101,43 @@ export default function Transporters() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 text-white">
-        <div className="max-w-6xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
+      <div className="bg-gradient-to-r from-teal-700 to-teal-800 text-white">
+        <div className="max-w-7xl mx-auto px-4 py-5">
+          <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-2xl font-bold flex items-center gap-2">
-                <Truck size={28} /> Transporters
+              <h1 className="text-xl font-bold flex items-center gap-2">
+                <Truck size={24} /> Transporters
               </h1>
-              <p className="text-sm text-indigo-200 mt-1">{transporters.length} transporters registered</p>
+              <p className="text-xs text-teal-200 mt-1">{new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
             </div>
-            {!showForm && (
-              <button onClick={() => { resetForm(); setShowForm(true); }}
-                className="bg-white text-indigo-700 px-4 py-2 rounded-lg font-semibold text-sm hover:bg-indigo-50 flex items-center gap-2 shadow">
-                <Plus size={16} /> Add Transporter
+            <div className="flex items-center gap-3">
+              <button onClick={loadAll} className="p-2 hover:bg-teal-600 rounded-lg transition text-sm text-teal-100" title="Refresh">
+                <RotateCcw size={18} />
               </button>
-            )}
+              {!showForm && (
+                <button onClick={() => { resetForm(); setShowForm(true); }}
+                  className="bg-white text-teal-700 px-4 py-2 rounded-lg font-semibold text-sm hover:bg-teal-50 flex items-center gap-2 shadow-md transition">
+                  <Plus size={16} /> New Transporter
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Stats Bar */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-teal-600 bg-opacity-40 rounded-lg px-4 py-3 backdrop-blur-sm">
+              <p className="text-teal-100 text-xs font-medium">Total Transporters</p>
+              <p className="text-white text-xl font-bold">{transporters.length}</p>
+            </div>
+            <div className="bg-teal-600 bg-opacity-40 rounded-lg px-4 py-3 backdrop-blur-sm">
+              <p className="text-teal-100 text-xs font-medium">Fleet Vehicles</p>
+              <p className="text-white text-xl font-bold">{transporters.reduce((sum, t) => sum + (t.vehicleCount || 0), 0)}</p>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-4 py-4">
+      <div className="max-w-7xl mx-auto px-4 py-6">
         {msg && (
           <div className={`rounded-lg p-3 mb-4 text-sm flex items-center gap-2 ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
             {msg.type === 'ok' ? <CheckCircle size={16} /> : <X size={16} />} {msg.text}
@@ -129,10 +146,10 @@ export default function Transporters() {
 
         {/* Add/Edit Form */}
         {showForm && (
-          <div className="bg-white rounded-xl shadow-lg border border-indigo-200 mb-6 overflow-hidden">
-            <div className="bg-indigo-50 px-4 py-3 flex items-center justify-between border-b border-indigo-200">
-              <h3 className="font-bold text-indigo-800 text-sm">{editId ? 'Edit Transporter' : 'New Transporter'}</h3>
-              <button onClick={resetForm} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+          <div className="bg-white rounded-xl shadow-lg border border-teal-200 mb-6 overflow-hidden">
+            <div className="bg-gradient-to-r from-teal-700 to-teal-800 px-4 py-3 flex items-center justify-between">
+              <h3 className="font-bold text-white text-sm">{editId ? 'Edit Transporter' : 'New Transporter'}</h3>
+              <button onClick={resetForm} className="text-teal-200 hover:text-white"><X size={18} /></button>
             </div>
             <div className="p-4 space-y-3">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -183,7 +200,7 @@ export default function Transporters() {
               </div>
               <div className="flex justify-end">
                 <button onClick={saveTransporter} disabled={saving}
-                  className="px-6 py-2.5 bg-indigo-600 text-white rounded-lg font-bold text-sm hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2 shadow">
+                  className="px-6 py-3 bg-teal-600 text-white rounded-lg font-bold text-sm hover:bg-teal-700 disabled:opacity-50 flex items-center gap-2 shadow-md transition">
                   {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                   {editId ? 'Update' : 'Add Transporter'}
                 </button>
@@ -205,7 +222,7 @@ export default function Transporters() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {transporters.map(t => (
-              <div key={t.id} className="bg-white rounded-lg border shadow-sm p-4 hover:shadow-md transition">
+              <div key={t.id} className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 hover:shadow-md transition">
                 <div className="flex items-start justify-between mb-2">
                   <div>
                     <h3 className="font-bold text-gray-900">{t.name}</h3>
@@ -217,11 +234,11 @@ export default function Transporters() {
                   </div>
                   <div className="flex gap-1">
                     <button onClick={() => startEdit(t)}
-                      className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded">
+                      className="p-1.5 text-gray-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition">
                       <Edit2 size={14} />
                     </button>
                     <button onClick={() => deleteTransporter(t)}
-                      className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded">
+                      className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition">
                       <Trash2 size={14} />
                     </button>
                   </div>
@@ -231,7 +248,7 @@ export default function Transporters() {
                   {t.phone && (
                     <p className="flex items-center gap-1.5">
                       <Phone size={11} />
-                      <a href={`tel:${t.phone}`} className="text-indigo-600 hover:underline">{t.phone}</a>
+                      <a href={`tel:${t.phone}`} className="text-teal-600 hover:underline">{t.phone}</a>
                     </p>
                   )}
                   {t.vehicleCount ? (

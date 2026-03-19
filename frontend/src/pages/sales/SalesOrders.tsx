@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ClipboardList, Plus, X, Save, Loader2, Trash2, ChevronDown, Truck, FileText, Send, CheckCircle, Clock, ArrowRight } from 'lucide-react';
+import { ClipboardList, Plus, X, Save, Loader2, Trash2, ChevronDown, Truck, FileText, Send, CheckCircle, Clock, ArrowRight, RotateCcw } from 'lucide-react';
 import api from '../../services/api';
 
 interface Customer { id: string; name: string; }
@@ -273,30 +273,47 @@ export default function SalesOrders() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-gradient-to-r from-purple-600 to-purple-700 text-white">
-        <div className="max-w-6xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
+      <div className="bg-gradient-to-r from-purple-700 to-purple-800 text-white">
+        <div className="max-w-7xl mx-auto px-4 py-5">
+          <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-2xl font-bold flex items-center gap-2">
-                <ClipboardList size={28} /> Sales Orders
+              <h1 className="text-xl font-bold flex items-center gap-2">
+                <ClipboardList size={24} /> Sales Orders
               </h1>
-              <div className="flex gap-4 mt-2 text-sm text-purple-200">
-                <span>{stats.total} orders</span>
-                <span>{stats.active} active</span>
-                <span>₹{stats.value.toLocaleString('en-IN', { maximumFractionDigits: 0 })} value</span>
-              </div>
+              <p className="text-xs text-purple-200 mt-1">{new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
             </div>
-            {!showForm && (
-              <button onClick={() => setShowForm(true)}
-                className="bg-white text-purple-700 px-4 py-2 rounded-lg font-semibold text-sm hover:bg-purple-50 flex items-center gap-2 shadow">
-                <Plus size={16} /> New Sale
+            <div className="flex items-center gap-3">
+              <button onClick={loadAll} className="p-2 hover:bg-purple-600 rounded-lg transition text-sm text-purple-100" title="Refresh">
+                <RotateCcw size={18} />
               </button>
-            )}
+              {!showForm && (
+                <button onClick={() => setShowForm(true)}
+                  className="bg-white text-purple-700 px-4 py-2 rounded-lg font-semibold text-sm hover:bg-purple-50 flex items-center gap-2 shadow-md transition">
+                  <Plus size={16} /> New Sale
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Stats Bar */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-purple-600 bg-opacity-40 rounded-lg px-4 py-3 backdrop-blur-sm">
+              <p className="text-purple-100 text-xs font-medium">Total Orders</p>
+              <p className="text-white text-xl font-bold">{stats.total}</p>
+            </div>
+            <div className="bg-purple-600 bg-opacity-40 rounded-lg px-4 py-3 backdrop-blur-sm">
+              <p className="text-purple-100 text-xs font-medium">Active Orders</p>
+              <p className="text-white text-xl font-bold">{stats.active}</p>
+            </div>
+            <div className="bg-purple-600 bg-opacity-40 rounded-lg px-4 py-3 backdrop-blur-sm">
+              <p className="text-purple-100 text-xs font-medium">Total Value</p>
+              <p className="text-white text-xl font-bold">₹{(stats.value / 100000).toFixed(1)}L</p>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-4 py-4">
+      <div className="max-w-7xl mx-auto px-4 py-6">
         {msg && (
           <div className={`rounded-lg p-3 mb-4 text-sm flex items-center gap-2 ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
             {msg.type === 'ok' ? <CheckCircle size={16} /> : <X size={16} />}
@@ -307,9 +324,9 @@ export default function SalesOrders() {
         {/* ── Quick Create Form ── */}
         {showForm && (
           <div className="bg-white rounded-xl shadow-lg border border-purple-200 mb-6 overflow-hidden">
-            <div className="bg-purple-50 px-4 py-3 flex items-center justify-between border-b border-purple-200">
-              <h3 className="font-bold text-purple-800 text-sm">Quick Sale Order</h3>
-              <button onClick={resetForm} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+            <div className="bg-gradient-to-r from-purple-700 to-purple-800 px-4 py-3 flex items-center justify-between">
+              <h3 className="font-bold text-white text-sm">Quick Sale Order</h3>
+              <button onClick={resetForm} className="text-purple-200 hover:text-white"><X size={18} /></button>
             </div>
 
             <div className="p-4 space-y-4">
@@ -442,11 +459,11 @@ export default function SalesOrders() {
         )}
 
         {/* ── Filters ── */}
-        <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
+        <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
           {['ALL', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'].map(s => (
             <button key={s} onClick={() => setFilterStatus(s)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition ${
-                filterStatus === s ? 'bg-purple-600 text-white' : 'bg-white text-gray-600 border hover:bg-gray-50'
+              className={`px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition ${
+                filterStatus === s ? 'bg-purple-600 text-white shadow-md' : 'bg-white text-gray-600 border border-gray-200 hover:border-purple-300 hover:bg-purple-50'
               }`}>
               {s === 'ALL' ? 'All' : s === 'IN_PROGRESS' ? 'In Progress' : s.charAt(0) + s.slice(1).toLowerCase()}
             </button>
@@ -472,7 +489,7 @@ export default function SalesOrders() {
               const soConfirmed = ['CONFIRMED', 'IN_PROGRESS', 'COMPLETED'].includes(order.status);
 
               return (
-                <div key={order.id} className="bg-white rounded-lg border shadow-sm hover:shadow-md transition">
+                <div key={order.id} className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition">
                   {/* Card Header */}
                   <button onClick={() => setExpandedId(isExpanded ? null : order.id)}
                     className="w-full p-4 text-left">
@@ -480,7 +497,7 @@ export default function SalesOrders() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <span className="font-bold text-gray-900">#{order.orderNo}</span>
-                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                             order.status === 'CONFIRMED' ? 'bg-blue-100 text-blue-700' :
                             order.status === 'IN_PROGRESS' ? 'bg-amber-100 text-amber-700' :
                             order.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
