@@ -467,42 +467,57 @@ export default function Shipments() {
                               ))}
                             </div>
 
-                            {/* Documents — compact inline */}
-                            <div className="space-y-1">
-                              <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Documents</div>
-                              <div className="grid grid-cols-2 gap-1.5">
+                            {/* Documents */}
+                            <div className="space-y-2">
+                              <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Documents</div>
+                              <div className="grid grid-cols-2 gap-2">
                                 {DOC_TYPES.map(dt => {
                                   const hasDoc = docs.some(d => d.docType === dt.key);
                                   const fieldVal = (s as any)[dt.field] || '';
+                                  const isUploading = uploadingDoc === `${s.id}_${dt.key}`;
                                   return (
-                                    <div key={dt.key} className={`rounded-lg border p-1.5 ${hasDoc ? 'bg-green-50/60 border-green-200' : 'bg-white border-gray-200'}`}>
-                                      <div className="flex items-center gap-1 mb-0.5">
-                                        <span className="text-[9px] font-bold text-gray-500">{dt.label}</span>
-                                        {hasDoc && <CheckCircle size={9} className="text-green-500" />}
-                                        <div className="ml-auto flex gap-0.5">
-                                          {([
-                                            { src: 'camera' as const, icon: <Camera size={8} />, c: 'text-blue-600' },
-                                            { src: 'gallery' as const, icon: <Image size={8} />, c: 'text-purple-600' },
-                                            { src: 'file' as const, icon: <Upload size={8} />, c: 'text-gray-500' },
-                                          ]).map(btn => (
-                                            <button key={btn.src} onClick={() => uploadDoc(s.id, dt.key, btn.src)}
-                                              disabled={uploadingDoc === `${s.id}_${dt.key}`}
-                                              className={`p-0.5 rounded hover:bg-gray-100 ${btn.c}`}>
-                                              {uploadingDoc === `${s.id}_${dt.key}` ? <Loader2 size={8} className="animate-spin" /> : btn.icon}
-                                            </button>
-                                          ))}
-                                        </div>
+                                    <div key={dt.key} className={`rounded-xl border-2 p-2.5 transition-colors ${
+                                      hasDoc ? 'bg-green-50 border-green-300' : 'bg-white border-gray-200'
+                                    }`}>
+                                      {/* Header with status */}
+                                      <div className="flex items-center justify-between mb-1.5">
+                                        <span className="text-xs font-bold text-gray-800">{dt.label}</span>
+                                        {hasDoc ? (
+                                          <span className="flex items-center gap-1 text-[10px] font-bold text-green-600 bg-green-100 px-2 py-0.5 rounded-full">
+                                            <CheckCircle size={10} /> Uploaded
+                                          </span>
+                                        ) : (
+                                          <span className="text-[10px] text-gray-400">Pending</span>
+                                        )}
                                       </div>
+
+                                      {/* Doc number input */}
                                       <input defaultValue={fieldVal} placeholder={`${dt.label} No.`}
-                                        className="w-full px-1.5 py-0.5 text-[11px] border border-gray-200 rounded bg-white focus:ring-1 focus:ring-blue-200 outline-none"
+                                        className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-blue-200 outline-none mb-1.5"
                                         onBlur={(e) => { if (e.target.value !== fieldVal) saveField(s.id, dt.field, e.target.value); }}
                                       />
                                       {dt.key === 'GR_BILTY' && (
                                         <input type="date" defaultValue={s.grBiltyDate || ''}
-                                          className="w-full px-1.5 py-0.5 text-[11px] border border-gray-200 rounded bg-white mt-0.5 focus:ring-1 focus:ring-blue-200 outline-none"
+                                          className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white mb-1.5 focus:ring-2 focus:ring-blue-200 outline-none"
                                           onBlur={(e) => { if (e.target.value !== (s.grBiltyDate || '')) saveField(s.id, 'grBiltyDate', e.target.value); }}
                                         />
                                       )}
+
+                                      {/* Upload buttons — big and clear */}
+                                      <div className="flex gap-1">
+                                        {([
+                                          { src: 'camera' as const, label: 'Camera', icon: <Camera size={12} />, bg: 'bg-blue-100 hover:bg-blue-200 text-blue-700' },
+                                          { src: 'gallery' as const, label: 'Gallery', icon: <Image size={12} />, bg: 'bg-purple-100 hover:bg-purple-200 text-purple-700' },
+                                          { src: 'file' as const, label: 'File', icon: <Upload size={12} />, bg: 'bg-gray-100 hover:bg-gray-200 text-gray-700' },
+                                        ]).map(btn => (
+                                          <button key={btn.src} onClick={() => uploadDoc(s.id, dt.key, btn.src)}
+                                            disabled={isUploading}
+                                            className={`flex-1 py-1.5 rounded-lg text-[10px] font-semibold flex items-center justify-center gap-1 transition-colors ${btn.bg} disabled:opacity-50`}>
+                                            {isUploading ? <Loader2 size={11} className="animate-spin" /> : btn.icon}
+                                            {btn.label}
+                                          </button>
+                                        ))}
+                                      </div>
                                     </div>
                                   );
                                 })}
