@@ -114,14 +114,14 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
   // White-out the template's "Date:" and "[Your letter content goes here]" text
-  page.drawRectangle({ x: 0, y: height - 235, width: width, height: 95, color: rgb(1, 1, 1) });
+  page.drawRectangle({ x: 0, y: height - 220, width: width, height: 82, color: rgb(1, 1, 1) });
 
   const black = rgb(0, 0, 0);
   const gray = rgb(0.4, 0.4, 0.4);
-  const darkBlue = rgb(0.1, 0.2, 0.4);
+  const darkBlue = rgb(0.29, 0.49, 0.25); // MSPIL green
   const headerBg = rgb(0.85, 0.9, 0.95);
 
-  let y = height - 145; // Start just below letterhead
+  let y = height - 148; // Start just below letterhead
   const marginL = 40;
   const marginR = width - 40;
   const contentW = marginR - marginL;
@@ -348,157 +348,156 @@ export async function generateInvoicePdf(inv: InvoiceData): Promise<Buffer> {
   const { width, height } = page.getSize();
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const fontItalic = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
 
-  // White-out the template placeholder text
-  page.drawRectangle({ x: 0, y: height - 230, width: width, height: 95, color: rgb(1, 1, 1) });
+  // White-out "Date: ___" and "[Your letter content goes here]" from template
+  // Template: letterhead box ends at ~y=700, Date at ~y=660, placeholder at ~y=628
+  page.drawRectangle({ x: 0, y: height - 220, width: width, height: 82, color: rgb(1, 1, 1) });
 
   const black = rgb(0, 0, 0);
-  const gray = rgb(0.4, 0.4, 0.4);
-  const darkBlue = rgb(0.1, 0.2, 0.4);
+  const gray = rgb(0.35, 0.35, 0.35);
+  const lightGray = rgb(0.55, 0.55, 0.55);
+  const green = rgb(0.29, 0.49, 0.25); // MSPIL green #4a7c3f
+  const white = rgb(1, 1, 1);
 
-  let y = height - 145;
-  const marginL = 40;
-  const marginR = width - 40;
-  const contentW = marginR - marginL;
+  const mL = 45;            // left margin
+  const mR = width - 45;    // right margin
+  const cW = mR - mL;       // content width
+  let y = height - 148;     // start below letterhead (measured from template)
 
-  const drawText = (text: string, x: number, yPos: number, size: number, f = font, color = black) => {
-    page.drawText(text, { x, y: yPos, size, font: f, color });
+  const text = (t: string, x: number, yP: number, size: number, f = font, color = black) => {
+    page.drawText(t, { x, y: yP, size, font: f, color });
+  };
+  const line = (yP: number, thick = 0.5, color = rgb(0.8, 0.8, 0.8)) => {
+    page.drawLine({ start: { x: mL, y: yP }, end: { x: mR, y: yP }, thickness: thick, color });
+  };
+  const rightText = (t: string, yP: number, size: number, f = font, color = black) => {
+    const w = f.widthOfTextAtSize(t, size);
+    text(t, mR - w, yP, size, f, color);
   };
 
-  const drawLine = (y: number, thickness = 0.5) => {
-    page.drawLine({ start: { x: marginL, y }, end: { x: marginR, y }, thickness, color: gray });
-  };
+  // ═══ TITLE BAR ═══
+  page.drawRectangle({ x: mL, y: y - 4, width: cW, height: 22, color: green });
+  const titleW = fontBold.widthOfTextAtSize('TAX INVOICE', 13);
+  text('TAX INVOICE', mL + (cW - titleW) / 2, y, 13, fontBold, white);
+  y -= 28;
 
-  // Title
-  drawText('TAX INVOICE', width / 2 - 45, y, 16, fontBold, darkBlue);
-  y -= 22;
-  drawLine(y, 1);
-  y -= 12;
-
-  // Invoice details
-  drawText('Invoice No:', marginL, y, 9, fontBold);
-  drawText(`INV-${inv.invoiceNo}`, marginL + 65, y, 9);
-  drawText('Date:', width / 2, y, 9, fontBold);
-  drawText(formatDate(inv.invoiceDate), width / 2 + 35, y, 9);
+  // ═══ INVOICE DETAILS — 2 column grid ═══
+  const col2 = width / 2 + 10;
+  text('Invoice No:', mL, y, 9, fontBold, lightGray);
+  text(`INV-${inv.invoiceNo}`, mL + 62, y, 9, fontBold);
+  text('Date:', col2, y, 9, fontBold, lightGray);
+  text(formatDate(inv.invoiceDate), col2 + 32, y, 9, fontBold);
+  y -= 13;
+  if (inv.dueDate) { text('Due Date:', mL, y, 8, font, lightGray); text(formatDate(inv.dueDate), mL + 55, y, 8); }
+  if (inv.challanNo) { text('Challan:', col2, y, 8, font, lightGray); text(inv.challanNo, col2 + 45, y, 8); }
+  y -= 13;
+  if (inv.ewayBill) { text('E-Way Bill:', mL, y, 8, font, lightGray); text(inv.ewayBill, mL + 60, y, 8); }
   y -= 14;
-  if (inv.dueDate) {
-    drawText('Due Date:', marginL, y, 9, fontBold);
-    drawText(formatDate(inv.dueDate), marginL + 65, y, 9);
-  }
-  if (inv.challanNo) {
-    drawText('Challan:', width / 2, y, 9, fontBold);
-    drawText(inv.challanNo, width / 2 + 50, y, 9);
-  }
-  y -= 14;
-  if (inv.ewayBill) {
-    drawText('E-Way Bill:', marginL, y, 9, fontBold);
-    drawText(inv.ewayBill, marginL + 65, y, 9);
-  }
-  y -= 20;
+  line(y, 0.3);
+  y -= 10;
 
-  // Customer box
-  page.drawRectangle({ x: marginL, y: y - 55, width: contentW, height: 60, borderColor: gray, borderWidth: 0.5, color: rgb(0.97, 0.97, 0.97) });
-  drawText('BILL TO', marginL + 5, y, 8, fontBold, gray);
-  y -= 12;
-  drawText(inv.customer.name, marginL + 5, y, 10, fontBold);
-  y -= 12;
-  if (inv.customer.address) { drawText(inv.customer.address, marginL + 5, y, 8); y -= 11; }
+  // ═══ BILL TO ═══
+  page.drawRectangle({ x: mL, y: y - 52, width: cW, height: 56, borderColor: rgb(0.85, 0.85, 0.85), borderWidth: 0.5 });
+  text('BILL TO', mL + 6, y - 2, 7, fontBold, lightGray);
+  let bY = y - 14;
+  text(inv.customer.name, mL + 6, bY, 10, fontBold); bY -= 11;
+  const custAddr = [inv.customer.address].filter(Boolean).join('');
+  if (custAddr) { text(custAddr, mL + 6, bY, 8); bY -= 10; }
   const custCity = [inv.customer.city, inv.customer.state, inv.customer.pincode].filter(Boolean).join(', ');
-  if (custCity) { drawText(custCity, marginL + 5, y, 8); y -= 11; }
-  if (inv.customer.gstin) { drawText(`GSTIN: ${inv.customer.gstin}`, marginL + 5, y, 8); y -= 11; }
-  y -= 15;
+  if (custCity) { text(custCity, mL + 6, bY, 8); bY -= 10; }
+  if (inv.customer.gstin) { text(`GSTIN: ${inv.customer.gstin}`, mL + 6, bY, 8, font, lightGray); }
+  y -= 62;
 
-  // Line items table - improved column spacing
-  const cols = [
-    { label: '#', x: marginL, w: 20 },
-    { label: 'Description', x: marginL + 20, w: 140 },
-    { label: 'Qty', x: marginL + 160, w: 45 },
-    { label: 'Unit', x: marginL + 205, w: 35 },
-    { label: 'Rate', x: marginL + 240, w: 65 },
-    { label: 'Amount', x: marginL + 305, w: 75 },
-    { label: 'GST %', x: marginL + 380, w: 35 },
-    { label: 'GST Amt', x: marginL + 415, w: 75 },
+  // ═══ LINE ITEMS TABLE ═══
+  // Header
+  page.drawRectangle({ x: mL, y: y - 15, width: cW, height: 17, color: green });
+  const hCols = [
+    { l: '#', x: mL + 3, w: 18 },
+    { l: 'Description', x: mL + 22, w: 150 },
+    { l: 'Qty', x: mL + 175, w: 42 },
+    { l: 'Unit', x: mL + 220, w: 30 },
+    { l: 'Rate (Rs.)', x: mL + 252, w: 65 },
+    { l: 'Amount (Rs.)', x: mL + 320, w: 80 },
+    { l: 'GST', x: mL + 405, w: 100 },
   ];
+  hCols.forEach(c => text(c.l, c.x, y - 11, 7.5, fontBold, white));
+  y -= 19;
 
-  page.drawRectangle({ x: marginL, y: y - 14, width: contentW, height: 16, color: darkBlue });
-  cols.forEach(col => {
-    drawText(col.label, col.x + 3, y - 11, 8, fontBold, rgb(1, 1, 1));
-  });
-  y -= 18;
-
-  // Single line item
-  page.drawRectangle({ x: marginL, y: y - 14, width: contentW, height: 16, color: rgb(0.96, 0.96, 0.96) });
-  drawText('1', cols[0].x + 2, y - 11, 8);
-  drawText(inv.productName, cols[1].x + 2, y - 11, 7);
-  drawText(inv.quantity.toFixed(2), cols[2].x + 2, y - 11, 8);
-  drawText(inv.unit, cols[3].x + 2, y - 11, 8);
-  drawText(formatINR(inv.rate), cols[4].x + 2, y - 11, 7);
-  drawText(formatINR(inv.amount), cols[5].x + 2, y - 11, 7);
-  drawText(`${inv.gstPercent}%`, cols[6].x + 2, y - 11, 8);
-  drawText(formatINR(inv.gstAmount), cols[7].x + 2, y - 11, 7);
-  y -= 18;
-
-  drawLine(y, 0.5);
+  // Row
+  page.drawRectangle({ x: mL, y: y - 15, width: cW, height: 17, color: rgb(0.97, 0.98, 0.97) });
+  text('1', hCols[0].x, y - 11, 8);
+  text(inv.productName, hCols[1].x, y - 11, 8);
+  text(inv.quantity.toFixed(2), hCols[2].x, y - 11, 8);
+  text(inv.unit, hCols[3].x, y - 11, 8);
+  text(formatINR(inv.rate), hCols[4].x, y - 11, 7.5);
+  text(formatINR(inv.amount), hCols[5].x, y - 11, 7.5);
+  const gstHalf = inv.gstPercent / 2;
+  text(`${inv.gstPercent}% (CGST ${gstHalf}% + SGST ${gstHalf}%)`, hCols[6].x, y - 11, 6.5);
+  y -= 19;
+  line(y, 0.5, green);
   y -= 12;
 
-  // Totals
-  const totX = marginL + 350;
-  const labX = marginL + 250;
-  drawText('Taxable Amt:', labX, y, 8, fontBold);
-  drawText(formatINR(inv.amount), totX, y, 8);
-  y -= 13;
-  drawText(`GST (${inv.gstPercent}%):`, labX, y, 8, fontBold);
-  drawText(formatINR(inv.gstAmount), totX, y, 8);
-  y -= 13;
+  // ═══ TOTALS — right aligned ═══
+  const labX = mL + 300;
+  const valX = mL + 410;
+  text('Taxable Amount:', labX, y, 8, font, gray); text(formatINR(inv.amount), valX, y, 8, fontBold); y -= 12;
+
+  // CGST + SGST split
+  text(`CGST (${gstHalf}%):`, labX, y, 8, font, gray);
+  text(formatINR(inv.gstAmount / 2), valX, y, 8); y -= 11;
+  text(`SGST (${gstHalf}%):`, labX, y, 8, font, gray);
+  text(formatINR(inv.gstAmount / 2), valX, y, 8); y -= 11;
+
   if (inv.freightCharge) {
-    drawText('Freight:', labX, y, 8, fontBold);
-    drawText(formatINR(inv.freightCharge), totX, y, 8);
-    y -= 13;
+    text('Freight:', labX, y, 8, font, gray); text(formatINR(inv.freightCharge), valX, y, 8); y -= 11;
   }
-  drawLine(y + 1, 1);
-  y -= 3;
-  drawText('TOTAL AMOUNT:', labX, y, 10, fontBold, darkBlue);
-  drawText(formatINR(inv.totalAmount), totX, y, 10, fontBold, darkBlue);
-  y -= 18;
+  y -= 2;
+  page.drawLine({ start: { x: labX, y }, end: { x: mR, y }, thickness: 1.5, color: green });
+  y -= 14;
+  text('TOTAL:', labX, y, 11, fontBold, green);
+  text(formatINR(inv.totalAmount), valX, y, 11, fontBold, green);
+  y -= 16;
 
   // Amount in words
-  drawText('Amount in Words:', marginL, y, 8, fontBold, gray);
-  y -= 12;
-  drawText(numberToWords(inv.totalAmount), marginL, y, 8, fontBold);
-  y -= 30;
-
-  // Bank details + Terms (from template)
-  const invTmpl = await getTemplate('INVOICE');
-  drawLine(y, 0.5);
-  y -= 12;
-  drawText('Bank Details:', marginL, y, 8, fontBold);
+  text('Amount in Words:', mL, y, 7, fontItalic, lightGray);
   y -= 11;
-  const bankInfo = invTmpl.bankDetails || 'Bank: State Bank of India | A/c: 39aboreshwar | Branch: Narsinghpur | IFSC: SBIN0001234';
-  drawText(bankInfo, marginL, y, 7);
+  text(numberToWords(inv.totalAmount), mL, y, 8, fontBold);
+  y -= 18;
+
+  // ═══ BANK DETAILS ═══
+  line(y, 0.3);
   y -= 12;
+  const invTmpl = await getTemplate('INVOICE');
+  text('Bank Details:', mL, y, 7.5, fontBold, gray);
+  y -= 10;
+  const bankInfo = invTmpl.bankDetails || 'Bank: State Bank of India | A/c: 30926010498 | Branch: Narsinghpur | IFSC: SBIN0001234';
+  text(bankInfo, mL, y, 6.5, font, lightGray);
+  y -= 14;
+
+  // ═══ TERMS ═══
   if (invTmpl.terms.length > 0) {
-    drawText('Terms:', marginL, y, 8, fontBold);
-    y -= 12;
+    text('Terms & Conditions:', mL, y, 7.5, fontBold, gray);
+    y -= 10;
     invTmpl.terms.forEach((t, i) => {
-      drawText(`${i + 1}. ${t}`, marginL, y, 7);
-      y -= 10;
+      text(`${i + 1}. ${t}`, mL + 4, y, 6, font, lightGray);
+      y -= 8;
     });
-    y -= 5;
   }
 
-  // Barcode
-  try {
-    const barcodeImg = await generateBarcode(`INV-${inv.invoiceNo}`);
-    const bcImage = await pdfDoc.embedPng(barcodeImg);
-    page.drawImage(bcImage, { x: marginR - 140, y: y, width: 130, height: 25 });
-  } catch { /* barcode failed */ }
-  y -= 20;
+  // ═══ SIGNATURES ═══
+  y = 70;
+  line(y + 20, 0.3);
+  text('_____________________', mL, y, 8, font, rgb(0.7, 0.7, 0.7));
+  text('For MSPIL', mL, y - 10, 7, fontBold, gray);
+  text('_____________________', mR - 130, y, 8, font, rgb(0.7, 0.7, 0.7));
+  text('Authorized Signatory', mR - 130, y - 10, 7, fontBold, gray);
 
-  // Signatures
-  drawText('Prepared By', marginL, y, 8, fontBold);
-  drawText('Authorized Signatory', marginR - 120, y, 8, fontBold);
-
-  drawText(invTmpl.footer, width / 2 - 80, 25, 7, font, gray);
+  // Footer
+  const footerText = invTmpl.footer || 'This is a computer-generated invoice from MSPIL ERP.';
+  page.drawRectangle({ x: mL, y: 22, width: cW, height: 1, color: green });
+  const ftW = font.widthOfTextAtSize(footerText, 6);
+  text(footerText, mL + (cW - ftW) / 2, 12, 6, font, lightGray);
 
   const pdfBytes = await pdfDoc.save();
   return Buffer.from(pdfBytes);
