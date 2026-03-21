@@ -17,14 +17,15 @@ interface DDGSTruck {
   remarks: string | null; createdAt: string;
 }
 
-const STATUS_FLOW = ['GATE_IN', 'TARE_WEIGHED', 'LOADING', 'GROSS_WEIGHED', 'BILLED', 'RELEASED'] as const;
+const STATUS_FLOW = ['GATE_IN', 'TARE_WEIGHED', 'LOADING', 'GROSS_WEIGHED', 'BILLED', 'PAYMENT_CONFIRMED', 'RELEASED'] as const;
 const STATUS_CFG: Record<string, { label: string; badge: string }> = {
-  GATE_IN:        { label: 'Gate In',  badge: 'bg-slate-100 text-slate-700' },
-  TARE_WEIGHED:   { label: 'Tared',    badge: 'bg-blue-50 text-blue-700' },
-  LOADING:        { label: 'Loading',  badge: 'bg-amber-50 text-amber-700' },
-  GROSS_WEIGHED:  { label: 'Weighed',  badge: 'bg-orange-50 text-orange-700' },
-  BILLED:         { label: 'Billed',   badge: 'bg-purple-50 text-purple-700' },
-  RELEASED:       { label: 'Released', badge: 'bg-green-50 text-green-700' },
+  GATE_IN:            { label: 'Gate In',   badge: 'bg-slate-100 text-slate-700' },
+  TARE_WEIGHED:       { label: 'Tared',     badge: 'bg-blue-50 text-blue-700' },
+  LOADING:            { label: 'Loading',   badge: 'bg-amber-50 text-amber-700' },
+  GROSS_WEIGHED:      { label: 'Weighed',   badge: 'bg-orange-50 text-orange-700' },
+  BILLED:             { label: 'Billed',    badge: 'bg-purple-50 text-purple-700' },
+  PAYMENT_CONFIRMED:  { label: 'Paid',      badge: 'bg-emerald-50 text-emerald-700' },
+  RELEASED:           { label: 'Released',  badge: 'bg-green-50 text-green-700' },
 };
 
 export default function DDGSDispatch() {
@@ -148,6 +149,15 @@ export default function DDGSDispatch() {
     setBillSaving(false);
   }
 
+  // ── Confirm Payment ──
+  async function confirmPayment(id: string) {
+    try {
+      await api.post(`/ddgs-dispatch/${id}/confirm-payment`);
+      setMsg({ type: 'ok', text: 'Payment confirmed! Generate E-Way Bill now.' });
+      loadTrucks();
+    } catch { setMsg({ type: 'err', text: 'Payment confirmation failed' }); }
+  }
+
   // ── Release ──
   async function releaseTruck(id: string) {
     try {
@@ -220,6 +230,12 @@ export default function DDGSDispatch() {
       </button>
     );
     if (s === 'BILLED') return (
+      <button onClick={(e) => { e.stopPropagation(); confirmPayment(t.id); }}
+        className="px-2 py-0.5 bg-emerald-600 text-white rounded text-[10px] font-bold whitespace-nowrap">
+        ₹ Confirm Pay
+      </button>
+    );
+    if (s === 'PAYMENT_CONFIRMED') return (
       <button onClick={(e) => { e.stopPropagation(); releaseTruck(t.id); }}
         className="px-2 py-0.5 bg-green-600 text-white rounded text-[10px] font-bold whitespace-nowrap">
         Release
@@ -429,7 +445,7 @@ export default function DDGSDispatch() {
                       <div className="flex gap-px mt-1">
                         {STATUS_FLOW.map((st, i) => (
                           <div key={st} className={`h-[2px] flex-1 rounded-full ${
-                            i <= stepIdx ? (i === stepIdx && stepIdx < 5 ? 'bg-red-400 animate-pulse' : 'bg-green-400') : 'bg-gray-200'
+                            i <= stepIdx ? (i === stepIdx && stepIdx < 6 ? 'bg-red-400 animate-pulse' : 'bg-green-400') : 'bg-gray-200'
                           }`} />
                         ))}
                       </div>
@@ -533,8 +549,22 @@ export default function DDGSDispatch() {
                               <FileText size={11} /> Gate Pass PDF
                             </button>
                           )}
-                          {/* Release */}
-                          {(t.status === 'BILLED' || (t.status === 'GROSS_WEIGHED' && t.invoiceNo)) && (
+                          {/* Payment Confirmation */}
+                          {t.status === 'BILLED' && (
+                            <button onClick={() => confirmPayment(t.id)}
+                              className="px-2 py-1 text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg flex items-center gap-1 hover:bg-emerald-100">
+                              <CheckCircle size={11} /> ₹ Confirm Payment
+                            </button>
+                          )}
+                          {/* E-Way Bill — only after payment confirmed */}
+                          {t.status === 'PAYMENT_CONFIRMED' && !t.ewayBillNo && (
+                            <button onClick={() => { /* TODO: eway bill modal */ setMsg({ type: 'ok', text: 'E-Way Bill generation will be available when NIC credentials are configured' }); }}
+                              className="px-2 py-1 text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg flex items-center gap-1 hover:bg-indigo-100">
+                              <Truck size={11} /> Generate E-Way Bill
+                            </button>
+                          )}
+                          {/* Release — after payment confirmed */}
+                          {t.status === 'PAYMENT_CONFIRMED' && (
                             <button onClick={() => releaseTruck(t.id)}
                               className="px-2 py-1 text-[10px] font-semibold bg-green-50 text-green-700 border border-green-200 rounded-lg flex items-center gap-1 hover:bg-green-100">
                               <CheckCircle size={11} /> Release Truck
