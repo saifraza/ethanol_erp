@@ -1,6 +1,7 @@
 node_modules/
 dist/
 frontend/public/
+backend/public/
 .env
 *.db
 *.db-journal
