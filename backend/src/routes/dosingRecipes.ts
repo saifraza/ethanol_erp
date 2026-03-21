@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate } from '../middleware/auth';
+import { authenticate, authorize } from '../middleware/auth';
 
 const router = Router();
 router.use(authenticate as any);
@@ -24,7 +24,7 @@ router.get('/:category', async (req: Request, res: Response) => {
 });
 
 /* POST create recipe */
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', authorize('ADMIN') as any, async (req: Request, res: Response) => {
   try {
     const { category, chemicalName, quantity, unit, order } = req.body;
     const recipe = await prisma.dosingRecipe.create({
@@ -41,7 +41,7 @@ router.post('/', async (req: Request, res: Response) => {
 });
 
 /* PATCH update recipe */
-router.patch('/:id', async (req: Request, res: Response) => {
+router.patch('/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
   try {
     const data: any = {};
     const b = req.body;
@@ -56,7 +56,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
 });
 
 /* DELETE (soft) */
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
   await prisma.dosingRecipe.update({ where: { id: req.params.id }, data: { isActive: false } });
   res.json({ ok: true });
 });

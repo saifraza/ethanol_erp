@@ -132,9 +132,11 @@ router.get('/overview', async (_req: Request, res: Response) => {
 });
 
 /* ═══════ BATCHES (lifecycle) ═══════ */
-router.get('/batches', async (_req: Request, res: Response) => {
+router.get('/batches', async (req: Request, res: Response) => {
+  // Cap limit to prevent unbounded queries
+  const limit = Math.min(parseInt((req.query.limit as string) || '50'), 100);
   const batches = await prisma.fermentationBatch.findMany({
-    orderBy: { createdAt: 'desc' }, take: 100,
+    orderBy: { createdAt: 'desc' }, take: limit,
     include: { dosings: { orderBy: { addedAt: 'asc' } } }
   });
   res.json(batches);
@@ -298,15 +300,19 @@ router.delete('/dosing/:id', authorize('ADMIN') as any, async (req: Request, res
 /* ═══════ LAB READINGS (FermentationEntry) ═══════ */
 // GET all
 router.get('/', async (_req: Request, res: Response) => {
-  const entries = await prisma.fermentationEntry.findMany({ orderBy: { date: 'desc' }, take: 500 });
+  // Cap limit to prevent unbounded queries
+  const limit = Math.min(parseInt((_req.query.limit as string) || '50'), 500);
+  const entries = await prisma.fermentationEntry.findMany({ orderBy: { date: 'desc' }, take: limit });
   res.json(entries);
 });
 
 // GET for specific fermenter
 router.get('/fermenter/:no', async (req: Request, res: Response) => {
   const fermenterNo = parseInt(req.params.no);
+  // Cap limit to prevent unbounded queries
+  const limit = Math.min(parseInt((req.query.limit as string) || '50'), 200);
   const entries = await prisma.fermentationEntry.findMany({
-    where: { fermenterNo }, orderBy: { date: 'desc' }, take: 200
+    where: { fermenterNo }, orderBy: { date: 'desc' }, take: limit
   });
   res.json(entries);
 });
@@ -486,7 +492,8 @@ router.put('/:id', async (req: Request, res: Response) => {
 router.delete('/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
   const entry = await prisma.fermentationEntry.findUnique({ where: { id: req.params.id } });
   if (entry?.spentLossPhotoUrl) {
-    const fp = path.join(__dirname, '../..', entry.spentLossPhotoUrl);
+    const filename = path.basename(entry.spentLossPhotoUrl.replace(/^\//, ''));
+    const fp = path.join(__dirname, '../../uploads/spent-loss', filename);
     fs.unlink(fp, () => {});
   }
   await prisma.fermentationEntry.delete({ where: { id: req.params.id } });

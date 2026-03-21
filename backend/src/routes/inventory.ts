@@ -35,7 +35,7 @@ router.get('/items/:id', async (req: Request, res: Response) => {
 });
 
 // POST /items — create new item
-router.post('/items', async (req: Request, res: Response) => {
+router.post('/items', authorize('ADMIN') as any, async (req: Request, res: Response) => {
   try {
     const b = req.body;
     const item = await prisma.inventoryItem.create({
@@ -59,7 +59,7 @@ router.post('/items', async (req: Request, res: Response) => {
 });
 
 // PUT /items/:id — update item
-router.put('/items/:id', async (req: Request, res: Response) => {
+router.put('/items/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
   try {
     const b = req.body;
     const item = await prisma.inventoryItem.update({
@@ -100,30 +100,35 @@ router.post('/transaction', async (req: Request, res: Response) => {
     const qty = parseFloat(b.quantity) || 0;
     const type = b.type; // IN, OUT, ADJUST
 
-    // Create transaction
-    const txn = await prisma.inventoryTransaction.create({
-      data: {
-        itemId: b.itemId,
-        type,
-        quantity: qty,
-        reference: b.reference || null,
-        remarks: b.remarks || null,
-        userId: (req as any).user.id,
-      },
-    });
-
-    // Update current stock
-    const item = await prisma.inventoryItem.findUnique({ where: { id: b.itemId } });
-    if (item) {
-      let newStock = item.currentStock;
-      if (type === 'IN') newStock += qty;
-      else if (type === 'OUT') newStock -= qty;
-      else if (type === 'ADJUST') newStock = qty; // absolute set
-      await prisma.inventoryItem.update({
-        where: { id: b.itemId },
-        data: { currentStock: Math.max(0, newStock) },
+    // Wrap in transaction to ensure atomicity
+    const txn = await prisma.$transaction(async (tx: any) => {
+      // Create transaction
+      const transaction = await tx.inventoryTransaction.create({
+        data: {
+          itemId: b.itemId,
+          type,
+          quantity: qty,
+          reference: b.reference || null,
+          remarks: b.remarks || null,
+          userId: (req as any).user.id,
+        },
       });
-    }
+
+      // Update current stock
+      const item = await tx.inventoryItem.findUnique({ where: { id: b.itemId } });
+      if (item) {
+        let newStock = item.currentStock;
+        if (type === 'IN') newStock += qty;
+        else if (type === 'OUT') newStock -= qty;
+        else if (type === 'ADJUST') newStock = qty; // absolute set
+        await tx.inventoryItem.update({
+          where: { id: b.itemId },
+          data: { currentStock: Math.max(0, newStock) },
+        });
+      }
+
+      return transaction;
+    });
 
     res.status(201).json(txn);
   } catch (err: any) { res.status(500).json({ error: err.message }); }

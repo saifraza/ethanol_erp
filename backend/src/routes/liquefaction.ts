@@ -130,7 +130,8 @@ router.put('/:id', async (req: Request, res: Response) => {
 router.delete('/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
   const entry = await prisma.liquefactionEntry.findUnique({ where: { id: req.params.id } });
   if (entry?.fltIodinePhotoUrl) {
-    const filePath = path.join(__dirname, '..', '..', entry.fltIodinePhotoUrl.replace(/^\//, ''));
+    const filename = path.basename(entry.fltIodinePhotoUrl.replace(/^\//, ''));
+    const filePath = path.join(__dirname, '../../uploads/iodine', filename);
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
   }
   await prisma.liquefactionEntry.delete({ where: { id: req.params.id } });

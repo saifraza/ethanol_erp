@@ -4,6 +4,19 @@ import { authenticate, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
+/**
+ * Escape CSV values to prevent injection attacks.
+ * If value contains special chars, wrap in quotes and escape inner quotes.
+ */
+function escapeCSV(val: any): string {
+  const s = String(val ?? '');
+  // Check for formula characters, quotes, newlines, commas
+  if (/[",\n\r]|^[=+@\-]/.test(s)) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
 router.post('/filter', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { startDate, endDate } = req.body;
@@ -33,7 +46,14 @@ router.get('/csv', authenticate, async (req: AuthRequest, res: Response) => {
 
     let csv = 'Date,Grain Consumed,Grain Distilled,Recovery %,Efficiency %\n';
     entries.forEach((entry) => {
-      csv += `${entry.date.toISOString()},${entry.grainConsumed},${entry.grainDistilled},${entry.recoveryPercentage},${entry.distillationEfficiency}\n`;
+      // Escape all CSV fields to prevent injection
+      csv += [
+        escapeCSV(entry.date.toISOString()),
+        escapeCSV(entry.grainConsumed),
+        escapeCSV(entry.grainDistilled),
+        escapeCSV(entry.recoveryPercentage),
+        escapeCSV(entry.distillationEfficiency)
+      ].join(',') + '\n';
     });
 
     res.setHeader('Content-Type', 'text/csv');

@@ -62,7 +62,8 @@ router.delete('/:id', authorize('ADMIN') as any, async (req: Request, res: Respo
       // Clean up photo files
       for (const url of [entry.spentWashPhotoUrl, entry.rcLessPhotoUrl]) {
         if (url) {
-          const filePath = path.join(__dirname, '../..', url);
+          const filename = path.basename(url.replace(/^\//, ''));
+          const filePath = path.join(__dirname, '../../uploads/distillation', filename);
           if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
         }
       }

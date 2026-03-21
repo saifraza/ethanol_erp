@@ -2,6 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
 import path from 'path';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import authRoutes from './routes/auth';
 import dashboardRoutes from './routes/dashboard';
 import reportRoutes from './routes/reports';
@@ -59,16 +61,29 @@ import ethanolContractRoutes from './routes/ethanolContracts';
 
 const app = express();
 
+// Security middleware: Helmet (must be before CORS)
+app.use(helmet({ contentSecurityPolicy: false })); // CSP disabled for SPA
+
+// CORS middleware
 app.use(cors({
   origin: process.env.NODE_ENV === 'production'
     ? [process.env.FRONTEND_URL || 'https://web-production-d305.up.railway.app']
     : true,
   credentials: true,
 }));
-app.use(morgan('dev'));
-app.use(express.json());
 
-app.use('/api/auth', authRoutes);
+// Logging and body parsing
+app.use(morgan('dev'));
+app.use(express.json({ limit: '10mb' }));
+
+// Rate limiting for auth routes
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20, // 20 attempts per window
+  message: { error: 'Too many requests, try again later' },
+});
+
+app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/settings', settingsRoutes);

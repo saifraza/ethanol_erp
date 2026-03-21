@@ -397,8 +397,9 @@ router.delete('/:id', authenticate, authorize('ADMIN'), async (req: AuthRequest,
   try {
     const t = await prisma.grainTruck.findUnique({ where: { id: req.params.id } });
     if (t?.photoUrl) {
-      // photoUrl is like "/uploads/grain/xxx.jpg" — strip leading slash for path.join
-      const filePath = path.join(__dirname, '..', '..', t.photoUrl.replace(/^\//, ''));
+      // photoUrl is like "/uploads/grain-truck/xxx.jpg" — strip leading slash and validate with basename
+      const filename = path.basename(t.photoUrl.replace(/^\//, ''));
+      const filePath = path.join(__dirname, '../../uploads/grain-truck', filename);
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     }
     await prisma.grainTruck.delete({ where: { id: req.params.id } });

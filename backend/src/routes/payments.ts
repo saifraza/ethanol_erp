@@ -44,17 +44,21 @@ router.get('/ledger/:customerId', async (req: Request, res: Response) => {
   try {
     const customerId = req.params.customerId;
 
+    // Cap limit to prevent unbounded queries
+    const limit = Math.min(parseInt((req.query.limit as string) || '200'), 1000);
     const invoices = await prisma.invoice.findMany({
       where: { customerId },
       include: {
         payments: true,
       },
       orderBy: { invoiceDate: 'asc' },
+      take: limit,
     });
 
     const payments = await prisma.payment.findMany({
       where: { customerId },
       orderBy: { paymentDate: 'asc' },
+      take: limit,
     });
 
     // Combine timeline
@@ -104,6 +108,8 @@ router.get('/ledger/:customerId', async (req: Request, res: Response) => {
 // GET /aging — AR aging report
 router.get('/aging', async (req: Request, res: Response) => {
   try {
+    // Cap limit to prevent unbounded queries
+    const limit = Math.min(parseInt((req.query.limit as string) || '200'), 1000);
     const outstanding = await prisma.invoice.findMany({
       where: {
         status: { in: ['UNPAID', 'PARTIAL'] },
@@ -113,6 +119,7 @@ router.get('/aging', async (req: Request, res: Response) => {
           select: { id: true, name: true },
         },
       },
+      take: limit,
     });
 
     const now = new Date();
@@ -163,59 +170,63 @@ router.post('/', async (req: Request, res: Response) => {
     const b = req.body;
     const amount = parseFloat(b.amount) || 0;
 
-    // Create payment
-    const payment = await prisma.payment.create({
-      data: {
-        customerId: b.customerId,
-        invoiceId: b.invoiceId || null,
-        paymentDate: b.paymentDate ? new Date(b.paymentDate) : new Date(),
-        amount,
-        mode: b.mode || 'BANK_TRANSFER',
-        reference: b.reference || '',
-        confirmedBy: b.confirmedBy || '',
-        remarks: b.remarks || null,
-        userId: (req as any).user.id,
-      },
-    });
-
-    // If invoiceId: update invoice
-    if (b.invoiceId) {
-      const invoice = await prisma.invoice.findUnique({
-        where: { id: b.invoiceId },
+    // Wrap in transaction to ensure atomicity
+    const result = await prisma.$transaction(async (tx: any) => {
+      // Create payment
+      const payment = await tx.payment.create({
+        data: {
+          customerId: b.customerId,
+          invoiceId: b.invoiceId || null,
+          paymentDate: b.paymentDate ? new Date(b.paymentDate) : new Date(),
+          amount,
+          mode: b.mode || 'BANK_TRANSFER',
+          reference: b.reference || '',
+          confirmedBy: b.confirmedBy || '',
+          remarks: b.remarks || null,
+          userId: (req as any).user.id,
+        },
       });
 
-      if (invoice) {
-        const newPaidAmount = invoice.paidAmount + amount;
-        const newBalanceAmount = invoice.totalAmount - newPaidAmount;
-        let newStatus = 'UNPAID';
-
-        if (newBalanceAmount <= 0) {
-          newStatus = 'PAID';
-        } else if (newPaidAmount > 0) {
-          newStatus = 'PARTIAL';
-        }
-
-        await prisma.invoice.update({
+      // If invoiceId: update invoice
+      if (b.invoiceId) {
+        const invoice = await tx.invoice.findUnique({
           where: { id: b.invoiceId },
-          data: {
-            paidAmount: newPaidAmount,
-            balanceAmount: Math.max(0, newBalanceAmount),
-            status: newStatus,
-          },
         });
-      }
-    }
 
-    const result = await prisma.payment.findUnique({
-      where: { id: payment.id },
-      include: {
-        customer: {
-          select: { id: true, name: true },
+        if (invoice) {
+          const newPaidAmount = invoice.paidAmount + amount;
+          const newBalanceAmount = invoice.totalAmount - newPaidAmount;
+          let newStatus = 'UNPAID';
+
+          if (newBalanceAmount <= 0) {
+            newStatus = 'PAID';
+          } else if (newPaidAmount > 0) {
+            newStatus = 'PARTIAL';
+          }
+
+          await tx.invoice.update({
+            where: { id: b.invoiceId },
+            data: {
+              paidAmount: newPaidAmount,
+              balanceAmount: Math.max(0, newBalanceAmount),
+              status: newStatus,
+            },
+          });
+        }
+      }
+
+      // Fetch the created payment with full details
+      return await tx.payment.findUnique({
+        where: { id: payment.id },
+        include: {
+          customer: {
+            select: { id: true, name: true },
+          },
+          invoice: {
+            select: { id: true, invoiceNo: true },
+          },
         },
-        invoice: {
-          select: { id: true, invoiceNo: true },
-        },
-      },
+      });
     });
 
     res.status(201).json(result);

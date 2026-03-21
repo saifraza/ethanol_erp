@@ -137,48 +137,53 @@ router.post('/', async (req: Request, res: Response) => {
     const amount = parseFloat(b.amount) || 0;
     const tdsDeducted = parseFloat(b.tdsDeducted) || 0;
 
-    const payment = await prisma.vendorPayment.create({
-      data: {
-        vendorId: b.vendorId,
-        invoiceId: b.invoiceId || null,
-        amount,
-        mode: b.mode || 'BANK_TRANSFER',
-        reference: b.reference || '',
-        tdsDeducted,
-        tdsSection: b.tdsSection || null,
-        isAdvance: b.isAdvance || false,
-        remarks: b.remarks || null,
-        paymentDate: b.paymentDate ? new Date(b.paymentDate) : new Date(),
-        userId: (req as any).user.id,
-      },
-    });
-
-    // Update invoice if linked
-    if (b.invoiceId) {
-      const invoice = await prisma.vendorInvoice.findUnique({
-        where: { id: b.invoiceId },
+    // Wrap in transaction to ensure atomicity
+    const payment = await prisma.$transaction(async (tx: any) => {
+      const newPayment = await tx.vendorPayment.create({
+        data: {
+          vendorId: b.vendorId,
+          invoiceId: b.invoiceId || null,
+          amount,
+          mode: b.mode || 'BANK_TRANSFER',
+          reference: b.reference || '',
+          tdsDeducted,
+          tdsSection: b.tdsSection || null,
+          isAdvance: b.isAdvance || false,
+          remarks: b.remarks || null,
+          paymentDate: b.paymentDate ? new Date(b.paymentDate) : new Date(),
+          userId: (req as any).user.id,
+        },
       });
-      if (invoice) {
-        const newPaidAmount = (invoice.paidAmount || 0) + amount;
-        const newBalanceAmount = (invoice.netPayable || 0) - newPaidAmount;
-        let newStatus = invoice.status;
 
-        if (newBalanceAmount <= 0) {
-          newStatus = 'PAID';
-        } else if (newPaidAmount > 0) {
-          newStatus = 'PARTIAL_PAID';
-        }
-
-        await prisma.vendorInvoice.update({
+      // Update invoice if linked
+      if (b.invoiceId) {
+        const invoice = await tx.vendorInvoice.findUnique({
           where: { id: b.invoiceId },
-          data: {
-            paidAmount: newPaidAmount,
-            balanceAmount: Math.max(0, newBalanceAmount),
-            status: newStatus,
-          },
         });
+        if (invoice) {
+          const newPaidAmount = (invoice.paidAmount || 0) + amount;
+          const newBalanceAmount = (invoice.netPayable || 0) - newPaidAmount;
+          let newStatus = invoice.status;
+
+          if (newBalanceAmount <= 0) {
+            newStatus = 'PAID';
+          } else if (newPaidAmount > 0) {
+            newStatus = 'PARTIAL_PAID';
+          }
+
+          await tx.vendorInvoice.update({
+            where: { id: b.invoiceId },
+            data: {
+              paidAmount: newPaidAmount,
+              balanceAmount: Math.max(0, newBalanceAmount),
+              status: newStatus,
+            },
+          });
+        }
       }
-    }
+
+      return newPayment;
+    });
 
     res.status(201).json(payment);
   } catch (err: any) { res.status(500).json({ error: err.message }); }

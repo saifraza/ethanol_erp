@@ -52,6 +52,8 @@ router.get('/active', async (req: Request, res: Response) => {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
+    // Cap limit to prevent unbounded queries
+    const limit = Math.min(parseInt((req.query.limit as string) || '100'), 500);
     const shipments = await prisma.shipment.findMany({
       where: {
         OR: [
@@ -65,6 +67,7 @@ router.get('/active', async (req: Request, res: Response) => {
         documents: { orderBy: { createdAt: 'desc' } },
       },
       orderBy: { createdAt: 'desc' },
+      take: limit,
     });
     res.json({ shipments });
   } catch (err: any) { res.status(500).json({ error: err.message }); }

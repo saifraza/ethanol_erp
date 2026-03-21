@@ -7,7 +7,8 @@ const router = Router();
 // ─── Comprehensive analytics endpoint ───
 router.get('/analytics', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const days = Math.min(Number(req.query.days) || 30, 365);
+    // Validate and cap days parameter
+    const days = Math.max(1, Math.min(Number(req.query.days) || 30, 365));
     const now = new Date();
     now.setHours(23, 59, 59, 999);
     const from = new Date(now);
@@ -238,7 +239,8 @@ router.get('/analytics', authenticate, async (req: AuthRequest, res: Response) =
 // ─── Deep fermentation analytics ───
 router.get('/fermentation-deep', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const days = Math.min(Number(req.query.days) || 90, 365);
+    // Validate and cap days parameter
+    const days = Math.max(1, Math.min(Number(req.query.days) || 90, 365));
     const now = new Date();
     now.setHours(23, 59, 59, 999);
     const from = new Date(now);

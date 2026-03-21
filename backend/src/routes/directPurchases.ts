@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate } from '../middleware/auth';
+import { authenticate, authorize } from '../middleware/auth';
 
 const router = Router();
 router.use(authenticate as any);
@@ -112,7 +112,7 @@ router.put('/:id', async (req: Request, res: Response) => {
 });
 
 // DELETE /:id
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
   try {
     await prisma.directPurchase.delete({ where: { id: req.params.id } });
     res.json({ ok: true });

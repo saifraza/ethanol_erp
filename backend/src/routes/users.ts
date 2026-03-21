@@ -5,6 +5,12 @@ import { authenticate, AuthRequest, authorize } from '../middleware/auth';
 
 const router = Router();
 
+// Email validation regex
+const isValidEmail = (email: string): boolean => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+};
+
 router.get('/', authenticate, authorize('ADMIN'), async (req: AuthRequest, res: Response) => {
   try {
     const users = await prisma.user.findMany({
@@ -27,6 +33,16 @@ router.get('/', authenticate, authorize('ADMIN'), async (req: AuthRequest, res: 
 router.post('/', authenticate, authorize('ADMIN'), async (req: AuthRequest, res: Response) => {
   try {
     const { email, password, name, role, allowedModules } = req.body;
+
+    if (!email || !isValidEmail(email)) {
+      res.status(400).json({ error: 'Invalid email format' });
+      return;
+    }
+
+    if (!password || password.length < 8) {
+      res.status(400).json({ error: 'Password must be at least 8 characters' });
+      return;
+    }
 
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
@@ -138,8 +154,8 @@ router.delete('/:id', authenticate, authorize('ADMIN'), async (req: AuthRequest,
 router.put('/:id/password', authenticate, authorize('ADMIN'), async (req: AuthRequest, res: Response) => {
   try {
     const { password } = req.body;
-    if (!password || password.length < 4) {
-      res.status(400).json({ error: 'Password must be at least 4 characters' });
+    if (!password || password.length < 8) {
+      res.status(400).json({ error: 'Password must be at least 8 characters' });
       return;
     }
     const hash = await bcrypt.hash(password, 10);

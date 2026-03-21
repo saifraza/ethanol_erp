@@ -52,6 +52,8 @@ router.get('/', async (req: Request, res: Response) => {
 // GET /outstanding — Outstanding invoices summary
 router.get('/outstanding', async (req: Request, res: Response) => {
   try {
+    // Cap limit to prevent unbounded queries
+    const limit = Math.min(parseInt((req.query.limit as string) || '200'), 1000);
     const outstanding = await prisma.invoice.findMany({
       where: {
         status: { in: ['UNPAID', 'PARTIAL'] },
@@ -61,6 +63,7 @@ router.get('/outstanding', async (req: Request, res: Response) => {
           select: { id: true, name: true },
         },
       },
+      take: limit,
     });
 
     // Group by customerId

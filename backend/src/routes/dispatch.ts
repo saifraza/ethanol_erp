@@ -137,7 +137,8 @@ router.delete('/:id', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const d = await prisma.dispatchTruck.findUnique({ where: { id: req.params.id } });
     if (d?.photoUrl) {
-      const filePath = path.join(__dirname, '..', '..', d.photoUrl.replace(/^\//, ''));
+      const filename = path.basename(d.photoUrl.replace(/^\//, ''));
+      const filePath = path.join(__dirname, '../../uploads/dispatch', filename);
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     }
     await prisma.dispatchTruck.delete({ where: { id: req.params.id } });

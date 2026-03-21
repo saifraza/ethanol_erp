@@ -25,9 +25,11 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 // GET /stats — counts by status/severity
-router.get('/stats', async (_req: Request, res: Response) => {
+router.get('/stats', async (req: Request, res: Response) => {
   try {
-    const issues = await prisma.plantIssue.findMany();
+    // Cap limit to prevent unbounded queries
+    const limit = Math.min(parseInt((req.query.limit as string) || '1000'), 5000);
+    const issues = await prisma.plantIssue.findMany({ take: limit });
     const byStatus: Record<string, number> = {};
     const bySeverity: Record<string, number> = {};
     const byType: Record<string, number> = {};
@@ -81,7 +83,7 @@ router.post('/', async (req: Request, res: Response) => {
 });
 
 // PUT /:id — update issue (status, assign, resolve)
-router.put('/:id', async (req: Request, res: Response) => {
+router.put('/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
   try {
     const b = req.body;
     const data: any = {};
