@@ -148,9 +148,10 @@ export default function Fermentation() {
           temp: f.temp ? +f.temp : undefined, remarks: f.remarks || undefined,
         });
       } else {
+        const analysisTime = f.analysisTime ? new Date(f.analysisTime).toISOString() : new Date().toISOString();
         await api.post('/fermentation/lab-reading', {
           vesselType: selected.type, vesselNo: selected.no,
-          analysisTime: new Date().toISOString(),
+          analysisTime,
           level: f.level ? +f.level : undefined, spGravity: f.spGravity ? +f.spGravity : undefined,
           ph: f.ph ? +f.ph : undefined, rs: f.rs ? +f.rs : undefined, rst: f.rst ? +f.rst : undefined,
           alcohol: f.alcohol ? +f.alcohol : undefined, ds: f.ds ? +f.ds : undefined,
@@ -358,7 +359,7 @@ export default function Fermentation() {
           {ALL_VESSELS.map(v => {
             const isSelected = selected?.type === v.type && selected?.no === v.no;
             let batch: any = null;
-            let phase = 'IDLE'; let metric1 = ''; let metric2 = ''; let batchNo = 0; let startTime = '';
+            let phase = 'IDLE'; let metric1 = ''; let metric2 = ''; let levelStr = ''; let batchNo = 0; let startTime = '';
 
             if (v.type === 'PF') {
               batch = getActivePF(v.no);
@@ -367,6 +368,7 @@ export default function Fermentation() {
                 const last = batch.labReadings?.[batch.labReadings.length - 1];
                 metric1 = last?.spGravity ? last.spGravity.toFixed(3) : batch.slurryGravity ? batch.slurryGravity.toFixed(3) : '';
                 metric2 = last?.temp ? `${last.temp}°` : '';
+                levelStr = last?.level ? `${last.level}%` : '';
                 startTime = batch.setupTime || batch.createdAt || '';
               }
             } else if (v.type === 'FERM') {
@@ -375,8 +377,9 @@ export default function Fermentation() {
                 phase = batch.phase; batchNo = batch.batchNo;
                 const entries = fermEntries[v.no] || [];
                 const last = entries[entries.length - 1];
-                metric1 = last?.alcohol ? `${last.alcohol}%` : last?.spGravity ? last.spGravity.toFixed(3) : '';
-                metric2 = last?.temp ? `${last.temp}°` : batch.fermLevel ? `${batch.fermLevel}%` : '';
+                metric1 = last?.spGravity ? last.spGravity.toFixed(3) : batch.setupGravity ? batch.setupGravity.toFixed(3) : '';
+                metric2 = last?.temp ? `${last.temp}°` : '';
+                levelStr = last?.level ? `${last.level}%` : batch.fermLevel ? `${batch.fermLevel}%` : '';
                 startTime = batch.pfTransferTime || batch.fillingStartTime || '';
               }
             } else {
@@ -411,7 +414,12 @@ export default function Fermentation() {
                   </div>
                 )}
                 {metric1 && <div className="text-sm font-black text-gray-900 mt-1 tracking-tight">{metric1}</div>}
-                {metric2 && <div className="text-[10px] font-semibold text-gray-500">{metric2}</div>}
+                {(metric2 || levelStr) && (
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {metric2 && <span className="text-[10px] font-semibold text-gray-500">{metric2}</span>}
+                    {levelStr && <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1 py-0.5 rounded">{levelStr}</span>}
+                  </div>
+                )}
                 {isIdle && v.type !== 'BW' && <div className="text-[10px] text-gray-300 mt-1.5 italic">idle</div>}
                 {v.type === 'BW' && !metric1 && <div className="text-[10px] text-gray-300 mt-1.5 italic">no data</div>}
                 {startTime && !isIdle && (
@@ -510,6 +518,16 @@ export default function Fermentation() {
                 {(tab === 'reading' || isBW) && (
                   <div className="p-3 space-y-3">
                     <div className="space-y-3">
+                      {!isBW && (
+                        <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-1.5 border border-gray-200">
+                          <Clock size={12} className="text-gray-400 shrink-0" />
+                          <label className="text-[9px] font-bold text-gray-500 uppercase tracking-wider shrink-0">Time</label>
+                          <input type="datetime-local" step="60"
+                            value={readingForm.analysisTime || new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+                            onChange={e => setReadingForm(f => ({ ...f, analysisTime: e.target.value }))}
+                            className="flex-1 px-2 py-1 text-xs font-semibold text-gray-900 border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-indigo-300 outline-none" />
+                        </div>
+                      )}
                       <div className="grid grid-cols-2 gap-2.5">
                         <div className="bg-blue-50 rounded-xl p-3 border border-blue-100">
                           <label className="text-[9px] font-bold text-blue-600 uppercase tracking-wider">Level %</label>
@@ -742,7 +760,7 @@ export default function Fermentation() {
                     {/* Phase actions */}
                     <div className="space-y-1.5">
                       <div className="text-[9px] font-bold text-gray-400 uppercase">Actions</div>
-                      {isPF && phase === 'LAB' && (
+                      {isPF && (phase === 'LAB' || phase === 'TRANSFER') && (
                         <div>
                           <div className="text-[10px] text-gray-600 mb-1">Transfer to Fermenter:</div>
                           <div className="flex gap-1.5 flex-wrap">

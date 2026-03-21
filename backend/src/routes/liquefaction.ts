@@ -73,6 +73,60 @@ router.post('/', upload.single('iodinePhoto'), async (req: Request, res: Respons
   }
 });
 
+// PUT /api/liquefaction/:id — edit entry
+router.put('/:id', async (req: Request, res: Response) => {
+  try {
+    const existing = await prisma.liquefactionEntry.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: 'Entry not found' });
+    const b = req.body;
+    const p = (v: any) => v !== undefined && v !== null && v !== '' ? parseFloat(v) : null;
+    const entry = await prisma.liquefactionEntry.update({
+      where: { id: req.params.id },
+      data: {
+        date: b.date ? new Date(b.date) : existing.date,
+        analysisTime: b.analysisTime ?? existing.analysisTime,
+        jetCookerTemp: b.jetCookerTemp !== undefined ? p(b.jetCookerTemp) : existing.jetCookerTemp,
+        jetCookerFlow: b.jetCookerFlow !== undefined ? p(b.jetCookerFlow) : existing.jetCookerFlow,
+        iltTemp: b.iltTemp !== undefined ? p(b.iltTemp) : existing.iltTemp,
+        iltSpGravity: b.iltSpGravity !== undefined ? p(b.iltSpGravity) : existing.iltSpGravity,
+        iltPh: b.iltPh !== undefined ? p(b.iltPh) : existing.iltPh,
+        iltRs: b.iltRs !== undefined ? p(b.iltRs) : existing.iltRs,
+        fltTemp: b.fltTemp !== undefined ? p(b.fltTemp) : existing.fltTemp,
+        fltSpGravity: b.fltSpGravity !== undefined ? p(b.fltSpGravity) : existing.fltSpGravity,
+        fltPh: b.fltPh !== undefined ? p(b.fltPh) : existing.fltPh,
+        fltRs: b.fltRs !== undefined ? p(b.fltRs) : existing.fltRs,
+        fltRst: b.fltRst !== undefined ? p(b.fltRst) : existing.fltRst,
+        iltDs: b.iltDs !== undefined ? p(b.iltDs) : existing.iltDs,
+        iltTs: b.iltTs !== undefined ? p(b.iltTs) : existing.iltTs,
+        fltDs: b.fltDs !== undefined ? p(b.fltDs) : existing.fltDs,
+        fltTs: b.fltTs !== undefined ? p(b.fltTs) : existing.fltTs,
+        iltBrix: b.iltBrix !== undefined ? p(b.iltBrix) : existing.iltBrix,
+        fltBrix: b.fltBrix !== undefined ? p(b.fltBrix) : existing.fltBrix,
+        iltViscosity: b.iltViscosity !== undefined ? p(b.iltViscosity) : existing.iltViscosity,
+        fltViscosity: b.fltViscosity !== undefined ? p(b.fltViscosity) : existing.fltViscosity,
+        iltAcidity: b.iltAcidity !== undefined ? p(b.iltAcidity) : existing.iltAcidity,
+        fltAcidity: b.fltAcidity !== undefined ? p(b.fltAcidity) : existing.fltAcidity,
+        iltLevel: b.iltLevel !== undefined ? p(b.iltLevel) : existing.iltLevel,
+        fltLevel: b.fltLevel !== undefined ? p(b.fltLevel) : existing.fltLevel,
+        fltFlowRate: b.fltFlowRate !== undefined ? p(b.fltFlowRate) : existing.fltFlowRate,
+        flourRate: b.flourRate !== undefined ? p(b.flourRate) : existing.flourRate,
+        hotWaterFlowRate: b.hotWaterFlowRate !== undefined ? p(b.hotWaterFlowRate) : existing.hotWaterFlowRate,
+        thinSlopRecycleFlowRate: b.thinSlopRecycleFlowRate !== undefined ? p(b.thinSlopRecycleFlowRate) : existing.thinSlopRecycleFlowRate,
+        slurryFlow: b.slurryFlow !== undefined ? p(b.slurryFlow) : existing.slurryFlow,
+        steamFlow: b.steamFlow !== undefined ? p(b.steamFlow) : existing.steamFlow,
+        iltSteam: b.iltSteam !== undefined ? p(b.iltSteam) : existing.iltSteam,
+        flowToFermenter: b.flowToFermenter !== undefined ? p(b.flowToFermenter) : existing.flowToFermenter,
+        fltIodineTest: b.fltIodineTest !== undefined ? (b.fltIodineTest || null) : existing.fltIodineTest,
+        remark: b.remark !== undefined ? (b.remark || null) : existing.remark,
+      }
+    });
+    res.json(entry);
+  } catch (err: any) {
+    console.error('Liquefaction PUT error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.delete('/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
   const entry = await prisma.liquefactionEntry.findUnique({ where: { id: req.params.id } });
   if (entry?.fltIodinePhotoUrl) {

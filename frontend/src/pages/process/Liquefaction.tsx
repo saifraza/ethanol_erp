@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
-import { Droplets, Save, Loader2, Trash2, Clock, TrendingUp, Database, AlertTriangle, ChevronDown, ChevronUp, FlaskConical, Eye, X, Share2, Camera, CheckCircle, XCircle } from 'lucide-react';
+import { Droplets, Save, Loader2, Trash2, Clock, TrendingUp, Database, AlertTriangle, ChevronDown, ChevronUp, FlaskConical, Eye, X, Share2, Camera, CheckCircle, XCircle, Pencil } from 'lucide-react';
 import api from '../../services/api';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -94,6 +94,9 @@ export default function Liquefaction() {
   const [iodinePhoto, setIodinePhoto] = useState<File | null>(null);
   const [iodinePreview, setIodinePreview] = useState<string | null>(null);
   const iodineInputRef = useRef<HTMLInputElement>(null);
+  const [editEntry, setEditEntry] = useState<LiqEntry | null>(null);
+  const [editForm, setEditForm] = useState<FormState>(emptyForm());
+  const [editSaving, setEditSaving] = useState(false);
 
   const load = () => api.get('/liquefaction').then(r => setEntries(r.data)).catch(() => {});
   useEffect(() => { load(); }, []);
@@ -177,6 +180,43 @@ export default function Liquefaction() {
     setDeletingId(id);
     try { await api.delete(`/liquefaction/${id}`); load(); } catch {}
     setDeletingId(null);
+  };
+
+  const startEdit = (e: LiqEntry) => {
+    const v = (n: number | null) => n !== null && n !== undefined ? String(n) : '';
+    setEditForm({
+      date: e.date?.split('T')[0] || '', analysisTime: e.analysisTime || '',
+      jetCookerTemp: v(e.jetCookerTemp), jetCookerFlow: v(e.jetCookerFlow),
+      iltTemp: v(e.iltTemp), iltSpGravity: v(e.iltSpGravity), iltPh: v(e.iltPh), iltRs: v(e.iltRs),
+      fltTemp: v(e.fltTemp), fltSpGravity: v(e.fltSpGravity), fltPh: v(e.fltPh), fltRs: v(e.fltRs), fltRst: v(e.fltRst),
+      iltDs: v(e.iltDs), iltTs: v(e.iltTs), fltDs: v(e.fltDs), fltTs: v(e.fltTs),
+      iltBrix: v(e.iltBrix), fltBrix: v(e.fltBrix),
+      iltViscosity: v(e.iltViscosity), fltViscosity: v(e.fltViscosity),
+      iltAcidity: v(e.iltAcidity), fltAcidity: v(e.fltAcidity),
+      iltLevel: v(e.iltLevel), fltLevel: v(e.fltLevel), fltFlowRate: v(e.fltFlowRate),
+      flourRate: v(e.flourRate), hotWaterFlowRate: v(e.hotWaterFlowRate),
+      thinSlopRecycleFlowRate: v(e.thinSlopRecycleFlowRate),
+      slurryFlow: v(e.slurryFlow), steamFlow: v(e.steamFlow),
+      iltSteam: v(e.iltSteam), flowToFermenter: v(e.flowToFermenter),
+      fltIodineTest: e.fltIodineTest || '', remark: e.remark || '',
+    });
+    setEditEntry(e);
+  };
+
+  const handleEditSave = async () => {
+    if (!editEntry) return;
+    setEditSaving(true);
+    try {
+      const payload: any = {};
+      Object.entries(editForm).forEach(([k, v]) => { payload[k] = v; });
+      await api.put(`/liquefaction/${editEntry.id}`, payload);
+      setMsg({ type: 'ok', text: 'Entry updated' });
+      setEditEntry(null); load();
+      setTimeout(() => setMsg(null), 3000);
+    } catch (err: any) {
+      setMsg({ type: 'err', text: err.response?.data?.error || 'Update failed' });
+    }
+    setEditSaving(false);
   };
 
   /* ---- chart config ---- */
@@ -548,32 +588,48 @@ export default function Liquefaction() {
           <table className="w-full text-xs">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="px-2 py-2 text-left font-semibold text-gray-600">Date</th>
+                <th className="px-2 py-2 text-left font-semibold text-gray-600 sticky left-0 bg-gray-50 z-10">Date</th>
                 <th className="px-2 py-2 text-left font-semibold text-gray-600">Time</th>
+                <th className="px-2 py-2 text-right font-semibold text-gray-500">JC Temp</th>
+                <th className="px-2 py-2 text-right font-semibold text-gray-500">JC Flow</th>
+                <th className="px-2 py-2 text-right font-semibold text-blue-600">ILT Lvl</th>
+                <th className="px-2 py-2 text-right font-semibold text-blue-600">ILT Tmp</th>
                 <th className="px-2 py-2 text-right font-semibold text-blue-600">ILT Grav</th>
                 <th className="px-2 py-2 text-right font-semibold text-blue-600">ILT pH</th>
-                <th className="px-2 py-2 text-right font-semibold text-blue-600">ILT RS%</th>
+                <th className="px-2 py-2 text-right font-semibold text-blue-600">ILT RS</th>
+                <th className="px-2 py-2 text-right font-semibold text-green-600">FLT Lvl</th>
+                <th className="px-2 py-2 text-right font-semibold text-green-600">FLT Tmp</th>
                 <th className="px-2 py-2 text-right font-semibold text-green-600">FLT Grav</th>
                 <th className="px-2 py-2 text-right font-semibold text-green-600">FLT pH</th>
-                <th className="px-2 py-2 text-right font-semibold text-green-600">FLT RS%</th>
-                <th className="px-2 py-2 text-right font-semibold text-green-600">FLT RST%</th>
+                <th className="px-2 py-2 text-right font-semibold text-green-600">FLT RS</th>
+                <th className="px-2 py-2 text-right font-semibold text-green-600">FLT RST</th>
+                <th className="px-2 py-2 text-right font-semibold text-amber-600">Flour</th>
+                <th className="px-2 py-2 text-right font-semibold text-amber-600">→Ferm</th>
                 <th className="px-2 py-2 text-center font-semibold text-indigo-600">Iodine</th>
                 <th className="px-2 py-2 text-left font-semibold text-gray-600">Remark</th>
-                <th className="px-2 py-2"></th>
+                <th className="px-2 py-2 sticky right-0 bg-gray-50 z-10"></th>
               </tr>
             </thead>
             <tbody>
               {entries.slice(0, 100).map((e, i) => (
                 <tr key={e.id} className={`border-b border-gray-100 hover:bg-blue-50/50 transition ${e.id === lastSavedId ? 'bg-green-100 ring-2 ring-green-400 ring-inset animate-pulse' : i % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
-                  <td className="px-2 py-1.5 text-gray-700 font-medium">{fmtDate(e.date)}</td>
+                  <td className="px-2 py-1.5 text-gray-700 font-medium sticky left-0 bg-inherit z-10">{fmtDate(e.date)}</td>
                   <td className="px-2 py-1.5 text-gray-600">{e.analysisTime || '—'}</td>
-                  <td className="px-2 py-1.5 text-right font-mono text-blue-700">{fmt(e.iltSpGravity, 3)}</td>
+                  <td className="px-2 py-1.5 text-right font-mono text-gray-600">{fmt(e.jetCookerTemp, 1)}</td>
+                  <td className="px-2 py-1.5 text-right font-mono text-gray-600">{fmt(e.jetCookerFlow, 1)}</td>
+                  <td className="px-2 py-1.5 text-right font-mono text-blue-600">{fmt(e.iltLevel, 1)}</td>
+                  <td className="px-2 py-1.5 text-right font-mono text-blue-600">{fmt(e.iltTemp, 1)}</td>
+                  <td className="px-2 py-1.5 text-right font-mono text-blue-700 font-bold">{fmt(e.iltSpGravity, 3)}</td>
                   <td className="px-2 py-1.5 text-right font-mono">{fmt(e.iltPh)}</td>
                   <td className="px-2 py-1.5 text-right font-mono">{fmt(e.iltRs)}</td>
-                  <td className="px-2 py-1.5 text-right font-mono text-green-700">{fmt(e.fltSpGravity, 3)}</td>
+                  <td className="px-2 py-1.5 text-right font-mono text-green-600">{fmt(e.fltLevel, 1)}</td>
+                  <td className="px-2 py-1.5 text-right font-mono text-green-600">{fmt(e.fltTemp, 1)}</td>
+                  <td className="px-2 py-1.5 text-right font-mono text-green-700 font-bold">{fmt(e.fltSpGravity, 3)}</td>
                   <td className="px-2 py-1.5 text-right font-mono">{fmt(e.fltPh)}</td>
                   <td className="px-2 py-1.5 text-right font-mono">{fmt(e.fltRs)}</td>
                   <td className="px-2 py-1.5 text-right font-mono">{fmt(e.fltRst)}</td>
+                  <td className="px-2 py-1.5 text-right font-mono text-amber-700">{fmt(e.flourRate, 1)}</td>
+                  <td className="px-2 py-1.5 text-right font-mono text-amber-700">{fmt(e.flowToFermenter, 1)}</td>
                   <td className="px-2 py-1.5 text-center">
                     {e.fltIodineTest ? (
                       <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${e.fltIodineTest === 'NEGATIVE' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
@@ -582,11 +638,16 @@ export default function Liquefaction() {
                     ) : '—'}
                   </td>
                   <td className="px-2 py-1.5 text-gray-500 max-w-[120px] truncate">{e.remark || ''}</td>
-                  <td className="px-2 py-1.5">
-                    <button onClick={() => handleDelete(e.id)} disabled={deletingId === e.id}
-                      className="text-gray-300 hover:text-red-500 transition disabled:opacity-50">
-                      <Trash2 size={13} />
-                    </button>
+                  <td className="px-2 py-1.5 sticky right-0 bg-inherit z-10">
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => startEdit(e)} className="text-gray-300 hover:text-blue-500 transition">
+                        <Pencil size={13} />
+                      </button>
+                      <button onClick={() => handleDelete(e.id)} disabled={deletingId === e.id}
+                        className="text-gray-300 hover:text-red-500 transition disabled:opacity-50">
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -595,6 +656,124 @@ export default function Liquefaction() {
           {entries.length > 100 && <div className="text-xs text-gray-400 mt-2 text-center">Showing first 100 of {entries.length}</div>}
         </div>
       </div>
+
+      {/* Edit Modal */}
+      {editEntry && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setEditEntry(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-5 py-3 flex items-center justify-between rounded-t-2xl z-10">
+              <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                <Pencil size={16} className="text-blue-600" /> Edit Entry — {fmtDate(editEntry.date)} {editEntry.analysisTime || ''}
+              </h3>
+              <button onClick={() => setEditEntry(null)} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              {/* Date & Time */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-[10px] font-semibold text-gray-500 mb-1">Date</label>
+                  <input type="date" value={editForm.date} onChange={e => setEditForm(f => ({ ...f, date: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-300" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold text-gray-500 mb-1">Time</label>
+                  <input type="time" value={editForm.analysisTime} onChange={e => setEditForm(f => ({ ...f, analysisTime: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-300" />
+                </div>
+                {[{ k: 'jetCookerTemp', l: 'JC Temp °C' }, { k: 'jetCookerFlow', l: 'JC Flow' }].map(f => (
+                  <div key={f.k}>
+                    <label className="block text-[10px] font-semibold text-gray-500 mb-1">{f.l}</label>
+                    <input type="number" step="0.1" value={(editForm as any)[f.k]} onChange={e => setEditForm(ef => ({ ...ef, [f.k]: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-300" />
+                  </div>
+                ))}
+              </div>
+
+              {/* Flow Rates */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[{ k: 'flourRate', l: 'Flour Rate' }, { k: 'hotWaterFlowRate', l: 'Hot Water Flow' }, { k: 'thinSlopRecycleFlowRate', l: 'Thin Slop Recycle' }, { k: 'flowToFermenter', l: 'Flow → Fermenter' }].map(f => (
+                  <div key={f.k}>
+                    <label className="block text-[10px] font-semibold text-gray-500 mb-1">{f.l}</label>
+                    <input type="number" step="0.1" value={(editForm as any)[f.k]} onChange={e => setEditForm(ef => ({ ...ef, [f.k]: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-300" />
+                  </div>
+                ))}
+              </div>
+
+              {/* ILT */}
+              <div>
+                <div className="text-xs font-bold text-blue-700 mb-2 border-b border-blue-100 pb-1">ILT (Initial Liquefaction Tank)</div>
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+                  {[{ k: 'iltLevel', l: 'Level' }, { k: 'iltTemp', l: 'Temp' }, { k: 'iltSteam', l: 'Steam' }, { k: 'iltSpGravity', l: 'Gravity' }, { k: 'iltPh', l: 'pH' }, { k: 'iltRs', l: 'RS%' }].map(f => (
+                    <div key={f.k}>
+                      <label className="block text-[10px] font-semibold text-gray-500 mb-1">{f.l}</label>
+                      <input type="number" step="0.001" value={(editForm as any)[f.k]} onChange={e => setEditForm(ef => ({ ...ef, [f.k]: e.target.value }))}
+                        className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-300" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* FLT */}
+              <div>
+                <div className="text-xs font-bold text-green-700 mb-2 border-b border-green-100 pb-1">FLT (Final Liquefaction Tank)</div>
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+                  {[{ k: 'fltLevel', l: 'Level' }, { k: 'fltFlowRate', l: 'Flow Rate' }, { k: 'fltTemp', l: 'Temp' }, { k: 'fltSpGravity', l: 'Gravity' }, { k: 'fltPh', l: 'pH' }, { k: 'fltRs', l: 'RS%' }, { k: 'fltRst', l: 'RST%' }, { k: 'fltTs', l: 'TS' }].map(f => (
+                    <div key={f.k}>
+                      <label className="block text-[10px] font-semibold text-gray-500 mb-1">{f.l}</label>
+                      <input type="number" step="0.001" value={(editForm as any)[f.k]} onChange={e => setEditForm(ef => ({ ...ef, [f.k]: e.target.value }))}
+                        className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-300" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Extra Tests */}
+              <div>
+                <div className="text-xs font-bold text-amber-700 mb-2 border-b border-amber-100 pb-1">Additional Tests</div>
+                <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
+                  {[{ k: 'slurryFlow', l: 'Slurry Flow' }, { k: 'steamFlow', l: 'Steam Flow' }, { k: 'iltDs', l: 'ILT DS' }, { k: 'iltTs', l: 'ILT TS' }, { k: 'iltBrix', l: 'ILT Brix' }, { k: 'iltViscosity', l: 'ILT Visc' }, { k: 'iltAcidity', l: 'ILT Acid' }, { k: 'fltDs', l: 'FLT DS' }, { k: 'fltBrix', l: 'FLT Brix' }, { k: 'fltViscosity', l: 'FLT Visc' }, { k: 'fltAcidity', l: 'FLT Acid' }].map(f => (
+                    <div key={f.k}>
+                      <label className="block text-[10px] font-semibold text-gray-500 mb-1">{f.l}</label>
+                      <input type="number" step="0.001" value={(editForm as any)[f.k]} onChange={e => setEditForm(ef => ({ ...ef, [f.k]: e.target.value }))}
+                        className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-300" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Iodine + Remark */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-semibold text-gray-500 mb-1">Iodine Test</label>
+                  <select value={editForm.fltIodineTest} onChange={e => setEditForm(f => ({ ...f, fltIodineTest: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-300">
+                    <option value="">—</option>
+                    <option value="POSITIVE">Positive</option>
+                    <option value="NEGATIVE">Negative</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold text-gray-500 mb-1">Remark</label>
+                  <input type="text" value={editForm.remark} onChange={e => setEditForm(f => ({ ...f, remark: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-300" />
+                </div>
+              </div>
+            </div>
+
+            {/* Save / Cancel */}
+            <div className="sticky bottom-0 bg-white border-t border-gray-200 px-5 py-3 flex gap-3 rounded-b-2xl">
+              <button onClick={handleEditSave} disabled={editSaving}
+                className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2 hover:bg-blue-700 transition">
+                {editSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save Changes
+              </button>
+              <button onClick={() => setEditEntry(null)} className="px-6 py-2.5 bg-gray-100 text-gray-600 rounded-xl text-sm font-semibold hover:bg-gray-200 transition">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

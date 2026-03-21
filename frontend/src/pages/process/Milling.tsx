@@ -236,10 +236,10 @@ export default function Milling() {
   useEffect(() => { loadEntries(); loadChartData(); }, []);
 
   async function loadEntries() {
-    try { const res = await api.get('/milling?limit=20'); setEntries(res.data.entries); } catch (e) { console.error(e); }
+    try { const res = await api.get('/milling?limit=500'); setEntries(res.data.entries); } catch (e) { console.error(e); }
   }
   async function loadChartData() {
-    try { const res = await api.get('/milling/chart?limit=60'); setChartEntries(res.data.entries); } catch (e) { console.error(e); }
+    try { const res = await api.get('/milling/chart?limit=500'); setChartEntries(res.data.entries); } catch (e) { console.error(e); }
   }
 
   async function handleSave() {
