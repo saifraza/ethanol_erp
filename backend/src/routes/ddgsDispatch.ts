@@ -414,24 +414,24 @@ router.get('/:id/invoice-pdf', async (req: Request, res: Response) => {
       ];
     } else {
       taxCols = [
-        { hdr: 'CGST\nRate %', w: 28, val: `${cgstRate.toFixed(2)}` },
-        { hdr: 'CGST\nAmt', w: 40, val: cgstAmt.toFixed(2) },
-        { hdr: 'SGST\nRate %', w: 28, val: `${sgstRate.toFixed(2)}` },
-        { hdr: 'SGST\nAmt', w: 40, val: sgstAmt.toFixed(2) },
+        { hdr: 'CGST\n%', w: 24, val: `${cgstRate.toFixed(2)}` },
+        { hdr: 'CGST\nAmt', w: 38, val: cgstAmt.toFixed(2) },
+        { hdr: 'SGST\n%', w: 24, val: `${sgstRate.toFixed(2)}` },
+        { hdr: 'SGST\nAmt', w: 38, val: sgstAmt.toFixed(2) },
       ];
     }
 
     const fixedCols = [
-      { hdr: 'Sr.\nNo.', w: 22, align: 'left' as const },
-      { hdr: 'Description of Goods/Services', w: interstate ? 110 : 85, align: 'left' as const },
-      { hdr: 'HSN/SAC\nCode', w: 50, align: 'left' as const },
-      { hdr: 'Quantity', w: 48, align: 'right' as const },
-      { hdr: 'UOM', w: 25, align: 'left' as const },
-      { hdr: 'Rate [INR]', w: 45, align: 'right' as const },
-      { hdr: 'Disc\n%', w: 25, align: 'right' as const },
-      { hdr: 'Taxable Value\n[INR]', w: 55, align: 'right' as const },
+      { hdr: 'Sr.\nNo.', w: 20, align: 'left' as const },
+      { hdr: 'Description of Goods/Services', w: interstate ? 105 : 82, align: 'left' as const },
+      { hdr: 'HSN/SAC\nCode', w: 48, align: 'left' as const },
+      { hdr: 'Quantity', w: 45, align: 'right' as const },
+      { hdr: 'UOM', w: 22, align: 'left' as const },
+      { hdr: 'Rate [INR]', w: 42, align: 'right' as const },
+      { hdr: 'Disc\n%', w: 22, align: 'right' as const },
+      { hdr: 'Taxable Value\n[INR]', w: 52, align: 'right' as const },
     ];
-    const totalCol = { hdr: 'Total Amount', w: 60, align: 'right' as const };
+    const totalCol = { hdr: 'Total\nAmount', w: 58, align: 'right' as const };
 
     const allCols = [...fixedCols, ...taxCols.map(tc => ({ hdr: tc.hdr, w: tc.w, align: 'right' as const })), totalCol];
 
@@ -633,7 +633,7 @@ router.get('/:id/gate-pass-pdf', async (req: Request, res: Response) => {
 
     // ── Items Table ──
     const tY = doc.y;
-    const tCols = [25, 175, 58, 55, 55, 40, 65, 52];
+    const tCols = [22, 168, 55, 52, 52, 38, 62, 56];
     const tHdrs = ['Sr.', 'Description of Goods', 'HSN Code', 'Qty (KG)', 'Qty (MT)', 'Bags', 'Rate/MT', 'Value (₹)'];
 
     // Header
