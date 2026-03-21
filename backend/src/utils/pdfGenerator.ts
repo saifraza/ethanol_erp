@@ -352,7 +352,7 @@ export async function generateInvoicePdf(inv: InvoiceData): Promise<Buffer> {
 
   // White-out "Date: ___" and "[Your letter content goes here]" from template
   // Template: letterhead box ends at ~y=700, Date at ~y=660, placeholder at ~y=628
-  page.drawRectangle({ x: 0, y: height - 220, width: width, height: 82, color: rgb(1, 1, 1) });
+  page.drawRectangle({ x: 0, y: height - 240, width: width, height: 110, color: rgb(1, 1, 1) });
 
   const black = rgb(0, 0, 0);
   const gray = rgb(0.35, 0.35, 0.35);
