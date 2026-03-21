@@ -54,6 +54,13 @@ export default function Shipments() {
   const [weighing, setWeighing] = useState<{ id: string; type: 'tare' | 'gross' } | null>(null);
   const [weighVal, setWeighVal] = useState('');
   const weighRef = useRef<HTMLInputElement>(null);
+  // Bill generation
+  const [billShipment, setBillShipment] = useState<Shipment | null>(null);
+  const [billForm, setBillForm] = useState({
+    productName: '', customerName: '', quantity: '', unit: 'MT', rate: '',
+    gstPercent: '18', freightCharge: '0', remarks: '', challanNo: '', ewayBill: '',
+  });
+  const [billSaving, setBillSaving] = useState(false);
 
   const load = async () => {
     try {
@@ -172,6 +179,74 @@ export default function Shipments() {
     else window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
   };
 
+  // ── Bill generation ──
+  const openBillForm = (s: Shipment) => {
+    const netMT = s.weightNet ? (s.weightNet / 1000) : 0;
+    const dr = s.dispatchRequest;
+    // Try to get rate from DR/order if available
+    setBillForm({
+      productName: s.productName || dr?.productName || '',
+      customerName: s.customerName || dr?.customerName || '',
+      quantity: netMT.toFixed(3),
+      unit: s.productName?.toUpperCase().includes('ETHANOL') ? 'KL' : 'MT',
+      rate: '',
+      gstPercent: '18',
+      freightCharge: '0',
+      remarks: `Vehicle: ${s.vehicleNo}`,
+      challanNo: s.challanNo || '',
+      ewayBill: s.ewayBill || '',
+    });
+    setBillShipment(s);
+  };
+
+  const generateBill = async () => {
+    if (!billShipment) return;
+    const qty = parseFloat(billForm.quantity) || 0;
+    const rate = parseFloat(billForm.rate) || 0;
+    if (!rate) { flash('err', 'Enter rate'); return; }
+    if (!billForm.customerName) { flash('err', 'Customer name required'); return; }
+
+    setBillSaving(true);
+    try {
+      // Find or use customer — search by name
+      const custRes = await api.get('/customers', { params: { search: billForm.customerName } });
+      const customers = custRes.data.customers || custRes.data || [];
+      let customerId = customers[0]?.id;
+      if (!customerId) {
+        // Create minimal customer
+        const newCust = await api.post('/customers', { name: billForm.customerName });
+        customerId = newCust.data.id || newCust.data.customer?.id;
+      }
+
+      const invoiceData = {
+        customerId,
+        shipmentId: billShipment.id,
+        productName: billForm.productName,
+        quantity: qty,
+        unit: billForm.unit,
+        rate,
+        gstPercent: parseFloat(billForm.gstPercent) || 0,
+        freightCharge: parseFloat(billForm.freightCharge) || 0,
+        challanNo: billForm.challanNo || null,
+        ewayBill: billForm.ewayBill || null,
+        remarks: billForm.remarks || null,
+      };
+
+      const res = await api.post('/invoices', invoiceData);
+      const inv = res.data;
+      // Update shipment invoiceRef
+      if (inv.invoiceNo) {
+        await api.put(`/shipments/${billShipment.id}`, { invoiceRef: `INV-${inv.invoiceNo}` });
+      }
+      flash('ok', `Bill #${inv.invoiceNo} created — ₹${inv.totalAmount?.toLocaleString('en-IN')}`);
+      setBillShipment(null);
+      load();
+    } catch (e: any) {
+      flash('err', e?.response?.data?.error || 'Bill creation failed');
+    }
+    setBillSaving(false);
+  };
+
   // ── Stats ──
   const stats = useMemo(() => ({
     total: shipments.length,
@@ -225,14 +300,22 @@ export default function Shipments() {
         </button>
       );
     }
-    // GROSS_WEIGHED → Release
+    // GROSS_WEIGHED → Generate Bill + Release
     if (s.status === 'GROSS_WEIGHED') {
       return (
-        <button onClick={() => doStatus(s.id, 'RELEASED', { releaseTime: new Date().toISOString() })}
-          disabled={isSaving}
-          className="px-2 py-1 bg-orange-600 text-white rounded text-[10px] font-bold hover:bg-orange-700 active:scale-95 disabled:opacity-50">
-          {isSaving ? <Loader2 size={10} className="animate-spin" /> : '🔓 Release'}
-        </button>
+        <div className="flex items-center gap-1">
+          {!s.invoiceRef && (
+            <button onClick={() => openBillForm(s)}
+              className="px-2 py-1 bg-purple-600 text-white rounded text-[10px] font-bold flex items-center gap-0.5 hover:bg-purple-700 active:scale-95">
+              <FileText size={9} /> Bill
+            </button>
+          )}
+          <button onClick={() => doStatus(s.id, 'RELEASED', { releaseTime: new Date().toISOString() })}
+            disabled={isSaving}
+            className="px-2 py-1 bg-orange-600 text-white rounded text-[10px] font-bold hover:bg-orange-700 active:scale-95 disabled:opacity-50">
+            {isSaving ? <Loader2 size={10} className="animate-spin" /> : '🔓 Release'}
+          </button>
+        </div>
       );
     }
     // RELEASED → Exit (with doc check)
@@ -277,7 +360,7 @@ export default function Shipments() {
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto px-3 py-2">
+      <div className="px-3 py-2">
         {msg && (
           <div className={`rounded-lg p-2 mb-2 text-xs flex items-center gap-1.5 ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
             {msg.type === 'ok' ? <CheckCircle size={12} /> : <AlertCircle size={12} />} {msg.text}
@@ -524,11 +607,24 @@ export default function Shipments() {
                               </div>
                             </div>
 
-                            {/* Challan PDF */}
-                            <button onClick={() => { const token = localStorage.getItem('token'); window.open(`/api/shipments/${s.id}/challan-pdf?token=${token}`, '_blank'); }}
-                              className="w-full py-1.5 text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 rounded-lg flex items-center justify-center gap-1 hover:bg-blue-100">
-                              <FileText size={11} /> Challan PDF
-                            </button>
+                            {/* Bill + Challan PDF */}
+                            <div className="flex gap-2">
+                              {!s.invoiceRef && s.weightNet && (
+                                <button onClick={() => openBillForm(s)}
+                                  className="flex-1 py-1.5 text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 rounded-lg flex items-center justify-center gap-1 hover:bg-purple-100">
+                                  <FileText size={11} /> Generate Bill
+                                </button>
+                              )}
+                              {s.invoiceRef && (
+                                <span className="flex-1 py-1.5 text-[10px] font-semibold bg-green-50 text-green-700 border border-green-200 rounded-lg flex items-center justify-center gap-1">
+                                  <CheckCircle size={11} /> {s.invoiceRef}
+                                </span>
+                              )}
+                              <button onClick={() => { const token = localStorage.getItem('token'); window.open(`/api/shipments/${s.id}/challan-pdf?token=${token}`, '_blank'); }}
+                                className="flex-1 py-1.5 text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 rounded-lg flex items-center justify-center gap-1 hover:bg-blue-100">
+                                <FileText size={11} /> Challan PDF
+                              </button>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -606,6 +702,125 @@ export default function Shipments() {
           </div>
         </div>
       )}
+
+      {/* ── Generate Bill modal ── */}
+      {billShipment && (() => {
+        const qty = parseFloat(billForm.quantity) || 0;
+        const rate = parseFloat(billForm.rate) || 0;
+        const amount = qty * rate;
+        const gst = (amount * (parseFloat(billForm.gstPercent) || 0)) / 100;
+        const freight = parseFloat(billForm.freightCharge) || 0;
+        const total = amount + gst + freight;
+
+        return (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-2" onClick={() => setBillShipment(null)}>
+            <div className="bg-white rounded-xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              <div className="p-4">
+                {/* Header */}
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h3 className="font-bold text-sm flex items-center gap-1.5"><FileText size={16} className="text-purple-600" /> Generate Bill</h3>
+                    <p className="text-[10px] text-gray-400 mt-0.5">{billShipment.vehicleNo} — Net: {billShipment.weightNet ? (billShipment.weightNet / 1000).toFixed(3) : '—'} MT</p>
+                  </div>
+                  <button onClick={() => setBillShipment(null)} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+                </div>
+
+                {/* Form */}
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-500 uppercase">Customer</label>
+                      <input value={billForm.customerName} onChange={e => setBillForm(f => ({ ...f, customerName: e.target.value }))}
+                        className="w-full px-2 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-purple-200 outline-none" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-500 uppercase">Product</label>
+                      <input value={billForm.productName} onChange={e => setBillForm(f => ({ ...f, productName: e.target.value }))}
+                        className="w-full px-2 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-purple-200 outline-none" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-500 uppercase">Quantity</label>
+                      <input type="number" step="0.001" value={billForm.quantity} onChange={e => setBillForm(f => ({ ...f, quantity: e.target.value }))}
+                        className="w-full px-2 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-purple-200 outline-none" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-500 uppercase">Unit</label>
+                      <select value={billForm.unit} onChange={e => setBillForm(f => ({ ...f, unit: e.target.value }))}
+                        className="w-full px-2 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-purple-200 outline-none bg-white">
+                        <option>MT</option><option>KL</option><option>BL</option><option>TON</option><option>KG</option><option>BAG</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-purple-600 uppercase">Rate (₹)*</label>
+                      <input type="number" step="0.01" value={billForm.rate} onChange={e => setBillForm(f => ({ ...f, rate: e.target.value }))}
+                        placeholder="Enter rate"
+                        className="w-full px-2 py-1.5 text-xs border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-300 outline-none bg-purple-50" autoFocus />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-500 uppercase">GST %</label>
+                      <input type="number" step="0.01" value={billForm.gstPercent} onChange={e => setBillForm(f => ({ ...f, gstPercent: e.target.value }))}
+                        className="w-full px-2 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-purple-200 outline-none" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-500 uppercase">Freight (₹)</label>
+                      <input type="number" step="0.01" value={billForm.freightCharge} onChange={e => setBillForm(f => ({ ...f, freightCharge: e.target.value }))}
+                        className="w-full px-2 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-purple-200 outline-none" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-500 uppercase">Challan No</label>
+                      <input value={billForm.challanNo} onChange={e => setBillForm(f => ({ ...f, challanNo: e.target.value }))}
+                        className="w-full px-2 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-purple-200 outline-none" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-500 uppercase">Remarks</label>
+                    <input value={billForm.remarks} onChange={e => setBillForm(f => ({ ...f, remarks: e.target.value }))}
+                      className="w-full px-2 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-purple-200 outline-none" />
+                  </div>
+                </div>
+
+                {/* Summary */}
+                <div className="mt-3 bg-gray-50 rounded-lg p-2.5 space-y-1">
+                  <div className="flex justify-between text-xs text-gray-600">
+                    <span>Amount ({qty} × ₹{rate.toLocaleString('en-IN')})</span>
+                    <span>₹{amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex justify-between text-xs text-gray-600">
+                    <span>GST ({billForm.gstPercent}%)</span>
+                    <span>₹{gst.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                  </div>
+                  {freight > 0 && (
+                    <div className="flex justify-between text-xs text-gray-600">
+                      <span>Freight</span>
+                      <span>₹{freight.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-sm font-bold text-gray-900 border-t pt-1">
+                    <span>Total</span>
+                    <span>₹{total.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-2 mt-3">
+                  <button onClick={() => setBillShipment(null)}
+                    className="flex-1 py-2 text-xs font-semibold bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+                    Cancel
+                  </button>
+                  <button onClick={generateBill} disabled={billSaving || !billForm.rate}
+                    className="flex-1 py-2 text-xs font-bold bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center justify-center gap-1">
+                    {billSaving ? <Loader2 size={14} className="animate-spin" /> : <><FileText size={12} /> Generate Bill</>}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
