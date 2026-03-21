@@ -72,7 +72,7 @@ export default function Fermentation() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [selected, setSelected] = useState<Vessel | null>(null);
-  const [tab, setTab] = useState<'reading' | 'dosing' | 'charts' | 'batch'>('reading');
+  const [tab, setTab] = useState<'reading' | 'charts'>('reading');
   const [msg, setMsg] = useState<{ t: 'ok' | 'err'; m: string } | null>(null);
 
   const [readingForm, setReadingForm] = useState<Record<string, string>>({});
@@ -548,25 +548,90 @@ export default function Fermentation() {
               </div>
             )}
 
-            {/* Active tabs */}
+            {/* Active panel — unified view */}
             {(phase !== 'IDLE' || isBW) && (
               <>
+                {/* ── BATCH INFO (always visible at top) ── */}
+                {!isBW && batch && (
+                  <div className="px-3 py-2 bg-gray-50/50 border-b border-gray-100 space-y-2">
+                    {/* Phase timeline */}
+                    <div className="flex items-center gap-0.5">
+                      {(isPF ? PF_PHASES : FERM_PHASES).map((p, i) => {
+                        const pCfg = phCfg(p);
+                        const phaseList = isPF ? PF_PHASES : FERM_PHASES;
+                        const ci = phaseList.indexOf(phase);
+                        return (
+                          <div key={p} className={`flex-1 text-center py-1 rounded text-[7px] font-bold ${
+                            i < ci ? 'bg-green-100 text-green-600' : i === ci ? `${pCfg.bg} ${pCfg.text} ring-1 ${pCfg.ring}` : 'bg-gray-50 text-gray-300'
+                          }`}>{pCfg.label}</div>
+                        );
+                      })}
+                    </div>
+                    {/* Setup stats */}
+                    <div className="flex gap-2 flex-wrap">
+                      {isPF && (batch as PFBatch).slurryVolume && <div className="bg-indigo-50 rounded px-2 py-0.5 text-[10px]"><span className="text-indigo-400 font-bold">Vol</span> <span className="font-bold text-indigo-700">{((batch as PFBatch).slurryVolume! / 1000).toFixed(0)} KL</span></div>}
+                      {isPF && (batch as PFBatch).slurryGravity && <div className="bg-indigo-50 rounded px-2 py-0.5 text-[10px]"><span className="text-indigo-400 font-bold">SG</span> <span className="font-bold text-indigo-700">{(batch as PFBatch).slurryGravity!.toFixed(3)}</span></div>}
+                      {isPF && (batch as PFBatch).slurryTemp && <div className="bg-indigo-50 rounded px-2 py-0.5 text-[10px]"><span className="text-indigo-400 font-bold">Temp</span> <span className="font-bold text-indigo-700">{(batch as PFBatch).slurryTemp}°C</span></div>}
+                      {isFerm && (batch as FermBatch).fermLevel && <div className="bg-blue-50 rounded px-2 py-0.5 text-[10px]"><span className="text-blue-400 font-bold">Lvl</span> <span className="font-bold text-blue-700">{(batch as FermBatch).fermLevel}%</span></div>}
+                      {isFerm && (batch as FermBatch).setupGravity && <div className="bg-indigo-50 rounded px-2 py-0.5 text-[10px]"><span className="text-indigo-400 font-bold">SG</span> <span className="font-bold text-indigo-700">{(batch as FermBatch).setupGravity!.toFixed(3)}</span></div>}
+                      {isFerm && (batch as FermBatch).finalAlcohol && <div className="bg-emerald-50 rounded px-2 py-0.5 text-[10px]"><span className="text-emerald-400 font-bold">Alc</span> <span className="font-bold text-emerald-700">{(batch as FermBatch).finalAlcohol}%</span></div>}
+                      {isFerm && (batch as FermBatch).retentionStartTime && phase === 'RETENTION' && <div className="bg-orange-50 rounded px-2 py-0.5 text-[10px]"><span className="text-orange-400 font-bold">Ret</span> <span className="font-bold text-orange-700">{elapsed((batch as FermBatch).retentionStartTime)}</span></div>}
+                      {batch.remarks && <div className="bg-gray-100 rounded px-2 py-0.5 text-[10px] text-gray-500 truncate max-w-[200px]" title={batch.remarks}>{batch.remarks}</div>}
+                    </div>
+                    {/* Phase actions — compact row */}
+                    <div className="flex gap-1.5 flex-wrap">
+                      {isPF && (phase === 'LAB' || phase === 'TRANSFER') && freeFermenters.map(fn => (
+                        <button key={fn} onClick={() => transferPF(batch!.id, fn)} disabled={saving}
+                          className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">
+                          {saving ? <Loader2 size={12} className="animate-spin" /> : `→ F-${fn}`}
+                        </button>
+                      ))}
+                      {isPF && (phase === 'LAB' || phase === 'TRANSFER') && freeFermenters.length === 0 && <span className="text-xs text-gray-400">No free fermenters</span>}
+                      {isPF && phase === 'SETUP' && <button onClick={() => advancePhase('PF', batch!.id, 'DOSING')} disabled={saving} className="px-3 py-1.5 bg-violet-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Dosing</button>}
+                      {isPF && phase === 'DOSING' && <button onClick={() => advancePhase('PF', batch!.id, 'LAB')} disabled={saving} className="px-3 py-1.5 bg-cyan-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Lab</button>}
+                      {isPF && phase === 'CIP' && <button onClick={() => advancePhase('PF', batch!.id, 'DONE', { cipEndTime: new Date().toISOString() })} disabled={saving} className="px-3 py-1.5 bg-gray-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Complete</button>}
+
+                      {isFerm && phase === 'FILLING' && <button onClick={() => advancePhase('FERM', batch!.id, 'REACTION', { reactionStartTime: new Date().toISOString(), fillingEndTime: new Date().toISOString() })} disabled={saving} className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Reaction</button>}
+                      {isFerm && phase === 'REACTION' && <button onClick={() => advancePhase('FERM', batch!.id, 'RETENTION', { retentionStartTime: new Date().toISOString() })} disabled={saving} className="px-3 py-1.5 bg-orange-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Retention</button>}
+                      {isFerm && phase === 'RETENTION' && (
+                        <button onClick={async () => {
+                          setSaving(true);
+                          try {
+                            await api.patch(`/fermentation/batches/${batch!.id}`, { phase: 'CIP', transferTime: new Date().toISOString(), cipStartTime: new Date().toISOString() });
+                            flash('ok', '→ Transferred & CIP started');
+                            load();
+                          } catch { flash('err', 'Failed'); }
+                          setSaving(false);
+                        }} disabled={saving} className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Transfer & CIP</button>
+                      )}
+                      {isFerm && phase === 'CIP' && <button onClick={() => advancePhase('FERM', batch!.id, 'DONE', { cipEndTime: new Date().toISOString() })} disabled={saving} className="px-3 py-1.5 bg-gray-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Complete</button>}
+
+                      {/* Small delete */}
+                      <button onClick={deleteBatch}
+                        className="ml-auto px-2 py-1 text-[10px] text-red-400 hover:text-red-600 hover:bg-red-50 rounded flex items-center gap-1">
+                        <Trash2 size={10} /> Del
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── TABS: Reading / Charts only ── */}
                 {!isBW && (
                   <div className="flex border-b bg-gray-50/30 px-1 pt-1">
-                    {(['reading', 'dosing', 'charts', 'batch'] as const).map(t => (
+                    {(['reading', 'charts'] as const).map(t => (
                       <button key={t} onClick={() => setTab(t)}
-                        className={`flex-1 py-2 text-[11px] font-bold tracking-wide rounded-t-lg transition-all duration-150 ${
+                        className={`flex-1 py-1.5 text-[11px] font-bold tracking-wide rounded-t-lg transition-all duration-150 ${
                           tab === t
                             ? 'text-indigo-700 bg-white border-b-2 border-indigo-600 shadow-sm'
                             : 'text-gray-400 hover:text-gray-600 hover:bg-white/50'
                         }`}>
-                        {t === 'reading' ? 'Reading' : t === 'dosing' ? 'Dosing' : t === 'charts' ? 'Charts' : 'Batch'}
+                        {t === 'reading' ? 'Reading & Dosing' : 'Charts'}
                       </button>
                     ))}
                   </div>
                 )}
 
-                {/* TAB: Reading */}
+                {/* TAB: Reading + Quick Dosing */}
                 {(tab === 'reading' || isBW) && (
                   <div className="p-3 space-y-3">
                     <div className="space-y-3">
@@ -621,6 +686,66 @@ export default function Fermentation() {
                         </button>
                       </div>
                     </div>
+
+                    {/* ── QUICK DOSING (inline, below reading) ── */}
+                    {!isBW && batch && (
+                      <div className="border-t border-gray-100 pt-3">
+                        {dosings.length > 0 && (
+                          <div className="space-y-0.5 mb-2">
+                            <div className="text-[9px] font-bold text-gray-400 uppercase">Chemicals</div>
+                            {dosings.map((d: Dosing) => (
+                              <div key={d.id} className="flex items-center gap-2 bg-violet-50/50 rounded px-2 py-1">
+                                <span className="text-[11px] font-medium text-gray-800 flex-1">{d.chemicalName}</span>
+                                {editingDosing === d.id ? (
+                                  <div className="flex items-center gap-1">
+                                    <input type="number" value={editDosingQty} onChange={e => setEditDosingQty(e.target.value)}
+                                      className="w-14 px-1 py-0.5 text-[11px] border rounded" autoFocus
+                                      onKeyDown={e => { if (e.key === 'Enter') updateDosing(d.id); if (e.key === 'Escape') setEditingDosing(null); }} />
+                                    <span className="text-[9px] text-gray-400">{d.unit}</span>
+                                    <button onClick={() => updateDosing(d.id)} className="text-green-600"><CheckCircle size={12} /></button>
+                                    <button onClick={() => setEditingDosing(null)} className="text-gray-400"><X size={12} /></button>
+                                  </div>
+                                ) : (
+                                  <button onClick={() => { setEditingDosing(d.id); setEditDosingQty(String(d.quantity)); }}
+                                    className="text-[11px] font-bold text-violet-700 hover:underline">{d.quantity} {d.unit}</button>
+                                )}
+                                <button onClick={() => deleteDosing(d.id)} className="text-gray-300 hover:text-red-500"><Trash2 size={10} /></button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {(isPF ? recipes.PF : recipes.FERMENTER).length > 0 && dosings.length === 0 && (
+                          <button onClick={applyRecipe} disabled={saving}
+                            className="w-full py-1.5 mb-2 bg-violet-50 text-violet-700 border border-violet-200 rounded-lg text-xs font-bold hover:bg-violet-100 flex items-center justify-center gap-1">
+                            <Play size={11} /> Apply Recipe ({(isPF ? recipes.PF : recipes.FERMENTER).length})
+                          </button>
+                        )}
+                        <div className="flex gap-1.5 items-end">
+                          <div className="flex-1">
+                            <select value={dosingForm.chemicalName} onChange={e => setDosingForm(f => ({ ...f, chemicalName: e.target.value }))}
+                              className="w-full px-2 py-1.5 text-xs border rounded-lg bg-white">
+                              <option value="">+ Chemical...</option>
+                              {chemicals.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                            </select>
+                          </div>
+                          <div className="w-16">
+                            <input type="number" value={dosingForm.quantity} onChange={e => setDosingForm(f => ({ ...f, quantity: e.target.value }))}
+                              placeholder="Qty" className="w-full px-2 py-1.5 text-xs border rounded-lg" />
+                          </div>
+                          <div className="w-14">
+                            <select value={dosingForm.unit} onChange={e => setDosingForm(f => ({ ...f, unit: e.target.value }))}
+                              className="w-full px-2 py-1.5 text-xs border rounded-lg bg-white">
+                              {['kg', 'ltr', 'gm', 'ml'].map(u => <option key={u} value={u}>{u}</option>)}
+                            </select>
+                          </div>
+                          <button onClick={addDosing} disabled={saving || !dosingForm.chemicalName || !dosingForm.quantity}
+                            className="px-2.5 py-1.5 bg-violet-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">
+                            <Plus size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Recent readings */}
                     {(() => {
                       const rList = isBW ? getBW(selected.no).map(r => ({ id: r.id, analysisTime: '', spGravity: r.spGravity, ph: r.ph, alcohol: r.alcohol, temp: r.temp, level: r.level, rs: undefined as number | undefined, createdAt: r.createdAt, status: '' })) : readings;
@@ -681,70 +806,6 @@ export default function Fermentation() {
                   </div>
                 )}
 
-                {/* TAB: Dosing */}
-                {tab === 'dosing' && !isBW && (
-                  <div className="p-3 space-y-3">
-                    {(isPF ? recipes.PF : recipes.FERMENTER).length > 0 && dosings.length === 0 && (
-                      <button onClick={applyRecipe} disabled={saving}
-                        className="w-full py-2 bg-violet-50 text-violet-700 border border-violet-200 rounded-lg text-xs font-bold hover:bg-violet-100 flex items-center justify-center gap-1">
-                        <Play size={11} /> Apply Recipe ({(isPF ? recipes.PF : recipes.FERMENTER).length} chemicals)
-                      </button>
-                    )}
-                    {dosings.length > 0 && (
-                      <div className="space-y-1">
-                        <div className="text-[9px] font-bold text-gray-400 uppercase">Added Chemicals</div>
-                        {dosings.map((d: Dosing) => (
-                          <div key={d.id} className="flex items-center gap-2 bg-violet-50/50 rounded-lg px-2 py-1.5">
-                            <span className="text-xs font-medium text-gray-800 flex-1">{d.chemicalName}</span>
-                            {editingDosing === d.id ? (
-                              <div className="flex items-center gap-1">
-                                <input type="number" value={editDosingQty} onChange={e => setEditDosingQty(e.target.value)}
-                                  className="w-16 px-1.5 py-0.5 text-xs border rounded" autoFocus
-                                  onKeyDown={e => { if (e.key === 'Enter') updateDosing(d.id); if (e.key === 'Escape') setEditingDosing(null); }} />
-                                <span className="text-[10px] text-gray-400">{d.unit}</span>
-                                <button onClick={() => updateDosing(d.id)} className="text-green-600 hover:text-green-800"><CheckCircle size={13} /></button>
-                                <button onClick={() => setEditingDosing(null)} className="text-gray-400 hover:text-gray-600"><X size={13} /></button>
-                              </div>
-                            ) : (
-                              <button onClick={() => { setEditingDosing(d.id); setEditDosingQty(String(d.quantity)); }}
-                                className="text-xs font-bold text-violet-700 hover:text-violet-900 hover:underline cursor-pointer">
-                                {d.quantity} {d.unit}
-                              </button>
-                            )}
-                            <button onClick={() => deleteDosing(d.id)} className="text-gray-300 hover:text-red-500"><Trash2 size={11} /></button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <div className="flex gap-1.5 items-end">
-                      <div className="flex-1">
-                        <label className="text-[8px] font-bold text-gray-400">Chemical</label>
-                        <select value={dosingForm.chemicalName} onChange={e => setDosingForm(f => ({ ...f, chemicalName: e.target.value }))}
-                          className="w-full px-2 py-1.5 text-xs border rounded-lg bg-white">
-                          <option value="">Select...</option>
-                          {chemicals.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                        </select>
-                      </div>
-                      <div className="w-16">
-                        <label className="text-[8px] font-bold text-gray-400">Qty</label>
-                        <input type="number" value={dosingForm.quantity} onChange={e => setDosingForm(f => ({ ...f, quantity: e.target.value }))}
-                          className="w-full px-2 py-1.5 text-xs border rounded-lg" />
-                      </div>
-                      <div className="w-14">
-                        <label className="text-[8px] font-bold text-gray-400">Unit</label>
-                        <select value={dosingForm.unit} onChange={e => setDosingForm(f => ({ ...f, unit: e.target.value }))}
-                          className="w-full px-2 py-1.5 text-xs border rounded-lg bg-white">
-                          {['kg', 'ltr', 'gm', 'ml'].map(u => <option key={u} value={u}>{u}</option>)}
-                        </select>
-                      </div>
-                      <button onClick={addDosing} disabled={saving || !dosingForm.chemicalName || !dosingForm.quantity}
-                        className="px-3 py-1.5 bg-violet-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">
-                        <Plus size={14} />
-                      </button>
-                    </div>
-                  </div>
-                )}
-
                 {/* TAB: Charts */}
                 {tab === 'charts' && !isBW && (
                   <div className="p-3 space-y-3">
@@ -787,87 +848,6 @@ export default function Fermentation() {
                   </div>
                 )}
 
-                {/* TAB: Batch */}
-                {tab === 'batch' && !isBW && batch && (
-                  <div className="p-3 space-y-3">
-                    {/* Phase timeline */}
-                    <div>
-                      <div className="text-[9px] font-bold text-gray-400 uppercase mb-1.5">Phase Timeline</div>
-                      <div className="flex items-center gap-0.5">
-                        {(isPF ? PF_PHASES : FERM_PHASES).map((p, i) => {
-                          const pCfg = phCfg(p);
-                          const phaseList = isPF ? PF_PHASES : FERM_PHASES;
-                          const ci = phaseList.indexOf(phase);
-                          return (
-                            <div key={p} className={`flex-1 text-center py-1 rounded text-[7px] font-bold ${
-                              i < ci ? 'bg-green-100 text-green-600' : i === ci ? `${pCfg.bg} ${pCfg.text} ring-1 ${pCfg.ring}` : 'bg-gray-50 text-gray-300'
-                            }`}>{pCfg.label}</div>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Setup info */}
-                    {isPF && (batch as PFBatch).slurryVolume && (
-                      <div className="grid grid-cols-3 gap-2 text-center">
-                        <div className="bg-indigo-50 rounded-lg p-1.5"><div className="text-[8px] text-indigo-400 font-bold">Volume</div><div className="text-xs font-bold text-indigo-700">{((batch as PFBatch).slurryVolume! / 1000).toFixed(0)} KL</div></div>
-                        {(batch as PFBatch).slurryGravity && <div className="bg-indigo-50 rounded-lg p-1.5"><div className="text-[8px] text-indigo-400 font-bold">Gravity</div><div className="text-xs font-bold text-indigo-700">{(batch as PFBatch).slurryGravity!.toFixed(3)}</div></div>}
-                        {(batch as PFBatch).slurryTemp && <div className="bg-indigo-50 rounded-lg p-1.5"><div className="text-[8px] text-indigo-400 font-bold">Temp</div><div className="text-xs font-bold text-indigo-700">{(batch as PFBatch).slurryTemp}°C</div></div>}
-                      </div>
-                    )}
-                    {isFerm && (
-                      <div className="grid grid-cols-3 gap-2 text-center">
-                        {(batch as FermBatch).fermLevel && <div className="bg-blue-50 rounded-lg p-1.5"><div className="text-[8px] text-blue-400 font-bold">Level</div><div className="text-xs font-bold text-blue-700">{(batch as FermBatch).fermLevel}%</div></div>}
-                        {(batch as FermBatch).setupGravity && <div className="bg-indigo-50 rounded-lg p-1.5"><div className="text-[8px] text-indigo-400 font-bold">Setup SG</div><div className="text-xs font-bold text-indigo-700">{(batch as FermBatch).setupGravity!.toFixed(3)}</div></div>}
-                        {(batch as FermBatch).finalAlcohol && <div className="bg-emerald-50 rounded-lg p-1.5"><div className="text-[8px] text-emerald-400 font-bold">Final Alc</div><div className="text-xs font-bold text-emerald-700">{(batch as FermBatch).finalAlcohol}%</div></div>}
-                      </div>
-                    )}
-
-                    {/* Phase actions */}
-                    <div className="space-y-1.5">
-                      <div className="text-[9px] font-bold text-gray-400 uppercase">Actions</div>
-                      {isPF && (phase === 'LAB' || phase === 'TRANSFER') && (
-                        <div>
-                          <div className="text-[10px] text-gray-600 mb-1">Transfer to Fermenter:</div>
-                          <div className="flex gap-1.5 flex-wrap">
-                            {freeFermenters.map(fn => (
-                              <button key={fn} onClick={() => transferPF(batch!.id, fn)} disabled={saving}
-                                className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">
-                                {saving ? <Loader2 size={12} className="animate-spin" /> : `→ F-${fn}`}
-                              </button>
-                            ))}
-                            {freeFermenters.length === 0 && <span className="text-xs text-gray-400">No free fermenters</span>}
-                          </div>
-                        </div>
-                      )}
-                      {isPF && phase === 'SETUP' && <button onClick={() => advancePhase('PF', batch!.id, 'DOSING')} disabled={saving} className="w-full py-2 bg-violet-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Start Dosing</button>}
-                      {isPF && phase === 'DOSING' && <button onClick={() => advancePhase('PF', batch!.id, 'LAB')} disabled={saving} className="w-full py-2 bg-cyan-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Lab Monitoring</button>}
-                      {isPF && phase === 'CIP' && <button onClick={() => advancePhase('PF', batch!.id, 'DONE', { cipEndTime: new Date().toISOString() })} disabled={saving} className="w-full py-2 bg-gray-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Complete</button>}
-
-                      {isFerm && phase === 'FILLING' && <button onClick={() => advancePhase('FERM', batch!.id, 'REACTION', { reactionStartTime: new Date().toISOString(), fillingEndTime: new Date().toISOString() })} disabled={saving} className="w-full py-2 bg-amber-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Start Reaction</button>}
-                      {isFerm && phase === 'REACTION' && <button onClick={() => advancePhase('FERM', batch!.id, 'RETENTION', { retentionStartTime: new Date().toISOString() })} disabled={saving} className="w-full py-2 bg-orange-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Start Retention</button>}
-                      {isFerm && phase === 'RETENTION' && (
-                        <>
-                          {(batch as FermBatch).retentionStartTime && <div className="text-[10px] text-gray-500">Retention: {elapsed((batch as FermBatch).retentionStartTime)} elapsed{settings.fermRetentionHours ? ` / ${settings.fermRetentionHours}h target` : ''}</div>}
-                          <button onClick={async () => {
-                            setSaving(true);
-                            try {
-                              await api.patch(`/fermentation/batches/${batch!.id}`, { phase: 'CIP', transferTime: new Date().toISOString(), cipStartTime: new Date().toISOString() });
-                              flash('ok', '→ Transferred & CIP started');
-                              load();
-                            } catch { flash('err', 'Failed'); }
-                            setSaving(false);
-                          }} disabled={saving} className="w-full py-2 bg-emerald-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Transfer to BW & Start CIP</button>
-                        </>
-                      )}
-                      {isFerm && phase === 'CIP' && <button onClick={() => advancePhase('FERM', batch!.id, 'DONE', { cipEndTime: new Date().toISOString() })} disabled={saving} className="w-full py-2 bg-gray-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Complete</button>}
-                    </div>
-                    {/* Delete batch */}
-                    <button onClick={deleteBatch} className="w-full py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg text-xs font-semibold hover:bg-red-100 flex items-center justify-center gap-1.5 mt-2">
-                      <Trash2 size={12} /> Delete Batch #{batchNo}
-                    </button>
-                  </div>
-                )}
               </>
             )}
           </div>
