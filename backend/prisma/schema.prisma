@@ -1685,6 +1685,8 @@ model EthanolContract {
   totalReceivedAmt  Float    @default(0)
 
   remarks           String?
+  contractPdf       String?  // base64-encoded PDF
+  contractPdfName   String?  // original filename
   userId            String
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt

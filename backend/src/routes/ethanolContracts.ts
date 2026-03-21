@@ -1,8 +1,10 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
+import multer from 'multer';
 
 const prisma = new PrismaClient();
 const router = Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // ── GET all contracts ──
 router.get('/', async (req: Request, res: Response) => {
@@ -16,7 +18,7 @@ router.get('/', async (req: Request, res: Response) => {
       where,
       include: { liftings: { orderBy: { liftingDate: 'desc' }, take: 5 } },
       orderBy: { createdAt: 'desc' },
-    });
+    }).then(rows => rows.map(({ contractPdf, ...rest }) => ({ ...rest, hasPdf: !!contractPdf })));
 
     // Summary stats
     const stats = {
@@ -39,12 +41,13 @@ router.get('/', async (req: Request, res: Response) => {
 // ── GET single contract with all liftings ──
 router.get('/:id', async (req: Request, res: Response) => {
   try {
-    const contract = await prisma.ethanolContract.findUnique({
+    const raw = await prisma.ethanolContract.findUnique({
       where: { id: req.params.id },
       include: { liftings: { orderBy: { liftingDate: 'desc' } } },
     });
-    if (!contract) return res.status(404).json({ error: 'Contract not found' });
-    res.json({ contract });
+    if (!raw) return res.status(404).json({ error: 'Contract not found' });
+    const { contractPdf, ...contract } = raw;
+    res.json({ contract: { ...contract, hasPdf: !!contractPdf } });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -171,6 +174,57 @@ router.delete('/:id', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Cannot delete contract with liftings. Terminate instead.' });
     }
     await prisma.ethanolContract.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── PDF UPLOAD/DOWNLOAD ──
+
+// Upload contract PDF
+router.post('/:id/pdf', upload.single('pdf'), async (req: Request, res: Response) => {
+  try {
+    const file = (req as any).file;
+    if (!file) return res.status(400).json({ error: 'No file uploaded' });
+
+    const base64 = file.buffer.toString('base64');
+    const contract = await prisma.ethanolContract.update({
+      where: { id: req.params.id },
+      data: { contractPdf: base64, contractPdfName: file.originalname },
+    });
+    res.json({ success: true, filename: contract.contractPdfName });
+  } catch (err: any) {
+    console.error('POST pdf upload error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Download contract PDF
+router.get('/:id/pdf', async (req: Request, res: Response) => {
+  try {
+    const contract = await prisma.ethanolContract.findUnique({
+      where: { id: req.params.id },
+      select: { contractPdf: true, contractPdfName: true },
+    });
+    if (!contract || !contract.contractPdf) return res.status(404).json({ error: 'No PDF attached' });
+
+    const buffer = Buffer.from(contract.contractPdf, 'base64');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${contract.contractPdfName || 'contract.pdf'}"`);
+    res.send(buffer);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete contract PDF
+router.delete('/:id/pdf', async (req: Request, res: Response) => {
+  try {
+    await prisma.ethanolContract.update({
+      where: { id: req.params.id },
+      data: { contractPdf: null, contractPdfName: null },
+    });
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

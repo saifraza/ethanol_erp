@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Plus, X, Pencil, Truck, ChevronDown, ChevronUp, Fuel, Factory, Building2, Landmark, Trash2 } from 'lucide-react';
+import { FileText, Plus, X, Pencil, Truck, ChevronDown, ChevronUp, Fuel, Factory, Building2, Landmark, Trash2, Upload, FileDown } from 'lucide-react';
 import api from '../../services/api';
 
 interface Contract {
@@ -39,6 +39,8 @@ interface Contract {
   totalInvoicedAmt: number;
   totalReceivedAmt: number;
   remarks?: string;
+  contractPdfName?: string;
+  hasPdf?: boolean;
   createdAt: string;
   liftings?: Lifting[];
 }
@@ -224,6 +226,31 @@ const EthanolContracts: React.FC = () => {
     }
   };
 
+  const handlePdfUpload = async (contractId: string) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.pdf';
+    input.onchange = async (e: any) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        const formData = new FormData();
+        formData.append('pdf', file);
+        await api.post(`/ethanol-contracts/${contractId}/pdf`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        fetchData();
+      } catch (err: any) {
+        setError(err?.response?.data?.error || 'Failed to upload PDF');
+      }
+    };
+    input.click();
+  };
+
+  const viewPdf = (contractId: string) => {
+    window.open(`/api/ethanol-contracts/${contractId}/pdf`, '_blank');
+  };
+
   const filtered = typeFilter === 'ALL' ? contracts : contracts.filter(c => c.contractType === typeFilter);
 
   const pctUsed = (c: Contract) => c.contractQtyKL ? Math.round((c.totalSuppliedKL / c.contractQtyKL) * 100) : 0;
@@ -340,6 +367,18 @@ const EthanolContracts: React.FC = () => {
                       )}
                     </div>
                     <div className="flex gap-1.5">
+                      {c.hasPdf ? (
+                        <button onClick={() => viewPdf(c.id)}
+                          className="px-3 py-1 text-xs bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 font-medium flex items-center gap-1"
+                          title={c.contractPdfName || 'View PDF'}>
+                          <FileDown size={12} /> PDF
+                        </button>
+                      ) : (
+                        <button onClick={() => handlePdfUpload(c.id)}
+                          className="px-3 py-1 text-xs bg-gray-100 text-gray-500 rounded-lg hover:bg-gray-200 font-medium flex items-center gap-1">
+                          <Upload size={12} /> PDF
+                        </button>
+                      )}
                       <button onClick={() => { setLiftingContractId(c.id); setLiftForm({ ...emptyLiftingForm, destination: c.omcDepot || '' }); }}
                         className="px-3 py-1 text-xs bg-green-100 text-green-700 rounded-lg hover:bg-green-200 font-medium flex items-center gap-1">
                         <Truck size={12} /> Lifting
@@ -418,6 +457,22 @@ const EthanolContracts: React.FC = () => {
                         )}
                         {c.totalInvoicedAmt > 0 && <div><span className="text-gray-400">Invoiced:</span> <span className="font-medium">₹{c.totalInvoicedAmt.toLocaleString()}</span></div>}
                         {c.remarks && <div className="col-span-2"><span className="text-gray-400">Remarks:</span> <span className="font-medium">{c.remarks}</span></div>}
+                      </div>
+                      {/* PDF Attachment */}
+                      <div className="mt-3 pt-3 border-t border-gray-200 flex items-center gap-3">
+                        <span className="text-xs text-gray-400 font-semibold">Contract PDF:</span>
+                        {c.hasPdf ? (
+                          <>
+                            <button onClick={() => viewPdf(c.id)} className="text-xs text-purple-600 hover:underline font-medium flex items-center gap-1">
+                              <FileDown size={12} /> {c.contractPdfName || 'View PDF'}
+                            </button>
+                            <button onClick={() => handlePdfUpload(c.id)} className="text-xs text-gray-400 hover:text-gray-600">Replace</button>
+                          </>
+                        ) : (
+                          <button onClick={() => handlePdfUpload(c.id)} className="text-xs text-blue-600 hover:underline font-medium flex items-center gap-1">
+                            <Upload size={12} /> Upload PDF
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
