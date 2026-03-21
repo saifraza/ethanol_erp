@@ -1632,3 +1632,93 @@ model DirectSale {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
+
+// ── ETHANOL SUPPLY / CONTRACTS ──
+
+model EthanolContract {
+  id                String   @id @default(uuid())
+  contractNo        String   @unique
+  contractType      String   // JOB_WORK, FIXED_PRICE, OMC
+  status            String   @default("ACTIVE") // DRAFT, ACTIVE, EXPIRED, TERMINATED
+
+  // Buyer / Party
+  buyerName         String
+  buyerAddress      String?
+  buyerGst          String?
+  buyerPan          String?
+  buyerContact      String?
+  buyerPhone        String?
+  buyerEmail        String?
+
+  // OMC-specific
+  omcName           String?  // IOCL, BPCL, HPCL, JioBP, Nayara
+  omcDepot          String?  // delivery depot/location
+  allocationQtyKL   Float?   // allocated qty in KL
+
+  // Job Work-specific (principal provides grain, MSPIL converts)
+  principalName     String?  // e.g. "Mash Bio Fuels Pvt Ltd"
+  conversionRate    Float?   // ₹/BL for ethanol conversion charges
+  ddgsRate          Float?   // ₹/kg for DDGS
+  ethanolBenchmark  Float?   // BL per 1000kg grain (e.g. 374)
+  ddgsBenchmark     Float?   // kg per BL ethanol (e.g. 0.76)
+  prcPenalty        Float?   // ₹/BL short supply penalty
+
+  // Fixed Price-specific
+  ethanolRate       Float?   // ₹/Litre base rate (e.g. 60)
+
+  // Common terms
+  startDate         DateTime
+  endDate           DateTime
+  contractQtyKL     Float?   // total contract quantity KL
+  dailyTargetKL     Float?   // daily supply target KL
+  minLiftingPerDay  Int?     // min tankers per day
+  tankerCapacityKL  String?  // "20/30/35/40" etc
+  paymentTermsDays  Int?     // payment within X days
+  paymentMode       String?  // RTGS, NEFT, BANK_TRANSFER
+  gstPercent        Float?
+  supplyType        String?  // INTRA_STATE, INTER_STATE
+  logisticsBy       String?  // BUYER, SELLER, PRINCIPAL
+
+  // Tracking (updated on dispatch)
+  totalSuppliedKL   Float    @default(0)
+  totalInvoicedAmt  Float    @default(0)
+  totalReceivedAmt  Float    @default(0)
+
+  remarks           String?
+  userId            String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  liftings          EthanolLifting[]
+}
+
+model EthanolLifting {
+  id              String   @id @default(uuid())
+  contractId      String
+  contract        EthanolContract @relation(fields: [contractId], references: [id])
+  liftingDate     DateTime
+  vehicleNo       String
+  driverName      String?
+  driverPhone     String?
+  transporterName String?
+  destination     String?
+  quantityBL      Float    @default(0)
+  quantityKL      Float    @default(0)
+  strength        Float?
+  temperature     Float?
+  // Billing
+  rate            Float?   // ₹/BL or ₹/L
+  amount          Float?
+  invoiceNo       String?
+  invoiceDate     DateTime?
+  // Status
+  status          String   @default("LOADED") // LOADED, IN_TRANSIT, DELIVERED, SHORTAGE
+  deliveredQtyKL  Float?
+  shortageKL      Float?
+  omcReceiptNo    String?
+  deliveredAt     DateTime?
+  remarks         String?
+  userId          String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}

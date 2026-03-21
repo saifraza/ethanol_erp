@@ -53,6 +53,8 @@ import vendorPaymentRoutes from './routes/vendorPayments';
 // Direct Trade (cash purchases/sales without paperwork)
 import directPurchaseRoutes from './routes/directPurchases';
 import directSaleRoutes from './routes/directSales';
+// Ethanol Supply
+import ethanolContractRoutes from './routes/ethanolContracts';
 
 
 const app = express();
@@ -117,6 +119,8 @@ app.use('/api/vendor-payments', vendorPaymentRoutes);
 // Direct Trade
 app.use('/api/direct-purchases', directPurchaseRoutes);
 app.use('/api/direct-sales', directSaleRoutes);
+// Ethanol Supply
+app.use('/api/ethanol-contracts', ethanolContractRoutes);
 
 
 // Serve uploaded files

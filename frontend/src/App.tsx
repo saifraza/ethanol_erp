@@ -41,6 +41,7 @@ import Shipments from './pages/sales/Shipments';
 import Invoices from './pages/sales/Invoices';
 import Payments from './pages/sales/Payments';
 import FreightManagement from './pages/sales/FreightManagement';
+import EthanolContracts from './pages/sales/EthanolContracts';
 // Procurement (P2P)
 import Vendors from './pages/procurement/Vendors';
 import Materials from './pages/procurement/Materials';
@@ -116,6 +117,7 @@ export default function App() {
         <Route path="sales/invoices" element={<Invoices />} />
         <Route path="sales/payments" element={<Payments />} />
         <Route path="sales/freight" element={<FreightManagement />} />
+        <Route path="sales/ethanol-contracts" element={<EthanolContracts />} />
         {/* Procurement (P2P) */}
         <Route path="procurement/vendors" element={<Vendors />} />
         <Route path="procurement/materials" element={<Materials />} />

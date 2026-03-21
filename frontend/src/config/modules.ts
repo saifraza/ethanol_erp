@@ -8,7 +8,7 @@ import {
   Warehouse, AlertCircle, ShoppingCart,
   UserCheck, ClipboardList, Send, FileText, IndianRupee,
   Building2, Box, ShoppingBag, PackageCheck, Receipt, CreditCard,
-  Store, Tractor, Scale
+  Store, Tractor, Scale, Handshake
 } from 'lucide-react';
 
 export interface ModuleDef {
@@ -49,6 +49,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'shipments', label: 'Gate Register', to: '/sales/shipments', icon: Scale, group: 'sales' },
   { key: 'invoices', label: 'Billing', to: '/sales/invoices', icon: FileText, group: 'sales' },
   { key: 'payments', label: 'Collections', to: '/sales/payments', icon: IndianRupee, group: 'sales' },
+  { key: 'ethanol-contracts', label: 'Ethanol Supply', to: '/sales/ethanol-contracts', icon: Handshake, group: 'sales' },
 
   // ── PROCUREMENT (Grain + Chemicals inward) ──
   { key: 'vendors', label: 'Suppliers', to: '/procurement/vendors', icon: Building2, group: 'procurement' },
