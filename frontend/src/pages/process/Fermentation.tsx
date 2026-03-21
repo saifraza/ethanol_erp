@@ -25,7 +25,7 @@ const ALL_VESSELS: Vessel[] = [
   { type: 'PF', no: 1, label: 'PF-1' }, { type: 'PF', no: 2, label: 'PF-2' },
   { type: 'FERM', no: 1, label: 'F-1' }, { type: 'FERM', no: 2, label: 'F-2' },
   { type: 'FERM', no: 3, label: 'F-3' }, { type: 'FERM', no: 4, label: 'F-4' },
-  { type: 'BW', no: 1, label: 'BW-1' }, { type: 'BW', no: 2, label: 'BW-2' },
+  { type: 'BW', no: 1, label: 'BW-1' },
 ];
 
 const PHASE_CFG: Record<string, { label: string; bg: string; text: string; ring: string; dot: string }> = {
@@ -44,7 +44,7 @@ const PHASE_CFG: Record<string, { label: string; bg: string; text: string; ring:
 const phCfg = (p: string) => PHASE_CFG[p] || PHASE_CFG.IDLE;
 
 const PF_PHASES = ['SETUP', 'DOSING', 'LAB', 'TRANSFER', 'CIP', 'DONE'];
-const FERM_PHASES = ['PF_TRANSFER', 'FILLING', 'REACTION', 'RETENTION', 'TRANSFER', 'CIP', 'DONE'];
+const FERM_PHASES = ['PF_TRANSFER', 'FILLING', 'REACTION', 'RETENTION', 'CIP', 'DONE'];
 
 const fmtTime = (iso?: string) => {
   if (!iso) return '—';
@@ -167,7 +167,20 @@ export default function Fermentation() {
           remarks: f.remarks || undefined,
         });
       }
-      flash('ok', `${selected.label} saved ✓`);
+      // Auto-advance fermenter REACTION → RETENTION when SG ≤ 1.0
+      if (selected.type === 'FERM' && f.spGravity && +f.spGravity <= 1.0) {
+        const batch = getVesselBatch(selected);
+        if (batch && batch.phase === 'REACTION') {
+          try {
+            await api.patch(`/fermentation/batches/${batch.id}`, { phase: 'RETENTION', retentionStartTime: new Date().toISOString() });
+            flash('ok', `${selected.label} saved ✓ · Auto → Retention (SG ≤ 1.0)`);
+          } catch { flash('ok', `${selected.label} saved ✓ (auto-retention failed)`); }
+        } else {
+          flash('ok', `${selected.label} saved ✓`);
+        }
+      } else {
+        flash('ok', `${selected.label} saved ✓`);
+      }
       if (andShare) {
         const batch = getVesselBatch(selected);
         const lines = [
@@ -212,7 +225,15 @@ export default function Fermentation() {
           userId: user?.id || '',
         });
       }
-      flash('ok', `${selected.label} Batch #${bn} started`);
+      // Auto-advance any FILLING fermenters to REACTION
+      const fillingBatches = fermBatches.filter(b => b.phase === 'FILLING');
+      for (const fb of fillingBatches) {
+        try {
+          await api.patch(`/fermentation/batches/${fb.id}`, { phase: 'REACTION', reactionStartTime: new Date().toISOString(), fillingEndTime: new Date().toISOString() });
+        } catch {}
+      }
+      if (fillingBatches.length > 0) flash('ok', `${selected.label} Batch #${bn} started · F-${fillingBatches.map(b => b.fermenterNo).join(',')} auto → Reaction`);
+      else flash('ok', `${selected.label} Batch #${bn} started`);
       setShowNewBatch(false); setNewBatchForm({ batchNo: '', pfLevel: '', slurryGravity: '', slurryTemp: '' });
       load();
     } catch (e: any) { flash('err', e?.response?.data?.error || 'Failed'); }
@@ -222,8 +243,16 @@ export default function Fermentation() {
   const transferPF = async (pfBatchId: string, fermNo: number) => {
     setSaving(true);
     try {
+      // Auto-advance any FILLING fermenters to REACTION before transfer
+      const fillingBatches = fermBatches.filter(b => b.phase === 'FILLING');
+      for (const fb of fillingBatches) {
+        try {
+          await api.patch(`/fermentation/batches/${fb.id}`, { phase: 'REACTION', reactionStartTime: new Date().toISOString(), fillingEndTime: new Date().toISOString() });
+        } catch {}
+      }
       await api.post('/fermentation/transfer-pf', { pfBatchId, fermenterNo: fermNo });
-      flash('ok', `Transferred to F-${fermNo} ✓`);
+      const autoMsg = fillingBatches.length > 0 ? ` · F-${fillingBatches.map(b => b.fermenterNo).join(',')} auto → Reaction` : '';
+      flash('ok', `Transferred to F-${fermNo} ✓${autoMsg}`);
       load();
     } catch (e: any) { flash('err', e?.response?.data?.error || 'Transfer failed'); }
     setSaving(false);
@@ -278,6 +307,20 @@ export default function Fermentation() {
       await api.delete(selected.type === 'PF' ? `/pre-fermentation/dosing/${dosingId}` : `/fermentation/dosing/${dosingId}`);
       load();
     } catch { flash('err', 'Delete failed'); }
+  };
+
+  const [editingDosing, setEditingDosing] = useState<string | null>(null);
+  const [editDosingQty, setEditDosingQty] = useState('');
+
+  const updateDosing = async (dosingId: string) => {
+    if (!selected || !editDosingQty) return;
+    try {
+      const url = selected.type === 'PF' ? `/pre-fermentation/dosing/${dosingId}` : `/fermentation/dosing/${dosingId}`;
+      await api.patch(url, { quantity: +editDosingQty });
+      setEditingDosing(null);
+      flash('ok', 'Qty updated');
+      load();
+    } catch { flash('err', 'Update failed'); }
   };
 
   const deleteReading = async (readingId: string) => {
@@ -653,7 +696,21 @@ export default function Fermentation() {
                         {dosings.map((d: Dosing) => (
                           <div key={d.id} className="flex items-center gap-2 bg-violet-50/50 rounded-lg px-2 py-1.5">
                             <span className="text-xs font-medium text-gray-800 flex-1">{d.chemicalName}</span>
-                            <span className="text-xs font-bold text-violet-700">{d.quantity} {d.unit}</span>
+                            {editingDosing === d.id ? (
+                              <div className="flex items-center gap-1">
+                                <input type="number" value={editDosingQty} onChange={e => setEditDosingQty(e.target.value)}
+                                  className="w-16 px-1.5 py-0.5 text-xs border rounded" autoFocus
+                                  onKeyDown={e => { if (e.key === 'Enter') updateDosing(d.id); if (e.key === 'Escape') setEditingDosing(null); }} />
+                                <span className="text-[10px] text-gray-400">{d.unit}</span>
+                                <button onClick={() => updateDosing(d.id)} className="text-green-600 hover:text-green-800"><CheckCircle size={13} /></button>
+                                <button onClick={() => setEditingDosing(null)} className="text-gray-400 hover:text-gray-600"><X size={13} /></button>
+                              </div>
+                            ) : (
+                              <button onClick={() => { setEditingDosing(d.id); setEditDosingQty(String(d.quantity)); }}
+                                className="text-xs font-bold text-violet-700 hover:text-violet-900 hover:underline cursor-pointer">
+                                {d.quantity} {d.unit}
+                              </button>
+                            )}
                             <button onClick={() => deleteDosing(d.id)} className="text-gray-300 hover:text-red-500"><Trash2 size={11} /></button>
                           </div>
                         ))}
@@ -785,7 +842,6 @@ export default function Fermentation() {
                       )}
                       {isPF && phase === 'SETUP' && <button onClick={() => advancePhase('PF', batch!.id, 'DOSING')} disabled={saving} className="w-full py-2 bg-violet-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Start Dosing</button>}
                       {isPF && phase === 'DOSING' && <button onClick={() => advancePhase('PF', batch!.id, 'LAB')} disabled={saving} className="w-full py-2 bg-cyan-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Lab Monitoring</button>}
-                      {isPF && phase === 'TRANSFER' && <button onClick={() => advancePhase('PF', batch!.id, 'CIP', { cipStartTime: new Date().toISOString() })} disabled={saving} className="w-full py-2 bg-purple-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Start CIP</button>}
                       {isPF && phase === 'CIP' && <button onClick={() => advancePhase('PF', batch!.id, 'DONE', { cipEndTime: new Date().toISOString() })} disabled={saving} className="w-full py-2 bg-gray-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Complete</button>}
 
                       {isFerm && phase === 'FILLING' && <button onClick={() => advancePhase('FERM', batch!.id, 'REACTION', { reactionStartTime: new Date().toISOString(), fillingEndTime: new Date().toISOString() })} disabled={saving} className="w-full py-2 bg-amber-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Start Reaction</button>}
@@ -793,10 +849,17 @@ export default function Fermentation() {
                       {isFerm && phase === 'RETENTION' && (
                         <>
                           {(batch as FermBatch).retentionStartTime && <div className="text-[10px] text-gray-500">Retention: {elapsed((batch as FermBatch).retentionStartTime)} elapsed{settings.fermRetentionHours ? ` / ${settings.fermRetentionHours}h target` : ''}</div>}
-                          <button onClick={() => advancePhase('FERM', batch!.id, 'TRANSFER', { transferTime: new Date().toISOString() })} disabled={saving} className="w-full py-2 bg-emerald-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Transfer to Beer Well</button>
+                          <button onClick={async () => {
+                            setSaving(true);
+                            try {
+                              await api.patch(`/fermentation/batches/${batch!.id}`, { phase: 'CIP', transferTime: new Date().toISOString(), cipStartTime: new Date().toISOString() });
+                              flash('ok', '→ Transferred & CIP started');
+                              load();
+                            } catch { flash('err', 'Failed'); }
+                            setSaving(false);
+                          }} disabled={saving} className="w-full py-2 bg-emerald-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Transfer to BW & Start CIP</button>
                         </>
                       )}
-                      {isFerm && phase === 'TRANSFER' && <button onClick={() => advancePhase('FERM', batch!.id, 'CIP', { cipStartTime: new Date().toISOString() })} disabled={saving} className="w-full py-2 bg-purple-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Start CIP</button>}
                       {isFerm && phase === 'CIP' && <button onClick={() => advancePhase('FERM', batch!.id, 'DONE', { cipEndTime: new Date().toISOString() })} disabled={saving} className="w-full py-2 bg-gray-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Complete</button>}
                     </div>
                     {/* Delete batch */}

@@ -279,6 +279,17 @@ router.post('/batches/:id/dosing', async (req: Request, res: Response) => {
   } catch (err: any) { res.status(400).json({ error: err.message }); }
 });
 
+router.patch('/dosing/:id', async (req: Request, res: Response) => {
+  try {
+    const { quantity, unit } = req.body;
+    const data: any = {};
+    if (quantity !== undefined) data.quantity = parseFloat(quantity);
+    if (unit !== undefined) data.unit = unit;
+    const dosing = await prisma.fermDosing.update({ where: { id: req.params.id }, data });
+    res.json(dosing);
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
 router.delete('/dosing/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
   await prisma.fermDosing.delete({ where: { id: req.params.id } });
   res.json({ ok: true });
