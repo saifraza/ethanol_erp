@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Truck, X, Loader2, Share2, MessageCircle, Phone, ChevronDown,
   Scale, CheckCircle, AlertCircle, FileText, Camera, Upload, Image,
-  Clock, MapPin, Trash2
+  Clock, MapPin, Trash2, Plus, ClipboardList
 } from 'lucide-react';
 import api from '../../services/api';
 
@@ -16,6 +16,8 @@ interface Shipment {
   dispatchRequestId?: string; challanNo?: string; ewayBill?: string; ewayBillStatus?: string; gatePassNo?: string;
   invoiceRef?: string; grBiltyNo?: string; grBiltyDate?: string;
   tareTime?: string; grossTime?: string; releaseTime?: string; exitTime?: string;
+  gatePassType?: string; purpose?: string; partyName?: string; partyGstin?: string; totalValue?: number;
+  gatePassItems?: string;
   dispatchRequest?: { drNo?: number; customerName?: string; productName?: string; quantity?: number; unit?: string };
   documents?: { id: string; docType: string; fileName: string }[];
 }
@@ -63,6 +65,52 @@ export default function Shipments() {
   const [billSaving, setBillSaving] = useState(false);
   // E-Way Bill generation
   const [ewbLoading, setEwbLoading] = useState<string | null>(null);
+  // Gate Pass form
+  const [showGPForm, setShowGPForm] = useState(false);
+  const [gpForm, setGpForm] = useState({
+    gatePassType: 'RETURNABLE' as string,
+    purpose: '',
+    partyName: '', partyAddress: '', partyGstin: '',
+    vehicleNo: '', driverName: '', driverMobile: '', transporterName: '',
+    totalValue: '',
+    items: [{ desc: '', hsnCode: '', qty: '1', unit: 'NOS', value: '' }] as { desc: string; hsnCode: string; qty: string; unit: string; value: string }[],
+  });
+  const [gpSaving, setGpSaving] = useState(false);
+
+  const addGPItem = () => setGpForm(f => ({ ...f, items: [...f.items, { desc: '', hsnCode: '', qty: '1', unit: 'NOS', value: '' }] }));
+  const removeGPItem = (i: number) => setGpForm(f => ({ ...f, items: f.items.filter((_, idx) => idx !== i) }));
+  const updateGPItem = (i: number, field: string, val: string) => setGpForm(f => ({
+    ...f, items: f.items.map((item, idx) => idx === i ? { ...item, [field]: val } : item),
+  }));
+
+  const createGatePass = async () => {
+    if (!gpForm.partyName) { flash('err', 'Party name required'); return; }
+    if (!gpForm.vehicleNo) { flash('err', 'Vehicle number required'); return; }
+    setGpSaving(true);
+    try {
+      const totalVal = gpForm.items.reduce((s, item) => s + (parseFloat(item.value) || 0), 0);
+      await api.post('/shipments', {
+        gatePassType: gpForm.gatePassType,
+        purpose: gpForm.purpose,
+        partyName: gpForm.partyName,
+        partyAddress: gpForm.partyAddress,
+        partyGstin: gpForm.partyGstin,
+        vehicleNo: gpForm.vehicleNo,
+        driverName: gpForm.driverName,
+        driverMobile: gpForm.driverMobile,
+        transporterName: gpForm.transporterName,
+        totalValue: totalVal || parseFloat(gpForm.totalValue) || 0,
+        gatePassItems: gpForm.items.filter(i => i.desc),
+        productName: gpForm.items.map(i => i.desc).filter(Boolean).join(', ').substring(0, 100) || 'Gate Pass Material',
+        gateInTime: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+      });
+      flash('ok', 'Gate Pass created');
+      setShowGPForm(false);
+      setGpForm({ gatePassType: 'RETURNABLE', purpose: '', partyName: '', partyAddress: '', partyGstin: '', vehicleNo: '', driverName: '', driverMobile: '', transporterName: '', totalValue: '', items: [{ desc: '', hsnCode: '', qty: '1', unit: 'NOS', value: '' }] });
+      load();
+    } catch (e: any) { flash('err', e?.response?.data?.error || 'Failed to create gate pass'); }
+    setGpSaving(false);
+  };
 
   const generateEwb = async (s: Shipment) => {
     setEwbLoading(s.id);
@@ -361,7 +409,13 @@ export default function Shipments() {
       <div className="bg-gradient-to-r from-slate-800 to-slate-900 text-white px-4 py-2.5">
         <div className="flex items-center justify-between mb-1.5">
           <h1 className="text-base font-bold flex items-center gap-1.5"><Scale size={16} /> Weighbridge</h1>
-          <span className="text-[10px] text-slate-400">{new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setShowGPForm(true)}
+              className="px-2.5 py-1 bg-emerald-600 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 hover:bg-emerald-700 active:scale-95">
+              <ClipboardList size={12} /> Gate Pass
+            </button>
+            <span className="text-[10px] text-slate-400">{new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
+          </div>
         </div>
         <div className="flex gap-1.5 overflow-x-auto">
           {[
@@ -533,6 +587,22 @@ export default function Shipments() {
                         {/* ── Expanded panel ── */}
                         {isExp && (
                           <div className="border-t border-gray-100 px-3 py-2 bg-gray-50/50 space-y-2">
+                            {/* Gate Pass type badge */}
+                            {s.gatePassType && (
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                  s.gatePassType === 'RETURNABLE' ? 'bg-blue-100 text-blue-700' :
+                                  s.gatePassType === 'SALE' ? 'bg-green-100 text-green-700' :
+                                  s.gatePassType === 'JOB_WORK' ? 'bg-amber-100 text-amber-700' :
+                                  'bg-red-100 text-red-700'
+                                }`}>
+                                  {s.gatePassType.replace('_', '-')} GATE PASS
+                                </span>
+                                {s.partyName && <span className="text-[10px] text-gray-500">→ {s.partyName}</span>}
+                                {s.purpose && <span className="text-[10px] text-gray-400">({s.purpose})</span>}
+                              </div>
+                            )}
+
                             {/* Driver row */}
                             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                               {s.driverName && <span className="text-gray-700 font-medium">🧑 {s.driverName}</span>}
@@ -655,6 +725,12 @@ export default function Shipments() {
                                 className="flex-1 py-1.5 text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 rounded-lg flex items-center justify-center gap-1 hover:bg-blue-100">
                                 <FileText size={11} /> Challan PDF
                               </button>
+                              {s.gatePassType && (
+                                <button onClick={() => { const token = localStorage.getItem('token'); window.open(`/api/shipments/${s.id}/gate-pass-pdf?token=${token}`, '_blank'); }}
+                                  className="flex-1 py-1.5 text-[10px] font-semibold bg-teal-50 text-teal-700 border border-teal-200 rounded-lg flex items-center justify-center gap-1 hover:bg-teal-100">
+                                  <ClipboardList size={11} /> Gate Pass PDF
+                                </button>
+                              )}
                             </div>
                           </div>
                         )}
@@ -852,6 +928,128 @@ export default function Shipments() {
           </div>
         );
       })()}
+
+      {/* ── Gate Pass Form modal ── */}
+      {showGPForm && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center p-2 pt-8 overflow-y-auto" onClick={() => setShowGPForm(false)}>
+          <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-bold text-sm flex items-center gap-1.5"><ClipboardList size={16} className="text-emerald-600" /> New Gate Pass</h3>
+                <button onClick={() => setShowGPForm(false)} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+              </div>
+
+              <div className="space-y-2">
+                {/* Type + Purpose */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-500 uppercase">Type</label>
+                    <select value={gpForm.gatePassType} onChange={e => setGpForm(f => ({ ...f, gatePassType: e.target.value }))}
+                      className="w-full px-2 py-1.5 text-xs border rounded-lg bg-white focus:ring-2 focus:ring-emerald-200 outline-none">
+                      <option value="RETURNABLE">Returnable</option>
+                      <option value="NON_RETURNABLE">Non-Returnable</option>
+                      <option value="JOB_WORK">Job Work</option>
+                      <option value="SALE">Sale</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-500 uppercase">Purpose</label>
+                    <input value={gpForm.purpose} onChange={e => setGpForm(f => ({ ...f, purpose: e.target.value }))}
+                      placeholder="e.g. Deshelling & Reshelling"
+                      className="w-full px-2 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-emerald-200 outline-none" />
+                  </div>
+                </div>
+
+                {/* Party */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-emerald-600 uppercase">Party Name *</label>
+                    <input value={gpForm.partyName} onChange={e => setGpForm(f => ({ ...f, partyName: e.target.value }))}
+                      className="w-full px-2 py-1.5 text-xs border-2 border-emerald-300 rounded-lg focus:ring-2 focus:ring-emerald-200 outline-none bg-emerald-50" autoFocus />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-500 uppercase">GSTIN</label>
+                    <input value={gpForm.partyGstin} onChange={e => setGpForm(f => ({ ...f, partyGstin: e.target.value }))}
+                      placeholder="e.g. 09AGOPS9267M1Z5"
+                      className="w-full px-2 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-emerald-200 outline-none" />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-gray-500 uppercase">Party Address</label>
+                  <input value={gpForm.partyAddress} onChange={e => setGpForm(f => ({ ...f, partyAddress: e.target.value }))}
+                    className="w-full px-2 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-emerald-200 outline-none" />
+                </div>
+
+                {/* Vehicle */}
+                <div className="grid grid-cols-4 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-emerald-600 uppercase">Vehicle *</label>
+                    <input value={gpForm.vehicleNo} onChange={e => setGpForm(f => ({ ...f, vehicleNo: e.target.value }))}
+                      className="w-full px-2 py-1.5 text-xs border-2 border-emerald-300 rounded-lg focus:ring-2 focus:ring-emerald-200 outline-none bg-emerald-50" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-500 uppercase">Driver</label>
+                    <input value={gpForm.driverName} onChange={e => setGpForm(f => ({ ...f, driverName: e.target.value }))}
+                      className="w-full px-2 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-emerald-200 outline-none" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-500 uppercase">Mobile</label>
+                    <input value={gpForm.driverMobile} onChange={e => setGpForm(f => ({ ...f, driverMobile: e.target.value }))}
+                      className="w-full px-2 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-emerald-200 outline-none" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-500 uppercase">Transporter</label>
+                    <input value={gpForm.transporterName} onChange={e => setGpForm(f => ({ ...f, transporterName: e.target.value }))}
+                      className="w-full px-2 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-emerald-200 outline-none" />
+                  </div>
+                </div>
+
+                {/* Items */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[10px] font-bold text-gray-500 uppercase">Items</label>
+                    <button onClick={addGPItem} className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5 hover:text-emerald-700">
+                      <Plus size={10} /> Add Item
+                    </button>
+                  </div>
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                    {gpForm.items.map((item, i) => (
+                      <div key={i} className="flex gap-1 items-start">
+                        <input value={item.desc} onChange={e => updateGPItem(i, 'desc', e.target.value)}
+                          placeholder="Description" className="flex-[3] px-2 py-1 text-xs border rounded focus:ring-1 focus:ring-emerald-200 outline-none" />
+                        <input value={item.hsnCode} onChange={e => updateGPItem(i, 'hsnCode', e.target.value)}
+                          placeholder="HSN" className="flex-1 px-2 py-1 text-xs border rounded focus:ring-1 focus:ring-emerald-200 outline-none" />
+                        <input type="number" value={item.qty} onChange={e => updateGPItem(i, 'qty', e.target.value)}
+                          placeholder="Qty" className="w-12 px-1 py-1 text-xs border rounded text-center focus:ring-1 focus:ring-emerald-200 outline-none" />
+                        <input type="number" value={item.value} onChange={e => updateGPItem(i, 'value', e.target.value)}
+                          placeholder="Value ₹" className="w-20 px-1 py-1 text-xs border rounded text-right focus:ring-1 focus:ring-emerald-200 outline-none" />
+                        {gpForm.items.length > 1 && (
+                          <button onClick={() => removeGPItem(i)} className="text-gray-300 hover:text-red-500 mt-0.5"><X size={14} /></button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="text-right text-xs font-bold text-gray-600 mt-1">
+                    Total: ₹{gpForm.items.reduce((s, item) => s + (parseFloat(item.value) || 0), 0).toLocaleString('en-IN')}
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-2 mt-3">
+                <button onClick={() => setShowGPForm(false)}
+                  className="flex-1 py-2 text-xs font-semibold bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+                  Cancel
+                </button>
+                <button onClick={createGatePass} disabled={gpSaving}
+                  className="flex-1 py-2 text-xs font-bold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-1">
+                  {gpSaving ? <Loader2 size={14} className="animate-spin" /> : <><ClipboardList size={12} /> Create Gate Pass</>}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

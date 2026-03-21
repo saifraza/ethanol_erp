@@ -1096,6 +1096,15 @@ model Shipment {
   exitTime        String?
   date            DateTime         @default(now())
   remarks         String?
+  // ── Gate Pass (for job work / returnable material) ──
+  gatePassType    String?                  // SALE, RETURNABLE, NON_RETURNABLE, JOB_WORK
+  purpose         String?                  // e.g. "Deshelling & Reshelling"
+  partyName       String?                  // vendor/party for non-sale gate passes
+  partyAddress    String?
+  partyGstin      String?
+  gatePassItems   String?                  // JSON array of items [{desc, hsnCode, qty, unit, value}]
+  totalValue      Float?                   // declared value of goods
+  coveringNote    String?                  // authority letter text
   userId          String?                  // factory user
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

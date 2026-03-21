@@ -93,30 +93,51 @@ router.get('/:id', async (req: Request, res: Response) => {
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-// POST / — Create shipment (Gate Entry)
+// POST / — Create shipment (Gate Entry) or Gate Pass
 router.post('/', async (req: Request, res: Response) => {
   try {
     const b = req.body;
     const capacityTon = parseFloat(b.capacityTon) || 0;
 
+    const data: any = {
+      productName: b.productName || '',
+      customerName: b.customerName || '',
+      destination: b.destination || '',
+      vehicleNo: b.vehicleNo || '',
+      vehicleType: b.vehicleType || '',
+      capacityTon,
+      driverName: b.driverName || '',
+      driverMobile: b.driverMobile || '',
+      transporterName: b.transporterName || '',
+      date: b.date ? new Date(b.date) : new Date(),
+      gateInTime: b.gateInTime || null,
+      status: 'GATE_IN',
+      remarks: b.remarks || null,
+      userId: (req as any).user.id,
+    };
+
+    // Link to dispatch request if provided (sales flow)
+    if (b.dispatchRequestId) {
+      data.dispatchRequest = { connect: { id: b.dispatchRequestId } };
+    }
+
+    // Gate pass fields (job work / returnable flow)
+    if (b.gatePassType) {
+      data.gatePassType = b.gatePassType;
+      data.purpose = b.purpose || null;
+      data.partyName = b.partyName || null;
+      data.partyAddress = b.partyAddress || null;
+      data.partyGstin = b.partyGstin || null;
+      data.gatePassItems = b.gatePassItems ? JSON.stringify(b.gatePassItems) : null;
+      data.totalValue = parseFloat(b.totalValue) || null;
+      data.coveringNote = b.coveringNote || null;
+      // Use party info as customer/destination
+      if (!b.customerName && b.partyName) data.customerName = b.partyName;
+      if (!b.destination && b.partyAddress) data.destination = b.partyAddress;
+    }
+
     const shipment = await prisma.shipment.create({
-      data: {
-        dispatchRequest: { connect: { id: b.dispatchRequestId } },
-        productName: b.productName || '',
-        customerName: b.customerName || '',
-        destination: b.destination || '',
-        vehicleNo: b.vehicleNo || '',
-        vehicleType: b.vehicleType || '',
-        capacityTon,
-        driverName: b.driverName || '',
-        driverMobile: b.driverMobile || '',
-        transporterName: b.transporterName || '',
-        date: b.date ? new Date(b.date) : new Date(),
-        gateInTime: b.gateInTime || null,
-        status: 'GATE_IN',
-        remarks: b.remarks || null,
-        userId: (req as any).user.id,
-      },
+      data,
       include: {
         dispatchRequest: true,
       },
@@ -288,8 +309,12 @@ router.put('/:id', async (req: Request, res: Response) => {
     if (b.weightPerBag !== undefined) updateData.weightPerBag = parseFloat(b.weightPerBag);
 
     // Copy string fields
+    if (b.totalValue !== undefined) updateData.totalValue = parseFloat(b.totalValue);
+
+    // Copy string fields
     ['productName', 'customerName', 'destination', 'vehicleNo', 'vehicleType', 'driverName', 'driverMobile', 'transporterName', 'remarks', 'challanNo', 'ewayBill', 'gatePassNo', 'invoiceRef', 'status',
-     'grBiltyNo', 'deliveryStatus', 'receivedByName', 'receivedByPhone', 'podRemarks', 'insuranceBy', 'insuranceNo', 'insuranceProvider'].forEach(field => {
+     'grBiltyNo', 'deliveryStatus', 'receivedByName', 'receivedByPhone', 'podRemarks', 'insuranceBy', 'insuranceNo', 'insuranceProvider',
+     'gatePassType', 'purpose', 'partyName', 'partyAddress', 'partyGstin', 'gatePassItems', 'coveringNote'].forEach(field => {
       if (b[field] !== undefined) updateData[field] = b[field];
     });
     // Date fields
@@ -659,6 +684,165 @@ router.get('/:id/challan-pdf', async (req: Request, res: Response) => {
     const fY = doc.page.height - 40;
     doc.rect(mL, fY - 5, cW, 1).fill('#4a7c3f');
     doc.fontSize(7).fillColor('#999').text(tmpl.footer, mL, fY + 2, { align: 'center', width: cW });
+
+    doc.end();
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /:id/gate-pass-pdf — Generate Gate Pass cum Challan PDF
+router.get('/:id/gate-pass-pdf', async (req: Request, res: Response) => {
+  try {
+    const shipment = await prisma.shipment.findUnique({ where: { id: req.params.id } });
+    if (!shipment) { res.status(404).json({ error: 'Shipment not found' }); return; }
+
+    const items = shipment.gatePassItems ? JSON.parse(shipment.gatePassItems) : [];
+    const isReturnable = shipment.gatePassType === 'RETURNABLE' || shipment.gatePassType === 'JOB_WORK';
+
+    const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename=GatePass-${shipment.shipmentNo}.pdf`);
+    doc.pipe(res);
+
+    const pageW = doc.page.width;
+    const mL = 40;
+    const mR = pageW - 40;
+    const cW = mR - mL;
+    const lf = 'Helvetica-Bold';
+    const vf = 'Helvetica';
+
+    // Letterhead
+    const letterheadPath = path.resolve(__dirname, '../../../assets/letterhead_img_0.jpeg');
+    if (fs.existsSync(letterheadPath)) {
+      doc.image(letterheadPath, mL, 30, { width: cW, height: 70 });
+      doc.y = 110;
+    } else {
+      doc.fontSize(14).font(lf).text('Mahakaushal Sugar and Power Industries Ltd.', mL, 30, { align: 'center', width: cW });
+      doc.fontSize(8).font(vf).text('GSTIN: 23AAECM3666P1Z1 | Village Bachai, Narsinghpur, MP - 487001', { align: 'center', width: cW });
+      doc.y = 70;
+    }
+
+    // Green bar
+    doc.rect(mL, doc.y, cW, 3).fill('#4a7c3f');
+    doc.y += 10;
+
+    // Title
+    const gpNo = shipment.gatePassNo || `GP-${shipment.shipmentNo}`;
+    doc.fontSize(13).font(lf).fillColor('#1a3a1a').text('GATE PASS CUM CHALLAN', mL, doc.y, { width: cW * 0.5 });
+    if (isReturnable) {
+      doc.fontSize(10).font(lf).fillColor('#b91c1c').text('RETURNABLE', mL + cW * 0.5, doc.y, { width: cW * 0.5, align: 'right' });
+    } else {
+      doc.fontSize(10).font(lf).fillColor('#4a7c3f').text('NON-RETURNABLE', mL + cW * 0.5, doc.y, { width: cW * 0.5, align: 'right' });
+    }
+    doc.y += 22;
+
+    // Thin divider
+    doc.moveTo(mL, doc.y).lineTo(mR, doc.y).lineWidth(0.5).strokeColor('#ddd').stroke();
+    doc.y += 8;
+
+    // Info grid
+    const col2 = pageW / 2 + 20;
+    const y0 = doc.y;
+    const info = (label: string, val: string, x: number, y: number) => {
+      doc.fontSize(8).font(lf).fillColor('#888').text(label, x, y);
+      doc.fontSize(9).font(vf).fillColor('#222').text(val || '—', x + 85, y);
+    };
+
+    info('Gate Pass No:', gpNo, mL, y0);
+    info('Date:', new Date(shipment.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }), col2, y0);
+    info('Vehicle No:', shipment.vehicleNo || '—', mL, y0 + 16);
+    info('Driver:', shipment.driverName || '—', col2, y0 + 16);
+    info('Purpose:', shipment.purpose || '—', mL, y0 + 32);
+    info('Transporter:', shipment.transporterName || '—', col2, y0 + 32);
+    if (shipment.ewayBill) info('E-Way Bill:', shipment.ewayBill, mL, y0 + 48);
+    doc.y = y0 + (shipment.ewayBill ? 68 : 52);
+
+    // Party box
+    const cy = doc.y;
+    doc.rect(mL, cy, cW, 50).lineWidth(0.5).strokeColor('#4a7c3f').fillOpacity(0.03).fillAndStroke('#4a7c3f', '#4a7c3f');
+    doc.fillOpacity(1);
+    doc.fontSize(8).font(lf).fillColor('#4a7c3f').text('PARTY / CONSIGNEE', mL + 10, cy + 6);
+    doc.fontSize(10).font(lf).fillColor('#222').text(shipment.partyName || shipment.customerName || '—', mL + 10, cy + 20);
+    doc.font(vf).fontSize(8).fillColor('#555').text(shipment.partyAddress || shipment.destination || '—', mL + 10, cy + 33, { width: cW / 2 - 20 });
+    if (shipment.partyGstin) doc.fontSize(8).font(vf).fillColor('#555').text(`GSTIN: ${shipment.partyGstin}`, col2, cy + 20);
+    doc.y = cy + 60;
+
+    // Items table
+    const tY = doc.y;
+    const cols = [30, 220, 60, 50, 80, 75];
+    const hdrs = ['#', 'Description', 'HSN', 'Qty', 'Unit', 'Value (₹)'];
+    doc.rect(mL, tY, cW, 20).fill('#4a7c3f');
+    let cx = mL + 4;
+    hdrs.forEach((h, i) => {
+      doc.fontSize(8).font(lf).fillColor('#fff').text(h, cx, tY + 5, { width: cols[i], align: i > 2 ? 'right' : 'left' });
+      cx += cols[i];
+    });
+
+    let rY = tY + 22;
+    let totalVal = 0;
+    items.forEach((item: any, idx: number) => {
+      const bg = idx % 2 === 0 ? '#f8faf8' : '#fff';
+      doc.rect(mL, rY - 2, cW, 18).fill(bg);
+      cx = mL + 4;
+      const rowData = [
+        (idx + 1).toString(),
+        item.desc || item.description || '—',
+        item.hsnCode || '—',
+        item.qty?.toString() || '—',
+        item.unit || 'NOS',
+        item.value ? parseFloat(item.value).toLocaleString('en-IN') : '—',
+      ];
+      rowData.forEach((v, i) => {
+        doc.fontSize(8).font(vf).fillColor('#333').text(v, cx, rY, { width: cols[i], align: i > 2 ? 'right' : 'left' });
+        cx += cols[i];
+      });
+      totalVal += parseFloat(item.value) || 0;
+      rY += 18;
+    });
+
+    // Total row
+    doc.moveTo(mL, rY).lineTo(mR, rY).lineWidth(0.5).strokeColor('#ddd').stroke();
+    rY += 4;
+    doc.fontSize(9).font(lf).fillColor('#1a3a1a').text('Total Value:', mL + 4, rY, { width: 360, align: 'right' });
+    doc.text(`₹${(shipment.totalValue || totalVal).toLocaleString('en-IN')}`, mL + 370, rY, { width: 145, align: 'right' });
+    rY += 20;
+
+    // Covering note (auto-generated authority)
+    if (isReturnable) {
+      doc.rect(mL, rY, cW, 48).lineWidth(0.5).strokeColor('#e5e7eb').stroke();
+      doc.fontSize(8).font(lf).fillColor('#4a7c3f').text('AUTHORITY NOTE', mL + 10, rY + 5);
+      const noteText = shipment.coveringNote || `This material is the sole property of M/s Mahakaushal Sugar & Power Industries Ltd., Bachai, Dist. Narsinghpur (M.P.) - 487001, GST No. 23AAECM3666P1Z1. Sent for ${shipment.purpose || 'job work'}. Material will be returned back. Hence not for sale.`;
+      doc.fontSize(7.5).font(vf).fillColor('#555').text(noteText, mL + 10, rY + 18, { width: cW - 20 });
+      rY += 56;
+    }
+
+    // Weight summary (if available)
+    if (shipment.weightTare || shipment.weightGross) {
+      doc.rect(mL, rY, cW, 35).lineWidth(0.5).strokeColor('#e5e7eb').stroke();
+      doc.fontSize(9).font(lf).fillColor('#4a7c3f').text('WEIGHT', mL + 10, rY + 6);
+      rY += 18;
+      doc.fontSize(9).font(vf).fillColor('#333');
+      doc.text(`Tare: ${shipment.weightTare ? (shipment.weightTare / 1000).toFixed(2) + ' MT' : '—'}`, mL + 10, rY);
+      doc.text(`Gross: ${shipment.weightGross ? (shipment.weightGross / 1000).toFixed(2) + ' MT' : '—'}`, mL + 170, rY);
+      doc.font(lf).text(`Net: ${shipment.weightNet ? (shipment.weightNet / 1000).toFixed(2) + ' MT' : '—'}`, mL + 340, rY);
+      rY += 25;
+    }
+
+    // Signatures
+    rY = Math.max(rY + 10, doc.page.height - 120);
+    doc.fontSize(8).font(vf).fillColor('#555');
+    doc.text('________________________', mL, rY, { width: 120, align: 'center' });
+    doc.text('Store Clerk', mL, rY + 12, { width: 120, align: 'center' });
+    doc.text('________________________', mL + 140, rY, { width: 120, align: 'center' });
+    doc.text('Store Incharge', mL + 140, rY + 12, { width: 120, align: 'center' });
+    doc.text('________________________', mL + 280, rY, { width: 120, align: 'center' });
+    doc.text('Received By', mL + 280, rY + 12, { width: 120, align: 'center' });
+    doc.text('________________________', mR - 120, rY, { width: 120, align: 'center' });
+    doc.text('Authorized Signatory', mR - 120, rY + 12, { width: 120, align: 'center' });
+
+    // Footer
+    const fY = doc.page.height - 40;
+    doc.rect(mL, fY - 5, cW, 1).fill('#4a7c3f');
+    doc.fontSize(7).fillColor('#999').text('Mahakaushal Sugar and Power Industries Ltd. | Village Bachai, Narsinghpur, M.P. - 487001', mL, fY + 2, { align: 'center', width: cW });
 
     doc.end();
   } catch (err: any) { res.status(500).json({ error: err.message }); }
