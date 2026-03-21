@@ -733,12 +733,28 @@ export default function GoodsReceipts() {
                       {grn.status}
                     </span>
                     {grn.status === 'DRAFT' && (
-                      <button
-                        onClick={() => handleConfirmGRN(grn.id)}
-                        className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition"
-                      >
-                        Confirm GRN
-                      </button>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleConfirmGRN(grn.id)}
+                          className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition"
+                        >
+                          Confirm GRN
+                        </button>
+                        <button
+                          onClick={async () => {
+                            if (!confirm(`Delete GRN-${grn.grnNo}?`)) return;
+                            try {
+                              await api.delete(`/goods-receipts/${grn.id}`);
+                              setSuccessMessage('GRN deleted');
+                              await fetchGRNs();
+                              setTimeout(() => setSuccessMessage(null), 3000);
+                            } catch (err) { console.error(err); }
+                          }}
+                          className="px-4 py-2 bg-red-50 text-red-700 text-sm font-medium rounded-lg border border-red-300 hover:bg-red-100 transition"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>

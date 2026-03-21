@@ -989,6 +989,20 @@ const PurchaseOrders: React.FC = () => {
                               : nextStatus}
                         </button>
                       ))}
+                      {po.status === 'DRAFT' && (
+                        <button
+                          onClick={async () => {
+                            if (!confirm(`Delete PO-${po.poNo}?`)) return;
+                            try {
+                              await api.delete(`/purchase-orders/${po.id}`);
+                              fetchData();
+                            } catch (err) { console.error(err); }
+                          }}
+                          className="px-4 py-2 rounded-lg font-medium text-sm transition bg-red-50 text-red-700 border border-red-300 hover:bg-red-100 flex items-center gap-1"
+                        >
+                          <Trash2 className="w-4 h-4" /> Delete
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

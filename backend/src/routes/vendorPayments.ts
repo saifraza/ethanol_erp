@@ -148,7 +148,7 @@ router.post('/', async (req: Request, res: Response) => {
         tdsSection: b.tdsSection || null,
         isAdvance: b.isAdvance || false,
         remarks: b.remarks || null,
-        paymentDate: new Date(),
+        paymentDate: b.paymentDate ? new Date(b.paymentDate) : new Date(),
         userId: (req as any).user.id,
       },
     });

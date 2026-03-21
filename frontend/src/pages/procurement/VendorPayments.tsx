@@ -57,6 +57,7 @@ interface FormData {
   tdsSection: string;
   isAdvance: boolean;
   remarks: string;
+  paymentDate: string;
 }
 
 const VendorPayments: React.FC = () => {
@@ -80,6 +81,7 @@ const VendorPayments: React.FC = () => {
     tdsSection: '',
     isAdvance: false,
     remarks: '',
+    paymentDate: new Date().toISOString().split('T')[0],
   });
 
   useEffect(() => {
@@ -117,8 +119,11 @@ const VendorPayments: React.FC = () => {
 
   const fetchInvoices = async (vendorId: string) => {
     try {
-      const res = await api.get(`/vendor-invoices?vendorId=${vendorId}&status=APPROVED`);
-      setInvoices(res.data.invoices || []);
+      const res = await api.get(`/vendor-invoices?vendorId=${vendorId}`);
+      const payable = (res.data.invoices || []).filter((inv: any) =>
+        inv.balanceAmount > 0 && !['CANCELLED', 'PAID'].includes(inv.status)
+      );
+      setInvoices(payable);
     } catch (err) {
       console.error('Failed to fetch invoices', err);
       setInvoices([]);
@@ -139,7 +144,7 @@ const VendorPayments: React.FC = () => {
     try {
       const res = await api.get('/vendor-payments/outstanding');
       const sorted = (res.data.outstanding || []).sort(
-        (a, b) => b.totalOutstanding - a.totalOutstanding
+        (a: any, b: any) => b.totalOutstanding - a.totalOutstanding
       );
       setOutstanding(sorted);
     } catch (err) {
@@ -180,6 +185,7 @@ const VendorPayments: React.FC = () => {
         tdsSection: formData.tdsSection,
         isAdvance: formData.isAdvance,
         remarks: formData.remarks,
+        paymentDate: formData.paymentDate || new Date().toISOString().split('T')[0],
       };
 
       await api.post('/vendor-payments', payload);
@@ -194,6 +200,7 @@ const VendorPayments: React.FC = () => {
         tdsSection: '',
         isAdvance: false,
         remarks: '',
+        paymentDate: new Date().toISOString().split('T')[0],
       });
       setSelectedVendor('');
       setInvoices([]);
@@ -314,6 +321,20 @@ const VendorPayments: React.FC = () => {
                       </select>
                     </div>
 
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Payment Date *</label>
+                      <input
+                        type="date"
+                        name="paymentDate"
+                        value={formData.paymentDate}
+                        onChange={handleFormChange}
+                        required
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Payment Mode *</label>
                       <select

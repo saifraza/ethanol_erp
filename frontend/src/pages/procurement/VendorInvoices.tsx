@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Receipt, X } from 'lucide-react';
+import { Receipt, X, Pencil } from 'lucide-react';
 import api from '../../services/api';
 
 interface Vendor {
@@ -236,6 +236,110 @@ const VendorInvoices: React.FC = () => {
     } catch (err) {
       setError('Failed to update status');
       console.error(err);
+    }
+  };
+
+  const [editInvoice, setEditInvoice] = useState<VendorInvoice | null>(null);
+  const [editForm, setEditForm] = useState<FormData>({
+    vendorId: '', poId: '', grnId: '', vendorInvNo: '', vendorInvDate: '', invoiceDate: '', dueDate: '',
+    productName: '', quantity: '', unit: '', rate: '', supplyType: 'INTRA_STATE', gstPercent: '',
+    isRCM: false, freightCharge: '', loadingCharge: '', otherCharges: '', roundOff: '',
+    tdsSection: '', tdsPercent: '', remarks: '',
+  });
+  const [editSaving, setEditSaving] = useState(false);
+
+  const startEdit = (inv: VendorInvoice) => {
+    setEditInvoice(inv);
+    setEditForm({
+      vendorId: inv.vendor?.id || '',
+      poId: (inv.po as any)?.id || '',
+      grnId: (inv.grn as any)?.id || '',
+      vendorInvNo: inv.vendorInvNo || '',
+      vendorInvDate: inv.vendorInvDate ? inv.vendorInvDate.slice(0, 10) : '',
+      invoiceDate: inv.invoiceDate ? inv.invoiceDate.slice(0, 10) : '',
+      dueDate: (inv as any).dueDate ? (inv as any).dueDate.slice(0, 10) : '',
+      productName: inv.productName || '',
+      quantity: String(inv.quantity || ''),
+      unit: inv.unit || '',
+      rate: String(inv.rate || ''),
+      supplyType: inv.supplyType || 'INTRA_STATE',
+      gstPercent: String(inv.gstPercent || ''),
+      isRCM: inv.isRCM || false,
+      freightCharge: String((inv as any).freightCharge || ''),
+      loadingCharge: String((inv as any).loadingCharge || ''),
+      otherCharges: String((inv as any).otherCharges || ''),
+      roundOff: String((inv as any).roundOff || ''),
+      tdsSection: (inv as any).tdsSection || '',
+      tdsPercent: String((inv as any).tdsPercent || ''),
+      remarks: (inv as any).remarks || '',
+    });
+  };
+
+  const handleEditFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const { name, value, type } = e.target;
+    setEditForm(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value,
+    }));
+  };
+
+  const computeEditValues = () => {
+    const quantity = parseFloat(editForm.quantity) || 0;
+    const rate = parseFloat(editForm.rate) || 0;
+    const gstPercent = parseFloat(editForm.gstPercent) || 0;
+    const freightCharge = parseFloat(editForm.freightCharge) || 0;
+    const loadingCharge = parseFloat(editForm.loadingCharge) || 0;
+    const otherCharges = parseFloat(editForm.otherCharges) || 0;
+    const roundOff = parseFloat(editForm.roundOff) || 0;
+    const tdsPercent = parseFloat(editForm.tdsPercent) || 0;
+    const subtotal = quantity * rate;
+    let gst = 0;
+    if (editForm.supplyType === 'INTRA_STATE') {
+      gst = (subtotal * gstPercent) / 100 / 2;
+    } else {
+      gst = (subtotal * gstPercent) / 100;
+    }
+    const chargesTotal = freightCharge + loadingCharge + otherCharges;
+    const beforeTds = subtotal + gst + chargesTotal + roundOff;
+    const tds = (beforeTds * tdsPercent) / 100;
+    return { subtotal, gst, chargesTotal, beforeTds, tds, netPayable: beforeTds - tds };
+  };
+
+  const handleEditSave = async () => {
+    if (!editInvoice) return;
+    try {
+      setEditSaving(true);
+      const payload = {
+        vendorId: editForm.vendorId,
+        poId: editForm.poId || null,
+        grnId: editForm.grnId || null,
+        vendorInvNo: editForm.vendorInvNo,
+        vendorInvDate: editForm.vendorInvDate,
+        invoiceDate: editForm.invoiceDate,
+        dueDate: editForm.dueDate,
+        productName: editForm.productName,
+        quantity: parseFloat(editForm.quantity),
+        unit: editForm.unit,
+        rate: parseFloat(editForm.rate),
+        supplyType: editForm.supplyType,
+        gstPercent: parseFloat(editForm.gstPercent),
+        isRCM: editForm.isRCM,
+        freightCharge: parseFloat(editForm.freightCharge) || 0,
+        loadingCharge: parseFloat(editForm.loadingCharge) || 0,
+        otherCharges: parseFloat(editForm.otherCharges) || 0,
+        roundOff: parseFloat(editForm.roundOff) || 0,
+        tdsSection: editForm.tdsSection,
+        tdsPercent: parseFloat(editForm.tdsPercent) || 0,
+        remarks: editForm.remarks,
+      };
+      await api.put(`/vendor-invoices/${editInvoice.id}`, payload);
+      setEditInvoice(null);
+      fetchData();
+    } catch (err: any) {
+      setError(err?.response?.data?.error || 'Failed to update invoice');
+      console.error(err);
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -741,12 +845,20 @@ const VendorInvoices: React.FC = () => {
 
                 <div className="flex gap-2">
                   {invoice.status === 'PENDING' && (
-                    <button
-                      onClick={() => handleStatusChange(invoice.id, 'VERIFIED')}
-                      className="px-4 py-1 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors font-medium"
-                    >
-                      Verify
-                    </button>
+                    <>
+                      <button
+                        onClick={() => startEdit(invoice)}
+                        className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors font-medium flex items-center gap-1"
+                      >
+                        <Pencil size={14} /> Edit
+                      </button>
+                      <button
+                        onClick={() => handleStatusChange(invoice.id, 'VERIFIED')}
+                        className="px-4 py-1 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors font-medium"
+                      >
+                        Verify
+                      </button>
+                    </>
                   )}
                   {invoice.status === 'VERIFIED' && (
                     <button
@@ -768,6 +880,184 @@ const VendorInvoices: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Edit Invoice Modal */}
+      {editInvoice && (
+        <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 overflow-y-auto py-8">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl mx-4">
+            <div className="flex justify-between items-center p-6 border-b">
+              <h2 className="text-xl font-bold text-gray-900">Edit Invoice — {editInvoice.vendorInvNo}</h2>
+              <button onClick={() => setEditInvoice(null)} className="text-gray-400 hover:text-gray-600"><X size={24} /></button>
+            </div>
+            <div className="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Vendor *</label>
+                  <select name="vendorId" value={editForm.vendorId} onChange={handleEditFormChange} required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent">
+                    <option value="">Select Vendor</option>
+                    {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">PO</label>
+                  <select name="poId" value={editForm.poId} onChange={handleEditFormChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent">
+                    <option value="">Select PO</option>
+                    {pos.map(p => <option key={p.id} value={p.id}>{p.poNo}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">GRN</label>
+                  <select name="grnId" value={editForm.grnId} onChange={handleEditFormChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent">
+                    <option value="">Select GRN</option>
+                    {grns.map(g => <option key={g.id} value={g.id}>{g.grnNo}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-4 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Vendor Invoice No *</label>
+                  <input type="text" name="vendorInvNo" value={editForm.vendorInvNo} onChange={handleEditFormChange} required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Vendor Invoice Date *</label>
+                  <input type="date" name="vendorInvDate" value={editForm.vendorInvDate} onChange={handleEditFormChange} required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Our Invoice Date *</label>
+                  <input type="date" name="invoiceDate" value={editForm.invoiceDate} onChange={handleEditFormChange} required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Due Date</label>
+                  <input type="date" name="dueDate" value={editForm.dueDate} onChange={handleEditFormChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-4 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Product Name *</label>
+                  <input type="text" name="productName" value={editForm.productName} onChange={handleEditFormChange} required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Quantity *</label>
+                  <input type="number" name="quantity" value={editForm.quantity} onChange={handleEditFormChange} required step="0.01"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Unit *</label>
+                  <input type="text" name="unit" value={editForm.unit} onChange={handleEditFormChange} required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Rate *</label>
+                  <input type="number" name="rate" value={editForm.rate} onChange={handleEditFormChange} required step="0.01"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-4 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Supply Type</label>
+                  <select name="supplyType" value={editForm.supplyType} onChange={handleEditFormChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent">
+                    <option value="INTRA_STATE">Intra State</option>
+                    <option value="INTER_STATE">Inter State</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">GST %</label>
+                  <input type="number" name="gstPercent" value={editForm.gstPercent} onChange={handleEditFormChange} step="0.01"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
+                </div>
+                <div className="flex items-end">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" name="isRCM" checked={editForm.isRCM} onChange={handleEditFormChange} className="w-4 h-4 rounded border-gray-300" />
+                    <span className="text-sm font-medium text-gray-700">RCM</span>
+                  </label>
+                </div>
+                <div></div>
+              </div>
+
+              <div className="grid grid-cols-4 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Freight</label>
+                  <input type="number" name="freightCharge" value={editForm.freightCharge} onChange={handleEditFormChange} step="0.01"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Loading</label>
+                  <input type="number" name="loadingCharge" value={editForm.loadingCharge} onChange={handleEditFormChange} step="0.01"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Other Charges</label>
+                  <input type="number" name="otherCharges" value={editForm.otherCharges} onChange={handleEditFormChange} step="0.01"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Round Off</label>
+                  <input type="number" name="roundOff" value={editForm.roundOff} onChange={handleEditFormChange} step="0.01"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">TDS Section</label>
+                  <input type="text" name="tdsSection" value={editForm.tdsSection} onChange={handleEditFormChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">TDS %</label>
+                  <input type="number" name="tdsPercent" value={editForm.tdsPercent} onChange={handleEditFormChange} step="0.01"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Remarks</label>
+                  <input type="text" name="remarks" value={editForm.remarks} onChange={handleEditFormChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
+                </div>
+              </div>
+
+              {(editForm.quantity && editForm.rate && editForm.gstPercent) && (
+                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                  {(() => {
+                    const computed = computeEditValues();
+                    return (
+                      <div className="grid grid-cols-3 gap-4 text-sm">
+                        <div className="flex justify-between"><span className="text-gray-600">Subtotal:</span><span className="font-medium">₹{computed.subtotal.toFixed(2)}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-600">GST:</span><span className="font-medium">₹{computed.gst.toFixed(2)}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-600">Charges:</span><span className="font-medium">₹{computed.chargesTotal.toFixed(2)}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-600">TDS:</span><span className="font-medium">₹{computed.tds.toFixed(2)}</span></div>
+                        <div className="flex justify-between font-bold text-base border-t pt-2"><span>Total:</span><span>₹{computed.beforeTds.toFixed(2)}</span></div>
+                        <div className="flex justify-between font-bold text-base border-t pt-2"><span>Net Payable:</span><span className="text-orange-600">₹{computed.netPayable.toFixed(2)}</span></div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+            <div className="flex gap-3 p-6 border-t">
+              <button onClick={handleEditSave} disabled={editSaving}
+                className="px-6 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors font-medium disabled:opacity-50">
+                {editSaving ? 'Saving...' : 'Save Changes'}
+              </button>
+              <button onClick={() => setEditInvoice(null)}
+                className="px-6 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors font-medium">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

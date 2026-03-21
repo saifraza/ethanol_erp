@@ -238,4 +238,46 @@ router.put('/:id/status', async (req: Request, res: Response) => {
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
+// DELETE /:id — delete GRN (DRAFT only), reverse stock and PO line updates
+router.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    const grn = await prisma.goodsReceipt.findUnique({
+      where: { id: req.params.id },
+      include: { lines: true },
+    });
+    if (!grn) return res.status(404).json({ error: 'GRN not found' });
+    if (grn.status !== 'DRAFT') {
+      return res.status(400).json({ error: 'Can only delete GRN in DRAFT status' });
+    }
+
+    // Reverse PO line and material stock updates
+    for (const line of grn.lines) {
+      if (line.poLineId) {
+        const poLine = await prisma.pOLine.findUnique({ where: { id: line.poLineId } });
+        if (poLine) {
+          await prisma.pOLine.update({
+            where: { id: line.poLineId },
+            data: {
+              receivedQty: Math.max(0, poLine.receivedQty - line.acceptedQty),
+              pendingQty: poLine.quantity - Math.max(0, poLine.receivedQty - line.acceptedQty),
+            },
+          });
+        }
+      }
+      if (line.materialId) {
+        const mat = await prisma.material.findUnique({ where: { id: line.materialId } });
+        if (mat) {
+          await prisma.material.update({
+            where: { id: line.materialId },
+            data: { currentStock: Math.max(0, mat.currentStock - line.acceptedQty) },
+          });
+        }
+      }
+    }
+
+    await prisma.goodsReceipt.delete({ where: { id: req.params.id } });
+    res.json({ ok: true });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
 export default router;

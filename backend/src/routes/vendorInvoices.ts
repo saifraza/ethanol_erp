@@ -213,6 +213,65 @@ router.post('/', async (req: Request, res: Response) => {
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
+// PUT /:id — edit vendor invoice (only PENDING status)
+router.put('/:id', async (req: Request, res: Response) => {
+  try {
+    const existing = await prisma.vendorInvoice.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: 'Invoice not found' });
+    if (existing.status !== 'PENDING') {
+      return res.status(400).json({ error: 'Can only edit invoices in PENDING status' });
+    }
+
+    const b = req.body;
+    const quantity = b.quantity !== undefined ? parseFloat(b.quantity) : existing.quantity;
+    const rate = b.rate !== undefined ? parseFloat(b.rate) : existing.rate;
+    const gstPercent = b.gstPercent !== undefined ? parseFloat(b.gstPercent) : existing.gstPercent;
+    const freightCharge = b.freightCharge !== undefined ? parseFloat(b.freightCharge) : existing.freightCharge;
+    const loadingCharge = b.loadingCharge !== undefined ? parseFloat(b.loadingCharge) : existing.loadingCharge;
+    const otherCharges = b.otherCharges !== undefined ? parseFloat(b.otherCharges) : existing.otherCharges;
+    const roundOff = b.roundOff !== undefined ? parseFloat(b.roundOff) : existing.roundOff;
+    const tdsPercent = b.tdsPercent !== undefined ? parseFloat(b.tdsPercent) : existing.tdsPercent;
+    const supplyType = b.supplyType || existing.supplyType;
+
+    const subtotal = quantity * rate;
+    let cgstAmount = 0, sgstAmount = 0, igstAmount = 0;
+    if (supplyType === 'INTRA_STATE') {
+      cgstAmount = subtotal * ((gstPercent / 2) / 100);
+      sgstAmount = subtotal * ((gstPercent / 2) / 100);
+    } else {
+      igstAmount = subtotal * (gstPercent / 100);
+    }
+    const totalGst = cgstAmount + sgstAmount + igstAmount;
+    const isRCM = b.isRCM !== undefined ? b.isRCM : existing.isRCM;
+    const totalAmount = subtotal + totalGst + freightCharge + loadingCharge + otherCharges + roundOff;
+    const tdsAmount = subtotal * (tdsPercent / 100);
+    const netPayable = totalAmount - tdsAmount;
+    const balanceAmount = netPayable - (existing.paidAmount || 0);
+
+    const invoice = await prisma.vendorInvoice.update({
+      where: { id: req.params.id },
+      data: {
+        vendorInvNo: b.vendorInvNo ?? existing.vendorInvNo,
+        vendorInvDate: b.vendorInvDate ? new Date(b.vendorInvDate) : existing.vendorInvDate,
+        invoiceDate: b.invoiceDate ? new Date(b.invoiceDate) : existing.invoiceDate,
+        dueDate: b.dueDate ? new Date(b.dueDate) : existing.dueDate,
+        productName: b.productName ?? existing.productName,
+        quantity, unit: b.unit || existing.unit, rate, subtotal,
+        supplyType, gstPercent, isRCM,
+        cgstAmount, sgstAmount, igstAmount, totalGst,
+        rcmCgst: isRCM ? cgstAmount : 0, rcmSgst: isRCM ? sgstAmount : 0, rcmIgst: isRCM ? igstAmount : 0,
+        freightCharge, loadingCharge, otherCharges, roundOff,
+        totalAmount, tdsSection: b.tdsSection ?? existing.tdsSection,
+        tdsPercent, tdsAmount, netPayable, balanceAmount: Math.max(0, balanceAmount),
+        remarks: b.remarks ?? existing.remarks,
+        poId: b.poId !== undefined ? (b.poId || null) : existing.poId,
+        grnId: b.grnId !== undefined ? (b.grnId || null) : existing.grnId,
+      },
+    });
+    res.json(invoice);
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
 // PUT /:id/status — status transitions
 router.put('/:id/status', async (req: Request, res: Response) => {
   try {

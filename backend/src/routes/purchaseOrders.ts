@@ -12,7 +12,7 @@ router.get('/', async (req: Request, res: Response) => {
     const status = req.query.status as string | undefined;
     const vendorId = req.query.vendorId as string | undefined;
     const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
+    const limit = parseInt(req.query.limit as string) || 500;
 
     const where: any = {};
     if (status) where.status = status;
@@ -218,11 +218,12 @@ router.put('/:id/status', async (req: Request, res: Response) => {
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-// PUT /:id — update PO details (only if DRAFT)
+// PUT /:id — update PO details and lines (only if DRAFT)
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const po = await prisma.purchaseOrder.findUnique({
       where: { id: req.params.id },
+      include: { lines: true },
     });
     if (!po) return res.status(404).json({ error: 'PO not found' });
     if (po.status !== 'DRAFT') {
@@ -230,6 +231,92 @@ router.put('/:id', async (req: Request, res: Response) => {
     }
 
     const b = req.body;
+
+    // If lines are provided, rebuild them
+    if (b.lines && Array.isArray(b.lines)) {
+      // Look up materials for auto-fill
+      const materialIds = b.lines.map((l: any) => l.materialId).filter(Boolean);
+      const materialsMap: Record<string, any> = {};
+      if (materialIds.length > 0) {
+        const mats = await prisma.material.findMany({ where: { id: { in: materialIds } } });
+        mats.forEach((m: any) => { materialsMap[m.id] = m; });
+      }
+
+      const supplyType = b.supplyType || po.supplyType;
+      const processedLines = b.lines.map((line: any) => {
+        const mat = line.materialId ? materialsMap[line.materialId] : null;
+        const quantity = parseFloat(line.quantity) || 0;
+        const rate = parseFloat(line.rate) || 0;
+        const discountPercent = parseFloat(line.discountPercent) || 0;
+        const gstPercent = parseFloat(line.gstPercent) || (mat?.gstPercent || 0);
+
+        const amount = quantity * rate;
+        const discountAmount = amount * (discountPercent / 100);
+        const taxableAmount = amount - discountAmount;
+
+        let cgstPercent = 0, sgstPercent = 0, igstPercent = 0;
+        let cgstAmount = 0, sgstAmount = 0, igstAmount = 0;
+
+        if (supplyType === 'INTRA_STATE') {
+          cgstPercent = gstPercent / 2; sgstPercent = gstPercent / 2;
+          cgstAmount = taxableAmount * (cgstPercent / 100);
+          sgstAmount = taxableAmount * (sgstPercent / 100);
+        } else if (supplyType === 'INTER_STATE') {
+          igstPercent = gstPercent;
+          igstAmount = taxableAmount * (igstPercent / 100);
+        }
+
+        const totalGst = cgstAmount + sgstAmount + igstAmount;
+        const lineTotal = taxableAmount + totalGst;
+
+        return {
+          materialId: line.materialId || null, description: line.description || mat?.name || '',
+          hsnCode: line.hsnCode || mat?.hsnCode || '', quantity, unit: line.unit || mat?.unit || 'KG',
+          rate, discountPercent, discountAmount, gstPercent, amount, taxableAmount,
+          cgstPercent, cgstAmount, sgstPercent, sgstAmount, igstPercent, igstAmount,
+          totalGst, lineTotal, isRCM: line.isRCM || false, pendingQty: quantity, receivedQty: 0,
+        };
+      });
+
+      // Delete old lines and create new ones
+      await prisma.pOLine.deleteMany({ where: { poId: po.id } });
+
+      const subtotal = processedLines.reduce((s: number, l: any) => s + l.amount, 0);
+      const totalCgst = processedLines.reduce((s: number, l: any) => s + l.cgstAmount, 0);
+      const totalSgst = processedLines.reduce((s: number, l: any) => s + l.sgstAmount, 0);
+      const totalIgst = processedLines.reduce((s: number, l: any) => s + l.igstAmount, 0);
+      const totalGst = totalCgst + totalSgst + totalIgst;
+      const freightCharge = parseFloat(b.freightCharge) ?? po.freightCharge;
+      const otherCharges = parseFloat(b.otherCharges) ?? po.otherCharges;
+      const roundOff = parseFloat(b.roundOff) ?? po.roundOff;
+      const grandTotal = subtotal + totalGst + freightCharge + otherCharges + roundOff;
+
+      const vendor = await prisma.vendor.findUnique({ where: { id: b.vendorId || po.vendorId } });
+      let tdsAmount = 0;
+      if (vendor?.tdsApplicable) tdsAmount = subtotal * ((vendor.tdsPercent || 0) / 100);
+
+      const updated = await prisma.purchaseOrder.update({
+        where: { id: po.id },
+        data: {
+          vendorId: b.vendorId || po.vendorId,
+          poDate: b.poDate ? new Date(b.poDate) : po.poDate,
+          deliveryDate: b.deliveryDate ? new Date(b.deliveryDate) : po.deliveryDate,
+          supplyType: supplyType, placeOfSupply: b.placeOfSupply ?? po.placeOfSupply,
+          paymentTerms: b.paymentTerms ?? po.paymentTerms,
+          creditDays: b.creditDays !== undefined ? parseInt(b.creditDays) : po.creditDays,
+          deliveryAddress: b.deliveryAddress ?? po.deliveryAddress,
+          transportMode: b.transportMode ?? po.transportMode,
+          remarks: b.remarks ?? po.remarks,
+          subtotal, totalCgst, totalSgst, totalIgst, totalGst,
+          freightCharge, otherCharges, roundOff, grandTotal, tdsAmount,
+          lines: { create: processedLines },
+        },
+        include: { lines: true },
+      });
+      return res.json(updated);
+    }
+
+    // Header-only update (no lines provided)
     const updated = await prisma.purchaseOrder.update({
       where: { id: req.params.id },
       data: {
