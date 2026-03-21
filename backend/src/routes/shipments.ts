@@ -10,6 +10,7 @@ import {
 import PDFDocument from 'pdfkit';
 import path from 'path';
 import fs from 'fs';
+import { drawLetterhead } from '../utils/letterhead';
 
 const router = Router();
 
@@ -563,20 +564,9 @@ router.get('/:id/challan-pdf', async (req: Request, res: Response) => {
     const mR = pageW - 40;
     const cW = mR - mL;
 
-    // Letterhead
-    const letterheadPath = path.resolve(__dirname, '../../../assets/letterhead_img_0.jpeg');
-    if (fs.existsSync(letterheadPath)) {
-      doc.image(letterheadPath, mL, 30, { width: cW, height: 70 });
-      doc.y = 110;
-    } else {
-      doc.fontSize(14).font('Helvetica-Bold').text('Mahakaushal Sugar and Power Industries Ltd.', mL, 30, { align: 'center', width: cW });
-      doc.fontSize(8).font('Helvetica').text('GSTIN: 23AAECM3666P1Z1 | Village Bachai, Narsinghpur, MP - 487001', { align: 'center', width: cW });
-      doc.y = 70;
-    }
-
-    // Green accent bar
-    doc.rect(mL, doc.y, cW, 3).fill('#4a7c3f');
-    doc.y += 10;
+    // Letterhead (HD vector)
+    const afterLH = drawLetterhead(doc, mL, cW);
+    doc.y = afterLH + 4;
 
     // Title + Barcode row
     const challanRef = shipment.challanNo || `DC-${shipment.shipmentNo}`;
@@ -710,20 +700,9 @@ router.get('/:id/gate-pass-pdf', async (req: Request, res: Response) => {
     const lf = 'Helvetica-Bold';
     const vf = 'Helvetica';
 
-    // Letterhead
-    const letterheadPath = path.resolve(__dirname, '../../../assets/letterhead_img_0.jpeg');
-    if (fs.existsSync(letterheadPath)) {
-      doc.image(letterheadPath, mL, 30, { width: cW, height: 70 });
-      doc.y = 110;
-    } else {
-      doc.fontSize(14).font(lf).text('Mahakaushal Sugar and Power Industries Ltd.', mL, 30, { align: 'center', width: cW });
-      doc.fontSize(8).font(vf).text('GSTIN: 23AAECM3666P1Z1 | Village Bachai, Narsinghpur, MP - 487001', { align: 'center', width: cW });
-      doc.y = 70;
-    }
-
-    // Green bar
-    doc.rect(mL, doc.y, cW, 3).fill('#4a7c3f');
-    doc.y += 10;
+    // Letterhead (HD vector)
+    const afterLH2 = drawLetterhead(doc, mL, cW);
+    doc.y = afterLH2 + 4;
 
     // Title
     const gpNo = shipment.gatePassNo || `GP-${shipment.shipmentNo}`;

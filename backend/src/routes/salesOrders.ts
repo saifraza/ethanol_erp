@@ -4,6 +4,7 @@ import { authenticate, authorize } from '../middleware/auth';
 import PDFDocument from 'pdfkit';
 import path from 'path';
 import fs from 'fs';
+import { drawLetterhead } from '../utils/letterhead';
 
 const router = Router();
 
@@ -344,38 +345,9 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
     const marginR = 40;
     const contentW = pageW - marginL - marginR;
 
-    // ── Letterhead ──
-    const letterheadPath = path.resolve(__dirname, '../../../assets/letterhead_img_0.jpeg');
-    const logoPath = path.resolve(__dirname, '../../../assets/MSPIL_logo_transparent.png');
-
-    if (fs.existsSync(letterheadPath)) {
-      doc.image(letterheadPath, marginL, 30, { width: contentW, height: 70 });
-      doc.moveDown(0.5);
-      doc.y = 110;
-    } else if (fs.existsSync(logoPath)) {
-      // Fallback: logo + text header
-      doc.image(logoPath, marginL, 30, { width: 60 });
-      doc.fontSize(16).font('Helvetica-Bold')
-        .text('Mahakaushal Sugar and Power Industries Ltd.', marginL + 70, 35, { width: contentW - 70 });
-      doc.fontSize(8).font('Helvetica')
-        .text('CIN: U01543MP2005PLC017514, GSTIN: 23AAECM3666P1Z1', marginL + 70, 55, { width: contentW - 70 })
-        .text('Regd off: SF-11, Second Floor, Aakriti Business Center, Aakriti Eco city, Bawadiya Kalan, Bhopal-462039', marginL + 70, 65, { width: contentW - 70 })
-        .text('Admin off & Factory: Village Bachai, Dist. Narsinghpur (M.P.) - 487001', marginL + 70, 75, { width: contentW - 70 })
-        .text('E-mail: mspil.acc@gmail.com | mspil.power@gmail.com', marginL + 70, 85, { width: contentW - 70 });
-      doc.y = 110;
-    } else {
-      // Pure text fallback
-      doc.fontSize(16).font('Helvetica-Bold')
-        .text('Mahakaushal Sugar and Power Industries Ltd.', marginL, 30, { align: 'center', width: contentW });
-      doc.fontSize(8).font('Helvetica')
-        .text('CIN: U01543MP2005PLC017514 | GSTIN: 23AAECM3666P1Z1', { align: 'center', width: contentW })
-        .text('Village Bachai, Dist. Narsinghpur (M.P.) - 487001 | mspil.acc@gmail.com', { align: 'center', width: contentW });
-      doc.y = 80;
-    }
-
-    // ── Divider line ──
-    const afterHeader = doc.y;
-    doc.moveTo(marginL, afterHeader).lineTo(pageW - marginR, afterHeader).lineWidth(1.5).strokeColor('#4a7c3f').stroke();
+    // ── Letterhead (HD vector) ──
+    const afterHeader = drawLetterhead(doc, marginL, contentW);
+    doc.y = afterHeader + 2;
     doc.y = afterHeader + 10;
 
     // ── Title ──

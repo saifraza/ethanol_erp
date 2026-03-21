@@ -4,6 +4,7 @@ import { authenticate } from '../middleware/auth';
 import PDFDocument from 'pdfkit';
 import path from 'path';
 import fs from 'fs';
+import { drawLetterhead } from '../utils/letterhead';
 
 const router = Router();
 router.use(authenticate as any);
@@ -164,20 +165,9 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
     const mL = 40;
     const cW = pageW - 80;
 
-    // Letterhead
-    const letterheadPath = path.resolve(__dirname, '../../../assets/letterhead_img_0.jpeg');
-    if (fs.existsSync(letterheadPath)) {
-      doc.image(letterheadPath, mL, 30, { width: cW, height: 70 });
-      doc.y = 110;
-    } else {
-      doc.fontSize(14).font('Helvetica-Bold').text('Mahakaushal Sugar and Power Industries Ltd.', mL, 30, { align: 'center', width: cW });
-      doc.fontSize(8).font('Helvetica').text('GSTIN: 23AAECM3666P1Z1 | Village Bachai, Narsinghpur, MP - 487001', { align: 'center', width: cW });
-      doc.y = 70;
-    }
-
-    // Divider
-    doc.moveTo(mL, doc.y).lineTo(pageW - 40, doc.y).lineWidth(1.5).strokeColor('#4a7c3f').stroke();
-    doc.y += 6;
+    // Letterhead (HD vector)
+    const afterLH = drawLetterhead(doc, mL, cW);
+    doc.y = afterLH + 4;
 
     // Title + Inquiry No on same line
     doc.fontSize(12).font('Helvetica-Bold').fillColor('#333').text('FREIGHT INQUIRY', mL, doc.y, { continued: true, width: cW });

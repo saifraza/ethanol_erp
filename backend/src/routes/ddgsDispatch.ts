@@ -5,6 +5,7 @@ import PDFDocument from 'pdfkit';
 import path from 'path';
 import fs from 'fs';
 import { generateEwayBill, MSPIL } from '../services/ewayBill';
+import { drawLetterhead } from '../utils/letterhead';
 
 const router = Router();
 router.use(authenticate as any);
@@ -75,22 +76,7 @@ const MSPIL_BANK = {
   account: '30613498188',
 };
 
-const letterheadPath = path.resolve(__dirname, '../../../assets/letterhead_img_0.jpeg');
-const hasLetterhead = fs.existsSync(letterheadPath);
-
-function drawLetterhead(doc: PDFKit.PDFDocument, mL: number, cW: number) {
-  const lf = 'Helvetica-Bold';
-  const vf = 'Helvetica';
-  if (hasLetterhead) {
-    doc.image(letterheadPath, mL, 20, { width: cW, height: 75 });
-    doc.y = 100;
-  } else {
-    doc.fontSize(13).font(lf).fillColor('#1a3a1a').text('Mahakaushal Sugar and Power Industries Ltd.', mL, 25, { align: 'center', width: cW });
-    doc.fontSize(7).font(vf).fillColor('#555').text('Village Bachai, Tehsil Gadarwara, Dist. Narsinghpur, Madhya Pradesh - 487001', { align: 'center', width: cW });
-    doc.fontSize(7).font(vf).fillColor('#555').text(`PAN: AAECM3666P  |  GSTIN: ${MSPIL.gstin}  |  CIN: U15412MP2007PLC019952`, { align: 'center', width: cW });
-    doc.y = 72;
-  }
-}
+// letterhead is now imported from ../utils/letterhead
 
 // ═══════════════════════════════════════════════
 // GET /summary?date=YYYY-MM-DD
@@ -301,7 +287,8 @@ router.get('/:id/invoice-pdf', async (req: Request, res: Response) => {
     const midX = mL + cW / 2;
 
     // ── Letterhead ──
-    drawLetterhead(doc, mL, cW);
+    const afterLH = drawLetterhead(doc, mL, cW);
+    doc.y = afterLH;
 
     // ── Tax Invoice title bar ──
     const titleY = doc.y;
@@ -589,7 +576,8 @@ router.get('/:id/gate-pass-pdf', async (req: Request, res: Response) => {
     const midX = mL + cW / 2;
 
     // ── Letterhead ──
-    drawLetterhead(doc, mL, cW);
+    const afterLH2 = drawLetterhead(doc, mL, cW);
+    doc.y = afterLH2;
 
     // ── Title bar ──
     const titleY = doc.y;
