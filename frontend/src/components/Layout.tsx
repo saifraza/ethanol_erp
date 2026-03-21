@@ -17,8 +17,8 @@ function hasModuleAccess(user: any, moduleKey: string): boolean {
 
 function NavLink({ to, label, icon: Icon, active, onClick }: any) {
   return (
-    <Link to={to} onClick={onClick} className={`flex items-center gap-3 px-3 py-2.5 md:py-2 rounded-lg text-sm transition ${active ? 'bg-copper-50 text-copper-700 font-semibold border-l-[3px] border-copper-500' : 'text-warm-600 hover:bg-warm-100 hover:text-warm-800'}`}>
-      <Icon size={17} className={active ? 'text-copper-500' : 'text-warm-400'} />{label}
+    <Link to={to} onClick={onClick} className={`flex items-center gap-3 px-3 py-2.5 md:py-2 rounded-lg text-sm transition ${active ? 'bg-[#FDF8F3] text-[#7C4A21] font-semibold border-l-[3px] border-[#B87333]' : 'text-[#4A4A44] hover:bg-[#F5F5F0] hover:text-[#1F1F1C]'}`}>
+      <Icon size={17} className={active ? 'text-[#B87333]' : 'text-[#9C9C94]'} />{label}
     </Link>
   );
 }
@@ -66,16 +66,16 @@ export default function Layout() {
       )}
 
       {sidebarOpen && (
-        <div className="fixed inset-0 bg-warm-900/50 z-30 md:hidden" onClick={closeSidebar} />
+        <div className="fixed inset-0 bg-[#0F0F0D]/50 z-30 md:hidden" onClick={closeSidebar} />
       )}
 
-      <aside className={`fixed md:static inset-y-0 left-0 z-40 w-64 md:w-60 bg-white border-r border-warm-200 flex flex-col overflow-y-auto transform transition-transform duration-200 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}>
-        <div className="p-4 border-b border-warm-200 flex items-center justify-between">
+      <aside className={`fixed md:static inset-y-0 left-0 z-40 w-64 md:w-60 bg-white border-r border-[#E8E8E0] flex flex-col overflow-y-auto transform transition-transform duration-200 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}>
+        <div className="p-4 border-b border-[#E8E8E0] flex items-center justify-between">
           <div>
-            <h1 className="font-heading text-lg font-bold text-warm-800 tracking-wide">MSPIL</h1>
-            <p className="text-[10px] text-warm-400 mt-0.5 uppercase tracking-wider">Ethanol Division</p>
+            <h1 className="font-heading text-lg font-bold text-[#1F1F1C] tracking-wide">MSPIL</h1>
+            <p className="text-[10px] text-[#9C9C94] mt-0.5 uppercase tracking-wider">Ethanol Division</p>
           </div>
-          <button onClick={closeSidebar} className="md:hidden text-warm-400 hover:text-warm-700 p-1">
+          <button onClick={closeSidebar} className="md:hidden text-[#9C9C94] hover:text-[#333330] p-1">
             <X size={20} />
           </button>
         </div>
@@ -93,12 +93,12 @@ export default function Layout() {
             { label: 'Admin', open: adminOpen, toggle: () => setAdminOpen(!adminOpen), items: adminNav },
           ].map(section => (
             <React.Fragment key={section.label}>
-              <button onClick={section.toggle} className="flex items-center justify-between w-full px-3 py-2 text-[10px] font-semibold text-copper-500 uppercase tracking-widest mt-3 hover:text-copper-700">
+              <button onClick={section.toggle} className="flex items-center justify-between w-full px-3 py-2 text-[10px] font-semibold text-[#B87333] uppercase tracking-widest mt-3 hover:text-[#7C4A21]">
                 <span>{section.label}</span>
-                {section.open ? <ChevronDown size={14} className="text-warm-400" /> : <ChevronRight size={14} className="text-warm-400" />}
+                {section.open ? <ChevronDown size={14} className="text-[#9C9C94]" /> : <ChevronRight size={14} className="text-[#9C9C94]" />}
               </button>
               {section.open && (
-                <div className="space-y-0.5 ml-1 border-l border-warm-200 pl-2">
+                <div className="space-y-0.5 ml-1 border-l border-[#E8E8E0] pl-2">
                   {section.items.filter((n: any) => {
                     if (section.label === 'Admin') return (!n.adminOnly || user?.role === 'ADMIN') && hasModuleAccess(user, n.moduleKey);
                     return hasModuleAccess(user, n.moduleKey);
@@ -111,21 +111,21 @@ export default function Layout() {
           ))}
         </nav>
 
-        <div className="p-3 border-t border-warm-200 text-sm">
-          <div className="font-semibold text-warm-700">{user?.name}</div>
-          <div className="text-[10px] text-warm-400 mb-1 uppercase tracking-wider">{user?.role}</div>
-          <button onClick={logout} className="flex items-center gap-2 text-warm-400 hover:text-copper-600 text-xs mt-1"><LogOut size={13} />Logout</button>
+        <div className="p-3 border-t border-[#E8E8E0] text-sm">
+          <div className="font-semibold text-[#333330]">{user?.name}</div>
+          <div className="text-[10px] text-[#9C9C94] mb-1 uppercase tracking-wider">{user?.role}</div>
+          <button onClick={logout} className="flex items-center gap-2 text-[#9C9C94] hover:text-[#9A5E2A] text-xs mt-1"><LogOut size={13} />Logout</button>
         </div>
       </aside>
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="md:hidden bg-white border-b border-warm-200 flex items-center gap-3 px-3 py-2.5 shrink-0">
-          <button onClick={() => setSidebarOpen(true)} className="p-1 text-warm-600">
+        <div className="md:hidden bg-white border-b border-[#E8E8E0] flex items-center gap-3 px-3 py-2.5 shrink-0">
+          <button onClick={() => setSidebarOpen(true)} className="p-1 text-[#4A4A44]">
             <Menu size={22} />
           </button>
-          <span className="font-heading text-sm font-bold text-warm-800 tracking-wide">MSPIL</span>
+          <span className="font-heading text-sm font-bold text-[#1F1F1C] tracking-wide">MSPIL</span>
         </div>
-        <main className="flex-1 overflow-auto bg-warm-50 p-3 md:p-6">
+        <main className="flex-1 overflow-auto bg-[#FAFAF8] p-3 md:p-6">
           <Outlet />
         </main>
       </div>
