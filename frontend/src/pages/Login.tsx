@@ -15,15 +15,14 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#FAFAF8]">
-      <div className="card w-full max-w-md p-8">
-        <h2 className="font-heading text-3xl font-bold text-center mb-1 text-[#1F1F1C]">MSPIL</h2>
-        <p className="text-[10px] text-[#B87333] text-center mb-1 uppercase tracking-widest font-semibold">Ethanol Division</p>
-        <p className="text-sm text-[#9C9C94] text-center mb-8">Mahakaushal Sugar & Power Industries Ltd.</p>
-        {error && <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg mb-4">{error}</div>}
+    <div className="min-h-screen flex items-center justify-center bg-gray-100">
+      <div className="card w-full max-w-md">
+        <h2 className="text-2xl font-bold text-center mb-2">Distillery ERP</h2>
+        <p className="text-sm text-gray-500 text-center mb-6">Mahakaushal Sugar & Power Industries Ltd.</p>
+        {error && <div className="bg-red-50 text-red-600 text-sm p-3 rounded mb-4">{error}</div>}
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div><label className="block text-sm font-medium text-[#4A4A44] mb-1">Email / Username</label><input type="text" value={email} onChange={e => setEmail(e.target.value)} className="input-field" required /></div>
-          <div><label className="block text-sm font-medium text-[#4A4A44] mb-1">Password</label><input type="password" value={password} onChange={e => setPassword(e.target.value)} className="input-field" required /></div>
+          <div><label className="block text-sm font-medium mb-1">Email / Username</label><input type="text" value={email} onChange={e => setEmail(e.target.value)} className="input-field" required /></div>
+          <div><label className="block text-sm font-medium mb-1">Password</label><input type="password" value={password} onChange={e => setPassword(e.target.value)} className="input-field" required /></div>
           <button type="submit" className="btn-primary w-full">Sign In</button>
         </form>
       </div>
