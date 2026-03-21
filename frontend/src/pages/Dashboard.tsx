@@ -20,25 +20,25 @@ const PERIOD_OPTIONS = [
   { label: '90 Days', days: 90 },
 ];
 
-const COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
-const FERM_COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
+const COLORS = ['#B87333', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
+const FERM_COLORS = ['#B87333', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
 
 const phaseColors: Record<string, string> = {
   FILLING: '#6366f1', SETUP: '#f59e0b', DOSING: '#f59e0b', REACTION: '#22c55e',
-  LAB: '#3b82f6', RETENTION: '#06b6d4', TRANSFER: '#3b82f6', CIP: '#a855f7', DONE: '#6b7280',
-  PF_TRANSFER: '#3b82f6',
+  LAB: '#B87333', RETENTION: '#06b6d4', TRANSFER: '#B87333', CIP: '#a855f7', DONE: '#6b7280',
+  PF_TRANSFER: '#B87333',
 };
 
 function KPI({ label, value, unit, icon: Icon, color, sub, trend }: any) {
   return (
-    <div className="bg-white rounded-xl shadow-sm border p-3 md:p-4">
+    <div className="bg-white rounded-xl border border-[#E8E8E0] p-3 md:p-4">
       <div className="flex items-center gap-3">
         <div className={`p-2 rounded-lg ${color}`}><Icon size={18} className="text-white" /></div>
         <div className="min-w-0 flex-1">
-          <p className="text-[11px] text-gray-500 truncate">{label}</p>
+          <p className="text-[11px] text-[#6B6B63] truncate">{label}</p>
           <div className="flex items-baseline gap-1.5">
             <p className="text-lg md:text-xl font-bold">{value ?? '—'}</p>
-            <span className="text-xs text-gray-400">{unit}</span>
+            <span className="text-xs text-[#9C9C94]">{unit}</span>
             {trend !== undefined && trend !== 0 && (
               <span className={`text-[10px] flex items-center gap-0.5 ${trend > 0 ? 'text-green-600' : 'text-red-500'}`}>
                 {trend > 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
@@ -46,7 +46,7 @@ function KPI({ label, value, unit, icon: Icon, color, sub, trend }: any) {
               </span>
             )}
           </div>
-          {sub && <p className="text-[10px] text-gray-400 mt-0.5 truncate">{sub}</p>}
+          {sub && <p className="text-[10px] text-[#9C9C94] mt-0.5 truncate">{sub}</p>}
         </div>
       </div>
     </div>
@@ -56,8 +56,8 @@ function KPI({ label, value, unit, icon: Icon, color, sub, trend }: any) {
 function SectionHeader({ title, icon: Icon }: { title: string; icon: any }) {
   return (
     <div className="flex items-center gap-2 mt-2">
-      <Icon size={16} className="text-gray-500" />
-      <h3 className="text-sm font-semibold text-gray-700">{title}</h3>
+      <Icon size={16} className="text-[#B87333]" />
+      <h3 className="text-sm font-semibold text-[#333330] font-heading">{title}</h3>
     </div>
   );
 }
@@ -70,7 +70,7 @@ function FermCard({ b, type }: { b: any; type: 'F' | 'PF' }) {
         <span className="text-[10px] px-2 py-0.5 rounded-full text-white font-bold"
           style={{ backgroundColor: phaseColors[b.phase] || '#6b7280' }}>{b.phase}</span>
       </div>
-      <div className="text-xs text-gray-600 space-y-0.5">
+      <div className="text-xs text-[#6B6B63] space-y-0.5">
         {b.fermLevel != null && <div>Level: <b>{b.fermLevel}%</b></div>}
         {b.slurryVolume != null && <div>Slurry: <b>{(b.slurryVolume / 1000).toFixed(0)} M³</b></div>}
         {b.setupGravity && <div>SG: <b>{b.setupGravity}</b></div>}
@@ -89,7 +89,7 @@ function HealthBar({ score }: { score: number }) {
   const textColor = score >= 80 ? 'text-green-700' : score >= 50 ? 'text-amber-700' : 'text-red-700';
   return (
     <div className="flex items-center gap-2">
-      <div className="flex-1 bg-gray-200 rounded-full h-2.5 overflow-hidden">
+      <div className="flex-1 bg-[#E8E8E0] rounded-full h-2.5 overflow-hidden">
         <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${score}%` }} />
       </div>
       <span className={`text-xs font-bold ${textColor}`}>{score}</span>
@@ -148,11 +148,11 @@ export default function Dashboard() {
 
   if (loading && !data) return (
     <div className="flex items-center justify-center h-64">
-      <RefreshCw className="animate-spin text-blue-500" size={24} />
+      <RefreshCw className="animate-spin text-[#B87333]" size={24} />
     </div>
   );
 
-  if (!data) return <div className="p-8 text-center text-gray-500">Failed to load dashboard</div>;
+  if (!data) return <div className="p-8 text-center text-[#6B6B63]">Failed to load dashboard</div>;
 
   const k = data.kpis;
   const t = data.trends;
@@ -162,17 +162,17 @@ export default function Dashboard() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-gray-800">Plant Dashboard</h1>
-          <p className="text-xs text-gray-400">{data.period.from} — {data.period.to}</p>
+          <h1 className="text-xl font-bold text-[#1F1F1C] font-heading">Plant Dashboard</h1>
+          <p className="text-xs text-[#9C9C94]">{data.period.from} — {data.period.to}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {PERIOD_OPTIONS.map(p => (
             <button key={p.days} onClick={() => setDays(p.days)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${days === p.days ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${days === p.days ? 'bg-[#B87333] text-white' : 'bg-[#F5F5F0] text-[#6B6B63] hover:bg-[#E8E8E0]'}`}>
               {p.label}
             </button>
           ))}
-          <button onClick={() => { fetchData(days); fetchFermData(days); }} className="p-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 transition" title="Refresh">
+          <button onClick={() => { fetchData(days); fetchFermData(days); }} className="p-1.5 rounded-lg bg-[#F5F5F0] hover:bg-[#E8E8E0] transition" title="Refresh">
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           </button>
           <button onClick={handleShare} className="p-1.5 rounded-lg bg-green-100 hover:bg-green-200 transition text-green-700" title="Share">
@@ -182,10 +182,10 @@ export default function Dashboard() {
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex gap-1 bg-gray-100 rounded-lg p-1 overflow-x-auto">
+      <div className="flex gap-1 bg-[#F5F5F0] rounded-lg p-1 overflow-x-auto">
         {(['overview', 'fermentation', 'production', 'quality', 'dispatch'] as const).map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2 rounded-md text-xs font-medium transition whitespace-nowrap ${activeTab === tab ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}>
+            className={`px-4 py-2 rounded-md text-xs font-medium transition whitespace-nowrap ${activeTab === tab ? 'bg-white shadow text-[#B87333]' : 'text-[#6B6B63] hover:text-[#333330]'}`}>
             {tab === 'overview' ? 'Overview' : tab === 'fermentation' ? 'Fermentation' : tab === 'production' ? 'Production' : tab === 'quality' ? 'Quality' : 'Dispatch'}
           </button>
         ))}
@@ -198,29 +198,29 @@ export default function Dashboard() {
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
             <KPI label="Grain Unloaded" value={k.grainUnloaded.toFixed(0)} unit="T" icon={Wheat} color="bg-amber-600" sub={`Consumed: ${k.grainConsumed.toFixed(0)} T`} />
             <KPI label="Silo Stock" value={k.siloStock.toFixed(0)} unit="T" icon={Factory} color="bg-amber-800" sub={`Total@Plant: ${k.totalAtPlant.toFixed(0)} T`} />
-            <KPI label="Ethanol Prod" value={fmtNum(k.ethanolProductionBL)} unit="BL" icon={Fuel} color="bg-blue-600" sub={`AL: ${fmtNum(k.ethanolProductionAL)}`} />
+            <KPI label="Ethanol Prod" value={fmtNum(k.ethanolProductionBL)} unit="BL" icon={Fuel} color="bg-[#B87333]" sub={`AL: ${fmtNum(k.ethanolProductionAL)}`} />
             <KPI label="Current Stock" value={fmtNum(k.ethanolStock)} unit="BL" icon={Droplets} color="bg-cyan-600" sub={`Avg: ${k.avgStrength.toFixed(1)}%`} />
             <KPI label="Dispatched" value={fmtNum(k.totalDispatchBL)} unit="BL" icon={Truck} color="bg-green-600" sub={`${k.dispatchTrucks} trucks`} />
-            <KPI label="KLPD" value={k.latestKlpd.toFixed(1)} unit="" icon={TrendingUp} color="bg-indigo-600" sub="Latest flow rate" />
+            <KPI label="KLPD" value={k.latestKlpd.toFixed(1)} unit="" icon={TrendingUp} color="bg-[#B87333]" sub="Latest flow rate" />
           </div>
 
           {/* Two charts */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="bg-white rounded-xl shadow-sm border p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Ethanol Production (BL)</h3>
+            <div className="bg-white rounded-xl border border-[#E8E8E0] p-4">
+              <h3 className="text-sm font-semibold text-[#333330] mb-3 font-heading">Ethanol Production (BL)</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={t.ethanol}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="date" fontSize={10} tickFormatter={shortDate} />
                   <YAxis fontSize={10} />
                   <Tooltip formatter={(v: number) => v.toFixed(0)} labelFormatter={(l: string) => `Date: ${l}`} />
-                  <Bar dataKey="productionBL" fill="#3b82f6" name="Production BL" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="productionBL" fill="#B87333" name="Production BL" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Grain Stock (Ton)</h3>
+            <div className="bg-white rounded-xl border border-[#E8E8E0] p-4">
+              <h3 className="text-sm font-semibold text-[#333330] mb-3 font-heading">Grain Stock (Ton)</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <AreaChart data={t.grain}>
                   <CartesianGrid strokeDasharray="3 3" />
@@ -252,10 +252,10 @@ export default function Dashboard() {
               <div className="space-y-2">
                 {fermData.alerts.map((a: any, i: number) => (
                   <div key={i} className={`flex items-start gap-3 p-3 rounded-lg border ${a.severity === 'critical' ? 'bg-red-50 border-red-200' : a.severity === 'warning' ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200'}`}>
-                    <AlertTriangle size={16} className={a.severity === 'critical' ? 'text-red-500' : a.severity === 'warning' ? 'text-amber-500' : 'text-blue-500'} />
+                    <AlertTriangle size={16} className={a.severity === 'critical' ? 'text-red-500' : a.severity === 'warning' ? 'text-amber-500' : 'text-[#B87333]'} />
                     <div>
                       <span className="text-sm font-semibold">{a.vessel}</span>
-                      <span className="text-sm text-gray-600 ml-2">{a.msg}</span>
+                      <span className="text-sm text-[#6B6B63] ml-2">{a.msg}</span>
                     </div>
                   </div>
                 ))}
@@ -275,14 +275,14 @@ export default function Dashboard() {
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <KPI label="Wash Distilled" value={k.washDistilled.toFixed(0)} unit="KL" icon={Flame} color="bg-orange-600" />
-            <KPI label="Ethanol (AL)" value={fmtNum(k.ethanolProductionAL)} unit="AL" icon={Fuel} color="bg-blue-600" />
+            <KPI label="Ethanol (AL)" value={fmtNum(k.ethanolProductionAL)} unit="AL" icon={Fuel} color="bg-[#B87333]" />
             <KPI label="Grain Consumed" value={k.grainConsumed.toFixed(0)} unit="T" icon={Wheat} color="bg-amber-600" />
             <KPI label="DDGS Produced" value={(k.ddgsProduced / 1000).toFixed(1)} unit="T" icon={Package} color="bg-green-700" sub={`Dispatched: ${(k.ddgsDispatched / 1000).toFixed(1)} T`} />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="bg-white rounded-xl shadow-sm border p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">KLPD Trend</h3>
+            <div className="bg-white rounded-xl border border-[#E8E8E0] p-4">
+              <h3 className="text-sm font-semibold text-[#333330] mb-3 font-heading">KLPD Trend</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={t.ethanol}>
                   <CartesianGrid strokeDasharray="3 3" />
@@ -294,8 +294,8 @@ export default function Dashboard() {
               </ResponsiveContainer>
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Grain: Unloaded vs Consumed</h3>
+            <div className="bg-white rounded-xl border border-[#E8E8E0] p-4">
+              <h3 className="text-sm font-semibold text-[#333330] mb-3 font-heading">Grain: Unloaded vs Consumed</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={t.grain}>
                   <CartesianGrid strokeDasharray="3 3" />
@@ -309,8 +309,8 @@ export default function Dashboard() {
               </ResponsiveContainer>
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">DDGS Production & Dispatch</h3>
+            <div className="bg-white rounded-xl border border-[#E8E8E0] p-4">
+              <h3 className="text-sm font-semibold text-[#333330] mb-3 font-heading">DDGS Production & Dispatch</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={t.ddgs}>
                   <CartesianGrid strokeDasharray="3 3" />
@@ -319,13 +319,13 @@ export default function Dashboard() {
                   <Tooltip />
                   <Legend />
                   <Bar dataKey="produced" fill="#22c55e" name="Produced" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="dispatched" fill="#3b82f6" name="Dispatched" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="dispatched" fill="#B87333" name="Dispatched" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Ethanol Stock (BL)</h3>
+            <div className="bg-white rounded-xl border border-[#E8E8E0] p-4">
+              <h3 className="text-sm font-semibold text-[#333330] mb-3 font-heading">Ethanol Stock (BL)</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <AreaChart data={t.ethanol}>
                   <CartesianGrid strokeDasharray="3 3" />
@@ -344,15 +344,15 @@ export default function Dashboard() {
       {activeTab === 'quality' && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <KPI label="Avg Ethanol Strength" value={k.avgEthanolStrength.toFixed(1)} unit="%" icon={Droplets} color="bg-blue-600" />
+            <KPI label="Avg Ethanol Strength" value={k.avgEthanolStrength.toFixed(1)} unit="%" icon={Droplets} color="bg-[#B87333]" />
             <KPI label="Avg Moisture" value={k.avgMoisture.toFixed(1)} unit="%" icon={Wheat} color="bg-amber-500" sub={`${data.tables.rawMaterial.length} samples`} />
             <KPI label="Avg Starch" value={k.avgStarch.toFixed(1)} unit="%" icon={Wheat} color="bg-green-600" />
-            <KPI label="Avg Strength" value={k.avgStrength.toFixed(1)} unit="%" icon={Fuel} color="bg-indigo-600" sub="Weighted avg" />
+            <KPI label="Avg Strength" value={k.avgStrength.toFixed(1)} unit="%" icon={Fuel} color="bg-[#B87333]" sub="Weighted avg" />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="bg-white rounded-xl shadow-sm border p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Distillation Strength</h3>
+            <div className="bg-white rounded-xl border border-[#E8E8E0] p-4">
+              <h3 className="text-sm font-semibold text-[#333330] mb-3 font-heading">Distillation Strength</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={t.distillation}>
                   <CartesianGrid strokeDasharray="3 3" />
@@ -360,14 +360,14 @@ export default function Dashboard() {
                   <YAxis fontSize={10} domain={['auto', 'auto']} />
                   <Tooltip />
                   <Legend />
-                  <Line type="monotone" dataKey="ethanolStrength" stroke="#3b82f6" dot={false} strokeWidth={2} name="Ethanol %" />
+                  <Line type="monotone" dataKey="ethanolStrength" stroke="#B87333" dot={false} strokeWidth={2} name="Ethanol %" />
                   <Line type="monotone" dataKey="rcReflexStrength" stroke="#f59e0b" dot={false} strokeWidth={2} name="RC Reflex %" />
                 </LineChart>
               </ResponsiveContainer>
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Liquefaction Gravity</h3>
+            <div className="bg-white rounded-xl border border-[#E8E8E0] p-4">
+              <h3 className="text-sm font-semibold text-[#333330] mb-3 font-heading">Liquefaction Gravity</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={t.liquefaction}>
                   <CartesianGrid strokeDasharray="3 3" />
@@ -375,14 +375,14 @@ export default function Dashboard() {
                   <YAxis fontSize={10} domain={['auto', 'auto']} />
                   <Tooltip />
                   <Legend />
-                  <Line type="monotone" dataKey="iltGravity" stroke="#3b82f6" dot={false} strokeWidth={2} name="ILT" />
+                  <Line type="monotone" dataKey="iltGravity" stroke="#B87333" dot={false} strokeWidth={2} name="ILT" />
                   <Line type="monotone" dataKey="fltGravity" stroke="#22c55e" dot={false} strokeWidth={2} name="FLT" />
                 </LineChart>
               </ResponsiveContainer>
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Liquefaction pH</h3>
+            <div className="bg-white rounded-xl border border-[#E8E8E0] p-4">
+              <h3 className="text-sm font-semibold text-[#333330] mb-3 font-heading">Liquefaction pH</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={t.liquefaction}>
                   <CartesianGrid strokeDasharray="3 3" />
@@ -397,8 +397,8 @@ export default function Dashboard() {
             </div>
 
             {t.milling.length > 0 && (
-              <div className="bg-white rounded-xl shadow-sm border p-4">
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">Milling Sieve Analysis</h3>
+              <div className="bg-white rounded-xl border border-[#E8E8E0] p-4">
+                <h3 className="text-sm font-semibold text-[#333330] mb-3 font-heading">Milling Sieve Analysis</h3>
                 <ResponsiveContainer width="100%" height={220}>
                   <LineChart data={t.milling}>
                     <CartesianGrid strokeDasharray="3 3" />
@@ -409,7 +409,7 @@ export default function Dashboard() {
                     <Line type="monotone" dataKey="sieve1mm" stroke="#ef4444" dot={false} name="1.00mm" />
                     <Line type="monotone" dataKey="sieve850" stroke="#f59e0b" dot={false} name="0.850mm" />
                     <Line type="monotone" dataKey="sieve600" stroke="#22c55e" dot={false} name="0.600mm" />
-                    <Line type="monotone" dataKey="sieve300" stroke="#3b82f6" dot={false} name="0.300mm" />
+                    <Line type="monotone" dataKey="sieve300" stroke="#B87333" dot={false} name="0.300mm" />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -417,10 +417,10 @@ export default function Dashboard() {
           </div>
 
           {data.tables.rawMaterial.length > 0 && (
-            <div className="bg-white rounded-xl shadow-sm border p-4 overflow-x-auto">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Recent Raw Material</h3>
+            <div className="bg-white rounded-xl border border-[#E8E8E0] p-4 overflow-x-auto">
+              <h3 className="text-sm font-semibold text-[#333330] mb-3 font-heading">Recent Raw Material</h3>
               <table className="w-full text-xs">
-                <thead><tr className="border-b text-gray-500">
+                <thead><tr className="border-b text-[#6B6B63]">
                   <th className="text-left py-2 pr-3">Date</th>
                   <th className="text-left py-2 pr-3">Vehicle</th>
                   <th className="text-left py-2 pr-3">Material</th>
@@ -451,15 +451,15 @@ export default function Dashboard() {
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <KPI label="Total Dispatched" value={fmtNum(k.totalDispatchBL)} unit="BL" icon={Truck} color="bg-green-600" />
-            <KPI label="Trucks" value={k.dispatchTrucks} unit="" icon={Truck} color="bg-blue-600" />
+            <KPI label="Trucks" value={k.dispatchTrucks} unit="" icon={Truck} color="bg-[#B87333]" />
             <KPI label="DDGS Dispatched" value={(k.ddgsDispatched / 1000).toFixed(1)} unit="T" icon={Package} color="bg-amber-600" />
-            <KPI label="Avg Strength" value={k.avgStrength.toFixed(1)} unit="%" icon={Fuel} color="bg-indigo-600" />
+            <KPI label="Avg Strength" value={k.avgStrength.toFixed(1)} unit="%" icon={Fuel} color="bg-[#B87333]" />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {data.tables.dispatchByParty.length > 0 && (
-              <div className="bg-white rounded-xl shadow-sm border p-4">
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">Dispatch by Party (BL)</h3>
+              <div className="bg-white rounded-xl border border-[#E8E8E0] p-4">
+                <h3 className="text-sm font-semibold text-[#333330] mb-3 font-heading">Dispatch by Party (BL)</h3>
                 <ResponsiveContainer width="100%" height={260}>
                   <PieChart>
                     <Pie data={data.tables.dispatchByParty.slice(0, 8)} dataKey="qty" nameKey="party" cx="50%" cy="50%"
@@ -475,8 +475,8 @@ export default function Dashboard() {
               </div>
             )}
 
-            <div className="bg-white rounded-xl shadow-sm border p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Daily Ethanol Dispatch (BL)</h3>
+            <div className="bg-white rounded-xl border border-[#E8E8E0] p-4">
+              <h3 className="text-sm font-semibold text-[#333330] mb-3 font-heading">Daily Ethanol Dispatch (BL)</h3>
               <ResponsiveContainer width="100%" height={260}>
                 <BarChart data={t.ethanol}>
                   <CartesianGrid strokeDasharray="3 3" />
@@ -490,10 +490,10 @@ export default function Dashboard() {
           </div>
 
           {data.tables.recentDispatches.length > 0 && (
-            <div className="bg-white rounded-xl shadow-sm border p-4 overflow-x-auto">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Recent Dispatches</h3>
+            <div className="bg-white rounded-xl border border-[#E8E8E0] p-4 overflow-x-auto">
+              <h3 className="text-sm font-semibold text-[#333330] mb-3 font-heading">Recent Dispatches</h3>
               <table className="w-full text-xs">
-                <thead><tr className="border-b text-gray-500">
+                <thead><tr className="border-b text-[#6B6B63]">
                   <th className="text-left py-2 pr-3">Date</th>
                   <th className="text-left py-2 pr-3">Vehicle</th>
                   <th className="text-left py-2 pr-3">Party</th>
@@ -518,10 +518,10 @@ export default function Dashboard() {
           )}
 
           {data.tables.dispatchByParty.length > 0 && (
-            <div className="bg-white rounded-xl shadow-sm border p-4 overflow-x-auto">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Party-wise Summary</h3>
+            <div className="bg-white rounded-xl border border-[#E8E8E0] p-4 overflow-x-auto">
+              <h3 className="text-sm font-semibold text-[#333330] mb-3 font-heading">Party-wise Summary</h3>
               <table className="w-full text-xs">
-                <thead><tr className="border-b text-gray-500">
+                <thead><tr className="border-b text-[#6B6B63]">
                   <th className="text-left py-2 pr-3">Party</th>
                   <th className="text-right py-2 pr-3">Trucks</th>
                   <th className="text-right py-2">Total BL</th>
@@ -554,7 +554,7 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
   if (loading || !data) return (
     <div className="flex items-center justify-center h-48">
       <RefreshCw className="animate-spin text-indigo-500" size={24} />
-      <span className="ml-2 text-gray-500">Loading fermentation analytics...</span>
+      <span className="ml-2 text-[#6B6B63]">Loading fermentation analytics...</span>
     </div>
   );
 
@@ -618,22 +618,22 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
   return (
     <div className="space-y-4">
       {/* ─── Plant Pipeline Flow ─── */}
-      <div className="bg-white rounded-xl shadow-sm border p-4">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2"><Zap size={14} /> Plant Pipeline</h3>
+      <div className="bg-white rounded-xl border border-[#E8E8E0] p-4">
+        <h3 className="text-sm font-semibold text-[#333330] mb-3 flex items-center gap-2 font-heading"><Zap size={14} className="text-[#B87333]" /> Plant Pipeline</h3>
         <div className="flex items-center gap-1 overflow-x-auto pb-2">
           <PipelineStep label="Grain In" value={pipe.grainIn.toFixed(0)} unit="T" icon={Wheat} color="bg-amber-600" />
           <PipelineStep label="Consumed" value={pipe.grainConsumed.toFixed(0)} unit="T" icon={Flame} color="bg-orange-600" />
-          <PipelineStep label="PF Batches" value={pipe.pfBatchesRun} unit="runs" icon={Beaker} color="bg-indigo-600" />
+          <PipelineStep label="PF Batches" value={pipe.pfBatchesRun} unit="runs" icon={Beaker} color="bg-[#B87333]" />
           <PipelineStep label="Ferm" value={pipe.fermBatchesRun} unit="batches" icon={FlaskConical} color="bg-emerald-600" />
-          <PipelineStep label="Ethanol" value={fmtNum(pipe.ethanolProduced)} unit="BL" icon={Fuel} color="bg-blue-600" />
+          <PipelineStep label="Ethanol" value={fmtNum(pipe.ethanolProduced)} unit="BL" icon={Fuel} color="bg-[#B87333]" />
           <PipelineStep label="Dispatched" value={fmtNum(pipe.ethanolDispatched)} unit="BL" icon={Truck} color="bg-green-600" isLast />
         </div>
       </div>
 
       {/* ─── Fermentation KPIs ─── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KPI label="Total Batches" value={fk.totalBatches} unit="" icon={FlaskConical} color="bg-indigo-600" sub={`${fk.completedCount} done, ${fk.activeFermCount} active`} />
-        <KPI label="Avg Cycle Time" value={fk.avgCycleTime} unit="hrs" icon={Clock} color="bg-blue-600" sub={`PF avg: ${fk.avgPFCycleTime} hrs`} />
+        <KPI label="Total Batches" value={fk.totalBatches} unit="" icon={FlaskConical} color="bg-[#B87333]" sub={`${fk.completedCount} done, ${fk.activeFermCount} active`} />
+        <KPI label="Avg Cycle Time" value={fk.avgCycleTime} unit="hrs" icon={Clock} color="bg-[#B87333]" sub={`PF avg: ${fk.avgPFCycleTime} hrs`} />
         <KPI label="Avg Final Alcohol" value={fk.avgFinalAlcohol} unit="%" icon={Droplets} color="bg-emerald-600" sub="Completed batches" />
         <KPI label="Gravity Target" value={fk.gravityTarget} unit="" icon={Target} color="bg-amber-600" sub="PF transfer threshold" />
       </div>
@@ -646,7 +646,7 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
             <div key={i} className={`flex items-start gap-3 p-3 rounded-lg border text-sm ${a.severity === 'critical' ? 'bg-red-50 border-red-200' : a.severity === 'warning' ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200'}`}>
               {a.severity === 'critical' ? <AlertTriangle size={16} className="text-red-500 mt-0.5 flex-shrink-0" /> :
                a.severity === 'warning' ? <AlertTriangle size={16} className="text-amber-500 mt-0.5 flex-shrink-0" /> :
-               <Activity size={16} className="text-blue-500 mt-0.5 flex-shrink-0" />}
+               <Activity size={16} className="text-[#B87333] mt-0.5 flex-shrink-0" />}
               <div><span className="font-semibold">{a.vessel}:</span> {a.msg}</div>
             </div>
           ))}
@@ -665,45 +665,45 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
                     <FlaskConical size={18} className="text-emerald-600" />
                     <span className="font-bold">F-{p.fermenterNo}</span>
                     <span className="text-xs px-2 py-0.5 rounded-full text-white font-medium" style={{ backgroundColor: phaseColors[p.phase] || '#6b7280' }}>{p.phase}</span>
-                    <span className="text-xs text-gray-500">#{p.batchNo}</span>
+                    <span className="text-xs text-[#6B6B63]">#{p.batchNo}</span>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3 text-sm mb-3">
                   <div>
-                    <span className="text-xs text-gray-500">Current Gravity</span>
+                    <span className="text-xs text-[#6B6B63]">Current Gravity</span>
                     <p className="font-bold text-lg">{p.currentGravity.toFixed(3)}</p>
                   </div>
                   <div>
-                    <span className="text-xs text-gray-500">Drop Rate</span>
+                    <span className="text-xs text-[#6B6B63]">Drop Rate</span>
                     <p className="font-bold text-lg">{p.gravityDropRate}/hr</p>
                   </div>
                   <div>
-                    <span className="text-xs text-gray-500">Elapsed</span>
+                    <span className="text-xs text-[#6B6B63]">Elapsed</span>
                     <p className="font-medium">{p.hoursElapsed} hrs</p>
                   </div>
                   <div>
-                    <span className="text-xs text-gray-500">Est. Remaining</span>
+                    <span className="text-xs text-[#6B6B63]">Est. Remaining</span>
                     <p className="font-medium">{p.hoursRemaining ? `${p.hoursRemaining} hrs` : '—'}</p>
                   </div>
                   {p.currentTemp && (
                     <div>
-                      <span className="text-xs text-gray-500">Temperature</span>
+                      <span className="text-xs text-[#6B6B63]">Temperature</span>
                       <p className={`font-medium ${p.currentTemp > 37 ? 'text-red-600' : ''}`}>{p.currentTemp}°C</p>
                     </div>
                   )}
                   {p.currentAlcohol && (
                     <div>
-                      <span className="text-xs text-gray-500">Alcohol</span>
+                      <span className="text-xs text-[#6B6B63]">Alcohol</span>
                       <p className="font-medium">{p.currentAlcohol}%</p>
                     </div>
                   )}
                 </div>
                 <div>
-                  <span className="text-xs text-gray-500 block mb-1">Health Score</span>
+                  <span className="text-xs text-[#6B6B63] block mb-1">Health Score</span>
                   <HealthBar score={p.health} />
                 </div>
                 {p.predictedEndTime && (
-                  <p className="text-xs text-gray-400 mt-2">Predicted completion: {new Date(p.predictedEndTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false })}</p>
+                  <p className="text-xs text-[#9C9C94] mt-2">Predicted completion: {new Date(p.predictedEndTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false })}</p>
                 )}
               </div>
             ))}
@@ -713,8 +713,8 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
 
       {/* ─── Gravity Curves Chart ─── */}
       {gravityChartData.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Gravity Drop Curves (Batch Comparison)</h3>
+        <div className="bg-white rounded-xl border border-[#E8E8E0] p-4">
+          <h3 className="text-sm font-semibold text-[#333330] mb-3 font-heading">Gravity Drop Curves (Batch Comparison)</h3>
           <ResponsiveContainer width="100%" height={300}>
             <ComposedChart data={gravityChartData}>
               <CartesianGrid strokeDasharray="3 3" />
@@ -739,8 +739,8 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
 
       {/* ─── Alcohol Build-up Chart ─── */}
       {alcoholChartData.some((d: any) => Object.keys(d).length > 1) && (
-        <div className="bg-white rounded-xl shadow-sm border p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Alcohol Build-up Over Time</h3>
+        <div className="bg-white rounded-xl border border-[#E8E8E0] p-4">
+          <h3 className="text-sm font-semibold text-[#333330] mb-3 font-heading">Alcohol Build-up Over Time</h3>
           <ResponsiveContainer width="100%" height={260}>
             <LineChart data={alcoholChartData}>
               <CartesianGrid strokeDasharray="3 3" />
@@ -761,8 +761,8 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
 
       {/* ─── Temperature Monitoring ─── */}
       {tempChartData.some((d: any) => Object.keys(d).length > 1) && (
-        <div className="bg-white rounded-xl shadow-sm border p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Temperature Monitoring</h3>
+        <div className="bg-white rounded-xl border border-[#E8E8E0] p-4">
+          <h3 className="text-sm font-semibold text-[#333330] mb-3 font-heading">Temperature Monitoring</h3>
           <ResponsiveContainer width="100%" height={260}>
             <ComposedChart data={tempChartData}>
               <CartesianGrid strokeDasharray="3 3" />
@@ -785,10 +785,10 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
 
       {/* ─── Batch Comparison Table ─── */}
       {data.batchComparison && data.batchComparison.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border p-4 overflow-x-auto">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Batch Comparison</h3>
+        <div className="bg-white rounded-xl border border-[#E8E8E0] p-4 overflow-x-auto">
+          <h3 className="text-sm font-semibold text-[#333330] mb-3 font-heading">Batch Comparison</h3>
           <table className="w-full text-xs">
-            <thead><tr className="border-b text-gray-500">
+            <thead><tr className="border-b text-[#6B6B63]">
               <th className="text-left py-2 pr-2">Batch</th>
               <th className="text-left py-2 pr-2">F#</th>
               <th className="text-left py-2 pr-2">Phase</th>
@@ -827,8 +827,8 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
       {/* ─── Chemical Consumption ─── */}
       {data.chemicalSummary && data.chemicalSummary.length > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="bg-white rounded-xl shadow-sm border p-4">
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">Chemical Consumption</h3>
+          <div className="bg-white rounded-xl border border-[#E8E8E0] p-4">
+            <h3 className="text-sm font-semibold text-[#333330] mb-3 font-heading">Chemical Consumption</h3>
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={data.chemicalSummary.slice(0, 8)} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" />
@@ -840,10 +840,10 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
             </ResponsiveContainer>
           </div>
 
-          <div className="bg-white rounded-xl shadow-sm border p-4 overflow-x-auto">
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">Chemical Details</h3>
+          <div className="bg-white rounded-xl border border-[#E8E8E0] p-4 overflow-x-auto">
+            <h3 className="text-sm font-semibold text-[#333330] mb-3 font-heading">Chemical Details</h3>
             <table className="w-full text-xs">
-              <thead><tr className="border-b text-gray-500">
+              <thead><tr className="border-b text-[#6B6B63]">
                 <th className="text-left py-2 pr-3">Chemical</th>
                 <th className="text-right py-2 pr-3">Total</th>
                 <th className="text-right py-2 pr-3">Avg/batch</th>
@@ -866,8 +866,8 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
 
       {/* ─── Fermentation Activity Timeline ─── */}
       {data.fermActivity && data.fermActivity.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Daily Fermentation Activity</h3>
+        <div className="bg-white rounded-xl border border-[#E8E8E0] p-4">
+          <h3 className="text-sm font-semibold text-[#333330] mb-3 font-heading">Daily Fermentation Activity</h3>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={data.fermActivity}>
               <CartesianGrid strokeDasharray="3 3" />
@@ -885,10 +885,10 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
 
       {/* ─── PF Analytics Table ─── */}
       {data.pfAnalytics && data.pfAnalytics.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border p-4 overflow-x-auto">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Pre-Fermenter History</h3>
+        <div className="bg-white rounded-xl border border-[#E8E8E0] p-4 overflow-x-auto">
+          <h3 className="text-sm font-semibold text-[#333330] mb-3 font-heading">Pre-Fermenter History</h3>
           <table className="w-full text-xs">
-            <thead><tr className="border-b text-gray-500">
+            <thead><tr className="border-b text-[#6B6B63]">
               <th className="text-left py-2 pr-2">Batch</th>
               <th className="text-left py-2 pr-2">PF#</th>
               <th className="text-left py-2 pr-2">Phase</th>

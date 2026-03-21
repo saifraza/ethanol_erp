@@ -33,13 +33,13 @@ const PHASE_CFG: Record<string, { label: string; bg: string; text: string; ring:
   SETUP:          { label: 'Setup',      bg: 'bg-indigo-50',   text: 'text-indigo-700',  ring: 'ring-indigo-400',  dot: 'bg-indigo-500' },
   DOSING:         { label: 'Dosing',     bg: 'bg-violet-50',   text: 'text-violet-700',  ring: 'ring-violet-400',  dot: 'bg-violet-500' },
   LAB:            { label: 'Lab',        bg: 'bg-cyan-50',     text: 'text-cyan-700',    ring: 'ring-cyan-400',    dot: 'bg-cyan-500' },
-  PF_TRANSFER:    { label: 'PF Xfer',   bg: 'bg-blue-50',     text: 'text-blue-700',    ring: 'ring-blue-400',    dot: 'bg-blue-500' },
+  PF_TRANSFER:    { label: 'PF Xfer',   bg: 'bg-[#FDF8F3]',     text: 'text-[#7C4A21]',    ring: 'ring-[#B87333]',    dot: 'bg-[#B87333]' },
   FILLING:        { label: 'Filling',    bg: 'bg-sky-50',      text: 'text-sky-700',     ring: 'ring-sky-400',     dot: 'bg-sky-500 animate-pulse' },
   REACTION:       { label: 'Reaction',   bg: 'bg-amber-50',    text: 'text-amber-800',   ring: 'ring-amber-400',   dot: 'bg-amber-500 animate-pulse' },
   RETENTION:      { label: 'Retention',  bg: 'bg-orange-50',   text: 'text-orange-800',  ring: 'ring-orange-400',  dot: 'bg-orange-500 animate-pulse' },
   TRANSFER:       { label: 'Transfer',   bg: 'bg-emerald-50',  text: 'text-emerald-700', ring: 'ring-emerald-400', dot: 'bg-emerald-500' },
   CIP:            { label: 'CIP',        bg: 'bg-purple-50',   text: 'text-purple-700',  ring: 'ring-purple-400',  dot: 'bg-purple-500' },
-  DONE:           { label: 'Done',       bg: 'bg-gray-50',     text: 'text-gray-500',    ring: 'ring-gray-300',    dot: 'bg-gray-400' },
+  DONE:           { label: 'Done',       bg: 'bg-[#FAFAF8]',     text: 'text-[#6B6B63]',    ring: 'ring-[#D4D4CC]',    dot: 'bg-[#9C9C94]' },
 };
 const phCfg = (p: string) => PHASE_CFG[p] || PHASE_CFG.IDLE;
 
@@ -329,17 +329,17 @@ export default function Fermentation() {
 
   /* ═══ RENDER ═══ */
   if (loading) return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+    <div className="min-h-screen bg-[#FAFAF8] flex items-center justify-center">
       <Loader2 size={32} className="animate-spin text-indigo-500" />
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
+    <div className="min-h-screen bg-[#FAFAF8] pb-20">
       {/* Header */}
       <div className="bg-gradient-to-br from-indigo-900 via-purple-900 to-violet-900 text-white px-4 py-3">
         <div className="flex items-center justify-between">
-          <h1 className="text-lg font-extrabold flex items-center gap-2 tracking-tight"><FlaskConical size={20} /> Fermentation</h1>
+          <h1 className="text-lg font-extrabold font-heading flex items-center gap-2 tracking-tight"><FlaskConical size={20} /> Fermentation</h1>
           <div className="flex items-center gap-3">
             <span className="text-xs text-indigo-300 font-medium">{new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
             <button onClick={() => { setLoading(true); load(); }} className="p-1.5 rounded-lg hover:bg-white/10 active:bg-white/20 transition-colors"><RefreshCw size={16} /></button>
@@ -395,36 +395,36 @@ export default function Fermentation() {
               <button key={`${v.type}-${v.no}`}
                 onClick={() => { setSelected(isSelected ? null : v); setTab('reading'); setReadingForm({}); setShowNewBatch(false); }}
                 className={`relative rounded-xl p-2.5 text-left transition-all duration-200 border-2 ${
-                  isSelected ? `${cfg.bg} ring-2 ${cfg.ring} border-transparent shadow-lg scale-[1.03]`
-                  : isIdle ? 'bg-white border-gray-100 hover:border-gray-300 hover:shadow-md'
-                  : `bg-white border-gray-100 hover:shadow-md hover:border-gray-200`
+                  isSelected ? `${cfg.bg} ring-2 ${cfg.ring} border-transparent scale-[1.03]`
+                  : isIdle ? 'bg-white border-[#F5F5F0] hover:border-[#D4D4CC] '
+                  : `bg-white border-[#F5F5F0]  hover:border-[#E8E8E0]`
                 }`}>
                 {/* Active dot indicator */}
                 {!isIdle && v.type !== 'BW' && (
                   <div className={`absolute top-1.5 right-1.5 w-2 h-2 rounded-full ${cfg.dot}`} />
                 )}
                 <div className="flex items-center gap-1.5 mb-1">
-                  <Icon size={14} className={isIdle ? 'text-gray-300' : v.type === 'BW' ? 'text-amber-500' : cfg.text} />
-                  <span className={`text-xs font-extrabold ${isIdle ? 'text-gray-400' : 'text-gray-900'}`}>{v.label}</span>
+                  <Icon size={14} className={isIdle ? 'text-[#C8C8BE]' : v.type === 'BW' ? 'text-amber-500' : cfg.text} />
+                  <span className={`text-xs font-extrabold ${isIdle ? 'text-[#9C9C94]' : 'text-[#333330]'}`}>{v.label}</span>
                 </div>
                 {batchNo > 0 && (
                   <div className="flex items-center gap-1.5 mb-0.5">
                     <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md ${cfg.bg} ${cfg.text}`}>{cfg.label}</span>
-                    <span className="text-[9px] text-gray-400 font-semibold">#{batchNo}</span>
+                    <span className="text-[9px] text-[#9C9C94] font-semibold">#{batchNo}</span>
                   </div>
                 )}
-                {metric1 && <div className="text-sm font-black text-gray-900 mt-1 tracking-tight">{metric1}</div>}
+                {metric1 && <div className="text-sm font-black text-[#333330] mt-1 tracking-tight">{metric1}</div>}
                 {(metric2 || levelStr) && (
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    {metric2 && <span className="text-[10px] font-semibold text-gray-500">{metric2}</span>}
-                    {levelStr && <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1 py-0.5 rounded">{levelStr}</span>}
+                    {metric2 && <span className="text-[10px] font-semibold text-[#6B6B63]">{metric2}</span>}
+                    {levelStr && <span className="text-[10px] font-bold text-[#B87333] bg-[#FDF8F3] px-1 py-0.5 rounded">{levelStr}</span>}
                   </div>
                 )}
-                {isIdle && v.type !== 'BW' && <div className="text-[10px] text-gray-300 mt-1.5 italic">idle</div>}
-                {v.type === 'BW' && !metric1 && <div className="text-[10px] text-gray-300 mt-1.5 italic">no data</div>}
+                {isIdle && v.type !== 'BW' && <div className="text-[10px] text-[#C8C8BE] mt-1.5 italic">idle</div>}
+                {v.type === 'BW' && !metric1 && <div className="text-[10px] text-[#C8C8BE] mt-1.5 italic">no data</div>}
                 {startTime && !isIdle && (
-                  <div className="text-[9px] text-gray-400 mt-1 flex items-center gap-0.5 font-medium">
-                    <Clock size={8} className="text-gray-300" />{elapsed(startTime)}
+                  <div className="text-[9px] text-[#9C9C94] mt-1 flex items-center gap-0.5 font-medium">
+                    <Clock size={8} className="text-[#C8C8BE]" />{elapsed(startTime)}
                   </div>
                 )}
               </button>
@@ -446,21 +446,21 @@ export default function Fermentation() {
         const dosings: Dosing[] = batch?.dosings || [];
 
         return (
-          <div className="mx-3 mt-3 bg-white rounded-2xl border border-gray-200 shadow-lg overflow-hidden animate-[slideUp_0.2s_ease-out]">
+          <div className="mx-3 mt-3 bg-white rounded-2xl border border-[#E8E8E0] overflow-hidden animate-[slideUp_0.2s_ease-out]">
             <style>{`@keyframes slideUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }`}</style>
             {/* Panel header */}
-            <div className={`px-4 py-3 ${isBW ? 'bg-gradient-to-r from-amber-50 to-amber-100/50' : `bg-gradient-to-r ${cfg.bg}`} flex items-center gap-2 border-b border-gray-100`}>
-              <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isBW ? 'bg-amber-200' : cfg.bg} shadow-sm`}>
+            <div className={`px-4 py-3 ${isBW ? 'bg-gradient-to-r from-amber-50 to-amber-100/50' : `bg-gradient-to-r ${cfg.bg}`} flex items-center gap-2 border-b border-[#F5F5F0]`}>
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isBW ? 'bg-amber-200' : cfg.bg}`}>
                 {isPF ? <Beaker size={16} className={cfg.text} /> : isFerm ? <FlaskConical size={16} className={cfg.text} /> : <Cylinder size={16} className="text-amber-600" />}
               </div>
               <div>
-                <span className={`font-extrabold text-base ${isBW ? 'text-amber-800' : 'text-gray-900'}`}>{selected.label}</span>
+                <span className={`font-extrabold text-base ${isBW ? 'text-amber-800' : 'text-[#333330]'}`}>{selected.label}</span>
                 <div className="flex items-center gap-1.5">
-                  {batchNo > 0 && <span className="text-[10px] text-gray-500 font-semibold">Batch #{batchNo}</span>}
+                  {batchNo > 0 && <span className="text-[10px] text-[#6B6B63] font-semibold">Batch #{batchNo}</span>}
                   {phase !== 'IDLE' && !isBW && <span className={`text-[10px] font-bold ${cfg.text}`}>· {cfg.label}</span>}
                 </div>
               </div>
-              <button onClick={() => setSelected(null)} className="ml-auto w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"><X size={14} className="text-gray-500" /></button>
+              <button onClick={() => setSelected(null)} className="ml-auto w-7 h-7 rounded-full bg-[#F5F5F0] hover:bg-[#E8E8E0] flex items-center justify-center transition-colors"><X size={14} className="text-[#6B6B63]" /></button>
             </div>
 
             {/* IDLE — Start batch */}
@@ -474,22 +474,22 @@ export default function Fermentation() {
                 ) : (
                   <div className="space-y-2 max-w-xs mx-auto">
                     <div className="grid grid-cols-2 gap-2">
-                      <div><label className="text-[10px] font-bold text-gray-500">Batch #</label>
+                      <div><label className="text-[10px] font-bold text-[#6B6B63]">Batch #</label>
                         <input type="number" value={newBatchForm.batchNo} onChange={e => setNewBatchForm(f => ({ ...f, batchNo: e.target.value }))} className="w-full px-2 py-1.5 border rounded-lg text-sm" /></div>
-                      <div><label className="text-[10px] font-bold text-gray-500">Level %</label>
+                      <div><label className="text-[10px] font-bold text-[#6B6B63]">Level %</label>
                         <input type="number" step="0.1" value={newBatchForm.pfLevel} onChange={e => setNewBatchForm(f => ({ ...f, pfLevel: e.target.value }))} className="w-full px-2 py-1.5 border rounded-lg text-sm" /></div>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
-                      <div><label className="text-[10px] font-bold text-gray-500">Gravity</label>
+                      <div><label className="text-[10px] font-bold text-[#6B6B63]">Gravity</label>
                         <input type="number" step="0.001" value={newBatchForm.slurryGravity} onChange={e => setNewBatchForm(f => ({ ...f, slurryGravity: e.target.value }))} className="w-full px-2 py-1.5 border rounded-lg text-sm" /></div>
-                      {isPF && <div><label className="text-[10px] font-bold text-gray-500">Temp °C</label>
+                      {isPF && <div><label className="text-[10px] font-bold text-[#6B6B63]">Temp °C</label>
                         <input type="number" step="0.1" value={newBatchForm.slurryTemp} onChange={e => setNewBatchForm(f => ({ ...f, slurryTemp: e.target.value }))} className="w-full px-2 py-1.5 border rounded-lg text-sm" /></div>}
                     </div>
                     <div className="flex gap-2">
                       <button onClick={startBatch} disabled={saving} className="flex-1 py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">
                         {saving ? <Loader2 size={14} className="animate-spin mx-auto" /> : '🚀 Start'}
                       </button>
-                      <button onClick={() => setShowNewBatch(false)} className="px-3 py-2 bg-gray-100 text-gray-600 rounded-lg text-xs">Cancel</button>
+                      <button onClick={() => setShowNewBatch(false)} className="px-3 py-2 bg-[#F5F5F0] text-[#4A4A44] rounded-lg text-xs">Cancel</button>
                     </div>
                   </div>
                 )}
@@ -500,13 +500,13 @@ export default function Fermentation() {
             {(phase !== 'IDLE' || isBW) && (
               <>
                 {!isBW && (
-                  <div className="flex border-b bg-gray-50/30 px-1 pt-1">
+                  <div className="flex border-b bg-[#FAFAF8]/30 px-1 pt-1">
                     {(['reading', 'dosing', 'charts', 'batch'] as const).map(t => (
                       <button key={t} onClick={() => setTab(t)}
                         className={`flex-1 py-2 text-[11px] font-bold tracking-wide rounded-t-lg transition-all duration-150 ${
                           tab === t
-                            ? 'text-indigo-700 bg-white border-b-2 border-indigo-600 shadow-sm'
-                            : 'text-gray-400 hover:text-gray-600 hover:bg-white/50'
+                            ? 'text-indigo-700 bg-white border-b-2 border-indigo-600'
+                            : 'text-[#9C9C94] hover:text-[#4A4A44] hover:bg-white/50'
                         }`}>
                         {t === 'reading' ? 'Reading' : t === 'dosing' ? 'Dosing' : t === 'charts' ? 'Charts' : 'Batch'}
                       </button>
@@ -519,20 +519,20 @@ export default function Fermentation() {
                   <div className="p-3 space-y-3">
                     <div className="space-y-3">
                       {!isBW && (
-                        <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-1.5 border border-gray-200">
-                          <Clock size={12} className="text-gray-400 shrink-0" />
-                          <label className="text-[9px] font-bold text-gray-500 uppercase tracking-wider shrink-0">Time</label>
+                        <div className="flex items-center gap-2 bg-[#FAFAF8] rounded-lg px-3 py-1.5 border border-[#E8E8E0]">
+                          <Clock size={12} className="text-[#9C9C94] shrink-0" />
+                          <label className="text-[9px] font-bold text-[#6B6B63] uppercase tracking-wider shrink-0">Time</label>
                           <input type="datetime-local" step="60"
                             value={readingForm.analysisTime || new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
                             onChange={e => setReadingForm(f => ({ ...f, analysisTime: e.target.value }))}
-                            className="flex-1 px-2 py-1 text-xs font-semibold text-gray-900 border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-indigo-300 outline-none" />
+                            className="flex-1 px-2 py-1 text-xs font-semibold text-[#333330] border border-[#E8E8E0] rounded-lg bg-white focus:ring-2 focus:ring-[#B87333] outline-none" />
                         </div>
                       )}
                       <div className="grid grid-cols-2 gap-2.5">
-                        <div className="bg-blue-50 rounded-xl p-3 border border-blue-100">
-                          <label className="text-[9px] font-bold text-blue-600 uppercase tracking-wider">Level %</label>
+                        <div className="bg-[#FDF8F3] rounded-xl p-3 border border-[#F5E6D3]">
+                          <label className="text-[9px] font-bold text-[#B87333] uppercase tracking-wider">Level %</label>
                           <input type="number" step="0.1" value={readingForm.level || ''} onChange={e => setReadingForm(f => ({ ...f, level: e.target.value }))}
-                            placeholder="—" className="w-full text-2xl font-black text-blue-900 bg-transparent border-none outline-none placeholder-blue-200 mt-0.5" inputMode="decimal" />
+                            placeholder="—" className="w-full text-2xl font-black text-[#5C3317] bg-transparent border-none outline-none placeholder-[#E8D5C4] mt-0.5" inputMode="decimal" />
                         </div>
                         <div className="bg-orange-50 rounded-xl p-3 border border-orange-100">
                           <label className="text-[9px] font-bold text-orange-600 uppercase tracking-wider">Temp °C</label>
@@ -549,22 +549,22 @@ export default function Fermentation() {
                           ...(!isBW ? [{ key: 'ds', label: 'DS%', step: '0.01' }, { key: 'vfaPpa', label: 'VFA', step: '0.01' }] : []),
                         ].map(f => (
                           <div key={f.key}>
-                            <label className="text-[8px] font-bold text-gray-500 uppercase tracking-wider">{f.label}</label>
+                            <label className="text-[8px] font-bold text-[#6B6B63] uppercase tracking-wider">{f.label}</label>
                             <input type="number" step={f.step} value={(readingForm as any)[f.key] || ''}
                               onChange={e => setReadingForm(rf => ({ ...rf, [f.key]: e.target.value }))}
-                              className="w-full px-2 py-1.5 text-sm font-semibold text-gray-900 border border-gray-200 rounded-lg bg-gray-50 focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300 focus:bg-white outline-none transition-all" inputMode="decimal" />
+                              className="w-full px-2 py-1.5 text-sm font-semibold text-[#333330] border border-[#E8E8E0] rounded-lg bg-[#FAFAF8] focus:ring-2 focus:ring-[#B87333] focus:border-[#B87333] focus:bg-white outline-none transition-all" inputMode="decimal" />
                           </div>
                         ))}
                       </div>
                       <input placeholder="Remarks..." value={readingForm.remarks || ''} onChange={e => setReadingForm(f => ({ ...f, remarks: e.target.value }))}
-                        className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-gray-50 outline-none" />
+                        className="w-full px-2 py-1.5 text-xs border border-[#E8E8E0] rounded-lg bg-[#FAFAF8] outline-none" />
                       <div className="flex gap-2.5">
                         <button onClick={() => saveReading(false)} disabled={saving}
-                          className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-sm hover:bg-indigo-700 active:scale-[0.98] transition-all">
+                          className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-1.5 hover:bg-indigo-700 active:scale-[0.98] transition-all">
                           {saving ? <Loader2 size={14} className="animate-spin" /> : <><Send size={13} /> Save</>}
                         </button>
                         <button onClick={() => saveReading(true)} disabled={saving}
-                          className="flex-1 py-2.5 bg-green-600 text-white rounded-xl text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-sm hover:bg-green-700 active:scale-[0.98] transition-all">
+                          className="flex-1 py-2.5 bg-green-600 text-white rounded-xl text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-1.5 hover:bg-green-700 active:scale-[0.98] transition-all">
                           {saving ? <Loader2 size={14} className="animate-spin" /> : <><MessageCircle size={13} /> Save & Share</>}
                         </button>
                       </div>
@@ -574,7 +574,7 @@ export default function Fermentation() {
                       const rList = isBW ? getBW(selected.no).map(r => ({ id: r.id, analysisTime: '', spGravity: r.spGravity, ph: r.ph, alcohol: r.alcohol, temp: r.temp, level: r.level, rs: undefined as number | undefined, createdAt: r.createdAt, status: '' })) : readings;
                       return rList.length > 0 && (
                         <div>
-                          <div className="text-[9px] font-bold text-gray-400 uppercase mb-1">Recent Readings</div>
+                          <div className="text-[9px] font-bold text-[#9C9C94] uppercase mb-1">Recent Readings</div>
                           <div className="space-y-0.5 max-h-64 overflow-y-auto">
                             {rList.slice(-10).reverse().map((r, i) => (
                               editingReading === r.id ? (
@@ -586,7 +586,7 @@ export default function Fermentation() {
                                       { k: 'temp', l: 'Temp' }, { k: 'alcohol', l: 'Alc%' }, { k: 'rs', l: 'RS' },
                                     ].map(f => (
                                       <div key={f.k}>
-                                        <label className="text-[7px] font-bold text-gray-400">{f.l}</label>
+                                        <label className="text-[7px] font-bold text-[#9C9C94]">{f.l}</label>
                                         <input type="number" step="0.01" value={editForm[f.k] || ''} onChange={e => setEditForm(ef => ({ ...ef, [f.k]: e.target.value }))}
                                           className="w-full px-1 py-0.5 text-[10px] border rounded" />
                                       </div>
@@ -594,24 +594,24 @@ export default function Fermentation() {
                                   </div>
                                   <div className="flex gap-1.5">
                                     <button onClick={() => saveEditReading(r.id)} className="flex-1 py-1 bg-green-600 text-white text-[10px] font-bold rounded">Save</button>
-                                    <button onClick={() => setEditingReading(null)} className="flex-1 py-1 bg-gray-200 text-gray-600 text-[10px] font-bold rounded">Cancel</button>
+                                    <button onClick={() => setEditingReading(null)} className="flex-1 py-1 bg-[#E8E8E0] text-[#4A4A44] text-[10px] font-bold rounded">Cancel</button>
                                   </div>
                                 </div>
                               ) : (
                                 /* Normal row */
-                                <div key={r.id || i} className="flex items-center gap-2 px-2.5 py-2 bg-gray-50/80 rounded-lg text-[11px] group hover:bg-gray-100 transition-colors">
-                                  <span className="text-gray-400 font-mono text-[10px] w-11 shrink-0">{fmtTime(r.analysisTime || r.createdAt)}</span>
+                                <div key={r.id || i} className="flex items-center gap-2 px-2.5 py-2 bg-[#FAFAF8]/80 rounded-lg text-[11px] group hover:bg-[#F5F5F0] transition-colors">
+                                  <span className="text-[#9C9C94] font-mono text-[10px] w-11 shrink-0">{fmtTime(r.analysisTime || r.createdAt)}</span>
                                   <div className="flex items-center gap-2 flex-1 flex-wrap">
-                                    {r.level && <span className="text-blue-700 font-bold bg-blue-50 px-1.5 py-0.5 rounded">Lvl {r.level}%</span>}
+                                    {r.level && <span className="text-[#7C4A21] font-bold bg-[#FDF8F3] px-1.5 py-0.5 rounded">Lvl {r.level}%</span>}
                                     {r.spGravity && <span className="text-indigo-700 font-bold bg-indigo-50 px-1.5 py-0.5 rounded">SG {typeof r.spGravity === 'number' ? r.spGravity.toFixed(3) : r.spGravity}</span>}
-                                    {r.ph && <span className="text-gray-700 font-semibold">pH {r.ph}</span>}
+                                    {r.ph && <span className="text-[#333330] font-semibold">pH {r.ph}</span>}
                                     {r.temp && <span className={`font-bold px-1.5 py-0.5 rounded ${(r.temp || 0) > 37 ? 'text-red-700 bg-red-50' : 'text-orange-700 bg-orange-50'}`}>{r.temp}°C</span>}
                                     {r.alcohol && <span className="text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded">{r.alcohol}%</span>}
                                     {r.status === 'FIELD' && <span className="text-[9px] bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded font-bold">FIELD</span>}
                                   </div>
                                   {r.id && !isBW && (
                                     <div className="flex items-center gap-1 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity">
-                                      <button onClick={() => startEditReading(r as any)} className="w-6 h-6 rounded-md bg-blue-50 hover:bg-blue-100 flex items-center justify-center text-blue-600 transition-colors" title="Edit">
+                                      <button onClick={() => startEditReading(r as any)} className="w-6 h-6 rounded-md bg-[#FDF8F3] hover:bg-[#F5E6D3] flex items-center justify-center text-[#B87333] transition-colors" title="Edit">
                                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M17 3a2.83 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
                                       </button>
                                       <button onClick={() => deleteReading(r.id)} className="w-6 h-6 rounded-md bg-red-50 hover:bg-red-100 flex items-center justify-center text-red-500 transition-colors" title="Delete">
@@ -640,19 +640,19 @@ export default function Fermentation() {
                     )}
                     {dosings.length > 0 && (
                       <div className="space-y-1">
-                        <div className="text-[9px] font-bold text-gray-400 uppercase">Added Chemicals</div>
+                        <div className="text-[9px] font-bold text-[#9C9C94] uppercase">Added Chemicals</div>
                         {dosings.map((d: Dosing) => (
                           <div key={d.id} className="flex items-center gap-2 bg-violet-50/50 rounded-lg px-2 py-1.5">
-                            <span className="text-xs font-medium text-gray-800 flex-1">{d.chemicalName}</span>
+                            <span className="text-xs font-medium text-[#4A4A44] flex-1">{d.chemicalName}</span>
                             <span className="text-xs font-bold text-violet-700">{d.quantity} {d.unit}</span>
-                            <button onClick={() => deleteDosing(d.id)} className="text-gray-300 hover:text-red-500"><Trash2 size={11} /></button>
+                            <button onClick={() => deleteDosing(d.id)} className="text-[#C8C8BE] hover:text-red-500"><Trash2 size={11} /></button>
                           </div>
                         ))}
                       </div>
                     )}
                     <div className="flex gap-1.5 items-end">
                       <div className="flex-1">
-                        <label className="text-[8px] font-bold text-gray-400">Chemical</label>
+                        <label className="text-[8px] font-bold text-[#9C9C94]">Chemical</label>
                         <select value={dosingForm.chemicalName} onChange={e => setDosingForm(f => ({ ...f, chemicalName: e.target.value }))}
                           className="w-full px-2 py-1.5 text-xs border rounded-lg bg-white">
                           <option value="">Select...</option>
@@ -660,12 +660,12 @@ export default function Fermentation() {
                         </select>
                       </div>
                       <div className="w-16">
-                        <label className="text-[8px] font-bold text-gray-400">Qty</label>
+                        <label className="text-[8px] font-bold text-[#9C9C94]">Qty</label>
                         <input type="number" value={dosingForm.quantity} onChange={e => setDosingForm(f => ({ ...f, quantity: e.target.value }))}
                           className="w-full px-2 py-1.5 text-xs border rounded-lg" />
                       </div>
                       <div className="w-14">
-                        <label className="text-[8px] font-bold text-gray-400">Unit</label>
+                        <label className="text-[8px] font-bold text-[#9C9C94]">Unit</label>
                         <select value={dosingForm.unit} onChange={e => setDosingForm(f => ({ ...f, unit: e.target.value }))}
                           className="w-full px-2 py-1.5 text-xs border rounded-lg bg-white">
                           {['kg', 'ltr', 'gm', 'ml'].map(u => <option key={u} value={u}>{u}</option>)}
@@ -683,11 +683,11 @@ export default function Fermentation() {
                 {tab === 'charts' && !isBW && (
                   <div className="p-3 space-y-3">
                     {readings.length < 2 ? (
-                      <p className="text-center text-gray-400 text-xs py-8">Need 2+ readings for charts</p>
+                      <p className="text-center text-[#9C9C94] text-xs py-8">Need 2+ readings for charts</p>
                     ) : (
                       <>
                         <div>
-                          <div className="text-[9px] font-bold text-gray-400 uppercase mb-1">Gravity & Alcohol</div>
+                          <div className="text-[9px] font-bold text-[#9C9C94] uppercase mb-1">Gravity & Alcohol</div>
                           <ResponsiveContainer width="100%" height={180}>
                             <LineChart data={readings.map(r => ({ time: fmtTime(r.analysisTime || r.createdAt), sg: r.spGravity, alc: r.alcohol }))}>
                               <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
@@ -702,7 +702,7 @@ export default function Fermentation() {
                           </ResponsiveContainer>
                         </div>
                         <div>
-                          <div className="text-[9px] font-bold text-gray-400 uppercase mb-1">pH & Temperature</div>
+                          <div className="text-[9px] font-bold text-[#9C9C94] uppercase mb-1">pH & Temperature</div>
                           <ResponsiveContainer width="100%" height={150}>
                             <LineChart data={readings.map(r => ({ time: fmtTime(r.analysisTime || r.createdAt), ph: r.ph, temp: r.temp }))}>
                               <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
@@ -726,7 +726,7 @@ export default function Fermentation() {
                   <div className="p-3 space-y-3">
                     {/* Phase timeline */}
                     <div>
-                      <div className="text-[9px] font-bold text-gray-400 uppercase mb-1.5">Phase Timeline</div>
+                      <div className="text-[9px] font-bold text-[#9C9C94] uppercase mb-1.5">Phase Timeline</div>
                       <div className="flex items-center gap-0.5">
                         {(isPF ? PF_PHASES : FERM_PHASES).map((p, i) => {
                           const pCfg = phCfg(p);
@@ -734,7 +734,7 @@ export default function Fermentation() {
                           const ci = phaseList.indexOf(phase);
                           return (
                             <div key={p} className={`flex-1 text-center py-1 rounded text-[7px] font-bold ${
-                              i < ci ? 'bg-green-100 text-green-600' : i === ci ? `${pCfg.bg} ${pCfg.text} ring-1 ${pCfg.ring}` : 'bg-gray-50 text-gray-300'
+                              i < ci ? 'bg-green-100 text-green-600' : i === ci ? `${pCfg.bg} ${pCfg.text} ring-1 ${pCfg.ring}` : 'bg-[#FAFAF8] text-[#C8C8BE]'
                             }`}>{pCfg.label}</div>
                           );
                         })}
@@ -751,7 +751,7 @@ export default function Fermentation() {
                     )}
                     {isFerm && (
                       <div className="grid grid-cols-3 gap-2 text-center">
-                        {(batch as FermBatch).fermLevel && <div className="bg-blue-50 rounded-lg p-1.5"><div className="text-[8px] text-blue-400 font-bold">Level</div><div className="text-xs font-bold text-blue-700">{(batch as FermBatch).fermLevel}%</div></div>}
+                        {(batch as FermBatch).fermLevel && <div className="bg-[#FDF8F3] rounded-lg p-1.5"><div className="text-[8px] text-[#D4A574] font-bold">Level</div><div className="text-xs font-bold text-[#7C4A21]">{(batch as FermBatch).fermLevel}%</div></div>}
                         {(batch as FermBatch).setupGravity && <div className="bg-indigo-50 rounded-lg p-1.5"><div className="text-[8px] text-indigo-400 font-bold">Setup SG</div><div className="text-xs font-bold text-indigo-700">{(batch as FermBatch).setupGravity!.toFixed(3)}</div></div>}
                         {(batch as FermBatch).finalAlcohol && <div className="bg-emerald-50 rounded-lg p-1.5"><div className="text-[8px] text-emerald-400 font-bold">Final Alc</div><div className="text-xs font-bold text-emerald-700">{(batch as FermBatch).finalAlcohol}%</div></div>}
                       </div>
@@ -759,36 +759,36 @@ export default function Fermentation() {
 
                     {/* Phase actions */}
                     <div className="space-y-1.5">
-                      <div className="text-[9px] font-bold text-gray-400 uppercase">Actions</div>
+                      <div className="text-[9px] font-bold text-[#9C9C94] uppercase">Actions</div>
                       {isPF && (phase === 'LAB' || phase === 'TRANSFER') && (
                         <div>
-                          <div className="text-[10px] text-gray-600 mb-1">Transfer to Fermenter:</div>
+                          <div className="text-[10px] text-[#4A4A44] mb-1">Transfer to Fermenter:</div>
                           <div className="flex gap-1.5 flex-wrap">
                             {freeFermenters.map(fn => (
                               <button key={fn} onClick={() => transferPF(batch!.id, fn)} disabled={saving}
-                                className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">
+                                className="px-3 py-1.5 bg-[#B87333] text-white rounded-lg text-xs font-bold disabled:opacity-50">
                                 {saving ? <Loader2 size={12} className="animate-spin" /> : `→ F-${fn}`}
                               </button>
                             ))}
-                            {freeFermenters.length === 0 && <span className="text-xs text-gray-400">No free fermenters</span>}
+                            {freeFermenters.length === 0 && <span className="text-xs text-[#9C9C94]">No free fermenters</span>}
                           </div>
                         </div>
                       )}
                       {isPF && phase === 'SETUP' && <button onClick={() => advancePhase('PF', batch!.id, 'DOSING')} disabled={saving} className="w-full py-2 bg-violet-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Start Dosing</button>}
                       {isPF && phase === 'DOSING' && <button onClick={() => advancePhase('PF', batch!.id, 'LAB')} disabled={saving} className="w-full py-2 bg-cyan-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Lab Monitoring</button>}
                       {isPF && phase === 'TRANSFER' && <button onClick={() => advancePhase('PF', batch!.id, 'CIP', { cipStartTime: new Date().toISOString() })} disabled={saving} className="w-full py-2 bg-purple-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Start CIP</button>}
-                      {isPF && phase === 'CIP' && <button onClick={() => advancePhase('PF', batch!.id, 'DONE', { cipEndTime: new Date().toISOString() })} disabled={saving} className="w-full py-2 bg-gray-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Complete</button>}
+                      {isPF && phase === 'CIP' && <button onClick={() => advancePhase('PF', batch!.id, 'DONE', { cipEndTime: new Date().toISOString() })} disabled={saving} className="w-full py-2 bg-[#7C4A21] text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Complete</button>}
 
                       {isFerm && phase === 'FILLING' && <button onClick={() => advancePhase('FERM', batch!.id, 'REACTION', { reactionStartTime: new Date().toISOString(), fillingEndTime: new Date().toISOString() })} disabled={saving} className="w-full py-2 bg-amber-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Start Reaction</button>}
                       {isFerm && phase === 'REACTION' && <button onClick={() => advancePhase('FERM', batch!.id, 'RETENTION', { retentionStartTime: new Date().toISOString() })} disabled={saving} className="w-full py-2 bg-orange-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Start Retention</button>}
                       {isFerm && phase === 'RETENTION' && (
                         <>
-                          {(batch as FermBatch).retentionStartTime && <div className="text-[10px] text-gray-500">Retention: {elapsed((batch as FermBatch).retentionStartTime)} elapsed{settings.fermRetentionHours ? ` / ${settings.fermRetentionHours}h target` : ''}</div>}
+                          {(batch as FermBatch).retentionStartTime && <div className="text-[10px] text-[#6B6B63]">Retention: {elapsed((batch as FermBatch).retentionStartTime)} elapsed{settings.fermRetentionHours ? ` / ${settings.fermRetentionHours}h target` : ''}</div>}
                           <button onClick={() => advancePhase('FERM', batch!.id, 'TRANSFER', { transferTime: new Date().toISOString() })} disabled={saving} className="w-full py-2 bg-emerald-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Transfer to Beer Well</button>
                         </>
                       )}
                       {isFerm && phase === 'TRANSFER' && <button onClick={() => advancePhase('FERM', batch!.id, 'CIP', { cipStartTime: new Date().toISOString() })} disabled={saving} className="w-full py-2 bg-purple-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Start CIP</button>}
-                      {isFerm && phase === 'CIP' && <button onClick={() => advancePhase('FERM', batch!.id, 'DONE', { cipEndTime: new Date().toISOString() })} disabled={saving} className="w-full py-2 bg-gray-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Complete</button>}
+                      {isFerm && phase === 'CIP' && <button onClick={() => advancePhase('FERM', batch!.id, 'DONE', { cipEndTime: new Date().toISOString() })} disabled={saving} className="w-full py-2 bg-[#7C4A21] text-white rounded-lg text-xs font-bold disabled:opacity-50">→ Complete</button>}
                     </div>
                     {/* Delete batch */}
                     <button onClick={deleteBatch} className="w-full py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg text-xs font-semibold hover:bg-red-100 flex items-center justify-center gap-1.5 mt-2">
