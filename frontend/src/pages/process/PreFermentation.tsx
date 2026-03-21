@@ -40,6 +40,20 @@ export default function PreFermentation() {
   const [transferTarget, setTransferTarget] = useState<{ pfBatch: Batch; fermenterNo: string; transferTime: string } | null>(null);
 
   const [nbForm, setNbForm] = useState({ batchNo: '', fermenterNo: '1', pfLevel: '', slurryGravity: '', slurryTemp: '', remarks: '' });
+
+  // Prefill new batch form from latest completed batch
+  useEffect(() => {
+    if (showNewBatch && batches.length > 0) {
+      const prev = batches[0]; // most recent batch
+      const lastLab = prev.labReadings.length > 0 ? prev.labReadings[prev.labReadings.length - 1] : null;
+      setNbForm(f => ({
+        ...f,
+        batchNo: f.batchNo || String((prev.batchNo || 0) + 1),
+        pfLevel: f.pfLevel || (prev.slurryVolume ? String(((prev.slurryVolume / 1000) / PF_VOLUME_M3 * 100).toFixed(0)) : ''),
+        slurryGravity: f.slurryGravity || (lastLab?.spGravity ? String(lastLab.spGravity) : prev.slurryGravity ? String(prev.slurryGravity) : ''),
+      }));
+    }
+  }, [showNewBatch, batches]);
   const [doseForm, setDoseForm] = useState({ chemicalName: '', quantity: '', unit: 'kg', rate: '' });
   const [labForm, setLabForm] = useState({ analysisTime: '', spGravity: '', ph: '', rs: '', rst: '', alcohol: '', ds: '', vfaPpa: '', temp: '', remarks: '' });
   const [chemForm, setChemForm] = useState({ name: '', rate: '', unit: 'kg' });
@@ -107,6 +121,13 @@ export default function PreFermentation() {
     } catch {}
   };
 
+  // Prefill first lab reading gravity from setup slurryGravity
+  useEffect(() => {
+    if (activeBatch && activeBatch.labReadings.length === 0 && activeBatch.slurryGravity) {
+      setLabForm(f => ({ ...f, spGravity: f.spGravity || String(activeBatch.slurryGravity) }));
+    }
+  }, [activeBatch?.id, activeBatch?.labReadings.length]);
+
   const addLabReading = async () => {
     if (!activeBatch) return;
     try {
@@ -135,17 +156,28 @@ export default function PreFermentation() {
     if (!transferTarget) return;
     const { pfBatch, fermenterNo, transferTime } = transferTarget;
     const dt = transferTime ? new Date(transferTime).toISOString() : new Date().toISOString();
+    // Get latest gravity from lab readings (or fallback to setup gravity)
+    const lastLab = pfBatch.labReadings.length > 0 ? pfBatch.labReadings[pfBatch.labReadings.length - 1] : null;
+    const latestGravity = lastLab?.spGravity ?? pfBatch.slurryGravity;
+    // Calculate transfer volume from PF level
+    const transferVolume = pfBatch.slurryVolume;
     try {
       setPhaseMsg('Transferring to Fermenter...');
-      await api.patch(`/pre-fermentation/batches/${pfBatch.id}`, { phase: 'TRANSFER', transferTime: dt });
+      await api.patch(`/pre-fermentation/batches/${pfBatch.id}`, {
+        phase: 'TRANSFER',
+        transferTime: dt,
+        transferVolume: transferVolume,
+      });
       await api.post('/fermentation/batches/from-pf', {
         batchNo: pfBatch.batchNo,
         fermenterNo: parseInt(fermenterNo),
         pfTransferTime: dt,
-        setupGravity: pfBatch.slurryGravity,
+        setupGravity: latestGravity,
         pfNo: pfBatch.fermenterNo,
         pfBatchId: pfBatch.id,
-        remarks: `From PF${pfBatch.fermenterNo} batch #${pfBatch.batchNo}`
+        pfBatchNo: pfBatch.batchNo,
+        transferVolume: transferVolume,
+        remarks: `PF${pfBatch.fermenterNo} #${pfBatch.batchNo} transferred at ${new Date(dt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`
       });
       setShowTransferModal(false);
       setTransferTarget(null);

@@ -194,7 +194,7 @@ export default function Dashboard() {
       {/* ═══ OVERVIEW TAB ═══ */}
       {activeTab === 'overview' && (
         <>
-          {/* KPI Grid */}
+          {/* KPI Grid — Row 1: Grain & Ethanol */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
             <KPI label="Grain Unloaded" value={k.grainUnloaded.toFixed(0)} unit="T" icon={Wheat} color="bg-amber-600" sub={`Consumed: ${k.grainConsumed.toFixed(0)} T`} />
             <KPI label="Silo Stock" value={k.siloStock.toFixed(0)} unit="T" icon={Factory} color="bg-amber-800" sub={`Total@Plant: ${k.totalAtPlant.toFixed(0)} T`} />
@@ -204,7 +204,17 @@ export default function Dashboard() {
             <KPI label="KLPD" value={k.latestKlpd.toFixed(1)} unit="" icon={TrendingUp} color="bg-indigo-600" sub="Latest flow rate" />
           </div>
 
-          {/* Two charts */}
+          {/* KPI Grid — Row 2: Quality, DDGS, Distillation */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+            <KPI label="Ethanol Strength" value={k.avgEthanolStrength.toFixed(1)} unit="%" icon={FlaskConical} color="bg-purple-600" sub="Distillation avg" />
+            <KPI label="Raw Moisture" value={k.avgMoisture.toFixed(1)} unit="%" icon={Wheat} color="bg-yellow-600" sub={`${data.tables.rawMaterial.length} samples`} />
+            <KPI label="Raw Starch" value={k.avgStarch.toFixed(1)} unit="%" icon={Wheat} color="bg-lime-600" sub="Avg starch %" />
+            <KPI label="DDGS Produced" value={(k.ddgsProduced / 1000).toFixed(1)} unit="T" icon={Package} color="bg-green-700" sub={`Dispatched: ${(k.ddgsDispatched / 1000).toFixed(1)} T`} />
+            <KPI label="Wash Distilled" value={k.washDistilled.toFixed(0)} unit="KL" icon={Flame} color="bg-orange-600" sub="Total wash" />
+            <KPI label="Active Fermenters" value={data.live.fermenters.length + data.live.preFermenters.length} unit="" icon={Activity} color="bg-teal-600" sub={`${data.live.fermenters.length} F + ${data.live.preFermenters.length} PF`} />
+          </div>
+
+          {/* Charts — 2x2 grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="bg-white rounded-xl shadow-sm border p-4">
               <h3 className="text-sm font-semibold text-gray-700 mb-3">Ethanol Production (BL)</h3>
@@ -216,6 +226,19 @@ export default function Dashboard() {
                   <Tooltip formatter={(v: number) => v.toFixed(0)} labelFormatter={(l: string) => `Date: ${l}`} />
                   <Bar dataKey="productionBL" fill="#3b82f6" name="Production BL" radius={[4, 4, 0, 0]} />
                 </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="bg-white rounded-xl shadow-sm border p-4">
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">KLPD Trend</h3>
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={t.ethanol}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" fontSize={10} tickFormatter={shortDate} />
+                  <YAxis fontSize={10} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="klpd" stroke="#6366f1" strokeWidth={2} dot={{ r: 3 }} name="KLPD" />
+                </LineChart>
               </ResponsiveContainer>
             </div>
 
@@ -232,7 +255,55 @@ export default function Dashboard() {
                 </AreaChart>
               </ResponsiveContainer>
             </div>
+
+            <div className="bg-white rounded-xl shadow-sm border p-4">
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">Ethanol Stock & Dispatch (BL)</h3>
+              <ResponsiveContainer width="100%" height={220}>
+                <ComposedChart data={t.ethanol}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" fontSize={10} tickFormatter={shortDate} />
+                  <YAxis fontSize={10} />
+                  <Tooltip />
+                  <Legend />
+                  <Area type="monotone" dataKey="totalStock" stroke="#06b6d4" fill="#67e8f9" fillOpacity={0.3} name="Stock" />
+                  <Bar dataKey="dispatch" fill="#22c55e" name="Dispatch" radius={[4, 4, 0, 0]} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
           </div>
+
+          {/* Recent Dispatch Table */}
+          {data.tables.recentDispatches.length > 0 && (
+            <>
+              <SectionHeader title="Recent Dispatches" icon={Truck} />
+              <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 text-gray-600 text-xs">
+                      <tr>
+                        <th className="px-3 py-2 text-left">Date</th>
+                        <th className="px-3 py-2 text-left">Vehicle</th>
+                        <th className="px-3 py-2 text-left">Party</th>
+                        <th className="px-3 py-2 text-right">Qty (BL)</th>
+                        <th className="px-3 py-2 text-right">Strength</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {data.tables.recentDispatches.slice(0, 8).map((d: any, i: number) => (
+                        <tr key={i} className="hover:bg-gray-50">
+                          <td className="px-3 py-2 text-gray-600">{shortDate(d.date)}</td>
+                          <td className="px-3 py-2 font-medium">{d.vehicleNo}</td>
+                          <td className="px-3 py-2 text-gray-600">{d.party}</td>
+                          <td className="px-3 py-2 text-right font-medium">{(d.quantityBL || 0).toLocaleString()}</td>
+                          <td className="px-3 py-2 text-right">{d.strength}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
 
           {/* Live Fermenter Status */}
           {(data.live.fermenters.length > 0 || data.live.preFermenters.length > 0) && (

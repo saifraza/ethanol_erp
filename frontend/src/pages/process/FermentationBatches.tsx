@@ -735,6 +735,9 @@ export default function Fermentation() {
                 {activeBatch.setupGravity && <span>SG: {activeBatch.setupGravity}</span>}
                 {activeBatch.beerWellNo && <span>→ Beer Well #{activeBatch.beerWellNo}</span>}
               </div>
+              {activeBatch.remarks && (
+                <p className="text-xs text-indigo-600 font-medium mt-1 bg-indigo-50 px-2 py-1 rounded inline-block">{activeBatch.remarks}</p>
+              )}
               <div className="flex flex-wrap gap-x-5 gap-y-1 mt-2">
                 {activeBatch.pfTransferTime && <TimeField label="PF Transfer" value={activeBatch.pfTransferTime} field="pfTransferTime" batchId={activeBatch.id} color="orange" />}
                 {activeBatch.fillingStartTime && <TimeField label="Filling Start" value={activeBatch.fillingStartTime} field="fillingStartTime" batchId={activeBatch.id} color="indigo" />}
