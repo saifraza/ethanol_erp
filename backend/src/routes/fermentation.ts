@@ -580,4 +580,45 @@ router.post('/beer-well', async (req: Request, res: Response) => {
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
+/* ═══════ BATCH HISTORY — all completed PF + Ferm batches ═══════ */
+router.get('/history', async (req: Request, res: Response) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+
+    const [pfHistory, fermHistory] = await Promise.all([
+      prisma.pFBatch.findMany({
+        where: { phase: 'DONE' },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        select: {
+          id: true, batchNo: true, fermenterNo: true, phase: true,
+          setupTime: true, dosingEndTime: true, transferTime: true,
+          cipStartTime: true, cipEndTime: true,
+          slurryVolume: true, slurryGravity: true, slurryTemp: true,
+          remarks: true, createdAt: true,
+          labReadings: { orderBy: { createdAt: 'desc' }, take: 1, select: { spGravity: true, ph: true, alcohol: true } },
+        },
+      }),
+      prisma.fermentationBatch.findMany({
+        where: { phase: 'DONE' },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        select: {
+          id: true, batchNo: true, fermenterNo: true, phase: true,
+          pfTransferTime: true, fillingStartTime: true, fillingEndTime: true,
+          reactionStartTime: true, retentionStartTime: true, transferTime: true,
+          cipStartTime: true, cipEndTime: true,
+          setupGravity: true, fermLevel: true, volume: true, transferVolume: true,
+          beerWellNo: true, finalAlcohol: true, totalHours: true,
+          remarks: true, createdAt: true,
+        },
+      }),
+    ]);
+
+    res.json({ pfHistory, fermHistory });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

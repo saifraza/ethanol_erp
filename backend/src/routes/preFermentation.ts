@@ -46,18 +46,35 @@ router.post('/batches', async (req: Request, res: Response) => {
   try {
     const b = req.body;
     const userId = (req as any).user?.id || 'unknown';
+    const setupTime = b.setupTime ? new Date(b.setupTime) : new Date();
+    const slurryGravity = b.slurryGravity ? parseFloat(b.slurryGravity) : null;
+    const slurryTemp = b.slurryTemp ? parseFloat(b.slurryTemp) : null;
+    const slurryVolume = b.slurryVolume ? parseFloat(b.slurryVolume) : null;
+    const pfLevel = b.pfLevel ? parseFloat(b.pfLevel) : null;
+
     const batch = await prisma.pFBatch.create({
       data: {
         batchNo: parseInt(b.batchNo) || 0,
         fermenterNo: parseInt(b.fermenterNo) || 1,
         phase: 'SETUP',
-        setupTime: b.setupTime ? new Date(b.setupTime) : new Date(),
-        slurryVolume: b.slurryVolume ? parseFloat(b.slurryVolume) : null,
-        slurryGravity: b.slurryGravity ? parseFloat(b.slurryGravity) : null,
-        slurryTemp: b.slurryTemp ? parseFloat(b.slurryTemp) : null,
+        setupTime,
+        slurryVolume,
+        slurryGravity,
+        slurryTemp,
         remarks: b.remarks || null,
-        userId
-      }
+        userId,
+        // Auto-create first lab reading from setup data
+        labReadings: (slurryGravity || slurryTemp || pfLevel) ? {
+          create: {
+            analysisTime: setupTime.toISOString(),
+            spGravity: slurryGravity,
+            temp: slurryTemp,
+            remarks: 'Setup reading (auto)',
+            userId,
+          }
+        } : undefined,
+      },
+      include: { dosings: true, labReadings: { orderBy: { createdAt: 'asc' } } },
     });
     res.status(201).json(batch);
   } catch (err: any) {

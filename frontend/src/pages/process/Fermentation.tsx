@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   FlaskConical, Beaker, Cylinder, RefreshCw, Loader2, CheckCircle, AlertCircle,
-  Plus, Trash2, Send, ChevronDown, Clock, Play, X, MessageCircle
+  Plus, Trash2, Send, ChevronDown, Clock, Play, X, MessageCircle, History
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
 import api from '../../services/api';
@@ -79,6 +79,9 @@ export default function Fermentation() {
   const [dosingForm, setDosingForm] = useState({ chemicalName: '', quantity: '', unit: 'kg' });
   const [newBatchForm, setNewBatchForm] = useState({ batchNo: '', pfLevel: '', slurryGravity: '', slurryTemp: '' });
   const [showNewBatch, setShowNewBatch] = useState(false);
+  const [pfHistory, setPfHistory] = useState<any[]>([]);
+  const [fermHistory, setFermHistory] = useState<any[]>([]);
+  const [historyTab, setHistoryTab] = useState<'ferm' | 'pf'>('ferm');
 
   const flash = (t: 'ok' | 'err', m: string) => { setMsg({ t, m }); setTimeout(() => setMsg(null), 3000); };
 
@@ -106,6 +109,11 @@ export default function Fermentation() {
         } catch { entries[fb.fermenterNo] = []; }
       }
       setFermEntries(entries);
+      // Load history (non-blocking)
+      api.get('/fermentation/history').then(h => {
+        setPfHistory(h.data.pfHistory || []);
+        setFermHistory(h.data.fermHistory || []);
+      }).catch(() => {});
     } catch { flash('err', 'Failed to load'); }
     finally { setLoading(false); }
   }, []);
@@ -188,6 +196,7 @@ export default function Fermentation() {
         await api.post('/pre-fermentation/batches', {
           batchNo: bn, fermenterNo: selected.no, setupTime: new Date().toISOString(),
           slurryVolume: pfLvl > 0 ? (pfLvl / 100) * 450 * 1000 : undefined,
+          pfLevel: pfLvl > 0 ? pfLvl : undefined,
           slurryGravity: f.slurryGravity ? +f.slurryGravity : undefined,
           slurryTemp: f.slurryTemp ? +f.slurryTemp : undefined,
           userId: user?.id || '',
@@ -801,6 +810,96 @@ export default function Fermentation() {
           </div>
         );
       })()}
+
+      {/* ═══ BATCH HISTORY ═══ */}
+      <div className="px-3 mt-6">
+        <div className="bg-white rounded-2xl border border-gray-200 shadow overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+            <h2 className="font-bold text-gray-800 text-sm flex items-center gap-2"><Clock size={16} className="text-gray-400" /> Batch History</h2>
+            <div className="flex gap-1">
+              <button onClick={() => setHistoryTab('ferm')} className={`px-3 py-1 text-xs font-semibold rounded-lg ${historyTab === 'ferm' ? 'bg-indigo-100 text-indigo-700' : 'text-gray-400 hover:text-gray-600'}`}>Fermenters</button>
+              <button onClick={() => setHistoryTab('pf')} className={`px-3 py-1 text-xs font-semibold rounded-lg ${historyTab === 'pf' ? 'bg-violet-100 text-violet-700' : 'text-gray-400 hover:text-gray-600'}`}>Pre-Ferm</button>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            {historyTab === 'ferm' ? (
+              fermHistory.length > 0 ? (
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-gray-50 text-gray-500 border-b">
+                      <th className="text-left px-3 py-2 font-semibold">Batch</th>
+                      <th className="text-left px-3 py-2 font-semibold">F#</th>
+                      <th className="text-left px-3 py-2 font-semibold">Started</th>
+                      <th className="text-right px-3 py-2 font-semibold">Setup SG</th>
+                      <th className="text-right px-3 py-2 font-semibold">Final Alc%</th>
+                      <th className="text-right px-3 py-2 font-semibold">Volume</th>
+                      <th className="text-center px-3 py-2 font-semibold">BW</th>
+                      <th className="text-right px-3 py-2 font-semibold">Hours</th>
+                      <th className="text-left px-3 py-2 font-semibold">Transferred</th>
+                      <th className="text-left px-3 py-2 font-semibold">Remarks</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fermHistory.map((b: any) => (
+                      <tr key={b.id} className="border-b border-gray-50 hover:bg-gray-50">
+                        <td className="px-3 py-2 font-bold text-gray-800">#{b.batchNo}</td>
+                        <td className="px-3 py-2 font-medium text-indigo-600">F-{b.fermenterNo}</td>
+                        <td className="px-3 py-2 text-gray-500">{b.pfTransferTime ? new Date(b.pfTransferTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—'}</td>
+                        <td className="px-3 py-2 text-right font-medium">{b.setupGravity?.toFixed(3) || '—'}</td>
+                        <td className="px-3 py-2 text-right font-bold text-emerald-700">{b.finalAlcohol ? `${b.finalAlcohol}%` : '—'}</td>
+                        <td className="px-3 py-2 text-right">{b.transferVolume ? `${(b.transferVolume / 1000).toFixed(1)} KL` : '—'}</td>
+                        <td className="px-3 py-2 text-center">{b.beerWellNo ? <span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold">BW-{b.beerWellNo}</span> : '—'}</td>
+                        <td className="px-3 py-2 text-right">{b.totalHours ? `${b.totalHours}h` : '—'}</td>
+                        <td className="px-3 py-2 text-gray-500">{b.transferTime ? new Date(b.transferTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                        <td className="px-3 py-2 text-gray-400 max-w-[120px] truncate" title={b.remarks || ''}>{b.remarks || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="text-center text-gray-400 py-8 text-sm">No completed fermentation batches yet</div>
+              )
+            ) : (
+              pfHistory.length > 0 ? (
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-gray-50 text-gray-500 border-b">
+                      <th className="text-left px-3 py-2 font-semibold">Batch</th>
+                      <th className="text-left px-3 py-2 font-semibold">PF#</th>
+                      <th className="text-left px-3 py-2 font-semibold">Setup</th>
+                      <th className="text-right px-3 py-2 font-semibold">Volume (L)</th>
+                      <th className="text-right px-3 py-2 font-semibold">Gravity</th>
+                      <th className="text-right px-3 py-2 font-semibold">Temp</th>
+                      <th className="text-right px-3 py-2 font-semibold">Final SG</th>
+                      <th className="text-left px-3 py-2 font-semibold">Transferred</th>
+                      <th className="text-left px-3 py-2 font-semibold">CIP Done</th>
+                      <th className="text-left px-3 py-2 font-semibold">Remarks</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pfHistory.map((b: any) => (
+                      <tr key={b.id} className="border-b border-gray-50 hover:bg-gray-50">
+                        <td className="px-3 py-2 font-bold text-gray-800">#{b.batchNo}</td>
+                        <td className="px-3 py-2 font-medium text-violet-600">PF-{b.fermenterNo}</td>
+                        <td className="px-3 py-2 text-gray-500">{b.setupTime ? new Date(b.setupTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                        <td className="px-3 py-2 text-right font-medium">{b.slurryVolume?.toLocaleString() || '—'}</td>
+                        <td className="px-3 py-2 text-right font-medium">{b.slurryGravity?.toFixed(3) || '—'}</td>
+                        <td className="px-3 py-2 text-right">{b.slurryTemp ? `${b.slurryTemp}°C` : '—'}</td>
+                        <td className="px-3 py-2 text-right font-medium">{b.labReadings?.[0]?.spGravity?.toFixed(3) || '—'}</td>
+                        <td className="px-3 py-2 text-gray-500">{b.transferTime ? new Date(b.transferTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                        <td className="px-3 py-2 text-gray-500">{b.cipEndTime ? new Date(b.cipEndTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                        <td className="px-3 py-2 text-gray-400 max-w-[120px] truncate" title={b.remarks || ''}>{b.remarks || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="text-center text-gray-400 py-8 text-sm">No completed PF batches yet</div>
+              )
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
