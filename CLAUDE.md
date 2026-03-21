@@ -121,20 +121,41 @@ AuditLog, BeerWellReading, Customer, DDGSDispatchTruck, DDGSProductionEntry, DDG
 - Document templates for Invoice, Challan, PO PDFs
 - Sales pipeline with document trail tracking
 
+## Security & Middleware
+- **Helmet**: Security headers (CSP disabled for SPA)
+- **Rate limiting**: `/api/auth` — 20 requests per 15 min window
+- **Body limit**: `express.json({ limit: '10mb' })`
+- **Auth**: JWT via `Authorization: Bearer` header, 7-day expiry
+- **Password**: Minimum 8 chars, bcrypt hashed
+- **File uploads**: Multer with `path.basename()` sanitization to prevent traversal
+- **Transactions**: Inventory, vendor payments, sales payments wrapped in `prisma.$transaction()`
+
+## PDF Generation
+- **PDFKit** (pdfkit): Challan, Gate Pass, SO, Freight Inquiry, DDGS Invoice/Gate Pass
+- **pdf-lib**: PO and Tax Invoice PDFs
+- **Shared letterhead**: `backend/src/utils/letterhead.ts` (PDFKit) / inline PNG embedding (pdf-lib)
+- **Asset**: `backend/assets/MSPIL_letterhead.png` (2448×520 PNG)
+- **Shared validation**: `backend/src/utils/validation.ts` (numbers, dates, strings, pagination)
+
 ## File Structure Quick Reference
 ```
 backend/
-  prisma/schema.prisma    — 1634 lines, 61 models
-  src/routes/             — 51 route files
-  src/controllers/        — business logic
+  prisma/schema.prisma      — 1634 lines, 61 models
+  src/routes/               — 51 route files
+  src/utils/validation.ts   — shared input validation
+  src/utils/letterhead.ts   — shared PDFKit letterhead
+  src/utils/pdfGenerator.ts — PO & Invoice PDF (pdf-lib)
+  src/utils/templateHelper.ts — document template defaults
   src/data/calibrations.json — tank calibration data
+  assets/                   — MSPIL_letterhead.png, logo
 frontend/
-  src/pages/              — page components
-  src/pages/process/      — 23 plant operation pages
-  src/pages/procurement/  — 6 procurement pages
-  src/pages/sales/        — 9 sales pages
-  src/pages/trade/        — 2 trade pages
-  src/components/         — shared components
-  src/services/           — API client functions
+  src/pages/                — page components
+  src/pages/process/        — 23 plant operation pages
+  src/pages/procurement/    — 6 procurement pages
+  src/pages/sales/          — 9 sales pages
+  src/pages/trade/          — 2 trade pages
+  src/components/           — shared components (ErrorBoundary, Layout, etc.)
+  src/pages/NotFound.tsx    — 404 page
+  src/services/             — API client functions
 ```
 
