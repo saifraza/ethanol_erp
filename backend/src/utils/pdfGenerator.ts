@@ -117,7 +117,7 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
   const darkBlue = rgb(0.29, 0.49, 0.25); // MSPIL green
   const headerBg = rgb(0.85, 0.9, 0.95);
 
-  let y = height - 130; // Start just below letterhead
+  let y = height - 148; // Start just below letterhead
   const marginL = 40;
   const marginR = width - 40;
   const contentW = marginR - marginL;
@@ -354,7 +354,7 @@ export async function generateInvoicePdf(inv: InvoiceData): Promise<Buffer> {
   const mL = 45;            // left margin
   const mR = width - 45;    // right margin
   const cW = mR - mL;       // content width
-  let y = height - 130;     // start below letterhead PNG
+  let y = height - 148;     // start below letterhead PNG
 
   const text = (t: string, x: number, yP: number, size: number, f = font, color = black) => {
     page.drawText(t, { x, y: yP, size, font: f, color });
