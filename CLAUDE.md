@@ -137,3 +137,4 @@ frontend/
   src/components/         — shared components
   src/services/           — API client functions
 ```
+
