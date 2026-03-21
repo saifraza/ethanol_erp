@@ -3,7 +3,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getTemplate, generateBarcode } from './templateHelper';
 
-const LETTERHEAD_PATH = path.join(__dirname, '../../assets/MSPIL_Letterhead_Template.pdf');
+const LETTERHEAD_PDF = path.join(__dirname, '../../assets/MSPIL_Letterhead_Template.pdf');
+const LETTERHEAD_PNG = path.join(__dirname, '../../assets/MSPIL_letterhead.png');
 
 // Company info for fallback (if letterhead not found)
 const COMPANY = {
@@ -94,34 +95,29 @@ interface POData {
 }
 
 export async function generatePOPdf(po: POData): Promise<Buffer> {
-  let pdfDoc: PDFDocument;
-
-  // Try to use letterhead as base
-  if (fs.existsSync(LETTERHEAD_PATH)) {
-    const letterheadBytes = fs.readFileSync(LETTERHEAD_PATH);
-    const letterheadPdf = await PDFDocument.load(letterheadBytes);
-    pdfDoc = await PDFDocument.create();
-    const [letterheadPage] = await pdfDoc.copyPages(letterheadPdf, [0]);
-    pdfDoc.addPage(letterheadPage);
-  } else {
-    pdfDoc = await PDFDocument.create();
-    pdfDoc.addPage([595.28, 841.89]); // A4
-  }
+  const pdfDoc = await PDFDocument.create();
+  pdfDoc.addPage([595.28, 841.89]); // A4
 
   const page = pdfDoc.getPages()[0];
   const { width, height } = page.getSize();
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
-  // White-out the template's "Date:" and "[Your letter content goes here]" text
-  page.drawRectangle({ x: 0, y: height - 240, width: width, height: 110, color: rgb(1, 1, 1) });
+  // Embed letterhead PNG at top
+  if (fs.existsSync(LETTERHEAD_PNG)) {
+    const pngBytes = fs.readFileSync(LETTERHEAD_PNG);
+    const pngImage = await pdfDoc.embedPng(pngBytes);
+    const imgW = width - 80; // 40px margins
+    const imgH = imgW / (pngImage.width / pngImage.height);
+    page.drawImage(pngImage, { x: 40, y: height - 18 - imgH, width: imgW, height: imgH });
+  }
 
   const black = rgb(0, 0, 0);
   const gray = rgb(0.4, 0.4, 0.4);
   const darkBlue = rgb(0.29, 0.49, 0.25); // MSPIL green
   const headerBg = rgb(0.85, 0.9, 0.95);
 
-  let y = height - 148; // Start just below letterhead
+  let y = height - 130; // Start just below letterhead
   const marginL = 40;
   const marginR = width - 40;
   const contentW = marginR - marginL;
@@ -331,18 +327,8 @@ interface InvoiceData {
 }
 
 export async function generateInvoicePdf(inv: InvoiceData): Promise<Buffer> {
-  let pdfDoc: PDFDocument;
-
-  if (fs.existsSync(LETTERHEAD_PATH)) {
-    const letterheadBytes = fs.readFileSync(LETTERHEAD_PATH);
-    const letterheadPdf = await PDFDocument.load(letterheadBytes);
-    pdfDoc = await PDFDocument.create();
-    const [letterheadPage] = await pdfDoc.copyPages(letterheadPdf, [0]);
-    pdfDoc.addPage(letterheadPage);
-  } else {
-    pdfDoc = await PDFDocument.create();
-    pdfDoc.addPage([595.28, 841.89]);
-  }
+  const pdfDoc = await PDFDocument.create();
+  pdfDoc.addPage([595.28, 841.89]); // A4
 
   const page = pdfDoc.getPages()[0];
   const { width, height } = page.getSize();
@@ -350,9 +336,14 @@ export async function generateInvoicePdf(inv: InvoiceData): Promise<Buffer> {
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   const fontItalic = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
 
-  // White-out "Date: ___" and "[Your letter content goes here]" from template
-  // Template: letterhead box ends at ~y=700, Date at ~y=660, placeholder at ~y=628
-  page.drawRectangle({ x: 0, y: height - 240, width: width, height: 110, color: rgb(1, 1, 1) });
+  // Embed letterhead PNG at top
+  if (fs.existsSync(LETTERHEAD_PNG)) {
+    const pngBytes = fs.readFileSync(LETTERHEAD_PNG);
+    const pngImage = await pdfDoc.embedPng(pngBytes);
+    const imgW = width - 80;
+    const imgH = imgW / (pngImage.width / pngImage.height);
+    page.drawImage(pngImage, { x: 40, y: height - 18 - imgH, width: imgW, height: imgH });
+  }
 
   const black = rgb(0, 0, 0);
   const gray = rgb(0.35, 0.35, 0.35);
@@ -363,7 +354,7 @@ export async function generateInvoicePdf(inv: InvoiceData): Promise<Buffer> {
   const mL = 45;            // left margin
   const mR = width - 45;    // right margin
   const cW = mR - mL;       // content width
-  let y = height - 148;     // start below letterhead (measured from template)
+  let y = height - 130;     // start below letterhead PNG
 
   const text = (t: string, x: number, yP: number, size: number, f = font, color = black) => {
     page.drawText(t, { x, y: yP, size, font: f, color });
