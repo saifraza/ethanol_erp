@@ -1,0 +1,16 @@
+# Force fresh builds — prevents Docker layer caching from serving stale frontend bundles
+[phases.setup]
+nixPkgs = ["nodejs_18"]
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = [
+  "cd backend && npm install && npx prisma generate && npx tsc --outDir dist && cp -r src/data dist/",
+  "cd frontend && npm install && npx vite build --outDir ../backend/public --emptyOutDir"
+]
+# dependsOn = ["install"]  — implicit
+
+[start]
+cmd = "cd backend && npx prisma db push --skip-generate && node dist/server.js"
