@@ -4,6 +4,7 @@ import { authenticate, authorize } from '../middleware/auth';
 import {
   generateEwayBill, buildEwayBillPayload, MSPIL,
   getStateCode, getHsnCode, getUnitCode, formatDateDDMMYYYY,
+  cancelEwayBill, updateVehicle, getEwayBillDetails,
   EwayBillInput,
 } from '../services/ewayBill';
 import PDFDocument from 'pdfkit';
@@ -66,6 +67,16 @@ router.get('/active', async (req: Request, res: Response) => {
     });
     res.json({ shipments });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /config/eway-mode — Return current e-way bill mode for frontend
+router.get('/config/eway-mode', async (_req: Request, res: Response) => {
+  res.json({
+    mode: process.env.EWAY_BILL_MODE || 'sandbox',
+    gstin: process.env.EWAY_GSTIN || MSPIL.gstin,
+    nicConfigured: !!(process.env.EWAY_NIC_URL && process.env.EWAY_NIC_CLIENT_ID),
+    gspConfigured: !!(process.env.EWAY_GSP_URL && process.env.EWAY_GSP_TOKEN),
+  });
 });
 
 // GET /:id — Single shipment with dispatchRequest details
@@ -650,6 +661,75 @@ router.get('/:id/challan-pdf', async (req: Request, res: Response) => {
     doc.fontSize(7).fillColor('#999').text(tmpl.footer, mL, fY + 2, { align: 'center', width: cW });
 
     doc.end();
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /:id/eway-bill/cancel — Cancel e-way bill
+router.post('/:id/eway-bill/cancel', async (req: Request, res: Response) => {
+  try {
+    const shipment = await prisma.shipment.findUnique({ where: { id: req.params.id } });
+    if (!shipment) { res.status(404).json({ error: 'Shipment not found' }); return; }
+    if (!shipment.ewayBill) { res.status(400).json({ error: 'No e-way bill to cancel' }); return; }
+
+    const { reasonCode, remarks } = req.body;
+    const result = await cancelEwayBill(
+      shipment.ewayBill,
+      reasonCode || 1,
+      remarks || 'Cancelled from ERP'
+    );
+
+    if (result.success) {
+      await prisma.shipment.update({
+        where: { id: req.params.id },
+        data: { ewayBillStatus: 'CANCELLED' },
+      });
+      res.json({ success: true, message: 'E-Way Bill cancelled' });
+    } else {
+      res.status(400).json({ success: false, error: result.error });
+    }
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// PUT /:id/eway-bill/vehicle — Update vehicle number on e-way bill
+router.put('/:id/eway-bill/vehicle', async (req: Request, res: Response) => {
+  try {
+    const shipment = await prisma.shipment.findUnique({ where: { id: req.params.id } });
+    if (!shipment) { res.status(404).json({ error: 'Shipment not found' }); return; }
+    if (!shipment.ewayBill) { res.status(400).json({ error: 'No e-way bill to update' }); return; }
+
+    const { vehicleNo, reasonCode, remarks } = req.body;
+    if (!vehicleNo) { res.status(400).json({ error: 'vehicleNo required' }); return; }
+
+    const result = await updateVehicle(
+      shipment.ewayBill,
+      vehicleNo,
+      'Narsinghpur', // fromPlace
+      23,             // MP state code
+      reasonCode || 4, // 4 = First Time
+      remarks || 'Vehicle updated from ERP'
+    );
+
+    if (result.success) {
+      await prisma.shipment.update({
+        where: { id: req.params.id },
+        data: { vehicleNo: vehicleNo.replace(/\s/g, '').toUpperCase() },
+      });
+      res.json({ success: true, message: `Vehicle updated to ${vehicleNo}` });
+    } else {
+      res.status(400).json({ success: false, error: result.error });
+    }
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /:id/eway-bill/details — Get e-way bill details from NIC
+router.get('/:id/eway-bill/details', async (req: Request, res: Response) => {
+  try {
+    const shipment = await prisma.shipment.findUnique({ where: { id: req.params.id } });
+    if (!shipment) { res.status(404).json({ error: 'Shipment not found' }); return; }
+    if (!shipment.ewayBill) { res.status(400).json({ error: 'No e-way bill' }); return; }
+
+    const details = await getEwayBillDetails(shipment.ewayBill);
+    res.json(details);
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 

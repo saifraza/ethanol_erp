@@ -61,6 +61,20 @@ export default function Shipments() {
     gstPercent: '18', freightCharge: '0', remarks: '', challanNo: '', ewayBill: '',
   });
   const [billSaving, setBillSaving] = useState(false);
+  // E-Way Bill generation
+  const [ewbLoading, setEwbLoading] = useState<string | null>(null);
+
+  const generateEwb = async (s: Shipment) => {
+    setEwbLoading(s.id);
+    try {
+      const r = await api.post(`/shipments/${s.id}/eway-bill`);
+      flash('ok', `E-Way Bill: ${r.data.ewayBillNo}${r.data.message?.includes('SANDBOX') ? ' (sandbox)' : ''}`);
+      load();
+    } catch (e: any) {
+      flash('err', e.response?.data?.error || 'E-Way Bill generation failed');
+    }
+    setEwbLoading(null);
+  };
 
   const load = async () => {
     try {
@@ -300,7 +314,7 @@ export default function Shipments() {
         </button>
       );
     }
-    // GROSS_WEIGHED → Generate Bill + Release
+    // GROSS_WEIGHED → Generate Bill + E-Way Bill + Release
     if (s.status === 'GROSS_WEIGHED') {
       return (
         <div className="flex items-center gap-1">
@@ -308,6 +322,12 @@ export default function Shipments() {
             <button onClick={() => openBillForm(s)}
               className="px-2 py-1 bg-purple-600 text-white rounded text-[10px] font-bold flex items-center gap-0.5 hover:bg-purple-700 active:scale-95">
               <FileText size={9} /> Bill
+            </button>
+          )}
+          {!s.ewayBill && s.dispatchRequestId && (
+            <button onClick={() => generateEwb(s)} disabled={ewbLoading === s.id}
+              className="px-2 py-1 bg-indigo-600 text-white rounded text-[10px] font-bold flex items-center gap-0.5 hover:bg-indigo-700 active:scale-95 disabled:opacity-50">
+              {ewbLoading === s.id ? <Loader2 size={9} className="animate-spin" /> : <Truck size={9} />} EWB
             </button>
           )}
           <button onClick={() => doStatus(s.id, 'RELEASED', { releaseTime: new Date().toISOString() })}
@@ -607,7 +627,7 @@ export default function Shipments() {
                               </div>
                             </div>
 
-                            {/* Bill + Challan PDF */}
+                            {/* Bill + E-Way Bill + Challan PDF */}
                             <div className="flex gap-2">
                               {!s.invoiceRef && s.weightNet && (
                                 <button onClick={() => openBillForm(s)}
@@ -618,6 +638,17 @@ export default function Shipments() {
                               {s.invoiceRef && (
                                 <span className="flex-1 py-1.5 text-[10px] font-semibold bg-green-50 text-green-700 border border-green-200 rounded-lg flex items-center justify-center gap-1">
                                   <CheckCircle size={11} /> {s.invoiceRef}
+                                </span>
+                              )}
+                              {!s.ewayBill && s.weightNet && s.dispatchRequestId && (
+                                <button onClick={() => generateEwb(s)} disabled={ewbLoading === s.id}
+                                  className="flex-1 py-1.5 text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg flex items-center justify-center gap-1 hover:bg-indigo-100 disabled:opacity-50">
+                                  {ewbLoading === s.id ? <Loader2 size={11} className="animate-spin" /> : <Truck size={11} />} Generate E-Way Bill
+                                </button>
+                              )}
+                              {s.ewayBill && (
+                                <span className="flex-1 py-1.5 text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg flex items-center justify-center gap-1">
+                                  <Truck size={11} /> EWB: {s.ewayBill}
                                 </span>
                               )}
                               <button onClick={() => { const token = localStorage.getItem('token'); window.open(`/api/shipments/${s.id}/challan-pdf?token=${token}`, '_blank'); }}
