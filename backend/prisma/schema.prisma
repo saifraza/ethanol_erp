@@ -570,17 +570,34 @@ model DDGSStockEntry {
 model DDGSDispatchTruck {
   id              String   @id @default(uuid())
   date            DateTime @default(now())
+  status          String   @default("GATE_IN") // GATE_IN → TARE_WEIGHED → LOADING → GROSS_WEIGHED → BILLED → RELEASED
   vehicleNo       String   @default("")
   partyName       String   @default("")
+  partyAddress    String?
+  partyGstin      String?
   destination     String   @default("")
+  driverName      String?
+  driverMobile    String?
+  transporterName String?
   bags            Int      @default(0)
   weightPerBag    Float    @default(50)
   weightGross     Float    @default(0)
   weightTare      Float    @default(0)
   weightNet       Float    @default(0)
+  rate            Float?                     // ₹ per MT
+  invoiceNo       String?
+  invoiceAmount   Float?
+  gatePassNo      String?
+  ewayBillNo      String?
+  hsnCode         String   @default("2303")  // DDGS HSN
+  gateInTime      DateTime?
+  tareTime        DateTime?
+  grossTime       DateTime?
+  releaseTime     DateTime?
   remarks         String?
   userId          String?
   createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 // ═══════════════════════════════════════════════
