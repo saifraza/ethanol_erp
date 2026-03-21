@@ -29,7 +29,7 @@ const DEFAULTS: Record<string, { terms: string[]; footer: string; bankDetails?: 
       'Subject to Narsinghpur (M.P.) jurisdiction.',
     ],
     footer: 'This is a computer-generated invoice.',
-    bankDetails: 'Bank: [Company Bank Name]  |  A/c: [Account Number]  |  IFSC: [IFSC Code]',
+    bankDetails: 'Bank: State Bank of India  |  A/c: 30613498188  |  Branch: Narsinghpur  |  IFSC: SBIN0000636',
   },
   RATE_REQUEST: {
     terms: [

@@ -114,7 +114,7 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
   // White-out the template's "Date:" and "[Your letter content goes here]" text
-  page.drawRectangle({ x: 0, y: height - 220, width: width, height: 82, color: rgb(1, 1, 1) });
+  page.drawRectangle({ x: 0, y: height - 240, width: width, height: 110, color: rgb(1, 1, 1) });
 
   const black = rgb(0, 0, 0);
   const gray = rgb(0.4, 0.4, 0.4);
@@ -471,7 +471,7 @@ export async function generateInvoicePdf(inv: InvoiceData): Promise<Buffer> {
   const invTmpl = await getTemplate('INVOICE');
   text('Bank Details:', mL, y, 7.5, fontBold, gray);
   y -= 10;
-  const bankInfo = invTmpl.bankDetails || 'Bank: State Bank of India | A/c: 30926010498 | Branch: Narsinghpur | IFSC: SBIN0001234';
+  const bankInfo = invTmpl.bankDetails || 'Bank: State Bank of India | A/c: 30613498188 | Branch: Narsinghpur | IFSC: SBIN0000636';
   text(bankInfo, mL, y, 6.5, font, lightGray);
   y -= 14;
 
