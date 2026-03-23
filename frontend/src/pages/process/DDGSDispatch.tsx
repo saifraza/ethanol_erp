@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Truck, Plus, Trash2, X, Share2, ChevronDown, ChevronUp, Clock, FileText, Receipt } from 'lucide-react';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 
 interface DDGSTruck {
-  id: string; date: string; vehicleNo: string; partyName: string;
+  id: string; date: string; rstNo: number | null; vehicleNo: string; partyName: string;
   partyGstin: string | null; destination: string;
   bags: number; weightPerBag: number; weightGross: number; weightTare: number; weightNet: number;
   rate: number | null; invoiceNo: string | null; invoiceAmount: number | null;
@@ -30,15 +30,14 @@ export default function DDGSDispatch() {
   const [history, setHistory] = useState<Record<string, DDGSTruck[]>>({});
 
   // Form state
+  const [rstNo, setRstNo] = useState('');
   const [vehicleNo, setVehicleNo] = useState('');
   const [partyName, setPartyName] = useState('');
-  const [partyGstin, setPartyGstin] = useState('');
   const [destination, setDestination] = useState('');
   const [bags, setBags] = useState('');
   const [weightPerBag, setWeightPerBag] = useState('50');
-  const [weightTare, setWeightTare] = useState('');
-  const [weightGross, setWeightGross] = useState('');
-  const [rate, setRate] = useState('');
+  const [weightTareKg, setWeightTareKg] = useState('');
+  const [weightGrossKg, setWeightGrossKg] = useState('');
   const [remarks, setRemarks] = useState('');
 
   // Bill modal
@@ -57,33 +56,36 @@ export default function DDGSDispatch() {
 
   async function loadHistory() {
     try {
-      // Fetch last 30 days
       const res = await api.get('/ddgs-dispatch/history');
       setHistory(res.data.history || {});
     } catch (e) { console.error(e); }
   }
 
   function resetForm() {
-    setVehicleNo(''); setPartyName(''); setPartyGstin(''); setDestination('');
-    setBags(''); setWeightPerBag('50'); setWeightTare(''); setWeightGross('');
-    setRate(''); setRemarks(''); setShowForm(false);
+    setRstNo(''); setVehicleNo(''); setPartyName(''); setDestination('');
+    setBags(''); setWeightPerBag('50'); setWeightTareKg(''); setWeightGrossKg('');
+    setRemarks(''); setShowForm(false);
   }
 
-  const weightNet = (parseFloat(weightGross) || 0) - (parseFloat(weightTare) || 0);
-  const netMT = weightNet; // already in MT
-  const calcAmount = netMT > 0 && parseFloat(rate) ? netMT * parseFloat(rate) : 0;
-  const gst = Math.round(calcAmount * 0.05 * 100) / 100;
-  const totalAmt = Math.round((calcAmount + gst) * 100) / 100;
+  // Net weight in KG — computed instantly via useMemo
+  const netWeightKg = useMemo(() => {
+    const g = parseFloat(weightGrossKg) || 0;
+    const t = parseFloat(weightTareKg) || 0;
+    return g > t && t > 0 ? g - t : 0;
+  }, [weightGrossKg, weightTareKg]);
 
   async function handleSave() {
     if (!vehicleNo) { setMsg({ type: 'err', text: 'Vehicle No required' }); return; }
     setSaving(true); setMsg(null);
     try {
+      // Convert KG to MT for storage
+      const tareMT = (parseFloat(weightTareKg) || 0) / 1000;
+      const grossMT = (parseFloat(weightGrossKg) || 0) / 1000;
       await api.post('/ddgs-dispatch', {
-        date, vehicleNo, partyName, partyGstin: partyGstin || null, destination,
+        date, rstNo: rstNo || null, vehicleNo, partyName, destination,
         bags: parseInt(bags) || 0, weightPerBag: parseFloat(weightPerBag) || 50,
-        weightTare: parseFloat(weightTare) || 0, weightGross: parseFloat(weightGross) || 0,
-        rate: parseFloat(rate) || null, remarks: remarks || null,
+        weightTare: tareMT, weightGross: grossMT,
+        remarks: remarks || null,
       });
       const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
       setMsg({ type: 'ok', text: `Saved at ${now}` });
@@ -116,9 +118,9 @@ export default function DDGSDispatch() {
 
   function shareWhatsApp() {
     const lines = dispatches.map((d, i) =>
-      `${i + 1}. ${d.vehicleNo} → ${d.partyName || '-'} | ${d.bags} bags | ${d.weightNet.toFixed(2)} MT${d.rate ? ` @ ₹${d.rate}/MT` : ''}`
+      `${i + 1}. ${d.vehicleNo} → ${d.partyName || '-'} | ${d.bags} bags | ${(d.weightNet * 1000).toFixed(0)} KG`
     ).join('\n');
-    const text = `*DDGS Dispatch Report*\n📅 ${date}\n\n${lines}\n\n*Total: ${totalNet.toFixed(2)} MT | ${totalBags} bags | ${dispatches.length} trucks*`;
+    const text = `*DDGS Dispatch Report*\n📅 ${date}\n\n${lines}\n\n*Total: ${(totalNet * 1000).toFixed(0)} KG (${totalNet.toFixed(2)} MT) | ${totalBags} bags | ${dispatches.length} trucks*`;
     if (navigator.share) {
       navigator.share({ text }).catch(() => {
         window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
@@ -150,7 +152,7 @@ export default function DDGSDispatch() {
         </div>
         <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2">
           <div className="text-[10px] text-amber-500 uppercase">Total Dispatch</div>
-          <div className="text-lg font-bold text-amber-700">{totalNet.toFixed(2)} MT</div>
+          <div className="text-lg font-bold text-amber-700">{(totalNet * 1000).toFixed(0)} KG <span className="text-xs font-normal text-gray-400">({totalNet.toFixed(2)} MT)</span></div>
           <div className="text-[10px] text-gray-500">{totalBags} bags · {dispatches.length} truck{dispatches.length !== 1 ? 's' : ''}</div>
         </div>
       </div>
@@ -173,6 +175,11 @@ export default function DDGSDispatch() {
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
             <div>
+              <label className="text-[10px] text-gray-400">RST No *</label>
+              <input type="number" value={rstNo} onChange={e => setRstNo(e.target.value)}
+                className="border rounded px-2 py-2 w-full text-sm" placeholder="Unique RST number" />
+            </div>
+            <div>
               <label className="text-[10px] text-gray-400">Vehicle No *</label>
               <input type="text" value={vehicleNo} onChange={e => setVehicleNo(e.target.value)}
                 className="border rounded px-2 py-2 w-full text-sm" placeholder="MP 20 AB 1234" />
@@ -181,11 +188,6 @@ export default function DDGSDispatch() {
               <label className="text-[10px] text-gray-400">Party Name</label>
               <input type="text" value={partyName} onChange={e => setPartyName(e.target.value)}
                 className="border rounded px-2 py-2 w-full text-sm" />
-            </div>
-            <div>
-              <label className="text-[10px] text-gray-400">Party GSTIN</label>
-              <input type="text" value={partyGstin} onChange={e => setPartyGstin(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" placeholder="23AAACM1234A1Z5" />
             </div>
             <div>
               <label className="text-[10px] text-gray-400">Destination</label>
@@ -204,49 +206,24 @@ export default function DDGSDispatch() {
             </div>
           </div>
 
-          {/* Weights */}
+          {/* Weights in KG */}
           <div className="grid grid-cols-3 gap-3 mb-3">
             <div>
-              <label className="text-[10px] text-gray-400">Tare Wt (MT)</label>
-              <input type="number" step="any" value={weightTare} onChange={e => setWeightTare(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" />
+              <label className="text-[10px] text-gray-400">Tare Wt (KG)</label>
+              <input type="number" step="any" value={weightTareKg} onChange={e => setWeightTareKg(e.target.value)}
+                className="border rounded px-2 py-2 w-full text-sm" placeholder="e.g. 12500" />
             </div>
             <div>
-              <label className="text-[10px] text-gray-400">Gross Wt (MT)</label>
-              <input type="number" step="any" value={weightGross} onChange={e => setWeightGross(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" />
+              <label className="text-[10px] text-gray-400">Gross Wt (KG)</label>
+              <input type="number" step="any" value={weightGrossKg} onChange={e => setWeightGrossKg(e.target.value)}
+                className="border rounded px-2 py-2 w-full text-sm" placeholder="e.g. 38000" />
             </div>
             <div>
-              <label className="text-[10px] text-gray-400">Net Wt (MT)</label>
+              <label className="text-[10px] text-gray-400">Net Wt (KG)</label>
               <div className="border rounded px-2 py-2 w-full text-sm bg-gray-50 font-semibold text-amber-700">
-                {weightNet > 0 ? weightNet.toFixed(2) : '—'}
+                {netWeightKg > 0 ? `${netWeightKg.toFixed(0)} KG (${(netWeightKg / 1000).toFixed(2)} MT)` : '—'}
               </div>
             </div>
-          </div>
-
-          {/* Rate + Amount */}
-          <div className="grid grid-cols-3 gap-3 mb-3">
-            <div>
-              <label className="text-[10px] text-gray-400">Rate (₹/MT)</label>
-              <input type="number" step="any" value={rate} onChange={e => setRate(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" placeholder="Optional" />
-            </div>
-            {parseFloat(rate) > 0 && weightNet > 0 && (
-              <>
-                <div>
-                  <label className="text-[10px] text-gray-400">Taxable</label>
-                  <div className="border rounded px-2 py-2 w-full text-sm bg-gray-50">
-                    ₹{calcAmount.toFixed(2)} + 5% GST
-                  </div>
-                </div>
-                <div>
-                  <label className="text-[10px] text-gray-400">Total</label>
-                  <div className="border rounded px-2 py-2 w-full text-sm bg-green-50 font-semibold text-green-700">
-                    ₹{totalAmt.toFixed(2)}
-                  </div>
-                </div>
-              </>
-            )}
           </div>
 
           <div className="mb-3">
@@ -274,6 +251,7 @@ export default function DDGSDispatch() {
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className="text-xs font-bold text-gray-400">#{dispatches.length - i}</span>
+                  {d.rstNo && <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">RST {d.rstNo}</span>}
                   <span className="font-semibold text-sm">{d.vehicleNo}</span>
                   <span className="text-xs text-gray-400">
                     {new Date(d.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
@@ -287,33 +265,29 @@ export default function DDGSDispatch() {
                 <div className="text-xs text-gray-600">
                   {d.partyName && <span>{d.partyName} • </span>}
                   {d.destination && <span>{d.destination} • </span>}
-                  <span className="font-semibold text-amber-700">{d.weightNet.toFixed(2)} MT</span>
-                  <span className="text-gray-400"> ({d.bags} bags)</span>
-                  {d.rate && <span> @ ₹{d.rate}/MT</span>}
+                  <span className="font-semibold text-amber-700">{(d.weightNet * 1000).toFixed(0)} KG</span>
+                  <span className="text-gray-400"> ({d.weightNet.toFixed(2)} MT)</span>
+                  {d.bags > 0 && <span className="text-gray-400"> · {d.bags} bags</span>}
                   {d.invoiceAmount && <span className="font-semibold text-green-700"> = ₹{d.invoiceAmount.toLocaleString('en-IN')}</span>}
                 </div>
                 {d.remarks && <div className="text-[11px] text-gray-400 mt-0.5">{d.remarks}</div>}
               </div>
               <div className="flex items-center gap-1.5">
-                {/* Generate Bill button (if no invoice yet and has weight) */}
                 {!d.invoiceNo && d.weightNet > 0 && (
                   <button onClick={() => { setBillTruck(d); setBillRate(d.rate?.toString() || ''); }}
                     title="Generate Bill"
                     className="text-purple-500 hover:text-purple-700 p-1"><Receipt size={15} /></button>
                 )}
-                {/* Invoice PDF */}
                 {d.invoiceNo && (
                   <a href={`${API_BASE}/api/ddgs-dispatch/${d.id}/invoice-pdf`} target="_blank" rel="noreferrer"
                     title="Invoice PDF"
                     className="text-blue-500 hover:text-blue-700 p-1"><FileText size={15} /></a>
                 )}
-                {/* Gate Pass PDF */}
                 {d.weightNet > 0 && (
                   <a href={`${API_BASE}/api/ddgs-dispatch/${d.id}/gate-pass-pdf`} target="_blank" rel="noreferrer"
                     title="Gate Pass"
                     className="text-green-500 hover:text-green-700 p-1"><FileText size={15} /></a>
                 )}
-                {/* Delete */}
                 {isAdmin && (
                   <button onClick={() => handleDelete(d.id)}
                     className="text-red-400 hover:text-red-600 p-1"><Trash2 size={14} /></button>
@@ -352,13 +326,13 @@ export default function DDGSDispatch() {
                 <div key={dateKey} className="border rounded-lg p-3 bg-gray-50">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-semibold text-gray-700">{fmtDt(dateKey)}</span>
-                    <span className="text-xs font-bold text-amber-600">{dayNet.toFixed(2)} MT — {dayBags} bags — {items.length} trucks</span>
+                    <span className="text-xs font-bold text-amber-600">{(dayNet * 1000).toFixed(0)} KG — {dayBags} bags — {items.length} trucks</span>
                   </div>
                   <div className="space-y-1">
                     {items.map((d: DDGSTruck) => (
                       <div key={d.id} className="text-xs text-gray-600 flex justify-between">
-                        <span>{d.vehicleNo} → {d.partyName || '-'}</span>
-                        <span className="font-medium">{d.weightNet.toFixed(2)} MT ({d.bags} bags)</span>
+                        <span>{d.rstNo ? `[${d.rstNo}] ` : ''}{d.vehicleNo} → {d.partyName || '-'}</span>
+                        <span className="font-medium">{(d.weightNet * 1000).toFixed(0)} KG</span>
                       </div>
                     ))}
                   </div>
@@ -375,7 +349,7 @@ export default function DDGSDispatch() {
           <div className="bg-white rounded-xl p-5 w-full max-w-sm shadow-xl" onClick={e => e.stopPropagation()}>
             <h3 className="font-bold text-gray-800 mb-3">Generate Bill</h3>
             <div className="text-xs text-gray-500 mb-3">
-              {billTruck.vehicleNo} · {billTruck.partyName} · Net: {billTruck.weightNet.toFixed(2)} MT
+              {billTruck.vehicleNo} · {billTruck.partyName} · Net: {(billTruck.weightNet * 1000).toFixed(0)} KG ({billTruck.weightNet.toFixed(2)} MT)
             </div>
             <div className="space-y-3">
               <div>

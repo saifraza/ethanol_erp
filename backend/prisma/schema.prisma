@@ -587,6 +587,7 @@ model DDGSDispatchTruck {
   id              String   @id @default(uuid())
   date            DateTime @default(now())
   status          String   @default("GATE_IN") // GATE_IN → TARE_WEIGHED → LOADING → GROSS_WEIGHED → BILLED → RELEASED
+  rstNo           Int?     @unique
   vehicleNo       String   @default("")
   partyName       String   @default("")
   partyAddress    String?

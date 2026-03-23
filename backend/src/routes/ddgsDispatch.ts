@@ -122,7 +122,7 @@ router.get('/history', async (req: Request, res: Response) => {
       orderBy: { date: 'desc' },
       take: 500,
       select: {
-        id: true, date: true, vehicleNo: true, partyName: true, destination: true,
+        id: true, date: true, rstNo: true, vehicleNo: true, partyName: true, destination: true,
         bags: true, weightNet: true, rate: true, invoiceAmount: true, invoiceNo: true,
         createdAt: true, status: true, weightGross: true, weightTare: true, weightPerBag: true,
         partyGstin: true, ewayBillNo: true, remarks: true,
@@ -163,6 +163,7 @@ router.post('/', async (req: Request, res: Response) => {
     const truck = await prisma.dDGSDispatchTruck.create({
       data: {
         date: new Date(b.date || new Date()), status,
+        rstNo: b.rstNo ? parseInt(b.rstNo) : null,
         vehicleNo: b.vehicleNo || '', partyName: b.partyName || '',
         partyAddress: b.partyAddress || null, partyGstin: b.partyGstin || null,
         destination: b.destination || '', driverName: b.driverName || null,
