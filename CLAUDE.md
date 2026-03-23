@@ -4,7 +4,7 @@
 - **Company**: Mahakaushal Sugar & Power Industries Ltd (MSPIL)
 - **System**: Distillery ERP for ethanol plant at Village Bachai, Dist. Narsinghpur, MP
 - **Stack**: Express + TypeScript + Prisma ORM (backend), React + Vite + Tailwind CSS (frontend), PostgreSQL on Railway
-- **Production URL**: https://web-production-d305.up.railway.app/
+- **Production URL**: https://app.mspil.in/
 - **Login**: admin@distillery.com / admin123
 
 ## Deployment — Railway

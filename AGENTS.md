@@ -6,7 +6,7 @@
 - **Monorepo**: Root package.json orchestrates builds for Railway
 
 ## Deployment - Railway
-- **URL**: https://web-production-d305.up.railway.app/
+- **URL**: https://app.mspil.in/
 - **DB**: `DATABASE_URL=<see .env>`
 - **Auto-deploys** from GitHub `main` branch
 - **GitHub**: https://github.com/saifraza/ethanol_erp.git

@@ -13,7 +13,7 @@
 - Branch: `main`
 
 ### Production
-- URL: https://web-production-d305.up.railway.app/
+- URL: https://app.mspil.in/
 - Railway PostgreSQL: `postgresql://postgres:DrENyRNbBLtcdBMKzgIbIhHSMDiiXvBu@shuttle.proxy.rlwy.net:15470/railway`
 
 ### Local Development

@@ -114,6 +114,34 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 // ═══════════════════════════════════════════════
+// GET /history — past dispatches grouped by date
+// ═══════════════════════════════════════════════
+router.get('/history', async (req: Request, res: Response) => {
+  try {
+    const trucks = await prisma.dDGSDispatchTruck.findMany({
+      orderBy: { date: 'desc' },
+      take: 500,
+      select: {
+        id: true, date: true, vehicleNo: true, partyName: true, destination: true,
+        bags: true, weightNet: true, rate: true, invoiceAmount: true, invoiceNo: true,
+        createdAt: true, status: true, weightGross: true, weightTare: true, weightPerBag: true,
+        partyGstin: true, ewayBillNo: true, remarks: true,
+      },
+    });
+    const history: Record<string, typeof trucks> = {};
+    for (const t of trucks) {
+      const key = new Date(t.date).toISOString().split('T')[0];
+      if (!history[key]) history[key] = [];
+      history[key].push(t);
+    }
+    // Remove today
+    const today = new Date().toISOString().split('T')[0];
+    delete history[today];
+    res.json({ history });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// ═══════════════════════════════════════════════
 // POST / — Gate In
 // ═══════════════════════════════════════════════
 router.post('/', async (req: Request, res: Response) => {

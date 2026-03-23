@@ -74,7 +74,7 @@ app.use(compression());
 // CORS middleware
 app.use(cors({
   origin: process.env.NODE_ENV === 'production'
-    ? [process.env.FRONTEND_URL || 'https://web-production-d305.up.railway.app']
+    ? [process.env.FRONTEND_URL || 'https://app.mspil.in']
     : true,
   credentials: true,
 }));

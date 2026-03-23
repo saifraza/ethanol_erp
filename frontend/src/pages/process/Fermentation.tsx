@@ -862,7 +862,7 @@ export default function Fermentation() {
                               <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
                               <XAxis dataKey="time" tick={{ fontSize: 8 }} interval="preserveStartEnd" />
                               <YAxis yAxisId="sg" domain={[sgMin, sgMax]} tick={{ fontSize: 8 }} tickFormatter={(v: number) => v.toFixed(3)} label={{ value: 'SG', angle: -90, position: 'insideLeft', fontSize: 8, fill: '#6366f1' }} />
-                              <YAxis yAxisId="alc" orientation="right" tick={{ fontSize: 8 }} label={{ value: 'Alc% / Level%', angle: 90, position: 'insideRight', fontSize: 8, fill: '#10b981' }} />
+                              <YAxis yAxisId="alc" orientation="right" domain={[0, 'auto']} tick={{ fontSize: 8 }} label={{ value: 'Alc% / Level%', angle: 90, position: 'insideRight', fontSize: 8, fill: '#10b981' }} />
                               <Tooltip contentStyle={{ fontSize: 10 }} />
                               <Legend wrapperStyle={{ fontSize: 9 }} />
                               {phaseMarkers.map((pm, i) => (
@@ -881,8 +881,8 @@ export default function Fermentation() {
                             <LineChart data={chartData}>
                               <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
                               <XAxis dataKey="time" tick={{ fontSize: 8 }} interval="preserveStartEnd" />
-                              <YAxis yAxisId="ph" tick={{ fontSize: 8 }} domain={['auto', 'auto']} label={{ value: 'pH', angle: -90, position: 'insideLeft', fontSize: 8, fill: '#f59e0b' }} />
-                              <YAxis yAxisId="temp" orientation="right" tick={{ fontSize: 8 }} domain={['auto', 'auto']} label={{ value: '°C', angle: 90, position: 'insideRight', fontSize: 8, fill: '#ef4444' }} />
+                              <YAxis yAxisId="ph" tick={{ fontSize: 8 }} domain={[0, 'auto']} label={{ value: 'pH', angle: -90, position: 'insideLeft', fontSize: 8, fill: '#f59e0b' }} />
+                              <YAxis yAxisId="temp" orientation="right" tick={{ fontSize: 8 }} domain={[0, 'auto']} label={{ value: '°C', angle: 90, position: 'insideRight', fontSize: 8, fill: '#ef4444' }} />
                               <Tooltip contentStyle={{ fontSize: 10 }} />
                               <Legend wrapperStyle={{ fontSize: 9 }} />
                               {phaseMarkers.map((pm, i) => (
@@ -1042,7 +1042,7 @@ export default function Fermentation() {
                                       <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
                                       <XAxis dataKey="time" tick={{ fontSize: 8 }} />
                                       <YAxis yAxisId="sg" domain={[sgMin2, sgMax2]} tick={{ fontSize: 8 }} tickFormatter={(v: number) => v.toFixed(3)} />
-                                      <YAxis yAxisId="alc" orientation="right" tick={{ fontSize: 8 }} />
+                                      <YAxis yAxisId="alc" orientation="right" domain={[0, 'auto']} tick={{ fontSize: 8 }} />
                                       <Tooltip contentStyle={{ fontSize: 9 }} />
                                       <Legend wrapperStyle={{ fontSize: 8 }} />
                                       <Line yAxisId="sg" dataKey="sg" name="Gravity" stroke="#6366f1" strokeWidth={2} dot={{ r: 2 }} connectNulls />
