@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Truck, Plus, X, Save, Loader2, Trash2, Edit2, Phone, User, Hash, CheckCircle, RotateCcw } from 'lucide-react';
+import { Truck, Plus, X, Save, Loader2, Trash2, Edit2, Phone, User, Hash, CheckCircle, RotateCcw, Search } from 'lucide-react';
 import api from '../../services/api';
 
 interface Transporter {
@@ -15,6 +15,7 @@ export default function Transporters() {
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [gstLookupLoading, setGstLookupLoading] = useState(false);
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   // Form fields
@@ -98,6 +99,29 @@ export default function Transporters() {
     }
   };
 
+  const lookupGSTIN = async () => {
+    const g = gstin.trim().toUpperCase();
+    if (g.length !== 15) { flash('err', 'Enter a valid 15-character GSTIN first'); return; }
+    setGstLookupLoading(true);
+    try {
+      const res = await api.get(`/transporters/gstin-lookup/${g}`);
+      const d = res.data;
+      if (d.success) {
+        if (d.name && !name) setName(d.name);
+        if (d.pan) setPan(d.pan);
+        if (d.address) setAddress([d.address, d.city, d.state, d.pincode].filter(Boolean).join(', '));
+        setGstin(g);
+        flash('ok', `Found: ${d.tradeName || d.legalName}`);
+      } else {
+        flash('err', d.error || 'GSTIN not found');
+      }
+    } catch (e: any) {
+      flash('err', e.response?.data?.error || 'GSTIN lookup failed');
+    } finally {
+      setGstLookupLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -177,8 +201,15 @@ export default function Transporters() {
                 </div>
                 <div>
                   <label className="text-xs text-gray-500 font-medium">GSTIN</label>
-                  <input value={gstin} onChange={e => setGstin(e.target.value)}
-                    placeholder="GST number" className="input-field w-full text-sm mt-1" />
+                  <div className="flex gap-1 mt-1">
+                    <input value={gstin} onChange={e => setGstin(e.target.value.toUpperCase())} maxLength={15}
+                      placeholder="GST number" className="input-field w-full text-sm" />
+                    <button type="button" onClick={lookupGSTIN} disabled={gstLookupLoading || gstin.length !== 15}
+                      title="Lookup GSTIN"
+                      className="px-2.5 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-40 transition flex-shrink-0">
+                      {gstLookupLoading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <label className="text-xs text-gray-500 font-medium">PAN</label>
