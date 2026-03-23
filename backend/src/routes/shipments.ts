@@ -463,6 +463,16 @@ router.post('/:id/eway-bill', async (req: Request, res: Response) => {
       return;
     }
 
+    // ── Payment gate: ADVANCE/COD must be paid before generating EWB ──
+    if (shipment.paymentStatus === 'PENDING') {
+      res.status(400).json({
+        error: `Payment must be confirmed before generating E-Way Bill (terms: ${shipment.paymentTerms || 'ADVANCE'})`,
+        step: 'payment-required',
+        code: 'PAYMENT_REQUIRED',
+      });
+      return;
+    }
+
     // ── STEP 0: Find the Invoice for this shipment ──
     // Invoice is the single source of truth for all tax/amount data
     const invoice = await prisma.invoice.findFirst({

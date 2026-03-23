@@ -467,54 +467,68 @@ export default function Shipments() {
         </button>
       );
     }
-    // GROSS_WEIGHED → Step 1: Bill → Step 2: E-Way Bill (includes e-Invoice) → Release
+    // GROSS_WEIGHED → ① Bill → ② Pay (ADVANCE/COD only) → ③ EWB (+IRN) → Release
     if (s.status === 'GROSS_WEIGHED') {
+      const needsPayment = s.paymentStatus === 'PENDING';
+      const isPaid = s.paymentStatus === 'CONFIRMED' || s.paymentStatus === 'NOT_REQUIRED';
+      const hasBill = !!s.invoiceRef;
+      const hasEwb = !!s.ewayBill;
+
       return (
-        <div className="flex items-center gap-1">
-          {/* Step 1: Invoice required first */}
-          {!s.invoiceRef && (
+        <div className="flex items-center gap-1 flex-wrap">
+          {/* ① Bill — always first */}
+          {!hasBill && (
             <button onClick={() => openBillForm(s)}
               className="px-2 py-1 bg-purple-600 text-white rounded text-[10px] font-bold flex items-center gap-0.5 hover:bg-purple-700 active:scale-95">
               <FileText size={9} /> ① Bill
             </button>
           )}
-          {s.invoiceRef && !s.ewayBill && (
+          {hasBill && (
             <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[9px] font-bold flex items-center gap-0.5">
               <CheckCircle size={8} /> {s.invoiceRef}
             </span>
           )}
-          {/* Step 2: EWB (needs invoice first) */}
-          {s.invoiceRef && !s.ewayBill && s.dispatchRequestId && (
-            <button onClick={() => generateEwb(s)} disabled={ewbLoading === s.id}
-              className="px-2 py-1 bg-indigo-600 text-white rounded text-[10px] font-bold flex items-center gap-0.5 hover:bg-indigo-700 active:scale-95 disabled:opacity-50">
-              {ewbLoading === s.id ? <Loader2 size={9} className="animate-spin" /> : <Truck size={9} />} ② EWB
-            </button>
-          )}
-          {!s.invoiceRef && !s.ewayBill && s.dispatchRequestId && (
-            <span className="px-1.5 py-0.5 bg-gray-100 text-gray-400 rounded text-[9px] font-bold" title="Create Invoice first">
-              <Truck size={8} /> EWB
-            </span>
-          )}
-          {s.ewayBill && (
-            <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded text-[9px] font-bold flex items-center gap-0.5">
-              <Truck size={8} /> {s.ewayBill}
-            </span>
-          )}
-          {/* Payment gate for ADVANCE/COD */}
-          {s.paymentStatus === 'PENDING' && (
+
+          {/* ② Payment gate — after bill, before EWB (ADVANCE/COD only) */}
+          {hasBill && needsPayment && (
             <button onClick={() => { setPaymentShipment(s); setPaymentForm({ mode: 'UPI', ref: '', amount: String(s.weightNet ? Math.round(s.weightNet / 1000 * 100) / 100 : '') }); }}
               className="px-2 py-1 bg-yellow-500 text-white rounded text-[10px] font-bold flex items-center gap-0.5 hover:bg-yellow-600 active:scale-95">
-              💰 Pay ({s.paymentTerms})
+              💰 ② Pay ({s.paymentTerms})
             </button>
           )}
-          {s.paymentStatus === 'CONFIRMED' && (
+          {hasBill && s.paymentStatus === 'CONFIRMED' && (
             <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[9px] font-bold flex items-center gap-0.5">
               <CheckCircle size={8} /> Paid
             </span>
           )}
+
+          {/* ③ EWB — only after bill AND payment confirmed */}
+          {hasBill && isPaid && !hasEwb && s.dispatchRequestId && (
+            <button onClick={() => generateEwb(s)} disabled={ewbLoading === s.id}
+              className="px-2 py-1 bg-indigo-600 text-white rounded text-[10px] font-bold flex items-center gap-0.5 hover:bg-indigo-700 active:scale-95 disabled:opacity-50">
+              {ewbLoading === s.id ? <Loader2 size={9} className="animate-spin" /> : <Truck size={9} />} ③ EWB
+            </button>
+          )}
+          {hasBill && needsPayment && !hasEwb && s.dispatchRequestId && (
+            <span className="px-1.5 py-0.5 bg-gray-100 text-gray-400 rounded text-[9px] font-bold" title="Confirm payment before generating EWB">
+              <Truck size={8} /> EWB
+            </span>
+          )}
+          {!hasBill && !hasEwb && s.dispatchRequestId && (
+            <span className="px-1.5 py-0.5 bg-gray-100 text-gray-400 rounded text-[9px] font-bold" title="Create Invoice first">
+              <Truck size={8} /> EWB
+            </span>
+          )}
+          {hasEwb && (
+            <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded text-[9px] font-bold flex items-center gap-0.5">
+              <Truck size={8} /> {s.ewayBill}
+            </span>
+          )}
+
+          {/* Release — only after EWB (or if no DR / standalone) */}
           <button onClick={() => doStatus(s.id, 'RELEASED', { releaseTime: new Date().toISOString() })}
-            disabled={isSaving || s.paymentStatus === 'PENDING'}
-            title={s.paymentStatus === 'PENDING' ? 'Confirm payment first' : 'Release truck'}
+            disabled={isSaving || needsPayment}
+            title={needsPayment ? 'Confirm payment first' : 'Release truck'}
             className="px-2 py-1 bg-orange-600 text-white rounded text-[10px] font-bold hover:bg-orange-700 active:scale-95 disabled:opacity-50">
             {isSaving ? <Loader2 size={10} className="animate-spin" /> : '🔓 Release'}
           </button>
