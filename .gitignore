@@ -1,0 +1,16 @@
+node_modules/
+dist/
+frontend/public/
+backend/public/
+.env
+*.db
+*.db-journal
+.DS_Store
+*.log
+uploads/
+frontend/src/src/
+uploads/
+backend/ensure-server.sh
+backend/keepalive.sh
+backend/loadHistoricalData.ts
+.claude/worktrees/

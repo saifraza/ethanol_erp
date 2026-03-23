@@ -1,0 +1,483 @@
+import React, { useEffect, useState } from 'react';
+import { CogIcon, Save, Loader2, ChevronDown, ChevronUp, Trash2, TrendingUp, Eye, X, Share2 } from 'lucide-react';
+import ProcessPage, { InputCard, Field } from './ProcessPage';
+import api from '../../services/api';
+import {
+  LineChart, Line, BarChart, Bar,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  ReferenceLine
+} from 'recharts';
+
+interface MillForm {
+  date: string;
+  analysisTime: string;
+  sieve_1mm: number | null; sieve_850: number | null; sieve_600: number | null; sieve_300: number | null;
+  millA_rpm: number | null; millA_load: number | null;
+  millB_rpm: number | null; millB_load: number | null;
+  millC_rpm: number | null; millC_load: number | null;
+  remarks: string;
+}
+
+const emptyForm: MillForm = {
+  date: new Date().toISOString().split('T')[0],
+  analysisTime: '',
+  sieve_1mm: null, sieve_850: null, sieve_600: null, sieve_300: null,
+  millA_rpm: null, millA_load: null,
+  millB_rpm: null, millB_load: null,
+  millC_rpm: null, millC_load: null,
+  remarks: '',
+};
+
+function calcTotalFine(s1mm: number | null, s850: number | null, s600: number | null, s300: number | null): number {
+  return Math.round((100 - ((s1mm || 0) + (s850 || 0) + (s600 || 0) + (s300 || 0))) * 100) / 100;
+}
+function calcTotalCoarse(s1mm: number | null, s850: number | null): number {
+  return Math.round(((s1mm || 0) + (s850 || 0)) * 100) / 100;
+}
+
+// ─── Chart ───────────────────
+type ChartView = 'fine' | 'sieve' | 'rpm' | 'load' | 'particle';
+const CHART_VIEWS: { key: ChartView; label: string }[] = [
+  { key: 'fine', label: 'Total Fine %' },
+  { key: 'sieve', label: 'Sieve Breakdown' },
+  { key: 'particle', label: 'Coarse & Fines' },
+  { key: 'rpm', label: 'Mill RPM' },
+  { key: 'load', label: 'Mill Load' },
+];
+const MILL_COLORS = { A: '#3b82f6', B: '#10b981', C: '#f59e0b' };
+
+function MillingChartInner({ entries }: { entries: any[] }) {
+  const [view, setView] = useState<ChartView>('fine');
+  if (entries.length < 1) return null;
+
+  const chartData = entries.map(e => ({
+    date: e.date.split('T')[0].slice(5),
+    fullDate: e.date.split('T')[0],
+    time: e.analysisTime || '',
+    fine: e.totalFine,
+    coarse: Math.round(((e.sieve_1mm || 0) + (e.sieve_850 || 0)) * 100) / 100,
+    s1mm: e.sieve_1mm, s850: e.sieve_850, s600: e.sieve_600, s300: e.sieve_300,
+    aRpm: e.millA_rpm, bRpm: e.millB_rpm, cRpm: e.millC_rpm,
+    aLoad: e.millA_load, bLoad: e.millB_load, cLoad: e.millC_load,
+  }));
+
+  const avgFine = entries.reduce((s: number, e: any) => s + e.totalFine, 0) / entries.length;
+
+  const CustomTooltip = ({ active, payload }: any) => {
+    if (!active || !payload?.length) return null;
+    return (
+      <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-xs">
+        <p className="font-semibold text-gray-700 mb-1">{payload[0]?.payload?.fullDate} {payload[0]?.payload?.time && `@ ${payload[0].payload.time}`}</p>
+        {payload.map((p: any, i: number) => (
+          <p key={i} style={{ color: p.color }} className="flex justify-between gap-4">
+            <span>{p.name}:</span>
+            <span className="font-mono font-semibold">{typeof p.value === 'number' ? p.value.toFixed(2) : p.value}</span>
+          </p>
+        ))}
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      <div className="flex gap-1 mb-4 bg-gray-100 rounded-lg p-1 w-fit">
+        {CHART_VIEWS.map(v => (
+          <button key={v.key} onClick={() => setView(v.key)}
+            className={`px-3 py-1.5 text-xs rounded-md font-medium transition-all ${view === v.key ? 'bg-white text-stone-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+            {v.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Total Fine % trend */}
+      {view === 'fine' && (
+        <>
+          <ResponsiveContainer width="100%" height={280}>
+            <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} domain={['auto', 'auto']} unit="%" />
+              <Tooltip content={<CustomTooltip />} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <ReferenceLine y={avgFine} stroke="#6b7280" strokeDasharray="5 5" strokeOpacity={0.5} label={{ value: `avg ${avgFine.toFixed(1)}%`, fontSize: 10, fill: '#9ca3af' }} />
+              <Line type="monotone" dataKey="fine" name="Total Fine %" stroke="#8b5cf6" strokeWidth={2.5} dot={{ r: 4, fill: '#8b5cf6' }} activeDot={{ r: 6 }} />
+            </LineChart>
+          </ResponsiveContainer>
+          {entries.length >= 2 && (
+            <div className="flex items-center justify-center gap-8 mt-3 pt-3 border-t">
+              <div className="text-center">
+                <p className="text-xs text-gray-400">Average</p>
+                <p className="text-xl font-bold text-purple-600">{avgFine.toFixed(2)}%</p>
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-gray-400">Min</p>
+                <p className="text-lg font-semibold text-green-600">{Math.min(...entries.map((e: any) => e.totalFine)).toFixed(2)}%</p>
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-gray-400">Max</p>
+                <p className="text-lg font-semibold text-red-500">{Math.max(...entries.map((e: any) => e.totalFine)).toFixed(2)}%</p>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Sieve breakdown — line chart per fraction */}
+      {view === 'sieve' && (
+        <ResponsiveContainer width="100%" height={280}>
+          <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+            <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+            <YAxis tick={{ fontSize: 11 }} domain={['auto', 'auto']} unit="%" />
+            <Tooltip content={<CustomTooltip />} />
+            <Legend wrapperStyle={{ fontSize: 12 }} />
+            <Line type="monotone" dataKey="s600" name="0.600mm" stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 4, fill: '#3b82f6' }} />
+            <Line type="monotone" dataKey="fine" name="Fine (<0.3mm)" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3, fill: '#8b5cf6' }} />
+            <Line type="monotone" dataKey="s300" name="0.300mm" stroke="#10b981" strokeWidth={2} dot={{ r: 3, fill: '#10b981' }} />
+            <Line type="monotone" dataKey="s850" name="0.850mm" stroke="#f97316" strokeWidth={2} dot={{ r: 3, fill: '#f97316' }} />
+            <Line type="monotone" dataKey="s1mm" name="1.00mm" stroke="#ef4444" strokeWidth={2} dot={{ r: 3, fill: '#ef4444' }} />
+          </LineChart>
+        </ResponsiveContainer>
+      )}
+
+      {/* Coarse & Fines — Bar histogram */}
+      {view === 'particle' && (
+        <>
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }} barCategoryGap="20%">
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+              <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} domain={[0, 'auto']} unit="%" />
+              <Tooltip content={<CustomTooltip />} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Bar dataKey="coarse" name="Coarse (>0.85mm)" fill="#f97316" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="fine" name="Fines (<0.3mm)" fill="#8b5cf6" radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+          {entries.length >= 2 && (() => {
+            const coarseVals = entries.map((e: any) => Math.round(((e.sieve_1mm || 0) + (e.sieve_850 || 0)) * 100) / 100);
+            const fineVals = entries.map((e: any) => e.totalFine);
+            const avgCoarse = coarseVals.reduce((s: number, v: number) => s + v, 0) / coarseVals.length;
+            const avgFines = fineVals.reduce((s: number, v: number) => s + v, 0) / fineVals.length;
+            return (
+              <div className="flex items-start justify-center gap-10 mt-3 pt-3 border-t">
+                <div>
+                  <p className="text-xs font-semibold text-orange-500 text-center mb-2">Coarse (&gt;0.85mm)</p>
+                  <div className="flex gap-6">
+                    <div className="text-center"><p className="text-xs text-gray-400">Average</p><p className="text-xl font-bold text-orange-500">{avgCoarse.toFixed(2)}%</p></div>
+                    <div className="text-center"><p className="text-xs text-gray-400">Min</p><p className="text-lg font-semibold text-green-600">{Math.min(...coarseVals).toFixed(2)}%</p></div>
+                    <div className="text-center"><p className="text-xs text-gray-400">Max</p><p className="text-lg font-semibold text-red-500">{Math.max(...coarseVals).toFixed(2)}%</p></div>
+                  </div>
+                </div>
+                <div className="w-px bg-gray-200 self-stretch" />
+                <div>
+                  <p className="text-xs font-semibold text-purple-600 text-center mb-2">Fines (&lt;0.3mm)</p>
+                  <div className="flex gap-6">
+                    <div className="text-center"><p className="text-xs text-gray-400">Average</p><p className="text-xl font-bold text-purple-600">{avgFines.toFixed(2)}%</p></div>
+                    <div className="text-center"><p className="text-xs text-gray-400">Min</p><p className="text-lg font-semibold text-green-600">{Math.min(...fineVals).toFixed(2)}%</p></div>
+                    <div className="text-center"><p className="text-xs text-gray-400">Max</p><p className="text-lg font-semibold text-red-500">{Math.max(...fineVals).toFixed(2)}%</p></div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+        </>
+      )}
+
+      {/* RPM per mill */}
+      {view === 'rpm' && (
+        <ResponsiveContainer width="100%" height={280}>
+          <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+            <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+            <YAxis tick={{ fontSize: 11 }} domain={['auto', 'auto']} unit=" rpm" />
+            <Tooltip content={<CustomTooltip />} />
+            <Legend wrapperStyle={{ fontSize: 12 }} />
+            <Line type="monotone" dataKey="aRpm" name="Mill A" stroke={MILL_COLORS.A} strokeWidth={2} dot={{ r: 4 }} />
+            <Line type="monotone" dataKey="bRpm" name="Mill B" stroke={MILL_COLORS.B} strokeWidth={2} dot={{ r: 4 }} />
+            <Line type="monotone" dataKey="cRpm" name="Mill C" stroke={MILL_COLORS.C} strokeWidth={2} dot={{ r: 4 }} />
+          </LineChart>
+        </ResponsiveContainer>
+      )}
+
+      {/* Load per mill */}
+      {view === 'load' && (
+        <ResponsiveContainer width="100%" height={280}>
+          <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+            <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+            <YAxis tick={{ fontSize: 11 }} domain={['auto', 'auto']} unit=" A" />
+            <Tooltip content={<CustomTooltip />} />
+            <Legend wrapperStyle={{ fontSize: 12 }} />
+            <Line type="monotone" dataKey="aLoad" name="Mill A" stroke={MILL_COLORS.A} strokeWidth={2} dot={{ r: 4 }} />
+            <Line type="monotone" dataKey="bLoad" name="Mill B" stroke={MILL_COLORS.B} strokeWidth={2} dot={{ r: 4 }} />
+            <Line type="monotone" dataKey="cLoad" name="Mill C" stroke={MILL_COLORS.C} strokeWidth={2} dot={{ r: 4 }} />
+          </LineChart>
+        </ResponsiveContainer>
+      )}
+    </div>
+  );
+}
+
+// ─── Main Component ───────────────────
+export default function Milling() {
+  const [form, setForm] = useState<MillForm>({ ...emptyForm });
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [entries, setEntries] = useState<any[]>([]);
+  const [chartEntries, setChartEntries] = useState<any[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [showChart, setShowChart] = useState(true);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
+
+  const update = (n: string, v: any) => setForm(f => ({ ...f, [n]: v }));
+
+  useEffect(() => { loadEntries(); loadChartData(); }, []);
+
+  async function loadEntries() {
+    try { const res = await api.get('/milling?limit=500'); setEntries(res.data.entries); } catch (e) { console.error(e); }
+  }
+  async function loadChartData() {
+    try { const res = await api.get('/milling/chart?limit=500'); setChartEntries(res.data.entries); } catch (e) { console.error(e); }
+  }
+
+  async function handleSave() {
+    if (!form.date) { setMsg({ type: 'err', text: 'Date is required' }); return; }
+    setSaving(true); setMsg(null);
+    try {
+      if (editId) { await api.put(`/milling/${editId}`, form); }
+      else { await api.post('/milling', form); }
+      const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      setMsg({ type: 'ok', text: `Saved at ${now}` });
+      setForm({ ...emptyForm, date: form.date });
+      setEditId(null);
+      await loadEntries(); await loadChartData();
+    } catch (err: any) {
+      const isNetwork = !err.response;
+      setMsg({ type: 'err', text: isNetwork ? 'Server unreachable — your data is safe in the form, try again in a moment' : (err.response?.data?.error || 'Save failed') });
+    }
+    setSaving(false);
+  }
+
+  function editEntry(e: any) {
+    setEditId(e.id);
+    setForm({
+      date: e.date.split('T')[0], analysisTime: e.analysisTime || '',
+      sieve_1mm: e.sieve_1mm, sieve_850: e.sieve_850, sieve_600: e.sieve_600, sieve_300: e.sieve_300,
+      millA_rpm: e.millA_rpm, millA_load: e.millA_load,
+      millB_rpm: e.millB_rpm, millB_load: e.millB_load,
+      millC_rpm: e.millC_rpm, millC_load: e.millC_load,
+      remarks: e.remarks || '',
+    });
+    window.scrollTo(0, 0);
+  }
+
+  async function deleteEntry(id: string) {
+    if (!confirm('Delete this milling entry?')) return;
+    try { await api.delete(`/milling/${id}`); await loadEntries(); await loadChartData(); setMsg({ type: 'ok', text: 'Deleted.' }); }
+    catch (err: any) { setMsg({ type: 'err', text: err.response?.data?.error || 'Delete failed' }); }
+  }
+
+  function fmtTime(iso: string) {
+    if (!iso) return '';
+    return new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  }
+
+  const totalFine = calcTotalFine(form.sieve_1mm, form.sieve_850, form.sieve_600, form.sieve_300);
+  const totalCoarse = calcTotalCoarse(form.sieve_1mm, form.sieve_850);
+
+  return (
+    <ProcessPage title="Milling" icon={<CogIcon size={28} />} description="Grain milling analysis — sieve distribution, RPM & load for Mill A, B, C" flow={{ from: 'Grain Silo', to: 'Slurry Tank' }} color="bg-stone-600">
+
+      {msg && (
+        <div className={`rounded-lg p-3 mb-4 text-sm ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+          {msg.text}
+        </div>
+      )}
+
+      {/* Trend Charts */}
+      {chartEntries.length > 0 && (
+        <div className="card mb-6">
+          <button onClick={() => setShowChart(!showChart)} className="flex items-center justify-between w-full text-left">
+            <div className="flex items-center gap-2">
+              <TrendingUp size={18} className="text-stone-600" />
+              <h3 className="section-title mb-0">Trend Analysis</h3>
+              <span className="text-xs text-gray-400">({chartEntries.length} entries)</span>
+            </div>
+            {showChart ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+          </button>
+          {showChart && <div className="mt-3"><MillingChartInner entries={chartEntries} /></div>}
+        </div>
+      )}
+
+      <InputCard title={editId ? '✏️ Edit Entry' : '📝 New Entry'}>
+        <Field label="Date" name="date" value={form.date} onChange={(_n: string, v: any) => update('date', v)} unit="" />
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-gray-600 w-52 shrink-0">Analysis Time</label>
+          <input type="time" value={form.analysisTime} onChange={e => update('analysisTime', e.target.value)} className="input-field flex-1" />
+          <button type="button" onClick={() => { const now = new Date(); update('analysisTime', now.toTimeString().slice(0,5)); }} className="px-3 py-2 text-xs font-medium bg-stone-100 hover:bg-stone-200 text-stone-600 rounded-lg border border-stone-300 whitespace-nowrap transition-colors">Now</button>
+        </div>
+      </InputCard>
+
+      {/* Single sieve analysis — mixed flour */}
+      <InputCard title="Sieve Analysis — Mixed Flour">
+        <Field label="1.00 mm" name="sieve_1mm" value={form.sieve_1mm} onChange={update} unit="%" placeholder="Retained on 1.00mm" />
+        <Field label="0.850 mm" name="sieve_850" value={form.sieve_850} onChange={update} unit="%" placeholder="Retained on 0.850mm" />
+        <Field label="0.600 mm" name="sieve_600" value={form.sieve_600} onChange={update} unit="%" placeholder="Retained on 0.600mm" />
+        <Field label="0.300 mm" name="sieve_300" value={form.sieve_300} onChange={update} unit="%" placeholder="Passing 0.300mm" />
+        {/* Summary row */}
+        <div className="grid grid-cols-2 gap-3 mt-2 pt-3 border-t border-dashed border-gray-200">
+          <div className="flex items-center justify-between bg-orange-50 border border-orange-200 rounded-lg px-4 py-2.5">
+            <div>
+              <p className="text-[10px] text-orange-500 font-semibold uppercase tracking-wide">Total Coarse</p>
+              <p className="text-xs text-gray-400">&gt;0.85mm (1mm + 850µm)</p>
+            </div>
+            <p className="text-2xl font-bold text-orange-600">{totalCoarse}<span className="text-sm font-normal ml-0.5">%</span></p>
+          </div>
+          <div className="flex items-center justify-between bg-purple-50 border border-purple-200 rounded-lg px-4 py-2.5">
+            <div>
+              <p className="text-[10px] text-purple-500 font-semibold uppercase tracking-wide">Total Fine</p>
+              <p className="text-xs text-gray-400">&lt;0.3mm (passing 300µm)</p>
+            </div>
+            <p className="text-2xl font-bold text-purple-600">{totalFine}<span className="text-sm font-normal ml-0.5">%</span></p>
+          </div>
+        </div>
+      </InputCard>
+
+      {/* Per-mill RPM & Load in one card */}
+      <InputCard title="Mill RPM & Load">
+        {/* Header row */}
+        <div className="grid grid-cols-[1fr_1fr_1fr_1fr] gap-3 mb-2 text-xs text-gray-400 font-medium">
+          <div></div>
+          <div className="text-center font-semibold text-blue-600 text-sm">Mill A</div>
+          <div className="text-center font-semibold text-green-600 text-sm">Mill B</div>
+          <div className="text-center font-semibold text-amber-600 text-sm">Mill C</div>
+        </div>
+        {/* RPM row */}
+        <div className="grid grid-cols-[1fr_1fr_1fr_1fr] gap-3 items-center mb-2">
+          <label className="text-sm text-gray-600">RPM <span className="text-xs text-gray-400">(rpm)</span></label>
+          <input type="number" value={form.millA_rpm ?? ''} onChange={e => update('millA_rpm', e.target.value === '' ? null : parseFloat(e.target.value))} className="input-field text-center" placeholder="A" />
+          <input type="number" value={form.millB_rpm ?? ''} onChange={e => update('millB_rpm', e.target.value === '' ? null : parseFloat(e.target.value))} className="input-field text-center" placeholder="B" />
+          <input type="number" value={form.millC_rpm ?? ''} onChange={e => update('millC_rpm', e.target.value === '' ? null : parseFloat(e.target.value))} className="input-field text-center" placeholder="C" />
+        </div>
+        {/* Load row */}
+        <div className="grid grid-cols-[1fr_1fr_1fr_1fr] gap-3 items-center">
+          <label className="text-sm text-gray-600">Load <span className="text-xs text-gray-400">(Amp)</span></label>
+          <input type="number" value={form.millA_load ?? ''} onChange={e => update('millA_load', e.target.value === '' ? null : parseFloat(e.target.value))} className="input-field text-center" placeholder="A" />
+          <input type="number" value={form.millB_load ?? ''} onChange={e => update('millB_load', e.target.value === '' ? null : parseFloat(e.target.value))} className="input-field text-center" placeholder="B" />
+          <input type="number" value={form.millC_load ?? ''} onChange={e => update('millC_load', e.target.value === '' ? null : parseFloat(e.target.value))} className="input-field text-center" placeholder="C" />
+        </div>
+      </InputCard>
+
+      <InputCard title="Remarks (Optional)">
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-gray-600 w-52 shrink-0">Remarks</label>
+          <input type="text" value={form.remarks} onChange={e => update('remarks', e.target.value)} className="input-field flex-1" />
+        </div>
+      </InputCard>
+
+      <div className="flex flex-col md:flex-row md:justify-end gap-3 mt-4 mb-6">
+        {editId && <button onClick={() => { setEditId(null); setForm({ ...emptyForm }); }} className="btn-secondary w-full md:w-auto text-center">Cancel Edit</button>}
+        <button onClick={() => setShowPreview(true)} className="btn-primary w-full md:w-auto flex items-center justify-center gap-2">
+          <Eye size={16} /> Preview & Save
+        </button>
+      </div>
+
+      {/* Preview Modal */}
+      {showPreview && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowPreview(false)}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="bg-stone-600 text-white p-4 rounded-t-xl flex items-center justify-between">
+              <h3 className="font-bold text-lg">Milling Report Preview</h3>
+              <button onClick={() => setShowPreview(false)}><X size={20} /></button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="flex justify-between text-sm"><span className="text-gray-500">Date</span><span className="font-medium">{form.date}</span></div>
+              {form.analysisTime && <div className="flex justify-between text-sm"><span className="text-gray-500">Time</span><span className="font-medium">{form.analysisTime}</span></div>}
+              <div className="border-t pt-3">
+                <h4 className="text-sm font-semibold text-stone-700 mb-2">Sieve Analysis</h4>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  {form.sieve_1mm != null && <div className="flex justify-between"><span className="text-gray-500">1.00mm</span><span>{form.sieve_1mm}%</span></div>}
+                  {form.sieve_850 != null && <div className="flex justify-between"><span className="text-gray-500">0.850mm</span><span>{form.sieve_850}%</span></div>}
+                  {form.sieve_600 != null && <div className="flex justify-between"><span className="text-gray-500">0.600mm</span><span>{form.sieve_600}%</span></div>}
+                  {form.sieve_300 != null && <div className="flex justify-between"><span className="text-gray-500">0.300mm</span><span>{form.sieve_300}%</span></div>}
+                  <div className="flex justify-between font-semibold text-orange-600 col-span-2 border-t pt-1"><span>Total Coarse (&gt;0.85mm)</span><span>{totalCoarse}%</span></div>
+                  <div className="flex justify-between font-semibold text-purple-700 col-span-2"><span>Total Fine (&lt;0.3mm)</span><span>{totalFine}%</span></div>
+                </div>
+              </div>
+              <div className="border-t pt-3">
+                <h4 className="text-sm font-semibold text-stone-700 mb-2">Mill RPM & Load</h4>
+                <div className="grid grid-cols-3 gap-2 text-sm text-center">
+                  <div className="font-semibold text-blue-600">Mill A</div><div className="font-semibold text-green-600">Mill B</div><div className="font-semibold text-amber-600">Mill C</div>
+                  <div>{form.millA_rpm ?? '—'} rpm</div><div>{form.millB_rpm ?? '—'} rpm</div><div>{form.millC_rpm ?? '—'} rpm</div>
+                  <div>{form.millA_load ?? '—'} A</div><div>{form.millB_load ?? '—'} A</div><div>{form.millC_load ?? '—'} A</div>
+                </div>
+              </div>
+              {form.remarks && <div className="border-t pt-3 text-sm"><span className="text-gray-500">Remarks:</span> {form.remarks}</div>}
+            </div>
+            <div className="p-4 border-t flex gap-2">
+              <button onClick={() => {
+                const t = `*MILLING REPORT*\nDate: ${form.date} ${form.analysisTime || ''}\n\n*Sieve Analysis*\n1.00mm: ${form.sieve_1mm ?? '—'}%\n0.850mm: ${form.sieve_850 ?? '—'}%\n0.600mm: ${form.sieve_600 ?? '—'}%\n0.300mm: ${form.sieve_300 ?? '—'}%\nTotal Fine: ${totalFine}%\n\n*Mill RPM / Load*\nMill A: ${form.millA_rpm ?? '—'} rpm / ${form.millA_load ?? '—'} A\nMill B: ${form.millB_rpm ?? '—'} rpm / ${form.millB_load ?? '—'} A\nMill C: ${form.millC_rpm ?? '—'} rpm / ${form.millC_load ?? '—'} A${form.remarks ? '\n\nRemarks: ' + form.remarks : ''}`;
+                if (navigator.share) { navigator.share({ text: t }).catch(() => { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }); } else { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }
+              }} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
+                <Share2 size={16} /> Share
+              </button>
+              <button onClick={async () => { await handleSave(); setShowPreview(false); }} disabled={saving}
+                className="flex-1 flex items-center justify-center gap-2 bg-stone-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-stone-700 disabled:opacity-50">
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} {editId ? 'Update' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Entry History */}
+      <div className="card mb-8">
+        <button onClick={() => setShowHistory(!showHistory)} className="flex items-center justify-between w-full text-left">
+          <h3 className="section-title mb-0">Entry History ({entries.length})</h3>
+          {showHistory ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+        </button>
+        {showHistory && (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-gray-500">
+                  <th className="py-2 pr-3">Date</th>
+                  <th className="py-2 pr-3">Time</th>
+                  <th className="py-2 pr-3 text-orange-600">Coarse%</th>
+                  <th className="py-2 pr-3 text-purple-600">Fine%</th>
+                  <th className="py-2 pr-3">0.6mm</th>
+                  <th className="py-2 pr-3">A rpm</th>
+                  <th className="py-2 pr-3">B rpm</th>
+                  <th className="py-2 pr-3">C rpm</th>
+                  <th className="py-2 pr-3">Saved</th>
+                  <th className="py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {entries.map(e => (
+                  <tr key={e.id} className="border-b hover:bg-gray-50 cursor-pointer" onClick={() => editEntry(e)}>
+                    <td className="py-2 pr-3 font-medium">{e.date.split('T')[0]}</td>
+                    <td className="py-2 pr-3">{e.analysisTime || '—'}</td>
+                    <td className="py-2 pr-3 font-semibold text-orange-500">{((e.sieve_1mm || 0) + (e.sieve_850 || 0)).toFixed(2)}</td>
+                    <td className="py-2 pr-3 font-semibold text-purple-600">{e.totalFine?.toFixed(2)}</td>
+                    <td className="py-2 pr-3">{e.sieve_600?.toFixed(1)}</td>
+                    <td className="py-2 pr-3">{e.millA_rpm}</td>
+                    <td className="py-2 pr-3">{e.millB_rpm}</td>
+                    <td className="py-2 pr-3">{e.millC_rpm}</td>
+                    <td className="py-2 pr-3 text-gray-400 text-xs">{fmtTime(e.updatedAt)}</td>
+                    <td className="py-2">
+                      <button onClick={(ev) => { ev.stopPropagation(); deleteEntry(e.id); }} className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
+                    </td>
+                  </tr>
+                ))}
+                {entries.length === 0 && <tr><td colSpan={9} className="py-4 text-center text-gray-400">No entries yet.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </ProcessPage>
+  );
+}

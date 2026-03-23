@@ -1,0 +1,1808 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  role           String   @default("OPERATOR")
+  allowedModules String?  // comma-separated module keys, null = all access
+  isActive       Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  grainEntries GrainEntry[]
+}
+
+model DailyEntry {
+  id                      String   @id @default(cuid())
+  date                    DateTime
+  yearStart               Int
+  syrup1Flow              Float    @default(0)
+  syrup2Flow              Float    @default(0)
+  syrup3Flow              Float    @default(0)
+  fltFlow                 Float    @default(0)
+  washFlow                Float    @default(0)
+  fermenter1Level         Float    @default(0)
+  fermenter2Level         Float    @default(0)
+  fermenter3Level         Float    @default(0)
+  fermenter4Level         Float    @default(0)
+  beerWellLevel           Float    @default(0)
+  pfLevel                 Float    @default(0)
+  grainOpeningStock       Float    @default(0)
+  grainUnloadedToday      Float    @default(0)
+  grainConsumed           Float    @default(0)
+  grainDistilled          Float    @default(0)
+  grainClosingStock       Float    @default(0)
+  grainInFermenters       Float    @default(0)
+  steamTotal              Float    @default(0)
+  steamAvgTph             Float    @default(0)
+  steamPerTon             Float    @default(0)
+  distillationEfficiency  Float    @default(0)
+  recoveryPercentage      Float    @default(0)
+  status                  String   @default("DRAFT")
+  notes                   String   @default("")
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+  @@unique([date, yearStart])
+}
+
+model TankDip {
+  id          String   @id @default(cuid())
+  date        DateTime
+  yearStart   Int
+  rsLevel     Float    @default(0)
+  hfoLevel    Float    @default(0)
+  lfoLevel    Float    @default(0)
+  production  Float    @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  @@unique([date, yearStart])
+}
+
+model Settings {
+  id                    String   @id @default(cuid())
+  grainPercent          Float    @default(31)
+  fermenter1Cap         Float    @default(2300)
+  fermenter2Cap         Float    @default(2300)
+  fermenter3Cap         Float    @default(2300)
+  fermenter4Cap         Float    @default(2300)
+  beerWellCap           Float    @default(430)
+  pfCap                 Float    @default(430)
+  pfGrainPercent        Float    @default(15)
+  iltCap                Float    @default(190)
+  fltCap                Float    @default(440)
+  millingLossPercent    Float    @default(2.5)
+  pfGravityTarget       Float    @default(1.024)   // PF ready-to-transfer gravity
+  fermRetentionHours    Float    @default(8)        // hours before transfer
+  rsCap                 Float    @default(15000)
+  hfoCap                Float    @default(15000)
+  lfoCap                Float    @default(15000)
+  ddgsBaseProduction    Float    @default(3160)     // historical DDGS production before ERP (Ton)
+  ddgsBaseStock         Float    @default(1956.01)  // DDGS stock at ERP start (Ton)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+// Document templates for auto-generated PDFs (challan, PO, invoice, rate request, etc.)
+model DocumentTemplate {
+  id          String   @id @default(cuid())
+  docType     String   @unique   // CHALLAN, PURCHASE_ORDER, INVOICE, RATE_REQUEST, SALE_ORDER
+  title       String?            // e.g. "DELIVERY CHALLAN"
+  terms       String?            // JSON array of term strings
+  footer      String?            // Footer text
+  bankDetails String?            // Bank details text
+  companyInfo String?            // JSON with company overrides
+  remarks     String?            // Default remarks
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model GrainEntry {
+  id                 String   @id @default(uuid())
+  date               DateTime
+  yearStart          Int
+  grainUnloaded      Float    @default(0)
+  washConsumed         Float    @default(0)
+  washConsumedAt       DateTime?
+  fermentationVolume   Float    @default(0)
+  fermentationVolumeAt DateTime?
+  f1Level            Float?
+  f2Level            Float?
+  f3Level            Float?
+  f4Level            Float?
+  beerWellLevel      Float?
+  pf1Level           Float?
+  pf2Level           Float?
+  iltLevel           Float?
+  fltLevel           Float?
+  grainConsumed      Float    @default(0)
+  grainInProcess     Float    @default(0)
+  siloOpeningStock   Float    @default(0)
+  siloClosingStock   Float    @default(0)
+  quarantineStock    Float    @default(0)
+  flourSilo1Level    Float    @default(0)
+  flourSilo2Level    Float    @default(0)
+  totalGrainAtPlant  Float    @default(0)
+  cumulativeUnloaded Float    @default(0)
+  cumulativeConsumed Float    @default(0)
+  moisture           Float?
+  starchPercent      Float?
+  damagedPercent     Float?
+  foreignMatter      Float?
+  trucks             Int?
+  avgTruckWeight     Float?
+  supplier           String?
+  remarks            String?
+  userId             String
+  user               User     @relation(fields: [userId], references: [id])
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  @@index([date])
+  @@index([yearStart, date])
+}
+
+model MillingEntry {
+  id              String   @id @default(uuid())
+  date            DateTime
+  yearStart       Int
+  analysisTime    String   @default("")
+  sieve_1mm      Float    @default(0)
+  sieve_850      Float    @default(0)
+  sieve_600      Float    @default(0)
+  sieve_300      Float    @default(0)
+  totalFine      Float    @default(0)
+  millA_rpm       Float    @default(0)
+  millA_load      Float    @default(0)
+  millB_rpm       Float    @default(0)
+  millB_load      Float    @default(0)
+  millC_rpm       Float    @default(0)
+  millC_load      Float    @default(0)
+  remarks         String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  @@index([date])
+}
+
+// ═══════════════════════════════════════════════
+// RAW MATERIAL ANALYSIS
+// ═══════════════════════════════════════════════
+model RawMaterialEntry {
+  id            String   @id @default(uuid())
+  date          DateTime
+  vehicleCode   String   @default("")
+  vehicleNo     String   @default("")
+  moisture      Float    @default(0)
+  starch        Float    @default(0)
+  fungus        Float    @default(0)
+  immature      Float    @default(0)
+  damaged       Float    @default(0)
+  waterDamaged  Float    @default(0)
+  tfm           Float    @default(0)
+  material      String   @default("Corn")
+  remark        String?
+  userId        String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  @@index([date])
+}
+
+// ═══════════════════════════════════════════════
+// LIQUEFACTION
+// ═══════════════════════════════════════════════
+model LiquefactionEntry {
+  id              String   @id @default(uuid())
+  date            DateTime
+  analysisTime    String   @default("")
+  jetCookerTemp   Float?
+  jetCookerFlow   Float?
+  iltTemp         Float?
+  iltSpGravity    Float?
+  iltPh           Float?
+  iltRs           Float?
+  fltTemp         Float?
+  fltSpGravity    Float?
+  fltPh           Float?
+  fltRs           Float?
+  fltRst          Float?
+  // Extra test fields
+  iltDs           Float?   // Dissolved Solids ILT
+  iltTs           Float?   // Total Solids ILT
+  fltDs           Float?   // Dissolved Solids FLT
+  fltTs           Float?   // Total Solids FLT
+  iltBrix         Float?   // Brix ILT
+  fltBrix         Float?   // Brix FLT
+  iltViscosity    Float?   // Viscosity ILT
+  fltViscosity    Float?   // Viscosity FLT
+  iltAcidity      Float?   // Acidity ILT
+  fltAcidity      Float?   // Acidity FLT
+  iltLevel        Float?   // ILT Tank Level
+  fltLevel        Float?   // FLT Tank Level
+  fltFlowRate     Float?   // FLT Flow Rate
+  flourRate               Float?   // Flour Rate
+  hotWaterFlowRate        Float?   // Hot Water Flow Rate
+  thinSlopRecycleFlowRate Float?   // Thin Slop Recycle Flow Rate
+  slurryFlow              Float?   // ILT to Jet Cooker Slurry Flow
+  steamFlow               Float?   // Liquefaction Steam Flow
+  iltSteam                Float?   // Steam in ILT
+  flowToFermenter         Float?   // Flow to Fermenter M³/hr
+  fltIodineTest           String?  // POSITIVE or NEGATIVE
+  fltIodinePhotoUrl       String?  // photo of iodine test
+  remark          String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  @@index([date])
+}
+
+// ═══════════════════════════════════════════════
+// PRE-FERMENTATION
+// ═══════════════════════════════════════════════
+
+// Chemical master list (persists across batches)
+model PFChemical {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  rate      Float?   // Rs per unit
+  unit      String   @default("kg")  // kg, ltr, gm
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+// PF Batch — one cycle of pre-fermentation
+model PFBatch {
+  id              String   @id @default(uuid())
+  batchNo         Int
+  fermenterNo     Int      @default(1)
+  phase           String   @default("SETUP") // SETUP, DOSING, LAB, TRANSFER, CIP, DONE
+  setupTime       DateTime?
+  dosingEndTime   DateTime?
+  slurryVolume    Float?    // litres from liquefaction
+  slurryGravity   Float?
+  slurryTemp      Float?
+  transferTime    DateTime?
+  transferVolume  Float?
+  cipStartTime    DateTime?
+  cipEndTime      DateTime?
+  remarks         String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  dosings         PFDosing[]
+  labReadings     PFLabReading[]
+  @@index([phase])
+  @@index([createdAt])
+}
+
+// Dosing per batch — which chemicals added
+model PFDosing {
+  id          String   @id @default(uuid())
+  batchId     String
+  batch       PFBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  chemicalName String  // denormalized for easy display
+  quantity    Float    // amount in unit
+  unit        String   @default("kg")
+  rate        Float?   // Rs per unit at time of dosing
+  addedAt     DateTime @default(now())
+}
+
+// Lab readings during PF (replaces old PreFermentationEntry)
+model PFLabReading {
+  id           String   @id @default(uuid())
+  batchId      String
+  batch        PFBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  analysisTime String   @default("")
+  spGravity    Float?
+  ph           Float?
+  rs           Float?
+  rst          Float?
+  alcohol      Float?
+  ds           Float?
+  vfaPpa       Float?
+  temp         Float?
+  remarks      String?
+  userId       String
+  createdAt    DateTime @default(now())
+}
+
+// Keep old model for backward compat
+model PreFermentationEntry {
+  id              String   @id @default(uuid())
+  date            DateTime
+  analysisTime    String   @default("")
+  batchNo         Int      @default(0)
+  fermenterNo     Int      @default(1)
+  spGravity       Float?
+  ph              Float?
+  rs              Float?
+  rst             Float?
+  alcohol         Float?
+  ds              Float?
+  vfaPpa          Float?
+  temp            Float?
+  remarks         String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ═══════════════════════════════════════════════
+// FERMENTATION — the big one
+// Each row = one reading for one fermenter in one batch
+// ═══════════════════════════════════════════════
+model FermentationEntry {
+  id              String   @id @default(uuid())
+  date            DateTime
+  analysisTime    String   @default("")
+  batchNo         Int      @default(0)
+  fermenterNo     Int      @default(1)
+  level           Float?   // fermenter level % at time of reading
+  spGravity       Float?
+  ph              Float?
+  rs              Float?
+  rst             Float?
+  alcohol         Float?
+  ds              Float?
+  vfaPpa          Float?
+  temp            Float?
+  spentLoss       Float?
+  spentLossPhotoUrl String?
+  status          String   @default("U/F")
+  remarks         String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  @@index([batchNo, fermenterNo])
+  @@index([date])
+  @@index([createdAt])
+  @@index([fermenterNo])
+}
+
+// Fermentation batch metadata
+model FermentationBatch {
+  id                  String   @id @default(uuid())
+  batchNo             Int
+  fermenterNo         Int      @default(1)
+  phase               String   @default("PF_TRANSFER") // PF_TRANSFER, FILLING, REACTION, RETENTION, TRANSFER, CIP, DONE
+  pfTransferTime      DateTime?
+  fillingStartTime    DateTime?
+  fillingEndTime      DateTime?
+  setupEndTime        DateTime?
+  reactionStartTime   DateTime?
+  retentionStartTime  DateTime?
+  transferTime        DateTime?
+  cipStartTime        DateTime?
+  cipEndTime          DateTime?
+  setupTime           String?
+  setupDate           DateTime?
+  setupGravity        Float?
+  setupRs             Float?
+  setupRst            Float?
+  fermLevel           Float?    // level % of 2300 M³
+  volume              Float?    // calculated litres
+  transferVolume    Float?
+  beerWellNo        Int?
+  finalDate         DateTime?
+  finalRsGravity    Float?
+  totalHours        Float?
+  yeast             String?
+  enzyme            String?
+  formolin          String?
+  booster           String?
+  urea              String?
+  finalAlcohol      Float?
+  remarks           String?
+  userId            String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  dosings           FermDosing[]
+  @@unique([batchNo, fermenterNo])
+  @@index([phase])
+  @@index([createdAt])
+}
+
+// Fermentation chemicals (reusable list)
+model FermChemical {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  unit      String   @default("kg")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+// Dosing per fermentation batch
+model FermDosing {
+  id           String            @id @default(uuid())
+  batchId      String
+  batch        FermentationBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  chemicalName String
+  quantity     Float
+  unit         String            @default("kg")
+  level        Float?            // fermenter level % at time of dosing
+  addedAt      DateTime          @default(now())
+}
+
+// Beer Well readings
+model BeerWellReading {
+  id        String   @id @default(uuid())
+  wellNo    Int      @default(1)
+  level     Float?   // level %
+  spGravity Float?
+  ph        Float?
+  alcohol   Float?
+  temp      Float?
+  remarks   String?
+  batchNo   Int?     // which batch was transferred here
+  createdAt DateTime @default(now())
+  @@index([createdAt])
+}
+
+// ═══════════════════════════════════════════════
+// DOSING RECIPES (fixed patterns)
+// ═══════════════════════════════════════════════
+model DosingRecipe {
+  id           String   @id @default(uuid())
+  category     String   // PF, FERMENTER, LIQUEFACTION
+  chemicalName String
+  quantity     Float
+  unit         String   @default("kg")
+  order        Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// ═══════════════════════════════════════════════
+// DISTILLATION
+// ═══════════════════════════════════════════════
+model DistillationEntry {
+  id                  String   @id @default(uuid())
+  date                DateTime
+  analysisTime        String   @default("")
+  spentWashLoss       Float?
+  rcLessLoss          Float?
+  ethanolStrength     Float?
+  rcReflexStrength    Float?
+  regenerationStrength Float?
+  evaporationSpgr     Float?
+  // New fields
+  rcStrength          Float?
+  actStrength         Float?
+  spentLossLevel      String?  // NIL, SLIGHT, HIGH
+  spentWashPhotoUrl   String?
+  rcLessPhotoUrl      String?
+  remark              String?
+  userId              String
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  @@index([date])
+}
+
+// ═══════════════════════════════════════════════
+// EVAPORATION
+// ═══════════════════════════════════════════════
+model EvaporationEntry {
+  id              String   @id @default(uuid())
+  date            DateTime
+  analysisTime    String   @default("")
+  // FF1-FF5 specific gravity & temp
+  ff1SpGravity    Float?
+  ff1Temp         Float?
+  ff2SpGravity    Float?
+  ff2Temp         Float?
+  ff3SpGravity    Float?
+  ff3Temp         Float?
+  ff4SpGravity    Float?
+  ff4Temp         Float?
+  ff5SpGravity    Float?
+  ff5Temp         Float?
+  // FC1, FC2 specific gravity & temp
+  fc1SpGravity    Float?
+  fc1Temp         Float?
+  fc2SpGravity    Float?
+  fc2Temp         Float?
+  // Concentration of each FFE (%) — legacy, kept for old data
+  ff1Concentration Float?
+  ff2Concentration Float?
+  ff3Concentration Float?
+  ff4Concentration Float?
+  ff5Concentration Float?
+  // Syrup
+  syrupConcentration Float?
+  // Vacuum & flow
+  vacuum          Float?
+  thinSlopFlowRate Float?
+  // Last syrup gravity
+  lastSyrupGravity Float?
+  // Reboiler of Analyzer Column (A, B, C)
+  reboilerATemp    Float?
+  reboilerBTemp    Float?
+  reboilerCTemp    Float?
+  // Thin Slop
+  thinSlopGravity  Float?
+  thinSlopSolids   Float?
+  // Spent Wash
+  spentWashGravity Float?
+  spentWashSolids  Float?
+  remark          String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  @@index([date])
+}
+
+// ═══════════════════════════════════════════════
+// DDGS PRODUCTION
+// ═══════════════════════════════════════════════
+model DDGSProductionEntry {
+  id              String   @id @default(uuid())
+  date            DateTime
+  entryTime       String   @default("")
+  bags            Float?
+  weightPerBag    Float?
+  totalProduction Float?
+  // Dryer params
+  dryerInletTemp  Float?
+  dryerOutletTemp Float?
+  ddgsMoisture    Float?
+  ddgsProtein     Float?
+  remark          String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ═══════════════════════════════════════════════
+// DDGS STOCK (daily stock tracking)
+// ═══════════════════════════════════════════════
+model DDGSStockEntry {
+  id                String   @id @default(uuid())
+  date              DateTime
+  yearStart         Int
+  openingStock      Float    @default(0)      // auto from prev closing
+  productionToday   Float    @default(0)      // bags * weightPerBag from DDGS production
+  dispatchToday     Float    @default(0)      // sum of dispatch trucks
+  closingStock      Float    @default(0)      // opening + production - dispatch
+  bags              Int      @default(0)
+  weightPerBag      Float    @default(50)     // kg per bag default 50
+  remarks           String?
+  userId            String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([date, yearStart])
+}
+
+// ═══════════════════════════════════════════════
+// DDGS DISPATCH TRUCKS (per-truck outgoing)
+// ═══════════════════════════════════════════════
+model DDGSDispatchTruck {
+  id              String   @id @default(uuid())
+  date            DateTime @default(now())
+  status          String   @default("GATE_IN") // GATE_IN → TARE_WEIGHED → LOADING → GROSS_WEIGHED → BILLED → RELEASED
+  vehicleNo       String   @default("")
+  partyName       String   @default("")
+  partyAddress    String?
+  partyGstin      String?
+  destination     String   @default("")
+  driverName      String?
+  driverMobile    String?
+  transporterName String?
+  bags            Int      @default(0)
+  weightPerBag    Float    @default(50)
+  weightGross     Float    @default(0)
+  weightTare      Float    @default(0)
+  weightNet       Float    @default(0)
+  rate            Float?                     // ₹ per MT
+  invoiceNo       String?
+  invoiceAmount   Float?
+  gatePassNo      String?
+  ewayBillNo      String?
+  hsnCode         String   @default("2303")  // DDGS HSN
+  gateInTime      DateTime?
+  tareTime        DateTime?
+  grossTime       DateTime?
+  releaseTime     DateTime?
+  remarks         String?
+  userId          String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now()) @updatedAt
+  @@index([date])
+}
+
+// ═══════════════════════════════════════════════
+// DRYER (3 dryers — moisture, steam, syrup, load)
+// ═══════════════════════════════════════════════
+model DryerEntry {
+  id              String   @id @default(uuid())
+  date            DateTime
+  entryTime       String   @default("")
+  // Dryer 1
+  dr1Moisture     Float?
+  dr1SteamFlow    Float?
+  dr1SteamTempIn  Float?
+  dr1SteamTempOut Float?
+  dr1SyrupConsumption Float?
+  dr1LoadAmps     Float?
+  // Dryer 2
+  dr2Moisture     Float?
+  dr2SteamFlow    Float?
+  dr2SteamTempIn  Float?
+  dr2SteamTempOut Float?
+  dr2SyrupConsumption Float?
+  dr2LoadAmps     Float?
+  // Dryer 3
+  dr3Moisture     Float?
+  dr3SteamFlow    Float?
+  dr3SteamTempIn  Float?
+  dr3SteamTempOut Float?
+  dr3SyrupConsumption Float?
+  dr3LoadAmps     Float?
+  // Final
+  finalMoisture   Float?
+  remark          String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ═══════════════════════════════════════════════
+// DECANTER
+// ═══════════════════════════════════════════════
+model DecanterEntry {
+  id              String   @id @default(uuid())
+  date            DateTime
+  entryTime       String   @default("")
+  // Decanter 1-8: feed, wetCakeSolid, thinSlopGravity
+  d1Feed          Float?
+  d1WetCake       Float?
+  d1ThinSlopGr    Float?
+  d2Feed          Float?
+  d2WetCake       Float?
+  d2ThinSlopGr    Float?
+  d3Feed          Float?
+  d3WetCake       Float?
+  d3ThinSlopGr    Float?
+  d4Feed          Float?
+  d4WetCake       Float?
+  d4ThinSlopGr    Float?
+  d5Feed          Float?
+  d5WetCake       Float?
+  d5ThinSlopGr    Float?
+  d6Feed          Float?
+  d6WetCake       Float?
+  d6ThinSlopGr    Float?
+  d7Feed          Float?
+  d7WetCake       Float?
+  d7ThinSlopGr    Float?
+  d8Feed          Float?
+  d8WetCake       Float?
+  d8ThinSlopGr    Float?
+  remark          String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ═══════════════════════════════════════════════
+// ETHANOL PRODUCT & DISPATCH
+// ═══════════════════════════════════════════════
+model EthanolProductEntry {
+  id              String   @id @default(uuid())
+  date            DateTime
+  yearStart       Int
+  // 9 tanks: current DIP, LT%, Strength%, Volume (BL)
+  recADip         Float?
+  recALt          Float?
+  recAStrength    Float?
+  recAVolume      Float?
+  recBDip         Float?
+  recBLt          Float?
+  recBStrength    Float?
+  recBVolume      Float?
+  recCDip         Float?
+  recCLt          Float?
+  recCStrength    Float?
+  recCVolume      Float?
+  issADip         Float?
+  issALt          Float?
+  issAStrength    Float?
+  issAVolume      Float?
+  issBDip         Float?
+  issBLt          Float?
+  issBStrength    Float?
+  issBVolume      Float?
+  issCDip         Float?
+  issCLt          Float?
+  issCStrength    Float?
+  issCVolume      Float?
+  bulkADip        Float?
+  bulkALt         Float?
+  bulkAStrength   Float?
+  bulkAVolume     Float?
+  bulkBDip        Float?
+  bulkBLt         Float?
+  bulkBStrength   Float?
+  bulkBVolume     Float?
+  bulkCDip        Float?
+  bulkCLt         Float?
+  bulkCStrength   Float?
+  bulkCVolume     Float?
+  // Dispatch Tank
+  dispDip         Float?
+  dispLt          Float?
+  dispStrength    Float?
+  dispVolume      Float?
+  // RS / HFO / LFO tanks (15 M3 each) — current levels as %
+  rsLevel         Float?
+  hfoLevel        Float?
+  lfoLevel        Float?
+  // Computed / summary fields
+  totalStock      Float    @default(0)   // sum of all 9 tank volumes
+  avgStrength     Float    @default(0)   // weighted average strength
+  totalDispatch   Float    @default(0)   // sum of all truck dispatch BL
+  productionBL    Float    @default(0)   // currentStock - prevStock + dispatch
+  productionAL    Float    @default(0)   // productionBL × avgStrength / 100
+  klpd            Float    @default(0)   // kilolitres per day flow rate
+  remarks         String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  trucks          DispatchTruck[]
+  @@index([date])
+  @@index([yearStart, date])
+}
+
+model DispatchTruck {
+  id              String   @id @default(uuid())
+  entryId         String?
+  entry           EthanolProductEntry? @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  date            DateTime @default(now())
+  vehicleNo       String   @default("")
+  partyName       String   @default("")
+  destination     String   @default("")
+  batchNo         String   @default("")
+  quantityBL      Float    @default(0)
+  strength        Float?
+  photoUrl        String?
+  remarks         String?
+  userId          String?
+  createdAt       DateTime @default(now())
+  @@index([date])
+  @@index([entryId])
+}
+
+// Per-truck grain unloading (real-time)
+model GrainTruck {
+  id              String   @id @default(uuid())
+  date            DateTime @default(now())
+  uidRst          String   @default("")     // UID/RST tracking number for lab analysis
+  vehicleNo       String   @default("")
+  supplier        String   @default("")
+  weightGross     Float    @default(0)
+  weightTare      Float    @default(0)
+  weightNet       Float    @default(0)      // gross - tare
+  quarantineWeight Float   @default(0)      // partial reject weight (T) — in quarantine, not silo
+  moisture        Float?
+  starchPercent   Float?
+  damagedPercent  Float?
+  foreignMatter   Float?
+  quarantine      Boolean  @default(false)  // true = has quarantine portion
+  quarantineReason String?
+  bags            Float?                   // number of bags in truck
+  remarks         String?
+  photoUrl        String?
+  userId          String?
+  createdAt       DateTime @default(now())
+  @@index([date])
+}
+
+// ═══════════════════════════════════════════════
+// LAB SAMPLES — linked to trucks via RST number
+// ═══════════════════════════════════════════════
+model LabSample {
+  id              String   @id @default(uuid())
+  rstNumber       String   @unique          // links to GrainTruck.uidRst
+  date            DateTime @default(now())
+  moisture        Float?
+  starchPercent   Float?
+  damagedPercent  Float?
+  foreignMatter   Float?
+  fungus          Float?
+  immature        Float?
+  waterDamaged    Float?
+  tfm             Float?                   // total foreign matter
+  remarks         String?
+  result          String   @default("PENDING")  // PENDING, ACCEPTED, REJECTED
+  userId          String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String
+  entity    String
+  entityId  String
+  changes   String
+  userId    String
+  createdAt DateTime @default(now())
+  @@index([entity, entityId])
+  @@index([createdAt])
+}
+
+// ═══════════════════════════════════════════════
+// INVENTORY & STORE
+// ═══════════════════════════════════════════════
+model InventoryItem {
+  id              String   @id @default(uuid())
+  name            String
+  code            String   @unique            // SKU / part code
+  category        String   @default("RAW_MATERIAL") // RAW_MATERIAL, SPARE_PART, CONSUMABLE, CHEMICAL, FINISHED_GOOD, OTHER
+  unit            String   @default("kg")     // kg, ltr, nos, mtr, set
+  currentStock    Float    @default(0)
+  minStock        Float    @default(0)        // reorder point
+  maxStock        Float?                      // max storage
+  costPerUnit     Float    @default(0)
+  location        String?                     // bin/rack location
+  supplier        String?
+  leadTimeDays    Int?
+  isActive        Boolean  @default(true)
+  remarks         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  transactions    InventoryTransaction[]
+}
+
+model InventoryTransaction {
+  id          String   @id @default(uuid())
+  itemId      String
+  item        InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  type        String   // IN, OUT, ADJUST
+  quantity    Float
+  reference   String?  // PO number, issue ID, batch number, etc.
+  remarks     String?
+  userId      String
+  createdAt   DateTime @default(now())
+  @@index([itemId])
+}
+
+// ═══════════════════════════════════════════════
+// PLANT ISSUES (Maintenance / Breakdown)
+// ═══════════════════════════════════════════════
+model PlantIssue {
+  id              String   @id @default(uuid())
+  issueNo         Int      @default(autoincrement())
+  title           String
+  description     String
+  issueType       String   @default("MECHANICAL") // MECHANICAL, ELECTRICAL, INSTRUMENTATION, CIVIL, SAFETY, OTHER
+  severity        String   @default("MEDIUM")      // CRITICAL, HIGH, MEDIUM, LOW
+  equipment       String?                          // which equipment/area
+  location        String?                          // plant area
+  status          String   @default("OPEN")        // OPEN, ASSIGNED, IN_PROGRESS, RESOLVED, CLOSED
+  assignedTo      String?                          // user name or ID
+  resolvedAt      DateTime?
+  resolution      String?
+  partsUsed       String?                          // JSON or comma-separated
+  downtimeHours   Float?
+  photoUrl        String?
+  reportedBy      String
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  comments        IssueComment[]
+  @@index([status])
+}
+
+model IssueComment {
+  id        String     @id @default(uuid())
+  issueId   String
+  issue     PlantIssue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  message   String
+  userId    String
+  userName  String
+  createdAt DateTime   @default(now())
+}
+
+// ═══════════════════════════════════════════════
+// PURCHASE REQUISITION
+// ═══════════════════════════════════════════════
+model PurchaseRequisition {
+  id              String   @id @default(uuid())
+  reqNo           Int      @default(autoincrement())
+  title           String
+  itemName        String
+  quantity        Float    @default(1)
+  unit            String   @default("nos")
+  estimatedCost   Float    @default(0)
+  urgency         String   @default("ROUTINE") // ROUTINE, SOON, URGENT, EMERGENCY
+  category        String   @default("GENERAL") // SPARE_PART, RAW_MATERIAL, CONSUMABLE, TOOL, SAFETY, GENERAL
+  justification   String?
+  linkedIssueId   String?                      // optional link to PlantIssue
+  supplier        String?                      // preferred supplier
+  status          String   @default("DRAFT")   // DRAFT, SUBMITTED, APPROVED, REJECTED, ORDERED, RECEIVED
+  approvedBy      String?
+  approvedAt      DateTime?
+  rejectionReason String?
+  remarks         String?
+  requestedBy     String
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ═══════════════════════════════════════════════
+// SALES & DISTRIBUTION MODULE
+// ═══════════════════════════════════════════════
+
+// Master: Customer (buyer parties)
+model Customer {
+  id              String   @id @default(uuid())
+  name            String
+  shortName       String?                  // display name for lists
+  address         String?
+  city            String?
+  state           String?
+  pincode         String?
+  gstNo           String?                  // GSTIN
+  panNo           String?
+  contactPerson   String?
+  phone           String?
+  email           String?
+  creditLimit     Float    @default(0)     // max outstanding allowed (Rs)
+  defaultTerms    String   @default("ADVANCE") // ADVANCE, COD, NET7, NET15, NET30
+  isActive        Boolean  @default(true)
+  remarks         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  salesOrders     SalesOrder[]
+  invoices        Invoice[]
+  payments        Payment[]
+}
+
+// Master: Product catalogue
+model Product {
+  id              String   @id @default(uuid())
+  name            String   @unique         // DDGS, ETHANOL, LFO, HFO, RS
+  unit            String   @default("TON") // TON, KL, LTR
+  hsnCode         String?                  // GST HSN code
+  defaultRate     Float    @default(0)     // Rs per unit
+  gstPercent      Float    @default(18)    // GST %
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// Master: Transporter
+model Transporter {
+  id              String   @id @default(uuid())
+  name            String
+  contactPerson   String?
+  phone           String?
+  email           String?
+  gstin           String?
+  pan             String?
+  vehicleCount    Int?
+  address         String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ── Sales Order (HQ creates) ──
+model SalesOrder {
+  id              String   @id @default(uuid())
+  orderNo         Int      @default(autoincrement())
+  customerId      String
+  customer        Customer @relation(fields: [customerId], references: [id])
+  orderDate       DateTime @default(now())
+  deliveryDate    DateTime?
+  poNumber        String?                  // customer PO reference
+  paymentTerms    String   @default("ADVANCE") // ADVANCE, COD, NET7, NET15, NET30
+  logisticsBy     String   @default("BUYER")   // BUYER or SELLER
+  deliveryAddress String?                  // delivery location / full address
+  transporterId   String?                  // if SELLER arranges
+  freightRate     Float?                   // Rs per ton/KL if seller pays
+  status          String   @default("DRAFT") // DRAFT, CONFIRMED, IN_PROGRESS, COMPLETED, CANCELLED
+  remarks         String?
+  // Totals (computed from lines)
+  totalAmount     Float    @default(0)
+  totalGst        Float    @default(0)
+  grandTotal      Float    @default(0)
+  userId          String                   // created by
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lines           SalesOrderLine[]
+  dispatchRequests DispatchRequest[]
+  invoices        Invoice[]
+  @@index([customerId])
+  @@index([status])
+}
+
+// ── Sales Order Line Items ──
+model SalesOrderLine {
+  id              String     @id @default(uuid())
+  orderId         String
+  order           SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productName     String                   // DDGS, ETHANOL, LFO, HFO, RS
+  quantity        Float                    // ordered qty
+  unit            String     @default("TON")
+  rate            Float                    // Rs per unit
+  gstPercent      Float      @default(18)
+  amount          Float      @default(0)   // qty × rate
+  gstAmount       Float      @default(0)
+  totalAmount     Float      @default(0)   // amount + gst
+  dispatchedQty   Float      @default(0)   // how much already dispatched
+  pendingQty      Float      @default(0)   // quantity - dispatchedQty
+  createdAt       DateTime   @default(now())
+  dispatchRequests DispatchRequest[]
+}
+
+// ── Dispatch Request (HQ → Factory) ──
+model DispatchRequest {
+  id              String          @id @default(uuid())
+  drNo            Int             @default(autoincrement())
+  orderId         String
+  order           SalesOrder      @relation(fields: [orderId], references: [id])
+  orderLineId     String?
+  orderLine       SalesOrderLine? @relation(fields: [orderLineId], references: [id])
+  productName     String                   // DDGS, ETHANOL etc
+  quantity        Float                    // qty to dispatch
+  unit            String          @default("TON")
+  customerName    String          @default("") // denormalized for factory display
+  destination     String?
+  deliveryDate    DateTime?
+  // Logistics
+  logisticsBy     String          @default("BUYER")
+  transporterName String?
+  transporterId   String?                  // selected transporter from master
+  vehicleCount    Int?                     // expected trucks
+  freightRate     Float?                   // Rs per MT (negotiated)
+  distanceKm      Float?                   // factory to destination distance
+  // Status flow
+  status          String          @default("PENDING")
+  // PENDING → ACCEPTED → VEHICLE_ASSIGNED → LOADING → DISPATCHED → COMPLETED
+  acceptedAt      DateTime?
+  acceptedBy      String?
+  remarks         String?
+  userId          String                   // created by (HQ user)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  shipments       Shipment[]
+  freightInquiry  FreightInquiry?
+}
+
+// ── Shipment (Factory: one truck = one shipment) ──
+model Shipment {
+  id              String           @id @default(uuid())
+  shipmentNo      Int              @default(autoincrement())
+  dispatchRequestId String?
+  dispatchRequest DispatchRequest? @relation(fields: [dispatchRequestId], references: [id])
+  productName     String                   // DDGS, ETHANOL, LFO, HFO, RS
+  customerName    String           @default("")
+  destination     String?
+  // Vehicle
+  vehicleNo       String           @default("")
+  vehicleType     String?                  // TRUCK, TANKER, TRAILER
+  capacityTon     Float?
+  driverName      String?
+  driverMobile    String?
+  transporterName String?
+  // Weighbridge
+  weightTare      Float?                   // kg
+  weightGross     Float?                   // kg
+  weightNet       Float?                   // kg (gross - tare)
+  // For liquids (Ethanol, LFO, HFO, RS)
+  quantityKL      Float?                   // kilolitres
+  quantityBL      Float?                   // bulk litres
+  strength        Float?                   // % alcohol (ethanol)
+  // Bags (DDGS)
+  bags            Int?
+  weightPerBag    Float?                   // kg
+  // Documents
+  challanNo       String?
+  challanDate     String?
+  // E-Invoice (IRN)
+  irn             String?                  // Invoice Reference Number from e-Invoice system
+  irnDate         DateTime?                // IRN generation date
+  irnStatus       String?                  // GENERATED, CANCELLED
+  ackNo           String?                  // IRN acknowledgement number
+  signedQRCode    String?                  // Signed QR code from IRP
+  // E-Way Bill
+  ewayBill        String?                  // e-way bill number
+  ewayBillDate    DateTime?                // e-way bill generation date
+  ewayBillValid   DateTime?                // e-way bill validity date
+  ewayBillStatus  String?                  // GENERATED, CANCELLED, EXPIRED
+  gatePassNo      String?
+  invoiceRef      String?                  // linked invoice
+  // GR / Bilty (from transporter)
+  grBiltyNo       String?                  // GR/Bilty number from transporter
+  grBiltyDate     DateTime?
+  grReceivedBack  Boolean          @default(false) // signed GR received back from buyer
+  grReceivedDate  DateTime?
+  // Delivery confirmation
+  deliveryStatus  String?                  // IN_TRANSIT, DELIVERED, CONFIRMED
+  deliveredAt     DateTime?
+  receivedByName  String?                  // person at buyer who received
+  receivedByPhone String?
+  podRemarks      String?                  // proof of delivery remarks
+  // Insurance
+  insuranceBy     String?                  // BUYER, SELLER, NONE
+  insuranceNo     String?
+  insuranceProvider String?
+  // Status flow
+  status          String           @default("GATE_IN")
+  // GATE_IN → TARE_WEIGHED → LOADING → GROSS_WEIGHED → RELEASED → EXITED → DELIVERED → GR_RECEIVED
+  gateInTime      String?                  // HH:MM
+  tareTime        String?
+  loadStartTime   String?
+  grossTime       String?
+  releaseTime     String?
+  exitTime        String?
+  date            DateTime         @default(now())
+  remarks         String?
+  // ── Gate Pass (for job work / returnable material) ──
+  gatePassType    String?                  // SALE, RETURNABLE, NON_RETURNABLE, JOB_WORK
+  purpose         String?                  // e.g. "Deshelling & Reshelling"
+  partyName       String?                  // vendor/party for non-sale gate passes
+  partyAddress    String?
+  partyGstin      String?
+  gatePassItems   String?                  // JSON array of items [{desc, hsnCode, qty, unit, value}]
+  totalValue      Float?                   // declared value of goods
+  coveringNote    String?                  // authority letter text
+  userId          String?                  // factory user
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  documents       ShipmentDocument[]
+  transporterPayments TransporterPayment[]
+  @@index([date])
+  @@index([status])
+  @@index([dispatchRequestId])
+}
+
+// ── Shipment Documents (uploaded files: GR, Bilty, POD, Insurance, etc.) ──
+model ShipmentDocument {
+  id              String   @id @default(uuid())
+  shipmentId      String
+  shipment        Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  docType         String                   // GR_BILTY, POD, INSURANCE, CHALLAN, EWAY_BILL, INVOICE, INQUIRY, QUOTATION, OTHER
+  fileName        String
+  filePath        String                   // relative path to uploads/
+  fileSize        Int?                     // bytes
+  mimeType        String?
+  uploadedBy      String?
+  remarks         String?
+  createdAt       DateTime @default(now())
+}
+
+// ── Transporter Inquiry (MSPIL asks transporters for quotes) ──
+model FreightInquiry {
+  id              String   @id @default(uuid())
+  inquiryNo       Int      @default(autoincrement())
+  dispatchRequestId String?  @unique
+  dispatchRequest DispatchRequest? @relation(fields: [dispatchRequestId], references: [id])
+  orderId         String?
+  // Route
+  origin          String   @default("MSPIL, Village Bachai, Narsinghpur, MP - 487001")
+  destination     String
+  distanceKm      Float?
+  // Cargo
+  productName     String
+  quantity        Float
+  unit            String   @default("TON")
+  vehicleType     String?                  // TRUCK, TRAILER, TANKER
+  vehicleCount    Int      @default(1)
+  // Dates
+  loadingDate     DateTime?
+  inquiryDate     DateTime @default(now())
+  validTill       DateTime?
+  // Status
+  status          String   @default("OPEN") // OPEN, QUOTES_RECEIVED, AWARDED, CANCELLED
+  remarks         String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  quotations      FreightQuotation[]
+}
+
+// ── Freight Quotation (Transporter responds to inquiry) ──
+model FreightQuotation {
+  id              String   @id @default(uuid())
+  inquiryId       String
+  inquiry         FreightInquiry @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
+  transporterId   String?
+  transporterName String
+  // Rate
+  ratePerMT       Float?                   // Rs per metric ton
+  ratePerTrip     Float?                   // or flat rate per trip
+  ratePerKm       Float?                   // or per km
+  totalAmount     Float?
+  // Vehicle offered
+  vehicleType     String?
+  vehicleCount    Int      @default(1)
+  estimatedDays   Int?                     // transit time
+  // Status
+  status          String   @default("RECEIVED") // RECEIVED, ACCEPTED, REJECTED
+  remarks         String?
+  quotedAt        DateTime @default(now())
+  createdAt       DateTime @default(now())
+}
+
+// ── Transporter Payment (50% advance + balance after GR) ──
+model TransporterPayment {
+  id              String   @id @default(uuid())
+  paymentNo       Int      @default(autoincrement())
+  shipmentId      String
+  shipment        Shipment @relation(fields: [shipmentId], references: [id])
+  transporterId   String?
+  transporterName String
+  // Amount
+  paymentType     String                   // ADVANCE, BALANCE, FULL, DEDUCTION
+  amount          Float
+  // Payment details
+  paymentDate     DateTime @default(now())
+  mode            String   @default("BANK_TRANSFER") // CASH, CHEQUE, BANK_TRANSFER, UPI, NEFT, RTGS
+  reference       String?                  // UTR / cheque no
+  // Freight reference
+  freightRate     Float?                   // Rs per MT
+  freightTotal    Float?                   // total freight for this shipment
+  // Status
+  status          String   @default("PENDING") // PENDING, PAID, CANCELLED
+  paidAt          DateTime?
+  approvedBy      String?
+  remarks         String?
+  userId          String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ── Invoice (auto-generated from shipment) ──
+model Invoice {
+  id              String     @id @default(uuid())
+  invoiceNo       Int        @default(autoincrement())
+  customerId      String
+  customer        Customer   @relation(fields: [customerId], references: [id])
+  orderId         String?
+  order           SalesOrder? @relation(fields: [orderId], references: [id])
+  invoiceDate     DateTime   @default(now())
+  dueDate         DateTime?
+  // Line items
+  productName     String
+  quantity        Float
+  unit            String     @default("TON")
+  rate            Float
+  amount          Float      @default(0)   // qty × rate
+  gstPercent      Float      @default(18)
+  gstAmount       Float      @default(0)
+  freightCharge   Float      @default(0)
+  totalAmount     Float      @default(0)   // amount + gst + freight
+  // Payment tracking
+  paidAmount      Float      @default(0)
+  balanceAmount   Float      @default(0)   // total - paid
+  status          String     @default("UNPAID") // UNPAID, PARTIAL, PAID, CANCELLED
+  // E-Invoice (IRN) — authoritative source for IRN data
+  irn             String?                  // Invoice Reference Number from NIC/IRP
+  irnDate         DateTime?                // IRN generation date
+  irnStatus       String?                  // GENERATED, CANCELLED
+  ackNo           String?                  // IRN acknowledgement number
+  signedQRCode    String?                  // Signed QR code from IRP
+  // E-Way Bill
+  ewbNo           String?                  // E-Way Bill number (from IRN-based generation)
+  ewbDate         DateTime?                // EWB generation date
+  ewbValidTill    DateTime?                // EWB validity
+  ewbStatus       String?                  // GENERATED, CANCELLED, EXPIRED
+  // Document refs
+  shipmentId      String?                  // which shipment
+  challanNo       String?
+  ewayBill        String?                  // legacy field (manual entry)
+  remarks         String?
+  userId          String
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  payments        Payment[]
+  @@index([customerId])
+  @@index([status])
+  @@index([shipmentId])
+}
+
+// ── Payment (against invoices) ──
+model Payment {
+  id              String   @id @default(uuid())
+  paymentNo       Int      @default(autoincrement())
+  customerId      String
+  customer        Customer @relation(fields: [customerId], references: [id])
+  invoiceId       String?
+  invoice         Invoice? @relation(fields: [invoiceId], references: [id])
+  paymentDate     DateTime @default(now())
+  amount          Float
+  mode            String   @default("BANK_TRANSFER") // CASH, CHEQUE, BANK_TRANSFER, UPI, NEFT, RTGS
+  reference       String?                  // UTR / cheque no / UPI ref
+  confirmedBy     String?                  // who confirmed receipt
+  confirmedAt     DateTime?
+  remarks         String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PROCUREMENT MODULE (P2P — SAP MM inspired with Indian GST)
+// ═══════════════════════════════════════════════════════════════
+
+// ── Vendor Master (supplier registration) ──
+model Vendor {
+  id              String   @id @default(uuid())
+  vendorCode      String?  @unique          // auto or manual code
+  name            String
+  tradeName       String?                   // business trade name
+  category        String   @default("GENERAL") // RAW_MATERIAL, CHEMICAL, FUEL, PACKING, SERVICE, GENERAL
+  gstin           String?                   // 15-char GSTIN
+  pan             String?                   // 10-char PAN
+  gstState        String?                   // 2-digit state code (e.g., "09" for UP)
+  gstStateCode    String?                   // state name
+  isRCM           Boolean  @default(false)  // Reverse Charge Mechanism applicable
+  isMSME          Boolean  @default(false)  // MSME vendor (priority payment)
+  msmeRegNo       String?
+  msmeCategory    String?                   // MICRO, SMALL, MEDIUM
+  // Address
+  address         String?
+  city            String?
+  state           String?
+  pincode         String?
+  // Contact
+  contactPerson   String?
+  phone           String?
+  email           String?
+  // Bank Details
+  bankName        String?
+  bankBranch      String?
+  bankAccount     String?
+  bankIfsc        String?
+  // Payment
+  paymentTerms    String?                   // ADVANCE, COD, NET7, NET15, NET30, NET45, NET60
+  creditLimit     Float    @default(0)
+  creditDays      Int      @default(30)
+  // TDS
+  tdsApplicable   Boolean  @default(false)
+  tdsSection      String?                   // 194C, 194Q, etc.
+  tdsPercent      Float    @default(0)
+  //
+  isActive        Boolean  @default(true)
+  remarks         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  purchaseOrders  PurchaseOrder[]
+  grns            GoodsReceipt[]
+  vendorInvoices  VendorInvoice[]
+  vendorPayments  VendorPayment[]
+}
+
+// ── Material Master (items you buy) ──
+model Material {
+  id              String   @id @default(uuid())
+  code            String?  @unique          // item code
+  name            String
+  category        String   @default("RAW_MATERIAL") // RAW_MATERIAL, CHEMICAL, FUEL, PACKING, CONSUMABLE, SPARE, SERVICE
+  subCategory     String?                   // e.g., ENZYME, YEAST, ACID
+  hsnCode         String?                   // HSN/SAC code
+  unit            String   @default("KG")   // KG, MT, LTR, KL, NOS, BAG, DRUM
+  gstPercent      Float    @default(18)     // default GST rate
+  defaultRate     Float    @default(0)      // last/standard rate
+  minStock        Float    @default(0)      // reorder level
+  currentStock    Float    @default(0)      // current qty in store
+  storageLocation String?                   // STORE, YARD, TANK, etc.
+  isActive        Boolean  @default(true)
+  remarks         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  poLines         POLine[]
+  grnLines        GRNLine[]
+}
+
+// ── Purchase Order (HQ creates, sent to vendor) ──
+model PurchaseOrder {
+  id              String   @id @default(uuid())
+  poNo            Int      @default(autoincrement())
+  vendorId        String
+  vendor          Vendor   @relation(fields: [vendorId], references: [id])
+  poDate          DateTime @default(now())
+  deliveryDate    DateTime?
+  // GST supply type
+  supplyType      String   @default("INTRA_STATE") // INTRA_STATE (CGST+SGST), INTER_STATE (IGST)
+  placeOfSupply   String?                   // state code
+  // Totals (auto-calculated)
+  subtotal        Float    @default(0)      // sum of line amounts
+  totalCgst       Float    @default(0)
+  totalSgst       Float    @default(0)
+  totalIgst       Float    @default(0)
+  totalGst        Float    @default(0)
+  freightCharge   Float    @default(0)
+  otherCharges    Float    @default(0)
+  roundOff        Float    @default(0)
+  grandTotal      Float    @default(0)
+  // TDS
+  tdsApplicable   Boolean  @default(false)
+  tdsSection      String?
+  tdsPercent      Float    @default(0)
+  tdsAmount       Float    @default(0)
+  // Payment terms
+  paymentTerms    String?
+  creditDays      Int      @default(30)
+  // Logistics
+  deliveryAddress String?                   // factory address
+  transportMode   String?                   // ROAD, RAIL
+  // Status
+  status          String   @default("DRAFT") // DRAFT, APPROVED, SENT, PARTIAL_RECEIVED, RECEIVED, CLOSED, CANCELLED
+  approvedBy      String?
+  approvedAt      DateTime?
+  // Refs
+  remarks         String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  lines           POLine[]
+  grns            GoodsReceipt[]
+  vendorInvoices  VendorInvoice[]
+  @@index([vendorId])
+  @@index([status])
+}
+
+// ── PO Line Item ──
+model POLine {
+  id              String         @id @default(uuid())
+  poId            String
+  po              PurchaseOrder  @relation(fields: [poId], references: [id], onDelete: Cascade)
+  lineNo          Int            @default(1)
+  materialId      String?
+  material        Material?      @relation(fields: [materialId], references: [id])
+  description     String                   // item description
+  hsnCode         String?
+  quantity        Float
+  unit            String         @default("KG")
+  rate            Float
+  amount          Float          @default(0)  // qty × rate
+  discountPercent Float          @default(0)
+  discountAmount  Float          @default(0)
+  taxableAmount   Float          @default(0)  // amount - discount
+  // GST split
+  gstPercent      Float          @default(18)
+  cgstPercent     Float          @default(0)
+  cgstAmount      Float          @default(0)
+  sgstPercent     Float          @default(0)
+  sgstAmount      Float          @default(0)
+  igstPercent     Float          @default(0)
+  igstAmount      Float          @default(0)
+  totalGst        Float          @default(0)
+  lineTotal       Float          @default(0)  // taxable + gst
+  // Receipt tracking
+  receivedQty     Float          @default(0)
+  pendingQty      Float          @default(0)  // = quantity - receivedQty
+  // RCM
+  isRCM           Boolean        @default(false)
+  createdAt       DateTime       @default(now())
+
+  grnLines        GRNLine[]
+}
+
+// ── Goods Receipt Note (factory receives goods against PO) ──
+model GoodsReceipt {
+  id              String   @id @default(uuid())
+  grnNo           Int      @default(autoincrement())
+  poId            String
+  po              PurchaseOrder @relation(fields: [poId], references: [id])
+  vendorId        String
+  vendor          Vendor   @relation(fields: [vendorId], references: [id])
+  grnDate         DateTime @default(now())
+  // Vehicle / delivery info
+  vehicleNo       String?
+  challanNo       String?                   // vendor delivery challan
+  challanDate     DateTime?
+  ewayBill        String?
+  // Quality
+  qualityStatus   String   @default("PENDING") // PENDING, ACCEPTED, REJECTED, PARTIAL_ACCEPTED
+  qualityRemarks  String?
+  inspectedBy     String?
+  // Status
+  status          String   @default("DRAFT") // DRAFT, CONFIRMED, CANCELLED
+  // Totals (from lines)
+  totalQty        Float    @default(0)
+  totalAmount     Float    @default(0)
+  //
+  remarks         String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  lines           GRNLine[]
+  vendorInvoices  VendorInvoice[]
+  @@index([poId])
+  @@index([vendorId])
+}
+
+// ── GRN Line Item ──
+model GRNLine {
+  id              String       @id @default(uuid())
+  grnId           String
+  grn             GoodsReceipt @relation(fields: [grnId], references: [id], onDelete: Cascade)
+  poLineId        String?
+  poLine          POLine?      @relation(fields: [poLineId], references: [id])
+  materialId      String?
+  material        Material?    @relation(fields: [materialId], references: [id])
+  description     String
+  receivedQty     Float
+  acceptedQty     Float        @default(0)  // after quality check
+  rejectedQty     Float        @default(0)
+  unit            String       @default("KG")
+  rate            Float        @default(0)  // from PO
+  amount          Float        @default(0)  // acceptedQty × rate
+  storageLocation String?
+  batchNo         String?
+  expiryDate      DateTime?
+  remarks         String?
+  createdAt       DateTime     @default(now())
+}
+
+// ── Vendor Invoice (3-way match: PO + GRN + Invoice) ──
+model VendorInvoice {
+  id              String   @id @default(uuid())
+  invoiceNo       Int      @default(autoincrement())
+  vendorId        String
+  vendor          Vendor   @relation(fields: [vendorId], references: [id])
+  poId            String?
+  po              PurchaseOrder? @relation(fields: [poId], references: [id])
+  grnId           String?
+  grn             GoodsReceipt?  @relation(fields: [grnId], references: [id])
+  // Vendor's invoice details
+  vendorInvNo     String?                   // vendor's own invoice number
+  vendorInvDate   DateTime?                 // vendor's invoice date
+  invoiceDate     DateTime @default(now())  // our booking date
+  dueDate         DateTime?
+  // Line summary
+  productName     String?
+  quantity        Float    @default(0)
+  unit            String   @default("KG")
+  rate            Float    @default(0)
+  subtotal        Float    @default(0)      // qty × rate
+  // GST breakup
+  supplyType      String   @default("INTRA_STATE")
+  gstPercent      Float    @default(18)
+  cgstAmount      Float    @default(0)
+  sgstAmount      Float    @default(0)
+  igstAmount      Float    @default(0)
+  totalGst        Float    @default(0)
+  // RCM
+  isRCM           Boolean  @default(false)
+  rcmCgst         Float    @default(0)
+  rcmSgst         Float    @default(0)
+  rcmIgst         Float    @default(0)
+  rcmTotal        Float    @default(0)
+  // ITC eligibility
+  itcEligible     Boolean  @default(true)
+  itcClaimed      Boolean  @default(false)
+  itcClaimedDate  DateTime?
+  itcReversed     Boolean  @default(false)
+  itcReversalReason String?
+  // Other charges
+  freightCharge   Float    @default(0)
+  loadingCharge   Float    @default(0)
+  otherCharges    Float    @default(0)
+  roundOff        Float    @default(0)
+  totalAmount     Float    @default(0)
+  // TDS
+  tdsSection      String?
+  tdsPercent      Float    @default(0)
+  tdsAmount       Float    @default(0)
+  netPayable      Float    @default(0)      // total - tds
+  // Payment tracking
+  paidAmount      Float    @default(0)
+  balanceAmount   Float    @default(0)
+  status          String   @default("PENDING") // PENDING, VERIFIED, APPROVED, PARTIAL_PAID, PAID, DISPUTED, CANCELLED
+  // 3-way match
+  matchStatus     String   @default("UNMATCHED") // UNMATCHED, MATCHED, MISMATCH
+  matchRemarks    String?
+  // Document refs
+  remarks         String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  payments        VendorPayment[]
+}
+
+// ── Vendor Payment ──
+model VendorPayment {
+  id              String   @id @default(uuid())
+  paymentNo       Int      @default(autoincrement())
+  vendorId        String
+  vendor          Vendor   @relation(fields: [vendorId], references: [id])
+  invoiceId       String?
+  invoice         VendorInvoice? @relation(fields: [invoiceId], references: [id])
+  paymentDate     DateTime @default(now())
+  amount          Float
+  mode            String   @default("BANK_TRANSFER") // CASH, CHEQUE, BANK_TRANSFER, NEFT, RTGS, UPI
+  reference       String?                   // UTR / cheque no
+  // TDS deducted in this payment
+  tdsDeducted     Float    @default(0)
+  tdsSection      String?
+  // Advance payment (no invoice)
+  isAdvance       Boolean  @default(false)
+  advanceAdjusted Float    @default(0)      // how much of advance is adjusted
+  //
+  remarks         String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ══════════════════════════════════════════════════════════════
+// DIRECT TRADE — Cash purchases from farmers / cash sales without paperwork
+// ══════════════════════════════════════════════════════════════
+
+model DirectPurchase {
+  id              String   @id @default(uuid())
+  entryNo         Int      @default(autoincrement())
+  date            DateTime @default(now())
+  // Seller (farmer) — not a registered vendor
+  sellerName      String
+  sellerPhone     String?
+  sellerVillage   String?
+  sellerAadhaar   String?                   // optional ID proof
+  // What was bought
+  materialName    String                    // Maize, Broken Rice, etc.
+  quantity        Float
+  unit            String   @default("KG")  // KG, MT, QTL, LTR
+  rate            Float
+  amount          Float                     // qty × rate
+  // Weighbridge / vehicle
+  vehicleNo       String?
+  weightSlipNo    String?
+  grossWeight     Float?
+  tareWeight      Float?
+  netWeight       Float?
+  // Payment
+  paymentMode     String   @default("CASH") // CASH, UPI, BANK_TRANSFER
+  paymentRef      String?                   // UPI ref / cheque no
+  isPaid          Boolean  @default(true)
+  // Deductions (moisture, foreign matter, etc.)
+  deductions      Float    @default(0)
+  deductionReason String?
+  netPayable      Float    @default(0)      // amount - deductions
+  //
+  remarks         String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model DirectSale {
+  id              String   @id @default(uuid())
+  entryNo         Int      @default(autoincrement())
+  date            DateTime @default(now())
+  // Buyer — not a registered customer
+  buyerName       String
+  buyerPhone      String?
+  buyerAddress    String?
+  // What was sold
+  productName     String                    // DDGS, Spent Wash, etc.
+  quantity        Float
+  unit            String   @default("KG")
+  rate            Float
+  amount          Float                     // qty × rate
+  // Vehicle
+  vehicleNo       String?
+  weightSlipNo    String?
+  grossWeight     Float?
+  tareWeight      Float?
+  netWeight       Float?
+  // Payment
+  paymentMode     String   @default("CASH") // CASH, UPI, BANK_TRANSFER, CHEQUE
+  paymentRef      String?
+  isPaid          Boolean  @default(true)
+  //
+  remarks         String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ── ETHANOL SUPPLY / CONTRACTS ──
+
+model EthanolContract {
+  id                String   @id @default(uuid())
+  contractNo        String   @unique
+  contractType      String   // JOB_WORK, FIXED_PRICE, OMC
+  status            String   @default("ACTIVE") // DRAFT, ACTIVE, EXPIRED, TERMINATED
+
+  // Buyer / Party
+  buyerName         String
+  buyerAddress      String?
+  buyerGst          String?
+  buyerPan          String?
+  buyerContact      String?
+  buyerPhone        String?
+  buyerEmail        String?
+
+  // OMC-specific
+  omcName           String?  // IOCL, BPCL, HPCL, JioBP, Nayara
+  omcDepot          String?  // delivery depot/location
+  allocationQtyKL   Float?   // allocated qty in KL
+
+  // Job Work-specific (principal provides grain, MSPIL converts)
+  principalName     String?  // e.g. "Mash Bio Fuels Pvt Ltd"
+  conversionRate    Float?   // ₹/BL for ethanol conversion charges
+  ddgsRate          Float?   // ₹/kg for DDGS
+  ethanolBenchmark  Float?   // BL per 1000kg grain (e.g. 374)
+  ddgsBenchmark     Float?   // kg per BL ethanol (e.g. 0.76)
+  prcPenalty        Float?   // ₹/BL short supply penalty
+
+  // Fixed Price-specific
+  ethanolRate       Float?   // ₹/Litre base rate (e.g. 60)
+
+  // Common terms
+  startDate         DateTime
+  endDate           DateTime
+  contractQtyKL     Float?   // total contract quantity KL
+  dailyTargetKL     Float?   // daily supply target KL
+  minLiftingPerDay  Int?     // min tankers per day
+  tankerCapacityKL  String?  // "20/30/35/40" etc
+  paymentTermsDays  Int?     // payment within X days
+  paymentMode       String?  // RTGS, NEFT, BANK_TRANSFER
+  gstPercent        Float?
+  supplyType        String?  // INTRA_STATE, INTER_STATE
+  logisticsBy       String?  // BUYER, SELLER, PRINCIPAL
+
+  // Tracking (updated on dispatch)
+  totalSuppliedKL   Float    @default(0)
+  totalInvoicedAmt  Float    @default(0)
+  totalReceivedAmt  Float    @default(0)
+
+  remarks           String?
+  contractPdf       String?  // base64-encoded PDF
+  contractPdfName   String?  // original filename
+  userId            String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  liftings          EthanolLifting[]
+}
+
+model EthanolLifting {
+  id              String   @id @default(uuid())
+  contractId      String
+  contract        EthanolContract @relation(fields: [contractId], references: [id])
+  liftingDate     DateTime
+  vehicleNo       String
+  driverName      String?
+  driverPhone     String?
+  transporterName String?
+  destination     String?
+  quantityBL      Float    @default(0)
+  quantityKL      Float    @default(0)
+  strength        Float?
+  temperature     Float?
+  // Billing
+  rate            Float?   // ₹/BL or ₹/L
+  amount          Float?
+  invoiceNo       String?
+  invoiceDate     DateTime?
+  // Status
+  status          String   @default("LOADED") // LOADED, IN_TRANSIT, DELIVERED, SHORTAGE
+  deliveredQtyKL  Float?
+  shortageKL      Float?
+  omcReceiptNo    String?
+  deliveredAt     DateTime?
+  remarks         String?
+  userId          String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
