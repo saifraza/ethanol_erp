@@ -491,10 +491,10 @@ export default function Shipments() {
 
           {/* ② Payment gate — after bill, before EWB (ADVANCE/COD only) */}
           {hasBill && needsPayment && (
-            <button onClick={() => { setPaymentShipment(s); setPaymentForm({ mode: 'UPI', ref: '', amount: String(s.weightNet ? Math.round(s.weightNet / 1000 * 100) / 100 : '') }); }}
-              className="px-2 py-1 bg-yellow-500 text-white rounded text-[10px] font-bold flex items-center gap-0.5 hover:bg-yellow-600 active:scale-95">
-              💰 ② Pay ({s.paymentTerms})
-            </button>
+            <span className="px-1.5 py-0.5 bg-yellow-100 text-yellow-700 rounded text-[9px] font-bold flex items-center gap-0.5 animate-pulse"
+              title="Accounts team must confirm payment from Accounts → Payment Desk">
+              <Clock size={8} /> ② Awaiting Payment
+            </span>
           )}
           {hasBill && s.paymentStatus === 'CONFIRMED' && (
             <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[9px] font-bold flex items-center gap-0.5">
@@ -963,49 +963,7 @@ export default function Shipments() {
         )}
       </div>
 
-      {/* ── Payment confirmation modal ── */}
-      {paymentShipment && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-4" onClick={() => setPaymentShipment(null)}>
-          <div className="bg-white rounded-xl w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="px-4 py-3 bg-yellow-500 text-white rounded-t-xl">
-              <h3 className="font-bold text-sm">Confirm Payment — {paymentShipment.vehicleNo}</h3>
-              <p className="text-yellow-100 text-xs">{paymentShipment.customerName} • {paymentShipment.paymentTerms} • {paymentShipment.weightNet ? (paymentShipment.weightNet / 1000).toFixed(2) + ' MT' : ''}</p>
-            </div>
-            <div className="p-4 space-y-3">
-              <div>
-                <label className="text-xs text-gray-500 font-medium">Payment Mode</label>
-                <select value={paymentForm.mode} onChange={e => setPaymentForm(f => ({ ...f, mode: e.target.value }))}
-                  className="input-field w-full text-sm mt-1">
-                  <option value="CASH">Cash</option>
-                  <option value="UPI">UPI</option>
-                  <option value="NEFT">NEFT</option>
-                  <option value="RTGS">RTGS</option>
-                  <option value="CHEQUE">Cheque</option>
-                  <option value="BANK_TRANSFER">Bank Transfer</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 font-medium">Reference (UTR / Cheque No.)</label>
-                <input value={paymentForm.ref} onChange={e => setPaymentForm(f => ({ ...f, ref: e.target.value }))}
-                  placeholder="Transaction reference" className="input-field w-full text-sm mt-1" />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 font-medium">Amount Received</label>
-                <input type="number" value={paymentForm.amount} onChange={e => setPaymentForm(f => ({ ...f, amount: e.target.value }))}
-                  placeholder="₹" className="input-field w-full text-sm mt-1" />
-              </div>
-              <div className="flex gap-2 pt-1">
-                <button onClick={() => setPaymentShipment(null)}
-                  className="flex-1 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg border">Cancel</button>
-                <button onClick={confirmPayment} disabled={paymentSaving}
-                  className="flex-1 py-2 text-sm bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-1">
-                  {paymentSaving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
-                  Confirm Payment
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+      {/* Payment confirmation moved to Accounts → Payment Desk */}
       )}
 
       {/* ── Exit confirm modal (missing docs warning) ── */}

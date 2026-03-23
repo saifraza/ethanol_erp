@@ -16,7 +16,7 @@ export interface ModuleDef {
   label: string;
   to: string;
   icon: any;
-  group: 'process' | 'admin' | 'sales' | 'procurement' | 'trade';
+  group: 'process' | 'admin' | 'sales' | 'procurement' | 'trade' | 'accounts';
   adminOnly?: boolean;
 }
 
@@ -63,6 +63,9 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'direct-purchase', label: 'Spot Purchase', to: '/trade/purchases', icon: Tractor, group: 'trade' },
   { key: 'direct-sale', label: 'Spot Sale', to: '/trade/sales', icon: Store, group: 'trade' },
 
+  // ── ACCOUNTS ──
+  { key: 'payment-desk', label: 'Payment Desk', to: '/accounts/payments', icon: IndianRupee, group: 'accounts' },
+
   // ── ADMIN ──
   { key: 'inventory', label: 'Store', to: '/inventory', icon: Warehouse, group: 'admin' },
   { key: 'plant-issues', label: 'Maintenance', to: '/plant-issues', icon: AlertCircle, group: 'admin' },
@@ -92,6 +95,10 @@ export const procurementNav = MODULE_DEFS.filter(m => m.group === 'procurement')
 }));
 
 export const tradeNav = MODULE_DEFS.filter(m => m.group === 'trade').map(m => ({
+  to: m.to, label: m.label, icon: m.icon, moduleKey: m.key,
+}));
+
+export const accountsNav = MODULE_DEFS.filter(m => m.group === 'accounts').map(m => ({
   to: m.to, label: m.label, icon: m.icon, moduleKey: m.key,
 }));
 

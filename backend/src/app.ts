@@ -58,6 +58,8 @@ import directPurchaseRoutes from './routes/directPurchases';
 import directSaleRoutes from './routes/directSales';
 // Ethanol Supply
 import ethanolContractRoutes from './routes/ethanolContracts';
+// Accounts
+import accountsRoutes from './routes/accounts';
 
 
 const app = express();
@@ -141,6 +143,8 @@ app.use('/api/direct-purchases', directPurchaseRoutes);
 app.use('/api/direct-sales', directSaleRoutes);
 // Ethanol Supply
 app.use('/api/ethanol-contracts', ethanolContractRoutes);
+// Accounts
+app.use('/api/accounts', accountsRoutes);
 
 
 // Serve uploaded files

@@ -55,6 +55,8 @@ const VendorPayments = React.lazy(() => import('./pages/procurement/VendorPaymen
 // Direct Trade
 const DirectPurchases = React.lazy(() => import('./pages/trade/DirectPurchases'));
 const DirectSales = React.lazy(() => import('./pages/trade/DirectSales'));
+// Accounts
+const PaymentDashboard = React.lazy(() => import('./pages/accounts/PaymentDashboard'));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -131,6 +133,8 @@ export default function App() {
         {/* Direct Trade */}
         <Route path="trade/purchases" element={<DirectPurchases />} />
         <Route path="trade/sales" element={<DirectSales />} />
+        {/* Accounts */}
+        <Route path="accounts/payments" element={<PaymentDashboard />} />
         <Route path="reports" element={<Reports />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="document-templates" element={<DocumentTemplates />} />
