@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Package, Plus, Trash2, ChevronDown, ChevronUp, Share2, Eye, X, Clock } from 'lucide-react';
+import { Package, Plus, Trash2, ChevronDown, ChevronUp, Share2, Eye, X, Clock, Save, Loader2 } from 'lucide-react';
 import ProcessPage, { InputCard } from './ProcessPage';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
@@ -138,7 +138,11 @@ export default function DDGSStock() {
     setSaving(false);
   }
 
-  const previewText = `*DDGS Stock — ${sd}*\n\n📦 Production: ${todayBags} bags (${todayTonnage.toFixed(2)} MT)\n📦 Yesterday: ${yesterdayBags} bags (${yesterdayTonnage.toFixed(2)} MT)\n\n📊 Opening: ${openingStock.toFixed(1)} T\n➕ Produced: ${todayTonnage.toFixed(2)} T\n➖ Dispatched: ${dispatchToday.toFixed(2)} T\n📊 Closing: ${closingStock.toFixed(1)} T`;
+  const entryLines = (todayData?.entries || []).map((e, i) =>
+    `${e.timeFrom && e.timeTo ? e.timeFrom + '–' + e.timeTo : 'Entry ' + (i + 1)}${e.operatorName ? ' (' + e.operatorName + ')' : ''}: ${e.bags} bags`
+  ).join('\n');
+
+  const previewText = `*DDGS PRODUCTION REPORT*\nDate: ${sd}\n${entryLines ? '\n' + entryLines + '\n' : ''}\n*Today: ${todayBags} bags (${todayTonnage.toFixed(2)} MT)*\nYesterday: ${yesterdayBags} bags (${yesterdayTonnage.toFixed(2)} MT)\n\nOpening: ${openingStock.toFixed(1)} T\n+ Produced: ${todayTonnage.toFixed(2)} T\n- Dispatched: ${dispatchToday.toFixed(2)} T\n*Closing: ${closingStock.toFixed(1)} T*`;
 
   return (
     <ProcessPage title="DDGS Stock" icon={<Package size={28} />}
@@ -290,32 +294,48 @@ export default function DDGSStock() {
         </div>
       )}
 
-      {/* Action buttons */}
+      {/* Preview & Save button */}
       <div className="flex items-center gap-3 mt-4">
         <button onClick={() => setShowPreview(true)}
-          className="px-4 py-2 bg-amber-600 text-white rounded-lg font-medium text-sm hover:bg-amber-700 flex items-center gap-2">
-          <Eye size={16} /> Preview
-        </button>
-        <button onClick={saveDailyStock} disabled={saving}
-          className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium text-sm hover:bg-indigo-700 flex items-center gap-2 disabled:opacity-50">
-          Save Daily Stock
+          className="px-5 py-2.5 bg-amber-600 text-white rounded-lg font-medium text-sm hover:bg-amber-700 flex items-center gap-2">
+          <Eye size={16} /> Preview & Save
         </button>
       </div>
 
-      {/* Preview Modal */}
+      {/* Preview Modal — Share + Save like Liquefaction */}
       {showPreview && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowPreview(false)}>
-          <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full" onClick={e => e.stopPropagation()}>
-            <div className="bg-amber-600 text-white p-3 rounded-t-xl flex items-center justify-between">
-              <h3 className="font-bold text-sm">DDGS Stock Report</h3>
-              <button onClick={() => setShowPreview(false)}><X size={18} /></button>
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="bg-amber-600 text-white p-4 rounded-t-xl flex items-center justify-between">
+              <h3 className="font-bold text-lg">DDGS Production Report</h3>
+              <button onClick={() => setShowPreview(false)}><X size={20} /></button>
             </div>
-            <div className="p-4 space-y-2 text-sm">
+            <div className="p-4 space-y-3 text-sm">
               <div className="flex justify-between"><span className="text-gray-500">Shift Date</span><span className="font-medium">{sd}</span></div>
+
+              {/* Today's entries breakdown */}
+              {todayData?.entries && todayData.entries.length > 0 && (
+                <div className="border-t pt-2">
+                  <h4 className="font-semibold text-green-700 mb-1">Today's Entries</h4>
+                  <div className="space-y-1">
+                    {todayData.entries.map((e, i) => (
+                      <div key={e.id} className="flex justify-between text-xs">
+                        <span className="text-gray-500">
+                          {e.timeFrom && e.timeTo ? `${e.timeFrom}–${e.timeTo}` : `Entry ${i + 1}`}
+                          {e.operatorName ? ` (${e.operatorName})` : ''}
+                        </span>
+                        <b>{e.bags} bags</b>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="border-t pt-2 space-y-1">
-                <div className="flex justify-between text-green-700"><span>Today Production</span><b>{todayBags} bags ({todayTonnage.toFixed(2)} MT)</b></div>
+                <div className="flex justify-between text-green-700 font-bold"><span>Today Total</span><b>{todayBags} bags ({todayTonnage.toFixed(2)} MT)</b></div>
                 <div className="flex justify-between text-gray-500"><span>Yesterday</span><b>{yesterdayBags} bags ({yesterdayTonnage.toFixed(2)} MT)</b></div>
               </div>
+
               <div className="border-t pt-2 space-y-1">
                 <div className="flex justify-between"><span>Opening Stock</span><b>{openingStock.toFixed(1)} T</b></div>
                 <div className="flex justify-between text-green-700"><span>+ Production</span><b>{todayTonnage.toFixed(2)} T</b></div>
@@ -323,16 +343,16 @@ export default function DDGSStock() {
                 <div className="flex justify-between border-t pt-1 text-lg"><span>Closing Stock</span><b>{closingStock.toFixed(1)} T</b></div>
               </div>
             </div>
-            <div className="p-3 border-t flex gap-2">
+            <div className="p-4 border-t flex gap-2">
               <button onClick={() => {
-                if (navigator.share) navigator.share({ text: previewText }).catch(() => {});
-                else window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(previewText)}`, '_blank');
-              }} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2 rounded-lg text-sm font-medium">
-                <Share2 size={14} /> Share
+                const t = previewText;
+                if (navigator.share) { navigator.share({ text: t }).catch(() => { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }); } else { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }
+              }} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
+                <Share2 size={16} /> Share
               </button>
-              <button onClick={() => setShowPreview(false)}
-                className="flex-1 flex items-center justify-center gap-2 bg-gray-200 text-gray-700 py-2 rounded-lg text-sm font-medium">
-                Close
+              <button onClick={async () => { await saveDailyStock(); setShowPreview(false); }} disabled={saving}
+                className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save
               </button>
             </div>
           </div>
