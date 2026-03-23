@@ -76,7 +76,7 @@ export default function SettingsPage() {
               />
             </div>
             <p className="text-xs text-gray-400 ml-52 pl-2">
-              Messages auto-sent on DDGS bag entry, dispatch, etc. Set WHATSAPP_PROVIDER env var (twilio/meta/wapi/gupshup).
+              Messages auto-sent on DDGS bag entry, dispatch, etc. Set WHATSAPP_PROVIDER env var (interakt/twilio/meta/wapi/gupshup).
             </p>
           </div>
         </div>

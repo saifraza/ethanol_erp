@@ -2,6 +2,7 @@
  * Messaging Service — Email (SMTP) + WhatsApp (Multi-provider)
  *
  * WHATSAPP PROVIDERS (set WHATSAPP_PROVIDER env var):
+ *   "interakt" — Interakt WhatsApp API (interakt.shop)
  *   "twilio"  — Twilio WhatsApp API (sandbox or production)
  *   "meta"    — Meta Cloud API (direct)
  *   "wapi"    — WAPI.in WhatsApp API
@@ -11,7 +12,11 @@
  * ENV VARS:
  *   SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM
  *
- *   WHATSAPP_PROVIDER=twilio|meta|wapi|gupshup|web  (default: web)
+ *   WHATSAPP_PROVIDER=interakt|twilio|meta|wapi|gupshup|web  (default: web)
+ *
+ *   # Interakt
+ *   INTERAKT_API_KEY                     (from Interakt Dashboard → Developer Settings)
+ *   INTERAKT_TEMPLATE_NAME (optional)    (approved template name, or sends plain text via callback)
  *
  *   # Twilio
  *   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM (e.g. whatsapp:+14155238886)
@@ -103,6 +108,8 @@ export async function sendWhatsApp(opts: WhatsAppOptions): Promise<WhatsAppResul
   const provider = (process.env.WHATSAPP_PROVIDER || 'web').toLowerCase();
 
   switch (provider) {
+    case 'interakt':
+      return sendViaInterakt(opts);
     case 'twilio':
       return sendViaTwilio(opts);
     case 'meta':
@@ -114,6 +121,69 @@ export async function sendWhatsApp(opts: WhatsAppOptions): Promise<WhatsAppResul
     case 'web':
     default:
       return sendViaWeb(opts);
+  }
+}
+
+// ── Provider: Interakt ──
+
+async function sendViaInterakt(opts: WhatsAppOptions): Promise<WhatsAppResult> {
+  const apiKey = process.env.INTERAKT_API_KEY;
+  if (!apiKey) {
+    return { success: false, error: 'Interakt not configured. Set INTERAKT_API_KEY.', provider: 'interakt' };
+  }
+
+  try {
+    const phone = normalizePhone(opts.phone);
+    // Interakt wants phone without country code prefix
+    const phoneWithout91 = phone.startsWith('91') ? phone.slice(2) : phone;
+    const templateName = process.env.INTERAKT_TEMPLATE_NAME;
+
+    let body: any;
+
+    if (templateName) {
+      // Send via approved template
+      body = {
+        countryCode: '+91',
+        phoneNumber: phoneWithout91,
+        type: 'Template',
+        template: {
+          name: templateName,
+          languageCode: 'en',
+          bodyValues: [opts.message],
+        },
+      };
+    } else {
+      // Send as plain text (requires Interakt "text message" capability)
+      body = {
+        countryCode: '+91',
+        phoneNumber: phoneWithout91,
+        type: 'Text',
+        data: {
+          message: opts.message,
+        },
+      };
+    }
+
+    const res = await fetch('https://api.interakt.ai/v1/public/message/', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    const data: any = await res.json();
+    if (res.ok && data.result) {
+      console.log(`[Interakt] Sent to ${phoneWithout91}: ${data.id}`);
+      return { success: true, provider: 'interakt', messageId: data.id };
+    } else {
+      console.error('[Interakt] Error:', JSON.stringify(data));
+      return { success: false, error: data.message || 'Interakt error', provider: 'interakt' };
+    }
+  } catch (err: any) {
+    console.error('[Interakt] Failed:', err.message);
+    return { success: false, error: err.message, provider: 'interakt' };
   }
 }
 
