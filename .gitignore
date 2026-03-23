@@ -14,3 +14,8 @@ backend/ensure-server.sh
 backend/keepalive.sh
 backend/loadHistoricalData.ts
 .claude/worktrees/
+
+# Test artifacts
+test-*.pdf
+test-*.js
+EINVOICE_IMPLEMENTATION.md
