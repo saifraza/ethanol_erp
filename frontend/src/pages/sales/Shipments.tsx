@@ -964,7 +964,6 @@ export default function Shipments() {
       </div>
 
       {/* Payment confirmation moved to Accounts → Payment Desk */}
-      )}
 
       {/* ── Exit confirm modal (missing docs warning) ── */}
       {exitConfirm && (() => {

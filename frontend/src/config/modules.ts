@@ -47,8 +47,6 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'dispatch-requests', label: 'Logistics', to: '/sales/dispatch-requests', icon: Send, group: 'sales' },
   { key: 'transporters', label: 'Transporters', to: '/sales/transporters', icon: Truck, group: 'sales' },
   { key: 'shipments', label: 'Gate Register', to: '/sales/shipments', icon: Scale, group: 'sales' },
-  { key: 'invoices', label: 'Billing', to: '/sales/invoices', icon: FileText, group: 'sales' },
-  { key: 'payments', label: 'Collections', to: '/sales/payments', icon: IndianRupee, group: 'sales' },
   { key: 'ethanol-contracts', label: 'Ethanol Supply', to: '/sales/ethanol-contracts', icon: Handshake, group: 'sales' },
 
   // ── PROCUREMENT (Grain + Chemicals inward) ──
@@ -56,8 +54,6 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'materials', label: 'Items', to: '/procurement/materials', icon: Box, group: 'procurement' },
   { key: 'purchase-orders', label: 'Purchase Orders', to: '/procurement/purchase-orders', icon: ShoppingBag, group: 'procurement' },
   { key: 'goods-receipts', label: 'GRN', to: '/procurement/goods-receipts', icon: PackageCheck, group: 'procurement' },
-  { key: 'vendor-invoices', label: 'Supplier Bills', to: '/procurement/vendor-invoices', icon: Receipt, group: 'procurement' },
-  { key: 'vendor-payments', label: 'Supplier Payments', to: '/procurement/vendor-payments', icon: CreditCard, group: 'procurement' },
 
   // ── SPOT TRADE (Cash buy/sell at gate) ──
   { key: 'direct-purchase', label: 'Spot Purchase', to: '/trade/purchases', icon: Tractor, group: 'trade' },
@@ -65,6 +61,10 @@ export const MODULE_DEFS: ModuleDef[] = [
 
   // ── ACCOUNTS ──
   { key: 'payment-desk', label: 'Payment Desk', to: '/accounts/payments', icon: IndianRupee, group: 'accounts' },
+  { key: 'invoices', label: 'Sales Billing', to: '/sales/invoices', icon: FileText, group: 'accounts' },
+  { key: 'payments', label: 'Collections', to: '/sales/payments', icon: IndianRupee, group: 'accounts' },
+  { key: 'vendor-invoices', label: 'Supplier Bills', to: '/procurement/vendor-invoices', icon: Receipt, group: 'accounts' },
+  { key: 'vendor-payments', label: 'Supplier Payments', to: '/procurement/vendor-payments', icon: CreditCard, group: 'accounts' },
 
   // ── ADMIN ──
   { key: 'inventory', label: 'Store', to: '/inventory', icon: Warehouse, group: 'admin' },
