@@ -9,11 +9,12 @@ const router = Router();
 
 router.post('/register', async (req: AuthRequest, res: Response) => {
   try {
-    const { email, password, name } = req.body;
+    const { password, name } = req.body;
+    const email = req.body.email || `${name.toLowerCase().replace(/\s+/g, '.')}@distillery.local`;
 
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
-      res.status(400).json({ error: 'Email already registered' });
+      res.status(400).json({ error: 'Name already registered' });
       return;
     }
 
@@ -50,9 +51,17 @@ router.post('/register', async (req: AuthRequest, res: Response) => {
 
 router.post('/login', async (req: AuthRequest, res: Response) => {
   try {
-    const { email, password } = req.body;
+    const { username, password } = req.body;
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    // Support login by name or email
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { name: { equals: username, mode: 'insensitive' } },
+          { email: { equals: username, mode: 'insensitive' } },
+        ],
+      },
+    });
     if (!user || !user.isActive) {
       res.status(401).json({ error: 'Invalid credentials' });
       return;

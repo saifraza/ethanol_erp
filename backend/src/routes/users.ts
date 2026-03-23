@@ -5,12 +5,6 @@ import { authenticate, AuthRequest, authorize } from '../middleware/auth';
 
 const router = Router();
 
-// Email validation regex
-const isValidEmail = (email: string): boolean => {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
-};
-
 router.get('/', authenticate, authorize('ADMIN'), async (req: AuthRequest, res: Response) => {
   try {
     const users = await prisma.user.findMany({
@@ -32,10 +26,10 @@ router.get('/', authenticate, authorize('ADMIN'), async (req: AuthRequest, res: 
 
 router.post('/', authenticate, authorize('ADMIN'), async (req: AuthRequest, res: Response) => {
   try {
-    const { email, password, name, role, allowedModules } = req.body;
+    const { password, name, role, allowedModules } = req.body;
 
-    if (!email || !isValidEmail(email)) {
-      res.status(400).json({ error: 'Invalid email format' });
+    if (!name || !name.trim()) {
+      res.status(400).json({ error: 'Name is required' });
       return;
     }
 
@@ -44,9 +38,12 @@ router.post('/', authenticate, authorize('ADMIN'), async (req: AuthRequest, res:
       return;
     }
 
+    // Auto-generate email from name (DB requires unique email)
+    const email = req.body.email || `${name.toLowerCase().replace(/\s+/g, '.')}@distillery.local`;
+
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
-      res.status(400).json({ error: 'Email already exists' });
+      res.status(400).json({ error: 'User with this name already exists' });
       return;
     }
 
@@ -55,7 +52,7 @@ router.post('/', authenticate, authorize('ADMIN'), async (req: AuthRequest, res:
       data: {
         email,
         password: hash,
-        name,
+        name: name.trim(),
         role: role || 'OPERATOR',
         allowedModules: allowedModules || null,
       },

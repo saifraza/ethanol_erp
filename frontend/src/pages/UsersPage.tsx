@@ -16,7 +16,7 @@ function modulesToString(arr: string[]): string | null {
 export default function UsersPage() {
   const [users, setUsers] = useState<any[]>([]);
   const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'OPERATOR', modules: [] as string[] });
+  const [form, setForm] = useState({ name: '', password: '', role: 'OPERATOR', modules: [] as string[] });
   const [msg, setMsg] = useState({ text: '', type: '' });
 
   // Editing states
@@ -41,15 +41,15 @@ export default function UsersPage() {
   };
 
   const addUser = async () => {
-    if (!form.name || !form.email || !form.password) { flash('Fill all fields', 'error'); return; }
+    if (!form.name || !form.password) { flash('Fill name and password', 'error'); return; }
     try {
       await api.post('/users', {
-        name: form.name, email: form.email, password: form.password, role: form.role,
+        name: form.name, password: form.password, role: form.role,
         allowedModules: form.role === 'ADMIN' ? null : modulesToString(form.modules),
       });
       flash('User created!');
       setShowAdd(false);
-      setForm({ name: '', email: '', password: '', role: 'OPERATOR', modules: [] });
+      setForm({ name: '', password: '', role: 'OPERATOR', modules: [] });
       load();
     } catch (err: any) { flash(err.response?.data?.error || 'Error', 'error'); }
   };
@@ -111,9 +111,8 @@ export default function UsersPage() {
       {showAdd && (
         <div className="bg-white border rounded-xl p-5 mb-5 shadow-sm">
           <h3 className="font-semibold text-gray-700 mb-3">New User</h3>
-          <div className="grid grid-cols-2 gap-3 mb-4">
-            <input placeholder="Name" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm" />
-            <input placeholder="Email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm" />
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            <input placeholder="Name (used for login)" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm" />
             <input placeholder="Password" type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm" />
             <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm">
               <option value="OPERATOR">Operator</option>
