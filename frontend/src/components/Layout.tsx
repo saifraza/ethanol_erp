@@ -103,6 +103,7 @@ export default function Layout() {
             </div>
           )}
 
+          {salesNav.some(n => hasModuleAccess(user, n.moduleKey)) && (<>
           <button onClick={() => setSalesOpen(!salesOpen)} className="flex items-center justify-between w-full px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mt-3 hover:text-gray-200">
             <span>Sales</span>
             {salesOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -114,7 +115,9 @@ export default function Layout() {
               ))}
             </div>
           )}
+          </>)}
 
+          {procurementNav.some(n => hasModuleAccess(user, n.moduleKey)) && (<>
           <button onClick={() => setProcurementOpen(!procurementOpen)} className="flex items-center justify-between w-full px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mt-3 hover:text-gray-200">
             <span>Purchase</span>
             {procurementOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -126,7 +129,9 @@ export default function Layout() {
               ))}
             </div>
           )}
+          </>)}
 
+          {tradeNav.some(n => hasModuleAccess(user, n.moduleKey)) && (<>
           <button onClick={() => setTradeOpen(!tradeOpen)} className="flex items-center justify-between w-full px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mt-3 hover:text-gray-200">
             <span>Spot Trade</span>
             {tradeOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -138,7 +143,9 @@ export default function Layout() {
               ))}
             </div>
           )}
+          </>)}
 
+          {accountsNav.some(n => hasModuleAccess(user, n.moduleKey)) && (<>
           <button onClick={() => setAccountsOpen(!accountsOpen)} className="flex items-center justify-between w-full px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mt-3 hover:text-gray-200">
             <span>Accounts</span>
             {accountsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -150,7 +157,9 @@ export default function Layout() {
               ))}
             </div>
           )}
+          </>)}
 
+          {adminNav.some(n => (!n.adminOnly || user?.role === 'ADMIN') && hasModuleAccess(user, n.moduleKey)) && (<>
           <button onClick={() => setAdminOpen(!adminOpen)} className="flex items-center justify-between w-full px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mt-3 hover:text-gray-200">
             <span>Admin</span>
             {adminOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -162,6 +171,7 @@ export default function Layout() {
               ))}
             </div>
           )}
+          </>)}
         </nav>
 
         <div className="p-3 border-t border-gray-700 text-sm">
