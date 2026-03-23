@@ -89,6 +89,16 @@ export default function DDGSStock() {
   const openingStock = stockDefaults?.openingStock || 0;
   const dispatchToday = dispatchSummary?.totalNet || 0;
   const closingStock = openingStock + todayTonnage - dispatchToday;
+  const totalProduction = (stockDefaults?.totalProduction || 0) + todayTonnage;
+  const totalDispatch = stockDefaults?.cumulativeDispatch || 0;
+
+  function shareEntry(entryBags: string, from: string, to: string, name: string) {
+    const totalAfter = todayBags + (parseFloat(entryBags) || 0);
+    const tonnageAfter = todayTonnage + ((parseFloat(entryBags) || 0) * (parseFloat(weightPerBag) || 50) / 1000);
+    const t = `*DDGS Bag Entry*\n${from && to ? from + '–' + to : ''}${name ? ' (' + name + ')' : ''}\nBags: ${entryBags}\n\nTotal today: ${totalAfter} bags (${tonnageAfter.toFixed(2)} MT)\nClosing Stock: ${(openingStock + tonnageAfter - dispatchToday).toFixed(1)} T`;
+    if (navigator.share) { navigator.share({ text: t }).catch(() => { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }); }
+    else { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }
+  }
 
   async function handleAdd() {
     if (!bags || parseFloat(bags) <= 0) { setMsg({ type: 'err', text: 'Enter bags' }); return; }
@@ -98,6 +108,8 @@ export default function DDGSStock() {
         bags, weightPerBag, timeFrom, timeTo, operatorName, remark, shiftDate: sd,
       });
       setMsg({ type: 'ok', text: `Added ${bags} bags` });
+      shareEntry(bags, timeFrom, timeTo, operatorName);
+      const savedBags = bags;
       setBags(''); setRemark('');
       setTimeFrom(timeTo);
       setTimeTo(currentTimeStr());
@@ -142,7 +154,7 @@ export default function DDGSStock() {
     `${e.timeFrom && e.timeTo ? e.timeFrom + '–' + e.timeTo : 'Entry ' + (i + 1)}${e.operatorName ? ' (' + e.operatorName + ')' : ''}: ${e.bags} bags`
   ).join('\n');
 
-  const previewText = `*DDGS PRODUCTION REPORT*\nDate: ${sd}\n${entryLines ? '\n' + entryLines + '\n' : ''}\n*Today: ${todayBags} bags (${todayTonnage.toFixed(2)} MT)*\nYesterday: ${yesterdayBags} bags (${yesterdayTonnage.toFixed(2)} MT)\n\nOpening: ${openingStock.toFixed(1)} T\n+ Produced: ${todayTonnage.toFixed(2)} T\n- Dispatched: ${dispatchToday.toFixed(2)} T\n*Closing: ${closingStock.toFixed(1)} T*`;
+  const previewText = `*DDGS PRODUCTION REPORT*\nDate: ${sd}\n${entryLines ? '\n' + entryLines + '\n' : ''}\n*Today: ${todayBags} bags (${todayTonnage.toFixed(2)} MT)*\nYesterday: ${yesterdayBags} bags (${yesterdayTonnage.toFixed(2)} MT)\n\nOpening: ${openingStock.toFixed(1)} T\n+ Produced: ${todayTonnage.toFixed(2)} T\n- Dispatched: ${dispatchToday.toFixed(2)} T\n*Closing: ${closingStock.toFixed(1)} T*\n\nTotal Production: ${totalProduction.toFixed(1)} T\nTotal Dispatch: ${totalDispatch.toFixed(1)} T`;
 
   return (
     <ProcessPage title="DDGS Stock" icon={<Package size={28} />}
@@ -150,14 +162,16 @@ export default function DDGSStock() {
       flow={{ from: 'Dryer / Production', to: 'DDGS Storage' }} color="bg-amber-600">
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 md:gap-3 mb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-4 gap-2 md:gap-3 mb-4">
         {[
           { label: 'Today Bags', value: todayBags, unit: 'bags', color: 'bg-green-50 border-green-200', bold: true },
           { label: 'Today Production', value: todayTonnage.toFixed(2), unit: 'MT', color: 'bg-green-50 border-green-200' },
           { label: 'Yesterday', value: `${yesterdayBags}`, unit: `bags (${yesterdayTonnage.toFixed(1)} MT)`, color: 'bg-gray-50 border-gray-200' },
-          { label: 'Opening Stock', value: openingStock.toFixed(1), unit: 'MT', color: 'bg-amber-50 border-amber-200' },
-          { label: 'Dispatched', value: dispatchToday.toFixed(2), unit: 'MT', color: 'bg-red-50 border-red-200' },
           { label: 'Closing Stock', value: closingStock.toFixed(1), unit: 'MT', color: 'bg-blue-50 border-blue-200', bold: true },
+          { label: 'Opening Stock', value: openingStock.toFixed(1), unit: 'MT', color: 'bg-amber-50 border-amber-200' },
+          { label: 'Dispatched Today', value: dispatchToday.toFixed(2), unit: 'MT', color: 'bg-red-50 border-red-200' },
+          { label: 'Total Production', value: totalProduction.toFixed(1), unit: 'MT', color: 'bg-purple-50 border-purple-200' },
+          { label: 'Total Dispatch', value: totalDispatch.toFixed(1), unit: 'MT', color: 'bg-orange-50 border-orange-200' },
         ].map(k => (
           <div key={k.label} className={`rounded-lg border p-2 md:p-3 ${k.color}`}>
             <div className="text-[10px] md:text-xs text-gray-500">{k.label}</div>
@@ -341,6 +355,10 @@ export default function DDGSStock() {
                 <div className="flex justify-between text-green-700"><span>+ Production</span><b>{todayTonnage.toFixed(2)} T</b></div>
                 <div className="flex justify-between text-red-600"><span>- Dispatch</span><b>{dispatchToday.toFixed(2)} T ({dispatchSummary.truckCount} trucks)</b></div>
                 <div className="flex justify-between border-t pt-1 text-lg"><span>Closing Stock</span><b>{closingStock.toFixed(1)} T</b></div>
+              </div>
+              <div className="border-t pt-2 space-y-1 text-xs text-gray-500">
+                <div className="flex justify-between"><span>Total Production (all time)</span><b>{totalProduction.toFixed(1)} T</b></div>
+                <div className="flex justify-between"><span>Total Dispatch (all time)</span><b>{totalDispatch.toFixed(1)} T</b></div>
               </div>
             </div>
             <div className="p-4 border-t flex gap-2">
