@@ -41,6 +41,7 @@ export default function Vendors() {
   const [showForm, setShowForm] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [gstLookupLoading, setGstLookupLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
@@ -251,6 +252,34 @@ export default function Vendors() {
     }
   }
 
+  const lookupGSTIN = async () => {
+    const g = gstin.trim().toUpperCase();
+    if (g.length !== 15) { setMsg({ type: 'err', text: 'Enter a valid 15-character GSTIN first' }); return; }
+    setGstLookupLoading(true);
+    try {
+      const res = await api.get(`/vendors/gstin-lookup/${g}`);
+      const d = res.data;
+      if (d.success) {
+        if (d.legalName && !name) setName(d.legalName);
+        if (d.tradeName) setTradeName(d.tradeName);
+        if (d.pan) setPan(d.pan);
+        if (d.address) setAddress(d.address);
+        if (d.city) setCity(d.city);
+        if (d.state) { setState(d.state); setGstState(d.state); }
+        if (d.stateCode) setGstStateCode(d.stateCode);
+        if (d.pincode) setPincode(d.pincode);
+        setGstin(g);
+        setMsg({ type: 'ok', text: `Found: ${d.tradeName || d.legalName}` });
+      } else {
+        setMsg({ type: 'err', text: d.error || 'GSTIN not found' });
+      }
+    } catch (e: any) {
+      setMsg({ type: 'err', text: e.response?.data?.error || 'GSTIN lookup failed' });
+    } finally {
+      setGstLookupLoading(false);
+    }
+  };
+
   const getCategoryColor = (cat: string | undefined) => {
     const colors: { [key: string]: string } = {
       RAW_MATERIAL_SUPPLIER: 'bg-blue-100 text-blue-700',
@@ -383,12 +412,20 @@ export default function Vendors() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-gray-500">GSTIN</label>
-                  <input
-                    value={gstin}
-                    onChange={e => setGstin(e.target.value)}
-                    className="input-field w-full text-sm"
-                    placeholder="18AABCT0000X1Z0"
-                  />
+                  <div className="flex gap-1">
+                    <input
+                      value={gstin}
+                      onChange={e => setGstin(e.target.value.toUpperCase())}
+                      maxLength={15}
+                      className="input-field w-full text-sm"
+                      placeholder="18AABCT0000X1Z0"
+                    />
+                    <button type="button" onClick={lookupGSTIN} disabled={gstLookupLoading || gstin.length !== 15}
+                      title="Lookup GSTIN — auto-fill name, address, PAN, state"
+                      className="px-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-40 transition flex-shrink-0">
+                      {gstLookupLoading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <label className="text-xs text-gray-500">PAN</label>
