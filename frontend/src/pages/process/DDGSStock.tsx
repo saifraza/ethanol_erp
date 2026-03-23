@@ -111,13 +111,14 @@ export default function DDGSStock() {
       flow={{ from: 'Dryer / Production', to: 'DDGS Storage' }} color="bg-amber-600">
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 md:gap-3 mb-4 md:mb-5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 md:gap-3 mb-4 md:mb-5">
         {[
           { label: 'Opening Stock', value: (openingStock || 0).toFixed(1), unit: 'Ton', color: 'bg-amber-50 border-amber-200' },
           { label: 'Produced Today', value: (productionToday || 0).toFixed(2), unit: 'Ton', color: 'bg-green-50 border-green-200' },
           { label: 'Dispatched Today', value: (dispatchToday || 0).toFixed(2), unit: 'Ton', color: 'bg-red-50 border-red-200' },
           { label: 'Closing Stock', value: (closingStock || 0).toFixed(1), unit: 'Ton', color: 'bg-blue-50 border-blue-200' },
           { label: 'Total Produced', value: ((defaults?.totalProduction || 3160) + (productionToday || 0)).toFixed(1), unit: 'Ton', color: 'bg-purple-50 border-purple-200' },
+          { label: 'Total Dispatch', value: (defaults?.cumulativeDispatch || 0).toFixed(1), unit: 'Ton', color: 'bg-orange-50 border-orange-200' },
         ].map(k => (
           <div key={k.label} className={`rounded-lg border p-2 md:p-3 ${k.color}`}>
             <div className="text-[10px] md:text-xs text-gray-500">{k.label}</div>
