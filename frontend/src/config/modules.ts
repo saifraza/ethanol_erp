@@ -39,6 +39,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'ethanol-stock', label: 'Ethanol Tank', to: '/process/ethanol-stock', icon: Fuel, group: 'process' },
   { key: 'ethanol-dispatch', label: 'Ethanol Dispatch', to: '/process/ethanol-dispatch', icon: Truck, group: 'process' },
   { key: 'ddgs-stock', label: 'DDGS Godown', to: '/process/ddgs-stock', icon: Package, group: 'process' },
+  { key: 'ddgs-dispatch', label: 'DDGS Dispatch', to: '/process/ddgs-dispatch', icon: Truck, group: 'process' },
   { key: 'water-utility', label: 'Utilities', to: '/process/water-utility', icon: Waves, group: 'process' },
 
   // ── SALES (DDGS + Ethanol outward) ──
