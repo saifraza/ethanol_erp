@@ -206,9 +206,10 @@ export default function MyPage() {
 ## Module Skills
 
 For detailed guidance on specific modules, see `.claude/skills/`:
-- `process-grain.md` — Grain intake, mass balance, truck weighing
-- `process-fermentation.md` — Fermentation batches, phase transitions, lab readings
-- `process-distillation.md` — Distillation, ethanol product, DDGS, downstream
+- `process-production.md` — Full grain-to-ethanol-to-DDGS pipeline (grain, milling, liquefaction, fermentation, distillation, evaporation, decanter, dryer, DDGS, daily entries)
+- `process-grain.md` — Grain intake detail: mass balance, truck weighing, silo tracking
+- `process-fermentation.md` — Fermentation detail: batch phases, lab readings, dosing
+- `process-distillation.md` — Distillation detail: ethanol product, tank calibration, dispatch
 - `sales-module.md` — Order-to-cash, e-invoice, e-way bill, dispatch workflow
 - `procurement-module.md` — Procure-to-pay, PO lifecycle, GRN
 - `dashboard-analytics.md` — Dashboard performance, KPI calculations
