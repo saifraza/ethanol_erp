@@ -1,201 +1,280 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
+import { AuthRequest } from '../middleware/auth';
+import { asyncHandler } from '../shared/middleware';
+import { NotFoundError } from '../shared/errors';
 import prisma from '../config/prisma';
-import { authenticate } from '../middleware/auth';
 
 const router = Router();
-router.use(authenticate as any);
 
 // ═══════════════════════════════════════════════
 // GET /pending — Shipments awaiting payment confirmation
 // ═══════════════════════════════════════════════
-router.get('/pending', async (req: Request, res: Response) => {
-  try {
-    const take = Math.min(parseInt(req.query.limit as string) || 50, 200);
-    const skip = parseInt(req.query.offset as string) || 0;
+router.get('/pending', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const take = Math.min(parseInt(req.query.limit as string) || 50, 200);
+  const skip = parseInt(req.query.offset as string) || 0;
 
-    const shipments = await prisma.shipment.findMany({
-      where: { paymentStatus: 'PENDING' },
-      orderBy: { date: 'desc' },
-      take,
-      skip,
-      select: {
-        id: true,
-        shipmentNo: true,
-        vehicleNo: true,
-        customerName: true,
-        productName: true,
-        destination: true,
-        weightTare: true,
-        weightGross: true,
-        weightNet: true,
-        bags: true,
-        weightPerBag: true,
-        paymentTerms: true,
-        paymentStatus: true,
-        status: true,
-        date: true,
-        gateInTime: true,
-        challanNo: true,
-        invoiceRef: true,
-        ewayBill: true,
-        dispatchRequestId: true,
-        dispatchRequest: {
-          select: {
-            drNo: true,
-            order: {
-              select: {
-                orderNo: true,
-                paymentTerms: true,
-                grandTotal: true,
-                customer: { select: { id: true, name: true, phone: true } },
-                lines: { select: { productName: true, rate: true, gstPercent: true, unit: true } },
-              },
+  const shipments = await prisma.shipment.findMany({
+    where: { paymentStatus: 'PENDING' },
+    orderBy: { date: 'desc' },
+    take,
+    skip,
+    select: {
+      id: true,
+      shipmentNo: true,
+      vehicleNo: true,
+      customerName: true,
+      productName: true,
+      destination: true,
+      weightTare: true,
+      weightGross: true,
+      weightNet: true,
+      bags: true,
+      weightPerBag: true,
+      paymentTerms: true,
+      paymentStatus: true,
+      status: true,
+      date: true,
+      gateInTime: true,
+      challanNo: true,
+      invoiceRef: true,
+      ewayBill: true,
+      irn: true,
+      irnStatus: true,
+      ewayBillStatus: true,
+      dispatchRequestId: true,
+      dispatchRequest: {
+        select: {
+          drNo: true,
+          order: {
+            select: {
+              id: true,
+              orderNo: true,
+              paymentTerms: true,
+              grandTotal: true,
+              customer: { select: { id: true, name: true, phone: true, gstin: true } },
+              lines: { select: { productName: true, rate: true, gstPercent: true, unit: true, quantity: true } },
             },
           },
         },
       },
-    });
+    },
+  });
 
-    // Calculate expected amount for each shipment from order rate
-    const enriched = shipments.map((s: any) => {
-      const netMT = s.weightNet ? s.weightNet / 1000 : 0;
-      const line = s.dispatchRequest?.order?.lines?.[0];
-      const rate = line?.rate || 0;
-      const gstPct = line?.gstPercent || 5;
-      const taxable = netMT * rate;
-      const gst = taxable * gstPct / 100;
-      const expectedAmount = Math.round((taxable + gst) * 100) / 100;
+  const enriched = shipments.map((s: any) => {
+    const netMT = s.weightNet ? s.weightNet / 1000 : 0;
+    const line = s.dispatchRequest?.order?.lines?.[0];
+    const rate = line?.rate || 0;
+    const gstPct = line?.gstPercent || 5;
+    const taxable = netMT * rate;
+    const gst = taxable * gstPct / 100;
+    const expectedAmount = Math.round((taxable + gst) * 100) / 100;
 
-      return {
-        ...s,
-        netMT: Math.round(netMT * 1000) / 1000,
-        rate,
-        gstPercent: gstPct,
-        expectedAmount,
-        customerPhone: s.dispatchRequest?.order?.customer?.phone,
-        orderNo: s.dispatchRequest?.order?.orderNo,
-      };
-    });
+    return {
+      id: s.id,
+      shipmentNo: s.shipmentNo,
+      vehicleNo: s.vehicleNo,
+      customerName: s.customerName,
+      productName: s.productName,
+      destination: s.destination,
+      weightTare: s.weightTare,
+      weightGross: s.weightGross,
+      weightNet: s.weightNet,
+      netMT: Math.round(netMT * 1000) / 1000,
+      bags: s.bags,
+      paymentTerms: s.paymentTerms,
+      status: s.status,
+      date: s.date,
+      gateInTime: s.gateInTime,
+      invoiceRef: s.invoiceRef,
+      ewayBill: s.ewayBill,
+      irn: s.irn,
+      irnStatus: s.irnStatus,
+      ewayBillStatus: s.ewayBillStatus,
+      rate,
+      gstPercent: gstPct,
+      expectedAmount,
+      customerPhone: s.dispatchRequest?.order?.customer?.phone,
+      customerGstin: s.dispatchRequest?.order?.customer?.gstin,
+      orderNo: s.dispatchRequest?.order?.orderNo,
+      orderId: s.dispatchRequest?.order?.id,
+      drNo: s.dispatchRequest?.drNo,
+    };
+  });
 
-    res.json({ pending: enriched, total: enriched.length });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+  res.json({ pending: enriched, total: enriched.length });
+}));
 
 // ═══════════════════════════════════════════════
-// GET /dashboard — Today's payment summary
+// GET /dashboard — Summary stats
 // ═══════════════════════════════════════════════
-router.get('/dashboard', async (req: Request, res: Response) => {
-  try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+router.get('/dashboard', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
 
-    // Pending payments (all time)
-    const pendingCount = await prisma.shipment.count({
-      where: { paymentStatus: 'PENDING' },
-    });
-
-    // Today's confirmed payments
-    const todayPayments = await prisma.shipment.findMany({
-      where: {
-        paymentConfirmedAt: { gte: today, lt: tomorrow },
-        paymentStatus: 'CONFIRMED',
-      },
-      select: {
-        id: true,
-        paymentAmount: true,
-        paymentMode: true,
-        paymentRef: true,
-        paymentConfirmedAt: true,
-        customerName: true,
-        vehicleNo: true,
-        productName: true,
-        weightNet: true,
-      },
-    });
-
-    const todayTotal = todayPayments.reduce((sum: number, s: any) => sum + (s.paymentAmount || 0), 0);
-
-    // Mode breakdown
-    const modeBreakdown: Record<string, { count: number; amount: number }> = {};
-    todayPayments.forEach((s: any) => {
-      const mode = s.paymentMode || 'UNKNOWN';
-      if (!modeBreakdown[mode]) modeBreakdown[mode] = { count: 0, amount: 0 };
-      modeBreakdown[mode].count++;
-      modeBreakdown[mode].amount += s.paymentAmount || 0;
-    });
-
-    // Recent confirmed (last 20)
-    const recentConfirmed = await prisma.shipment.findMany({
+  const [pendingCount, todayPayments, recentConfirmed] = await Promise.all([
+    prisma.shipment.count({ where: { paymentStatus: 'PENDING' } }),
+    prisma.shipment.findMany({
+      where: { paymentConfirmedAt: { gte: today, lt: tomorrow }, paymentStatus: 'CONFIRMED' },
+      select: { id: true, paymentAmount: true, paymentMode: true },
+    }),
+    prisma.shipment.findMany({
       where: { paymentStatus: 'CONFIRMED', paymentConfirmedAt: { not: null } },
       orderBy: { paymentConfirmedAt: 'desc' },
-      take: 20,
+      take: 30,
       select: {
-        id: true,
-        shipmentNo: true,
-        vehicleNo: true,
-        customerName: true,
-        productName: true,
-        weightNet: true,
-        paymentAmount: true,
-        paymentMode: true,
-        paymentRef: true,
-        paymentConfirmedAt: true,
+        id: true, shipmentNo: true, vehicleNo: true, customerName: true,
+        productName: true, weightNet: true, destination: true,
+        paymentAmount: true, paymentMode: true, paymentRef: true,
+        paymentConfirmedAt: true, paymentConfirmedBy: true,
+        invoiceRef: true, ewayBill: true, status: true, date: true,
       },
-    });
+    }),
+  ]);
 
-    res.json({
-      pendingCount,
-      todayCollections: {
-        count: todayPayments.length,
-        total: Math.round(todayTotal * 100) / 100,
-        breakdown: modeBreakdown,
+  const todayTotal = todayPayments.reduce((sum: number, s: any) => sum + (s.paymentAmount || 0), 0);
+  const modeBreakdown: Record<string, { count: number; amount: number }> = {};
+  todayPayments.forEach((s: any) => {
+    const mode = s.paymentMode || 'OTHER';
+    if (!modeBreakdown[mode]) modeBreakdown[mode] = { count: 0, amount: 0 };
+    modeBreakdown[mode].count++;
+    modeBreakdown[mode].amount += s.paymentAmount || 0;
+  });
+
+  res.json({
+    pendingCount,
+    todayCollections: { count: todayPayments.length, total: Math.round(todayTotal * 100) / 100, breakdown: modeBreakdown },
+    recentConfirmed,
+  });
+}));
+
+// ═══════════════════════════════════════════════
+// GET /:id/history — Full order + shipment history for a shipment
+// ═══════════════════════════════════════════════
+router.get('/:id/history', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const shipment = await prisma.shipment.findUnique({
+    where: { id: req.params.id },
+    select: {
+      id: true, shipmentNo: true, vehicleNo: true, customerName: true,
+      productName: true, destination: true,
+      weightTare: true, weightGross: true, weightNet: true,
+      bags: true, weightPerBag: true,
+      paymentTerms: true, paymentStatus: true, paymentMode: true,
+      paymentRef: true, paymentAmount: true, paymentConfirmedAt: true,
+      status: true, date: true,
+      gateInTime: true, tareTime: true, loadStartTime: true,
+      grossTime: true, releaseTime: true, exitTime: true,
+      challanNo: true, invoiceRef: true,
+      irn: true, irnStatus: true, irnDate: true,
+      ewayBill: true, ewayBillDate: true, ewayBillStatus: true, ewayBillValid: true,
+      grBiltyNo: true, grBiltyDate: true, grReceivedBack: true,
+      driverName: true, driverMobile: true, transporterName: true,
+      remarks: true, createdAt: true,
+      dispatchRequest: {
+        select: {
+          id: true, drNo: true, quantity: true, unit: true, createdAt: true,
+          order: {
+            select: {
+              id: true, orderNo: true, paymentTerms: true, status: true,
+              grandTotal: true, createdAt: true,
+              customer: { select: { id: true, name: true, phone: true, gstin: true, city: true } },
+              lines: { select: { productName: true, rate: true, gstPercent: true, quantity: true, unit: true, amount: true } },
+            },
+          },
+        },
       },
-      recentConfirmed,
-    });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+      documents: { select: { id: true, docType: true, fileName: true, createdAt: true } },
+    },
+  });
+
+  if (!shipment) throw new NotFoundError('Shipment', req.params.id);
+
+  // Build timeline from timestamps
+  const timeline: { time: string; event: string; detail?: string }[] = [];
+  const s = shipment as any;
+  if (s.createdAt) timeline.push({ time: s.createdAt, event: 'Shipment Created', detail: `Vehicle ${s.vehicleNo} registered` });
+  if (s.gateInTime) timeline.push({ time: `${s.date?.toISOString?.().split('T')[0] || ''}T${s.gateInTime}`, event: 'Gate In', detail: `Driver: ${s.driverName || 'N/A'}` });
+  if (s.tareTime) timeline.push({ time: `${s.date?.toISOString?.().split('T')[0] || ''}T${s.tareTime}`, event: 'Tare Weighed', detail: `${s.weightTare ? (s.weightTare / 1000).toFixed(2) + ' MT' : ''}` });
+  if (s.grossTime) timeline.push({ time: `${s.date?.toISOString?.().split('T')[0] || ''}T${s.grossTime}`, event: 'Gross Weighed', detail: `Net: ${s.weightNet ? (s.weightNet / 1000).toFixed(3) + ' MT' : ''}` });
+  if (s.invoiceRef) timeline.push({ time: s.irnDate || s.createdAt, event: 'Invoice Generated', detail: s.invoiceRef });
+  if (s.paymentConfirmedAt) timeline.push({ time: s.paymentConfirmedAt, event: 'Payment Confirmed', detail: `${s.paymentMode} — ₹${s.paymentAmount?.toLocaleString('en-IN')}` });
+  if (s.ewayBill) timeline.push({ time: s.ewayBillDate || s.createdAt, event: 'E-Way Bill Generated', detail: s.ewayBill });
+  if (s.releaseTime) timeline.push({ time: `${s.date?.toISOString?.().split('T')[0] || ''}T${s.releaseTime}`, event: 'Vehicle Released' });
+  if (s.exitTime) timeline.push({ time: `${s.date?.toISOString?.().split('T')[0] || ''}T${s.exitTime}`, event: 'Gate Exit' });
+
+  res.json({ shipment, timeline });
+}));
 
 // ═══════════════════════════════════════════════
 // POST /:id/confirm-payment — Accounts team confirms payment
 // ═══════════════════════════════════════════════
-router.post('/:id/confirm-payment', async (req: Request, res: Response) => {
-  try {
-    const b = req.body;
-    const shipment = await prisma.shipment.findUnique({ where: { id: req.params.id } });
-    if (!shipment) { res.status(404).json({ error: 'Shipment not found' }); return; }
+router.post('/:id/confirm-payment', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const b = req.body;
+  const shipment = await prisma.shipment.findUnique({ where: { id: req.params.id } });
+  if (!shipment) throw new NotFoundError('Shipment', req.params.id);
 
-    if (shipment.paymentStatus !== 'PENDING') {
-      res.status(400).json({ error: 'Payment already confirmed or not required' });
-      return;
-    }
+  if (shipment.paymentStatus !== 'PENDING') {
+    res.status(400).json({ error: 'Payment already confirmed or not required' });
+    return;
+  }
 
-    const mode = b.paymentMode || 'CASH';
-    const validModes = ['CASH', 'UPI', 'NEFT', 'RTGS', 'CHEQUE', 'BANK_TRANSFER'];
-    if (!validModes.includes(mode)) {
-      res.status(400).json({ error: `Invalid payment mode. Use: ${validModes.join(', ')}` });
-      return;
-    }
+  const mode = b.paymentMode || 'CASH';
+  const validModes = ['CASH', 'UPI', 'NEFT', 'RTGS', 'CHEQUE', 'BANK_TRANSFER'];
+  if (!validModes.includes(mode)) {
+    res.status(400).json({ error: `Invalid payment mode. Use: ${validModes.join(', ')}` });
+    return;
+  }
 
-    if (!b.paymentAmount || parseFloat(b.paymentAmount) <= 0) {
-      res.status(400).json({ error: 'Payment amount is required' });
-      return;
-    }
+  if (!b.paymentAmount || parseFloat(b.paymentAmount) <= 0) {
+    res.status(400).json({ error: 'Payment amount is required' });
+    return;
+  }
 
-    const updated = await prisma.shipment.update({
-      where: { id: req.params.id },
-      data: {
-        paymentStatus: 'CONFIRMED',
-        paymentMode: mode,
-        paymentRef: b.paymentRef || null,
-        paymentAmount: parseFloat(b.paymentAmount),
-        paymentConfirmedAt: new Date(),
-        paymentConfirmedBy: (req as any).user?.id || null,
-      },
-    });
-    res.json({ success: true, shipment: updated });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+  const updated = await prisma.shipment.update({
+    where: { id: req.params.id },
+    data: {
+      paymentStatus: 'CONFIRMED',
+      paymentMode: mode,
+      paymentRef: b.paymentRef || null,
+      paymentAmount: parseFloat(b.paymentAmount),
+      paymentConfirmedAt: new Date(),
+      paymentConfirmedBy: req.user?.id || null,
+    },
+  });
+  res.json({ success: true, shipment: updated });
+}));
+
+// ═══════════════════════════════════════════════
+// DELETE /:id/payment — Revoke payment confirmation (reset to PENDING)
+// ═══════════════════════════════════════════════
+router.delete('/:id/payment', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const shipment = await prisma.shipment.findUnique({ where: { id: req.params.id } });
+  if (!shipment) throw new NotFoundError('Shipment', req.params.id);
+
+  if (shipment.paymentStatus !== 'CONFIRMED') {
+    res.status(400).json({ error: 'Can only revoke confirmed payments' });
+    return;
+  }
+
+  // Don't allow if EWB already generated (payment was used to unlock EWB)
+  if (shipment.ewayBill) {
+    res.status(400).json({ error: 'Cannot revoke — e-way bill already generated against this payment' });
+    return;
+  }
+
+  const updated = await prisma.shipment.update({
+    where: { id: req.params.id },
+    data: {
+      paymentStatus: 'PENDING',
+      paymentMode: null,
+      paymentRef: null,
+      paymentAmount: null,
+      paymentConfirmedAt: null,
+      paymentConfirmedBy: null,
+    },
+  });
+  res.json({ success: true, shipment: updated });
+}));
 
 export default router;

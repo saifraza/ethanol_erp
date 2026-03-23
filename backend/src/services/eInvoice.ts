@@ -592,72 +592,86 @@ export async function generateEWBByIRN(irn: string, ewbData: any): Promise<any> 
  * Returns: legal name, trade name, address, state, pincode, status, etc.
  */
 export async function getGSTINDetails(gstin: string): Promise<any> {
-  try {
-    const auth = await getSaralAuth();
-    const baseUrl = (process.env.EWAY_SARAL_URL || 'https://saralgsp.com').replace(/\/+$/, '');
+  const MAX_RETRIES = 2;
 
-    // Saral endpoint: GET /eivital/v1.04/Master?gstin=XXXX
-    // Note: requires 'user_name' header (lowercase with underscore) not 'UserName'
-    const url = `${baseUrl}/eivital/v1.04/Master?gstin=${gstin}`;
-    const headers = buildEInvoiceHeaders(auth);
-    // This endpoint needs 'user_name' specifically
-    const apiUsername = process.env.EWAY_EWB_USERNAME || process.env.EWAY_NIC_USERNAME || '';
-    if (apiUsername) headers['user_name'] = apiUsername;
-
-    console.log(`[E-Invoice] Looking up GSTIN: ${gstin}`);
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 45000);
-
-    const response = await fetch(url, {
-      method: 'GET',
-      headers,
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-
-    const resultText = await response.text();
-    console.log(`[E-Invoice] GSTIN lookup response status=${response.status}:`, resultText.slice(0, 500));
-
-    let result: any;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      result = JSON.parse(resultText);
-    } catch {
-      throw new Error(`Non-JSON response: ${resultText.slice(0, 200)}`);
-    }
+      if (attempt > 0) {
+        console.log(`[E-Invoice GSTIN] Retry attempt ${attempt}/${MAX_RETRIES}`);
+        await delay(1500 * attempt);
+      }
 
-    // Response shape: { Gstin, TradeName, LegalName, AddrBnm, AddrBno, AddrFlno, AddrSt, AddrLoc, StateCode, AddrPncd, TxpType, Status, BlkStatus, DtReg }
-    // OR error: { Status: 0, ErrorDetails: [...] }
-    if (result.Gstin || result.gstin) {
-      const data = result;
-      const addrParts = [data.AddrBno, data.AddrFlno, data.AddrBnm, data.AddrSt, data.AddrLoc].filter(Boolean).map((s: string) => s.trim()).filter(Boolean);
-      return {
-        success: true,
-        gstin: data.Gstin || gstin,
-        legalName: data.LegalName || '',
-        tradeName: data.TradeName || '',
-        address: addrParts.join(', '),
-        city: (data.AddrLoc || '').trim(),
-        state: String(data.StateCode || ''),
-        pincode: String(data.AddrPncd || ''),
-        status: data.Status || 'Unknown',
-        registrationDate: data.DtReg || '',
-        taxpayerType: data.TxpType || '',
-        rawResponse: data,
-      };
-    }
+      const auth = await getSaralAuth();
+      const baseUrl = (process.env.EWAY_SARAL_URL || 'https://saralgsp.com').replace(/\/+$/, '');
 
-    const errors = result.ErrorDetails || result.errorDetails || [];
-    const errorMsg = errors.length > 0
-      ? errors.map((e: any) => `${e.ErrorCode || e.errorCode}: ${e.ErrorMessage || e.errorMessage}`).join('; ')
-      : result.Error || result.error || JSON.stringify(result).slice(0, 300);
+      // Saral endpoint: GET /eivital/v1.04/Master?gstin=XXXX
+      // Note: requires 'user_name' header (lowercase with underscore) not 'UserName'
+      const url = `${baseUrl}/eivital/v1.04/Master?gstin=${gstin}`;
+      const headers = buildEInvoiceHeaders(auth);
+      // This endpoint needs 'user_name' specifically
+      const apiUsername = process.env.EWAY_EWB_USERNAME || process.env.EWAY_NIC_USERNAME || '';
+      if (apiUsername) headers['user_name'] = apiUsername;
 
-    return { success: false, error: errorMsg };
-  } catch (err: any) {
-    console.error('[E-Invoice GSTIN] Error:', err.message);
-    if (err.message.includes('auth') || err.message.includes('Auth') || err.message.includes('token')) {
-      clearSaralAuthCache();
+      console.log(`[E-Invoice] Looking up GSTIN: ${gstin} (attempt ${attempt + 1})`);
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30000);
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers,
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      const resultText = await response.text();
+      console.log(`[E-Invoice] GSTIN lookup response status=${response.status}:`, resultText.slice(0, 500));
+
+      let result: any;
+      try {
+        result = JSON.parse(resultText);
+      } catch {
+        throw new Error(`Non-JSON response: ${resultText.slice(0, 200)}`);
+      }
+
+      // Response shape: { Gstin, TradeName, LegalName, AddrBnm, AddrBno, AddrFlno, AddrSt, AddrLoc, StateCode, AddrPncd, TxpType, Status, BlkStatus, DtReg }
+      if (result.Gstin || result.gstin) {
+        const data = result;
+        const addrParts = [data.AddrBno, data.AddrFlno, data.AddrBnm, data.AddrSt, data.AddrLoc].filter(Boolean).map((s: string) => s.trim()).filter(Boolean);
+        return {
+          success: true,
+          gstin: data.Gstin || gstin,
+          legalName: data.LegalName || '',
+          tradeName: data.TradeName || '',
+          address: addrParts.join(', '),
+          city: (data.AddrLoc || '').trim(),
+          state: String(data.StateCode || ''),
+          pincode: String(data.AddrPncd || ''),
+          status: data.Status || 'Unknown',
+          registrationDate: data.DtReg || '',
+          taxpayerType: data.TxpType || '',
+          rawResponse: data,
+        };
+      }
+
+      const errors = result.ErrorDetails || result.errorDetails || [];
+      const errorMsg = errors.length > 0
+        ? errors.map((e: any) => `${e.ErrorCode || e.errorCode}: ${e.ErrorMessage || e.errorMessage}`).join('; ')
+        : result.Error || result.error || JSON.stringify(result).slice(0, 300);
+
+      return { success: false, error: errorMsg };
+    } catch (err: any) {
+      console.error(`[E-Invoice GSTIN] Error (attempt ${attempt + 1}):`, err.message);
+      // Retry on network errors (fetch failed, ECONNRESET, timeout)
+      if (attempt < MAX_RETRIES && (err.message.includes('fetch failed') || err.message.includes('ECONNRESET') || err.message.includes('abort'))) {
+        continue;
+      }
+      if (err.message.includes('auth') || err.message.includes('Auth') || err.message.includes('token')) {
+        clearSaralAuthCache();
+      }
+      return { success: false, error: `GSTIN lookup error: ${err.message}` };
     }
-    return { success: false, error: `GSTIN lookup error: ${err.message}` };
   }
+
+  return { success: false, error: 'GSTIN lookup failed after retries' };
 }

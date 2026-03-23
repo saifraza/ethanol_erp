@@ -202,6 +202,7 @@ export default function MyPage() {
 | **Analytics** | dashboard.ts, reports.ts | Dashboard.tsx, SalesDashboard.tsx, Reports.tsx | (aggregates from other models) |
 | **Inventory** | inventory.ts | Inventory.tsx | InventoryItem, InventoryTransaction |
 | **Plant Issues** | issues.ts | PlantIssues.tsx | PlantIssue, IssueComment |
+| **Accounts** | accounts.ts | PaymentDashboard.tsx | Shipment (payment fields) |
 
 ## Module Skills
 
@@ -212,6 +213,7 @@ For detailed guidance on specific modules, see `.claude/skills/`:
 - `process-distillation.md` — Distillation detail: ethanol product, tank calibration, dispatch
 - `sales-module.md` — Order-to-cash, e-invoice, e-way bill, dispatch workflow
 - `procurement-module.md` — Procure-to-pay, PO lifecycle, GRN
+- `accounts-module.md` — Payment desk, receivables, collections, payment flow, future costing
 - `dashboard-analytics.md` — Dashboard performance, KPI calculations
 - `admin-settings.md` — Auth, users, settings, audit trail
 
