@@ -22,15 +22,14 @@ router.get('/latest', async (req: Request, res: Response) => {
       where, orderBy: { date: 'desc' }
     });
 
-    // Cumulative production from DDGSProductionEntry (ERP entries only)
+    // Cumulative production from all DDGSProductionEntry records
     const prodAgg = await prisma.dDGSProductionEntry.aggregate({ _sum: { totalProduction: true } });
     const erpProduction = prodAgg._sum.totalProduction || 0;
 
-    // Cumulative production from DDGSStockEntry (daily stock entries)
+    // Also check DDGSStockEntry for legacy data
     const stockProdAgg = await prisma.dDGSStockEntry.aggregate({ _sum: { productionToday: true } });
     const stockProduction = stockProdAgg._sum.productionToday || 0;
 
-    // Use whichever is larger (production entries or stock entries)
     const cumulativeProduction = Math.max(erpProduction, stockProduction);
 
     // Cumulative dispatch from DDGSDispatchTruck

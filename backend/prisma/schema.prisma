@@ -544,7 +544,11 @@ model EvaporationEntry {
 model DDGSProductionEntry {
   id              String   @id @default(uuid())
   date            DateTime
+  shiftDate       String   @default("")  // YYYY-MM-DD of 9am-9am shift day
   entryTime       String   @default("")
+  timeFrom        String   @default("")  // e.g. "08:00"
+  timeTo          String   @default("")  // e.g. "09:00"
+  operatorName    String   @default("")
   bags            Float?
   weightPerBag    Float?
   totalProduction Float?
@@ -557,6 +561,8 @@ model DDGSProductionEntry {
   userId          String
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  @@index([shiftDate])
 }
 
 // ═══════════════════════════════════════════════
