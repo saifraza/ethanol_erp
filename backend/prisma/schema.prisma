@@ -1137,6 +1137,14 @@ model Shipment {
   insuranceBy     String?                  // BUYER, SELLER, NONE
   insuranceNo     String?
   insuranceProvider String?
+  // ── Payment gate (for ADVANCE / COD orders) ──
+  paymentTerms    String?                  // inherited from SalesOrder: ADVANCE, COD, NET7, NET15, NET30
+  paymentStatus   String           @default("PENDING") // PENDING, CONFIRMED, NOT_REQUIRED
+  paymentMode     String?                  // CASH, UPI, NEFT, RTGS, CHEQUE, BANK_TRANSFER
+  paymentRef      String?                  // UTR / cheque no / transaction ID
+  paymentAmount   Float?                   // amount received for this truck
+  paymentConfirmedAt DateTime?
+  paymentConfirmedBy String?               // userId who confirmed
   // Status flow
   status          String           @default("GATE_IN")
   // GATE_IN → TARE_WEIGHED → LOADING → GROSS_WEIGHED → RELEASED → EXITED → DELIVERED → GR_RECEIVED
@@ -1164,6 +1172,7 @@ model Shipment {
   transporterPayments TransporterPayment[]
   @@index([date])
   @@index([status])
+  @@index([paymentStatus])
   @@index([dispatchRequestId])
 }
 

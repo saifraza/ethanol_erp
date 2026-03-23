@@ -148,6 +148,27 @@ router.post('/', async (req: Request, res: Response) => {
     // Link to dispatch request if provided (sales flow)
     if (b.dispatchRequestId) {
       data.dispatchRequest = { connect: { id: b.dispatchRequestId } };
+
+      // Inherit paymentTerms from the SalesOrder
+      const dr = await prisma.dispatchRequest.findUnique({
+        where: { id: b.dispatchRequestId },
+        include: { order: { select: { paymentTerms: true } } },
+      });
+      if (dr?.order?.paymentTerms) {
+        data.paymentTerms = dr.order.paymentTerms;
+        // Credit terms (NET*) don't need payment before release
+        const creditTerms = ['NET7', 'NET15', 'NET30', 'NET45', 'NET60'];
+        data.paymentStatus = creditTerms.includes(dr.order.paymentTerms)
+          ? 'NOT_REQUIRED' : 'PENDING';
+      }
+    }
+
+    // Allow manual override of paymentTerms
+    if (b.paymentTerms) {
+      data.paymentTerms = b.paymentTerms;
+      const creditTerms = ['NET7', 'NET15', 'NET30', 'NET45', 'NET60'];
+      data.paymentStatus = creditTerms.includes(b.paymentTerms)
+        ? 'NOT_REQUIRED' : 'PENDING';
     }
 
     // Gate pass fields (job work / returnable flow)
@@ -237,6 +258,41 @@ router.put('/:id/weighbridge', async (req: Request, res: Response) => {
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
+// POST /:id/confirm-payment — Confirm payment received for ADVANCE/COD shipments
+router.post('/:id/confirm-payment', async (req: Request, res: Response) => {
+  try {
+    const b = req.body;
+    const shipment = await prisma.shipment.findUnique({ where: { id: req.params.id } });
+    if (!shipment) { res.status(404).json({ error: 'Shipment not found' }); return; }
+
+    if (shipment.paymentStatus === 'CONFIRMED' || shipment.paymentStatus === 'NOT_REQUIRED') {
+      res.status(400).json({ error: 'Payment already confirmed or not required' });
+      return;
+    }
+
+    const mode = b.paymentMode || 'CASH';
+    const validModes = ['CASH', 'UPI', 'NEFT', 'RTGS', 'CHEQUE', 'BANK_TRANSFER'];
+    if (!validModes.includes(mode)) {
+      res.status(400).json({ error: `Invalid payment mode. Use: ${validModes.join(', ')}` });
+      return;
+    }
+
+    const updated = await prisma.shipment.update({
+      where: { id: req.params.id },
+      data: {
+        paymentStatus: 'CONFIRMED',
+        paymentMode: mode,
+        paymentRef: b.paymentRef || null,
+        paymentAmount: parseFloat(b.paymentAmount) || null,
+        paymentConfirmedAt: new Date(),
+        paymentConfirmedBy: (req as any).user?.id || null,
+      },
+      include: { dispatchRequest: { include: { orderLine: true } } },
+    });
+    res.json(updated);
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
 // PUT /:id/status — Update shipment status with transitions
 router.put('/:id/status', async (req: Request, res: Response) => {
   try {
@@ -248,6 +304,15 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     if (newStatus === 'LOADING') {
       updateData.loadStartTime = b.loadStartTime || null;
     } else if (newStatus === 'RELEASED') {
+      // ── Payment gate: ADVANCE/COD orders must have payment confirmed before release ──
+      const shipCheck = await prisma.shipment.findUnique({ where: { id: req.params.id }, select: { paymentStatus: true, paymentTerms: true } });
+      if (shipCheck && shipCheck.paymentStatus === 'PENDING') {
+        res.status(400).json({
+          error: `Payment must be confirmed before release (terms: ${shipCheck.paymentTerms || 'ADVANCE'})`,
+          code: 'PAYMENT_REQUIRED',
+        });
+        return;
+      }
       updateData.releaseTime = b.releaseTime || null;
       if (b.challanNo) updateData.challanNo = b.challanNo;
       if (b.ewayBill) updateData.ewayBill = b.ewayBill;
