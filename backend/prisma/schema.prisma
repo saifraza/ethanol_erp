@@ -86,6 +86,8 @@ model Settings {
   lfoCap                Float    @default(15000)
   ddgsBaseProduction    Float    @default(3160)     // historical DDGS production before ERP (Ton)
   ddgsBaseStock         Float    @default(1956.01)  // DDGS stock at ERP start (Ton)
+  whatsappNumbers       String?  // comma-separated phone numbers for auto-push (e.g. "9876543210,9123456789")
+  whatsappEnabled       Boolean  @default(false)    // toggle auto-push on/off
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 }

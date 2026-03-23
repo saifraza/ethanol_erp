@@ -12,6 +12,8 @@ export default function SettingsPage() {
   useEffect(() => { api.get('/settings').then(r => setSettings(r.data)); }, []);
 
   const update = (k: string, v: string) => setSettings((s: any) => ({ ...s, [k]: v === '' ? null : parseFloat(v) }));
+  const updateStr = (k: string, v: string) => setSettings((s: any) => ({ ...s, [k]: v }));
+  const updateBool = (k: string, v: boolean) => setSettings((s: any) => ({ ...s, [k]: v }));
 
   const save = async () => {
     await api.patch('/settings', settings);
@@ -47,6 +49,38 @@ export default function SettingsPage() {
             </div>
           ))}
         </div>
+
+        {/* WhatsApp Auto-Push */}
+        <div className="mt-6 pt-6 border-t">
+          <h2 className="text-lg font-semibold mb-3">WhatsApp Notifications</h2>
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-gray-600 w-52">Auto-push enabled</label>
+              <button
+                onClick={() => updateBool('whatsappEnabled', !settings.whatsappEnabled)}
+                disabled={!isAdmin}
+                className={`relative w-12 h-6 rounded-full transition-colors ${settings.whatsappEnabled ? 'bg-green-500' : 'bg-gray-300'}`}>
+                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${settings.whatsappEnabled ? 'translate-x-6' : ''}`} />
+              </button>
+              <span className="text-xs text-gray-400">{settings.whatsappEnabled ? 'ON' : 'OFF'}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-gray-600 w-52">Phone numbers <span className="text-xs text-gray-400">(comma separated)</span></label>
+              <input
+                type="text"
+                value={settings.whatsappNumbers ?? ''}
+                onChange={e => updateStr('whatsappNumbers', e.target.value)}
+                className="input-field flex-1"
+                disabled={!isAdmin}
+                placeholder="9876543210, 9123456789"
+              />
+            </div>
+            <p className="text-xs text-gray-400 ml-52 pl-2">
+              Messages auto-sent on DDGS bag entry, dispatch, etc. Set WHATSAPP_PROVIDER env var (twilio/meta/wapi/gupshup).
+            </p>
+          </div>
+        </div>
+
         {isAdmin && (
           <div className="flex items-center gap-3 mt-6">
             <button onClick={save} className="btn-primary flex items-center gap-2"><Save size={16} />Save Settings</button>

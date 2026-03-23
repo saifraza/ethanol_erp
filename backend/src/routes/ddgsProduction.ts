@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
+import { sendWhatsApp } from '../services/messaging';
 
 const router = Router();
 router.use(authenticate as any);
@@ -103,6 +104,12 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       userId: req.user!.id,
     },
   });
+
+  // Auto-push WhatsApp notification (fire-and-forget)
+  pushWhatsAppNotification(shiftDate, entry).catch(err =>
+    console.error('[DDGS WA] Push failed:', err.message)
+  );
+
   res.status(201).json(entry);
 }));
 
@@ -111,5 +118,43 @@ router.delete('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
   await prisma.dDGSProductionEntry.delete({ where: { id: req.params.id } });
   res.json({ ok: true });
 }));
+
+/** Auto-push WhatsApp message to configured numbers */
+async function pushWhatsAppNotification(shiftDate: string, entry: any): Promise<void> {
+  const settings = await prisma.settings.findFirst();
+  if (!settings || !(settings as any).whatsappEnabled || !(settings as any).whatsappNumbers) return;
+
+  const numbers: string[] = ((settings as any).whatsappNumbers as string)
+    .split(',')
+    .map((n: string) => n.trim())
+    .filter(Boolean);
+
+  if (numbers.length === 0) return;
+
+  // Get today's running total
+  const todayEntries = await prisma.dDGSProductionEntry.findMany({
+    where: { shiftDate },
+    select: { bags: true, totalProduction: true },
+    take: 200,
+  });
+  const totalBags = todayEntries.reduce((sum, e) => sum + (e.bags || 0), 0);
+  const totalMT = todayEntries.reduce((sum, e) => sum + (e.totalProduction || 0), 0);
+
+  const timeStr = entry.timeFrom && entry.timeTo ? `${entry.timeFrom}–${entry.timeTo}` : '';
+  const msg = [
+    `*DDGS Bag Entry*`,
+    timeStr ? `Time: ${timeStr}` : '',
+    entry.operatorName ? `Operator: ${entry.operatorName}` : '',
+    `Bags: ${entry.bags}`,
+    ``,
+    `*Today Total: ${totalBags} bags (${totalMT.toFixed(2)} MT)*`,
+  ].filter(Boolean).join('\n');
+
+  for (const phone of numbers) {
+    sendWhatsApp({ phone, message: msg }).catch(err =>
+      console.error(`[DDGS WA] Failed for ${phone}:`, err.message)
+    );
+  }
+}
 
 export default router;

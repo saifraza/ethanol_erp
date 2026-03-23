@@ -92,14 +92,6 @@ export default function DDGSStock() {
   const totalProduction = (stockDefaults?.totalProduction || 0) + todayTonnage;
   const totalDispatch = stockDefaults?.cumulativeDispatch || 0;
 
-  function shareEntry(entryBags: string, from: string, to: string, name: string) {
-    const totalAfter = todayBags + (parseFloat(entryBags) || 0);
-    const tonnageAfter = todayTonnage + ((parseFloat(entryBags) || 0) * (parseFloat(weightPerBag) || 50) / 1000);
-    const t = `*DDGS Bag Entry*\n${from && to ? from + '–' + to : ''}${name ? ' (' + name + ')' : ''}\nBags: ${entryBags}\n\nTotal today: ${totalAfter} bags (${tonnageAfter.toFixed(2)} MT)\nClosing Stock: ${(openingStock + tonnageAfter - dispatchToday).toFixed(1)} T`;
-    if (navigator.share) { navigator.share({ text: t }).catch(() => { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }); }
-    else { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }
-  }
-
   async function handleAdd() {
     if (!bags || parseFloat(bags) <= 0) { setMsg({ type: 'err', text: 'Enter bags' }); return; }
     setSaving(true); setMsg(null);
@@ -107,9 +99,7 @@ export default function DDGSStock() {
       await api.post('/ddgs-production', {
         bags, weightPerBag, timeFrom, timeTo, operatorName, remark, shiftDate: sd,
       });
-      setMsg({ type: 'ok', text: `Added ${bags} bags` });
-      shareEntry(bags, timeFrom, timeTo, operatorName);
-      const savedBags = bags;
+      setMsg({ type: 'ok', text: `Added ${bags} bags (WhatsApp auto-sent)` });
       setBags(''); setRemark('');
       setTimeFrom(timeTo);
       setTimeTo(currentTimeStr());
