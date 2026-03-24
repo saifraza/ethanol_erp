@@ -624,6 +624,33 @@ router.post('/beer-well', async (req: Request, res: Response) => {
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
+// PUT beer well reading (edit)
+router.put('/beer-well/:id', async (req: Request, res: Response) => {
+  try {
+    const { level, spGravity, ph, alcohol, temp, remarks } = req.body;
+    const reading = await prisma.beerWellReading.update({
+      where: { id: req.params.id },
+      data: {
+        level: level !== undefined ? (level !== null ? parseFloat(level) : null) : undefined,
+        spGravity: spGravity !== undefined ? (spGravity !== null ? parseFloat(spGravity) : null) : undefined,
+        ph: ph !== undefined ? (ph !== null ? parseFloat(ph) : null) : undefined,
+        alcohol: alcohol !== undefined ? (alcohol !== null ? parseFloat(alcohol) : null) : undefined,
+        temp: temp !== undefined ? (temp !== null ? parseFloat(temp) : null) : undefined,
+        remarks: remarks !== undefined ? (remarks || null) : undefined,
+      },
+    });
+    res.json(reading);
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE beer well reading
+router.delete('/beer-well/:id', async (req: Request, res: Response) => {
+  try {
+    await prisma.beerWellReading.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
 /* ═══════ BATCH HISTORY — all completed PF + Ferm batches ═══════ */
 router.get('/history', async (req: Request, res: Response) => {
   try {

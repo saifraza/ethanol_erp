@@ -342,7 +342,7 @@ export default function Fermentation() {
   const deleteReading = async (readingId: string) => {
     if (!selected || !confirm('Delete this reading?')) return;
     try {
-      const url = selected.type === 'PF' ? `/pre-fermentation/lab/${readingId}` : `/fermentation/${readingId}`;
+      const url = selected.type === 'PF' ? `/pre-fermentation/lab/${readingId}` : selected.type === 'BW' ? `/fermentation/beer-well/${readingId}` : `/fermentation/${readingId}`;
       await api.delete(url);
       flash('ok', 'Deleted');
       load();
@@ -367,7 +367,7 @@ export default function Fermentation() {
   const saveEditReading = async (readingId: string) => {
     if (!selected) return;
     try {
-      const url = selected.type === 'PF' ? `/pre-fermentation/lab/${readingId}` : `/fermentation/${readingId}`;
+      const url = selected.type === 'PF' ? `/pre-fermentation/lab/${readingId}` : selected.type === 'BW' ? `/fermentation/beer-well/${readingId}` : `/fermentation/${readingId}`;
       await api.put(url, {
         level: editForm.level ? +editForm.level : null,
         spGravity: editForm.spGravity ? +editForm.spGravity : null,
@@ -928,7 +928,7 @@ export default function Fermentation() {
                         <div>
                           <div className="text-[9px] font-bold text-gray-400 uppercase mb-1">Recent Readings</div>
                           <div className="space-y-0.5 max-h-64 overflow-y-auto">
-                            {rList.slice(-10).reverse().map((r, i) => (
+                            {(isBW ? rList.slice(0, 10) : rList.slice(-10).reverse()).map((r, i) => (
                               editingReading === r.id ? (
                                 /* Inline edit row */
                                 <div key={r.id} className="bg-yellow-50 rounded-lg p-2 border border-yellow-200 space-y-1.5">
@@ -961,7 +961,7 @@ export default function Fermentation() {
                                     {r.alcohol != null && <span className="text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded">{r.alcohol}%</span>}
                                     {r.status === 'FIELD' && <span className="text-[9px] bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded font-bold">FIELD</span>}
                                   </div>
-                                  {r.id && !isBW && (
+                                  {r.id && (
                                     <div className="flex items-center gap-1 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity">
                                       <button onClick={() => startEditReading(r as any)} className="w-6 h-6 rounded-md bg-blue-50 hover:bg-blue-100 flex items-center justify-center text-blue-600 transition-colors" title="Edit">
                                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M17 3a2.83 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
