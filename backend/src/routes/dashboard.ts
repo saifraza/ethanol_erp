@@ -17,7 +17,7 @@ router.get('/analytics', authenticate, async (req: AuthRequest, res: Response) =
 
     // Run all queries in parallel
     const [
-      grain, ethanol, dispatch, ddgsStock, ddgsDispatch,
+      grain, ethanol, dispatch, ddgsStock, ddgsDispatch, ddgsProduction,
       distillation, liquefaction, milling, fermentationBatches,
       pfBatches, rawMaterial, settings
     ] = await Promise.all([
@@ -26,6 +26,7 @@ router.get('/analytics', authenticate, async (req: AuthRequest, res: Response) =
       prisma.dispatchTruck.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
       prisma.dDGSStockEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
       prisma.dDGSDispatchTruck.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
+      prisma.dDGSProductionEntry.findMany({ where: { date: { gte: from, lte: now } }, select: { totalProduction: true, date: true, shiftDate: true } }),
       prisma.distillationEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
       prisma.liquefactionEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
       prisma.millingEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
@@ -56,7 +57,11 @@ router.get('/analytics', authenticate, async (req: AuthRequest, res: Response) =
       ? ethanol.filter(e => e.avgStrength > 0).reduce((s, e) => s + e.avgStrength, 0) / ethanol.filter(e => e.avgStrength > 0).length
       : 0;
 
-    const totalDDGSProduced = ddgsStock.reduce((s, e) => s + (e.productionToday || 0), 0);
+    // DDGS production: use DDGSStockEntry.productionToday (manual daily summary)
+    // OR DDGSProductionEntry.totalProduction (auto-collected hourly entries), whichever is greater
+    const ddgsFromStock = ddgsStock.reduce((s: number, e: any) => s + (e.productionToday || 0), 0);
+    const ddgsFromProd = ddgsProduction.reduce((s: number, e: any) => s + (e.totalProduction || 0), 0);
+    const totalDDGSProduced = Math.max(ddgsFromStock, ddgsFromProd);
     const totalDDGSDispatched = ddgsDispatch.reduce((s, e) => s + (e.weightNet || 0), 0);
 
     const totalWashDistilled = grain.reduce((s, e) => s + (e.washConsumed || 0), 0);
