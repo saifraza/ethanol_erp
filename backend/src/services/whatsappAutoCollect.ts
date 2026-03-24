@@ -349,6 +349,28 @@ export function getActiveSessions(): { phone: string; module: string; step: numb
   }));
 }
 
+export function clearSession(phone: string): boolean {
+  // Try exact match first
+  if (activeSessions.has(phone)) {
+    activeSessions.delete(phone);
+    return true;
+  }
+  // Try with 91 prefix
+  let digits = phone.replace(/\D/g, '');
+  if (digits.length === 10) digits = '91' + digits;
+  if (activeSessions.has(digits)) {
+    activeSessions.delete(digits);
+    return true;
+  }
+  return false;
+}
+
+export function clearAllSessions(): number {
+  const count = activeSessions.size;
+  activeSessions.clear();
+  return count;
+}
+
 export function getAvailableModules(): { module: string; displayName: string; steps: number; fields: string[] }[] {
   return Object.entries(MODULE_REGISTRY).map(([mod, config]) => ({
     module: mod,

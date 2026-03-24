@@ -476,7 +476,18 @@ export default function Decanter() {
 
               {activeSessions.length > 0 && (
                 <div className="border-t pt-2">
-                  <p className="text-[10px] text-gray-500 uppercase mb-1">Active Sessions</p>
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-[10px] text-gray-500 uppercase">Active Sessions</p>
+                    <button onClick={async () => {
+                      try {
+                        await api.delete('/auto-collect/sessions');
+                        setActiveSessions([]);
+                        setAcStatus('Sessions cleared');
+                      } catch { setAcStatus('Failed to clear'); }
+                    }} className="px-2 py-0.5 text-[10px] text-red-500 hover:bg-red-50 rounded font-semibold">
+                      Reset All
+                    </button>
+                  </div>
                   {activeSessions.map((s, i) => (
                     <div key={i} className="text-xs text-cyan-700">
                       {s.phone} — step {s.step}/{s.totalSteps}

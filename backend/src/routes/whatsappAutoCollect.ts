@@ -7,6 +7,8 @@ import {
   saveSchedules,
   getActiveSessions,
   getAvailableModules,
+  clearSession,
+  clearAllSessions,
 } from '../services/whatsappAutoCollect';
 
 const router = Router();
@@ -65,6 +67,26 @@ router.get(
   authenticate,
   asyncHandler(async (_req: AuthRequest, res: Response) => {
     res.json(getActiveSessions());
+  })
+);
+
+// DELETE /api/auto-collect/sessions/:phone — clear a stuck session
+router.delete(
+  '/sessions/:phone',
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const cleared = clearSession(req.params.phone);
+    res.json({ success: cleared, message: cleared ? 'Session cleared' : 'No session found' });
+  })
+);
+
+// DELETE /api/auto-collect/sessions — clear ALL sessions
+router.delete(
+  '/sessions',
+  authenticate,
+  asyncHandler(async (_req: AuthRequest, res: Response) => {
+    const count = clearAllSessions();
+    res.json({ success: true, cleared: count });
   })
 );
 
