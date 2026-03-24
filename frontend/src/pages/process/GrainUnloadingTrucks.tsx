@@ -115,9 +115,37 @@ export default function GrainUnloadingTrucks() {
 
       await api.post('/grain-truck', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+
+      // Auto-send WhatsApp notification for each truck unload
+      const netWt = ((parseNumberInput(weightGross) ?? 0) - (parseNumberInput(weightTare) ?? 0)).toFixed(2);
+      const qw = parseNumberInput(quarantineWeight) ?? 0;
+      const toSiloWt = (parseFloat(netWt) - qw).toFixed(2);
+      const updatedTrucks = await api.get(`/grain-truck?date=${date}`);
+      const truckList = updatedTrucks.data.trucks || [];
+      const totalNetToday = truckList.reduce((s: number, t: any) => s + (t.weightNet - (t.quarantineWeight || 0)), 0);
+
+      const waLines = [
+        `🚛 *Truck Unloaded* — ${now}`,
+        `Vehicle: ${vehicleNo || '—'}`,
+        supplier ? `Supplier: ${supplier}` : '',
+        `Gross: ${weightGross} kg · Tare: ${weightTare} kg`,
+        `Net: ${netWt} kg${qw > 0 ? ` · Quarantine: ${qw} kg` : ''}`,
+        `To Silo: ${toSiloWt} kg`,
+        moisture ? `Moisture: ${moisture}%` : '',
+        starchPercent ? `Starch: ${starchPercent}%` : '',
+        damagedPercent ? `Damaged: ${damagedPercent}%` : '',
+        foreignMatter ? `Foreign Matter: ${foreignMatter}%` : '',
+        bags ? `Bags: ${bags}` : '',
+        remarks ? `Remarks: ${remarks}` : '',
+        '',
+        `📊 Today: ${truckList.length} trucks · ${(totalNetToday / 1000).toFixed(2)} MT to silo`,
+      ].filter(Boolean).join('\n');
+
+      api.post('/whatsapp/send-report', { message: waLines, module: 'grain' }).catch(() => {});
+
       setMsg({ type: 'ok', text: `Truck saved at ${now}` });
       resetForm();
-      await loadTrucks();
+      setTrucks(truckList);
     } catch (err: any) { setMsg({ type: 'err', text: err.response?.data?.error || 'Save failed' }); }
     setSaving(false);
   }
