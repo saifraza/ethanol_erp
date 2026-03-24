@@ -23,6 +23,7 @@ interface ActiveSession {
   collectedData: Record<string, number>;
   startedAt: Date;
   expiresAt: Date;
+  autoShare: boolean;
 }
 
 // ── In-memory session store ──
@@ -36,7 +37,7 @@ let schedulerInterval: ReturnType<typeof setInterval> | null = null;
 /**
  * Start a collection session — sends the first question
  */
-export async function startCollection(phone: string, moduleName: string): Promise<{ success: boolean; error?: string }> {
+export async function startCollection(phone: string, moduleName: string, autoShare = true): Promise<{ success: boolean; error?: string }> {
   const config = MODULE_REGISTRY[moduleName];
   if (!config) return { success: false, error: `Unknown module: ${moduleName}. Available: ${Object.keys(MODULE_REGISTRY).join(', ')}` };
 
@@ -56,6 +57,7 @@ export async function startCollection(phone: string, moduleName: string): Promis
     collectedData: {},
     startedAt: new Date(),
     expiresAt: new Date(Date.now() + 30 * 60 * 1000), // 30 min timeout
+    autoShare,
   };
 
   activeSessions.set(digits, session);
@@ -162,32 +164,36 @@ async function handleIncoming(rawPhone: string, text: string, _name: string | nu
         `✅ *All ${config.displayName} readings saved!*\n\n${confirm}\n\n📊 *Complete Entry:*\n${summary}\n\n_Saved to ERP at ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}_`
       );
 
-      // Share to WhatsApp group + private numbers
-      try {
-        const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-        const fullReport = `📊 *${config.displayName} Report* — ${now}\n\n${summary}\n\n_Auto-collected via WhatsApp_`;
-        const settings = await prisma.settings.findFirst();
+      // Share to WhatsApp group + private numbers (only if autoShare enabled)
+      if (session.autoShare) {
+        try {
+          const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+          const fullReport = `📊 *${config.displayName} Report* — ${now}\n\n${summary}\n\n_Auto-collected via WhatsApp_`;
+          const settings = await prisma.settings.findFirst();
 
-        // Send report to group
-        const groupJid = (settings as any)?.whatsappGroupJid;
-        if (groupJid) {
-          await sendToGroup(groupJid, fullReport, config.module);
-          console.log(`[AutoCollect] Shared ${config.module} report to group`);
-        }
+          // Send report to group
+          const groupJid = (settings as any)?.whatsappGroupJid;
+          if (groupJid) {
+            await sendToGroup(groupJid, fullReport, config.module);
+            console.log(`[AutoCollect] Shared ${config.module} report to group`);
+          }
 
-        // Send to private numbers
-        const privateNumbers = ((settings as any)?.whatsappNumbers || '')
-          .split(',')
-          .map((p: string) => p.trim())
-          .filter((p: string) => p.length > 0 && p !== phone.replace(/^91/, ''));
-        for (const num of privateNumbers) {
-          await sendWhatsAppMessage(num, fullReport, config.module);
+          // Send to private numbers
+          const privateNumbers = ((settings as any)?.whatsappNumbers || '')
+            .split(',')
+            .map((p: string) => p.trim())
+            .filter((p: string) => p.length > 0 && p !== phone.replace(/^91/, ''));
+          for (const num of privateNumbers) {
+            await sendWhatsAppMessage(num, fullReport, config.module);
+          }
+          if (privateNumbers.length > 0) {
+            console.log(`[AutoCollect] Shared ${config.module} report to ${privateNumbers.length} private numbers`);
+          }
+        } catch (shareErr) {
+          console.error(`[AutoCollect] Failed to share ${config.module} report:`, shareErr);
         }
-        if (privateNumbers.length > 0) {
-          console.log(`[AutoCollect] Shared ${config.module} report to ${privateNumbers.length} private numbers`);
-        }
-      } catch (shareErr) {
-        console.error(`[AutoCollect] Failed to share ${config.module} report:`, shareErr);
+      } else {
+        console.log(`[AutoCollect] Auto-share disabled, skipping group report`);
       }
 
       console.log(`[AutoCollect] ${session.module} completed for ${phone}`);
@@ -208,6 +214,7 @@ interface AutoCollectSchedule {
   phone: string;
   intervalMinutes: number;
   enabled: boolean;
+  autoShare?: boolean;
 }
 
 let schedules: AutoCollectSchedule[] = [];
@@ -283,7 +290,7 @@ async function runScheduler(): Promise<void> {
 
       if (!activeSessions.has(digits)) {
         console.log(`[AutoCollect] Triggering ${sched.module} for ${phone} (shift-picked)`);
-        const result = await startCollection(phone, sched.module);
+        const result = await startCollection(phone, sched.module, sched.autoShare !== false);
         if (result.success) {
           schedulerLastRun.set(key, now);
         } else {

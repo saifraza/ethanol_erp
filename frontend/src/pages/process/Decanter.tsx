@@ -43,6 +43,7 @@ export default function Decanter() {
   const [acEnabled, setAcEnabled] = useState(false);
   const [acStatus, setAcStatus] = useState('');
   const [activeSessions, setActiveSessions] = useState<{ phone: string; module: string; step: number; totalSteps: number }[]>([]);
+  const [acAutoShare, setAcAutoShare] = useState(true);
 
   const load = () => api.get('/decanter').then(r => setEntries(r.data)).catch(() => {});
   useEffect(() => { load(); }, []);
@@ -55,6 +56,7 @@ export default function Decanter() {
         const s = scheds[0];
         setAcInterval(String(s.intervalMinutes || 120));
         setAcEnabled(s.enabled || false);
+        setAcAutoShare(s.autoShare !== false); // default true
         const phones = (s.phone || '').split(',').map((p: string) => p.trim());
         setAcShiftA(phones[0] || '');
         setAcShiftB(phones[1] || '');
@@ -64,6 +66,15 @@ export default function Decanter() {
     api.get('/auto-collect/sessions').then(r => setActiveSessions((r.data || []).filter((s: { module: string }) => s.module === 'decanter'))).catch(() => {});
   }, []);
   useEffect(() => { loadAutoCollect(); }, [loadAutoCollect]);
+
+  // Poll active sessions every 5s when auto-collect panel is open
+  useEffect(() => {
+    if (!showAutoCollect) return;
+    const iv = setInterval(() => {
+      api.get('/auto-collect/sessions').then(r => setActiveSessions((r.data || []).filter((s: { module: string }) => s.module === 'decanter'))).catch(() => {});
+    }, 5000);
+    return () => clearInterval(iv);
+  }, [showAutoCollect]);
 
   const setNow = () => {
     const d = new Date();
@@ -442,6 +453,12 @@ export default function Decanter() {
                     {acEnabled ? 'Enabled' : 'Disabled'}
                   </span>
                 </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" checked={acAutoShare} onChange={e => setAcAutoShare(e.target.checked)} className="w-4 h-4" />
+                  <span className={acAutoShare ? 'text-blue-700 font-semibold text-xs' : 'text-gray-500 text-xs'}>
+                    {acAutoShare ? 'Auto-Share' : 'No Share'}
+                  </span>
+                </label>
               </div>
 
               {/* Save + Test buttons */}
@@ -451,7 +468,7 @@ export default function Decanter() {
                   if (!phone) { setAcStatus('Add at least one phone number'); return; }
                   try {
                     await api.post('/auto-collect/schedules', {
-                      schedules: [{ module: 'decanter', phone, intervalMinutes: parseInt(acInterval) || 120, enabled: acEnabled }]
+                      schedules: [{ module: 'decanter', phone, intervalMinutes: parseInt(acInterval) || 120, enabled: acEnabled, autoShare: acAutoShare }]
                     });
                     setAcStatus('Schedule saved');
                   } catch { setAcStatus('Failed to save'); }
@@ -464,7 +481,7 @@ export default function Decanter() {
                   const phone = hr >= 6 && hr < 14 ? acShiftA : hr >= 14 && hr < 22 ? acShiftB : acShiftC;
                   if (!phone) { setAcStatus('No phone for current shift'); return; }
                   try {
-                    const r = await api.post('/auto-collect/trigger', { phone, module: 'decanter' });
+                    const r = await api.post('/auto-collect/trigger', { phone, module: 'decanter', autoShare: acAutoShare });
                     setAcStatus(r.data.success ? `Sent to ${phone}` : r.data.error);
                   } catch { setAcStatus('Failed to trigger'); }
                   setTimeout(() => setAcStatus(''), 5000);

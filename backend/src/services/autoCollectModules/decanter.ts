@@ -66,19 +66,23 @@ function buildConfirmation(step: CollectStep, parsed: Record<string, number>): s
 }
 
 function buildSummary(data: Record<string, number>): string {
-  const allFields = STEPS.flatMap(s => s.fields);
   const lines: string[] = [];
   let total = 0;
   for (const step of STEPS) {
+    let dryerTotal = 0;
     const vals = step.fields
       .filter(f => data[`${f}Feed`] != null)
-      .map(f => `${f.toUpperCase()}: ${data[`${f}Feed`]}`);
+      .map(f => {
+        const v = data[`${f}Feed`] || 0;
+        dryerTotal += v;
+        return `${f.toUpperCase()}: ${v}`;
+      });
     if (vals.length > 0) {
-      lines.push(`*${step.label}:* ${vals.join(', ')}`);
-      step.fields.forEach(f => { total += data[`${f}Feed`] || 0; });
+      lines.push(`*${step.label}:* ${vals.join(', ')} = *${dryerTotal.toFixed(2)}*`);
+      total += dryerTotal;
     }
   }
-  lines.push(`*Total Feed: ${total.toFixed(2)}*`);
+  lines.push(`\n*Total Feed: ${total.toFixed(2)}*`);
   return lines.join('\n');
 }
 

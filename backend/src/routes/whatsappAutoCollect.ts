@@ -51,12 +51,12 @@ router.post(
   '/trigger',
   authenticate,
   asyncHandler(async (req: AuthRequest, res: Response) => {
-    const { phone, module } = req.body;
+    const { phone, module, autoShare } = req.body;
     if (!phone || !module) {
       res.status(400).json({ error: 'phone and module are required' });
       return;
     }
-    const result = await startCollection(phone, module);
+    const result = await startCollection(phone, module, autoShare !== false);
     res.json(result);
   })
 );
