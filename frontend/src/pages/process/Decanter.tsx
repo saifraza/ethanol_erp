@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Filter, Save, Loader2, ChevronDown, ChevronUp, Trash2, Eye, X, Share2 } from 'lucide-react';
+import React, { useEffect, useState, useCallback } from 'react';
+import { Filter, Save, Loader2, ChevronDown, ChevronUp, Trash2, Eye, X, Share2, MessageCircle } from 'lucide-react';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 
@@ -34,8 +34,36 @@ export default function Decanter() {
   const [showPreview, setShowPreview] = useState(false);
   const [showExtras, setShowExtras] = useState(false);
 
+  // Auto-collection state
+  const [showAutoCollect, setShowAutoCollect] = useState(false);
+  const [acShiftA, setAcShiftA] = useState('');
+  const [acShiftB, setAcShiftB] = useState('');
+  const [acShiftC, setAcShiftC] = useState('');
+  const [acInterval, setAcInterval] = useState('120');
+  const [acEnabled, setAcEnabled] = useState(false);
+  const [acStatus, setAcStatus] = useState('');
+  const [activeSessions, setActiveSessions] = useState<{ phone: string; module: string; step: number; totalSteps: number }[]>([]);
+
   const load = () => api.get('/decanter').then(r => setEntries(r.data)).catch(() => {});
   useEffect(() => { load(); }, []);
+
+  // Load auto-collect schedule for decanter
+  const loadAutoCollect = useCallback(() => {
+    api.get('/auto-collect/schedules').then(r => {
+      const scheds = (r.data || []).filter((s: { module: string }) => s.module === 'decanter');
+      if (scheds.length > 0) {
+        const s = scheds[0];
+        setAcInterval(String(s.intervalMinutes || 120));
+        setAcEnabled(s.enabled || false);
+        const phones = (s.phone || '').split(',').map((p: string) => p.trim());
+        setAcShiftA(phones[0] || '');
+        setAcShiftB(phones[1] || '');
+        setAcShiftC(phones[2] || '');
+      }
+    }).catch(() => {});
+    api.get('/auto-collect/sessions').then(r => setActiveSessions((r.data || []).filter((s: { module: string }) => s.module === 'decanter'))).catch(() => {});
+  }, []);
+  useEffect(() => { loadAutoCollect(); }, [loadAutoCollect]);
 
   const setNow = () => {
     const d = new Date();
@@ -355,6 +383,111 @@ export default function Decanter() {
           </div>
         )}
       </div>
+
+      {/* WhatsApp Auto-Collection */}
+      {isAdmin && (
+        <div className="bg-white rounded-lg shadow-sm border mb-4">
+          <button
+            onClick={() => setShowAutoCollect(!showAutoCollect)}
+            className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition"
+          >
+            <div className="flex items-center gap-2">
+              <MessageCircle size={18} className="text-green-600" />
+              <span className="text-sm font-semibold text-gray-700">WhatsApp Auto-Collection</span>
+              {acEnabled && <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium">ON</span>}
+            </div>
+            {showAutoCollect ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
+          </button>
+
+          {showAutoCollect && (
+            <div className="px-4 pb-4 space-y-3">
+              <p className="text-xs text-gray-500">
+                Bot sends scheduled WhatsApp messages asking operators for decanter readings. Operator replies with numbers → data auto-saved.
+              </p>
+
+              {/* Shift-wise phone numbers */}
+              <div>
+                <label className="text-[10px] text-gray-500 uppercase mb-1 block">Operator Numbers (shift-wise)</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="text-[9px] text-blue-600 font-semibold">Shift A (6am–2pm)</label>
+                    <input type="text" value={acShiftA} onChange={e => setAcShiftA(e.target.value)}
+                      placeholder="Phone" className="border rounded px-2 py-1.5 w-full text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-[9px] text-amber-600 font-semibold">Shift B (2pm–10pm)</label>
+                    <input type="text" value={acShiftB} onChange={e => setAcShiftB(e.target.value)}
+                      placeholder="Phone" className="border rounded px-2 py-1.5 w-full text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-[9px] text-purple-600 font-semibold">Shift C (10pm–6am)</label>
+                    <input type="text" value={acShiftC} onChange={e => setAcShiftC(e.target.value)}
+                      placeholder="Phone" className="border rounded px-2 py-1.5 w-full text-sm" />
+                  </div>
+                </div>
+                <p className="text-[9px] text-gray-400 mt-1">Bot auto-picks the right number based on current shift time</p>
+              </div>
+
+              {/* Interval + Enable */}
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <label className="text-[10px] text-gray-500">Interval</label>
+                  <input type="number" value={acInterval} onChange={e => setAcInterval(e.target.value)}
+                    className="border rounded px-2 py-1 w-20 text-sm" />
+                  <span className="text-[10px] text-gray-400">min</span>
+                </div>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" checked={acEnabled} onChange={e => setAcEnabled(e.target.checked)} className="w-4 h-4" />
+                  <span className={acEnabled ? 'text-green-700 font-semibold text-xs' : 'text-gray-500 text-xs'}>
+                    {acEnabled ? 'Enabled' : 'Disabled'}
+                  </span>
+                </label>
+              </div>
+
+              {/* Save + Test buttons */}
+              <div className="flex gap-2 flex-wrap">
+                <button onClick={async () => {
+                  const phone = [acShiftA, acShiftB, acShiftC].filter(Boolean).join(',');
+                  if (!phone) { setAcStatus('Add at least one phone number'); return; }
+                  try {
+                    await api.post('/auto-collect/schedules', {
+                      schedules: [{ module: 'decanter', phone, intervalMinutes: parseInt(acInterval) || 120, enabled: acEnabled }]
+                    });
+                    setAcStatus('Schedule saved');
+                  } catch { setAcStatus('Failed to save'); }
+                  setTimeout(() => setAcStatus(''), 3000);
+                }} className="px-3 py-1.5 bg-cyan-600 text-white rounded text-xs font-medium hover:bg-cyan-700">
+                  Save Schedule
+                </button>
+                <button onClick={async () => {
+                  const hr = new Date().getHours();
+                  const phone = hr >= 6 && hr < 14 ? acShiftA : hr >= 14 && hr < 22 ? acShiftB : acShiftC;
+                  if (!phone) { setAcStatus('No phone for current shift'); return; }
+                  try {
+                    const r = await api.post('/auto-collect/trigger', { phone, module: 'decanter' });
+                    setAcStatus(r.data.success ? `Sent to ${phone}` : r.data.error);
+                  } catch { setAcStatus('Failed to trigger'); }
+                  setTimeout(() => setAcStatus(''), 5000);
+                }} disabled={!acShiftA && !acShiftB && !acShiftC} className="px-3 py-1.5 bg-green-600 text-white rounded text-xs font-medium hover:bg-green-700 disabled:opacity-50">
+                  Test Now (Current Shift)
+                </button>
+              </div>
+              {acStatus && <p className="text-xs text-cyan-700 font-medium">{acStatus}</p>}
+
+              {activeSessions.length > 0 && (
+                <div className="border-t pt-2">
+                  <p className="text-[10px] text-gray-500 uppercase mb-1">Active Sessions</p>
+                  {activeSessions.map((s, i) => (
+                    <div key={i} className="text-xs text-cyan-700">
+                      {s.phone} — step {s.step}/{s.totalSteps}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -28,18 +28,6 @@ export default function SettingsPage() {
   const [allModules, setAllModules] = useState<string[]>([]);
   const [privateModules, setPrivateModules] = useState<string[]>([]);
 
-  // Auto-collect state
-  const [acModules, setAcModules] = useState<{module: string; displayName: string}[]>([]);
-  const [acSchedules, setAcSchedules] = useState<any[]>([]);
-  const [acStatus, setAcStatus] = useState('');
-  const [activeSessions, setActiveSessions] = useState<any[]>([]);
-  // Form for adding/editing a schedule
-  const [acModule, setAcModule] = useState('decanter');
-  const [acShiftA, setAcShiftA] = useState(''); // morning shift phone
-  const [acShiftB, setAcShiftB] = useState(''); // evening shift phone
-  const [acShiftC, setAcShiftC] = useState(''); // night shift phone
-  const [acInterval, setAcInterval] = useState('120');
-  const [acEnabled, setAcEnabled] = useState(false);
 
   const fetchWAStatus = useCallback(async () => {
     try {
@@ -120,24 +108,6 @@ export default function SettingsPage() {
       // Only use defaults if nothing was saved in DB
       setPrivateModules(prev => prev.length > 0 ? prev : (savedPrivate || r.data.privateModules));
     }).catch(() => {});
-    // Load auto-collect config
-    api.get('/auto-collect/modules').then(r => setAcModules(r.data || [])).catch(() => {});
-    api.get('/auto-collect/schedules').then(r => {
-      const scheds = r.data || [];
-      setAcSchedules(scheds);
-      if (scheds.length > 0) {
-        const s = scheds[0];
-        setAcModule(s.module || 'decanter');
-        setAcInterval(String(s.intervalMinutes || 120));
-        setAcEnabled(s.enabled || false);
-        // Parse shift phones from comma-separated or single phone
-        const phones = (s.phone || '').split(',').map((p: string) => p.trim());
-        setAcShiftA(phones[0] || '');
-        setAcShiftB(phones[1] || '');
-        setAcShiftC(phones[2] || '');
-      }
-    }).catch(() => {});
-    api.get('/auto-collect/sessions').then(r => setActiveSessions(r.data || [])).catch(() => {});
   }, []);
 
   const togglePrivateModule = (mod: string) => {
@@ -381,110 +351,6 @@ export default function SettingsPage() {
               </div>
             </div>
           </div>
-        </div>
-
-        {/* Auto-Collection Section */}
-        <div className="mt-6 border rounded-lg p-4 bg-purple-50 border-purple-200">
-          <h3 className="text-sm font-bold text-purple-700 mb-3">
-            📊 WhatsApp Auto-Collection
-          </h3>
-          <p className="text-xs text-gray-500 mb-3">
-            Bot sends scheduled messages asking operators for readings. Operator replies → data auto-saved to ERP.
-          </p>
-
-          {/* Module selector */}
-          <div className="grid grid-cols-2 gap-3 mb-3">
-            <div>
-              <label className="text-[10px] text-gray-500 uppercase">Module</label>
-              <select value={acModule} onChange={e => setAcModule(e.target.value)}
-                className="border rounded px-2 py-1.5 w-full text-sm" disabled={!isAdmin}>
-                {acModules.map(m => (
-                  <option key={m.module} value={m.module}>{m.displayName}</option>
-                ))}
-                {acModules.length === 0 && <option value="decanter">Decanter</option>}
-              </select>
-            </div>
-            <div>
-              <label className="text-[10px] text-gray-500 uppercase">Interval (min)</label>
-              <input type="number" value={acInterval} onChange={e => setAcInterval(e.target.value)}
-                placeholder="120" className="border rounded px-2 py-1.5 w-full text-sm" disabled={!isAdmin} />
-            </div>
-          </div>
-
-          {/* Shift-wise phone numbers */}
-          <div className="mb-3">
-            <label className="text-[10px] text-gray-500 uppercase mb-1 block">Operator Numbers (shift-wise)</label>
-            <div className="grid grid-cols-3 gap-2">
-              <div>
-                <label className="text-[9px] text-blue-600 font-semibold">Shift A (Morning)</label>
-                <input type="text" value={acShiftA} onChange={e => setAcShiftA(e.target.value)}
-                  placeholder="9131489373" className="border rounded px-2 py-1.5 w-full text-sm" disabled={!isAdmin} />
-              </div>
-              <div>
-                <label className="text-[9px] text-amber-600 font-semibold">Shift B (Evening)</label>
-                <input type="text" value={acShiftB} onChange={e => setAcShiftB(e.target.value)}
-                  placeholder="Phone" className="border rounded px-2 py-1.5 w-full text-sm" disabled={!isAdmin} />
-              </div>
-              <div>
-                <label className="text-[9px] text-purple-600 font-semibold">Shift C (Night)</label>
-                <input type="text" value={acShiftC} onChange={e => setAcShiftC(e.target.value)}
-                  placeholder="Phone" className="border rounded px-2 py-1.5 w-full text-sm" disabled={!isAdmin} />
-              </div>
-            </div>
-            <p className="text-[9px] text-gray-400 mt-1">Bot auto-picks the right number based on current shift time</p>
-          </div>
-
-          {/* Enable + Save */}
-          <div className="flex items-center gap-3 mb-3">
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input type="checkbox" checked={acEnabled} onChange={e => setAcEnabled(e.target.checked)}
-                disabled={!isAdmin} className="w-4 h-4" />
-              <span className={acEnabled ? 'text-green-700 font-semibold' : 'text-gray-500'}>
-                {acEnabled ? 'Enabled' : 'Disabled'}
-              </span>
-            </label>
-          </div>
-
-          <div className="flex gap-2 flex-wrap">
-            <button onClick={async () => {
-              const phone = [acShiftA, acShiftB, acShiftC].filter(Boolean).join(',');
-              if (!phone) { setAcStatus('Add at least one phone number'); return; }
-              try {
-                await api.post('/auto-collect/schedules', {
-                  schedules: [{ module: acModule, phone, intervalMinutes: parseInt(acInterval) || 120, enabled: acEnabled }]
-                });
-                setAcStatus('✅ Schedule saved');
-              } catch (err: any) { setAcStatus('❌ ' + (err.response?.data?.error || 'Failed')); }
-              setTimeout(() => setAcStatus(''), 3000);
-            }} disabled={!isAdmin} className="px-3 py-1.5 bg-purple-600 text-white rounded text-xs font-medium hover:bg-purple-700 disabled:opacity-50">
-              Save Schedule
-            </button>
-            <button onClick={async () => {
-              // Determine current shift phone
-              const hr = new Date().getHours();
-              const phone = hr >= 6 && hr < 14 ? acShiftA : hr >= 14 && hr < 22 ? acShiftB : acShiftC;
-              if (!phone) { setAcStatus('No phone for current shift'); return; }
-              try {
-                const r = await api.post('/auto-collect/trigger', { phone, module: acModule });
-                setAcStatus(r.data.success ? `✅ Sent to ${phone}! Check WhatsApp.` : '❌ ' + r.data.error);
-              } catch (err: any) { setAcStatus('❌ ' + (err.response?.data?.error || 'Failed')); }
-              setTimeout(() => setAcStatus(''), 5000);
-            }} disabled={!isAdmin || (!acShiftA && !acShiftB && !acShiftC)} className="px-3 py-1.5 bg-green-600 text-white rounded text-xs font-medium hover:bg-green-700 disabled:opacity-50">
-              Test Now (Current Shift)
-            </button>
-          </div>
-          {acStatus && <p className="text-xs mt-2 text-purple-700">{acStatus}</p>}
-
-          {activeSessions.length > 0 && (
-            <div className="mt-3 border-t pt-2">
-              <p className="text-[10px] text-gray-500 uppercase mb-1">Active Sessions</p>
-              {activeSessions.map((s: any, i: number) => (
-                <div key={i} className="text-xs text-purple-700">
-                  {s.phone} — {s.module} — step {s.step}/{s.totalSteps}
-                </div>
-              ))}
-            </div>
-          )}
         </div>
 
         {isAdmin && (
