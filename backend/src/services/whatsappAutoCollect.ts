@@ -77,8 +77,22 @@ export async function startCollection(phone: string, moduleName: string): Promis
 /**
  * Handle incoming message — check if it's a reply to an active session
  */
-async function handleIncoming(phone: string, text: string, _name: string | null): Promise<boolean> {
-  const session = activeSessions.get(phone);
+async function handleIncoming(rawPhone: string, text: string, _name: string | null): Promise<boolean> {
+  // Try direct match first, then resolve @lid by finding matching active session
+  let phone = rawPhone;
+  let session = activeSessions.get(phone);
+  if (!session && rawPhone.includes('@lid')) {
+    // Unknown LID — try to match against active sessions
+    // This handles WhatsApp multi-device where replies come from LID JIDs
+    for (const [sessPhone, sess] of activeSessions.entries()) {
+      if (new Date() <= sess.expiresAt) {
+        phone = sessPhone;
+        session = sess;
+        console.log(`[AutoCollect] Matched LID ${rawPhone} → session ${sessPhone}`);
+        break;
+      }
+    }
+  }
   if (!session) return false;
 
   // Check expiry
