@@ -1029,16 +1029,19 @@ export default function Fermentation() {
                 {/* TAB: Charts */}
                 {tab === 'charts' && !isBW && (() => {
                   const fb = batch as FermBatch | undefined;
-                  // Build chart data with proper timestamps
-                  const chartData = readings.map(r => ({
-                    time: fmtTime(r.analysisTime || r.createdAt),
-                    ts: new Date(r.analysisTime || r.createdAt).getTime(),
-                    sg: r.spGravity ?? undefined,
-                    alc: r.alcohol ?? undefined,
-                    level: r.level ?? undefined,
-                    ph: r.ph ?? undefined,
-                    temp: r.temp ?? undefined,
-                  })).sort((a, b) => a.ts - b.ts);
+                  // Build chart data with proper timestamps — include date if multi-day
+                  const rawChart = readings.map(r => {
+                    const d = new Date(r.analysisTime || r.createdAt);
+                    return { d, ts: d.getTime(), sg: r.spGravity ?? undefined, alc: r.alcohol ?? undefined, level: r.level ?? undefined, ph: r.ph ?? undefined, temp: r.temp ?? undefined };
+                  }).sort((a, b) => a.ts - b.ts);
+                  // Check if data spans multiple days
+                  const multiDay = rawChart.length > 1 && new Date(rawChart[0].ts).toDateString() !== new Date(rawChart[rawChart.length - 1].ts).toDateString();
+                  const chartData = rawChart.map(r => ({
+                    ...r,
+                    time: multiDay
+                      ? r.d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) + ' ' + r.d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
+                      : r.d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                  }));
 
                   // Phase transition timestamps for reference lines
                   const phaseMarkers: { time: string; label: string; color: string }[] = [];

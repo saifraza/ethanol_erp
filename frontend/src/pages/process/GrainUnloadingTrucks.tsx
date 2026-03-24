@@ -128,9 +128,9 @@ export default function GrainUnloadingTrucks() {
         `🚛 *Truck Unloaded* — ${now}`,
         `Vehicle: ${vehicleNo || '—'}`,
         supplier ? `Supplier: ${supplier}` : '',
-        `Gross: ${weightGross} kg · Tare: ${weightTare} kg`,
-        `Net: ${netWt} kg${qw > 0 ? ` · Quarantine: ${qw} kg` : ''}`,
-        `To Silo: ${toSiloWt} kg`,
+        `Gross: ${weightGross} Ton · Tare: ${weightTare} Ton`,
+        `Net: ${netWt} Ton${qw > 0 ? ` · Quarantine: ${qw} Ton` : ''}`,
+        `To Silo: ${toSiloWt} Ton`,
         moisture ? `Moisture: ${moisture}%` : '',
         starchPercent ? `Starch: ${starchPercent}%` : '',
         damagedPercent ? `Damaged: ${damagedPercent}%` : '',
@@ -138,7 +138,7 @@ export default function GrainUnloadingTrucks() {
         bags ? `Bags: ${bags}` : '',
         remarks ? `Remarks: ${remarks}` : '',
         '',
-        `📊 Today: ${truckList.length} trucks · ${totalNetToday.toFixed(2)} kg to silo`,
+        `📊 Today: ${truckList.length} trucks · ${totalNetToday.toFixed(2)} Ton to silo`,
       ].filter(Boolean).join('\n');
 
       api.post('/whatsapp/send-report', { message: waLines, module: 'grain' }).catch(() => {});
@@ -217,9 +217,9 @@ export default function GrainUnloadingTrucks() {
   function shareWhatsApp() {
     const lines = trucks.map((t, i) => {
       const tSilo = t.weightNet - (t.quarantineWeight || 0);
-      return `${i+1}. ${t.uidRst ? `[${t.uidRst}] ` : ''}${t.vehicleNo} | ${t.supplier || '-'} | Net: ${t.weightNet.toFixed(1)} kg → Silo: ${tSilo.toFixed(1)} kg${t.quarantineWeight > 0 ? ` | Q: ${t.quarantineWeight.toFixed(1)} kg` : ''}`;
+      return `${i+1}. ${t.uidRst ? `[${t.uidRst}] ` : ''}${t.vehicleNo} | ${t.supplier || '-'} | Net: ${t.weightNet.toFixed(1)} Ton → Silo: ${tSilo.toFixed(1)} Ton${t.quarantineWeight > 0 ? ` | Q: ${t.quarantineWeight.toFixed(1)} Ton` : ''}`;
     }).join('\n');
-    const text = `*Grain Unloading Report*\n📅 ${date}\n\n${lines}\n\n*To Silo: ${totalNet.toFixed(1)} kg (${truckCount} trucks)*${quarantineTotal > 0 ? `\n⚠️ Quarantine: ${quarantineTotal.toFixed(1)} kg` : ''}`;
+    const text = `*Grain Unloading Report*\n📅 ${date}\n\n${lines}\n\n*To Silo: ${totalNet.toFixed(1)} Ton (${truckCount} trucks)*${quarantineTotal > 0 ? `\n⚠️ Quarantine: ${quarantineTotal.toFixed(1)} Ton` : ''}`;
 
     api.post('/whatsapp/send-report', { message: text, module: 'grain' }).catch(() => {});
   }
@@ -246,13 +246,13 @@ export default function GrainUnloadingTrucks() {
         </div>
         <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2">
           <div className="text-[10px] text-amber-400 uppercase">To Silo</div>
-          <div className="text-lg font-bold text-amber-700">{totalNet.toFixed(1)} kg</div>
+          <div className="text-lg font-bold text-amber-700">{totalNet.toFixed(1)} Ton</div>
           <div className="text-[10px] text-gray-500">{truckCount} truck{truckCount !== 1 ? 's' : ''}</div>
         </div>
         {quarantineTotal > 0 && (
           <div className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-2">
             <div className="text-[10px] text-orange-400 uppercase flex items-center gap-1"><AlertTriangle size={10} /> Quarantine</div>
-            <div className="text-lg font-bold text-orange-700">{quarantineTotal.toFixed(1)} kg</div>
+            <div className="text-lg font-bold text-orange-700">{quarantineTotal.toFixed(1)} Ton</div>
           </div>
         )}
       </div>
@@ -295,17 +295,17 @@ export default function GrainUnloadingTrucks() {
                 className="border rounded px-2 py-2 w-full text-sm" />
             </div>
             <div>
-              <label className="text-[10px] text-gray-400">Gross Weight (kg)</label>
+              <label className="text-[10px] text-gray-400">Gross Weight (Ton)</label>
               <input type="number" step="any" min="0" value={weightGross} onChange={e => setWeightGross(e.target.value)}
                 className="border rounded px-2 py-2 w-full text-sm" />
             </div>
             <div>
-              <label className="text-[10px] text-gray-400">Tare Weight (kg)</label>
+              <label className="text-[10px] text-gray-400">Tare Weight (Ton)</label>
               <input type="number" step="any" min="0" value={weightTare} onChange={e => setWeightTare(e.target.value)}
                 className="border rounded px-2 py-2 w-full text-sm" />
             </div>
             <div>
-              <label className="text-[10px] text-gray-400">Net Weight (kg)</label>
+              <label className="text-[10px] text-gray-400">Net Weight (Ton)</label>
               <div className="border rounded px-2 py-2 w-full text-sm bg-gray-50 font-semibold text-amber-700">
                 {net > 0 ? net.toFixed(2) : '—'}
               </div>
@@ -324,7 +324,7 @@ export default function GrainUnloadingTrucks() {
           {/* Quarantine (partial) */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
             <div>
-              <label className="text-[10px] text-orange-500 font-medium flex items-center gap-1"><AlertTriangle size={10} /> Rejected/Quarantine (kg)</label>
+              <label className="text-[10px] text-orange-500 font-medium flex items-center gap-1"><AlertTriangle size={10} /> Rejected/Quarantine (Ton)</label>
               <input type="number" step="any" min="0" value={quarantineWeight} onChange={e => setQuarantineWeight(e.target.value)}
                 className="border border-orange-200 rounded px-2 py-2 w-full text-sm bg-orange-50" placeholder="0 = none" />
               {validationError && (
@@ -332,7 +332,7 @@ export default function GrainUnloadingTrucks() {
               )}
             </div>
             <div>
-              <label className="text-[10px] text-green-600 font-medium">To Silo (kg)</label>
+              <label className="text-[10px] text-green-600 font-medium">To Silo (Ton)</label>
               <div className="border rounded px-2 py-2 w-full text-sm bg-green-50 font-semibold text-green-700">
                 {toSilo > 0 ? toSilo.toFixed(2) : '—'}
               </div>
@@ -435,10 +435,10 @@ export default function GrainUnloadingTrucks() {
                 </div>
                 <div className="text-xs text-gray-600">
                   {t.supplier && <span>{t.supplier} • </span>}
-                  <span>Gross: {t.weightGross} kg • Tare: {t.weightTare} kg • Net: {t.weightNet.toFixed(1)} kg</span>
+                  <span>Gross: {t.weightGross} Ton • Tare: {t.weightTare} Ton • Net: {t.weightNet.toFixed(1)} Ton</span>
                   {t.bags > 0 && <span> • {t.bags} bags</span>}
-                  {t.quarantineWeight > 0 && <span className="text-orange-600"> • Q: {t.quarantineWeight.toFixed(1)} kg</span>}
-                  <span className="font-semibold text-green-700"> → Silo: {tToSilo.toFixed(1)} kg</span>
+                  {t.quarantineWeight > 0 && <span className="text-orange-600"> • Q: {t.quarantineWeight.toFixed(1)} Ton</span>}
+                  <span className="font-semibold text-green-700"> → Silo: {tToSilo.toFixed(1)} Ton</span>
                 </div>
                 {t.moisture != null && (
                   <div className="text-[11px] text-gray-400 mt-0.5">
@@ -451,7 +451,7 @@ export default function GrainUnloadingTrucks() {
               <div className="flex items-center gap-2">
                 <button onClick={() => {
                   const tSilo = t.weightNet - (t.quarantineWeight || 0);
-                  const text = `*Grain Truck*\n${t.uidRst ? `UID/RST: ${t.uidRst}\n` : ''}Vehicle: ${t.vehicleNo}\n${t.supplier ? `Supplier: ${t.supplier}\n` : ''}Gross: ${t.weightGross} kg | Tare: ${t.weightTare} kg | Net: ${t.weightNet.toFixed(1)} kg${t.bags > 0 ? ` | Bags: ${t.bags}` : ''}\nTo Silo: ${tSilo.toFixed(1)} kg${t.quarantineWeight > 0 ? ` | Quarantine: ${t.quarantineWeight.toFixed(1)} kg` : ''}${t.moisture != null ? `\nM: ${t.moisture}%` : ''}${t.starchPercent != null ? ` | S: ${t.starchPercent}%` : ''}${t.damagedPercent != null ? ` | D: ${t.damagedPercent}%` : ''}${t.foreignMatter != null ? ` | FM: ${t.foreignMatter}%` : ''}${t.quarantineReason ? `\nReason: ${t.quarantineReason}` : ''}${t.remarks ? `\nRemarks: ${t.remarks}` : ''}`;
+                  const text = `*Grain Truck*\n${t.uidRst ? `UID/RST: ${t.uidRst}\n` : ''}Vehicle: ${t.vehicleNo}\n${t.supplier ? `Supplier: ${t.supplier}\n` : ''}Gross: ${t.weightGross} Ton | Tare: ${t.weightTare} Ton | Net: ${t.weightNet.toFixed(1)} Ton${t.bags > 0 ? ` | Bags: ${t.bags}` : ''}\nTo Silo: ${tSilo.toFixed(1)} Ton${t.quarantineWeight > 0 ? ` | Quarantine: ${t.quarantineWeight.toFixed(1)} Ton` : ''}${t.moisture != null ? `\nM: ${t.moisture}%` : ''}${t.starchPercent != null ? ` | S: ${t.starchPercent}%` : ''}${t.damagedPercent != null ? ` | D: ${t.damagedPercent}%` : ''}${t.foreignMatter != null ? ` | FM: ${t.foreignMatter}%` : ''}${t.quarantineReason ? `\nReason: ${t.quarantineReason}` : ''}${t.remarks ? `\nRemarks: ${t.remarks}` : ''}`;
                   api.post('/whatsapp/send-report', { message: text, module: 'grain' }).catch(() => {});
                 }} className="text-green-500 hover:text-green-700"><Share2 size={14} /></button>
                 {t.photoUrl && (
@@ -496,8 +496,8 @@ export default function GrainUnloadingTrucks() {
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-semibold text-gray-700">{fmtDt(dateKey)}</span>
                     <span className="text-xs font-bold text-amber-600">
-                      {dayTotal.toFixed(1)} kg — {items.length} trucks
-                      {dayQ > 0 && <span className="text-orange-500 ml-2">Q: {dayQ.toFixed(1)} kg</span>}
+                      {dayTotal.toFixed(1)} Ton — {items.length} trucks
+                      {dayQ > 0 && <span className="text-orange-500 ml-2">Q: {dayQ.toFixed(1)} Ton</span>}
                     </span>
                   </div>
                   <div className="space-y-1">
@@ -505,7 +505,7 @@ export default function GrainUnloadingTrucks() {
                       <div key={t.id} className="text-xs text-gray-600 flex justify-between items-center">
                         <span>{t.vehicleNo} → {t.supplier || '-'}{t.quarantine ? ' ⚠️' : ''}</span>
                         <span className="flex items-center gap-2">
-                          <span className="font-medium">{t.weightNet.toFixed(1)} kg</span>
+                          <span className="font-medium">{t.weightNet.toFixed(1)} Ton</span>
                           {isAdmin && <button onClick={() => handleDelete(t.id)}
                             className="text-red-300 hover:text-red-600"><Trash2 size={12} /></button>}
                         </span>

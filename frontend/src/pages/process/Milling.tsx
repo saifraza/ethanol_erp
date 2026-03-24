@@ -36,8 +36,9 @@ function calcTotalCoarse(s1mm: number | null, s850: number | null): number {
 }
 
 // ─── Chart ───────────────────
-type ChartView = 'fine' | 'sieve' | 'rpm' | 'load' | 'particle';
+type ChartView = 'coarse' | 'fine' | 'sieve' | 'rpm' | 'load' | 'particle';
 const CHART_VIEWS: { key: ChartView; label: string }[] = [
+  { key: 'coarse', label: 'Total Coarse %' },
   { key: 'fine', label: 'Total Fine %' },
   { key: 'sieve', label: 'Sieve Breakdown' },
   { key: 'particle', label: 'Coarse & Fines' },
@@ -47,7 +48,7 @@ const CHART_VIEWS: { key: ChartView; label: string }[] = [
 const MILL_COLORS = { A: '#3b82f6', B: '#10b981', C: '#f59e0b' };
 
 function MillingChartInner({ entries }: { entries: any[] }) {
-  const [view, setView] = useState<ChartView>('fine');
+  const [view, setView] = useState<ChartView>('coarse');
   if (entries.length < 1) return null;
 
   const chartData = entries.map(e => ({
@@ -88,6 +89,45 @@ function MillingChartInner({ entries }: { entries: any[] }) {
           </button>
         ))}
       </div>
+
+      {/* Total Coarse % trend (1mm + 0.850mm) */}
+      {view === 'coarse' && (() => {
+        const coarseVals = chartData.map(d => d.coarse);
+        const avgCoarse = coarseVals.reduce((s, v) => s + v, 0) / coarseVals.length;
+        return (
+          <>
+            <ResponsiveContainer width="100%" height={280}>
+              <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} domain={['auto', 'auto']} unit="%" />
+                <Tooltip content={<CustomTooltip />} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <ReferenceLine y={avgCoarse} stroke="#6b7280" strokeDasharray="5 5" strokeOpacity={0.5} label={{ value: `avg ${avgCoarse.toFixed(1)}%`, fontSize: 10, fill: '#9ca3af' }} />
+                <Line type="monotone" dataKey="coarse" name="Total Coarse %" stroke="#f97316" strokeWidth={2.5} dot={{ r: 4, fill: '#f97316' }} activeDot={{ r: 6 }} />
+                <Line type="monotone" dataKey="s1mm" name="1.00mm" stroke="#ef4444" strokeWidth={1.5} dot={{ r: 2 }} strokeDasharray="4 2" />
+                <Line type="monotone" dataKey="s850" name="0.850mm" stroke="#f59e0b" strokeWidth={1.5} dot={{ r: 2 }} strokeDasharray="4 2" />
+              </LineChart>
+            </ResponsiveContainer>
+            {entries.length >= 2 && (
+              <div className="flex items-center justify-center gap-8 mt-3 pt-3 border-t">
+                <div className="text-center">
+                  <p className="text-xs text-gray-400">Average</p>
+                  <p className="text-xl font-bold text-orange-500">{avgCoarse.toFixed(2)}%</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-gray-400">Min</p>
+                  <p className="text-lg font-semibold text-green-600">{Math.min(...coarseVals).toFixed(2)}%</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-gray-400">Max</p>
+                  <p className="text-lg font-semibold text-red-500">{Math.max(...coarseVals).toFixed(2)}%</p>
+                </div>
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       {/* Total Fine % trend */}
       {view === 'fine' && (
