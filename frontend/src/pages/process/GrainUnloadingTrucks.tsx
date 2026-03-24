@@ -128,9 +128,9 @@ export default function GrainUnloadingTrucks() {
         `🚛 *Truck Unloaded* — ${now}`,
         `Vehicle: ${vehicleNo || '—'}`,
         supplier ? `Supplier: ${supplier}` : '',
-        `Gross: ${weightGross} kg · Tare: ${weightTare} kg`,
-        `Net: ${netWt} kg${qw > 0 ? ` · Quarantine: ${qw} kg` : ''}`,
-        `To Silo: ${toSiloWt} kg`,
+        `Gross: ${weightGross} T · Tare: ${weightTare} T`,
+        `Net: ${netWt} T${qw > 0 ? ` · Quarantine: ${qw} T` : ''}`,
+        `To Silo: ${toSiloWt} T`,
         moisture ? `Moisture: ${moisture}%` : '',
         starchPercent ? `Starch: ${starchPercent}%` : '',
         damagedPercent ? `Damaged: ${damagedPercent}%` : '',
@@ -138,7 +138,7 @@ export default function GrainUnloadingTrucks() {
         bags ? `Bags: ${bags}` : '',
         remarks ? `Remarks: ${remarks}` : '',
         '',
-        `📊 Today: ${truckList.length} trucks · ${(totalNetToday / 1000).toFixed(2)} MT to silo`,
+        `📊 Today: ${truckList.length} trucks · ${totalNetToday.toFixed(2)} MT to silo`,
       ].filter(Boolean).join('\n');
 
       api.post('/whatsapp/send-report', { message: waLines, module: 'grain' }).catch(() => {});
