@@ -1037,7 +1037,11 @@ export default function Fermentation() {
                                     {r.spGravity != null && <span className="text-indigo-700 font-bold bg-indigo-50 px-1.5 py-0.5 rounded">SG {typeof r.spGravity === 'number' ? r.spGravity.toFixed(3) : r.spGravity}</span>}
                                     {r.ph != null && <span className="text-gray-700 font-semibold">pH {r.ph}</span>}
                                     {r.temp != null && <span className={`font-bold px-1.5 py-0.5 rounded ${(r.temp || 0) > 37 ? 'text-red-700 bg-red-50' : 'text-orange-700 bg-orange-50'}`}>{r.temp}°C</span>}
-                                    {r.alcohol != null && <span className="text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded">{r.alcohol}%</span>}
+                                    {r.alcohol != null && <span className="text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded">Alc {r.alcohol}%</span>}
+                                    {r.rs != null && <span className="text-amber-700 font-bold bg-amber-50 px-1.5 py-0.5 rounded">RS {r.rs}</span>}
+                                    {r.rst != null && <span className="text-amber-600 font-semibold bg-amber-50 px-1.5 py-0.5 rounded">RST {r.rst}</span>}
+                                    {r.ds != null && <span className="text-purple-700 font-semibold bg-purple-50 px-1.5 py-0.5 rounded">DS {r.ds}%</span>}
+                                    {r.vfaPpa != null && <span className="text-rose-700 font-semibold bg-rose-50 px-1.5 py-0.5 rounded">VFA {r.vfaPpa}</span>}
                                     {r.status === 'FIELD' && <span className="text-[9px] bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded font-bold">FIELD</span>}
                                   </div>
                                   {r.id && (

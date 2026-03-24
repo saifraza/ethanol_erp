@@ -161,15 +161,16 @@ async function handleIncoming(rawPhone: string, text: string, _name: string | nu
       const summary = config.buildSummary(session.collectedData);
 
       // Confirm to operator (group or private)
+      const istNow = nowIST();
+      const istTimeStr = `${String(istNow.getUTCHours() % 12 || 12).padStart(2, '0')}:${String(istNow.getUTCMinutes()).padStart(2, '0')} ${istNow.getUTCHours() >= 12 ? 'pm' : 'am'}`;
       await sendSessionMessage(session,
-        `✅ *All ${config.displayName} readings saved!*\n\n${confirm}\n\n📊 *Complete Entry:*\n${summary}\n\n_Saved to ERP at ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}_`
+        `✅ *All ${config.displayName} readings saved!*\n\n${confirm}\n\n📊 *Complete Entry:*\n${summary}\n\n_Saved to ERP at ${istTimeStr}_`
       );
 
       // Share to WhatsApp group + private numbers (only if autoShare enabled)
       if (session.autoShare) {
         try {
-          const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-          const fullReport = `📊 *${config.displayName} Report* — ${now}\n\n${summary}\n\n_Auto-collected via WhatsApp_`;
+          const fullReport = `📊 *${config.displayName} Report* — ${istTimeStr}\n\n${summary}\n\n_Auto-collected via WhatsApp_`;
           const settings = await prisma.settings.findFirst();
 
           // Send report to group (unless module is privateOnly)

@@ -93,9 +93,13 @@ function buildErrorHint(step: CollectStep): string {
 
 async function saveData(data: Record<string, number>): Promise<void> {
   const now = new Date();
+  const ist = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
+  const hh = ist.getUTCHours();
+  const mm = ist.getUTCMinutes();
+  const entryTime = `${String(hh % 12 || 12).padStart(2, '0')}:${String(mm).padStart(2, '0')} ${hh >= 12 ? 'pm' : 'am'}`;
   const entry: Record<string, string | number | Date | null> = {
     date: now,
-    entryTime: now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
+    entryTime,
     remark: 'Auto-collected via WhatsApp',
     userId: 'system',
   };
