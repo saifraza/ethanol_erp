@@ -3,6 +3,7 @@ import { config } from './config';
 import prisma from './config/prisma';
 import bcrypt from 'bcryptjs';
 import { initWhatsApp } from './services/whatsappBaileys';
+import { initAutoCollect } from './services/whatsappAutoCollect';
 
 // Prevent crashes from killing the server
 process.on('uncaughtException', (err) => {
@@ -37,5 +38,7 @@ const server = app.listen(PORT, HOST, async () => {
   await autoSeed();
   // Auto-reconnect WhatsApp if session exists in DB
   initWhatsApp().catch((err) => console.error('[WA] Init error:', err));
+  // Start WhatsApp auto-collection scheduler
+  initAutoCollect().catch((err) => console.error('[AutoCollect] Init error:', err));
 });
 

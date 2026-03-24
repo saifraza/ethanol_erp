@@ -179,6 +179,16 @@ router.post(
 
     const sent = results.filter((r) => r.success).length;
     const failed = results.filter((r) => !r.success).length;
+
+    if (results.length === 0) {
+      const reason = isGroup ? 'No WhatsApp group configured. Set group in Settings.' :
+                     isPrivate ? 'No private numbers configured. Add numbers in Settings.' :
+                     'No recipients configured.';
+      console.log(`[WA] send-report: No targets for module "${mod}" — ${reason}`);
+      res.status(400).json({ error: reason, sent: 0, failed: 0, total: 0, results: [] });
+      return;
+    }
+
     res.json({ sent, failed, total: results.length, results });
   })
 );

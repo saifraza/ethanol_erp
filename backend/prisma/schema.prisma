@@ -91,6 +91,7 @@ model Settings {
   whatsappGroupJid      String?  // WhatsApp group JID for production reports
   whatsappGroupName     String?  // Group name (display only)
   whatsappPrivateModules String? // JSON array of module names routed to private numbers only
+  autoCollectConfig     String?  // JSON config for WhatsApp auto-collection schedules
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 }

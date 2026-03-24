@@ -41,6 +41,21 @@ let connectionStatus: 'disconnected' | 'connecting' | 'connected' = 'disconnecte
 let retryCount = 0;
 const MAX_RETRIES = 5;
 
+// ── Incoming message handlers ──
+// External services (like auto-collect) can register handlers.
+// If any handler returns true, the message is considered "handled".
+type IncomingHandler = (phone: string, text: string, name: string | null) => Promise<boolean>;
+const incomingHandlers: IncomingHandler[] = [];
+
+export function registerIncomingHandler(handler: IncomingHandler): void {
+  incomingHandlers.push(handler);
+}
+
+export function removeIncomingHandler(handler: IncomingHandler): void {
+  const idx = incomingHandlers.indexOf(handler);
+  if (idx >= 0) incomingHandlers.splice(idx, 1);
+}
+
 // ── DB-backed Auth State Store ──
 
 async function loadAuthFromDB(): Promise<any | null> {
@@ -215,6 +230,16 @@ export async function connectWhatsApp(): Promise<void> {
           console.log(`[WA-Baileys] Incoming from ${phone}: ${text.slice(0, 50)}`);
         } catch (err) {
           console.error('[WA-Baileys] Failed to save incoming msg:', err);
+        }
+
+        // Notify registered handlers (e.g. auto-collect)
+        for (const handler of incomingHandlers) {
+          try {
+            const handled = await handler(phone, text, name);
+            if (handled) break; // stop after first handler claims it
+          } catch (herr) {
+            console.error('[WA-Baileys] Handler error:', herr);
+          }
         }
       }
     });

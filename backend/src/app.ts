@@ -63,6 +63,7 @@ import ethanolContractRoutes from './routes/ethanolContracts';
 import accountsRoutes from './routes/accounts';
 // WhatsApp (Baileys QR)
 import whatsappRoutes from './routes/whatsapp';
+import autoCollectRoutes from './routes/whatsappAutoCollect';
 
 
 const app = express();
@@ -151,6 +152,7 @@ app.use('/api/ethanol-contracts', ethanolContractRoutes);
 app.use('/api/accounts', accountsRoutes);
 // WhatsApp (Baileys QR)
 app.use('/api/whatsapp', whatsappRoutes);
+app.use('/api/auto-collect', autoCollectRoutes);
 
 
 // Serve uploaded files

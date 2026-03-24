@@ -260,7 +260,8 @@ export default function Milling() {
           await api.post('/whatsapp/send-report', { message: text, module: 'milling' });
           setMsg({ type: 'ok', text: `Saved at ${now} and shared via WhatsApp` });
         } catch (shareErr: any) {
-          setMsg({ type: 'ok', text: `Saved at ${now}, but sharing failed. Please try again.` });
+          const errMsg = shareErr.response?.data?.error || 'Sharing failed';
+          setMsg({ type: 'err', text: `Saved at ${now}, but ${errMsg}` });
         }
       } else {
         setMsg({ type: 'ok', text: `Saved at ${now}` });

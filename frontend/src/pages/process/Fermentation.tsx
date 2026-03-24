@@ -406,28 +406,28 @@ export default function Fermentation() {
 
   const buildVesselReport = (v: Vessel, batch: any, formReading?: Record<string, string>): string => {
     const lines: string[] = [];
-    const cfg = phCfg(batch?.phase || 'IDLE');
-    lines.push(`🧪 *${v.label}*${batch ? ` — B#${batch.batchNo} · ${cfg.label}` : ' — Idle'}`);
+    const status = batch ? phCfg(batch.phase).label.toUpperCase() : 'EMPTY';
+    const typeLabel = v.type === 'PF' ? 'PF' : v.type === 'BW' ? 'Beerwell' : 'Fermenter';
+    lines.push(`*${typeLabel} = ${String(v.no).padStart(2, '0')} (${status})*`);
     if (!batch) return lines.join('\n');
 
-    const startTime = v.type === 'PF' ? (batch.setupTime || batch.createdAt) : (batch.pfTransferTime || batch.fillingStartTime);
-    if (startTime) lines.push(`${elapsed(startTime)} ago`);
+    lines.push(`Batch = ${batch.batchNo}`);
 
     // Use form reading if provided, otherwise latest from state
     const r = formReading ? null : getLatestReading(v, batch);
-    const level = formReading?.level || (r?.level != null ? String(r.level) : '') || (batch.fermLevel ? String(batch.fermLevel) : '');
-    const sg = formReading?.spGravity || (r?.spGravity != null ? String(r.spGravity) : '') || (batch.setupGravity ? String(batch.setupGravity) : '');
+    const sg = formReading?.spGravity || (r?.spGravity != null ? String(r.spGravity) : '') || (batch.setupGravity ? String(batch.setupGravity) : '') || (batch.slurryGravity ? String(batch.slurryGravity) : '');
     const ph = formReading?.ph || (r?.ph != null ? String(r.ph) : '');
     const temp = formReading?.temp || (r?.temp != null ? String(r.temp) : '');
+    const level = formReading?.level || (r?.level != null ? String(r.level) : '') || (batch.fermLevel ? String(batch.fermLevel) : '');
     const alc = formReading?.alcohol || (r?.alcohol != null ? String(r.alcohol) : '');
     const rs = formReading?.rs || (r?.rs != null ? String(r.rs) : '');
 
-    if (level) lines.push(`Level: ${level}%`);
-    if (sg) lines.push(`SG: ${sg}`);
-    if (ph) lines.push(`pH: ${ph}`);
-    if (temp) lines.push(`Temp: ${temp}°C`);
-    if (alc) lines.push(`Alc: ${alc}%`);
-    if (rs) lines.push(`RS: ${rs}%`);
+    lines.push(`Sp Gravity = ${sg || '—'}`);
+    lines.push(`pH = ${ph || '—'}`);
+    lines.push(`Temp = ${temp || '—'}`);
+    lines.push(`Level = ${level ? `${level}%` : '—'}`);
+    if (alc) lines.push(`Alcohol = ${alc}%`);
+    if (rs) lines.push(`RS = ${rs}%`);
 
     return lines.join('\n');
   };
@@ -443,27 +443,63 @@ export default function Fermentation() {
   };
 
   const shareAllFermentation = async () => {
-    const lines: string[] = [`*🏭 Fermentation Status*`, `${new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}`, ''];
-    for (const v of ALL_VESSELS) {
-      const batch = v.type === 'PF' ? getActivePF(v.no) : v.type === 'FERM' ? getActiveFerm(v.no) : null;
-      if (v.type === 'BW') {
-        const bw = getBW(v.no);
-        lines.push(`📦 *BW-${v.no}*: ${bw[0]?.level ? `Lvl ${bw[0].level}%` : '—'}${bw[0]?.alcohol ? ` · Alc ${bw[0].alcohol}%` : ''}`);
-        continue;
-      }
-      if (!batch) { lines.push(`${v.label}: Idle`); continue; }
+    const now = new Date();
+    const time = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+    const date = now.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const lines: string[] = [
+      `*Fermentation Section Report*`,
+      `*Time = ${time}*`,
+      `*Date = ${date}*`,
+    ];
 
-      const r = getLatestReading(v, batch);
-      const parts = [`*${v.label}* B#${batch.batchNo} · ${phCfg(batch.phase).label}`];
-      const sg = r?.spGravity ?? batch.setupGravity ?? batch.slurryGravity;
-      const level = r?.level ?? batch.fermLevel;
-      if (sg) parts.push(`SG ${sg}`);
-      if (level) parts.push(`Lvl ${level}%`);
-      if (r?.temp) parts.push(`${r.temp}°C`);
-      if (r?.alcohol) parts.push(`Alc ${r.alcohol}%`);
-      const st = batch.pfTransferTime || batch.fillingStartTime || batch.setupTime;
-      if (st) parts.push(elapsed(st));
-      lines.push(parts.join(' · '));
+    // Fermenters first
+    for (const v of ALL_VESSELS.filter(v => v.type === 'FERM')) {
+      const batch = getActiveFerm(v.no);
+      const status = batch ? phCfg(batch.phase).label.toUpperCase() : 'EMPTY';
+      lines.push(`*Fermenter = ${String(v.no).padStart(2, '0')} (${status})*`);
+      lines.push(`Batch = ${batch?.batchNo || '—'}`);
+      if (batch) {
+        const r = getLatestReading(v, batch);
+        const sg = r?.spGravity ?? batch.setupGravity;
+        const ph = r?.ph;
+        const temp = r?.temp;
+        const level = r?.level ?? batch.fermLevel;
+        const alc = r?.alcohol;
+        const rs = r?.rs;
+        lines.push(`Sp Gravity = ${sg ?? '—'}`);
+        lines.push(`pH = ${ph ?? '—'}`);
+        lines.push(`Temp = ${temp ?? '—'}`);
+        lines.push(`Level = ${level ? `${level}%` : '—'}`);
+        if (alc) lines.push(`Alcohol = ${alc}%`);
+        if (rs) lines.push(`RS = ${rs}%`);
+      } else {
+        lines.push(`Sp Gravity =`);
+        lines.push(`pH =`);
+        lines.push(`Temp =`);
+        lines.push(`Level =`);
+      }
+    }
+
+    // PF vessels
+    for (const v of ALL_VESSELS.filter(v => v.type === 'PF')) {
+      const batch = getActivePF(v.no);
+      const status = batch ? phCfg(batch.phase).label.toUpperCase() : 'EMPTY';
+      lines.push(`*PF = ${String(v.no).padStart(2, '0')} (${status})*`);
+      if (batch) {
+        const r = getLatestReading(v, batch);
+        const sg = r?.spGravity ?? batch.slurryGravity;
+        lines.push(`Gravity = ${sg ?? '—'}`);
+        if (r?.ph) lines.push(`pH = ${r.ph}`);
+        if (r?.temp) lines.push(`Temp = ${r.temp}`);
+        if (r?.level || batch.pfLevel) lines.push(`Level = ${r?.level ?? batch.pfLevel}%`);
+      }
+    }
+
+    // Beerwell
+    for (const v of ALL_VESSELS.filter(v => v.type === 'BW')) {
+      const bw = getBW(v.no);
+      lines.push(`*Beerwell Level = ${bw[0]?.level ?? '—'}${bw[0]?.level ? '%' : ''}*`);
+      if (bw[0]?.alcohol) lines.push(`Beerwell Alcohol = ${bw[0].alcohol}%`);
     }
 
     try {

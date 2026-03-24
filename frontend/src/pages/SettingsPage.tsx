@@ -28,6 +28,14 @@ export default function SettingsPage() {
   const [allModules, setAllModules] = useState<string[]>([]);
   const [privateModules, setPrivateModules] = useState<string[]>([]);
 
+  // Auto-collect state
+  const [autoCollectPhone, setAutoCollectPhone] = useState('');
+  const [autoCollectInterval, setAutoCollectInterval] = useState('120');
+  const [autoCollectEnabled, setAutoCollectEnabled] = useState(false);
+  const [autoCollectModule, setAutoCollectModule] = useState('decanter');
+  const [autoCollectStatus, setAutoCollectStatus] = useState('');
+  const [activeSessions, setActiveSessions] = useState<any[]>([]);
+
   const fetchWAStatus = useCallback(async () => {
     try {
       const res = await api.get('/whatsapp/status');
@@ -107,6 +115,17 @@ export default function SettingsPage() {
       // Only use defaults if nothing was saved in DB
       setPrivateModules(prev => prev.length > 0 ? prev : (savedPrivate || r.data.privateModules));
     }).catch(() => {});
+    // Load auto-collect schedules
+    api.get('/auto-collect/schedules').then(r => {
+      if (r.data && r.data.length > 0) {
+        const s = r.data[0];
+        setAutoCollectPhone(s.phone || '');
+        setAutoCollectInterval(String(s.intervalMinutes || 120));
+        setAutoCollectEnabled(s.enabled || false);
+        setAutoCollectModule(s.module || 'decanter');
+      }
+    }).catch(() => {});
+    api.get('/auto-collect/sessions').then(r => setActiveSessions(r.data || [])).catch(() => {});
   }, []);
 
   const togglePrivateModule = (mod: string) => {
@@ -350,6 +369,81 @@ export default function SettingsPage() {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Auto-Collection Section */}
+        <div className="mt-6 border rounded-lg p-4 bg-purple-50 border-purple-200">
+          <h3 className="text-sm font-bold text-purple-700 mb-3 flex items-center gap-2">
+            📊 WhatsApp Auto-Collection
+          </h3>
+          <p className="text-xs text-gray-500 mb-3">
+            Bot sends scheduled messages asking operators for readings. Operator replies → data auto-saved to ERP.
+          </p>
+
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div>
+              <label className="text-[10px] text-gray-500 uppercase">Module</label>
+              <select value={autoCollectModule} onChange={e => setAutoCollectModule(e.target.value)}
+                className="border rounded px-2 py-1.5 w-full text-sm" disabled={!isAdmin}>
+                <option value="decanter">Decanter</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-500 uppercase">Phone Number</label>
+              <input type="text" value={autoCollectPhone} onChange={e => setAutoCollectPhone(e.target.value)}
+                placeholder="9131489373" className="border rounded px-2 py-1.5 w-full text-sm" disabled={!isAdmin} />
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-500 uppercase">Interval (minutes)</label>
+              <input type="number" value={autoCollectInterval} onChange={e => setAutoCollectInterval(e.target.value)}
+                placeholder="120" className="border rounded px-2 py-1.5 w-full text-sm" disabled={!isAdmin} />
+            </div>
+            <div className="flex items-end">
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="checkbox" checked={autoCollectEnabled} onChange={e => setAutoCollectEnabled(e.target.checked)}
+                  disabled={!isAdmin} className="w-4 h-4" />
+                <span className={autoCollectEnabled ? 'text-green-700 font-semibold' : 'text-gray-500'}>
+                  {autoCollectEnabled ? 'Enabled' : 'Disabled'}
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <button onClick={async () => {
+              try {
+                await api.post('/auto-collect/schedules', {
+                  schedules: [{ module: autoCollectModule, phone: autoCollectPhone, intervalMinutes: parseInt(autoCollectInterval) || 120, enabled: autoCollectEnabled }]
+                });
+                setAutoCollectStatus('✅ Schedule saved');
+              } catch (err: any) { setAutoCollectStatus('❌ ' + (err.response?.data?.error || 'Failed')); }
+              setTimeout(() => setAutoCollectStatus(''), 3000);
+            }} disabled={!isAdmin} className="px-3 py-1.5 bg-purple-600 text-white rounded text-xs font-medium hover:bg-purple-700 disabled:opacity-50">
+              Save Schedule
+            </button>
+            <button onClick={async () => {
+              if (!autoCollectPhone) { setAutoCollectStatus('Enter a phone number first'); return; }
+              try {
+                const r = await api.post('/auto-collect/trigger', { phone: autoCollectPhone, module: autoCollectModule });
+                setAutoCollectStatus(r.data.success ? '✅ Collection started! Check WhatsApp.' : '❌ ' + r.data.error);
+              } catch (err: any) { setAutoCollectStatus('❌ ' + (err.response?.data?.error || 'Failed')); }
+              setTimeout(() => setAutoCollectStatus(''), 5000);
+            }} disabled={!isAdmin || !autoCollectPhone} className="px-3 py-1.5 bg-green-600 text-white rounded text-xs font-medium hover:bg-green-700 disabled:opacity-50">
+              Test Now
+            </button>
+          </div>
+          {autoCollectStatus && <p className="text-xs mt-2 text-purple-700">{autoCollectStatus}</p>}
+
+          {activeSessions.length > 0 && (
+            <div className="mt-3 border-t pt-2">
+              <p className="text-[10px] text-gray-500 uppercase mb-1">Active Sessions</p>
+              {activeSessions.map((s: any, i: number) => (
+                <div key={i} className="text-xs text-purple-700">
+                  {s.phone} — {s.module} — step {s.step}/{s.totalSteps}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {isAdmin && (
