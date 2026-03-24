@@ -90,8 +90,11 @@ function buildSummary(data: Record<string, number>): string {
   const totalKg = bags * weightPerBag;
   const totalTon = totalKg / 1000;
   const { labelFrom, labelTo } = getTimeWindow();
+  const ist = nowIST();
+  const serverTime = `${String(ist.getUTCHours() % 12 || 12).padStart(2, '0')}:${String(ist.getUTCMinutes()).padStart(2, '0')} ${ist.getUTCHours() >= 12 ? 'PM' : 'AM'}`;
   const lines = [
     `*Period:* ${labelFrom} – ${labelTo}`,
+    `*Saved at:* ${serverTime} (Server IST)`,
     `*Bags:* ${bags}`,
     `*Weight/Bag:* ${weightPerBag} kg`,
     `*Production:* ${totalKg.toFixed(0)} kg (${totalTon.toFixed(3)} Ton)`,
@@ -170,7 +173,7 @@ const ddgsConfig: ModuleConfig = {
   buildSummary,
   buildErrorHint,
   saveData,
-  privateOnly: true,
+  privateOnly: false,
 };
 
 export default ddgsConfig;
