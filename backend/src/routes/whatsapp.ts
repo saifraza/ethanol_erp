@@ -124,12 +124,18 @@ router.post(
     const isPrivate = privateModules.includes(mod);
     const isGroup = !isPrivate && ALL_MODULES.includes(mod);
 
+    console.log(`[WA-Route] send-report module="${mod}" isPrivate=${isPrivate} isGroup=${isGroup} groupJid=${(settings as any)?.whatsappGroupJid || 'NONE'} privateModules=${JSON.stringify(privateModules)}`);
+
     // Send to group if module is a group module (or unknown defaults to both)
     if (isGroup || (!isPrivate && !isGroup)) {
       const groupJid = (settings as any)?.whatsappGroupJid;
       if (groupJid) {
+        console.log(`[WA-Route] Sending to group: ${groupJid}`);
         const r = await sendToGroup(groupJid, message, module);
+        console.log(`[WA-Route] Group result: ${JSON.stringify(r)}`);
         results.push({ target: 'group', ...r });
+      } else {
+        console.log(`[WA-Route] No groupJid configured, skipping group send`);
       }
     }
 
