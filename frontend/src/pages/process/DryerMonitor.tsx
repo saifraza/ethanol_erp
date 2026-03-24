@@ -41,11 +41,19 @@ export default function DryerMonitor() {
 
   const upd = (key: string, val: string) => setForm(f => ({ ...f, [key]: val }));
 
-  const handleSave = async () => {
+  const handleSave = async (share = false) => {
     setSaving(true); setMsg(null);
     try {
       await api.post('/dryer', form);
-      setMsg({ type: 'ok', text: `Saved at ${new Date().toLocaleTimeString()}` });
+
+      if (share) {
+        const text = buildPreviewText();
+        await api.post('/whatsapp/send-report', { message: text, module: 'dryer' });
+        setMsg({ type: 'ok', text: 'Saved and shared via WhatsApp' });
+      } else {
+        setMsg({ type: 'ok', text: `Saved at ${new Date().toLocaleTimeString()}` });
+      }
+
       setForm(empty()); setShowPreview(false); load();
     } catch (err: any) {
       setMsg({ type: 'err', text: err.response?.data?.error || 'Save failed' });
@@ -70,17 +78,6 @@ export default function DryerMonitor() {
     return lines.filter(Boolean).join('\n');
   };
 
-  const shareReport = async () => {
-    const text = buildPreviewText();
-    setSaving(true);
-    try {
-      await api.post('/whatsapp/send-report', { message: text, module: 'dryer' });
-      setMsg({ type: 'ok', text: 'Report sent via WhatsApp' });
-    } catch (err: any) {
-      setMsg({ type: 'err', text: err.response?.data?.error || 'Failed to send report' });
-    }
-    setSaving(false);
-  };
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -196,11 +193,11 @@ export default function DryerMonitor() {
             </div>
 
             <div className="sticky bottom-0 bg-gray-50 p-4 rounded-b-xl flex gap-3 border-t">
-              <button onClick={handleSave} disabled={saving} className="flex-1 flex items-center justify-center gap-2 bg-red-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50 transition">
-                {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save Entry
+              <button onClick={() => handleSave(false)} disabled={saving} className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition">
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save
               </button>
-              <button onClick={shareReport} disabled={saving} className="flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition">
-                {saving ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />} WhatsApp
+              <button onClick={() => handleSave(true)} disabled={saving} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition">
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />} Save & Share
               </button>
             </div>
           </div>

@@ -164,7 +164,7 @@ export default function EthanolProduct() {
     } catch (e) { console.error(e); }
   }
 
-  async function handleSave() {
+  async function handleSave(share = false) {
     if (!date) { setMsg({ type: 'err', text: 'Date is required' }); return; }
     setSaving(true); setMsg(null);
     try {
@@ -173,6 +173,27 @@ export default function EthanolProduct() {
       else await api.post('/ethanol-product', payload);
       const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       setMsg({ type: 'ok', text: `Saved at ${now}` });
+
+      if (share) {
+        // Generate report and share to WhatsApp
+        const tankLines = TANKS.map(t => {
+          if (form[`${t.key}Empty`]) return `${t.label}: Empty`;
+          return `${t.label}: ${(form[`${t.key}Volume`] || 0).toFixed(0)}L @ ${(form[`${t.key}Strength`] || 0).toFixed(1)}%`;
+        }).join('\n');
+        const dispLines = dispatchList.length > 0 ? '\n\n*Dispatch:*\n' + dispatchList.map((d: any) => `${d.vehicleNo} → ${d.destination || '-'} | ${d.quantityBL?.toFixed(0)} BL${d.strength ? ` @ ${d.strength}%` : ''} | ${d.partyName}`).join('\n') : '';
+        const totalStock = Object.entries(form).reduce((sum: number, [k, v]: any) => (k.endsWith('Volume') ? sum + (v || 0) : sum), 0);
+        const avgStrength = TANKS.length > 0 ? Object.entries(form).reduce((sum: number, [k, v]: any) => (k.endsWith('Strength') ? sum + (v || 0) : sum), 0) / TANKS.length : 0;
+        const productionBL = form.production || 0;
+        const klpd = form.klpd || 0;
+        const text = `*Ethanol Stock Report*\n📅 ${date} ${time}\n\n${tankLines}\n\nStock: ${totalStock.toFixed(1)} BL (${avgStrength.toFixed(2)}%)\nDispatch: ${todayDispatch.toFixed(1)} BL\nProd BL: ${productionBL.toFixed(2)}\nFlow: ${klpd.toFixed(2)} KLPD${dispLines}${remarks ? '\n\nRemarks: ' + remarks : ''}`;
+        try {
+          await api.post('/whatsapp/send-report', { message: text, module: 'ethanol-product' });
+          setMsg({ type: 'ok', text: 'Saved & shared to WhatsApp' });
+        } catch (err: any) {
+          setMsg({ type: 'ok', text: 'Saved but WhatsApp share failed' });
+        }
+      }
+
       setForm({}); setRemarks(''); setEditId(null);
       await loadLatest(); await loadEntries(); await loadTotals();
     } catch (err: any) { setMsg({ type: 'err', text: err.response?.data?.error || 'Save failed' }); }
@@ -299,19 +320,18 @@ export default function EthanolProduct() {
             </div>
           )}
           {/* Share dashboard status */}
-          <button onClick={() => {
+          <button onClick={async () => {
             const curStock = (lastEntry.totalStock || 0) - newDispatch;
             const dispInfo = lastEntry.totalDispatch > 0 ? `\nDispatch (in prod): ${lastEntry.totalDispatch?.toFixed(0)} BL` : '';
             const newDispInfo = newDispatch > 0 ? `\nNew Dispatch: ${newDispatch.toFixed(0)} BL (${newDispatchList.length} trucks)` : '';
             const newTruckLines = newDispatchList.length > 0 ? '\n' + newDispatchList.map((d: any) => `  ${d.vehicleNo} → ${d.destination || '-'} | ${d.quantityBL?.toFixed(0)} BL | ${d.partyName}`).join('\n') : '';
             const prevLine = lastPrevStock != null && lastPrevDate ? `\nPrev Stock: ${lastPrevStock.toFixed(0)} BL (${fmtDtTime(lastPrevDate)})` : '';
             const text = `*Ethananol Stock Status*\n📅 ${fmtDtTime(lastEntry.date)}\n${prevLine}\nStock: ${lastEntry.totalStock?.toFixed(0)} BL\nStrength: ${lastEntry.avgStrength?.toFixed(1)}%\nProd: ${lastEntry.productionBL?.toFixed(0)} BL${lastPrevDate ? ` (${fmtDtTime(lastPrevDate)} → ${fmtDtTime(lastEntry.date)})` : ''}\nKLPD: ${lastEntry.klpd?.toFixed(1)}${dispInfo}${newDispInfo}${newTruckLines}\n\n📦 *Current Stock: ${curStock.toFixed(0)} BL*\n🚛 Total Dispatched: ${(allTimeDispatched/100000).toFixed(2)} L BL (${allTimeDispatchCount} trucks)\n🏭 Total Produced: ${(totalProduced/100000).toFixed(2)} L BL`;
-            if (navigator.share) {
-              navigator.share({ text }).catch(() => {
-                window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
-              });
-            } else {
-              window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+            try {
+              await api.post('/whatsapp/send-report', { message: text, module: 'ethanol-product' });
+              setMsg({ type: 'ok', text: 'Status shared to WhatsApp' });
+            } catch (err: any) {
+              setMsg({ type: 'err', text: err.response?.data?.error || 'Failed to share' });
             }
           }} className="mt-3 w-full flex items-center justify-center gap-2 bg-green-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-green-700">
             <Share2 size={16} /> Share Status
@@ -582,26 +602,29 @@ export default function EthanolProduct() {
               {remarks && <div className="border-t pt-2"><span className="text-gray-500">Remarks:</span> {remarks}</div>}
             </div>
             <div className="p-4 border-t flex gap-2">
-              <button onClick={() => {
+              <button onClick={async () => {
                 const tankLines = TANKS.map(t => {
                   if (form[`${t.key}Empty`]) return `${t.label}: Empty`;
                   return `${t.label}: ${(form[`${t.key}Volume`] || 0).toFixed(0)}L @ ${(form[`${t.key}Strength`] || 0).toFixed(1)}%`;
                 }).join('\n');
                 const dispLines = dispatchList.length > 0 ? '\n\n*Dispatch:*\n' + dispatchList.map((d: any) => `${d.vehicleNo} → ${d.destination || '-'} | ${d.quantityBL?.toFixed(0)} BL${d.strength ? ` @ ${d.strength}%` : ''} | ${d.partyName}`).join('\n') : '';
                 const text = `*Ethanol Stock Report*\n📅 ${date} ${time}\n\n${tankLines}\n\nStock: ${totalStock.toFixed(1)} BL (${avgStrength.toFixed(2)}%)\nDispatch: ${todayDispatch.toFixed(1)} BL\nProd BL: ${productionBL.toFixed(2)}\nFlow: ${klpd.toFixed(2)} KLPD${dispLines}${remarks ? '\n\nRemarks: ' + remarks : ''}`;
-                if (navigator.share) {
-                  navigator.share({ text }).catch(() => {
-                    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
-                  });
-                } else {
-                  window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+                try {
+                  await api.post('/whatsapp/send-report', { message: text, module: 'ethanol-product' });
+                  setMsg({ type: 'ok', text: 'Report shared to WhatsApp' });
+                } catch (err: any) {
+                  setMsg({ type: 'err', text: err.response?.data?.error || 'Failed to share' });
                 }
               }} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
                 <Share2 size={16} /> WhatsApp
               </button>
-              <button onClick={async () => { await handleSave(); setShowPreview(false); }} disabled={saving}
+              <button onClick={async () => { await handleSave(false); setShowPreview(false); }} disabled={saving}
                 className="flex-1 flex items-center justify-center gap-2 bg-purple-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50">
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} {editId ? 'Update' : 'Save'}
+              </button>
+              <button onClick={async () => { await handleSave(true); setShowPreview(false); }} disabled={saving}
+                className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-50">
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />} Save & Share
               </button>
             </div>
           </div>

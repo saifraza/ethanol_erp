@@ -311,22 +311,40 @@ export default function SettingsPage() {
             />
           </div>
 
-          {/* Module selector — which modules are private-only */}
-          <div className="mt-3">
-            <p className="text-sm font-medium text-gray-700 mb-2">Private-only modules <span className="text-xs text-gray-400">(unchecked = goes to group)</span></p>
-            <div className="grid grid-cols-3 gap-1.5">
-              {allModules.map(mod => (
-                <button key={mod} onClick={() => isAdmin && togglePrivateModule(mod)}
-                  disabled={!isAdmin}
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                    privateModules.includes(mod)
-                      ? 'bg-orange-100 text-orange-800 border border-orange-300'
-                      : 'bg-gray-50 text-gray-500 border border-gray-200'
-                  } ${isAdmin ? 'hover:bg-orange-50 cursor-pointer' : 'cursor-not-allowed opacity-60'}`}>
-                  {privateModules.includes(mod) ? <CheckSquare size={13} /> : <Square size={13} />}
-                  {MODULE_LABELS[mod] || mod}
-                </button>
-              ))}
+          {/* Module routing — tap a module to toggle between group and private */}
+          <div className="mt-4">
+            <p className="text-sm font-medium text-gray-700 mb-2">Module Routing <span className="text-xs text-gray-400">(tap to toggle)</span></p>
+            <div className="grid grid-cols-2 gap-3">
+              {/* Group column */}
+              <div>
+                <div className="text-[10px] font-bold text-blue-600 uppercase mb-1.5 flex items-center gap-1"><Users size={11} /> Group + Private</div>
+                <div className="space-y-1">
+                  {allModules.filter(m => !privateModules.includes(m)).map(mod => (
+                    <button key={mod} onClick={() => isAdmin && togglePrivateModule(mod)} disabled={!isAdmin}
+                      className="w-full flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors text-left">
+                      <Users size={11} /> {MODULE_LABELS[mod] || mod}
+                    </button>
+                  ))}
+                  {allModules.filter(m => !privateModules.includes(m)).length === 0 && (
+                    <p className="text-[10px] text-gray-400 italic px-2">No modules in group</p>
+                  )}
+                </div>
+              </div>
+              {/* Private column */}
+              <div>
+                <div className="text-[10px] font-bold text-orange-600 uppercase mb-1.5 flex items-center gap-1"><Lock size={11} /> Private Only</div>
+                <div className="space-y-1">
+                  {allModules.filter(m => privateModules.includes(m)).map(mod => (
+                    <button key={mod} onClick={() => isAdmin && togglePrivateModule(mod)} disabled={!isAdmin}
+                      className="w-full flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 transition-colors text-left">
+                      <Lock size={11} /> {MODULE_LABELS[mod] || mod}
+                    </button>
+                  ))}
+                  {allModules.filter(m => privateModules.includes(m)).length === 0 && (
+                    <p className="text-[10px] text-gray-400 italic px-2">No private modules</p>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>

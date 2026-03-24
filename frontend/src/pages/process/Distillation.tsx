@@ -45,7 +45,7 @@ export default function Distillation() {
     setForm(f => ({ ...f, analysisTime: d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) }));
   };
 
-  const handleSave = async () => {
+  const handleSave = async (share = false) => {
     setSaving(true); setMsg(null);
     try {
       const fd = new FormData();
@@ -53,7 +53,14 @@ export default function Distillation() {
       if (swPhoto) fd.append('spentWashPhoto', swPhoto);
       if (rcPhoto) fd.append('rcLessPhoto', rcPhoto);
       await api.post('/distillation', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      setMsg({ type: 'ok', text: `Saved at ${new Date().toLocaleTimeString()}` });
+      if (share) {
+        try {
+          await api.post('/whatsapp/send-report', { message: buildPreviewText(), module: 'distillation' });
+          setMsg({ type: 'ok', text: 'Saved & shared on WhatsApp' });
+        } catch { setMsg({ type: 'ok', text: 'Saved! WhatsApp send failed' }); }
+      } else {
+        setMsg({ type: 'ok', text: `Saved at ${new Date().toLocaleTimeString()}` });
+      }
       setForm(emptyForm()); setShowPreview(false);
       setSwPhoto(null); setSwPreview(null); setRcPhoto(null); setRcPreview(null);
       load();
@@ -288,11 +295,11 @@ export default function Distillation() {
             </div>
 
             <div className="sticky bottom-0 bg-gray-50 p-4 rounded-b-xl flex gap-3 border-t">
-              <button onClick={handleSave} disabled={saving} className="flex-1 flex items-center justify-center gap-2 bg-red-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50 transition">
-                {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save Entry
+              <button onClick={() => handleSave(false)} disabled={saving} className="flex-1 flex items-center justify-center gap-2 bg-red-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50 transition">
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save
               </button>
-              <button onClick={shareReport} className="flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 transition">
-                <Share2 size={16} /> Share
+              <button onClick={() => handleSave(true)} disabled={saving} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition">
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />} Save & Share
               </button>
             </div>
           </div>

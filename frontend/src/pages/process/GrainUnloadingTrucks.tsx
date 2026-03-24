@@ -221,13 +221,7 @@ export default function GrainUnloadingTrucks() {
     }).join('\n');
     const text = `*Grain Unloading Report*\n📅 ${date}\n\n${lines}\n\n*To Silo: ${totalNet.toFixed(1)} T (${truckCount} trucks)*${quarantineTotal > 0 ? `\n⚠️ Quarantine: ${quarantineTotal.toFixed(1)} T` : ''}`;
 
-    if (navigator.share) {
-      navigator.share({ text }).catch(() => {
-        window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
-      });
-    } else {
-      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
-    }
+    api.post('/whatsapp/send-report', { message: text, module: 'grain' }).catch(() => {});
   }
 
   const fmtDt = (d: string) => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -458,8 +452,7 @@ export default function GrainUnloadingTrucks() {
                 <button onClick={() => {
                   const tSilo = t.weightNet - (t.quarantineWeight || 0);
                   const text = `*Grain Truck*\n${t.uidRst ? `UID/RST: ${t.uidRst}\n` : ''}Vehicle: ${t.vehicleNo}\n${t.supplier ? `Supplier: ${t.supplier}\n` : ''}Gross: ${t.weightGross}T | Tare: ${t.weightTare}T | Net: ${t.weightNet.toFixed(1)}T${t.bags > 0 ? ` | Bags: ${t.bags}` : ''}\nTo Silo: ${tSilo.toFixed(1)}T${t.quarantineWeight > 0 ? ` | Quarantine: ${t.quarantineWeight.toFixed(1)}T` : ''}${t.moisture != null ? `\nM: ${t.moisture}%` : ''}${t.starchPercent != null ? ` | S: ${t.starchPercent}%` : ''}${t.damagedPercent != null ? ` | D: ${t.damagedPercent}%` : ''}${t.foreignMatter != null ? ` | FM: ${t.foreignMatter}%` : ''}${t.quarantineReason ? `\nReason: ${t.quarantineReason}` : ''}${t.remarks ? `\nRemarks: ${t.remarks}` : ''}`;
-                  if (navigator.share) { navigator.share({ text }).catch(() => { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank'); }); }
-                  else { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank'); }
+                  api.post('/whatsapp/send-report', { message: text, module: 'grain' }).catch(() => {});
                 }} className="text-green-500 hover:text-green-700"><Share2 size={14} /></button>
                 {t.photoUrl && (
                   <button onClick={() => setPhotoPreview(`${API_BASE}${t.photoUrl}`)}

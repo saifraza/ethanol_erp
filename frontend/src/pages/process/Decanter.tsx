@@ -52,11 +52,23 @@ export default function Decanter() {
     return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
   })();
 
-  const handleSave = async () => {
+  const handleSave = async (share = false) => {
     setSaving(true); setMsg(null);
     try {
       await api.post('/decanter', form);
-      setMsg({ type: 'ok', text: `Saved at ${new Date().toLocaleTimeString()}` });
+      if (share) {
+        setSharing(true);
+        try {
+          const text = buildPreviewText();
+          await api.post('/whatsapp/send-report', { message: text, module: 'decanter' });
+          setMsg({ type: 'ok', text: 'Saved & shared on WhatsApp' });
+        } catch (err: any) {
+          setMsg({ type: 'err', text: err.response?.data?.error || 'Saved, but failed to share' });
+        }
+        setSharing(false);
+      } else {
+        setMsg({ type: 'ok', text: `Saved at ${new Date().toLocaleTimeString()}` });
+      }
       setForm(empty()); setShowPreview(false); setShowExtras(false); load();
     } catch (err: any) {
       setMsg({ type: 'err', text: err.response?.data?.error || 'Save failed' });
@@ -96,17 +108,6 @@ export default function Decanter() {
     return lines.filter(Boolean).join('\n');
   };
 
-  const shareReport = async () => {
-    const text = buildPreviewText();
-    setSharing(true);
-    try {
-      await api.post('/whatsapp/send-report', { message: text, module: 'decanter' });
-      setMsg({ type: 'ok', text: 'Report shared on WhatsApp' });
-    } catch (err: any) {
-      setMsg({ type: 'err', text: err.response?.data?.error || 'Failed to share report' });
-    }
-    setSharing(false);
-  };
 
   // History helpers
   const entryTotalFeed = (e: any) => DECANTERS.reduce((s, d) => s + (e[d.key + 'Feed'] || 0), 0);
@@ -318,11 +319,11 @@ export default function Decanter() {
             </div>
 
             <div className="sticky bottom-0 bg-gray-50 p-4 rounded-b-xl flex gap-3 border-t">
-              <button onClick={handleSave} disabled={saving} className="flex-1 flex items-center justify-center gap-2 bg-cyan-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-cyan-700 disabled:opacity-50 transition">
-                {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save Entry
+              <button onClick={() => handleSave(false)} disabled={saving} className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition">
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save
               </button>
-              <button onClick={shareReport} disabled={sharing} className="flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition">
-                {sharing ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />} WhatsApp
+              <button onClick={() => handleSave(true)} disabled={saving} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition">
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />} Save & Share
               </button>
             </div>
           </div>

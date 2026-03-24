@@ -74,7 +74,7 @@ export default function DDGSDispatch() {
     return g > t && t > 0 ? g - t : 0;
   }, [weightGrossKg, weightTareKg]);
 
-  async function handleSave() {
+  async function handleSave(share = false) {
     if (!vehicleNo) { setMsg({ type: 'err', text: 'Vehicle No required' }); return; }
     setSaving(true); setMsg(null);
     try {
@@ -91,6 +91,11 @@ export default function DDGSDispatch() {
       setMsg({ type: 'ok', text: `Saved at ${now}` });
       resetForm();
       await loadDispatches();
+
+      // Share to WhatsApp if requested
+      if (share) {
+        await shareWhatsApp();
+      }
     } catch (err: any) { setMsg({ type: 'err', text: err.response?.data?.error || 'Save failed' }); }
     setSaving(false);
   }
@@ -116,17 +121,16 @@ export default function DDGSDispatch() {
   const totalNet = dispatches.reduce((s, d) => s + (d.weightNet || 0), 0);
   const totalBags = dispatches.reduce((s, d) => s + (d.bags || 0), 0);
 
-  function shareWhatsApp() {
+  async function shareWhatsApp() {
     const lines = dispatches.map((d, i) =>
       `${i + 1}. ${d.vehicleNo} → ${d.partyName || '-'} | ${d.bags} bags | ${(d.weightNet * 1000).toFixed(0)} KG`
     ).join('\n');
     const text = `*DDGS Dispatch Report*\n📅 ${date}\n\n${lines}\n\n*Total: ${(totalNet * 1000).toFixed(0)} KG (${totalNet.toFixed(2)} MT) | ${totalBags} bags | ${dispatches.length} trucks*`;
-    if (navigator.share) {
-      navigator.share({ text }).catch(() => {
-        window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
-      });
-    } else {
-      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+    try {
+      await api.post('/whatsapp/send-report', { message: text, module: 'ddgs-dispatch' });
+      setMsg({ type: 'ok', text: 'Report sent to WhatsApp' });
+    } catch (err: any) {
+      setMsg({ type: 'err', text: err.response?.data?.error || 'Failed to send WhatsApp' });
     }
   }
 
@@ -234,9 +238,13 @@ export default function DDGSDispatch() {
 
           {/* Save */}
           <div className="flex items-center gap-3">
-            <button onClick={handleSave} disabled={saving}
+            <button onClick={() => handleSave(false)} disabled={saving}
               className="px-6 py-2.5 bg-amber-600 text-white rounded-lg font-medium text-sm hover:bg-amber-700 disabled:opacity-50">
               {saving ? 'Saving...' : 'Save Dispatch'}
+            </button>
+            <button onClick={() => handleSave(true)} disabled={saving}
+              className="px-6 py-2.5 bg-green-600 text-white rounded-lg font-medium text-sm hover:bg-green-700 disabled:opacity-50 flex items-center gap-2">
+              {saving ? 'Saving...' : <><Share2 size={16} /> Save & Share</>}
             </button>
             {msg && <span className={`text-sm ${msg.type === 'ok' ? 'text-green-600' : 'text-red-600'}`}>{msg.text}</span>}
           </div>

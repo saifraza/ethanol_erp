@@ -54,7 +54,7 @@ export default function RawMaterial() {
     setShowForm(false); setShowPreview(false); setEditId(null);
   };
 
-  const save = async () => {
+  const save = async (share: boolean = false) => {
     if (!form.vehicleCode.trim()) { setMsg({ type: 'err', text: 'RST number required' }); return; }
     setSaving(true); setMsg(null);
     try {
@@ -64,6 +64,10 @@ export default function RawMaterial() {
         await api.post('/raw-material', form);
       }
       setMsg({ type: 'ok', text: editId ? 'Updated!' : 'Saved!' }); resetForm(); load();
+      if (share) {
+        const text = `*Lab Analysis - ${form.material}*\nRST: ${form.vehicleCode}${form.vehicleNo ? '\nVehicle: ' + form.vehicleNo : ''}\n📅 ${form.date}\n\nMoisture: ${form.moisture || '-'}%\nStarch: ${form.starch || '-'}%\nDamaged: ${form.damaged || '-'}%\nTFM: ${form.tfm || '-'}%\nFungus: ${form.fungus || '-'}%\nImmature: ${form.immature || '-'}%\nWater Dam: ${form.waterDamaged || '-'}%\n*Total Damage: ${totalDamage.toFixed(1)}%*${form.remark ? '\n\nRemark: ' + form.remark : ''}`;
+        await doShare(text);
+      }
     } catch { setMsg({ type: 'err', text: 'Save failed' }); }
     setSaving(false);
   };
@@ -129,9 +133,13 @@ export default function RawMaterial() {
     return b.sortKey.localeCompare(a.sortKey);
   });
 
-  const doShare = (text: string) => {
-    if (navigator.share) navigator.share({ text }).catch(() => {});
-    else window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+  const doShare = async (text: string) => {
+    try {
+      await api.post('/whatsapp/send-report', { message: text, module: 'grain' });
+      setMsg({ type: 'ok', text: 'Shared via WhatsApp!' });
+    } catch {
+      setMsg({ type: 'err', text: 'Failed to share' });
+    }
   };
 
   const shareText = (e: Entry) =>
@@ -269,11 +277,7 @@ export default function RawMaterial() {
               {form.remark && <div className="border-t pt-1.5 text-xs text-gray-500">{form.remark}</div>}
             </div>
             <div className="p-3 border-t space-y-2">
-              <button onClick={async () => {
-                await save();
-                const text = `*Lab Analysis - ${form.material}*\nRST: ${form.vehicleCode}${form.vehicleNo ? '\nVehicle: ' + form.vehicleNo : ''}\n📅 ${form.date}\n\nMoisture: ${form.moisture || '-'}%\nStarch: ${form.starch || '-'}%\nDamaged: ${form.damaged || '-'}%\nTFM: ${form.tfm || '-'}%\nFungus: ${form.fungus || '-'}%\nImmature: ${form.immature || '-'}%\nWater Dam: ${form.waterDamaged || '-'}%\n*Total Damage: ${totalDamage.toFixed(1)}%*${form.remark ? '\n\nRemark: ' + form.remark : ''}`;
-                doShare(text);
-              }} disabled={saving}
+              <button onClick={() => save(true)} disabled={saving}
                 className="w-full flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-green-700 disabled:opacity-50">
                 {saving ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />} Save & Share
               </button>
