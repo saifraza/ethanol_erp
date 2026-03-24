@@ -414,7 +414,9 @@ router.get('/fermentation-deep', authenticate, async (req: AuthRequest, res: Res
         .filter((e: any) => e.spGravity != null)
         .sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
       if (entries.length < 2) continue;
-      const t0 = new Date(entries[0].createdAt).getTime();
+      // Use batch start time (pfTransferTime or fillingStartTime) for elapsed, not first reading
+      const batchStart = batch.pfTransferTime || batch.fillingStartTime || batch.createdAt;
+      const t0 = new Date(batchStart).getTime();
       // Simple linear regression on gravity
       const points = entries.map((e: any) => ({
         x: (new Date(e.createdAt).getTime() - t0) / 3600000,
@@ -456,7 +458,7 @@ router.get('/fermentation-deep', authenticate, async (req: AuthRequest, res: Res
         gravityDropRate: Math.round(slope * 10000) / 10000,
         currentTemp: latestTemp,
         currentAlcohol: latestAlc,
-        hoursElapsed: Math.round(currentHour * 10) / 10,
+        hoursElapsed: Math.round((Date.now() - t0) / 3600000 * 10) / 10,
         hoursRemaining: hoursRemaining ? Math.round(hoursRemaining * 10) / 10 : null,
         predictedEndTime: hoursRemaining ? new Date(Date.now() + hoursRemaining * 3600000).toISOString() : null,
         health,
