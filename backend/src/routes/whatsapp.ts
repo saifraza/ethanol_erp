@@ -9,11 +9,25 @@ import {
   getConnectionStatus,
   getConnectedNumber,
   sendWhatsAppMessage,
+  sendToGroup,
+  listGroups,
 } from '../services/whatsappBaileys';
 
 const router = Router();
 
-// GET /api/whatsapp/status — connection status + QR code + connected number
+// Modules that go to group (production data visible to all)
+const GROUP_MODULES = [
+  'liquefaction', 'fermentation', 'distillation', 'milling',
+  'evaporation', 'decanter', 'dryer', 'ethanol-product', 'grain',
+];
+
+// Modules that go to private numbers only (sensitive/financial)
+const PRIVATE_MODULES = [
+  'ddgs', 'ddgs-stock', 'ddgs-dispatch', 'sales', 'dispatch',
+  'procurement', 'accounts', 'inventory',
+];
+
+// GET /api/whatsapp/status
 router.get(
   '/status',
   authenticate,
@@ -26,14 +40,13 @@ router.get(
   })
 );
 
-// POST /api/whatsapp/connect — initiate WhatsApp connection (generates QR)
+// POST /api/whatsapp/connect
 router.post(
   '/connect',
   authenticate,
   authorize('ADMIN'),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     await connectWhatsApp();
-    // Give it a moment to generate QR
     await new Promise((r) => setTimeout(r, 2000));
     res.json({
       status: getConnectionStatus(),
@@ -42,7 +55,7 @@ router.post(
   })
 );
 
-// POST /api/whatsapp/disconnect — logout and clear session
+// POST /api/whatsapp/disconnect
 router.post(
   '/disconnect',
   authenticate,
@@ -53,7 +66,17 @@ router.post(
   })
 );
 
-// POST /api/whatsapp/test — send a test message
+// GET /api/whatsapp/groups — list all groups this number is part of
+router.get(
+  '/groups',
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const groups = await listGroups();
+    res.json(groups);
+  })
+);
+
+// POST /api/whatsapp/test
 router.post(
   '/test',
   authenticate,
@@ -69,45 +92,63 @@ router.post(
   })
 );
 
-// POST /api/whatsapp/send-report — send a report to configured numbers (or specific numbers)
+// POST /api/whatsapp/send-report — smart routing: group vs private based on module
 router.post(
   '/send-report',
   authenticate,
   asyncHandler(async (req: AuthRequest, res: Response) => {
-    const { message, module, phones } = req.body as {
+    const { message, module } = req.body as {
       message: string;
       module?: string;
-      phones?: string[];
     };
     if (!message) {
       res.status(400).json({ error: 'message is required' });
       return;
     }
 
-    // Use provided phones or fall back to settings
-    let targetPhones: string[] = phones || [];
-    if (targetPhones.length === 0) {
-      const settings = await prisma.settings.findFirst();
-      if (settings?.whatsappNumbers) {
-        targetPhones = settings.whatsappNumbers
-          .split(',')
-          .map((p: string) => p.trim())
-          .filter(Boolean);
+    const settings = await prisma.settings.findFirst();
+    const results: { target: string; success: boolean; error?: string }[] = [];
+
+    const mod = (module || '').toLowerCase();
+    const isPrivate = PRIVATE_MODULES.includes(mod);
+    const isGroup = GROUP_MODULES.includes(mod);
+
+    // Send to group if module is a group module (or unknown defaults to both)
+    if (isGroup || (!isPrivate && !isGroup)) {
+      const groupJid = (settings as any)?.whatsappGroupJid;
+      if (groupJid) {
+        const r = await sendToGroup(groupJid, message, module);
+        results.push({ target: 'group', ...r });
       }
     }
 
-    if (targetPhones.length === 0) {
-      res.status(400).json({ error: 'No phone numbers configured. Add numbers in Settings.' });
-      return;
+    // Send to private numbers if module is private (or unknown defaults to both)
+    if (isPrivate || (!isPrivate && !isGroup)) {
+      const privateNumbers = (settings?.whatsappNumbers || '')
+        .split(',')
+        .map((p: string) => p.trim())
+        .filter(Boolean);
+      for (const phone of privateNumbers) {
+        const r = await sendWhatsAppMessage(phone, message, module);
+        results.push({ target: phone, ...r });
+      }
     }
 
-    const results = await Promise.all(
-      targetPhones.map((phone) => sendWhatsAppMessage(phone, message, module))
-    );
+    // Also always send to private numbers for group modules (so admin gets everything)
+    if (isGroup) {
+      const privateNumbers = (settings?.whatsappNumbers || '')
+        .split(',')
+        .map((p: string) => p.trim())
+        .filter(Boolean);
+      for (const phone of privateNumbers) {
+        const r = await sendWhatsAppMessage(phone, message, module);
+        results.push({ target: phone, ...r });
+      }
+    }
 
     const sent = results.filter((r) => r.success).length;
     const failed = results.filter((r) => !r.success).length;
-    res.json({ sent, failed, total: targetPhones.length, results });
+    res.json({ sent, failed, total: results.length, results });
   })
 );
 

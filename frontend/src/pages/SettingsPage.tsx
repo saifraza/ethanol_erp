@@ -1,7 +1,13 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import api from '../services/api';
-import { Save, Smartphone, RefreshCw, LogOut, Send } from 'lucide-react';
+import { Save, Smartphone, RefreshCw, LogOut, Send, Users, Lock } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+
+interface WAGroup {
+  id: string;
+  subject: string;
+  size: number;
+}
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<any>({});
@@ -17,6 +23,8 @@ export default function SettingsPage() {
   const [testPhone, setTestPhone] = useState('');
   const [testMsg, setTestMsg] = useState('Hello from MSPIL ERP!');
   const [testResult, setTestResult] = useState('');
+  const [groups, setGroups] = useState<WAGroup[]>([]);
+  const [loadingGroups, setLoadingGroups] = useState(false);
 
   const fetchWAStatus = useCallback(async () => {
     try {
@@ -24,12 +32,9 @@ export default function SettingsPage() {
       setWaStatus(res.data.status);
       setWaQR(res.data.qr);
       setWaNumber(res.data.connectedNumber);
-    } catch {
-      // WhatsApp routes may not exist yet
-    }
+    } catch {}
   }, []);
 
-  // Poll WhatsApp status when connecting (QR needs refresh)
   useEffect(() => {
     fetchWAStatus();
     const interval = setInterval(fetchWAStatus, waStatus === 'connecting' ? 3000 : 15000);
@@ -74,11 +79,24 @@ export default function SettingsPage() {
     }
   };
 
+  const fetchGroups = async () => {
+    setLoadingGroups(true);
+    try {
+      const res = await api.get('/whatsapp/groups');
+      setGroups(res.data);
+    } catch {}
+    setLoadingGroups(false);
+  };
+
   useEffect(() => { api.get('/settings').then(r => setSettings(r.data)); }, []);
+
+  // Fetch groups when connected
+  useEffect(() => {
+    if (waStatus === 'connected') fetchGroups();
+  }, [waStatus]);
 
   const update = (k: string, v: string) => setSettings((s: any) => ({ ...s, [k]: v === '' ? null : parseFloat(v) }));
   const updateStr = (k: string, v: string) => setSettings((s: any) => ({ ...s, [k]: v }));
-  const updateBool = (k: string, v: boolean) => setSettings((s: any) => ({ ...s, [k]: v }));
 
   const save = async () => {
     await api.patch('/settings', settings);
@@ -115,100 +133,137 @@ export default function SettingsPage() {
           ))}
         </div>
 
-        {/* WhatsApp Connection (Baileys QR) */}
+        {/* WhatsApp Connection */}
         <div className="mt-6 pt-6 border-t">
           <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
             <Smartphone size={20} className="text-green-600" />
             WhatsApp Connection
           </h2>
 
-          {/* Status indicator */}
           <div className="flex items-center gap-2 mb-4">
             <span className={`w-3 h-3 rounded-full ${
               waStatus === 'connected' ? 'bg-green-500' :
-              waStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' :
-              'bg-gray-400'
+              waStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' : 'bg-gray-400'
             }`} />
             <span className="text-sm font-medium capitalize">{waStatus}</span>
             {waNumber && <span className="text-sm text-gray-500">— +{waNumber}</span>}
           </div>
 
-          {/* QR Code display */}
           {waStatus === 'connecting' && waQR && (
             <div className="mb-4 p-4 bg-white border rounded-lg inline-block">
               <p className="text-sm text-gray-600 mb-2">Scan with WhatsApp on your phone:</p>
               <img src={waQR} alt="WhatsApp QR Code" className="w-64 h-64" />
-              <p className="text-xs text-gray-400 mt-2">QR refreshes automatically. Keep this page open.</p>
+              <p className="text-xs text-gray-400 mt-2">QR refreshes automatically.</p>
             </div>
           )}
 
           {waStatus === 'connecting' && !waQR && (
             <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <p className="text-sm text-yellow-700">Generating QR code... please wait.</p>
+              <p className="text-sm text-yellow-700">Generating QR code...</p>
             </div>
           )}
 
-          {/* Connect / Disconnect buttons */}
           {isAdmin && (
             <div className="flex items-center gap-3 mb-4">
               {waStatus === 'disconnected' && (
-                <button onClick={handleConnect} disabled={waLoading}
-                  className="btn-primary flex items-center gap-2">
-                  <RefreshCw size={16} className={waLoading ? 'animate-spin' : ''} />
-                  Connect WhatsApp
+                <button onClick={handleConnect} disabled={waLoading} className="btn-primary flex items-center gap-2">
+                  <RefreshCw size={16} className={waLoading ? 'animate-spin' : ''} /> Connect WhatsApp
                 </button>
               )}
               {waStatus === 'connected' && (
                 <button onClick={handleDisconnect} disabled={waLoading}
                   className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 flex items-center gap-2">
-                  <LogOut size={16} />
-                  Disconnect
+                  <LogOut size={16} /> Disconnect
                 </button>
               )}
               {waStatus === 'connecting' && (
                 <button onClick={handleDisconnect} disabled={waLoading}
-                  className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 flex items-center gap-2">
-                  Cancel
-                </button>
+                  className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 flex items-center gap-2">Cancel</button>
               )}
             </div>
           )}
 
-          {/* Test message (when connected) */}
           {waStatus === 'connected' && isAdmin && (
             <div className="p-4 bg-green-50 border border-green-200 rounded-lg space-y-2">
               <p className="text-sm font-medium text-green-800">Send a test message</p>
               <div className="flex gap-2">
                 <input type="text" value={testPhone} onChange={e => setTestPhone(e.target.value)}
                   placeholder="Phone number" className="input-field w-40" />
-                <input type="text" value={testMsg} onChange={e => setTestMsg(e.target.value)}
-                  className="input-field flex-1" />
-                <button onClick={handleTestSend} className="btn-primary flex items-center gap-1">
-                  <Send size={14} /> Send
-                </button>
+                <input type="text" value={testMsg} onChange={e => setTestMsg(e.target.value)} className="input-field flex-1" />
+                <button onClick={handleTestSend} className="btn-primary flex items-center gap-1"><Send size={14} /> Send</button>
               </div>
               {testResult && <p className={`text-xs ${testResult.includes('success') ? 'text-green-600' : 'text-red-500'}`}>{testResult}</p>}
             </div>
           )}
         </div>
 
-        {/* WhatsApp Share Recipients */}
+        {/* Group Share — production data goes here */}
         <div className="mt-6 pt-6 border-t">
-          <h2 className="text-lg font-semibold mb-3">WhatsApp Share Numbers</h2>
-          <p className="text-sm text-gray-500 mb-3">"Save & Share" in any module sends reports to these numbers.</p>
+          <h2 className="text-lg font-semibold mb-1 flex items-center gap-2">
+            <Users size={18} className="text-blue-600" />
+            Group Share <span className="text-xs font-normal text-gray-400">(production data)</span>
+          </h2>
+          <p className="text-sm text-gray-500 mb-3">Liquefaction, Fermentation, Distillation, Milling etc. reports go to this group.</p>
 
-          {/* Show saved numbers as badges */}
+          {settings.whatsappGroupJid && settings.whatsappGroupName && (
+            <div className="flex items-center gap-2 mb-3">
+              <span className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
+                <Users size={14} /> {settings.whatsappGroupName}
+              </span>
+              {isAdmin && (
+                <button onClick={() => { updateStr('whatsappGroupJid', ''); updateStr('whatsappGroupName', ''); }}
+                  className="text-xs text-red-500 hover:underline">Remove</button>
+              )}
+            </div>
+          )}
+
+          {!settings.whatsappGroupJid && waStatus === 'connected' && isAdmin && (
+            <div className="space-y-2">
+              <button onClick={fetchGroups} disabled={loadingGroups}
+                className="text-sm text-blue-600 hover:underline flex items-center gap-1">
+                <RefreshCw size={12} className={loadingGroups ? 'animate-spin' : ''} /> {loadingGroups ? 'Loading...' : 'Load my groups'}
+              </button>
+              {groups.length > 0 && (
+                <div className="space-y-1 max-h-40 overflow-y-auto">
+                  {groups.map(g => (
+                    <button key={g.id} onClick={() => { updateStr('whatsappGroupJid', g.id); updateStr('whatsappGroupName', g.subject); }}
+                      className="w-full text-left px-3 py-2 bg-gray-50 hover:bg-blue-50 rounded-lg text-sm flex justify-between items-center">
+                      <span>{g.subject}</span>
+                      <span className="text-xs text-gray-400">{g.size} members</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {groups.length === 0 && !loadingGroups && (
+                <p className="text-xs text-gray-400">No groups found. Make sure the connected number is in a group.</p>
+              )}
+            </div>
+          )}
+
+          {!settings.whatsappGroupJid && waStatus !== 'connected' && (
+            <p className="text-sm text-orange-500">Connect WhatsApp first to select a group.</p>
+          )}
+        </div>
+
+        {/* Private Numbers — sensitive data goes here */}
+        <div className="mt-6 pt-6 border-t">
+          <h2 className="text-lg font-semibold mb-1 flex items-center gap-2">
+            <Lock size={18} className="text-orange-600" />
+            Private Numbers <span className="text-xs font-normal text-gray-400">(sensitive data)</span>
+          </h2>
+          <p className="text-sm text-gray-500 mb-3">DDGS, Sales, Dispatch, Financials go only to these numbers. Also gets all group reports.</p>
+
           {settings.whatsappNumbers && settings.whatsappNumbers.trim() && (
             <div className="flex flex-wrap gap-2 mb-3">
-              {settings.whatsappNumbers.split(',').map((p: string, i: number) => p.trim()).filter(Boolean).map((p: string, i: number) => (
-                <span key={i} className="inline-flex items-center gap-1 px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
+              {settings.whatsappNumbers.split(',').map((p: string) => p.trim()).filter(Boolean).map((p: string, i: number) => (
+                <span key={i} className="inline-flex items-center gap-1 px-3 py-1 bg-orange-100 text-orange-800 rounded-full text-sm font-medium">
                   <Smartphone size={14} /> +91 {p}
                 </span>
               ))}
             </div>
           )}
           {(!settings.whatsappNumbers || !settings.whatsappNumbers.trim()) && (
-            <p className="text-sm text-orange-500 mb-3">No numbers saved yet. Add numbers below and click Save.</p>
+            <p className="text-sm text-orange-500 mb-3">No private numbers saved yet.</p>
           )}
 
           <div className="flex items-center gap-2">

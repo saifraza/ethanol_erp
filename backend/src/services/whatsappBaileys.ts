@@ -277,6 +277,51 @@ export async function sendWhatsAppMessage(
   }
 }
 
+// ── Send to Group ──
+
+export async function sendToGroup(
+  groupJid: string,
+  message: string,
+  module?: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!sock || connectionStatus !== 'connected') {
+    return { success: false, error: 'WhatsApp not connected. Scan QR in Settings.' };
+  }
+
+  try {
+    await sock.sendMessage(groupJid, { text: message });
+    console.log(`[WA-Baileys] Sent to group ${groupJid}`);
+
+    try {
+      await prisma.whatsAppMessage.create({
+        data: { direction: 'outgoing', phone: groupJid, message, module: module || null },
+      });
+    } catch { /* non-critical */ }
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('[WA-Baileys] Group send failed:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+// ── List Groups ──
+
+export async function listGroups(): Promise<{ id: string; subject: string; size: number }[]> {
+  if (!sock || connectionStatus !== 'connected') return [];
+  try {
+    const groups = await sock.groupFetchAllParticipating();
+    return Object.values(groups).map((g: any) => ({
+      id: g.id,
+      subject: g.subject,
+      size: g.participants?.length || 0,
+    }));
+  } catch (err) {
+    console.error('[WA-Baileys] Failed to list groups:', err);
+    return [];
+  }
+}
+
 // ── Status Getters ──
 
 export function getQRCode(): string | null {
