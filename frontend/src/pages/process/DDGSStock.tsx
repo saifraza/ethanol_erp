@@ -66,6 +66,7 @@ export default function DDGSStock() {
   const [acEnabled, setAcEnabled] = useState(false);
   const [acStatus, setAcStatus] = useState('');
   const [acAutoShare, setAcAutoShare] = useState(true);
+  const [acLang, setAcLang] = useState<'hi' | 'en'>('hi');
   const [acDirty, setAcDirty] = useState(false);
   const [activeSessions, setActiveSessions] = useState<{ phone: string; module: string; step: number; totalSteps: number }[]>([]);
 
@@ -103,6 +104,7 @@ export default function DDGSStock() {
         setAcInterval(String(s.intervalMinutes || 60));
         setAcEnabled(s.enabled || false);
         setAcAutoShare(s.autoShare !== false);
+        setAcLang(s.language === 'en' ? 'en' : 'hi');
         const phones = (s.phone || '').split(',').map((p: string) => p.trim());
         setAcShiftA(phones[0] || '');
         setAcShiftB(phones[1] || '');
@@ -483,6 +485,13 @@ export default function DDGSStock() {
                     {acAutoShare ? 'Auto-Share' : 'No Share'}
                   </span>
                 </label>
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-gray-400">Prompt:</span>
+                  <button onClick={() => { setAcLang(acLang === 'hi' ? 'en' : 'hi'); setAcDirty(true); }}
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold ${acLang === 'hi' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                    {acLang === 'hi' ? 'हिंदी' : 'English'}
+                  </button>
+                </div>
               </div>
 
               {/* Save + Test */}
@@ -495,7 +504,7 @@ export default function DDGSStock() {
                       schedules: [
                         // Preserve existing decanter schedule
                         ...(await api.get('/auto-collect/schedules').then(r => (r.data || []).filter((s: { module: string }) => s.module !== 'ddgs'))),
-                        { module: 'ddgs', phone, intervalMinutes: parseInt(acInterval) || 60, enabled: acEnabled, autoShare: acAutoShare },
+                        { module: 'ddgs', phone, intervalMinutes: parseInt(acInterval) || 60, enabled: acEnabled, autoShare: acAutoShare, language: acLang },
                       ]
                     });
                     setAcDirty(false);

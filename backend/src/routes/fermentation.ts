@@ -218,7 +218,6 @@ router.post('/transfer-pf', async (req: Request, res: Response) => {
     if (existing) return res.status(400).json({ error: `Fermenter ${fermenterNo} is occupied by batch #${existing.batchNo}` });
 
     const now = new Date();
-    const lastGravity = pfBatch.labReadings[0]?.spGravity ?? null;
 
     // Update PF → TRANSFER then CIP
     await prisma.pFBatch.update({
@@ -226,7 +225,7 @@ router.post('/transfer-pf', async (req: Request, res: Response) => {
       data: { phase: 'CIP', transferTime: now, transferVolume: pfBatch.slurryVolume },
     });
 
-    // Create fermenter batch
+    // Create fermenter batch — setupGravity will be set from first fermenter lab reading
     const fermBatch = await prisma.fermentationBatch.create({
       data: {
         batchNo: pfBatch.batchNo,
@@ -234,7 +233,6 @@ router.post('/transfer-pf', async (req: Request, res: Response) => {
         phase: 'FILLING',
         pfTransferTime: now,
         fillingStartTime: now,
-        setupGravity: lastGravity,
         remarks: `From PF-${pfBatch.fermenterNo}`,
         userId: (req as any).user?.id || 'unknown',
       },
@@ -464,6 +462,14 @@ router.post('/lab-reading', async (req: Request, res: Response) => {
             autoAdvanced = true;
           }
         }
+      }
+
+      // Auto-set setupGravity from first fermenter SG reading (not PF gravity)
+      if (b.spGravity && !fermBatch.setupGravity) {
+        await prisma.fermentationBatch.update({
+          where: { id: fermBatch.id },
+          data: { setupGravity: parseFloat(b.spGravity) },
+        });
       }
 
       res.status(201).json({ entry, batchNo: fermBatch.batchNo, autoAdvanced, autoAdvancedTo: autoAdvanced ? 'REACTION' : undefined });

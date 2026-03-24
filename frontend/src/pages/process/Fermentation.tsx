@@ -420,12 +420,20 @@ export default function Fermentation() {
 
     // Use form reading if provided, otherwise latest from state
     const r = formReading ? null : getLatestReading(v, batch);
-    const sg = formReading?.spGravity || (r?.spGravity != null ? String(r.spGravity) : '') || (batch.setupGravity ? String(batch.setupGravity) : '') || (batch.slurryGravity ? String(batch.slurryGravity) : '');
+    const sg = formReading?.spGravity || (r?.spGravity != null ? String(r.spGravity) : '');
     const ph = formReading?.ph || (r?.ph != null ? String(r.ph) : '');
     const temp = formReading?.temp || (r?.temp != null ? String(r.temp) : '');
     const level = formReading?.level || (r?.level != null ? String(r.level) : '') || (batch.fermLevel ? String(batch.fermLevel) : '');
     const alc = formReading?.alcohol || (r?.alcohol != null ? String(r.alcohol) : '');
     const rs = formReading?.rs || (r?.rs != null ? String(r.rs) : '');
+
+    // Include reading time
+    const readingTime = formReading?.analysisTime
+      ? new Date(formReading.analysisTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
+      : r?.analysisTime
+        ? new Date(r.analysisTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
+        : new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+    lines.push(`Time = ${readingTime}`);
 
     lines.push(`Sp Gravity = ${sg || '—'}`);
     lines.push(`pH = ${ph || '—'}`);
@@ -465,12 +473,16 @@ export default function Fermentation() {
       lines.push(`Batch = ${batch?.batchNo || '—'}`);
       if (batch) {
         const r = getLatestReading(v, batch);
-        const sg = r?.spGravity ?? batch.setupGravity;
+        const sg = r?.spGravity;
         const ph = r?.ph;
         const temp = r?.temp;
         const level = r?.level ?? batch.fermLevel;
         const alc = r?.alcohol;
         const rs = r?.rs;
+        if (r?.analysisTime) {
+          const rTime = new Date(r.analysisTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+          lines.push(`Reading Time = ${rTime}`);
+        }
         lines.push(`Sp Gravity = ${sg ?? '—'}`);
         lines.push(`pH = ${ph ?? '—'}`);
         lines.push(`Temp = ${temp ?? '—'}`);
@@ -567,7 +579,7 @@ export default function Fermentation() {
                 phase = batch.phase; batchNo = batch.batchNo;
                 const entries = fermEntries[v.no] || [];
                 const last = entries[entries.length - 1];
-                metric1 = last?.spGravity ? last.spGravity.toFixed(3) : batch.setupGravity ? batch.setupGravity.toFixed(3) : '';
+                metric1 = last?.spGravity ? last.spGravity.toFixed(3) : '';
                 metric2 = last?.temp ? `${last.temp}°` : '';
                 levelStr = last?.level ? `${last.level}%` : batch.fermLevel ? `${batch.fermLevel}%` : '';
                 startTime = batch.pfTransferTime || batch.fillingStartTime || '';
@@ -1219,27 +1231,55 @@ export default function Fermentation() {
                               {cycleStart && <div className="bg-indigo-50 rounded px-2 py-1 ml-2"><span className="text-indigo-400">Total</span> <span className="font-bold text-indigo-700">{cycleTime}</span></div>}
                             </div>
 
-                            {/* Editable Setup SG + Final Alc% */}
-                            <div className="flex gap-4 text-[10px]">
-                              <div>
-                                <span className="text-gray-400 font-bold">Setup SG: </span>
-                                <input type="number" step="0.001" defaultValue={b.setupGravity || ''} className="w-20 px-1.5 py-0.5 border rounded text-[10px] font-medium text-indigo-600"
-                                  onBlur={async (e) => { const v = parseFloat(e.target.value); if (!v) return; try { await api.patch(`/fermentation/batches/${b.id}`, { setupGravity: v }); flash('ok', 'Setup SG updated'); } catch { flash('err', 'Update failed'); } }} />
+                            {/* Setup Data — all fields from batch setup */}
+                            <div className="bg-white rounded-lg border p-2.5 space-y-2">
+                              <div className="text-[10px] font-bold text-gray-400 uppercase">Setup Details</div>
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1.5 text-[10px]">
+                                <div>
+                                  <span className="text-gray-400">Setup SG: </span>
+                                  <input type="number" step="0.001" defaultValue={b.setupGravity || ''} className="w-20 px-1.5 py-0.5 border rounded text-[10px] font-medium text-indigo-600"
+                                    onBlur={async (e) => { const v = parseFloat(e.target.value); if (!v) return; try { await api.patch(`/fermentation/batches/${b.id}`, { setupGravity: v }); flash('ok', 'Setup SG updated'); } catch { flash('err', 'Update failed'); } }} />
+                                </div>
+                                <div>
+                                  <span className="text-gray-400">Final Alc%: </span>
+                                  <input type="number" step="0.01" defaultValue={b.finalAlcohol || ''} className="w-20 px-1.5 py-0.5 border rounded text-[10px] font-bold text-emerald-700"
+                                    onBlur={async (e) => { const v = parseFloat(e.target.value); if (!v) return; try { await api.patch(`/fermentation/batches/${b.id}`, { finalAlcohol: v }); flash('ok', 'Final Alc% updated'); } catch { flash('err', 'Update failed'); } }} />
+                                </div>
+                                {volM3 && <div><span className="text-gray-400">Volume: </span><span className="font-bold text-gray-700">{volM3} M³</span> <span className="text-gray-400">(Level {lastLevel}%)</span></div>}
+                                {b.transferVolume != null && <div><span className="text-gray-400">Transfer Vol: </span><span className="font-bold text-gray-700">{(b.transferVolume / 1000).toFixed(1)} KL</span></div>}
                               </div>
-                              <div>
-                                <span className="text-gray-400 font-bold">Final Alc%: </span>
-                                <input type="number" step="0.01" defaultValue={b.finalAlcohol || ''} className="w-20 px-1.5 py-0.5 border rounded text-[10px] font-bold text-emerald-700"
-                                  onBlur={async (e) => { const v = parseFloat(e.target.value); if (!v) return; try { await api.patch(`/fermentation/batches/${b.id}`, { finalAlcohol: v }); flash('ok', 'Final Alc% updated'); } catch { flash('err', 'Update failed'); } }} />
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-[10px]">
+                                {b.setupRs != null && <div><span className="text-gray-400">Setup RS: </span><span className="font-medium">{b.setupRs}</span></div>}
+                                {b.setupRst != null && <div><span className="text-gray-400">Setup RST: </span><span className="font-medium">{b.setupRst}</span></div>}
+                                {b.finalRsGravity != null && <div><span className="text-gray-400">Final RS/SG: </span><span className="font-medium">{b.finalRsGravity}</span></div>}
+                                {b.fermLevel != null && <div><span className="text-gray-400">Ferm Level: </span><span className="font-medium">{b.fermLevel}%</span></div>}
+                                {b.beerWellNo != null && <div><span className="text-gray-400">Beer Well: </span><span className="font-medium">BW-{b.beerWellNo}</span></div>}
+                                {b.setupDate && <div><span className="text-gray-400">Setup Date: </span><span className="font-medium">{new Date(b.setupDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</span></div>}
+                                {b.setupTime && <div><span className="text-gray-400">Setup Time: </span><span className="font-medium">{b.setupTime}</span></div>}
+                                {b.totalHours != null && <div><span className="text-gray-400">Total Hours: </span><span className="font-medium">{b.totalHours}h</span></div>}
                               </div>
-                              {volM3 && <div><span className="text-gray-400 font-bold">Volume: </span><span className="font-bold text-gray-700">{volM3} M³</span> <span className="text-gray-400">(Level {lastLevel}%)</span></div>}
+                              {/* Chemicals from setup */}
+                              {(b.yeast || b.enzyme || b.formolin || b.booster || b.urea) && (
+                                <div className="flex flex-wrap gap-1.5 pt-1">
+                                  {b.yeast && <span className="bg-green-50 border border-green-100 rounded px-2 py-0.5 text-[10px]"><span className="font-bold text-green-800">Yeast:</span> <span className="text-green-600">{b.yeast}</span></span>}
+                                  {b.enzyme && <span className="bg-blue-50 border border-blue-100 rounded px-2 py-0.5 text-[10px]"><span className="font-bold text-blue-800">Enzyme:</span> <span className="text-blue-600">{b.enzyme}</span></span>}
+                                  {b.urea && <span className="bg-amber-50 border border-amber-100 rounded px-2 py-0.5 text-[10px]"><span className="font-bold text-amber-800">Urea:</span> <span className="text-amber-600">{b.urea}</span></span>}
+                                  {b.formolin && <span className="bg-red-50 border border-red-100 rounded px-2 py-0.5 text-[10px]"><span className="font-bold text-red-800">Formolin:</span> <span className="text-red-600">{b.formolin}</span></span>}
+                                  {b.booster && <span className="bg-purple-50 border border-purple-100 rounded px-2 py-0.5 text-[10px]"><span className="font-bold text-purple-800">Booster:</span> <span className="text-purple-600">{b.booster}</span></span>}
+                                </div>
+                              )}
                             </div>
 
                             {/* Graph toggle */}
                             {readings.length >= 2 && (() => {
-                              const cData = readings.map((r: any) => ({
-                                time: new Date(r.analysisTime || r.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
-                                sg: r.spGravity ?? undefined, alc: r.alcohol ?? undefined, level: r.level ?? undefined,
-                              }));
+                              const multiDayHist = readings.length > 1 && new Date(readings[0].analysisTime || readings[0].createdAt).toDateString() !== new Date(readings[readings.length - 1].analysisTime || readings[readings.length - 1].createdAt).toDateString();
+                              const cData = readings.map((r: any) => {
+                                const d = new Date(r.analysisTime || r.createdAt);
+                                const timeStr = multiDayHist
+                                  ? d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) + ' ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
+                                  : d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+                                return { time: timeStr, sg: r.spGravity ?? undefined, alc: r.alcohol ?? undefined, level: r.level ?? undefined };
+                              });
                               const sgVals = cData.map(d => d.sg).filter((v): v is number => v != null);
                               const sgMin2 = sgVals.length ? Math.floor((Math.min(...sgVals) - 0.005) * 1000) / 1000 : 1;
                               const sgMax2 = sgVals.length ? Math.ceil((Math.max(...sgVals) + 0.005) * 1000) / 1000 : 1.1;
@@ -1279,6 +1319,7 @@ export default function Fermentation() {
                                       <th className="px-2 py-1 text-right">Alc%</th>
                                       <th className="px-2 py-1 text-right">Temp</th>
                                       <th className="px-2 py-1 text-right">RS</th>
+                                      <th className="px-2 py-1 text-right">RST</th>
                                     </tr></thead>
                                     <tbody>
                                       {readings.map((r: any, i: number) => {
@@ -1298,6 +1339,7 @@ export default function Fermentation() {
                                             <td className="px-2 py-1 text-right font-bold text-emerald-700">{r.alcohol ?? '—'}</td>
                                             <td className="px-2 py-1 text-right">{r.temp ? `${r.temp}°` : '—'}</td>
                                             <td className="px-2 py-1 text-right">{r.rs ?? '—'}</td>
+                                            <td className="px-2 py-1 text-right">{r.rst ?? '—'}</td>
                                           </tr>
                                         );
                                       })}

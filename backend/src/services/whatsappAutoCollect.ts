@@ -13,6 +13,7 @@
 import prisma from '../config/prisma';
 import { sendWhatsAppMessage, sendToGroup, registerIncomingHandler } from './whatsappBaileys';
 import { MODULE_REGISTRY, ModuleConfig } from './autoCollectModules';
+import { setDdgsLanguage } from './autoCollectModules/ddgsProduction';
 
 // ── Types ──
 
@@ -226,6 +227,9 @@ export async function loadSchedules(): Promise<void> {
     if (raw) {
       schedules = JSON.parse(raw);
       console.log('[AutoCollect] Loaded', schedules.length, 'schedule(s):', JSON.stringify(schedules));
+      // Sync per-module config
+      const ddgs = schedules.find(s => s.module === 'ddgs');
+      if (ddgs) setDdgsLanguage((ddgs as any).language || 'hi');
     } else {
       console.log('[AutoCollect] No autoCollectConfig in DB, starting with empty schedules');
     }
@@ -236,9 +240,10 @@ export async function loadSchedules(): Promise<void> {
 
 export async function saveSchedules(newSchedules: AutoCollectSchedule[]): Promise<void> {
   schedules = newSchedules;
-  // Reset last-run timestamps so new intervals take effect immediately
-  schedulerLastRun.clear();
-  console.log('[AutoCollect] Schedules updated, cleared lastRun timestamps. New config:', JSON.stringify(schedules));
+  // Sync per-module config
+  const ddgs = schedules.find(s => s.module === 'ddgs');
+  if (ddgs) setDdgsLanguage((ddgs as any).language || 'hi');
+  console.log('[AutoCollect] Schedules updated. New config:', JSON.stringify(schedules));
   try {
     const settings = await prisma.settings.findFirst();
     if (settings) {
@@ -259,8 +264,6 @@ export function getSchedules(): AutoCollectSchedule[] {
   return schedules;
 }
 
-const schedulerLastRun = new Map<string, Date>();
-
 /**
  * Pick the right phone number based on shift.
  * phone field is comma-separated: "shiftA,shiftB,shiftC"
@@ -270,40 +273,77 @@ const schedulerLastRun = new Map<string, Date>();
 export function pickShiftPhone(phoneStr: string): string | null {
   const parts = phoneStr.split(',').map(p => p.trim());
   const hour = new Date().getHours(); // IST on server
-  let idx = hour >= 6 && hour < 14 ? 0 : hour >= 14 && hour < 22 ? 1 : 2;
+  const idx = hour >= 6 && hour < 14 ? 0 : hour >= 14 && hour < 22 ? 1 : 2;
   // Try current shift first, then fallback to any non-empty
   if (parts[idx]) return parts[idx];
   return parts.find(p => p.length > 0) || null;
 }
 
-async function runScheduler(): Promise<void> {
+/**
+ * Clock-based scheduler — survives deploys.
+ *
+ * Instead of tracking "time since last trigger" in memory, we compute the
+ * current time-slot based on real clock time and check if we already sent
+ * a message in that slot by querying the WhatsAppMessage table.
+ *
+ * For interval=60 min:  slots are 00:00, 01:00, 02:00, ...
+ * For interval=120 min: slots are 00:00, 02:00, 04:00, ...
+ * For interval=30 min:  slots are 00:00, 00:30, 01:00, ...
+ *
+ * After a deploy, the scheduler checks: "Am I in a slot that already had
+ * a message sent?" — if yes, skip. If no, trigger.
+ */
+function getCurrentSlotStart(intervalMinutes: number): Date {
   const now = new Date();
+  const minutesSinceMidnight = now.getHours() * 60 + now.getMinutes();
+  const slotIndex = Math.floor(minutesSinceMidnight / intervalMinutes);
+  const slotMinutes = slotIndex * intervalMinutes;
+  const slotStart = new Date(now);
+  slotStart.setHours(Math.floor(slotMinutes / 60), slotMinutes % 60, 0, 0);
+  return slotStart;
+}
+
+async function wasAlreadyTriggeredInSlot(module: string, slotStart: Date): Promise<boolean> {
+  try {
+    const count = await prisma.whatsAppMessage.count({
+      where: {
+        module: `auto-collect-${module}`,
+        direction: 'outgoing',
+        timestamp: { gte: slotStart },
+      },
+    });
+    return count > 0;
+  } catch (err) {
+    console.error(`[AutoCollect] DB check failed for ${module}:`, err);
+    return false; // fail-open: trigger if DB check fails
+  }
+}
+
+async function runScheduler(): Promise<void> {
   for (const sched of schedules) {
     if (!sched.enabled) continue;
     if (!MODULE_REGISTRY[sched.module]) continue;
 
-    const key = `${sched.module}-${sched.phone}`;
-    const lastRun = schedulerLastRun.get(key);
-    const intervalMs = sched.intervalMinutes * 60 * 1000;
+    const slotStart = getCurrentSlotStart(sched.intervalMinutes);
+    const alreadySent = await wasAlreadyTriggeredInSlot(sched.module, slotStart);
 
-    if (!lastRun || (now.getTime() - lastRun.getTime()) >= intervalMs) {
-      const phone = pickShiftPhone(sched.phone);
-      if (!phone) {
-        console.warn(`[AutoCollect] No phone configured for current shift: ${sched.module}`);
-        continue;
-      }
+    if (alreadySent) continue;
 
-      let digits = phone.replace(/\D/g, '');
-      if (digits.length === 10) digits = '91' + digits;
+    const phone = pickShiftPhone(sched.phone);
+    if (!phone) {
+      console.warn(`[AutoCollect] No phone configured for current shift: ${sched.module}`);
+      continue;
+    }
 
-      if (!activeSessions.has(digits)) {
-        console.log(`[AutoCollect] Triggering ${sched.module} for ${phone} (shift-picked)`);
-        const result = await startCollection(phone, sched.module, sched.autoShare !== false);
-        if (result.success) {
-          schedulerLastRun.set(key, now);
-        } else {
-          console.error(`[AutoCollect] Failed to trigger: ${result.error}`);
-        }
+    let digits = phone.replace(/\D/g, '');
+    if (digits.length === 10) digits = '91' + digits;
+
+    if (!activeSessions.has(digits)) {
+      const slotLabel = `${String(slotStart.getHours()).padStart(2, '0')}:${String(slotStart.getMinutes()).padStart(2, '0')}`;
+      console.log(`[AutoCollect] Triggering ${sched.module} for ${phone} (slot ${slotLabel}, interval ${sched.intervalMinutes}min)`);
+      const result = await startCollection(phone, sched.module, sched.autoShare !== false);
+      if (!result.success) {
+        console.error(`[AutoCollect] Failed to trigger: ${result.error}`);
       }
     }
   }
