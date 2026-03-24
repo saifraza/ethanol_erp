@@ -1824,3 +1824,10 @@ model EthanolLifting {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
+
+model WhatsAppSession {
+  id        String   @id @default("default")
+  data      String   @db.Text  // JSON auth state
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

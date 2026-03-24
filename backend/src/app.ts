@@ -61,6 +61,8 @@ import directSaleRoutes from './routes/directSales';
 import ethanolContractRoutes from './routes/ethanolContracts';
 // Accounts
 import accountsRoutes from './routes/accounts';
+// WhatsApp (Baileys QR)
+import whatsappRoutes from './routes/whatsapp';
 
 
 const app = express();
@@ -147,6 +149,8 @@ app.use('/api/direct-sales', directSaleRoutes);
 app.use('/api/ethanol-contracts', ethanolContractRoutes);
 // Accounts
 app.use('/api/accounts', accountsRoutes);
+// WhatsApp (Baileys QR)
+app.use('/api/whatsapp', whatsappRoutes);
 
 
 // Serve uploaded files

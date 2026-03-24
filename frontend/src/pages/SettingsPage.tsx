@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import api from '../services/api';
-import { Save } from 'lucide-react';
+import { Save, Smartphone, RefreshCw, LogOut, Send } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function SettingsPage() {
@@ -8,6 +8,71 @@ export default function SettingsPage() {
   const [msg, setMsg] = useState('');
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
+
+  // WhatsApp Baileys state
+  const [waStatus, setWaStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
+  const [waQR, setWaQR] = useState<string | null>(null);
+  const [waNumber, setWaNumber] = useState<string | null>(null);
+  const [waLoading, setWaLoading] = useState(false);
+  const [testPhone, setTestPhone] = useState('');
+  const [testMsg, setTestMsg] = useState('Hello from MSPIL ERP!');
+  const [testResult, setTestResult] = useState('');
+
+  const fetchWAStatus = useCallback(async () => {
+    try {
+      const res = await api.get('/whatsapp/status');
+      setWaStatus(res.data.status);
+      setWaQR(res.data.qr);
+      setWaNumber(res.data.connectedNumber);
+    } catch {
+      // WhatsApp routes may not exist yet
+    }
+  }, []);
+
+  // Poll WhatsApp status when connecting (QR needs refresh)
+  useEffect(() => {
+    fetchWAStatus();
+    const interval = setInterval(fetchWAStatus, waStatus === 'connecting' ? 3000 : 15000);
+    return () => clearInterval(interval);
+  }, [fetchWAStatus, waStatus]);
+
+  const handleConnect = async () => {
+    setWaLoading(true);
+    try {
+      const res = await api.post('/whatsapp/connect');
+      setWaStatus(res.data.status);
+      setWaQR(res.data.qr);
+    } catch (err: any) {
+      setTestResult('Failed to connect: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setWaLoading(false);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    setWaLoading(true);
+    try {
+      await api.post('/whatsapp/disconnect');
+      setWaStatus('disconnected');
+      setWaQR(null);
+      setWaNumber(null);
+    } catch (err: any) {
+      setTestResult('Failed to disconnect: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setWaLoading(false);
+    }
+  };
+
+  const handleTestSend = async () => {
+    if (!testPhone) return;
+    setTestResult('Sending...');
+    try {
+      const res = await api.post('/whatsapp/test', { phone: testPhone, message: testMsg });
+      setTestResult(res.data.success ? 'Sent successfully!' : 'Failed: ' + res.data.error);
+    } catch (err: any) {
+      setTestResult('Error: ' + (err.response?.data?.error || err.message));
+    }
+  };
 
   useEffect(() => { api.get('/settings').then(r => setSettings(r.data)); }, []);
 
@@ -50,9 +115,86 @@ export default function SettingsPage() {
           ))}
         </div>
 
-        {/* WhatsApp Auto-Push */}
+        {/* WhatsApp Connection (Baileys QR) */}
         <div className="mt-6 pt-6 border-t">
-          <h2 className="text-lg font-semibold mb-3">WhatsApp Notifications</h2>
+          <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
+            <Smartphone size={20} className="text-green-600" />
+            WhatsApp Connection
+          </h2>
+
+          {/* Status indicator */}
+          <div className="flex items-center gap-2 mb-4">
+            <span className={`w-3 h-3 rounded-full ${
+              waStatus === 'connected' ? 'bg-green-500' :
+              waStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' :
+              'bg-gray-400'
+            }`} />
+            <span className="text-sm font-medium capitalize">{waStatus}</span>
+            {waNumber && <span className="text-sm text-gray-500">— +{waNumber}</span>}
+          </div>
+
+          {/* QR Code display */}
+          {waStatus === 'connecting' && waQR && (
+            <div className="mb-4 p-4 bg-white border rounded-lg inline-block">
+              <p className="text-sm text-gray-600 mb-2">Scan with WhatsApp on your phone:</p>
+              <img src={waQR} alt="WhatsApp QR Code" className="w-64 h-64" />
+              <p className="text-xs text-gray-400 mt-2">QR refreshes automatically. Keep this page open.</p>
+            </div>
+          )}
+
+          {waStatus === 'connecting' && !waQR && (
+            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <p className="text-sm text-yellow-700">Generating QR code... please wait.</p>
+            </div>
+          )}
+
+          {/* Connect / Disconnect buttons */}
+          {isAdmin && (
+            <div className="flex items-center gap-3 mb-4">
+              {waStatus === 'disconnected' && (
+                <button onClick={handleConnect} disabled={waLoading}
+                  className="btn-primary flex items-center gap-2">
+                  <RefreshCw size={16} className={waLoading ? 'animate-spin' : ''} />
+                  Connect WhatsApp
+                </button>
+              )}
+              {waStatus === 'connected' && (
+                <button onClick={handleDisconnect} disabled={waLoading}
+                  className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 flex items-center gap-2">
+                  <LogOut size={16} />
+                  Disconnect
+                </button>
+              )}
+              {waStatus === 'connecting' && (
+                <button onClick={handleDisconnect} disabled={waLoading}
+                  className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 flex items-center gap-2">
+                  Cancel
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Test message (when connected) */}
+          {waStatus === 'connected' && isAdmin && (
+            <div className="p-4 bg-green-50 border border-green-200 rounded-lg space-y-2">
+              <p className="text-sm font-medium text-green-800">Send a test message</p>
+              <div className="flex gap-2">
+                <input type="text" value={testPhone} onChange={e => setTestPhone(e.target.value)}
+                  placeholder="Phone number" className="input-field w-40" />
+                <input type="text" value={testMsg} onChange={e => setTestMsg(e.target.value)}
+                  className="input-field flex-1" />
+                <button onClick={handleTestSend} className="btn-primary flex items-center gap-1">
+                  <Send size={14} /> Send
+                </button>
+              </div>
+              {testResult && <p className={`text-xs ${testResult.includes('success') ? 'text-green-600' : 'text-red-500'}`}>{testResult}</p>}
+            </div>
+          )}
+        </div>
+
+        {/* WhatsApp Auto-Push Settings */}
+        <div className="mt-6 pt-6 border-t">
+          <h2 className="text-lg font-semibold mb-3">WhatsApp Auto-Push</h2>
           <div className="space-y-3">
             <div className="flex items-center gap-3">
               <label className="text-sm text-gray-600 w-52">Auto-push enabled</label>
@@ -76,7 +218,7 @@ export default function SettingsPage() {
               />
             </div>
             <p className="text-xs text-gray-400 ml-52 pl-2">
-              Messages auto-sent on DDGS bag entry, dispatch, etc. Set WHATSAPP_PROVIDER env var (interakt/twilio/meta/wapi/gupshup).
+              DDGS production notifications auto-sent via WhatsApp. Connect above first, then enable.
             </p>
           </div>
         </div>
