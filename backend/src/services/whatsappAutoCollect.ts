@@ -1,36 +1,20 @@
 /**
- * WhatsApp Auto-Collection Service
+ * WhatsApp Auto-Collection Service (Generic Engine)
  *
  * Sends scheduled WhatsApp messages to operators asking for field readings,
  * parses their replies, and saves data to the ERP database.
  *
- * Flow (Decanter example, by dryer group):
- * 1. Bot → "Enter Dryer 1 (D1, D2, D3) readings: Feed, WetCake, ThinSlopGr"
- * 2. Operator → "D1: 12.5, 35, 1.025\nD2: 11.8, 33, 1.030\nD3: 13.0, 36, 1.028"
- * 3. Bot → confirms + asks Dryer 2
- * 4. Repeat until all groups done → save DecanterEntry
+ * Module-specific logic lives in ./autoCollectModules/<module>.ts
+ * This file is the generic conversation engine + scheduler.
+ *
+ * To add a new module: see autoCollectModules/_template.ts
  */
 
 import prisma from '../config/prisma';
 import { sendWhatsAppMessage, sendToGroup, registerIncomingHandler } from './whatsappBaileys';
+import { MODULE_REGISTRY, ModuleConfig } from './autoCollectModules';
 
 // ── Types ──
-
-interface CollectStep {
-  key: string;           // e.g. 'dryer1'
-  label: string;         // e.g. 'Dryer 1 (D1, D2, D3)'
-  fields: string[];      // e.g. ['d1', 'd2', 'd3']
-  fieldLabels: string[]; // e.g. ['D1', 'D2', 'D3']
-  subFields: string[];   // e.g. ['Feed', 'WetCake', 'ThinSlopGr']
-}
-
-interface ModuleConfig {
-  module: string;
-  steps: CollectStep[];
-  buildPrompt: (step: CollectStep) => string;
-  parseReply: (text: string, step: CollectStep) => Record<string, number> | null;
-  saveData: (data: Record<string, number>) => Promise<void>;
-}
 
 interface ActiveSession {
   phone: string;
@@ -46,132 +30,6 @@ const activeSessions = new Map<string, ActiveSession>(); // key = phone
 
 // ── Scheduler state ──
 let schedulerInterval: ReturnType<typeof setInterval> | null = null;
-let lastSendTime: Date | null = null;
-
-// ── Module Configs ──
-
-const DECANTER_STEPS: CollectStep[] = [
-  {
-    key: 'dryer1',
-    label: 'Dryer 1 (D1, D2, D3)',
-    fields: ['d1', 'd2', 'd3'],
-    fieldLabels: ['D1', 'D2', 'D3'],
-    subFields: ['Feed', 'WetCake', 'ThinSlopGr'],
-  },
-  {
-    key: 'dryer2',
-    label: 'Dryer 2 (D4, D5)',
-    fields: ['d4', 'd5'],
-    fieldLabels: ['D4', 'D5'],
-    subFields: ['Feed', 'WetCake', 'ThinSlopGr'],
-  },
-  {
-    key: 'dryer3',
-    label: 'Dryer 3 (D6, D7, D8)',
-    fields: ['d6', 'd7', 'd8'],
-    fieldLabels: ['D6', 'D7', 'D8'],
-    subFields: ['Feed', 'WetCake', 'ThinSlopGr'],
-  },
-];
-
-function buildDecanterPrompt(step: CollectStep): string {
-  const example = step.fields.map((f, i) =>
-    `${step.fieldLabels[i]}: 12.5, 35, 1.025`
-  ).join('\n');
-
-  return [
-    `📊 *Decanter Reading — ${step.label}*`,
-    '',
-    `Enter ${step.subFields.join(', ')} for each:`,
-    '',
-    ...step.fieldLabels.map(l => `${l}: ___, ___, ___`),
-    '',
-    `Example:`,
-    example,
-  ].join('\n');
-}
-
-function parseDecanterReply(text: string, step: CollectStep): Record<string, number> | null {
-  const data: Record<string, number> = {};
-  const lines = text.trim().split('\n').map(l => l.trim()).filter(Boolean);
-
-  // Try labeled format: "D1: 12.5, 35, 1.025"
-  let parsed = 0;
-  for (const field of step.fields) {
-    const idx = step.fields.indexOf(field);
-    const label = step.fieldLabels[idx];
-    // Look for line starting with label (case-insensitive)
-    const regex = new RegExp(`^${label}\\s*[:=\\-]?\\s*(.+)`, 'i');
-    for (const line of lines) {
-      const match = line.match(regex);
-      if (match) {
-        const vals = match[1].split(/[,\s]+/).map(v => parseFloat(v.trim())).filter(v => !isNaN(v));
-        if (vals.length >= 3) {
-          data[`${field}Feed`] = vals[0];
-          data[`${field}WetCake`] = vals[1];
-          data[`${field}ThinSlopGr`] = vals[2];
-          parsed++;
-        }
-        break;
-      }
-    }
-  }
-
-  if (parsed === step.fields.length) return data;
-
-  // Fallback: try unlabeled — one line per decanter, 3 numbers each
-  if (lines.length >= step.fields.length) {
-    const fallbackData: Record<string, number> = {};
-    let ok = true;
-    for (let i = 0; i < step.fields.length; i++) {
-      // Strip optional label prefix
-      const cleaned = lines[i].replace(/^[dD]\d\s*[:=\-]?\s*/, '');
-      const vals = cleaned.split(/[,\s]+/).map(v => parseFloat(v.trim())).filter(v => !isNaN(v));
-      if (vals.length >= 3) {
-        fallbackData[`${step.fields[i]}Feed`] = vals[0];
-        fallbackData[`${step.fields[i]}WetCake`] = vals[1];
-        fallbackData[`${step.fields[i]}ThinSlopGr`] = vals[2];
-      } else {
-        ok = false;
-        break;
-      }
-    }
-    if (ok) return fallbackData;
-  }
-
-  return null; // couldn't parse
-}
-
-async function saveDecanterData(data: Record<string, number>): Promise<void> {
-  const now = new Date();
-  const entry: any = {
-    date: now,
-    entryTime: now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
-    remark: 'Auto-collected via WhatsApp',
-    userId: 'system',
-  };
-
-  // Map collected data to prisma fields
-  for (const [key, val] of Object.entries(data)) {
-    entry[key] = val;
-  }
-
-  await prisma.decanterEntry.create({ data: entry });
-  console.log('[AutoCollect] Saved DecanterEntry with', Object.keys(data).length, 'fields');
-}
-
-const DECANTER_CONFIG: ModuleConfig = {
-  module: 'decanter',
-  steps: DECANTER_STEPS,
-  buildPrompt: buildDecanterPrompt,
-  parseReply: parseDecanterReply,
-  saveData: saveDecanterData,
-};
-
-// Registry of all auto-collect modules
-const MODULE_CONFIGS: Record<string, ModuleConfig> = {
-  decanter: DECANTER_CONFIG,
-};
 
 // ── Core Logic ──
 
@@ -179,8 +37,8 @@ const MODULE_CONFIGS: Record<string, ModuleConfig> = {
  * Start a collection session — sends the first question
  */
 export async function startCollection(phone: string, moduleName: string): Promise<{ success: boolean; error?: string }> {
-  const config = MODULE_CONFIGS[moduleName];
-  if (!config) return { success: false, error: `Unknown module: ${moduleName}` };
+  const config = MODULE_REGISTRY[moduleName];
+  if (!config) return { success: false, error: `Unknown module: ${moduleName}. Available: ${Object.keys(MODULE_REGISTRY).join(', ')}` };
 
   // Clean phone
   let digits = phone.replace(/\D/g, '');
@@ -221,7 +79,7 @@ export async function startCollection(phone: string, moduleName: string): Promis
  */
 async function handleIncoming(phone: string, text: string, _name: string | null): Promise<boolean> {
   const session = activeSessions.get(phone);
-  if (!session) return false; // not part of any collection
+  if (!session) return false;
 
   // Check expiry
   if (new Date() > session.expiresAt) {
@@ -231,13 +89,14 @@ async function handleIncoming(phone: string, text: string, _name: string | null)
   }
 
   // Handle "cancel" command
-  if (text.toLowerCase().trim() === 'cancel' || text.toLowerCase().trim() === 'stop') {
+  const lower = text.toLowerCase().trim();
+  if (lower === 'cancel' || lower === 'stop') {
     activeSessions.delete(phone);
     await sendWhatsAppMessage(phone, '❌ Data collection cancelled.', `auto-collect-${session.module}`);
     return true;
   }
 
-  const config = MODULE_CONFIGS[session.module];
+  const config = MODULE_REGISTRY[session.module];
   if (!config) {
     activeSessions.delete(phone);
     return true;
@@ -249,11 +108,11 @@ async function handleIncoming(phone: string, text: string, _name: string | null)
   const parsed = config.parseReply(text, step);
 
   if (!parsed) {
-    // Couldn't parse — ask again
-    const hint = step.fieldLabels.map(l => `${l}: Feed, WetCake, ThinSlopGr`).join('\n');
+    // Couldn't parse — ask again with module-specific hint
+    const hint = config.buildErrorHint(step);
     await sendWhatsAppMessage(
       phone,
-      `❌ Couldn't read that. Please send in this format:\n\n${hint}\n\nExample: ${step.fieldLabels[0]}: 12.5, 35, 1.025\n\nType "cancel" to stop.`,
+      `❌ Couldn't read that. Please send in this format:\n\n${hint}\n\nType "cancel" to stop.`,
       `auto-collect-${session.module}`
     );
     return true;
@@ -262,13 +121,8 @@ async function handleIncoming(phone: string, text: string, _name: string | null)
   // Merge parsed data
   Object.assign(session.collectedData, parsed);
 
-  // Build confirmation
-  const confirm = step.fields.map((f, i) => {
-    const feed = parsed[`${f}Feed`];
-    const wet = parsed[`${f}WetCake`];
-    const thin = parsed[`${f}ThinSlopGr`];
-    return `${step.fieldLabels[i]}: Feed ${feed} | WetCake ${wet} | ThinSlop ${thin}`;
-  }).join('\n');
+  // Build module-specific confirmation
+  const confirm = config.buildConfirmation(step, parsed);
 
   // Move to next step
   session.stepIndex++;
@@ -290,33 +144,25 @@ async function handleIncoming(phone: string, text: string, _name: string | null)
       activeSessions.delete(phone);
 
       // Build final summary
-      const allFields = config.steps.flatMap(s => s.fields);
-      const summary = allFields.map(f => {
-        const feed = session.collectedData[`${f}Feed`];
-        const wet = session.collectedData[`${f}WetCake`];
-        const thin = session.collectedData[`${f}ThinSlopGr`];
-        if (feed == null && wet == null && thin == null) return null;
-        return `${f.toUpperCase()}: ${feed ?? '-'} | ${wet ?? '-'} | ${thin ?? '-'}`;
-      }).filter(Boolean).join('\n');
+      const summary = config.buildSummary(session.collectedData);
 
       // Confirm to operator
       await sendWhatsAppMessage(
         phone,
-        `✅ *All Decanter readings saved!*\n\n${confirm}\n\n📊 *Complete Entry:*\n${summary}\n\n_Saved to ERP at ${new Date().toLocaleTimeString('en-IN')}_`,
+        `✅ *All ${config.displayName} readings saved!*\n\n${confirm}\n\n📊 *Complete Entry:*\n${summary}\n\n_Saved to ERP at ${new Date().toLocaleTimeString('en-IN')}_`,
         `auto-collect-${session.module}`
       );
 
-      // Share complete report to WhatsApp group/module routing
+      // Share to WhatsApp group
       try {
-        const fullReport = `📊 *Decanter Report* — ${new Date().toLocaleTimeString('en-IN')}\n\n${summary}\n\n_Auto-collected via WhatsApp_`;
-        // Use module routing: send via the decanter module's configured channel
+        const fullReport = `📊 *${config.displayName} Report* — ${new Date().toLocaleTimeString('en-IN')}\n\n${summary}\n\n_Auto-collected via WhatsApp_`;
         const settings = await prisma.settings.findFirst();
         const groupJid = (settings as any)?.whatsappGroupJid;
         if (groupJid) {
-          await sendToGroup(groupJid, fullReport, 'decanter');
+          await sendToGroup(groupJid, fullReport, config.module);
         }
       } catch (shareErr) {
-        console.error('[AutoCollect] Failed to share report to group:', shareErr);
+        console.error(`[AutoCollect] Failed to share ${config.module} report to group:`, shareErr);
       }
 
       console.log(`[AutoCollect] ${session.module} completed for ${phone}`);
@@ -331,7 +177,7 @@ async function handleIncoming(phone: string, text: string, _name: string | null)
     }
   }
 
-  return true; // message was handled
+  return true;
 }
 
 // ── Scheduler ──
@@ -377,25 +223,46 @@ export function getSchedules(): AutoCollectSchedule[] {
   return schedules;
 }
 
+const schedulerLastRun = new Map<string, Date>();
+
+/**
+ * Pick the right phone number based on shift.
+ * phone field is comma-separated: "shiftA,shiftB,shiftC"
+ * Shift A = 06:00–13:59, Shift B = 14:00–21:59, Shift C = 22:00–05:59
+ * Falls back to first non-empty number if current shift slot is blank.
+ */
+export function pickShiftPhone(phoneStr: string): string | null {
+  const parts = phoneStr.split(',').map(p => p.trim());
+  const hour = new Date().getHours(); // IST on server
+  let idx = hour >= 6 && hour < 14 ? 0 : hour >= 14 && hour < 22 ? 1 : 2;
+  // Try current shift first, then fallback to any non-empty
+  if (parts[idx]) return parts[idx];
+  return parts.find(p => p.length > 0) || null;
+}
+
 async function runScheduler(): Promise<void> {
   const now = new Date();
   for (const sched of schedules) {
     if (!sched.enabled) continue;
+    if (!MODULE_REGISTRY[sched.module]) continue;
 
-    // Check if it's time to run (based on interval)
     const key = `${sched.module}-${sched.phone}`;
     const lastRun = schedulerLastRun.get(key);
     const intervalMs = sched.intervalMinutes * 60 * 1000;
 
     if (!lastRun || (now.getTime() - lastRun.getTime()) >= intervalMs) {
-      // Don't start if there's already an active session for this phone
-      const digits = sched.phone.replace(/\D/g, '').length === 10
-        ? '91' + sched.phone.replace(/\D/g, '')
-        : sched.phone.replace(/\D/g, '');
+      const phone = pickShiftPhone(sched.phone);
+      if (!phone) {
+        console.warn(`[AutoCollect] No phone configured for current shift: ${sched.module}`);
+        continue;
+      }
+
+      let digits = phone.replace(/\D/g, '');
+      if (digits.length === 10) digits = '91' + digits;
 
       if (!activeSessions.has(digits)) {
-        console.log(`[AutoCollect] Triggering ${sched.module} for ${sched.phone}`);
-        const result = await startCollection(sched.phone, sched.module);
+        console.log(`[AutoCollect] Triggering ${sched.module} for ${phone} (shift-picked)`);
+        const result = await startCollection(phone, sched.module);
         if (result.success) {
           schedulerLastRun.set(key, now);
         } else {
@@ -406,13 +273,11 @@ async function runScheduler(): Promise<void> {
   }
 }
 
-const schedulerLastRun = new Map<string, Date>();
-
 export function startScheduler(): void {
   if (schedulerInterval) return;
   schedulerInterval = setInterval(() => {
     runScheduler().catch(err => console.error('[AutoCollect] Scheduler error:', err));
-  }, 60 * 1000); // Check every minute
+  }, 60 * 1000);
   console.log('[AutoCollect] Scheduler started');
 }
 
@@ -430,7 +295,7 @@ export async function initAutoCollect(): Promise<void> {
   registerIncomingHandler(handleIncoming);
   await loadSchedules();
   startScheduler();
-  console.log('[AutoCollect] Initialized');
+  console.log(`[AutoCollect] Initialized with modules: ${Object.keys(MODULE_REGISTRY).join(', ')}`);
 }
 
 // ── Status ──
@@ -440,14 +305,16 @@ export function getActiveSessions(): { phone: string; module: string; step: numb
     phone: s.phone,
     module: s.module,
     step: s.stepIndex + 1,
-    totalSteps: MODULE_CONFIGS[s.module]?.steps.length || 0,
+    totalSteps: MODULE_REGISTRY[s.module]?.steps.length || 0,
     startedAt: s.startedAt,
   }));
 }
 
-export function getAvailableModules(): { module: string; fields: string[] }[] {
-  return Object.entries(MODULE_CONFIGS).map(([mod, config]) => ({
+export function getAvailableModules(): { module: string; displayName: string; steps: number; fields: string[] }[] {
+  return Object.entries(MODULE_REGISTRY).map(([mod, config]) => ({
     module: mod,
+    displayName: config.displayName,
+    steps: config.steps.length,
     fields: config.steps.flatMap(s =>
       s.fields.flatMap(f => s.subFields.map(sf => `${f}${sf}`))
     ),

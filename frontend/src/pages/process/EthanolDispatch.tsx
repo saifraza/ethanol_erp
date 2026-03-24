@@ -209,7 +209,7 @@ export default function EthanolDispatch() {
 
           {/* Save */}
           <div className="flex items-center gap-3">
-            <button onClick={handleSave} disabled={saving}
+            <button onClick={() => handleSave()} disabled={saving}
               className="px-6 py-2.5 bg-red-600 text-white rounded-lg font-medium text-sm hover:bg-red-700 disabled:opacity-50">
               {saving ? 'Saving...' : 'Save Dispatch'}
             </button>
