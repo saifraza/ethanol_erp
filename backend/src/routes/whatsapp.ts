@@ -94,6 +94,25 @@ router.post(
   })
 );
 
+// POST /api/whatsapp/test-group — test sending to the configured group
+router.post(
+  '/test-group',
+  authenticate,
+  authorize('ADMIN'),
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const settings = await prisma.settings.findFirst();
+    const groupJid = (settings as any)?.whatsappGroupJid;
+    if (!groupJid) {
+      res.status(400).json({ error: 'No group configured in Settings', groupJid: null });
+      return;
+    }
+    console.log(`[WA-Route] test-group: sending to groupJid="${groupJid}"`);
+    const result = await sendToGroup(groupJid, req.body.message || '🧪 Test message from MSPIL ERP');
+    console.log(`[WA-Route] test-group result:`, JSON.stringify(result));
+    res.json({ groupJid, ...result });
+  })
+);
+
 // POST /api/whatsapp/send-report — smart routing: group vs private based on module
 router.post(
   '/send-report',

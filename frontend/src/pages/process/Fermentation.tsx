@@ -392,52 +392,60 @@ export default function Fermentation() {
   };
 
   /* ── WhatsApp Sharing helpers ── */
+  const fmtDt = (iso?: string) => {
+    if (!iso) return '';
+    return new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
+  };
+
   const buildVesselReport = (v: Vessel, batch: any, lastReading?: Record<string, string>): string => {
     const lines: string[] = [];
     const cfg = phCfg(batch?.phase || 'IDLE');
     lines.push(`🧪 *${v.label}*${batch ? ` — Batch #${batch.batchNo} · ${cfg.label}` : ' — Idle'}`);
     if (!batch) return lines.join('\n');
 
-    // Use lastReading (from form) or latest readings from state
-    let sg = lastReading?.spGravity || '';
-    let ph = lastReading?.ph || '';
-    let temp = lastReading?.temp || '';
-    let level = lastReading?.level || '';
-    let alc = lastReading?.alcohol || '';
-    let rs = lastReading?.rs || '';
+    // Batch info
+    const startTime = v.type === 'PF' ? (batch.setupTime || batch.createdAt) : (batch.pfTransferTime || batch.fillingStartTime);
+    if (startTime) lines.push(`Started: ${fmtDt(startTime)} (${elapsed(startTime)} ago)`);
+    if (v.type === 'FERM' && batch.setupGravity) lines.push(`Setup SG: ${batch.setupGravity}`);
+    if (v.type === 'FERM' && batch.fermLevel) lines.push(`Initial Level: ${batch.fermLevel}%`);
 
-    if (!sg && !level) {
-      // Pull from fetched data
-      if (v.type === 'FERM') {
-        const entries = fermEntries[v.no] || [];
-        const last = entries[entries.length - 1];
-        if (last) {
-          sg = last.spGravity != null ? String(last.spGravity) : '';
-          ph = last.ph != null ? String(last.ph) : '';
-          temp = last.temp != null ? String(last.temp) : '';
-          level = last.level != null ? String(last.level) : '';
-          alc = last.alcohol != null ? String(last.alcohol) : '';
-          rs = last.rs != null ? String(last.rs) : '';
-        }
-      } else if (v.type === 'PF') {
-        const pfBatch = getActivePF(v.no);
-        const last = pfBatch?.labReadings?.[pfBatch.labReadings.length - 1];
-        if (last) {
-          sg = last.spGravity != null ? String(last.spGravity) : '';
-          ph = last.ph != null ? String(last.ph) : '';
-          temp = last.temp != null ? String(last.temp) : '';
-          level = last.level != null ? String(last.level) : '';
-        }
+    // ALL lab readings since batch start
+    let readings: LabReading[] = [];
+    if (v.type === 'FERM') {
+      readings = fermEntries[v.no] || [];
+    } else if (v.type === 'PF') {
+      readings = batch.labReadings || [];
+    }
+
+    if (readings.length > 0) {
+      lines.push('');
+      lines.push(`📊 *Lab Readings (${readings.length}):*`);
+      for (const r of readings) {
+        const parts: string[] = [];
+        if (r.level != null) parts.push(`Lvl:${r.level}%`);
+        if (r.spGravity != null) parts.push(`SG:${r.spGravity}`);
+        if (r.ph != null) parts.push(`pH:${r.ph}`);
+        if (r.temp != null) parts.push(`${r.temp}°C`);
+        if (r.alcohol != null) parts.push(`Alc:${r.alcohol}%`);
+        if (r.rs != null) parts.push(`RS:${r.rs}%`);
+        if (r.rst != null) parts.push(`RST:${r.rst}%`);
+        const time = fmtDt(r.analysisTime || r.createdAt);
+        lines.push(`${time} → ${parts.join(' · ') || 'no data'}`);
       }
     }
 
-    if (level) lines.push(`Level: ${level}%`);
-    if (sg) lines.push(`SG: ${sg}`);
-    if (ph) lines.push(`pH: ${ph}`);
-    if (temp) lines.push(`Temp: ${temp}°C`);
-    if (alc) lines.push(`Alcohol: ${alc}%`);
-    if (rs) lines.push(`RS: ${rs}%`);
-    if (batch.phase && batch.pfTransferTime) lines.push(`Since: ${elapsed(batch.pfTransferTime || batch.fillingStartTime)}`);
+    // Include just-saved reading from form if present
+    if (lastReading && (lastReading.spGravity || lastReading.level)) {
+      const parts: string[] = [];
+      if (lastReading.level) parts.push(`Lvl:${lastReading.level}%`);
+      if (lastReading.spGravity) parts.push(`SG:${lastReading.spGravity}`);
+      if (lastReading.ph) parts.push(`pH:${lastReading.ph}`);
+      if (lastReading.temp) parts.push(`${lastReading.temp}°C`);
+      if (lastReading.alcohol) parts.push(`Alc:${lastReading.alcohol}%`);
+      if (lastReading.rs) parts.push(`RS:${lastReading.rs}%`);
+      lines.push(`*NOW* → ${parts.join(' · ')}`);
+    }
+
     return lines.join('\n');
   };
 
@@ -460,29 +468,31 @@ export default function Fermentation() {
         lines.push(`📦 *BW-${v.no}*: ${bw[0]?.level ? `Level ${bw[0].level}%` : 'No data'}${bw[0]?.alcohol ? ` · Alc ${bw[0].alcohol}%` : ''}`);
         continue;
       }
-      const phase = batch ? phCfg(batch.phase).label : 'Idle';
       if (!batch) { lines.push(`${v.label}: Idle`); continue; }
 
-      let sg = '', temp = '', level = '';
-      if (v.type === 'FERM') {
-        const entries = fermEntries[v.no] || [];
-        const last = entries[entries.length - 1];
-        sg = last?.spGravity ? last.spGravity.toFixed(3) : batch.setupGravity ? batch.setupGravity.toFixed(3) : '';
-        temp = last?.temp ? `${last.temp}°C` : '';
-        level = last?.level ? `${last.level}%` : batch.fermLevel ? `${batch.fermLevel}%` : '';
-      } else {
-        const last = batch.labReadings?.[batch.labReadings.length - 1];
-        sg = last?.spGravity ? last.spGravity.toFixed(3) : batch.slurryGravity ? batch.slurryGravity.toFixed(3) : '';
-        temp = last?.temp ? `${last.temp}°C` : '';
-        level = last?.level ? `${last.level}%` : '';
-      }
+      // Summary line for each vessel
+      const cfg = phCfg(batch.phase);
+      lines.push(`*${v.label}* B#${batch.batchNo} · ${cfg.label}`);
 
-      const parts = [`*${v.label}* B#${batch.batchNo} · ${phase}`];
-      if (sg) parts.push(`SG ${sg}`);
-      if (level) parts.push(`Lvl ${level}`);
-      if (temp) parts.push(temp);
-      if (batch.pfTransferTime || batch.fillingStartTime) parts.push(elapsed(batch.pfTransferTime || batch.fillingStartTime));
-      lines.push(parts.join(' · '));
+      // All readings for this vessel
+      let readings: LabReading[] = [];
+      if (v.type === 'FERM') readings = fermEntries[v.no] || [];
+      else if (v.type === 'PF') readings = batch.labReadings || [];
+
+      if (readings.length > 0) {
+        for (const r of readings) {
+          const parts: string[] = [];
+          if (r.level != null) parts.push(`Lvl:${r.level}%`);
+          if (r.spGravity != null) parts.push(`SG:${r.spGravity}`);
+          if (r.ph != null) parts.push(`pH:${r.ph}`);
+          if (r.temp != null) parts.push(`${r.temp}°C`);
+          if (r.alcohol != null) parts.push(`Alc:${r.alcohol}%`);
+          lines.push(`  ${fmtDt(r.analysisTime || r.createdAt)} → ${parts.join(' · ')}`);
+        }
+      } else {
+        lines.push(`  No readings yet`);
+      }
+      lines.push('');
     }
 
     try {
