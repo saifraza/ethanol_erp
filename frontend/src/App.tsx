@@ -57,6 +57,13 @@ const DirectPurchases = React.lazy(() => import('./pages/trade/DirectPurchases')
 const DirectSales = React.lazy(() => import('./pages/trade/DirectSales'));
 // Accounts
 const PaymentDashboard = React.lazy(() => import('./pages/accounts/PaymentDashboard'));
+const ChartOfAccounts = React.lazy(() => import('./pages/accounts/ChartOfAccounts'));
+const JournalEntryPage = React.lazy(() => import('./pages/accounts/JournalEntry'));
+const Ledger = React.lazy(() => import('./pages/accounts/Ledger'));
+const TrialBalance = React.lazy(() => import('./pages/accounts/TrialBalance'));
+const DayBook = React.lazy(() => import('./pages/accounts/DayBook'));
+const ProfitLoss = React.lazy(() => import('./pages/accounts/ProfitLoss'));
+const BalanceSheetPage = React.lazy(() => import('./pages/accounts/BalanceSheet'));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -135,6 +142,13 @@ export default function App() {
         <Route path="trade/sales" element={<DirectSales />} />
         {/* Accounts */}
         <Route path="accounts/payments" element={<PaymentDashboard />} />
+        <Route path="accounts/chart" element={<ChartOfAccounts />} />
+        <Route path="accounts/journal" element={<JournalEntryPage />} />
+        <Route path="accounts/ledger" element={<Ledger />} />
+        <Route path="accounts/trial-balance" element={<TrialBalance />} />
+        <Route path="accounts/daybook" element={<DayBook />} />
+        <Route path="accounts/profit-loss" element={<ProfitLoss />} />
+        <Route path="accounts/balance-sheet" element={<BalanceSheetPage />} />
         <Route path="reports" element={<Reports />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="document-templates" element={<DocumentTemplates />} />

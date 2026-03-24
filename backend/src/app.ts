@@ -59,8 +59,11 @@ import directPurchaseRoutes from './routes/directPurchases';
 import directSaleRoutes from './routes/directSales';
 // Ethanol Supply
 import ethanolContractRoutes from './routes/ethanolContracts';
-// Accounts
+// Accounts (Payment Desk)
 import accountsRoutes from './routes/accounts';
+// Accounts (Bookkeeping — Chart of Accounts, Journal Entries, Ledger, Reports)
+import chartOfAccountsRoutes from './routes/chartOfAccounts';
+import journalEntryRoutes from './routes/journalEntries';
 // WhatsApp (Baileys QR)
 import whatsappRoutes from './routes/whatsapp';
 import autoCollectRoutes from './routes/whatsappAutoCollect';
@@ -148,8 +151,11 @@ app.use('/api/direct-purchases', directPurchaseRoutes);
 app.use('/api/direct-sales', directSaleRoutes);
 // Ethanol Supply
 app.use('/api/ethanol-contracts', ethanolContractRoutes);
-// Accounts
+// Accounts (Payment Desk)
 app.use('/api/accounts', accountsRoutes);
+// Accounts (Bookkeeping)
+app.use('/api/chart-of-accounts', chartOfAccountsRoutes);
+app.use('/api/journal-entries', journalEntryRoutes);
 // WhatsApp (Baileys QR)
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/auto-collect', autoCollectRoutes);

@@ -8,7 +8,8 @@ import {
   Warehouse, AlertCircle, ShoppingCart,
   UserCheck, ClipboardList, Send, FileText, IndianRupee,
   Building2, Box, ShoppingBag, PackageCheck, Receipt, CreditCard,
-  Store, Tractor, Scale, Handshake
+  Store, Tractor, Scale, Handshake,
+  BookOpen, Calculator, TrendingUp, Landmark
 } from 'lucide-react';
 
 export interface ModuleDef {
@@ -66,6 +67,13 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'payments', label: 'Collections', to: '/sales/payments', icon: IndianRupee, group: 'accounts' },
   { key: 'vendor-invoices', label: 'Supplier Bills', to: '/procurement/vendor-invoices', icon: Receipt, group: 'accounts' },
   { key: 'vendor-payments', label: 'Supplier Payments', to: '/procurement/vendor-payments', icon: CreditCard, group: 'accounts' },
+  { key: 'chart-of-accounts', label: 'Chart of Accounts', to: '/accounts/chart', icon: BookOpen, group: 'accounts' },
+  { key: 'journal-entries', label: 'Journal Entry', to: '/accounts/journal', icon: Calculator, group: 'accounts' },
+  { key: 'ledger', label: 'Ledger', to: '/accounts/ledger', icon: BookOpen, group: 'accounts' },
+  { key: 'trial-balance', label: 'Trial Balance', to: '/accounts/trial-balance', icon: TrendingUp, group: 'accounts' },
+  { key: 'daybook', label: 'Day Book', to: '/accounts/daybook', icon: FileText, group: 'accounts' },
+  { key: 'pnl', label: 'Profit & Loss', to: '/accounts/profit-loss', icon: TrendingUp, group: 'accounts' },
+  { key: 'balance-sheet', label: 'Balance Sheet', to: '/accounts/balance-sheet', icon: Landmark, group: 'accounts' },
 
   // ── ADMIN ──
   { key: 'inventory', label: 'Store', to: '/inventory', icon: Warehouse, group: 'admin' },

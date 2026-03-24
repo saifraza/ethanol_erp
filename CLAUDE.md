@@ -15,6 +15,58 @@
 - Frontend vite outputs to `../backend/public` (not `frontend/dist/`)
 - Any new static data files (like `calibrations.json`) must be copied in the ROOT build script
 
+## Core Design Principles
+
+### WhatsApp-First Data Collection
+WhatsApp is a **key feature** of this ERP. Plant operators submit hourly readings via WhatsApp instead of logging into the web UI. This is critical because:
+- Operators on the plant floor use phones, not desktops
+- Auto-collect bots ask questions on schedule, parse replies, save to DB, and share summary reports to groups
+- Every new module should consider WhatsApp integration from day one
+
+**WhatsApp Auto-Collect Architecture:**
+- `backend/src/services/whatsappBaileys.ts` — WhatsApp connection via Baileys (QR auth)
+- `backend/src/services/whatsappAutoCollect.ts` — Generic conversation engine + scheduler
+- `backend/src/services/autoCollectModules/` — Module-specific bots (one file per module)
+- `backend/src/services/autoCollectModules/_template.ts` — Template for new modules
+- Each module implements: `buildPrompt`, `parseReply`, `buildConfirmation`, `buildSummary`, `saveData`
+- `ModuleConfig.privateOnly` controls group sharing (`false` = send report to group + private)
+- Schedules stored in DB (`AutoCollectSchedule` model), configured via Settings UI
+- IST timezone: always use `nowIST()` pattern, NEVER `toLocaleTimeString()` on server
+
+**Adding a new WhatsApp auto-collect module:**
+1. Copy `_template.ts` → `yourModule.ts` in `autoCollectModules/`
+2. Define `STEPS` (field groups), implement `buildPrompt`, `parseReply`, `saveData`
+3. Register in `autoCollectModules/index.ts`
+4. Add schedule via Settings UI or seed data
+5. Set `privateOnly: false` if reports should go to WhatsApp group
+
+### WhatsApp Report Sharing
+Beyond auto-collect, the ERP also supports one-click WhatsApp sharing from the web UI:
+- Fermentation vessel readings → formatted report shared to group
+- Dispatch/shipment details → shared to relevant stakeholders
+- Any module can build a WhatsApp-formatted report string and share via `sendToGroup()` or `sendWhatsAppMessage()`
+
+### IST Timezone (Critical)
+Server runs UTC on Railway. Pattern for IST:
+```typescript
+function nowIST(): Date {
+  return new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+}
+const ist = nowIST();
+const hours = ist.getUTCHours();    // IST hours
+const minutes = ist.getUTCMinutes(); // IST minutes
+```
+**NEVER** use `toLocaleTimeString()` or `toLocaleDateString()` on server — output depends on server locale/location.
+
+### Module Build Approach
+When building new modules:
+1. **First create a skill file** in `.claude/skills/` with full spec (models, routes, pages, integration points)
+2. **Build sequentially** — modules are interlinked (accounts hooks into sales/procurement, inventory links to production)
+3. **Always consider WhatsApp integration** — what readings/reports should be auto-collected or shared?
+4. **Follow existing patterns** — use the code templates below
+
+---
+
 ## Architecture
 
 ### Backend (backend/src/)
@@ -30,6 +82,9 @@ backend/src/
 │   └── authorize.ts          # Module-level authorization
 ├── routes/                   # 52 route files
 ├── services/
+│   ├── whatsappBaileys.ts    # WhatsApp connection (Baileys QR auth, send/receive)
+│   ├── whatsappAutoCollect.ts # Auto-collect engine (scheduler, sessions, prompts)
+│   ├── autoCollectModules/   # Module-specific bots (ddgsProduction, decanter, _template)
 │   ├── eInvoice.ts           # IRN generation via Saral GSP
 │   ├── ewayBill.ts           # E-way bill generation
 │   └── messaging.ts          # WhatsApp/SMS notifications
@@ -204,6 +259,20 @@ export default function MyPage() {
 | **Plant Issues** | issues.ts | PlantIssues.tsx | PlantIssue, IssueComment |
 | **Accounts** | accounts.ts | PaymentDashboard.tsx | Shipment (payment fields) |
 
+## WhatsApp Integration by Module
+
+| Module | Auto-Collect Bot | Report Sharing | Group? |
+|--------|-----------------|----------------|--------|
+| **Fermentation** | ✅ (planned) | ✅ Vessel readings shared from UI | Yes |
+| **DDGS Production** | ✅ `ddgsProduction.ts` — hourly production data | ✅ Auto report after collection | Yes |
+| **Decanter** | ✅ `decanter.ts` — dryer/decanter readings | ✅ Auto report after collection | Yes |
+| **Distillation** | Planned | Manual share from UI | — |
+| **Sales/Dispatch** | ❌ | ✅ Dispatch details shared | Private |
+| **Accounts** | Planned (daily outstanding alerts) | ✅ Payment confirmations | Private |
+| **Inventory** | Planned (low stock alerts) | ❌ | Private |
+
+To add WhatsApp to a new module, see `autoCollectModules/_template.ts`.
+
 ## Module Skills
 
 For detailed guidance on specific modules, see `.claude/skills/`:
@@ -214,6 +283,8 @@ For detailed guidance on specific modules, see `.claude/skills/`:
 - `sales-module.md` — Order-to-cash, e-invoice, e-way bill, dispatch workflow
 - `procurement-module.md` — Procure-to-pay, PO lifecycle, GRN
 - `accounts-module.md` — Payment desk, receivables, collections, payment flow, future costing
+- `accounts-full-module.md` — Full double-entry bookkeeping spec (Chart of Accounts, Journals, Ledger, P&L, Balance Sheet, Bank Recon, GST)
+- `session-state.md` — Current session state, uncommitted changes, known issues, next steps
 - `dashboard-analytics.md` — Dashboard performance, KPI calculations
 - `admin-settings.md` — Auth, users, settings, audit trail
 
