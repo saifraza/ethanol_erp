@@ -284,7 +284,7 @@ export default function SettingsPage() {
             <Lock size={18} className="text-orange-600" />
             Private Numbers <span className="text-xs font-normal text-gray-400">(sensitive data)</span>
           </h2>
-          <p className="text-sm text-gray-500 mb-3">Selected modules go only to these numbers. Also gets all group reports.</p>
+          <p className="text-sm text-gray-500 mb-3">Private-only modules send here. Group modules go to the group (no duplicates).</p>
 
           {settings.whatsappNumbers && settings.whatsappNumbers.trim() && (
             <div className="flex flex-wrap gap-2 mb-3">

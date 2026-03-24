@@ -143,17 +143,15 @@ router.post(
     const isPrivate = privateModules.includes(mod);
     const isGroup = !isPrivate && ALL_MODULES.includes(mod);
 
-    // Send to group if module is a group module (or unknown defaults to both)
-    if (isGroup || (!isPrivate && !isGroup)) {
+    // Group modules → group only (private numbers are already in the group)
+    // Private modules → private numbers only
+    if (isGroup) {
       const groupJid = (settings as any)?.whatsappGroupJid;
       if (groupJid) {
         const r = await sendToGroup(groupJid, message, module);
         results.push({ target: 'group', ...r });
       }
-    }
-
-    // Send to private numbers if module is private (or unknown defaults to both)
-    if (isPrivate || (!isPrivate && !isGroup)) {
+    } else if (isPrivate) {
       const privateNumbers = (settings?.whatsappNumbers || '')
         .split(',')
         .map((p: string) => p.trim())
@@ -162,10 +160,13 @@ router.post(
         const r = await sendWhatsAppMessage(phone, message, module);
         results.push({ target: phone, ...r });
       }
-    }
-
-    // Also always send to private numbers for group modules (so admin gets everything)
-    if (isGroup) {
+    } else {
+      // Unknown module — send to both
+      const groupJid = (settings as any)?.whatsappGroupJid;
+      if (groupJid) {
+        const r = await sendToGroup(groupJid, message, module);
+        results.push({ target: 'group', ...r });
+      }
       const privateNumbers = (settings?.whatsappNumbers || '')
         .split(',')
         .map((p: string) => p.trim())
