@@ -411,12 +411,10 @@ export default function Fermentation() {
 
   const buildVesselReport = (v: Vessel, batch: any, formReading?: Record<string, string>): string => {
     const lines: string[] = [];
-    const status = batch ? phCfg(batch.phase).label.toUpperCase() : 'EMPTY';
-    const typeLabel = v.type === 'PF' ? 'PF' : v.type === 'BW' ? 'Beerwell' : 'Fermenter';
-    lines.push(`*${typeLabel} = ${String(v.no).padStart(2, '0')} (${status})*`);
 
-    // Beer Well — no batch, use form reading or latest BW reading
+    // Beer Well — no batch object, use form reading or latest BW reading
     if (v.type === 'BW') {
+      lines.push(`*Beerwell = ${String(v.no).padStart(2, '0')}*`);
       const bw = getBW(v.no);
       const lvl = formReading?.level || (bw[0]?.level != null ? String(bw[0].level) : '');
       const sg = formReading?.spGravity || (bw[0]?.spGravity != null ? String(bw[0].spGravity) : '');
@@ -432,6 +430,11 @@ export default function Fermentation() {
       if (temp) lines.push(`Temp = ${temp}`);
       return lines.join('\n');
     }
+
+    // Non-BW vessels
+    const status = batch ? phCfg(batch.phase).label.toUpperCase() : 'EMPTY';
+    const typeLabel = v.type === 'PF' ? 'PF' : 'Fermenter';
+    lines.push(`*${typeLabel} = ${String(v.no).padStart(2, '0')} (${status})*`);
 
     if (!batch) return lines.join('\n');
 
