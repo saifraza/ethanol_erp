@@ -59,9 +59,7 @@ export default function DDGSStock() {
 
   // WhatsApp auto-collect state
   const [showAutoCollect, setShowAutoCollect] = useState(false);
-  const [acShiftA, setAcShiftA] = useState('');
-  const [acShiftB, setAcShiftB] = useState('');
-  const [acShiftC, setAcShiftC] = useState('');
+  const [acPhones, setAcPhones] = useState('');
   const [acInterval, setAcInterval] = useState('60');
   const [acEnabled, setAcEnabled] = useState(false);
   const [acStatus, setAcStatus] = useState('');
@@ -105,10 +103,7 @@ export default function DDGSStock() {
         setAcEnabled(s.enabled || false);
         setAcAutoShare(s.autoShare !== false);
         setAcLang(s.language === 'en' ? 'en' : 'hi');
-        const phones = (s.phone || '').split(',').map((p: string) => p.trim());
-        setAcShiftA(phones[0] || '');
-        setAcShiftB(phones[1] || '');
-        setAcShiftC(phones[2] || '');
+        setAcPhones(s.phone || '');
         setAcDirty(false);
       }
     }).catch(() => {});
@@ -442,27 +437,12 @@ export default function DDGSStock() {
                 Bot sends hourly WhatsApp messages asking operators for DDGS bags packed. Operator replies with a number → data auto-saved.
               </p>
 
-              {/* Shift-wise phone numbers */}
+              {/* Phone numbers */}
               <div>
-                <label className="text-[10px] text-gray-500 uppercase mb-1 block">Operator Numbers (shift-wise)</label>
-                <div className="grid grid-cols-3 gap-2">
-                  <div>
-                    <label className="text-[9px] text-blue-600 font-semibold">Shift A (6am–2pm)</label>
-                    <input type="text" value={acShiftA} onChange={e => { setAcShiftA(e.target.value); setAcDirty(true); }}
-                      placeholder="Phone" className="border rounded px-2 py-1.5 w-full text-sm" />
-                  </div>
-                  <div>
-                    <label className="text-[9px] text-amber-600 font-semibold">Shift B (2pm–10pm)</label>
-                    <input type="text" value={acShiftB} onChange={e => { setAcShiftB(e.target.value); setAcDirty(true); }}
-                      placeholder="Phone" className="border rounded px-2 py-1.5 w-full text-sm" />
-                  </div>
-                  <div>
-                    <label className="text-[9px] text-purple-600 font-semibold">Shift C (10pm–6am)</label>
-                    <input type="text" value={acShiftC} onChange={e => { setAcShiftC(e.target.value); setAcDirty(true); }}
-                      placeholder="Phone" className="border rounded px-2 py-1.5 w-full text-sm" />
-                  </div>
-                </div>
-                <p className="text-[9px] text-gray-400 mt-1">Bot auto-picks the right number based on current shift time</p>
+                <label className="text-[10px] text-gray-500 uppercase mb-1 block">Operator Numbers</label>
+                <input type="text" value={acPhones} onChange={e => { setAcPhones(e.target.value); setAcDirty(true); }}
+                  placeholder="e.g. 9876543210, 9123456789" className="border rounded px-2 py-1.5 w-full text-sm" />
+                <p className="text-[9px] text-gray-400 mt-1">Comma-separated. Bot sends to all numbers at each interval.</p>
               </div>
 
               {/* Interval + Enable */}
@@ -497,12 +477,11 @@ export default function DDGSStock() {
               {/* Save + Test */}
               <div className="flex gap-2 flex-wrap">
                 <button onClick={async () => {
-                  const phone = [acShiftA, acShiftB, acShiftC].filter(Boolean).join(',');
+                  const phone = acPhones.trim();
                   if (!phone) { setAcStatus('Add at least one phone number'); return; }
                   try {
                     await api.post('/auto-collect/schedules', {
                       schedules: [
-                        // Preserve existing decanter schedule
                         ...(await api.get('/auto-collect/schedules').then(r => (r.data || []).filter((s: { module: string }) => s.module !== 'ddgs'))),
                         { module: 'ddgs', phone, intervalMinutes: parseInt(acInterval) || 60, enabled: acEnabled, autoShare: acAutoShare, language: acLang },
                       ]
@@ -515,17 +494,16 @@ export default function DDGSStock() {
                   {acDirty ? '⚠ Save Schedule' : 'Save Schedule'}
                 </button>
                 <button onClick={async () => {
-                  const hr = new Date().getHours();
-                  const phone = hr >= 6 && hr < 14 ? acShiftA : hr >= 14 && hr < 22 ? acShiftB : acShiftC;
-                  if (!phone) { setAcStatus('No phone for current shift'); return; }
+                  const phoneList = acPhones.split(',').map(p => p.trim()).filter(Boolean);
+                  if (!phoneList.length) { setAcStatus('No phone numbers configured'); return; }
                   try {
-                    const r = await api.post('/auto-collect/trigger', { phone, module: 'ddgs', autoShare: acAutoShare });
-                    setAcStatus(r.data.success ? `Sent to ${phone}` : r.data.error);
+                    const r = await api.post('/auto-collect/trigger', { phone: phoneList[0], module: 'ddgs', autoShare: acAutoShare });
+                    setAcStatus(r.data.success ? `Sent to ${phoneList[0]}` : r.data.error);
                     loadAutoCollect();
                   } catch { setAcStatus('Failed to trigger'); }
                   setTimeout(() => setAcStatus(''), 5000);
-                }} disabled={!acShiftA && !acShiftB && !acShiftC} className="px-3 py-1.5 bg-green-600 text-white rounded text-xs font-medium hover:bg-green-700 disabled:opacity-50">
-                  Test Now (Current Shift)
+                }} disabled={!acPhones.trim()} className="px-3 py-1.5 bg-green-600 text-white rounded text-xs font-medium hover:bg-green-700 disabled:opacity-50">
+                  Test Now
                 </button>
               </div>
               {acStatus && <p className="text-xs text-cyan-700 font-medium">{acStatus}</p>}

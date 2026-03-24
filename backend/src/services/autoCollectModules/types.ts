@@ -42,4 +42,7 @@ export interface ModuleConfig {
 
   /** Save collected data to the database */
   saveData: (data: Record<string, number>) => Promise<void>;
+
+  /** If true, auto-share sends only to private numbers (not group) */
+  privateOnly?: boolean;
 }

@@ -172,11 +172,13 @@ async function handleIncoming(rawPhone: string, text: string, _name: string | nu
           const fullReport = `📊 *${config.displayName} Report* — ${now}\n\n${summary}\n\n_Auto-collected via WhatsApp_`;
           const settings = await prisma.settings.findFirst();
 
-          // Send report to group
-          const groupJid = (settings as any)?.whatsappGroupJid;
-          if (groupJid) {
-            await sendToGroup(groupJid, fullReport, config.module);
-            console.log(`[AutoCollect] Shared ${config.module} report to group`);
+          // Send report to group (unless module is privateOnly)
+          if (!config.privateOnly) {
+            const groupJid = (settings as any)?.whatsappGroupJid;
+            if (groupJid) {
+              await sendToGroup(groupJid, fullReport, config.module);
+              console.log(`[AutoCollect] Shared ${config.module} report to group`);
+            }
           }
 
           // Send to private numbers
@@ -270,13 +272,15 @@ export function getSchedules(): AutoCollectSchedule[] {
  * Shift A = 06:00–13:59, Shift B = 14:00–21:59, Shift C = 22:00–05:59
  * Falls back to first non-empty number if current shift slot is blank.
  */
+/** Parse comma-separated phone string into array of non-empty numbers */
+export function parsePhones(phoneStr: string): string[] {
+  return phoneStr.split(',').map(p => p.trim()).filter(p => p.length > 0);
+}
+
+/** @deprecated — kept for backward compat, returns first phone */
 export function pickShiftPhone(phoneStr: string): string | null {
-  const parts = phoneStr.split(',').map(p => p.trim());
-  const hour = new Date().getHours(); // IST on server
-  const idx = hour >= 6 && hour < 14 ? 0 : hour >= 14 && hour < 22 ? 1 : 2;
-  // Try current shift first, then fallback to any non-empty
-  if (parts[idx]) return parts[idx];
-  return parts.find(p => p.length > 0) || null;
+  const phones = parsePhones(phoneStr);
+  return phones[0] || null;
 }
 
 /**
@@ -293,14 +297,21 @@ export function pickShiftPhone(phoneStr: string): string | null {
  * After a deploy, the scheduler checks: "Am I in a slot that already had
  * a message sent?" — if yes, skip. If no, trigger.
  */
+/** Get current IST time (UTC+5:30) — Railway runs in UTC */
+function nowIST(): Date {
+  return new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+}
+
 function getCurrentSlotStart(intervalMinutes: number): Date {
-  const now = new Date();
-  const minutesSinceMidnight = now.getHours() * 60 + now.getMinutes();
+  const ist = nowIST();
+  // Use IST hours/minutes for slot calculation
+  const minutesSinceMidnight = ist.getUTCHours() * 60 + ist.getUTCMinutes();
   const slotIndex = Math.floor(minutesSinceMidnight / intervalMinutes);
   const slotMinutes = slotIndex * intervalMinutes;
-  const slotStart = new Date(now);
-  slotStart.setHours(Math.floor(slotMinutes / 60), slotMinutes % 60, 0, 0);
-  return slotStart;
+  // Build slot start in real UTC (subtract IST offset back)
+  const slotStartIST = new Date(ist);
+  slotStartIST.setUTCHours(Math.floor(slotMinutes / 60), slotMinutes % 60, 0, 0);
+  return new Date(slotStartIST.getTime() - 5.5 * 60 * 60 * 1000); // convert back to UTC for DB query
 }
 
 async function wasAlreadyTriggeredInSlot(module: string, slotStart: Date): Promise<boolean> {
@@ -329,21 +340,26 @@ async function runScheduler(): Promise<void> {
 
     if (alreadySent) continue;
 
-    const phone = pickShiftPhone(sched.phone);
-    if (!phone) {
-      console.warn(`[AutoCollect] No phone configured for current shift: ${sched.module}`);
+    const phones = parsePhones(sched.phone);
+    if (!phones.length) {
+      console.warn(`[AutoCollect] No phone configured: ${sched.module}`);
       continue;
     }
 
-    let digits = phone.replace(/\D/g, '');
-    if (digits.length === 10) digits = '91' + digits;
+    // Show slot time in IST for logging
+    const slotIST = new Date(slotStart.getTime() + 5.5 * 60 * 60 * 1000);
+    const slotLabel = `${String(slotIST.getUTCHours()).padStart(2, '0')}:${String(slotIST.getUTCMinutes()).padStart(2, '0')} IST`;
 
-    if (!activeSessions.has(digits)) {
-      const slotLabel = `${String(slotStart.getHours()).padStart(2, '0')}:${String(slotStart.getMinutes()).padStart(2, '0')}`;
-      console.log(`[AutoCollect] Triggering ${sched.module} for ${phone} (slot ${slotLabel}, interval ${sched.intervalMinutes}min)`);
-      const result = await startCollection(phone, sched.module, sched.autoShare !== false);
-      if (!result.success) {
-        console.error(`[AutoCollect] Failed to trigger: ${result.error}`);
+    for (const phone of phones) {
+      let digits = phone.replace(/\D/g, '');
+      if (digits.length === 10) digits = '91' + digits;
+
+      if (!activeSessions.has(digits)) {
+        console.log(`[AutoCollect] Triggering ${sched.module} for ${phone} (slot ${slotLabel}, interval ${sched.intervalMinutes}min)`);
+        const result = await startCollection(phone, sched.module, sched.autoShare !== false);
+        if (!result.success) {
+          console.error(`[AutoCollect] Failed to trigger ${sched.module} for ${phone}: ${result.error}`);
+        }
       }
     }
   }

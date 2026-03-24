@@ -414,6 +414,25 @@ export default function Fermentation() {
     const status = batch ? phCfg(batch.phase).label.toUpperCase() : 'EMPTY';
     const typeLabel = v.type === 'PF' ? 'PF' : v.type === 'BW' ? 'Beerwell' : 'Fermenter';
     lines.push(`*${typeLabel} = ${String(v.no).padStart(2, '0')} (${status})*`);
+
+    // Beer Well — no batch, use form reading or latest BW reading
+    if (v.type === 'BW') {
+      const bw = getBW(v.no);
+      const lvl = formReading?.level || (bw[0]?.level != null ? String(bw[0].level) : '');
+      const sg = formReading?.spGravity || (bw[0]?.spGravity != null ? String(bw[0].spGravity) : '');
+      const ph = formReading?.ph || (bw[0]?.ph != null ? String(bw[0].ph) : '');
+      const alc = formReading?.alcohol || (bw[0]?.alcohol != null ? String(bw[0].alcohol) : '');
+      const temp = formReading?.temp || (bw[0]?.temp != null ? String(bw[0].temp) : '');
+      const time = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+      lines.push(`Time = ${time}`);
+      if (lvl) lines.push(`Level = ${lvl}%`);
+      if (sg) lines.push(`Sp Gravity = ${sg}`);
+      if (ph) lines.push(`pH = ${ph}`);
+      if (alc) lines.push(`Alcohol = ${alc}%`);
+      if (temp) lines.push(`Temp = ${temp}`);
+      return lines.join('\n');
+    }
+
     if (!batch) return lines.join('\n');
 
     lines.push(`Batch = ${batch.batchNo}`);

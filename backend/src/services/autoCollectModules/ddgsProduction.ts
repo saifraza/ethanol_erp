@@ -19,6 +19,12 @@ export function setDdgsLanguage(lang: string): void {
   promptLang = lang === 'en' ? 'en' : 'hi';
 }
 
+/** Get current time in IST (UTC+5:30) — Railway runs in UTC */
+function nowIST(): Date {
+  const now = new Date();
+  return new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
+}
+
 const STEPS: CollectStep[] = [
   {
     key: 'bags',
@@ -29,14 +35,13 @@ const STEPS: CollectStep[] = [
   },
 ];
 
-/** Get the shift date (9am–9am window) */
+/** Get the shift date (9am–9am window) in IST */
 function getShiftDate(): string {
-  const now = new Date();
-  const shifted = new Date(now);
-  if (shifted.getHours() < 9) {
-    shifted.setDate(shifted.getDate() - 1);
+  const ist = nowIST();
+  if (ist.getUTCHours() < 9) {
+    ist.setUTCDate(ist.getUTCDate() - 1);
   }
-  return shifted.toISOString().split('T')[0];
+  return ist.toISOString().split('T')[0];
 }
 
 /** Format hour to 12hr AM/PM */
@@ -46,10 +51,10 @@ function formatHour(hour24: number): string {
   return `${h}:00 ${ampm}`;
 }
 
-/** Get the hourly time window in 24hr for DB, plus AM/PM labels */
+/** Get the hourly time window using IST hours */
 function getTimeWindow(): { timeFrom: string; timeTo: string; labelFrom: string; labelTo: string } {
-  const now = new Date();
-  const hour = now.getHours();
+  const ist = nowIST();
+  const hour = ist.getUTCHours();
   const from = `${String(hour).padStart(2, '0')}:00`;
   const toHour = (hour + 1) % 24;
   const to = `${String(toHour).padStart(2, '0')}:00`;
@@ -109,6 +114,7 @@ function buildErrorHint(_step: CollectStep): string {
 
 async function saveData(data: Record<string, number>): Promise<void> {
   const now = new Date();
+  const ist = nowIST();
   const bags = data.bags || 0;
 
   const weightPerBag = 50; // kg — standard DDGS bag weight
@@ -116,7 +122,10 @@ async function saveData(data: Record<string, number>): Promise<void> {
 
   const shiftDate = getShiftDate();
   const { timeFrom, timeTo } = getTimeWindow();
-  const entryTime = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+  const hh = ist.getUTCHours();
+  const mm = ist.getUTCMinutes();
+  const ampm = hh >= 12 ? 'pm' : 'am';
+  const entryTime = `${String(hh % 12 || 12).padStart(2, '0')}:${String(mm).padStart(2, '0')} ${ampm}`;
 
   await prisma.dDGSProductionEntry.create({
     data: {
@@ -158,6 +167,7 @@ const ddgsConfig: ModuleConfig = {
   buildSummary,
   buildErrorHint,
   saveData,
+  privateOnly: true,
 };
 
 export default ddgsConfig;
