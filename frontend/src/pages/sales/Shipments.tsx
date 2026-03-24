@@ -156,7 +156,7 @@ export default function Shipments() {
           totalValue: totalVal || parseFloat(gpForm.totalValue) || 0,
           gatePassItems: gpForm.items.filter(i => i.desc),
           productName: gpForm.items.map(i => i.desc).filter(Boolean).join(', ').substring(0, 100) || 'Gate Pass Material',
-          gateInTime: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+          gateInTime: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
         });
         flash('ok', 'Gate Pass created');
       }
@@ -786,7 +786,7 @@ export default function Shipments() {
                                 <div key={w.label} className={`bg-${w.color}-50 rounded-lg p-1.5 text-center`}>
                                   <div className={`text-[8px] text-${w.color}-400 font-bold uppercase`}>{w.label}</div>
                                   <div className={`text-xs font-bold text-${w.color}-700`}>{w.val ? `${w.val} T` : '—'}</div>
-                                  {w.time && <div className={`text-[8px] text-${w.color}-300`}>{new Date(w.time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</div>}
+                                  {w.time && <div className={`text-[8px] text-${w.color}-300`}>{new Date(w.time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}</div>}
                                 </div>
                               ))}
                             </div>

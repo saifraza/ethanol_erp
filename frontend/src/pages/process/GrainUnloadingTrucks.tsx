@@ -114,7 +114,7 @@ export default function GrainUnloadingTrucks() {
       if (photo) fd.append('photo', photo);
 
       await api.post('/grain-truck', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+      const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
 
       // Auto-send WhatsApp notification for each truck unload
       const netWt = ((parseNumberInput(weightGross) ?? 0) - (parseNumberInput(weightTare) ?? 0)).toFixed(2);
@@ -430,7 +430,7 @@ export default function GrainUnloadingTrucks() {
                     </span>
                   )}
                   <span className="text-xs text-gray-400">
-                    {new Date(t.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                    {new Date(t.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
                   </span>
                 </div>
                 <div className="text-xs text-gray-600">

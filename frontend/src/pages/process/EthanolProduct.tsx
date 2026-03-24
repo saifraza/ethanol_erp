@@ -171,7 +171,7 @@ export default function EthanolProduct() {
       const payload = { date: buildEntryDate().toISOString(), ...form, remarks, trucks: [], plantNotRunning };
       if (editId) await api.put(`/ethanol-product/${editId}`, payload);
       else await api.post('/ethanol-product', payload);
-      const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
       setMsg({ type: 'ok', text: `Saved at ${now}` });
 
       if (share) {

@@ -49,7 +49,7 @@ const FERM_PHASES = ['PF_TRANSFER', 'FILLING', 'REACTION', 'RETENTION', 'CIP', '
 
 const fmtTime = (iso?: string) => {
   if (!iso) return '—';
-  return new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
 };
 const elapsed = (iso?: string) => {
   if (!iso) return '';
@@ -1126,13 +1126,13 @@ export default function Fermentation() {
                           <div className="px-4 pb-4 bg-gray-50/50 space-y-3 border-b border-gray-200">
                             {/* Phase timeline with elapsed times */}
                             <div className="flex flex-wrap gap-1 text-[10px]">
-                              {b.pfTransferTime && <div className="bg-blue-50 rounded px-2 py-1"><span className="text-blue-400">PF→F</span> <span className="font-bold text-blue-700">{new Date(b.pfTransferTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span></div>}
+                              {b.pfTransferTime && <div className="bg-blue-50 rounded px-2 py-1"><span className="text-blue-400">PF→F</span> <span className="font-bold text-blue-700">{new Date(b.pfTransferTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}</span></div>}
                               {b.pfTransferTime && b.fillingEndTime && <div className="text-gray-300 self-center">→ {elapsedStr(b.pfTransferTime, b.fillingEndTime)}</div>}
-                              {b.fillingEndTime && <div className="bg-amber-50 rounded px-2 py-1"><span className="text-amber-400">Rxn</span> <span className="font-bold text-amber-700">{new Date(b.fillingEndTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span></div>}
+                              {b.fillingEndTime && <div className="bg-amber-50 rounded px-2 py-1"><span className="text-amber-400">Rxn</span> <span className="font-bold text-amber-700">{new Date(b.fillingEndTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}</span></div>}
                               {b.fillingEndTime && b.retentionStartTime && <div className="text-gray-300 self-center">→ {elapsedStr(b.fillingEndTime, b.retentionStartTime)}</div>}
-                              {b.retentionStartTime && <div className="bg-orange-50 rounded px-2 py-1"><span className="text-orange-400">Ret</span> <span className="font-bold text-orange-700">{new Date(b.retentionStartTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span></div>}
+                              {b.retentionStartTime && <div className="bg-orange-50 rounded px-2 py-1"><span className="text-orange-400">Ret</span> <span className="font-bold text-orange-700">{new Date(b.retentionStartTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}</span></div>}
                               {b.retentionStartTime && b.transferTime && <div className="text-gray-300 self-center">→ {elapsedStr(b.retentionStartTime, b.transferTime)}</div>}
-                              {b.transferTime && <div className="bg-purple-50 rounded px-2 py-1"><span className="text-purple-400">→BW</span> <span className="font-bold text-purple-700">{new Date(b.transferTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span></div>}
+                              {b.transferTime && <div className="bg-purple-50 rounded px-2 py-1"><span className="text-purple-400">→BW</span> <span className="font-bold text-purple-700">{new Date(b.transferTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}</span></div>}
                               {cycleStart && <div className="bg-indigo-50 rounded px-2 py-1 ml-2"><span className="text-indigo-400">Total</span> <span className="font-bold text-indigo-700">{cycleTime}</span></div>}
                             </div>
 
@@ -1154,7 +1154,7 @@ export default function Fermentation() {
                             {/* Graph toggle */}
                             {readings.length >= 2 && (() => {
                               const cData = readings.map((r: any) => ({
-                                time: new Date(r.analysisTime || r.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }),
+                                time: new Date(r.analysisTime || r.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
                                 sg: r.spGravity ?? undefined, alc: r.alcohol ?? undefined, level: r.level ?? undefined,
                               }));
                               const sgVals = cData.map(d => d.sg).filter((v): v is number => v != null);
@@ -1206,7 +1206,7 @@ export default function Fermentation() {
                                         const rVol = r.level != null ? (r.level / 100 * FERM_CAPACITY_KL).toFixed(1) : null;
                                         return (
                                           <tr key={r.id || i} className="border-t border-gray-50 hover:bg-blue-50/30">
-                                            <td className="px-2 py-1 text-gray-500">{rTime.toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</td>
+                                            <td className="px-2 py-1 text-gray-500">{rTime.toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}</td>
                                             <td className="px-2 py-1 text-gray-400">{elStr}</td>
                                             <td className="px-2 py-1 text-right font-medium text-violet-600">{r.level ?? '—'}</td>
                                             <td className="px-2 py-1 text-right text-gray-500">{rVol ?? '—'}</td>

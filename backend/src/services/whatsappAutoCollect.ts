@@ -149,13 +149,13 @@ async function handleIncoming(phone: string, text: string, _name: string | null)
       // Confirm to operator
       await sendWhatsAppMessage(
         phone,
-        `✅ *All ${config.displayName} readings saved!*\n\n${confirm}\n\n📊 *Complete Entry:*\n${summary}\n\n_Saved to ERP at ${new Date().toLocaleTimeString('en-IN')}_`,
+        `✅ *All ${config.displayName} readings saved!*\n\n${confirm}\n\n📊 *Complete Entry:*\n${summary}\n\n_Saved to ERP at ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}_`,
         `auto-collect-${session.module}`
       );
 
       // Share to WhatsApp group
       try {
-        const fullReport = `📊 *${config.displayName} Report* — ${new Date().toLocaleTimeString('en-IN')}\n\n${summary}\n\n_Auto-collected via WhatsApp_`;
+        const fullReport = `📊 *${config.displayName} Report* — ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}\n\n${summary}\n\n_Auto-collected via WhatsApp_`;
         const settings = await prisma.settings.findFirst();
         const groupJid = (settings as any)?.whatsappGroupJid;
         if (groupJid) {

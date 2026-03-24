@@ -177,7 +177,7 @@ export default function PreFermentation() {
         pfBatchId: pfBatch.id,
         pfBatchNo: pfBatch.batchNo,
         transferVolume: transferVolume,
-        remarks: `PF${pfBatch.fermenterNo} #${pfBatch.batchNo} transferred at ${new Date(dt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`
+        remarks: `PF${pfBatch.fermenterNo} #${pfBatch.batchNo} transferred at ${new Date(dt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}`
       });
       setShowTransferModal(false);
       setTransferTarget(null);
@@ -226,7 +226,7 @@ export default function PreFermentation() {
         <div className="flex items-center gap-1.5 text-sm">
           <Clock size={13} className={`text-${color}-500`} />
           <span className="text-gray-500">{label}:</span>
-          {value ? new Date(value).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : <span className="text-gray-300 italic">not set</span>}
+          {value ? new Date(value).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true }) : <span className="text-gray-300 italic">not set</span>}
         </div>
       );
     }
@@ -245,7 +245,7 @@ export default function PreFermentation() {
           </span>
         ) : (
           <span className="flex items-center gap-1 cursor-pointer" onClick={() => setEditing(true)}>
-            {value ? new Date(value).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : <span className="text-gray-300 italic">not set</span>}
+            {value ? new Date(value).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true }) : <span className="text-gray-300 italic">not set</span>}
             <Pencil size={12} className="text-gray-400 hover:text-gray-600" />
           </span>
         )}
@@ -433,7 +433,7 @@ export default function PreFermentation() {
                 const b = activeBatch;
                 const dosingList = b.dosings.map(d => `  ${d.chemicalName}: ${d.quantity} ${d.unit}`).join('\n');
                 const lastLab = b.labReadings.length > 0 ? b.labReadings[b.labReadings.length - 1] : null;
-                const t = `*PRE-FERMENTATION — Batch #${b.batchNo} PF${b.fermenterNo}*\nPhase: ${phaseLabels[b.phase]}${b.setupTime ? '\nSetup: ' + new Date(b.setupTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : ''}${b.slurryVolume ? `\nLevel: ${(b.slurryVolume / (PF_VOLUME_M3 * 1000) * 100).toFixed(0)}% (${(b.slurryVolume / 1000).toFixed(0)} M³)` : ''}${b.slurryGravity ? ' | SG: ' + b.slurryGravity : ''}${b.slurryTemp ? ' | Temp: ' + b.slurryTemp + '°C' : ''}${b.dosings.length > 0 ? '\n\n*Dosing* (' + b.dosings.length + ' chemicals)\n' + dosingList : ''}${lastLab ? `\n\n*Latest Lab*\nGravity: ${lastLab.spGravity ?? '—'} | pH: ${lastLab.ph ?? '—'} | RS: ${lastLab.rs ?? '—'}%\nAlcohol: ${lastLab.alcohol ?? '—'}% | Temp: ${lastLab.temp ?? '—'}°C` : ''}${b.remarks ? '\n\nRemarks: ' + b.remarks : ''}`;
+                const t = `*PRE-FERMENTATION — Batch #${b.batchNo} PF${b.fermenterNo}*\nPhase: ${phaseLabels[b.phase]}${b.setupTime ? '\nSetup: ' + new Date(b.setupTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true }) : ''}${b.slurryVolume ? `\nLevel: ${(b.slurryVolume / (PF_VOLUME_M3 * 1000) * 100).toFixed(0)}% (${(b.slurryVolume / 1000).toFixed(0)} M³)` : ''}${b.slurryGravity ? ' | SG: ' + b.slurryGravity : ''}${b.slurryTemp ? ' | Temp: ' + b.slurryTemp + '°C' : ''}${b.dosings.length > 0 ? '\n\n*Dosing* (' + b.dosings.length + ' chemicals)\n' + dosingList : ''}${lastLab ? `\n\n*Latest Lab*\nGravity: ${lastLab.spGravity ?? '—'} | pH: ${lastLab.ph ?? '—'} | RS: ${lastLab.rs ?? '—'}%\nAlcohol: ${lastLab.alcohol ?? '—'}% | Temp: ${lastLab.temp ?? '—'}°C` : ''}${b.remarks ? '\n\nRemarks: ' + b.remarks : ''}`;
                 if (navigator.share) { navigator.share({ text: t }).catch(() => { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }); } else { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }
               }} className="text-white/80 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition" title="Share on WhatsApp">
                 <Share2 size={18} />
@@ -495,7 +495,7 @@ export default function PreFermentation() {
                           )}
                         </td>
                         <td className="text-right">{d.unit}</td>
-                        <td className="text-right text-xs text-gray-400">{new Date(d.addedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })}</td>
+                        <td className="text-right text-xs text-gray-400">{new Date(d.addedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}</td>
                         <td className="text-right text-xs font-medium text-indigo-600">{elapsed(activeBatch.setupTime, d.addedAt)}</td>
                         <td className="text-right">
                           {isAdmin && <button onClick={() => { api.delete(`/pre-fermentation/dosing/${d.id}`); load(); }} className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button>}
@@ -558,7 +558,7 @@ export default function PreFermentation() {
                     <thead><tr className="text-xs text-gray-500">{['Time', 'T0+', 'Gravity', 'pH', 'RS%', 'RST%', 'Alc%', 'DS%', 'VFA', 'Temp'].map(h => <th key={h} className="text-left py-1 px-1">{h}</th>)}</tr></thead>
                     <tbody>{activeBatch.labReadings.map(r => (
                       <tr key={r.id} className="border-t">
-                        <td className="px-1 py-1 text-xs whitespace-nowrap">{r.analysisTime ? new Date(r.analysisTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : '-'}</td>
+                        <td className="px-1 py-1 text-xs whitespace-nowrap">{r.analysisTime ? new Date(r.analysisTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true }) : '-'}</td>
                         <td className="px-1 text-xs font-medium text-indigo-600">{elapsed(activeBatch.setupTime, r.analysisTime || r.createdAt)}</td>
                         <td className="px-1">{r.spGravity ?? '-'}</td><td className="px-1">{r.ph ?? '-'}</td><td className="px-1">{r.rs ?? '-'}</td><td className="px-1">{r.rst ?? '-'}</td><td className="px-1">{r.alcohol ?? '-'}</td><td className="px-1">{r.ds ?? '-'}</td><td className="px-1">{r.vfaPpa ?? '-'}</td><td className="px-1">{r.temp ?? '-'}</td>
                       </tr>
@@ -676,7 +676,7 @@ export default function PreFermentation() {
                           <div className="flex flex-wrap gap-2">{b.dosings.map(d => (
                             <span key={d.id} className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">
                               {d.chemicalName}: {d.quantity} {d.unit}
-                              <span className="text-amber-500 ml-1">{new Date(d.addedAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false })}</span>
+                              <span className="text-amber-500 ml-1">{new Date(d.addedAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}</span>
                               <span className="text-indigo-500 ml-1">{elapsed(b.setupTime, d.addedAt)}</span>
                             </span>
                           ))}</div>
@@ -690,7 +690,7 @@ export default function PreFermentation() {
                               <thead><tr className="text-gray-500">{['Date/Time', 'T0+', 'SG', 'pH', 'RS%', 'RST%', 'Alc%', 'DS%', 'VFA', 'Temp'].map(h => <th key={h} className="text-left px-1 py-0.5">{h}</th>)}</tr></thead>
                               <tbody>{b.labReadings.map(r => (
                                 <tr key={r.id} className="border-t">
-                                  <td className="px-1 py-0.5 whitespace-nowrap">{r.analysisTime ? new Date(r.analysisTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : r.analysisTime}</td><td className="px-1 font-medium text-indigo-600">{elapsed(b.setupTime, r.analysisTime || r.createdAt)}</td><td className="px-1">{r.spGravity ?? '-'}</td><td className="px-1">{r.ph ?? '-'}</td><td className="px-1">{r.rs ?? '-'}</td><td className="px-1">{r.rst ?? '-'}</td><td className="px-1">{r.alcohol ?? '-'}</td><td className="px-1">{r.ds ?? '-'}</td><td className="px-1">{r.vfaPpa ?? '-'}</td><td className="px-1">{r.temp ?? '-'}</td>
+                                  <td className="px-1 py-0.5 whitespace-nowrap">{r.analysisTime ? new Date(r.analysisTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true }) : r.analysisTime}</td><td className="px-1 font-medium text-indigo-600">{elapsed(b.setupTime, r.analysisTime || r.createdAt)}</td><td className="px-1">{r.spGravity ?? '-'}</td><td className="px-1">{r.ph ?? '-'}</td><td className="px-1">{r.rs ?? '-'}</td><td className="px-1">{r.rst ?? '-'}</td><td className="px-1">{r.alcohol ?? '-'}</td><td className="px-1">{r.ds ?? '-'}</td><td className="px-1">{r.vfaPpa ?? '-'}</td><td className="px-1">{r.temp ?? '-'}</td>
                                 </tr>
                               ))}</tbody>
                             </table>

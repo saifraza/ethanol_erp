@@ -87,7 +87,7 @@ export default function DDGSDispatch() {
         weightTare: tareMT, weightGross: grossMT,
         remarks: remarks || null,
       });
-      const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+      const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
       setMsg({ type: 'ok', text: `Saved at ${now}` });
       resetForm();
       await loadDispatches();
@@ -262,7 +262,7 @@ export default function DDGSDispatch() {
                   {d.rstNo && <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">RST {d.rstNo}</span>}
                   <span className="font-semibold text-sm">{d.vehicleNo}</span>
                   <span className="text-xs text-gray-400">
-                    {new Date(d.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                    {new Date(d.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
                   </span>
                   {d.invoiceNo && (
                     <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-medium">

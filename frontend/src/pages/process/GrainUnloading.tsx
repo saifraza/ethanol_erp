@@ -98,7 +98,7 @@ function elapsed(ms: number): string {
 
 function fmtDt(iso: string | null) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true });
 }
 function fmtHrs(ms: number) {
   if (ms <= 0) return '';
@@ -504,7 +504,7 @@ export default function GrainUnloading() {
       };
       if (editId) await api.put(`/grain/${editId}`, payload);
       else await api.post('/grain', payload);
-      const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
       setMsg({ type: 'ok', text: `Saved at ${now}` });
       setForm({ ...emptyForm, date: form.date });
       setEditId(null);

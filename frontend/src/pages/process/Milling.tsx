@@ -252,7 +252,7 @@ export default function Milling() {
     try {
       if (editId) { await api.put(`/milling/${editId}`, form); }
       else { await api.post('/milling', form); }
-      const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
 
       if (share) {
         try {
@@ -298,7 +298,7 @@ export default function Milling() {
 
   function fmtTime(iso: string) {
     if (!iso) return '';
-    return new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    return new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true });
   }
 
   const totalFine = calcTotalFine(form.sieve_1mm, form.sieve_850, form.sieve_600, form.sieve_300);

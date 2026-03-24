@@ -774,7 +774,7 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
                   <HealthBar score={p.health} />
                 </div>
                 {p.predictedEndTime && (
-                  <p className="text-xs text-gray-400 mt-2">Predicted completion: {new Date(p.predictedEndTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false })}</p>
+                  <p className="text-xs text-gray-400 mt-2">Predicted completion: {new Date(p.predictedEndTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}</p>
                 )}
               </div>
             ))}

@@ -118,7 +118,7 @@ function buildErrorHint(step: CollectStep): string {
 
 async function saveData(data: Record<string, number>): Promise<void> {
   const now = new Date();
-  const entry: Record<string, any> = {
+  const entry: Record<string, string | number | Date | null> = {
     date: now,
     entryTime: now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
     remark: 'Auto-collected via WhatsApp',
@@ -127,7 +127,9 @@ async function saveData(data: Record<string, number>): Promise<void> {
   for (const [key, val] of Object.entries(data)) {
     entry[key] = val;
   }
-  await prisma.decanterEntry.create({ data: entry });
+  // Dynamic fields from auto-collection — keys match schema columns exactly
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (prisma.decanterEntry.create as Function)({ data: entry });
   console.log('[AutoCollect:decanter] Saved with', Object.keys(data).length, 'fields');
 }
 

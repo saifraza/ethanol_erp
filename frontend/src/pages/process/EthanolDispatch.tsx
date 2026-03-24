@@ -63,7 +63,7 @@ export default function EthanolDispatch() {
       if (photo) fd.append('photo', photo);
 
       await api.post('/dispatch', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+      const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
 
       // Auto-send WhatsApp for each dispatch truck
       try {
@@ -229,7 +229,7 @@ export default function EthanolDispatch() {
                   {d.batchNo && <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">{d.batchNo}</span>}
                   <span className="font-semibold text-sm">{d.vehicleNo}</span>
                   <span className="text-xs text-gray-400">
-                    {new Date(d.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                    {new Date(d.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
                   </span>
                 </div>
                 <div className="text-xs text-gray-600">

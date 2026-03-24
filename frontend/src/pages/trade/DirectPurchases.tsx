@@ -270,7 +270,7 @@ const DirectPurchases: React.FC = () => {
   // Format date time
   const formatDateTime = (dateString: string): string => {
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-IN') + ' ' + date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    return date.toLocaleDateString('en-IN') + ' ' + date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
   };
 
   return (
