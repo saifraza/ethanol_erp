@@ -46,6 +46,8 @@ const MAX_RETRIES = 5;
 // If any handler returns true, the message is considered "handled".
 type IncomingHandler = (phone: string, text: string, name: string | null) => Promise<boolean>;
 const incomingHandlers: IncomingHandler[] = [];
+// LID (Linked Identity) → phone mapping for WhatsApp multi-device
+const lidToPhone = new Map<string, string>();
 
 export function registerIncomingHandler(handler: IncomingHandler): void {
   incomingHandlers.push(handler);
@@ -221,7 +223,19 @@ export async function connectWhatsApp(): Promise<void> {
           msg.message.extendedTextMessage?.text ||
           msg.message.imageMessage?.caption ||
           '[media]';
-        const phone = msg.key.remoteJid?.replace('@s.whatsapp.net', '') || '';
+        const remoteJid = msg.key.remoteJid || '';
+        // Resolve phone: strip @s.whatsapp.net, or resolve @lid via mapping
+        let phone = remoteJid.replace('@s.whatsapp.net', '');
+        if (remoteJid.endsWith('@lid')) {
+          const lidId = remoteJid.replace('@lid', '');
+          const resolved = lidToPhone.get(lidId);
+          if (resolved) {
+            phone = resolved;
+            console.log(`[WA-Baileys] Resolved LID ${lidId} → ${phone}`);
+          } else {
+            console.log(`[WA-Baileys] Unknown LID: ${lidId}, raw jid: ${remoteJid}`);
+          }
+        }
         const name = msg.pushName || null;
         try {
           await prisma.whatsAppMessage.create({
@@ -285,8 +299,15 @@ export async function sendWhatsAppMessage(
     if (digits.startsWith('0') && digits.length === 11) digits = '91' + digits.slice(1);
 
     const jid = `${digits}@s.whatsapp.net`;
-    await sock.sendMessage(jid, { text: message });
+    const sent = await sock.sendMessage(jid, { text: message });
     console.log(`[WA-Baileys] Sent message to ${digits}`);
+
+    // Map LID → phone for incoming message resolution
+    if (sent?.key?.remoteJid?.endsWith('@lid')) {
+      const lid = sent.key.remoteJid.replace('@lid', '');
+      lidToPhone.set(lid, digits);
+      console.log(`[WA-Baileys] Mapped LID ${lid} → ${digits}`);
+    }
 
     // Log outgoing message
     try {
