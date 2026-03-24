@@ -44,6 +44,7 @@ export default function Decanter() {
   const [acStatus, setAcStatus] = useState('');
   const [activeSessions, setActiveSessions] = useState<{ phone: string; module: string; step: number; totalSteps: number }[]>([]);
   const [acAutoShare, setAcAutoShare] = useState(true);
+  const [acDirty, setAcDirty] = useState(false); // unsaved schedule changes
 
   const load = () => api.get('/decanter').then(r => setEntries(r.data)).catch(() => {});
   useEffect(() => { load(); }, []);
@@ -61,6 +62,7 @@ export default function Decanter() {
         setAcShiftA(phones[0] || '');
         setAcShiftB(phones[1] || '');
         setAcShiftC(phones[2] || '');
+        setAcDirty(false);
       }
     }).catch(() => {});
     api.get('/auto-collect/sessions').then(r => setActiveSessions((r.data || []).filter((s: { module: string }) => s.module === 'decanter'))).catch(() => {});
@@ -443,18 +445,18 @@ export default function Decanter() {
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2">
                   <label className="text-[10px] text-gray-500">Interval</label>
-                  <input type="number" value={acInterval} onChange={e => setAcInterval(e.target.value)}
+                  <input type="number" value={acInterval} onChange={e => { setAcInterval(e.target.value); setAcDirty(true); }}
                     className="border rounded px-2 py-1 w-20 text-sm" />
                   <span className="text-[10px] text-gray-400">min</span>
                 </div>
                 <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input type="checkbox" checked={acEnabled} onChange={e => setAcEnabled(e.target.checked)} className="w-4 h-4" />
+                  <input type="checkbox" checked={acEnabled} onChange={e => { setAcEnabled(e.target.checked); setAcDirty(true); }} className="w-4 h-4" />
                   <span className={acEnabled ? 'text-green-700 font-semibold text-xs' : 'text-gray-500 text-xs'}>
                     {acEnabled ? 'Enabled' : 'Disabled'}
                   </span>
                 </label>
                 <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input type="checkbox" checked={acAutoShare} onChange={e => setAcAutoShare(e.target.checked)} className="w-4 h-4" />
+                  <input type="checkbox" checked={acAutoShare} onChange={e => { setAcAutoShare(e.target.checked); setAcDirty(true); }} className="w-4 h-4" />
                   <span className={acAutoShare ? 'text-blue-700 font-semibold text-xs' : 'text-gray-500 text-xs'}>
                     {acAutoShare ? 'Auto-Share' : 'No Share'}
                   </span>
@@ -470,11 +472,12 @@ export default function Decanter() {
                     await api.post('/auto-collect/schedules', {
                       schedules: [{ module: 'decanter', phone, intervalMinutes: parseInt(acInterval) || 120, enabled: acEnabled, autoShare: acAutoShare }]
                     });
-                    setAcStatus('Schedule saved');
+                    setAcDirty(false);
+                    setAcStatus(`Schedule saved (${acEnabled ? 'enabled' : 'disabled'}, ${acInterval}min${acAutoShare ? ', auto-share' : ''})`);
                   } catch { setAcStatus('Failed to save'); }
                   setTimeout(() => setAcStatus(''), 3000);
-                }} className="px-3 py-1.5 bg-cyan-600 text-white rounded text-xs font-medium hover:bg-cyan-700">
-                  Save Schedule
+                }} className={`px-3 py-1.5 text-white rounded text-xs font-medium ${acDirty ? 'bg-orange-500 hover:bg-orange-600 animate-pulse' : 'bg-cyan-600 hover:bg-cyan-700'}`}>
+                  {acDirty ? '⚠ Save Schedule' : 'Save Schedule'}
                 </button>
                 <button onClick={async () => {
                   const hr = new Date().getHours();
