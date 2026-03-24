@@ -25,7 +25,7 @@ const ALL_MODULES = [
 
 // Default private modules (used if none configured in Settings)
 const DEFAULT_PRIVATE_MODULES = [
-  'ddgs', 'ddgs-stock', 'ddgs-dispatch', 'sales', 'dispatch',
+  'ddgs-stock', 'ddgs-dispatch', 'sales', 'dispatch',
   'procurement', 'accounts', 'inventory',
 ];
 

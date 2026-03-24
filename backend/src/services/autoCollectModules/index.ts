@@ -9,10 +9,12 @@
 
 import { ModuleConfig } from './types';
 import decanterConfig from './decanter';
+import ddgsConfig from './ddgsProduction';
 
 // ── Registry ── Add new modules here
 export const MODULE_REGISTRY: Record<string, ModuleConfig> = {
   decanter: decanterConfig,
+  ddgs: ddgsConfig,
   // evaporation: evaporationConfig,
   // dryer: dryerConfig,
   // distillation: distillationConfig,

@@ -469,8 +469,10 @@ export default function Decanter() {
                   const phone = [acShiftA, acShiftB, acShiftC].filter(Boolean).join(',');
                   if (!phone) { setAcStatus('Add at least one phone number'); return; }
                   try {
+                    // Preserve other module schedules (e.g. ddgs)
+                    const existing = await api.get('/auto-collect/schedules').then(r => (r.data || []).filter((s: { module: string }) => s.module !== 'decanter')).catch(() => []);
                     await api.post('/auto-collect/schedules', {
-                      schedules: [{ module: 'decanter', phone, intervalMinutes: parseInt(acInterval) || 120, enabled: acEnabled, autoShare: acAutoShare }]
+                      schedules: [...existing, { module: 'decanter', phone, intervalMinutes: parseInt(acInterval) || 120, enabled: acEnabled, autoShare: acAutoShare }]
                     });
                     setAcDirty(false);
                     setAcStatus(`Schedule saved (${acEnabled ? 'enabled' : 'disabled'}, ${acInterval}min${acAutoShare ? ', auto-share' : ''})`);
