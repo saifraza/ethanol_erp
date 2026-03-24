@@ -83,7 +83,8 @@ export default function Fermentation() {
   const [showNewBatch, setShowNewBatch] = useState(false);
   const [pfHistory, setPfHistory] = useState<any[]>([]);
   const [fermHistory, setFermHistory] = useState<any[]>([]);
-  const [historyTab, setHistoryTab] = useState<'ferm' | 'pf'>('ferm');
+  const [historyTab, setHistoryTab] = useState<'ferm' | 'pf' | 'bw'>('ferm');
+  const [bwHistory, setBwHistory] = useState<BeerWellReading[]>([]);
   const [expandedHist, setExpandedHist] = useState<string | null>(null);
 
   const flash = (t: 'ok' | 'err', m: string) => { setMsg({ t, m }); setTimeout(() => setMsg(null), 3000); };
@@ -116,6 +117,9 @@ export default function Fermentation() {
       api.get('/fermentation/history').then(h => {
         setPfHistory(h.data.pfHistory || []);
         setFermHistory(h.data.fermHistory || []);
+      }).catch(() => {});
+      api.get('/fermentation/beer-well').then(h => {
+        setBwHistory(h.data.readings || []);
       }).catch(() => {});
     } catch { flash('err', 'Failed to load'); }
     finally { setLoading(false); }
@@ -705,14 +709,34 @@ export default function Fermentation() {
                 {/* ── BATCH INFO (always visible at top) ── */}
                 {!isBW && batch && (
                   <div className="px-3 py-2 bg-gray-50/50 border-b border-gray-100 space-y-2">
-                    {/* Phase timeline */}
+                    {/* Phase timeline — click to change phase */}
                     <div className="flex items-center gap-0.5">
                       {(isPF ? PF_PHASES : FERM_PHASES).map((p, i) => {
                         const pCfg = phCfg(p);
                         const phaseList = isPF ? PF_PHASES : FERM_PHASES;
                         const ci = phaseList.indexOf(phase);
+                        const canClick = i !== ci && !saving && batch;
                         return (
-                          <div key={p} className={`flex-1 text-center py-1 rounded text-[7px] font-bold ${
+                          <div key={p} onClick={() => {
+                            if (!canClick) return;
+                            if (!confirm(`Change phase to ${pCfg.label}?`)) return;
+                            const now = new Date().toISOString();
+                            const extra: Record<string, string> = {};
+                            if (isPF) {
+                              // PF phase timing
+                              if (p === 'DONE') extra.cipEndTime = now;
+                            } else {
+                              // FERM phase timing
+                              if (p === 'FILLING') { extra.fillingStartTime = now; }
+                              if (p === 'REACTION') { extra.reactionStartTime = now; extra.fillingEndTime = now; }
+                              if (p === 'RETENTION') { extra.retentionStartTime = now; }
+                              if (p === 'CIP') { extra.transferTime = now; extra.cipStartTime = now; }
+                              if (p === 'DONE') { extra.cipEndTime = now; }
+                            }
+                            advancePhase(isPF ? 'PF' : 'FERM', batch!.id, p, extra);
+                          }} className={`flex-1 text-center py-1 rounded text-[7px] font-bold ${
+                            canClick ? 'cursor-pointer hover:ring-2 hover:ring-offset-1 active:scale-95 transition-all' : ''
+                          } ${
                             i < ci ? 'bg-green-100 text-green-600' : i === ci ? `${pCfg.bg} ${pCfg.text} ring-1 ${pCfg.ring}` : 'bg-gray-50 text-gray-300'
                           }`}>{pCfg.label}</div>
                         );
@@ -930,11 +954,11 @@ export default function Fermentation() {
                                 <div key={r.id || i} className="flex items-center gap-2 px-2.5 py-2 bg-gray-50/80 rounded-lg text-[11px] group hover:bg-gray-100 transition-colors">
                                   <span className="text-gray-400 font-mono text-[10px] w-11 shrink-0">{fmtTime(r.analysisTime || r.createdAt)}</span>
                                   <div className="flex items-center gap-2 flex-1 flex-wrap">
-                                    {r.level && <span className="text-blue-700 font-bold bg-blue-50 px-1.5 py-0.5 rounded">Lvl {r.level}%</span>}
-                                    {r.spGravity && <span className="text-indigo-700 font-bold bg-indigo-50 px-1.5 py-0.5 rounded">SG {typeof r.spGravity === 'number' ? r.spGravity.toFixed(3) : r.spGravity}</span>}
-                                    {r.ph && <span className="text-gray-700 font-semibold">pH {r.ph}</span>}
-                                    {r.temp && <span className={`font-bold px-1.5 py-0.5 rounded ${(r.temp || 0) > 37 ? 'text-red-700 bg-red-50' : 'text-orange-700 bg-orange-50'}`}>{r.temp}°C</span>}
-                                    {r.alcohol && <span className="text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded">{r.alcohol}%</span>}
+                                    {r.level != null && <span className="text-blue-700 font-bold bg-blue-50 px-1.5 py-0.5 rounded">Lvl {r.level}%</span>}
+                                    {r.spGravity != null && <span className="text-indigo-700 font-bold bg-indigo-50 px-1.5 py-0.5 rounded">SG {typeof r.spGravity === 'number' ? r.spGravity.toFixed(3) : r.spGravity}</span>}
+                                    {r.ph != null && <span className="text-gray-700 font-semibold">pH {r.ph}</span>}
+                                    {r.temp != null && <span className={`font-bold px-1.5 py-0.5 rounded ${(r.temp || 0) > 37 ? 'text-red-700 bg-red-50' : 'text-orange-700 bg-orange-50'}`}>{r.temp}°C</span>}
+                                    {r.alcohol != null && <span className="text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded">{r.alcohol}%</span>}
                                     {r.status === 'FIELD' && <span className="text-[9px] bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded font-bold">FIELD</span>}
                                   </div>
                                   {r.id && !isBW && (
@@ -1049,6 +1073,7 @@ export default function Fermentation() {
             <div className="flex gap-1">
               <button onClick={() => setHistoryTab('ferm')} className={`px-3 py-1 text-xs font-semibold rounded-lg ${historyTab === 'ferm' ? 'bg-indigo-100 text-indigo-700' : 'text-gray-400 hover:text-gray-600'}`}>Fermenters</button>
               <button onClick={() => setHistoryTab('pf')} className={`px-3 py-1 text-xs font-semibold rounded-lg ${historyTab === 'pf' ? 'bg-violet-100 text-violet-700' : 'text-gray-400 hover:text-gray-600'}`}>Pre-Ferm</button>
+              <button onClick={() => setHistoryTab('bw')} className={`px-3 py-1 text-xs font-semibold rounded-lg ${historyTab === 'bw' ? 'bg-amber-100 text-amber-700' : 'text-gray-400 hover:text-gray-600'}`}>Beer Well</button>
             </div>
           </div>
           <div className="overflow-x-auto">
@@ -1256,7 +1281,7 @@ export default function Fermentation() {
               ) : (
                 <div className="text-center text-gray-400 py-8 text-sm">No completed fermentation batches yet</div>
               )
-            ) : (
+            ) : historyTab === 'pf' ? (
               pfHistory.length > 0 ? (
                 <table className="w-full text-xs">
                   <thead>
@@ -1295,7 +1320,40 @@ export default function Fermentation() {
               ) : (
                 <div className="text-center text-gray-400 py-8 text-sm">No completed PF batches yet</div>
               )
-            )}
+            ) : historyTab === 'bw' ? (
+              bwHistory.length > 0 ? (
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-gray-50 text-gray-500 border-b">
+                      <th className="text-left px-3 py-2 font-semibold">Time</th>
+                      <th className="text-left px-3 py-2 font-semibold">Well</th>
+                      <th className="text-right px-3 py-2 font-semibold">Level %</th>
+                      <th className="text-right px-3 py-2 font-semibold">SG</th>
+                      <th className="text-right px-3 py-2 font-semibold">pH</th>
+                      <th className="text-right px-3 py-2 font-semibold">Alc %</th>
+                      <th className="text-right px-3 py-2 font-semibold">Temp</th>
+                      <th className="text-left px-3 py-2 font-semibold">Remarks</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bwHistory.map((r: BeerWellReading) => (
+                      <tr key={r.id} className="border-b border-gray-50 hover:bg-gray-50">
+                        <td className="px-3 py-2 text-gray-500">{new Date(r.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}</td>
+                        <td className="px-3 py-2 font-medium text-amber-600">BW-{r.wellNo}</td>
+                        <td className="px-3 py-2 text-right font-bold text-blue-700">{r.level != null ? `${r.level}%` : '—'}</td>
+                        <td className="px-3 py-2 text-right font-medium">{r.spGravity != null ? r.spGravity.toFixed(3) : '—'}</td>
+                        <td className="px-3 py-2 text-right">{r.ph ?? '—'}</td>
+                        <td className="px-3 py-2 text-right font-medium text-emerald-700">{r.alcohol != null ? `${r.alcohol}%` : '—'}</td>
+                        <td className="px-3 py-2 text-right">{r.temp != null ? `${r.temp}°C` : '—'}</td>
+                        <td className="px-3 py-2 text-gray-400 max-w-[120px] truncate" title={r.remarks || ''}>{r.remarks || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="text-center text-gray-400 py-8 text-sm">No beer well readings yet</div>
+              )
+            ) : null}
           </div>
         </div>
       </div>

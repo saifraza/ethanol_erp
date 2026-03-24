@@ -224,9 +224,21 @@ export async function connectWhatsApp(): Promise<void> {
           msg.message.imageMessage?.caption ||
           '[media]';
         const remoteJid = msg.key.remoteJid || '';
+        const isGroup = remoteJid.endsWith('@g.us');
+        // For group messages, participant is the actual sender
+        const participant = msg.key.participant || '';
         // Resolve phone: strip @s.whatsapp.net, or resolve @lid via mapping
         let phone = remoteJid.replace('@s.whatsapp.net', '');
-        if (remoteJid.endsWith('@lid')) {
+        if (isGroup) {
+          // Extract sender phone from participant JID
+          let senderPhone = participant.replace('@s.whatsapp.net', '').replace(/@lid$/, '');
+          if (participant.endsWith('@lid')) {
+            const resolved = lidToPhone.get(senderPhone);
+            if (resolved) senderPhone = resolved;
+          }
+          phone = senderPhone;
+          console.log(`[WA-Baileys] Group msg from ${phone} in ${remoteJid}`);
+        } else if (remoteJid.endsWith('@lid')) {
           const lidId = remoteJid.replace('@lid', '');
           const resolved = lidToPhone.get(lidId);
           if (resolved) {

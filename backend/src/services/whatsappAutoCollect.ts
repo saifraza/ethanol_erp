@@ -23,6 +23,7 @@ interface ActiveSession {
   collectedData: Record<string, number>;
   startedAt: Date;
   expiresAt: Date;
+  groupJid?: string; // if set, send prompts/replies to group instead of private
 }
 
 // ── In-memory session store ──
@@ -49,6 +50,13 @@ export async function startCollection(phone: string, moduleName: string): Promis
     return { success: false, error: `Active session already exists for ${digits}` };
   }
 
+  // Load group JID from settings — send prompts to group if available
+  let groupJid: string | undefined;
+  try {
+    const settings = await prisma.settings.findFirst();
+    groupJid = (settings as any)?.whatsappGroupJid || undefined;
+  } catch { /* ignore */ }
+
   const session: ActiveSession = {
     phone: digits,
     module: moduleName,
@@ -56,22 +64,37 @@ export async function startCollection(phone: string, moduleName: string): Promis
     collectedData: {},
     startedAt: new Date(),
     expiresAt: new Date(Date.now() + 30 * 60 * 1000), // 30 min timeout
+    groupJid,
   };
 
   activeSessions.set(digits, session);
 
-  // Send first question
+  // Send first question — to group if configured, else private
   const step = config.steps[0];
   const prompt = config.buildPrompt(step);
-  const result = await sendWhatsAppMessage(digits, prompt, `auto-collect-${moduleName}`);
+  let result: { success: boolean; error?: string };
+  if (groupJid) {
+    result = await sendToGroup(groupJid, prompt, `auto-collect-${moduleName}`);
+  } else {
+    result = await sendWhatsAppMessage(digits, prompt, `auto-collect-${moduleName}`);
+  }
 
   if (!result.success) {
     activeSessions.delete(digits);
     return { success: false, error: result.error };
   }
 
-  console.log(`[AutoCollect] Started ${moduleName} session for ${digits}, step 1/${config.steps.length}`);
+  console.log(`[AutoCollect] Started ${moduleName} session for ${digits}${groupJid ? ' (group)' : ''}, step 1/${config.steps.length}`);
   return { success: true };
+}
+
+/** Send a message back to the session — group if configured, else private */
+async function sendSessionMessage(session: ActiveSession, message: string): Promise<void> {
+  if (session.groupJid) {
+    await sendToGroup(session.groupJid, message, `auto-collect-${session.module}`);
+  } else {
+    await sendWhatsAppMessage(session.phone, message, `auto-collect-${session.module}`);
+  }
 }
 
 /**
@@ -98,7 +121,7 @@ async function handleIncoming(rawPhone: string, text: string, _name: string | nu
   // Check expiry
   if (new Date() > session.expiresAt) {
     activeSessions.delete(phone);
-    await sendWhatsAppMessage(phone, '⏰ Session expired. Data collection cancelled.', `auto-collect-${session.module}`);
+    await sendSessionMessage(session, '⏰ Session expired. Data collection cancelled.');
     return true;
   }
 
@@ -106,7 +129,7 @@ async function handleIncoming(rawPhone: string, text: string, _name: string | nu
   const lower = text.toLowerCase().trim();
   if (lower === 'cancel' || lower === 'stop') {
     activeSessions.delete(phone);
-    await sendWhatsAppMessage(phone, '❌ Data collection cancelled.', `auto-collect-${session.module}`);
+    await sendSessionMessage(session, '❌ Data collection cancelled.');
     return true;
   }
 
@@ -124,11 +147,7 @@ async function handleIncoming(rawPhone: string, text: string, _name: string | nu
   if (!parsed) {
     // Couldn't parse — ask again with module-specific hint
     const hint = config.buildErrorHint(step);
-    await sendWhatsAppMessage(
-      phone,
-      `❌ Couldn't read that. Please send in this format:\n\n${hint}\n\nType "cancel" to stop.`,
-      `auto-collect-${session.module}`
-    );
+    await sendSessionMessage(session, `❌ Couldn't read that. Please send in this format:\n\n${hint}\n\nType "cancel" to stop.`);
     return true;
   }
 
@@ -145,11 +164,7 @@ async function handleIncoming(rawPhone: string, text: string, _name: string | nu
     // More steps — send confirmation + next question
     const nextStep = config.steps[session.stepIndex];
     const nextPrompt = config.buildPrompt(nextStep);
-    await sendWhatsAppMessage(
-      phone,
-      `✅ *${step.label} saved!*\n${confirm}\n\n${nextPrompt}`,
-      `auto-collect-${session.module}`
-    );
+    await sendSessionMessage(session, `✅ *${step.label} saved!*\n${confirm}\n\n${nextPrompt}`);
     console.log(`[AutoCollect] ${session.module} step ${session.stepIndex}/${config.steps.length} for ${phone}`);
   } else {
     // All done — save to DB
@@ -160,11 +175,9 @@ async function handleIncoming(rawPhone: string, text: string, _name: string | nu
       // Build final summary
       const summary = config.buildSummary(session.collectedData);
 
-      // Confirm to operator
-      await sendWhatsAppMessage(
-        phone,
-        `✅ *All ${config.displayName} readings saved!*\n\n${confirm}\n\n📊 *Complete Entry:*\n${summary}\n\n_Saved to ERP at ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}_`,
-        `auto-collect-${session.module}`
+      // Confirm to operator (group or private)
+      await sendSessionMessage(session,
+        `✅ *All ${config.displayName} readings saved!*\n\n${confirm}\n\n📊 *Complete Entry:*\n${summary}\n\n_Saved to ERP at ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}_`
       );
 
       // Share to WhatsApp group + private numbers
@@ -173,9 +186,9 @@ async function handleIncoming(rawPhone: string, text: string, _name: string | nu
         const fullReport = `📊 *${config.displayName} Report* — ${now}\n\n${summary}\n\n_Auto-collected via WhatsApp_`;
         const settings = await prisma.settings.findFirst();
 
-        // Send to group
+        // Send to group (skip if already sent via session group)
         const groupJid = (settings as any)?.whatsappGroupJid;
-        if (groupJid) {
+        if (groupJid && !session.groupJid) {
           await sendToGroup(groupJid, fullReport, config.module);
           console.log(`[AutoCollect] Shared ${config.module} report to group`);
         }
@@ -198,11 +211,7 @@ async function handleIncoming(rawPhone: string, text: string, _name: string | nu
       console.log(`[AutoCollect] ${session.module} completed for ${phone}`);
     } catch (err: any) {
       activeSessions.delete(phone);
-      await sendWhatsAppMessage(
-        phone,
-        `❌ Failed to save: ${err.message}. Please enter manually in the ERP.`,
-        `auto-collect-${session.module}`
-      );
+      await sendSessionMessage(session, `❌ Failed to save: ${err.message}. Please enter manually in the ERP.`);
       console.error('[AutoCollect] Save error:', err);
     }
   }
