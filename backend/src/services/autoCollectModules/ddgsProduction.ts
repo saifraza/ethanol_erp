@@ -51,14 +51,17 @@ function formatHour(hour24: number): string {
   return `${h}:00 ${ampm}`;
 }
 
-/** Get the hourly time window using IST hours */
+/** Get the PREVIOUS hourly time window using IST hours.
+ *  Bot fires during hour H asking about production in hour H-1.
+ *  e.g. at 9:26 PM → window is 8:00 PM – 9:00 PM */
 function getTimeWindow(): { timeFrom: string; timeTo: string; labelFrom: string; labelTo: string } {
   const ist = nowIST();
-  const hour = ist.getUTCHours();
-  const from = `${String(hour).padStart(2, '0')}:00`;
-  const toHour = (hour + 1) % 24;
+  const currentHour = ist.getUTCHours();
+  const fromHour = (currentHour - 1 + 24) % 24;
+  const toHour = currentHour;
+  const from = `${String(fromHour).padStart(2, '0')}:00`;
   const to = `${String(toHour).padStart(2, '0')}:00`;
-  return { timeFrom: from, timeTo: to, labelFrom: formatHour(hour), labelTo: formatHour(toHour) };
+  return { timeFrom: from, timeTo: to, labelFrom: formatHour(fromHour), labelTo: formatHour(toHour) };
 }
 
 function buildPrompt(_step: CollectStep): string {
