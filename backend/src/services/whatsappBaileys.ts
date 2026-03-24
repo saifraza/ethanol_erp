@@ -11,20 +11,24 @@
 import prisma from '../config/prisma';
 
 // ── Lazy-loaded ESM modules ──
+// Use Function constructor to hide import() from TypeScript compiler,
+// which otherwise converts it to require() under "module": "commonjs".
 
 let _baileys: any = null;
 let _qrcode: any = null;
 
+const dynamicImport = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<any>;
+
 async function getBaileys(): Promise<any> {
   if (!_baileys) {
-    _baileys = await import('@whiskeysockets/baileys');
+    _baileys = await dynamicImport('@whiskeysockets/baileys');
   }
   return _baileys;
 }
 
 async function getQRCodeLib(): Promise<any> {
   if (!_qrcode) {
-    _qrcode = await import('qrcode');
+    _qrcode = await dynamicImport('qrcode');
   }
   return _qrcode;
 }

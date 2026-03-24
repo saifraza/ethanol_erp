@@ -109,8 +109,8 @@ export async function sendWhatsApp(opts: WhatsAppOptions): Promise<WhatsAppResul
 
   switch (provider) {
     case 'baileys': {
-      const { sendWhatsAppMessage } = await import('./whatsappBaileys');
-      const result = await sendWhatsAppMessage(opts.phone, opts.message);
+      const mod = await (new Function('s', 'return import(s)') as (s: string) => Promise<any>)('./whatsappBaileys');
+      const result = await mod.sendWhatsAppMessage(opts.phone, opts.message);
       return {
         success: result.success,
         error: result.error,
