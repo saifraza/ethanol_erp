@@ -242,14 +242,30 @@ export default function Milling() {
     try { const res = await api.get('/milling/chart?limit=500'); setChartEntries(res.data.entries); } catch (e) { console.error(e); }
   }
 
-  async function handleSave() {
+  function buildReportText(): string {
+    return `*MILLING REPORT*\nDate: ${form.date} ${form.analysisTime || ''}\n\n*Sieve Analysis*\n1.00mm: ${form.sieve_1mm ?? '—'}%\n0.850mm: ${form.sieve_850 ?? '—'}%\n0.600mm: ${form.sieve_600 ?? '—'}%\n0.300mm: ${form.sieve_300 ?? '—'}%\nTotal Fine: ${totalFine}%\n\n*Mill RPM / Load*\nMill A: ${form.millA_rpm ?? '—'} rpm / ${form.millA_load ?? '—'} A\nMill B: ${form.millB_rpm ?? '—'} rpm / ${form.millB_load ?? '—'} A\nMill C: ${form.millC_rpm ?? '—'} rpm / ${form.millC_load ?? '—'} A${form.remarks ? '\n\nRemarks: ' + form.remarks : ''}`;
+  }
+
+  async function handleSave(share = false) {
     if (!form.date) { setMsg({ type: 'err', text: 'Date is required' }); return; }
     setSaving(true); setMsg(null);
     try {
       if (editId) { await api.put(`/milling/${editId}`, form); }
       else { await api.post('/milling', form); }
       const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      setMsg({ type: 'ok', text: `Saved at ${now}` });
+
+      if (share) {
+        try {
+          const text = buildReportText();
+          await api.post('/whatsapp/send-report', { message: text, module: 'milling' });
+          setMsg({ type: 'ok', text: `Saved at ${now} and shared via WhatsApp` });
+        } catch (shareErr: any) {
+          setMsg({ type: 'ok', text: `Saved at ${now}, but sharing failed. Please try again.` });
+        }
+      } else {
+        setMsg({ type: 'ok', text: `Saved at ${now}` });
+      }
+
       setForm({ ...emptyForm, date: form.date });
       setEditId(null);
       await loadEntries(); await loadChartData();
@@ -417,13 +433,11 @@ export default function Milling() {
               {form.remarks && <div className="border-t pt-3 text-sm"><span className="text-gray-500">Remarks:</span> {form.remarks}</div>}
             </div>
             <div className="p-4 border-t flex gap-2">
-              <button onClick={() => {
-                const t = `*MILLING REPORT*\nDate: ${form.date} ${form.analysisTime || ''}\n\n*Sieve Analysis*\n1.00mm: ${form.sieve_1mm ?? '—'}%\n0.850mm: ${form.sieve_850 ?? '—'}%\n0.600mm: ${form.sieve_600 ?? '—'}%\n0.300mm: ${form.sieve_300 ?? '—'}%\nTotal Fine: ${totalFine}%\n\n*Mill RPM / Load*\nMill A: ${form.millA_rpm ?? '—'} rpm / ${form.millA_load ?? '—'} A\nMill B: ${form.millB_rpm ?? '—'} rpm / ${form.millB_load ?? '—'} A\nMill C: ${form.millC_rpm ?? '—'} rpm / ${form.millC_load ?? '—'} A${form.remarks ? '\n\nRemarks: ' + form.remarks : ''}`;
-                if (navigator.share) { navigator.share({ text: t }).catch(() => { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }); } else { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }
-              }} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
-                <Share2 size={16} /> Share
+              <button onClick={async () => { await handleSave(true); setShowPreview(false); }} disabled={saving}
+                className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />} Save & Share
               </button>
-              <button onClick={async () => { await handleSave(); setShowPreview(false); }} disabled={saving}
+              <button onClick={async () => { await handleSave(false); setShowPreview(false); }} disabled={saving}
                 className="flex-1 flex items-center justify-center gap-2 bg-stone-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-stone-700 disabled:opacity-50">
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} {editId ? 'Update' : 'Save'}
               </button>

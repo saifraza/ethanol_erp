@@ -15,14 +15,16 @@ import {
 
 const router = Router();
 
-// Modules that go to group (production data visible to all)
-const GROUP_MODULES = [
+// All available modules for WhatsApp reporting
+const ALL_MODULES = [
   'liquefaction', 'fermentation', 'distillation', 'milling',
   'evaporation', 'decanter', 'dryer', 'ethanol-product', 'grain',
+  'ddgs', 'ddgs-stock', 'ddgs-dispatch', 'sales', 'dispatch',
+  'procurement', 'accounts', 'inventory',
 ];
 
-// Modules that go to private numbers only (sensitive/financial)
-const PRIVATE_MODULES = [
+// Default private modules (used if none configured in Settings)
+const DEFAULT_PRIVATE_MODULES = [
   'ddgs', 'ddgs-stock', 'ddgs-dispatch', 'sales', 'dispatch',
   'procurement', 'accounts', 'inventory',
 ];
@@ -109,9 +111,18 @@ router.post(
     const settings = await prisma.settings.findFirst();
     const results: { target: string; success: boolean; error?: string }[] = [];
 
+    // Read private modules from settings (user-configurable) or fall back to defaults
+    const privateModules: string[] = (() => {
+      try {
+        const raw = (settings as any)?.whatsappPrivateModules;
+        if (raw) return JSON.parse(raw);
+      } catch { /* ignore parse errors */ }
+      return DEFAULT_PRIVATE_MODULES;
+    })();
+
     const mod = (module || '').toLowerCase();
-    const isPrivate = PRIVATE_MODULES.includes(mod);
-    const isGroup = GROUP_MODULES.includes(mod);
+    const isPrivate = privateModules.includes(mod);
+    const isGroup = !isPrivate && ALL_MODULES.includes(mod);
 
     // Send to group if module is a group module (or unknown defaults to both)
     if (isGroup || (!isPrivate && !isGroup)) {
@@ -149,6 +160,26 @@ router.post(
     const sent = results.filter((r) => r.success).length;
     const failed = results.filter((r) => !r.success).length;
     res.json({ sent, failed, total: results.length, results });
+  })
+);
+
+// GET /api/whatsapp/modules — list all modules for routing config
+router.get(
+  '/modules',
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const settings = await prisma.settings.findFirst();
+    const privateModules: string[] = (() => {
+      try {
+        const raw = (settings as any)?.whatsappPrivateModules;
+        if (raw) return JSON.parse(raw);
+      } catch { /* ignore */ }
+      return DEFAULT_PRIVATE_MODULES;
+    })();
+    res.json({
+      all: ALL_MODULES,
+      privateModules,
+    });
   })
 );
 

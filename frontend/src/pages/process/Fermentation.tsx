@@ -198,14 +198,11 @@ export default function Fermentation() {
       }
       if (andShare) {
         const batch = getVesselBatch(selected);
-        const lines = [
-          `🧪 ${selected.label}${batch ? ` B#${batch.batchNo}` : ''}`,
-          f.level ? `Level: ${f.level}%` : '', f.spGravity ? `SG: ${f.spGravity}` : '',
-          f.ph ? `pH: ${f.ph}` : '', f.temp ? `Temp: ${f.temp}°C` : '',
-          f.alcohol ? `Alc: ${f.alcohol}%` : '', f.rs ? `RS: ${f.rs}%` : '',
-          f.rst ? `RST: ${f.rst}%` : '', f.remarks ? `Note: ${f.remarks}` : '',
-        ].filter(Boolean).join('\n');
-        window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(lines)}`, '_blank');
+        const text = buildVesselReport(selected, batch, f);
+        try {
+          await api.post('/whatsapp/send-report', { message: text, module: 'fermentation' });
+          flash('ok', 'Shared on WhatsApp');
+        } catch { flash('err', 'WhatsApp send failed'); }
       }
       setReadingForm({});
       load();
@@ -394,6 +391,106 @@ export default function Fermentation() {
     } catch (e: any) { flash('err', e?.response?.data?.error || 'Delete failed'); }
   };
 
+  /* ── WhatsApp Sharing helpers ── */
+  const buildVesselReport = (v: Vessel, batch: any, lastReading?: Record<string, string>): string => {
+    const lines: string[] = [];
+    const cfg = phCfg(batch?.phase || 'IDLE');
+    lines.push(`🧪 *${v.label}*${batch ? ` — Batch #${batch.batchNo} · ${cfg.label}` : ' — Idle'}`);
+    if (!batch) return lines.join('\n');
+
+    // Use lastReading (from form) or latest readings from state
+    let sg = lastReading?.spGravity || '';
+    let ph = lastReading?.ph || '';
+    let temp = lastReading?.temp || '';
+    let level = lastReading?.level || '';
+    let alc = lastReading?.alcohol || '';
+    let rs = lastReading?.rs || '';
+
+    if (!sg && !level) {
+      // Pull from fetched data
+      if (v.type === 'FERM') {
+        const entries = fermEntries[v.no] || [];
+        const last = entries[entries.length - 1];
+        if (last) {
+          sg = last.spGravity != null ? String(last.spGravity) : '';
+          ph = last.ph != null ? String(last.ph) : '';
+          temp = last.temp != null ? String(last.temp) : '';
+          level = last.level != null ? String(last.level) : '';
+          alc = last.alcohol != null ? String(last.alcohol) : '';
+          rs = last.rs != null ? String(last.rs) : '';
+        }
+      } else if (v.type === 'PF') {
+        const pfBatch = getActivePF(v.no);
+        const last = pfBatch?.labReadings?.[pfBatch.labReadings.length - 1];
+        if (last) {
+          sg = last.spGravity != null ? String(last.spGravity) : '';
+          ph = last.ph != null ? String(last.ph) : '';
+          temp = last.temp != null ? String(last.temp) : '';
+          level = last.level != null ? String(last.level) : '';
+        }
+      }
+    }
+
+    if (level) lines.push(`Level: ${level}%`);
+    if (sg) lines.push(`SG: ${sg}`);
+    if (ph) lines.push(`pH: ${ph}`);
+    if (temp) lines.push(`Temp: ${temp}°C`);
+    if (alc) lines.push(`Alcohol: ${alc}%`);
+    if (rs) lines.push(`RS: ${rs}%`);
+    if (batch.phase && batch.pfTransferTime) lines.push(`Since: ${elapsed(batch.pfTransferTime || batch.fillingStartTime)}`);
+    return lines.join('\n');
+  };
+
+  const shareVessel = async (v: Vessel, e?: React.MouseEvent) => {
+    if (e) { e.stopPropagation(); e.preventDefault(); }
+    const batch = v.type === 'PF' ? getActivePF(v.no) : v.type === 'FERM' ? getActiveFerm(v.no) : null;
+    const text = buildVesselReport(v, batch);
+    try {
+      await api.post('/whatsapp/send-report', { message: text, module: 'fermentation' });
+      flash('ok', `${v.label} shared on WhatsApp`);
+    } catch { flash('err', 'WhatsApp send failed'); }
+  };
+
+  const shareAllFermentation = async () => {
+    const lines: string[] = [`*🏭 Fermentation Status*`, `${new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}`, ''];
+    for (const v of ALL_VESSELS) {
+      const batch = v.type === 'PF' ? getActivePF(v.no) : v.type === 'FERM' ? getActiveFerm(v.no) : null;
+      if (v.type === 'BW') {
+        const bw = getBW(v.no);
+        lines.push(`📦 *BW-${v.no}*: ${bw[0]?.level ? `Level ${bw[0].level}%` : 'No data'}${bw[0]?.alcohol ? ` · Alc ${bw[0].alcohol}%` : ''}`);
+        continue;
+      }
+      const phase = batch ? phCfg(batch.phase).label : 'Idle';
+      if (!batch) { lines.push(`${v.label}: Idle`); continue; }
+
+      let sg = '', temp = '', level = '';
+      if (v.type === 'FERM') {
+        const entries = fermEntries[v.no] || [];
+        const last = entries[entries.length - 1];
+        sg = last?.spGravity ? last.spGravity.toFixed(3) : batch.setupGravity ? batch.setupGravity.toFixed(3) : '';
+        temp = last?.temp ? `${last.temp}°C` : '';
+        level = last?.level ? `${last.level}%` : batch.fermLevel ? `${batch.fermLevel}%` : '';
+      } else {
+        const last = batch.labReadings?.[batch.labReadings.length - 1];
+        sg = last?.spGravity ? last.spGravity.toFixed(3) : batch.slurryGravity ? batch.slurryGravity.toFixed(3) : '';
+        temp = last?.temp ? `${last.temp}°C` : '';
+        level = last?.level ? `${last.level}%` : '';
+      }
+
+      const parts = [`*${v.label}* B#${batch.batchNo} · ${phase}`];
+      if (sg) parts.push(`SG ${sg}`);
+      if (level) parts.push(`Lvl ${level}`);
+      if (temp) parts.push(temp);
+      if (batch.pfTransferTime || batch.fillingStartTime) parts.push(elapsed(batch.pfTransferTime || batch.fillingStartTime));
+      lines.push(parts.join(' · '));
+    }
+
+    try {
+      await api.post('/whatsapp/send-report', { message: lines.join('\n'), module: 'fermentation' });
+      flash('ok', 'Full report shared on WhatsApp');
+    } catch { flash('err', 'WhatsApp send failed'); }
+  };
+
   /* ═══ RENDER ═══ */
   if (loading) return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -409,6 +506,10 @@ export default function Fermentation() {
           <h1 className="text-lg font-extrabold flex items-center gap-2 tracking-tight"><FlaskConical size={20} /> Fermentation</h1>
           <div className="flex items-center gap-3">
             <span className="text-xs text-indigo-300 font-medium">{new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
+            <button onClick={shareAllFermentation} title="Share all fermentation status on WhatsApp"
+              className="p-1.5 rounded-lg bg-green-600 hover:bg-green-500 active:bg-green-700 transition-colors">
+              <MessageCircle size={16} />
+            </button>
             <button onClick={() => { setLoading(true); load(); }} className="p-1.5 rounded-lg hover:bg-white/10 active:bg-white/20 transition-colors"><RefreshCw size={16} /></button>
           </div>
         </div>
@@ -493,6 +594,14 @@ export default function Fermentation() {
                   <div className="text-[9px] text-gray-400 mt-1 flex items-center gap-0.5 font-medium">
                     <Clock size={8} className="text-gray-300" />{elapsed(startTime)}
                   </div>
+                )}
+                {/* Small WhatsApp share icon on active vessels */}
+                {!isIdle && v.type !== 'BW' && (
+                  <button onClick={(e) => shareVessel(v, e)}
+                    className="absolute bottom-1.5 right-1.5 p-1 rounded-full bg-green-100 text-green-700 hover:bg-green-200 active:bg-green-300 transition-colors"
+                    title={`Share ${v.label} on WhatsApp`}>
+                    <MessageCircle size={10} />
+                  </button>
                 )}
               </button>
             );
@@ -845,7 +954,7 @@ export default function Fermentation() {
 
                   // Compute proper Y-axis domains for gravity
                   const sgVals = chartData.map(d => d.sg).filter((v): v is number => v != null);
-                  const sgMin = sgVals.length ? Math.floor((Math.min(...sgVals) - 0.005) * 1000) / 1000 : 0.98;
+                  const sgMin = 1;
                   const sgMax = sgVals.length ? Math.ceil((Math.max(...sgVals) + 0.005) * 1000) / 1000 : 1.1;
 
                   return (
@@ -1032,7 +1141,7 @@ export default function Fermentation() {
                                 sg: r.spGravity ?? undefined, alc: r.alcohol ?? undefined, level: r.level ?? undefined,
                               }));
                               const sgVals = cData.map(d => d.sg).filter((v): v is number => v != null);
-                              const sgMin2 = sgVals.length ? Math.floor((Math.min(...sgVals) - 0.005) * 1000) / 1000 : 0.98;
+                              const sgMin2 = 1;
                               const sgMax2 = sgVals.length ? Math.ceil((Math.max(...sgVals) + 0.005) * 1000) / 1000 : 1.1;
                               return (
                                 <div>

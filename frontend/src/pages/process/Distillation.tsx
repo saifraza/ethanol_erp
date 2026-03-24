@@ -93,9 +93,14 @@ export default function Distillation() {
     return lines.filter(Boolean).join('\n');
   };
 
-  const shareWhatsApp = () => {
-    const text = encodeURIComponent(buildPreviewText());
-    window.open(`https://wa.me/?text=${text}`, '_blank');
+  const shareReport = async () => {
+    try {
+      const text = buildPreviewText();
+      await api.post('/whatsapp/send-report', { message: text, module: 'distillation' });
+      setMsg({ type: 'ok', text: 'Report shared via WhatsApp' });
+    } catch (err: any) {
+      setMsg({ type: 'err', text: err.response?.data?.error || 'Failed to share report' });
+    }
   };
 
   const chartData = [...entries].reverse().map(e => ({
@@ -286,8 +291,8 @@ export default function Distillation() {
               <button onClick={handleSave} disabled={saving} className="flex-1 flex items-center justify-center gap-2 bg-red-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50 transition">
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save Entry
               </button>
-              <button onClick={shareWhatsApp} className="flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 transition">
-                <Share2 size={16} /> WhatsApp
+              <button onClick={shareReport} className="flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 transition">
+                <Share2 size={16} /> Share
               </button>
             </div>
           </div>

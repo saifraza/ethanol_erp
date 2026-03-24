@@ -90,6 +90,7 @@ model Settings {
   whatsappEnabled       Boolean  @default(false)    // toggle auto-push on/off
   whatsappGroupJid      String?  // WhatsApp group JID for production reports
   whatsappGroupName     String?  // Group name (display only)
+  whatsappPrivateModules String? // JSON array of module names routed to private numbers only
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 }

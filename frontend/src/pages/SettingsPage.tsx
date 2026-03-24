@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import api from '../services/api';
-import { Save, Smartphone, RefreshCw, LogOut, Send, Users, Lock } from 'lucide-react';
+import { Save, Smartphone, RefreshCw, LogOut, Send, Users, Lock, CheckSquare, Square } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 interface WAGroup {
@@ -25,6 +25,8 @@ export default function SettingsPage() {
   const [testResult, setTestResult] = useState('');
   const [groups, setGroups] = useState<WAGroup[]>([]);
   const [loadingGroups, setLoadingGroups] = useState(false);
+  const [allModules, setAllModules] = useState<string[]>([]);
+  const [privateModules, setPrivateModules] = useState<string[]>([]);
 
   const fetchWAStatus = useCallback(async () => {
     try {
@@ -88,7 +90,38 @@ export default function SettingsPage() {
     setLoadingGroups(false);
   };
 
-  useEffect(() => { api.get('/settings').then(r => setSettings(r.data)); }, []);
+  useEffect(() => {
+    api.get('/settings').then(r => {
+      setSettings(r.data);
+      // Parse saved private modules
+      try {
+        if (r.data.whatsappPrivateModules) {
+          setPrivateModules(JSON.parse(r.data.whatsappPrivateModules));
+        }
+      } catch { /* ignore */ }
+    });
+    api.get('/whatsapp/modules').then(r => {
+      setAllModules(r.data.all);
+      if (!privateModules.length) setPrivateModules(r.data.privateModules);
+    }).catch(() => {});
+  }, []);
+
+  const togglePrivateModule = (mod: string) => {
+    setPrivateModules(prev => {
+      const next = prev.includes(mod) ? prev.filter(m => m !== mod) : [...prev, mod];
+      setSettings((s: any) => ({ ...s, whatsappPrivateModules: JSON.stringify(next) }));
+      return next;
+    });
+  };
+
+  const MODULE_LABELS: Record<string, string> = {
+    'liquefaction': 'Liquefaction', 'fermentation': 'Fermentation', 'distillation': 'Distillation',
+    'milling': 'Milling', 'evaporation': 'Evaporation', 'decanter': 'Decanter',
+    'dryer': 'Dryer', 'ethanol-product': 'Ethanol Product', 'grain': 'Grain',
+    'ddgs': 'DDGS', 'ddgs-stock': 'DDGS Stock', 'ddgs-dispatch': 'DDGS Dispatch',
+    'sales': 'Sales', 'dispatch': 'Dispatch', 'procurement': 'Procurement',
+    'accounts': 'Accounts', 'inventory': 'Inventory',
+  };
 
   // Fetch groups when connected
   useEffect(() => {
@@ -251,7 +284,7 @@ export default function SettingsPage() {
             <Lock size={18} className="text-orange-600" />
             Private Numbers <span className="text-xs font-normal text-gray-400">(sensitive data)</span>
           </h2>
-          <p className="text-sm text-gray-500 mb-3">DDGS, Sales, Dispatch, Financials go only to these numbers. Also gets all group reports.</p>
+          <p className="text-sm text-gray-500 mb-3">Selected modules go only to these numbers. Also gets all group reports.</p>
 
           {settings.whatsappNumbers && settings.whatsappNumbers.trim() && (
             <div className="flex flex-wrap gap-2 mb-3">
@@ -266,7 +299,7 @@ export default function SettingsPage() {
             <p className="text-sm text-orange-500 mb-3">No private numbers saved yet.</p>
           )}
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 mb-4">
             <label className="text-sm text-gray-600 w-52">Phone numbers <span className="text-xs text-gray-400">(comma separated)</span></label>
             <input
               type="text"
@@ -276,6 +309,25 @@ export default function SettingsPage() {
               disabled={!isAdmin}
               placeholder="9876543210, 9123456789"
             />
+          </div>
+
+          {/* Module selector — which modules are private-only */}
+          <div className="mt-3">
+            <p className="text-sm font-medium text-gray-700 mb-2">Private-only modules <span className="text-xs text-gray-400">(unchecked = goes to group)</span></p>
+            <div className="grid grid-cols-3 gap-1.5">
+              {allModules.map(mod => (
+                <button key={mod} onClick={() => isAdmin && togglePrivateModule(mod)}
+                  disabled={!isAdmin}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                    privateModules.includes(mod)
+                      ? 'bg-orange-100 text-orange-800 border border-orange-300'
+                      : 'bg-gray-50 text-gray-500 border border-gray-200'
+                  } ${isAdmin ? 'hover:bg-orange-50 cursor-pointer' : 'cursor-not-allowed opacity-60'}`}>
+                  {privateModules.includes(mod) ? <CheckSquare size={13} /> : <Square size={13} />}
+                  {MODULE_LABELS[mod] || mod}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 

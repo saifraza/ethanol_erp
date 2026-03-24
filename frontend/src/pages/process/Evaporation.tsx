@@ -59,11 +59,14 @@ export default function Evaporation() {
 
   const upd = (key: keyof EvapForm, val: string) => setForm(f => ({ ...f, [key]: val }));
 
-  const handleSave = async () => {
+  const handleSave = async (share = false) => {
     setSaving(true); setMsg(null);
     try {
       await api.post('/evaporation', form);
       setMsg({ type: 'ok', text: `Saved at ${new Date().toLocaleTimeString()}` });
+      if (share) {
+        await shareReport();
+      }
       setForm(empty()); setShowPreview(false); load();
     } catch (err: any) {
       setMsg({ type: 'err', text: err.response?.data?.error || 'Save failed' });
@@ -101,9 +104,14 @@ export default function Evaporation() {
     return lines.filter(Boolean).join('\n');
   };
 
-  const shareWhatsApp = () => {
-    const text = encodeURIComponent(buildPreviewText());
-    window.open(`https://wa.me/?text=${text}`, '_blank');
+  const shareReport = async () => {
+    const text = buildPreviewText();
+    try {
+      await api.post('/whatsapp/send-report', { message: text, module: 'evaporation' });
+      setMsg({ type: 'ok', text: 'Report shared on WhatsApp' });
+    } catch (err: any) {
+      setMsg({ type: 'err', text: err.response?.data?.error || 'Failed to share on WhatsApp' });
+    }
   };
 
   return (
@@ -323,8 +331,8 @@ export default function Evaporation() {
               <button onClick={handleSave} disabled={saving} className="flex-1 flex items-center justify-center gap-2 bg-teal-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-teal-700 disabled:opacity-50 transition">
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save Entry
               </button>
-              <button onClick={shareWhatsApp} className="flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 transition">
-                <Share2 size={16} /> WhatsApp
+              <button onClick={() => handleSave(true)} disabled={saving} className="flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition">
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />} Save & Share
               </button>
             </div>
           </div>

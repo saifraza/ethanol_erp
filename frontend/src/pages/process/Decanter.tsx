@@ -28,6 +28,7 @@ export default function Decanter() {
   const [form, setForm] = useState<DecForm>(empty());
   const [entries, setEntries] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const [msg, setMsg] = useState<{ type: string; text: string } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
@@ -95,9 +96,16 @@ export default function Decanter() {
     return lines.filter(Boolean).join('\n');
   };
 
-  const shareWhatsApp = () => {
-    const text = encodeURIComponent(buildPreviewText());
-    window.open(`https://wa.me/?text=${text}`, '_blank');
+  const shareReport = async () => {
+    const text = buildPreviewText();
+    setSharing(true);
+    try {
+      await api.post('/whatsapp/send-report', { message: text, module: 'decanter' });
+      setMsg({ type: 'ok', text: 'Report shared on WhatsApp' });
+    } catch (err: any) {
+      setMsg({ type: 'err', text: err.response?.data?.error || 'Failed to share report' });
+    }
+    setSharing(false);
   };
 
   // History helpers
@@ -313,8 +321,8 @@ export default function Decanter() {
               <button onClick={handleSave} disabled={saving} className="flex-1 flex items-center justify-center gap-2 bg-cyan-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-cyan-700 disabled:opacity-50 transition">
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save Entry
               </button>
-              <button onClick={shareWhatsApp} className="flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 transition">
-                <Share2 size={16} /> WhatsApp
+              <button onClick={shareReport} disabled={sharing} className="flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition">
+                {sharing ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />} WhatsApp
               </button>
             </div>
           </div>
