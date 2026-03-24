@@ -23,7 +23,6 @@ interface ActiveSession {
   collectedData: Record<string, number>;
   startedAt: Date;
   expiresAt: Date;
-  groupJid?: string; // if set, send prompts/replies to group instead of private
 }
 
 // ── In-memory session store ──
@@ -50,13 +49,6 @@ export async function startCollection(phone: string, moduleName: string): Promis
     return { success: false, error: `Active session already exists for ${digits}` };
   }
 
-  // Load group JID from settings — send prompts to group if available
-  let groupJid: string | undefined;
-  try {
-    const settings = await prisma.settings.findFirst();
-    groupJid = (settings as any)?.whatsappGroupJid || undefined;
-  } catch { /* ignore */ }
-
   const session: ActiveSession = {
     phone: digits,
     module: moduleName,
@@ -64,37 +56,27 @@ export async function startCollection(phone: string, moduleName: string): Promis
     collectedData: {},
     startedAt: new Date(),
     expiresAt: new Date(Date.now() + 30 * 60 * 1000), // 30 min timeout
-    groupJid,
   };
 
   activeSessions.set(digits, session);
 
-  // Send first question — to group if configured, else private
+  // Send first question — always private to operator
   const step = config.steps[0];
   const prompt = config.buildPrompt(step);
-  let result: { success: boolean; error?: string };
-  if (groupJid) {
-    result = await sendToGroup(groupJid, prompt, `auto-collect-${moduleName}`);
-  } else {
-    result = await sendWhatsAppMessage(digits, prompt, `auto-collect-${moduleName}`);
-  }
+  const result = await sendWhatsAppMessage(digits, prompt, `auto-collect-${moduleName}`);
 
   if (!result.success) {
     activeSessions.delete(digits);
     return { success: false, error: result.error };
   }
 
-  console.log(`[AutoCollect] Started ${moduleName} session for ${digits}${groupJid ? ' (group)' : ''}, step 1/${config.steps.length}`);
+  console.log(`[AutoCollect] Started ${moduleName} session for ${digits}, step 1/${config.steps.length}`);
   return { success: true };
 }
 
-/** Send a message back to the session — group if configured, else private */
+/** Send a message back to the operator privately */
 async function sendSessionMessage(session: ActiveSession, message: string): Promise<void> {
-  if (session.groupJid) {
-    await sendToGroup(session.groupJid, message, `auto-collect-${session.module}`);
-  } else {
-    await sendWhatsAppMessage(session.phone, message, `auto-collect-${session.module}`);
-  }
+  await sendWhatsAppMessage(session.phone, message, `auto-collect-${session.module}`);
 }
 
 /**
@@ -186,9 +168,9 @@ async function handleIncoming(rawPhone: string, text: string, _name: string | nu
         const fullReport = `📊 *${config.displayName} Report* — ${now}\n\n${summary}\n\n_Auto-collected via WhatsApp_`;
         const settings = await prisma.settings.findFirst();
 
-        // Send to group (skip if already sent via session group)
+        // Send report to group
         const groupJid = (settings as any)?.whatsappGroupJid;
-        if (groupJid && !session.groupJid) {
+        if (groupJid) {
           await sendToGroup(groupJid, fullReport, config.module);
           console.log(`[AutoCollect] Shared ${config.module} report to group`);
         }
