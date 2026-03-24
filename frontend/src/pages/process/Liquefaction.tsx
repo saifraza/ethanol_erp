@@ -157,7 +157,9 @@ export default function Liquefaction() {
   };
   const upd = (key: keyof FormState, val: string) => setForm(f => ({ ...f, [key]: val }));
 
-  const handleSave = async () => {
+  const buildReportText = (f: FormState) => `*LIQUEFACTION REPORT*\nDate: ${f.date} ${f.analysisTime || ''}\n${f.jetCookerTemp ? `\nJet Cooker: ${f.jetCookerTemp}°C${f.jetCookerFlow ? ' | Flow: ' + f.jetCookerFlow : ''}` : ''}${f.flowToFermenter ? '\nFlow to Fermenter: ' + f.flowToFermenter + ' M³/hr' : ''}\n\n*ILT*${f.iltLevel ? '\nLevel: ' + f.iltLevel : ''}${f.iltSteam ? ' | Steam: ' + f.iltSteam : ''}\nGravity: ${f.iltSpGravity || '—'} | pH: ${f.iltPh || '—'} | RS: ${f.iltRs || '—'}%\nTemp: ${f.iltTemp || '—'}°C\n\n*FLT*${f.fltLevel ? '\nLevel: ' + f.fltLevel : ''}${f.fltFlowRate ? ' | Flow: ' + f.fltFlowRate : ''}\nGravity: ${f.fltSpGravity || '—'} | pH: ${f.fltPh || '—'}\nRS: ${f.fltRs || '—'}% | RST: ${f.fltRst || '—'}%${f.fltTs ? ' | TS: ' + f.fltTs : ''}\nTemp: ${f.fltTemp || '—'}°C${f.fltIodineTest ? '\nIodine Test: ' + f.fltIodineTest + (f.fltIodineTest === 'NEGATIVE' ? ' ✅' : ' ❌') : ''}${f.remark ? '\n\nRemarks: ' + f.remark : ''}`;
+
+  const handleSave = async (share = false) => {
     if (!form.date) { setMsg({ type: 'err', text: 'Date is required' }); return; }
     setSaving(true); setMsg(null);
     try {
@@ -166,17 +168,23 @@ export default function Liquefaction() {
       if (iodinePhoto) fd.append('iodinePhoto', iodinePhoto);
       const resp = await api.post('/liquefaction', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       setLastSavedId(resp.data.id);
-      setMsg({ type: 'ok', text: `Entry saved successfully at ${new Date().toLocaleTimeString()}` });
 
-      // Auto-send WhatsApp if enabled
-      try {
-        const settingsRes = await api.get('/settings');
-        if (settingsRes.data?.whatsappEnabled) {
-          const f = form;
-          const t = `*LIQUEFACTION REPORT*\nDate: ${f.date} ${f.analysisTime || ''}\n${f.jetCookerTemp ? `\nJet Cooker: ${f.jetCookerTemp}°C${f.jetCookerFlow ? ' | Flow: ' + f.jetCookerFlow : ''}` : ''}${f.flowToFermenter ? '\nFlow to Fermenter: ' + f.flowToFermenter + ' M³/hr' : ''}\n\n*ILT*${f.iltLevel ? '\nLevel: ' + f.iltLevel : ''}${f.iltSteam ? ' | Steam: ' + f.iltSteam : ''}\nGravity: ${f.iltSpGravity || '—'} | pH: ${f.iltPh || '—'} | RS: ${f.iltRs || '—'}%\nTemp: ${f.iltTemp || '—'}°C\n\n*FLT*${f.fltLevel ? '\nLevel: ' + f.fltLevel : ''}${f.fltFlowRate ? ' | Flow: ' + f.fltFlowRate : ''}\nGravity: ${f.fltSpGravity || '—'} | pH: ${f.fltPh || '—'}\nRS: ${f.fltRs || '—'}% | RST: ${f.fltRst || '—'}%${f.fltTs ? ' | TS: ' + f.fltTs : ''}\nTemp: ${f.fltTemp || '—'}°C${f.fltIodineTest ? '\nIodine Test: ' + f.fltIodineTest + (f.fltIodineTest === 'NEGATIVE' ? ' ✅' : ' ❌') : ''}${f.remark ? '\n\nRemarks: ' + f.remark : ''}`;
-          await api.post('/whatsapp/send-report', { message: t, module: 'liquefaction' });
+      // Send WhatsApp if "Save & Share" was clicked
+      if (share) {
+        try {
+          const t = buildReportText(form);
+          const waRes = await api.post('/whatsapp/send-report', { message: t, module: 'liquefaction' });
+          if (waRes.data.sent > 0) {
+            setMsg({ type: 'ok', text: `Saved & sent to ${waRes.data.sent} number(s)` });
+          } else {
+            setMsg({ type: 'ok', text: 'Saved! WhatsApp send failed: ' + (waRes.data.results?.[0]?.error || 'not connected') });
+          }
+        } catch {
+          setMsg({ type: 'ok', text: 'Saved! WhatsApp send failed.' });
         }
-      } catch { /* non-critical — don't block save */ }
+      } else {
+        setMsg({ type: 'ok', text: `Saved at ${new Date().toLocaleTimeString()}` });
+      }
 
       setForm(emptyForm()); setIodinePhoto(null); setIodinePreview(null); load();
       setTimeout(() => setMsg(null), 5000);
@@ -499,23 +507,13 @@ export default function Liquefaction() {
               {form.remark && <div className="border-t pt-2"><span className="text-gray-500">Remark:</span> {form.remark}</div>}
             </div>
             <div className="p-4 border-t flex gap-2">
-              <button onClick={async () => {
-                const t = `*LIQUEFACTION REPORT*\nDate: ${form.date} ${form.analysisTime || ''}\n${form.jetCookerTemp ? `\nJet Cooker: ${form.jetCookerTemp}°C${form.jetCookerFlow ? ' | Flow: ' + form.jetCookerFlow : ''}` : ''}${form.flowToFermenter ? '\nFlow to Fermenter: ' + form.flowToFermenter + ' M³/hr' : ''}\n\n*ILT*${form.iltLevel ? '\nLevel: ' + form.iltLevel : ''}${form.iltSteam ? ' | Steam: ' + form.iltSteam : ''}\nGravity: ${form.iltSpGravity || '—'} | pH: ${form.iltPh || '—'} | RS: ${form.iltRs || '—'}%\nTemp: ${form.iltTemp || '—'}°C\n\n*FLT*${form.fltLevel ? '\nLevel: ' + form.fltLevel : ''}${form.fltFlowRate ? ' | Flow: ' + form.fltFlowRate : ''}\nGravity: ${form.fltSpGravity || '—'} | pH: ${form.fltPh || '—'}\nRS: ${form.fltRs || '—'}% | RST: ${form.fltRst || '—'}%${form.fltTs ? ' | TS: ' + form.fltTs : ''}\nTemp: ${form.fltTemp || '—'}°C${form.fltIodineTest ? '\nIodine Test: ' + form.fltIodineTest + (form.fltIodineTest === 'NEGATIVE' ? ' ✅' : ' ❌') : ''}${form.remark ? '\n\nRemarks: ' + form.remark : ''}`;
-                try {
-                  const res = await api.post('/whatsapp/send-report', { message: t, module: 'liquefaction' });
-                  if (res.data.sent > 0) setMsg({ type: 'ok', text: `Sent to ${res.data.sent} number(s) via WhatsApp` });
-                  else setMsg({ type: 'err', text: res.data.results?.[0]?.error || 'WhatsApp not connected' });
-                } catch {
-                  // Fallback to wa.me link
-                  window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank');
-                }
-                setTimeout(() => setMsg(null), 4000);
-              }} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
-                <Share2 size={16} /> Share via WhatsApp
-              </button>
-              <button onClick={async () => { await handleSave(); setShowPreview(false); }} disabled={saving}
+              <button onClick={async () => { await handleSave(false); setShowPreview(false); }} disabled={saving}
                 className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save
+              </button>
+              <button onClick={async () => { await handleSave(true); setShowPreview(false); }} disabled={saving}
+                className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />} Save & Share
               </button>
             </div>
           </div>
