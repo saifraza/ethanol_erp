@@ -933,9 +933,9 @@ export default function Fermentation() {
                     if (fb.retentionStartTime) phaseMarkers.push({ time: fmtTime(fb.retentionStartTime), label: 'Retention', color: '#f97316' });
                   }
 
-                  // Compute proper Y-axis domains for gravity
+                  // Compute proper Y-axis domains for gravity — tight range around actual data
                   const sgVals = chartData.map(d => d.sg).filter((v): v is number => v != null);
-                  const sgMin = 1;
+                  const sgMin = sgVals.length ? Math.floor((Math.min(...sgVals) - 0.005) * 1000) / 1000 : 1;
                   const sgMax = sgVals.length ? Math.ceil((Math.max(...sgVals) + 0.005) * 1000) / 1000 : 1.1;
 
                   return (
@@ -953,7 +953,7 @@ export default function Fermentation() {
                               <XAxis dataKey="time" tick={{ fontSize: 8 }} interval="preserveStartEnd" />
                               <YAxis yAxisId="sg" domain={[sgMin, sgMax]} tick={{ fontSize: 8 }} tickFormatter={(v: number) => v.toFixed(3)} label={{ value: 'SG', angle: -90, position: 'insideLeft', fontSize: 8, fill: '#6366f1' }} />
                               <YAxis yAxisId="alc" orientation="right" domain={[0, 'auto']} tick={{ fontSize: 8 }} label={{ value: 'Alc% / Level%', angle: 90, position: 'insideRight', fontSize: 8, fill: '#10b981' }} />
-                              <Tooltip contentStyle={{ fontSize: 10 }} />
+                              <Tooltip contentStyle={{ fontSize: 10 }} formatter={(v: number, name: string) => [name === 'Gravity' ? v?.toFixed(3) : v, name]} />
                               <Legend wrapperStyle={{ fontSize: 9 }} />
                               {phaseMarkers.map((pm, i) => (
                                 <ReferenceLine key={i} yAxisId="sg" x={pm.time} stroke={pm.color} strokeDasharray="4 4" strokeWidth={1.5} label={{ value: pm.label, position: 'top', fontSize: 8, fill: pm.color, fontWeight: 'bold' }} />
@@ -1122,7 +1122,7 @@ export default function Fermentation() {
                                 sg: r.spGravity ?? undefined, alc: r.alcohol ?? undefined, level: r.level ?? undefined,
                               }));
                               const sgVals = cData.map(d => d.sg).filter((v): v is number => v != null);
-                              const sgMin2 = 1;
+                              const sgMin2 = sgVals.length ? Math.floor((Math.min(...sgVals) - 0.005) * 1000) / 1000 : 1;
                               const sgMax2 = sgVals.length ? Math.ceil((Math.max(...sgVals) + 0.005) * 1000) / 1000 : 1.1;
                               return (
                                 <div>
@@ -1133,7 +1133,7 @@ export default function Fermentation() {
                                       <XAxis dataKey="time" tick={{ fontSize: 8 }} />
                                       <YAxis yAxisId="sg" domain={[sgMin2, sgMax2]} tick={{ fontSize: 8 }} tickFormatter={(v: number) => v.toFixed(3)} />
                                       <YAxis yAxisId="alc" orientation="right" domain={[0, 'auto']} tick={{ fontSize: 8 }} />
-                                      <Tooltip contentStyle={{ fontSize: 9 }} />
+                                      <Tooltip contentStyle={{ fontSize: 9 }} formatter={(v: number, name: string) => [name === 'Gravity' ? v?.toFixed(3) : v, name]} />
                                       <Legend wrapperStyle={{ fontSize: 8 }} />
                                       <Line yAxisId="sg" dataKey="sg" name="Gravity" stroke="#6366f1" strokeWidth={2} dot={{ r: 2 }} connectNulls />
                                       <Line yAxisId="alc" dataKey="alc" name="Alc%" stroke="#10b981" strokeWidth={2} dot={{ r: 2 }} connectNulls />

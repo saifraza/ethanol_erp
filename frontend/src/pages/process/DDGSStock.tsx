@@ -99,7 +99,19 @@ export default function DDGSStock() {
       await api.post('/ddgs-production', {
         bags, weightPerBag, timeFrom, timeTo, operatorName, remark, shiftDate: sd,
       });
-      setMsg({ type: 'ok', text: `Added ${bags} bags (WhatsApp auto-sent)` });
+
+      // Auto-send WhatsApp for each DDGS production entry
+      const wt = (parseFloat(bags) * parseFloat(weightPerBag) / 1000).toFixed(2);
+      const waMsg = [
+        `📦 *DDGS Production*`,
+        `${timeFrom}–${timeTo}${operatorName ? ' (' + operatorName + ')' : ''}`,
+        `Bags: ${bags} · ${wt} MT`,
+        remark ? `Note: ${remark}` : '',
+        `Today total: ${todayBags + parseFloat(bags)} bags`,
+      ].filter(Boolean).join('\n');
+      api.post('/whatsapp/send-report', { message: waMsg, module: 'ddgs' }).catch(() => {});
+
+      setMsg({ type: 'ok', text: `Added ${bags} bags` });
       setBags(''); setRemark('');
       setTimeFrom(timeTo);
       setTimeTo(currentTimeStr());
@@ -352,15 +364,18 @@ export default function DDGSStock() {
               </div>
             </div>
             <div className="p-4 border-t flex gap-2">
-              <button onClick={() => {
-                const t = previewText;
-                if (navigator.share) { navigator.share({ text: t }).catch(() => { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }); } else { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }
-              }} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
-                <Share2 size={16} /> Share
-              </button>
               <button onClick={async () => { await saveDailyStock(); setShowPreview(false); }} disabled={saving}
                 className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save
+              </button>
+              <button onClick={async () => {
+                await saveDailyStock();
+                await api.post('/whatsapp/send-report', { message: previewText, module: 'ddgs-stock' }).catch(() => {});
+                setMsg({ type: 'ok', text: 'Saved & shared on WhatsApp' });
+                setShowPreview(false);
+              }} disabled={saving}
+                className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />} Save & Share
               </button>
             </div>
           </div>
