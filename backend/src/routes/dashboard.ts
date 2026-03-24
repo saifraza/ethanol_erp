@@ -47,20 +47,26 @@ router.get('/analytics', authenticate, async (req: AuthRequest, res: Response) =
     // ─── KPIs ───
     const totalGrainUnloaded = grain.reduce((s, e) => s + (e.grainUnloaded || 0), 0);
     const totalGrainConsumed = grain.reduce((s, e) => s + (e.grainConsumed || 0), 0);
-    const latestGrain = grain.length > 0 ? grain[grain.length - 1] : null;
+    // Use latest grain in range, or fall back to most recent entry (for silo/stock display)
+    const latestGrain = grain.length > 0
+      ? grain[grain.length - 1]
+      : await prisma.grainEntry.findFirst({ orderBy: { date: 'desc' } });
 
     const totalEthanolBL = ethanol.reduce((s, e) => s + (e.productionBL || 0), 0);
     const totalEthanolAL = ethanol.reduce((s, e) => s + (e.productionAL || 0), 0);
     const totalDispatchBL = dispatch.reduce((s, e) => s + (e.quantityBL || 0), 0);
-    const latestEthanol = ethanol.length > 0 ? ethanol[ethanol.length - 1] : null;
+    const latestEthanol = ethanol.length > 0
+      ? ethanol[ethanol.length - 1]
+      : await prisma.ethanolProductEntry.findFirst({ orderBy: { date: 'desc' } });
     const avgStrength = ethanol.filter(e => e.avgStrength > 0).length > 0
       ? ethanol.filter(e => e.avgStrength > 0).reduce((s, e) => s + e.avgStrength, 0) / ethanol.filter(e => e.avgStrength > 0).length
       : 0;
 
     // DDGS production: use DDGSStockEntry.productionToday (manual daily summary)
     // OR DDGSProductionEntry.totalProduction (auto-collected hourly entries), whichever is greater
-    const ddgsFromStock = ddgsStock.reduce((s: number, e: any) => s + (e.productionToday || 0), 0);
-    const ddgsFromProd = ddgsProduction.reduce((s: number, e: any) => s + (e.totalProduction || 0), 0);
+    // Both sources store values in Tons/MT — convert to kg (*1000) for consistency with dispatch (kg)
+    const ddgsFromStock = ddgsStock.reduce((s: number, e: any) => s + (e.productionToday || 0), 0) * 1000;
+    const ddgsFromProd = ddgsProduction.reduce((s: number, e: any) => s + (e.totalProduction || 0), 0) * 1000;
     const totalDDGSProduced = Math.max(ddgsFromStock, ddgsFromProd);
     const totalDDGSDispatched = ddgsDispatch.reduce((s, e) => s + (e.weightNet || 0), 0);
 
