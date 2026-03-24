@@ -327,6 +327,7 @@ export default function Fermentation() {
 
   const [editingDosing, setEditingDosing] = useState<string | null>(null);
   const [editDosingQty, setEditDosingQty] = useState('');
+  const [dosingExpanded, setDosingExpanded] = useState(false);
 
   const updateDosing = async (dosingId: string) => {
     if (!selected || !editDosingQty) return;
@@ -586,7 +587,7 @@ export default function Fermentation() {
 
             return (
               <button key={`${v.type}-${v.no}`}
-                onClick={() => { setSelected(isSelected ? null : v); setTab('reading'); setReadingForm({}); setShowNewBatch(false); }}
+                onClick={() => { setSelected(isSelected ? null : v); setTab('reading'); setReadingForm({}); setShowNewBatch(false); setDosingExpanded(false); }}
                 className={`relative rounded-xl p-2.5 text-left transition-all duration-200 border-2 ${
                   isSelected ? `${cfg.bg} ring-2 ${cfg.ring} border-transparent shadow-lg scale-[1.03]`
                   : isIdle ? 'bg-white border-gray-100 hover:border-gray-300 hover:shadow-md'
@@ -865,59 +866,103 @@ export default function Fermentation() {
                     {/* ── QUICK DOSING (inline, below reading) ── */}
                     {!isBW && batch && (
                       <div className="border-t border-gray-100 pt-3">
-                        {dosings.length > 0 && (
-                          <div className="space-y-0.5 mb-2">
-                            <div className="text-[9px] font-bold text-gray-400 uppercase">Chemicals</div>
-                            {dosings.map((d: Dosing) => (
-                              <div key={d.id} className="flex items-center gap-2 bg-violet-50/50 rounded px-2 py-1">
-                                <span className="text-[11px] font-medium text-gray-800 flex-1">{d.chemicalName}</span>
-                                {editingDosing === d.id ? (
-                                  <div className="flex items-center gap-1">
-                                    <input type="number" value={editDosingQty} onChange={e => setEditDosingQty(e.target.value)}
-                                      className="w-14 px-1 py-0.5 text-[11px] border rounded" autoFocus
-                                      onKeyDown={e => { if (e.key === 'Enter') updateDosing(d.id); if (e.key === 'Escape') setEditingDosing(null); }} />
-                                    <span className="text-[9px] text-gray-400">{d.unit}</span>
-                                    <button onClick={() => updateDosing(d.id)} className="text-green-600"><CheckCircle size={12} /></button>
-                                    <button onClick={() => setEditingDosing(null)} className="text-gray-400"><X size={12} /></button>
+                        {dosings.length > 0 ? (
+                          <>
+                            {/* Collapsed summary — tap to expand */}
+                            <button onClick={() => setDosingExpanded(!dosingExpanded)}
+                              className="w-full flex items-center gap-2 px-2 py-1.5 bg-violet-50/60 rounded-lg mb-1 hover:bg-violet-100/60 transition-colors">
+                              <ChevronDown size={12} className={`text-violet-500 transition-transform ${dosingExpanded ? 'rotate-0' : '-rotate-90'}`} />
+                              <span className="text-[9px] font-bold text-gray-400 uppercase">Chemicals ({dosings.length})</span>
+                              <span className="text-[10px] text-violet-600 ml-auto">{dosings.map(d => `${d.chemicalName} ${d.quantity}${d.unit}`).join(' · ')}</span>
+                            </button>
+                            {dosingExpanded && (
+                              <div className="space-y-0.5 mb-2">
+                                {dosings.map((d: Dosing) => (
+                                  <div key={d.id} className="flex items-center gap-2 bg-violet-50/50 rounded px-2 py-1">
+                                    <span className="text-[11px] font-medium text-gray-800 flex-1">{d.chemicalName}</span>
+                                    {editingDosing === d.id ? (
+                                      <div className="flex items-center gap-1">
+                                        <input type="number" value={editDosingQty} onChange={e => setEditDosingQty(e.target.value)}
+                                          className="w-14 px-1 py-0.5 text-[11px] border rounded" autoFocus
+                                          onKeyDown={e => { if (e.key === 'Enter') updateDosing(d.id); if (e.key === 'Escape') setEditingDosing(null); }} />
+                                        <span className="text-[9px] text-gray-400">{d.unit}</span>
+                                        <button onClick={() => updateDosing(d.id)} className="text-green-600"><CheckCircle size={12} /></button>
+                                        <button onClick={() => setEditingDosing(null)} className="text-gray-400"><X size={12} /></button>
+                                      </div>
+                                    ) : (
+                                      <button onClick={() => { setEditingDosing(d.id); setEditDosingQty(String(d.quantity)); }}
+                                        className="text-[11px] font-bold text-violet-700 hover:underline">{d.quantity} {d.unit}</button>
+                                    )}
+                                    <button onClick={() => deleteDosing(d.id)} className="text-gray-300 hover:text-red-500"><Trash2 size={10} /></button>
                                   </div>
-                                ) : (
-                                  <button onClick={() => { setEditingDosing(d.id); setEditDosingQty(String(d.quantity)); }}
-                                    className="text-[11px] font-bold text-violet-700 hover:underline">{d.quantity} {d.unit}</button>
-                                )}
-                                <button onClick={() => deleteDosing(d.id)} className="text-gray-300 hover:text-red-500"><Trash2 size={10} /></button>
+                                ))}
+                                {/* Add more chemicals when expanded */}
+                                <div className="flex gap-1.5 items-end pt-1">
+                                  <div className="flex-1">
+                                    <select value={dosingForm.chemicalName} onChange={e => setDosingForm(f => ({ ...f, chemicalName: e.target.value }))}
+                                      className="w-full px-2 py-1.5 text-xs border rounded-lg bg-white">
+                                      <option value="">+ Chemical...</option>
+                                      {chemicals.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                                    </select>
+                                  </div>
+                                  <div className="w-16">
+                                    <input type="number" value={dosingForm.quantity} onChange={e => setDosingForm(f => ({ ...f, quantity: e.target.value }))}
+                                      placeholder="Qty" className="w-full px-2 py-1.5 text-xs border rounded-lg" />
+                                  </div>
+                                  <div className="w-14">
+                                    <select value={dosingForm.unit} onChange={e => setDosingForm(f => ({ ...f, unit: e.target.value }))}
+                                      className="w-full px-2 py-1.5 text-xs border rounded-lg bg-white">
+                                      {['kg', 'ltr', 'gm', 'ml'].map(u => <option key={u} value={u}>{u}</option>)}
+                                    </select>
+                                  </div>
+                                  <button onClick={addDosing} disabled={saving || !dosingForm.chemicalName || !dosingForm.quantity}
+                                    className="px-2.5 py-1.5 bg-violet-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">
+                                    <Plus size={13} />
+                                  </button>
+                                </div>
                               </div>
-                            ))}
-                          </div>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            {/* No dosing yet — show blinking reminder + recipe/add form */}
+                            <style>{`@keyframes dosingBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }`}</style>
+                            <div className="flex items-center gap-2 px-2 py-1.5 bg-orange-50 border border-orange-200 rounded-lg mb-2"
+                              style={{ animation: 'dosingBlink 1.5s ease-in-out infinite' }}>
+                              <AlertCircle size={14} className="text-orange-500" />
+                              <span className="text-[11px] font-bold text-orange-700">Dosing not added!</span>
+                            </div>
+                            {(isPF ? recipes.PF : recipes.FERMENTER).length > 0 && (
+                              <button onClick={applyRecipe} disabled={saving}
+                                className="w-full py-1.5 mb-2 bg-violet-50 text-violet-700 border border-violet-200 rounded-lg text-xs font-bold hover:bg-violet-100 flex items-center justify-center gap-1">
+                                <Play size={11} /> Apply Recipe ({(isPF ? recipes.PF : recipes.FERMENTER).length})
+                              </button>
+                            )}
+                            <div className="flex gap-1.5 items-end">
+                              <div className="flex-1">
+                                <select value={dosingForm.chemicalName} onChange={e => setDosingForm(f => ({ ...f, chemicalName: e.target.value }))}
+                                  className="w-full px-2 py-1.5 text-xs border rounded-lg bg-white">
+                                  <option value="">+ Chemical...</option>
+                                  {chemicals.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                                </select>
+                              </div>
+                              <div className="w-16">
+                                <input type="number" value={dosingForm.quantity} onChange={e => setDosingForm(f => ({ ...f, quantity: e.target.value }))}
+                                  placeholder="Qty" className="w-full px-2 py-1.5 text-xs border rounded-lg" />
+                              </div>
+                              <div className="w-14">
+                                <select value={dosingForm.unit} onChange={e => setDosingForm(f => ({ ...f, unit: e.target.value }))}
+                                  className="w-full px-2 py-1.5 text-xs border rounded-lg bg-white">
+                                  {['kg', 'ltr', 'gm', 'ml'].map(u => <option key={u} value={u}>{u}</option>)}
+                                </select>
+                              </div>
+                              <button onClick={addDosing} disabled={saving || !dosingForm.chemicalName || !dosingForm.quantity}
+                                className="px-2.5 py-1.5 bg-violet-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">
+                                <Plus size={13} />
+                              </button>
+                            </div>
+                          </>
                         )}
-                        {(isPF ? recipes.PF : recipes.FERMENTER).length > 0 && dosings.length === 0 && (
-                          <button onClick={applyRecipe} disabled={saving}
-                            className="w-full py-1.5 mb-2 bg-violet-50 text-violet-700 border border-violet-200 rounded-lg text-xs font-bold hover:bg-violet-100 flex items-center justify-center gap-1">
-                            <Play size={11} /> Apply Recipe ({(isPF ? recipes.PF : recipes.FERMENTER).length})
-                          </button>
-                        )}
-                        <div className="flex gap-1.5 items-end">
-                          <div className="flex-1">
-                            <select value={dosingForm.chemicalName} onChange={e => setDosingForm(f => ({ ...f, chemicalName: e.target.value }))}
-                              className="w-full px-2 py-1.5 text-xs border rounded-lg bg-white">
-                              <option value="">+ Chemical...</option>
-                              {chemicals.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                            </select>
-                          </div>
-                          <div className="w-16">
-                            <input type="number" value={dosingForm.quantity} onChange={e => setDosingForm(f => ({ ...f, quantity: e.target.value }))}
-                              placeholder="Qty" className="w-full px-2 py-1.5 text-xs border rounded-lg" />
-                          </div>
-                          <div className="w-14">
-                            <select value={dosingForm.unit} onChange={e => setDosingForm(f => ({ ...f, unit: e.target.value }))}
-                              className="w-full px-2 py-1.5 text-xs border rounded-lg bg-white">
-                              {['kg', 'ltr', 'gm', 'ml'].map(u => <option key={u} value={u}>{u}</option>)}
-                            </select>
-                          </div>
-                          <button onClick={addDosing} disabled={saving || !dosingForm.chemicalName || !dosingForm.quantity}
-                            className="px-2.5 py-1.5 bg-violet-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">
-                            <Plus size={13} />
-                          </button>
-                        </div>
                       </div>
                     )}
 

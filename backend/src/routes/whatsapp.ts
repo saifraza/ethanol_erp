@@ -142,14 +142,20 @@ router.post(
     const mod = (module || '').toLowerCase();
     const isPrivate = privateModules.includes(mod);
     const isGroup = !isPrivate && ALL_MODULES.includes(mod);
+    const groupJidVal = (settings as any)?.whatsappGroupJid || null;
+
+    console.log(`[WA] send-report: module="${mod}" isGroup=${isGroup} isPrivate=${isPrivate} groupJid=${groupJidVal ? groupJidVal.substring(0, 20) + '...' : 'NOT SET'} settingsId=${settings?.id || 'NONE'}`);
 
     // Group modules → group only (private numbers are already in the group)
     // Private modules → private numbers only
     if (isGroup) {
-      const groupJid = (settings as any)?.whatsappGroupJid;
+      const groupJid = groupJidVal;
       if (groupJid) {
         const r = await sendToGroup(groupJid, message, module);
+        console.log(`[WA] send-report: group send result:`, JSON.stringify(r));
         results.push({ target: 'group', ...r });
+      } else {
+        console.log(`[WA] send-report: groupJid is NULL — cannot send to group for module "${mod}"`);
       }
     } else if (isPrivate) {
       const privateNumbers = (settings?.whatsappNumbers || '')
@@ -190,6 +196,43 @@ router.post(
     }
 
     res.json({ sent, failed, total: results.length, results });
+  })
+);
+
+// GET /api/whatsapp/config — diagnostic: show current WhatsApp routing config
+router.get(
+  '/config',
+  authenticate,
+  authorize('ADMIN'),
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const settings = await prisma.settings.findFirst();
+    const groupJid = (settings as any)?.whatsappGroupJid || null;
+    const groupName = (settings as any)?.whatsappGroupName || null;
+    const privateNumbers = (settings?.whatsappNumbers || '').split(',').map((p: string) => p.trim()).filter(Boolean);
+    const privateModules: string[] = (() => {
+      try {
+        const raw = (settings as any)?.whatsappPrivateModules;
+        if (raw) return JSON.parse(raw);
+      } catch { /* ignore */ }
+      return DEFAULT_PRIVATE_MODULES;
+    })();
+    const autoCollectConfig = (() => {
+      try {
+        const raw = (settings as any)?.autoCollectConfig;
+        if (raw) return JSON.parse(raw);
+      } catch { /* ignore */ }
+      return null;
+    })();
+    res.json({
+      groupJid,
+      groupName,
+      privateNumbers,
+      privateModules,
+      groupModules: ALL_MODULES.filter(m => !privateModules.includes(m)),
+      autoCollectConfig,
+      connectionStatus: getConnectionStatus(),
+      connectedNumber: getConnectedNumber(),
+    });
   })
 );
 

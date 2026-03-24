@@ -225,7 +225,9 @@ export async function loadSchedules(): Promise<void> {
     const raw = (settings as any)?.autoCollectConfig;
     if (raw) {
       schedules = JSON.parse(raw);
-      console.log('[AutoCollect] Loaded', schedules.length, 'schedule(s)');
+      console.log('[AutoCollect] Loaded', schedules.length, 'schedule(s):', JSON.stringify(schedules));
+    } else {
+      console.log('[AutoCollect] No autoCollectConfig in DB, starting with empty schedules');
     }
   } catch (err) {
     console.error('[AutoCollect] Failed to load schedules:', err);
@@ -234,6 +236,9 @@ export async function loadSchedules(): Promise<void> {
 
 export async function saveSchedules(newSchedules: AutoCollectSchedule[]): Promise<void> {
   schedules = newSchedules;
+  // Reset last-run timestamps so new intervals take effect immediately
+  schedulerLastRun.clear();
+  console.log('[AutoCollect] Schedules updated, cleared lastRun timestamps. New config:', JSON.stringify(schedules));
   try {
     const settings = await prisma.settings.findFirst();
     if (settings) {
@@ -241,6 +246,9 @@ export async function saveSchedules(newSchedules: AutoCollectSchedule[]): Promis
         where: { id: settings.id },
         data: { autoCollectConfig: JSON.stringify(schedules) } as any,
       });
+      console.log('[AutoCollect] Schedules persisted to DB');
+    } else {
+      console.warn('[AutoCollect] No settings row found — schedules NOT persisted!');
     }
   } catch (err) {
     console.error('[AutoCollect] Failed to save schedules:', err);
