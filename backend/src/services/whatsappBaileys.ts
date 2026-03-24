@@ -196,6 +196,29 @@ export async function connectWhatsApp(): Promise<void> {
     // Save credentials whenever they update
     sock.ev.on('creds.update', saveCreds);
 
+    // Listen for incoming messages and store in DB
+    sock.ev.on('messages.upsert', async (m: any) => {
+      if (!m.messages) return;
+      for (const msg of m.messages) {
+        if (!msg.message || msg.key.fromMe) continue;
+        const text =
+          msg.message.conversation ||
+          msg.message.extendedTextMessage?.text ||
+          msg.message.imageMessage?.caption ||
+          '[media]';
+        const phone = msg.key.remoteJid?.replace('@s.whatsapp.net', '') || '';
+        const name = msg.pushName || null;
+        try {
+          await prisma.whatsAppMessage.create({
+            data: { direction: 'incoming', phone, name, message: text },
+          });
+          console.log(`[WA-Baileys] Incoming from ${phone}: ${text.slice(0, 50)}`);
+        } catch (err) {
+          console.error('[WA-Baileys] Failed to save incoming msg:', err);
+        }
+      }
+    });
+
   } catch (err) {
     console.error('[WA-Baileys] Connection error:', err);
     connectionStatus = 'disconnected';
@@ -224,7 +247,8 @@ export async function disconnectWhatsApp(): Promise<void> {
 
 export async function sendWhatsAppMessage(
   phone: string,
-  message: string
+  message: string,
+  module?: string
 ): Promise<{ success: boolean; error?: string }> {
   if (!sock || connectionStatus !== 'connected') {
     return { success: false, error: 'WhatsApp not connected. Scan QR in Settings.' };
@@ -238,6 +262,14 @@ export async function sendWhatsAppMessage(
     const jid = `${digits}@s.whatsapp.net`;
     await sock.sendMessage(jid, { text: message });
     console.log(`[WA-Baileys] Sent message to ${digits}`);
+
+    // Log outgoing message
+    try {
+      await prisma.whatsAppMessage.create({
+        data: { direction: 'outgoing', phone: digits, message, module: module || null },
+      });
+    } catch { /* non-critical */ }
+
     return { success: true };
   } catch (err: any) {
     console.error('[WA-Baileys] Send failed:', err.message);
