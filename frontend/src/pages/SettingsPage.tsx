@@ -91,18 +91,21 @@ export default function SettingsPage() {
   };
 
   useEffect(() => {
+    let savedPrivate: string[] | null = null;
     api.get('/settings').then(r => {
       setSettings(r.data);
       // Parse saved private modules
       try {
         if (r.data.whatsappPrivateModules) {
-          setPrivateModules(JSON.parse(r.data.whatsappPrivateModules));
+          savedPrivate = JSON.parse(r.data.whatsappPrivateModules);
+          setPrivateModules(savedPrivate!);
         }
       } catch { /* ignore */ }
     });
     api.get('/whatsapp/modules').then(r => {
       setAllModules(r.data.all);
-      if (!privateModules.length) setPrivateModules(r.data.privateModules);
+      // Only use defaults if nothing was saved in DB
+      setPrivateModules(prev => prev.length > 0 ? prev : (savedPrivate || r.data.privateModules));
     }).catch(() => {});
   }, []);
 
@@ -317,7 +320,7 @@ export default function SettingsPage() {
             <div className="grid grid-cols-2 gap-3">
               {/* Group column */}
               <div>
-                <div className="text-[10px] font-bold text-blue-600 uppercase mb-1.5 flex items-center gap-1"><Users size={11} /> Group + Private</div>
+                <div className="text-[10px] font-bold text-blue-600 uppercase mb-1.5 flex items-center gap-1"><Users size={11} /> Group</div>
                 <div className="space-y-1">
                   {allModules.filter(m => !privateModules.includes(m)).map(mod => (
                     <button key={mod} onClick={() => isAdmin && togglePrivateModule(mod)} disabled={!isAdmin}

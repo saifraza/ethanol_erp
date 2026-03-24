@@ -47,7 +47,7 @@ export default function EthanolDispatch() {
     setPhoto(null); setShowForm(false);
   }
 
-  async function handleSave() {
+  async function handleSave(share = false) {
     if (!vehicleNo && !quantityBL) { setMsg({ type: 'err', text: 'Vehicle No or Quantity required' }); return; }
     setSaving(true); setMsg(null);
     try {
@@ -64,6 +64,13 @@ export default function EthanolDispatch() {
 
       await api.post('/dispatch', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+
+      // Auto-send WhatsApp for each dispatch truck
+      try {
+        const msg = `🚛 *Ethanol Dispatch* — ${now}\nVehicle: ${vehicleNo}\nParty: ${partyName || '-'}\nDestination: ${destination || '-'}\nQuantity: ${quantityBL} BL${strength ? ` @ ${strength}%` : ''}\nBatch: ${batchNo || '-'}${remarks ? `\nRemarks: ${remarks}` : ''}`;
+        await api.post('/whatsapp/send-report', { message: msg, module: 'dispatch' });
+      } catch (_) { /* WhatsApp send is best-effort */ }
+
       setMsg({ type: 'ok', text: `Dispatch saved at ${now}` });
       resetForm();
       await loadDispatches();
@@ -86,20 +93,16 @@ export default function EthanolDispatch() {
 
   const totalBL = dispatches.reduce((s, d) => s + (d.quantityBL || 0), 0);
 
-  function shareWhatsApp() {
-    const lines = dispatches.map((d, i) =>
+  async function shareWhatsApp() {
+    const lines = dispatches.map((d: any, i: number) =>
       `${i+1}. ${d.batchNo ? `[${d.batchNo}] ` : ''}${d.vehicleNo} → ${d.destination || '-'} | ${d.quantityBL} BL${d.strength ? ` @ ${d.strength}%` : ''} | ${d.partyName}`
     ).join('\n');
     const text = `*Ethanol Dispatch Report*\n📅 ${date}\n\n${lines}\n\n*Total: ${totalBL.toFixed(1)} BL (${dispatches.length} trucks)*`;
-
-    // Use Web Share API on mobile for better experience
-    if (navigator.share) {
-      navigator.share({ text }).catch(() => {
-        // Fallback to wa.me
-        window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
-      });
-    } else {
-      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+    try {
+      await api.post('/whatsapp/send-report', { message: text, module: 'dispatch' });
+      setMsg({ type: 'ok', text: 'Report shared via WhatsApp' });
+    } catch (_) {
+      setMsg({ type: 'err', text: 'WhatsApp share failed' });
     }
   }
 
