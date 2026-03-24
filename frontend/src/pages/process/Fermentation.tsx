@@ -569,7 +569,11 @@ export default function Fermentation() {
               }
             } else {
               const bw = getBW(v.no);
-              if (bw[0]) { metric1 = bw[0].level ? `${bw[0].level}%` : ''; metric2 = bw[0].alcohol ? `${bw[0].alcohol}%` : ''; }
+              if (bw[0]) {
+                metric1 = bw[0].level != null ? `${bw[0].level}%` : bw[0].spGravity != null ? `SG ${bw[0].spGravity}` : bw[0].alcohol != null ? `Alc ${bw[0].alcohol}%` : '';
+                metric2 = bw[0].level != null && bw[0].alcohol != null ? `Alc ${bw[0].alcohol}%` : '';
+                startTime = bw[0].createdAt || '';
+              }
             }
 
             const cfg = phCfg(phase);
@@ -606,10 +610,16 @@ export default function Fermentation() {
                   </div>
                 )}
                 {isIdle && v.type !== 'BW' && <div className="text-[10px] text-gray-300 mt-1.5 italic">idle</div>}
-                {v.type === 'BW' && !metric1 && <div className="text-[10px] text-gray-300 mt-1.5 italic">no data</div>}
-                {startTime && !isIdle && (
+                {v.type === 'BW' && !metric1 && !getBW(v.no).length && <div className="text-[10px] text-gray-300 mt-1.5 italic">no data</div>}
+                {v.type === 'BW' && !metric1 && getBW(v.no).length > 0 && <div className="text-[10px] text-gray-400 mt-1.5">has readings</div>}
+                {startTime && !isIdle && v.type !== 'BW' && (
                   <div className="text-[9px] text-gray-400 mt-1 flex items-center gap-0.5 font-medium">
                     <Clock size={8} className="text-gray-300" />{elapsed(startTime)}
+                  </div>
+                )}
+                {v.type === 'BW' && startTime && (
+                  <div className="text-[9px] text-gray-400 mt-1 flex items-center gap-0.5 font-medium">
+                    <Clock size={8} className="text-gray-300" />{fmtTime(startTime)} ({elapsed(startTime)})
                   </div>
                 )}
                 {/* Small WhatsApp share icon on active vessels */}
