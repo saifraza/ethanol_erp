@@ -32,7 +32,6 @@
  */
 
 import nodemailer from 'nodemailer';
-import { sendWhatsAppMessage as sendViaBaileys } from './whatsappBaileys';
 
 // ── SMTP Email ──
 
@@ -110,7 +109,8 @@ export async function sendWhatsApp(opts: WhatsAppOptions): Promise<WhatsAppResul
 
   switch (provider) {
     case 'baileys': {
-      const result = await sendViaBaileys(opts.phone, opts.message);
+      const { sendWhatsAppMessage } = await import('./whatsappBaileys');
+      const result = await sendWhatsAppMessage(opts.phone, opts.message);
       return {
         success: result.success,
         error: result.error,

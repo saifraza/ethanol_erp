@@ -3,33 +3,36 @@
  * - FREE, no per-message cost
  * - Session persisted in PostgreSQL (survives Railway deploys)
  * - QR code displayed in ERP Settings page
+ *
+ * NOTE: @whiskeysockets/baileys is ESM-only.
+ *       We use dynamic import() to load it from CommonJS.
  */
 
-import makeWASocket, {
-  DisconnectReason,
-  useMultiFileAuthState,
-  fetchLatestBaileysVersion,
-  makeCacheableSignalKeyStore,
-  WASocket,
-  ConnectionState,
-  AuthenticationState,
-  SignalDataTypeMap,
-  initAuthCreds,
-  proto,
-  BufferJSON,
-} from '@whiskeysockets/baileys';
-import * as QRCode from 'qrcode';
 import prisma from '../config/prisma';
 
-// ── Types ──
+// ── Lazy-loaded ESM modules ──
 
-interface AuthState {
-  creds: any;
-  keys: any;
+let _baileys: any = null;
+let _qrcode: any = null;
+
+async function getBaileys(): Promise<any> {
+  if (!_baileys) {
+    _baileys = await import('@whiskeysockets/baileys');
+  }
+  return _baileys;
 }
 
-let sock: WASocket | null = null;
-let currentQR: string | null = null;        // base64 data URL of QR
+async function getQRCodeLib(): Promise<any> {
+  if (!_qrcode) {
+    _qrcode = await import('qrcode');
+  }
+  return _qrcode;
+}
+
+// ── State ──
+
+let sock: any = null;
+let currentQR: string | null = null;
 let connectionStatus: 'disconnected' | 'connecting' | 'connected' = 'disconnected';
 let retryCount = 0;
 const MAX_RETRIES = 5;
@@ -38,9 +41,10 @@ const MAX_RETRIES = 5;
 
 async function loadAuthFromDB(): Promise<any | null> {
   try {
+    const baileys = await getBaileys();
     const row = await prisma.whatsAppSession.findUnique({ where: { id: 'default' } });
     if (row?.data) {
-      return JSON.parse(row.data, BufferJSON.reviver);
+      return JSON.parse(row.data, baileys.BufferJSON.reviver);
     }
   } catch (err) {
     console.error('[WA-Baileys] Failed to load auth from DB:', err);
@@ -50,7 +54,8 @@ async function loadAuthFromDB(): Promise<any | null> {
 
 async function saveAuthToDB(state: any): Promise<void> {
   try {
-    const data = JSON.stringify(state, BufferJSON.replacer);
+    const baileys = await getBaileys();
+    const data = JSON.stringify(state, baileys.BufferJSON.replacer);
     await prisma.whatsAppSession.upsert({
       where: { id: 'default' },
       create: { id: 'default', data },
@@ -71,12 +76,13 @@ async function deleteAuthFromDB(): Promise<void> {
 
 // ── Custom auth state backed by DB ──
 
-function useDatabaseAuthState(existingState: any | null): {
+async function useDatabaseAuthState(existingState: any | null): Promise<{
   state: { creds: any; keys: any };
   saveCreds: () => Promise<void>;
-} {
-  const creds = existingState?.creds || initAuthCreds();
-  const keys = existingState?.keys || {};
+}> {
+  const baileys = await getBaileys();
+  const creds = existingState?.creds || baileys.initAuthCreds();
+  const keys: Record<string, any> = existingState?.keys || {};
 
   const state = {
     creds,
@@ -126,9 +132,13 @@ export async function connectWhatsApp(): Promise<void> {
   currentQR = null;
 
   try {
+    const baileys = await getBaileys();
+    const QRCode = await getQRCodeLib();
     const existingAuth = await loadAuthFromDB();
-    const { state, saveCreds } = useDatabaseAuthState(existingAuth);
-    const { version } = await fetchLatestBaileysVersion();
+    const { state, saveCreds } = await useDatabaseAuthState(existingAuth);
+    const { version } = await baileys.fetchLatestBaileysVersion();
+
+    const makeWASocket = baileys.default || baileys.makeWASocket;
 
     sock = makeWASocket({
       version,
@@ -141,11 +151,10 @@ export async function connectWhatsApp(): Promise<void> {
     });
 
     // Connection updates
-    sock.ev.on('connection.update', async (update: Partial<ConnectionState>) => {
+    sock.ev.on('connection.update', async (update: any) => {
       const { connection, lastDisconnect, qr } = update;
 
       if (qr) {
-        // Generate QR as base64 data URL for the frontend
         try {
           currentQR = await QRCode.toDataURL(qr, { width: 300, margin: 2 });
           console.log('[WA-Baileys] New QR code generated');
@@ -159,7 +168,7 @@ export async function connectWhatsApp(): Promise<void> {
         connectionStatus = 'disconnected';
         const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
 
-        if (statusCode === DisconnectReason.loggedOut) {
+        if (statusCode === baileys.DisconnectReason.loggedOut) {
           console.log('[WA-Baileys] Logged out — clearing session');
           await deleteAuthFromDB();
           sock = null;
@@ -218,7 +227,6 @@ export async function sendWhatsAppMessage(
   }
 
   try {
-    // Normalize Indian phone number
     let digits = phone.replace(/\D/g, '');
     if (digits.length === 10) digits = '91' + digits;
     if (digits.startsWith('0') && digits.length === 11) digits = '91' + digits.slice(1);
