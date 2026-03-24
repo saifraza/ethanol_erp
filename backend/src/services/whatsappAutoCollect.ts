@@ -153,16 +153,32 @@ async function handleIncoming(phone: string, text: string, _name: string | null)
         `auto-collect-${session.module}`
       );
 
-      // Share to WhatsApp group
+      // Share to WhatsApp group + private numbers
       try {
-        const fullReport = `📊 *${config.displayName} Report* — ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}\n\n${summary}\n\n_Auto-collected via WhatsApp_`;
+        const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+        const fullReport = `📊 *${config.displayName} Report* — ${now}\n\n${summary}\n\n_Auto-collected via WhatsApp_`;
         const settings = await prisma.settings.findFirst();
+
+        // Send to group
         const groupJid = (settings as any)?.whatsappGroupJid;
         if (groupJid) {
           await sendToGroup(groupJid, fullReport, config.module);
+          console.log(`[AutoCollect] Shared ${config.module} report to group`);
+        }
+
+        // Send to private numbers
+        const privateNumbers = ((settings as any)?.whatsappNumbers || '')
+          .split(',')
+          .map((p: string) => p.trim())
+          .filter((p: string) => p.length > 0 && p !== phone.replace(/^91/, ''));
+        for (const num of privateNumbers) {
+          await sendWhatsAppMessage(num, fullReport, config.module);
+        }
+        if (privateNumbers.length > 0) {
+          console.log(`[AutoCollect] Shared ${config.module} report to ${privateNumbers.length} private numbers`);
         }
       } catch (shareErr) {
-        console.error(`[AutoCollect] Failed to share ${config.module} report to group:`, shareErr);
+        console.error(`[AutoCollect] Failed to share ${config.module} report:`, shareErr);
       }
 
       console.log(`[AutoCollect] ${session.module} completed for ${phone}`);
