@@ -148,8 +148,8 @@ export default function MaterialMaster() {
   };
 
   const handleSave = async () => {
-    if (!form.code.trim() || !form.name.trim()) {
-      setMsg({ type: 'err', text: 'Code and Name are required' });
+    if (!form.name.trim()) {
+      setMsg({ type: 'err', text: 'Name is required' });
       return;
     }
     setSaving(true);
@@ -338,7 +338,7 @@ export default function MaterialMaster() {
                 }));
               }} />}
 
-              <FormField label="Code *" value={form.code} onChange={(v) => setForm({ ...form, code: v })} placeholder="e.g. RM-001" />
+              <FormField label="Code" value={form.code} onChange={(v) => setForm({ ...form, code: v })} placeholder="Auto-generated (e.g. RM-00001)" />
               <FormField label="Name *" value={form.name} onChange={(v) => setForm({ ...form, name: v })} placeholder="Item name" />
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>

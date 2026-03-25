@@ -25,8 +25,27 @@ const accountSubTypes = [
   'CAPITAL', 'RESERVES',
 ] as const;
 
+// ── Auto Code Generation ──
+const TYPE_CODE_PREFIX: Record<string, number> = {
+  ASSET: 1000, LIABILITY: 2000, INCOME: 3000, EXPENSE: 4000, EQUITY: 5000,
+};
+
+async function generateAccountCode(type: string): Promise<string> {
+  const base = TYPE_CODE_PREFIX[type] || 1000;
+  const max = base + 999;
+  const last = await prisma.account.findFirst({
+    where: { code: { gte: String(base), lte: String(max) } },
+    orderBy: { code: 'desc' },
+    select: { code: true },
+  });
+  if (!last) return String(base + 1);
+  const num = parseInt(last.code, 10);
+  if (isNaN(num)) return String(base + 1);
+  return String(num + 1);
+}
+
 const createAccountSchema = z.object({
-  code: z.string().min(1).max(20),
+  code: z.string().max(20).optional(),
   name: z.string().min(1).max(200),
   type: z.enum(accountTypes),
   subType: z.enum(accountSubTypes).optional().nullable(),
@@ -41,6 +60,13 @@ const updateAccountSchema = z.object({
   openingBalance: z.number().optional(),
   isActive: z.boolean().optional(),
 });
+
+// ── GET /next-code?type=ASSET — Preview next auto-generated code ──
+router.get('/next-code', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const type = (req.query.type as string) || 'ASSET';
+  const code = await generateAccountCode(type);
+  res.json({ code, type });
+}));
 
 // ── GET / — List all accounts (tree-friendly) ──
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -194,17 +220,19 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
   res.json(account);
 }));
 
-// ── POST / — Create account ──
+// ── POST / — Create account (auto-generates code if not provided) ──
 router.post('/', validate(createAccountSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
-  // Check code uniqueness (Prisma unique constraint will also catch this)
-  const existing = await prisma.account.findUnique({ where: { code: req.body.code } });
-  if (existing) throw new ValidationError(`Account code "${req.body.code}" already exists`);
+  // Auto-generate code if not provided
+  const code = req.body.code?.trim() || await generateAccountCode(req.body.type);
+
+  // Check code uniqueness
+  const existing = await prisma.account.findUnique({ where: { code } });
+  if (existing) throw new ValidationError(`Account code "${code}" already exists`);
 
   // Validate parent exists if provided
   if (req.body.parentId) {
     const parent = await prisma.account.findUnique({ where: { id: req.body.parentId } });
     if (!parent) throw new NotFoundError('Parent Account', req.body.parentId);
-    // Parent type must match
     if (parent.type !== req.body.type) {
       throw new ValidationError(`Parent account type (${parent.type}) must match child type (${req.body.type})`);
     }
@@ -212,7 +240,7 @@ router.post('/', validate(createAccountSchema), asyncHandler(async (req: AuthReq
 
   const account = await prisma.account.create({
     data: {
-      code: req.body.code,
+      code,
       name: req.body.name,
       type: req.body.type,
       subType: req.body.subType || null,

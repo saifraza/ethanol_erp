@@ -6,6 +6,37 @@ import { searchHSN } from '../data/hsnDatabase';
 const router = Router();
 router.use(authenticate as any);
 
+// ─── Auto Code Generation ────────────────────────
+
+const CATEGORY_PREFIX: Record<string, string> = {
+  RAW_MATERIAL: 'RM',
+  SPARE_PART: 'SP',
+  CONSUMABLE: 'CO',
+  CHEMICAL: 'CH',
+  FINISHED_GOOD: 'FG',
+};
+
+async function generateItemCode(category: string): Promise<string> {
+  const prefix = CATEGORY_PREFIX[category] || 'ITM';
+  const last = await prisma.inventoryItem.findFirst({
+    where: { code: { startsWith: `${prefix}-` } },
+    orderBy: { code: 'desc' },
+    select: { code: true },
+  });
+  if (!last) return `${prefix}-00001`;
+  const num = parseInt(last.code.replace(`${prefix}-`, ''), 10) || 0;
+  return `${prefix}-${String(num + 1).padStart(5, '0')}`;
+}
+
+// GET /next-code?category=RAW_MATERIAL — Preview next auto-generated code
+router.get('/next-code', async (req: Request, res: Response) => {
+  try {
+    const category = (req.query.category as string) || 'RAW_MATERIAL';
+    const code = await generateItemCode(category);
+    res.json({ code, category });
+  } catch { res.status(500).json({ error: 'Failed to generate code' }); }
+});
+
 // ─── ITEM LOOKUP (Smart Search) ──────────────────
 
 // GET /item-lookup?q=search_term — search HSN database for auto-fill
@@ -59,15 +90,17 @@ router.get('/items/:id', async (req: Request, res: Response) => {
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-// POST /items — create new item
+// POST /items — create new item (auto-generates code if not provided)
 router.post('/items', authorize('ADMIN') as any, async (req: Request, res: Response) => {
   try {
     const b = req.body;
+    const category = b.category || 'RAW_MATERIAL';
+    const code = b.code?.trim() || await generateItemCode(category);
     const item = await prisma.inventoryItem.create({
       data: {
         name: b.name,
-        code: b.code,
-        category: b.category || 'RAW_MATERIAL',
+        code,
+        category,
         unit: b.unit || 'kg',
         currentStock: parseFloat(b.currentStock) || 0,
         minStock: parseFloat(b.minStock) || 0,
