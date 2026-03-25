@@ -66,6 +66,8 @@ import chartOfAccountsRoutes from './routes/chartOfAccounts';
 import journalEntryRoutes from './routes/journalEntries';
 import bankReconciliationRoutes from './routes/bankReconciliation';
 import accountsReportsRoutes from './routes/accountsReports';
+// AI Assistant
+import aiRoutes from './routes/ai';
 // Inventory (SAP-style)
 import inventoryWarehouseRoutes from './routes/inventoryWarehouses';
 import inventoryMovementRoutes from './routes/inventoryMovements';
@@ -173,6 +175,8 @@ app.use('/api/chart-of-accounts', chartOfAccountsRoutes);
 app.use('/api/journal-entries', journalEntryRoutes);
 app.use('/api/bank-reconciliation', bankReconciliationRoutes);
 app.use('/api/accounts-reports', accountsReportsRoutes);
+// AI Assistant
+app.use('/api/ai', aiRoutes);
 // WhatsApp (Baileys QR)
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/auto-collect', autoCollectRoutes);

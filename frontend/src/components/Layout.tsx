@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useLocation, Outlet } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
+import AIChatWidget from './AIChatWidget';
 import {
   LayoutDashboard, LogOut, ChevronDown, ChevronRight,
   WifiOff, Menu, X
@@ -209,6 +210,59 @@ export default function Layout() {
           <Outlet />
         </main>
       </div>
+      <AIChatWidget pageContext={getPageContext(location.pathname)} />
     </div>
   );
+}
+
+function getPageContext(path: string): string {
+  const seg = path.split('/').filter(Boolean);
+  if (seg.length === 0) return 'dashboard';
+  const first = seg[0].toLowerCase();
+  const contextMap: Record<string, string> = {
+    'dashboard': 'dashboard',
+    'fermentation': 'fermentation',
+    'pre-fermentation': 'fermentation',
+    'distillation': 'distillation',
+    'ethanol-product': 'distillation',
+    'ethanol-dispatch': 'distillation',
+    'grain-unloading': 'grain',
+    'raw-material': 'grain',
+    'milling': 'grain',
+    'liquefaction': 'grain',
+    'ddgs-stock': 'ddgs',
+    'ddgs-dispatch': 'ddgs',
+    'sales-orders': 'sales',
+    'customers': 'sales',
+    'invoices': 'invoices',
+    'payments': 'payments',
+    'shipments': 'sales',
+    'dispatch-requests': 'sales',
+    'ethanol-contracts': 'sales',
+    'freight-management': 'sales',
+    'vendors': 'procurement',
+    'materials': 'procurement',
+    'purchase-orders': 'procurement',
+    'goods-receipts': 'procurement',
+    'vendor-invoices': 'procurement',
+    'vendor-payments': 'procurement',
+    'inventory': 'inventory',
+    'stock-dashboard': 'inventory',
+    'stock-movements': 'inventory',
+    'stock-counts': 'inventory',
+    'reorder-rules': 'inventory',
+    'material-master': 'inventory',
+    'warehouses': 'inventory',
+    'chart-of-accounts': 'accounts',
+    'journal-entries': 'accounts',
+    'ledger': 'accounts',
+    'trial-balance': 'accounts',
+    'profit-loss': 'accounts',
+    'balance-sheet': 'accounts',
+    'bank-reconciliation': 'accounts',
+    'payment-dashboard': 'accounts',
+    'day-book': 'accounts',
+    'gst-summary': 'accounts',
+  };
+  return contextMap[first] || first;
 }

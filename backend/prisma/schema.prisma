@@ -96,6 +96,13 @@ model Settings {
   updatedAt             DateTime @updatedAt
 }
 
+// Generic key-value config (AI providers, integrations, etc.)
+model AppConfig {
+  key       String   @id
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt
+}
+
 // Document templates for auto-generated PDFs (challan, PO, invoice, rate request, etc.)
 model DocumentTemplate {
   id          String   @id @default(cuid())
