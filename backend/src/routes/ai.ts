@@ -16,9 +16,18 @@ interface AIConfig {
 }
 
 async function getAIConfig(): Promise<AIConfig | null> {
-  // Check env vars first (OpenClaw takes priority)
+  // Check env vars — try Anthropic first (most reliable), then OpenClaw
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  if (anthropicKey) {
+    return {
+      provider: 'anthropic',
+      baseUrl: 'https://api.anthropic.com',
+      apiKey: anthropicKey,
+      model: 'claude-sonnet-4-20250514',
+    };
+  }
+
   const openclawToken = process.env.OPENCLAW_GATEWAY_TOKEN;
-  // Use private Railway networking (faster, cheaper) or fallback to public URL
   const openclawUrl = process.env.OPENCLAW_URL || (openclawToken ? 'http://openclaw.railway.internal:18789' : '');
   if (openclawUrl && openclawToken) {
     return {
