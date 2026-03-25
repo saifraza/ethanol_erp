@@ -46,7 +46,7 @@ export default function DayBook() {
 
   const fmtCurrency = (n: number): string => {
     if (n === 0) return '';
-    return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return '\u20B9' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
 
   const moveDate = (days: number) => {
@@ -55,74 +55,125 @@ export default function DayBook() {
     setDate(d.toISOString().split('T')[0]);
   };
 
-  return (
-    <div className="p-6 space-y-4">
-      <h1 className="text-2xl font-bold text-gray-800">Day Book</h1>
+  const fmtDisplayDate = (d: string): string => new Date(d).toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
 
-      {/* Date Navigation */}
-      <div className="flex gap-3 items-center">
-        <button onClick={() => moveDate(-1)} className="px-3 py-1.5 bg-gray-100 rounded hover:bg-gray-200 text-sm">← Prev</button>
-        <input
-          type="date"
-          value={date}
-          onChange={e => setDate(e.target.value)}
-          className="border rounded px-3 py-1.5 text-sm"
-        />
-        <button onClick={() => moveDate(1)} className="px-3 py-1.5 bg-gray-100 rounded hover:bg-gray-200 text-sm">Next →</button>
-        <button
-          onClick={() => setDate(new Date().toISOString().split('T')[0])}
-          className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded text-sm hover:bg-blue-200"
-        >
-          Today
-        </button>
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <div className="p-3 md:p-6 space-y-0">
+        {/* Page Toolbar */}
+        <div className="bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <h1 className="text-sm font-bold tracking-wide uppercase">Day Book</h1>
+            <span className="text-[10px] text-slate-400">|</span>
+            <span className="text-[10px] text-slate-400">Daily journal entries register</span>
+          </div>
+        </div>
+
+        {/* Date Navigation Toolbar */}
+        <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6 flex items-center gap-4 flex-wrap">
+          <button
+            onClick={() => moveDate(-1)}
+            className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50"
+          >
+            Prev
+          </button>
+          <input
+            type="date"
+            value={date}
+            onChange={e => setDate(e.target.value)}
+            className="border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-slate-400 focus:border-slate-400"
+          />
+          <button
+            onClick={() => moveDate(1)}
+            className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50"
+          >
+            Next
+          </button>
+          <button
+            onClick={() => setDate(new Date().toISOString().split('T')[0])}
+            className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700"
+          >
+            Today
+          </button>
+          <span className="text-[10px] text-slate-500 uppercase tracking-widest ml-auto">{fmtDisplayDate(date)}</span>
+        </div>
+
+        {/* KPI Summary Cards */}
         {data && (
-          <span className="text-sm text-gray-500 ml-2">
-            {data.count} entries | Debit: {fmtCurrency(data.totalDebit)} | Credit: {fmtCurrency(data.totalCredit)}
-          </span>
+          <div className="grid grid-cols-3 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+            <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-blue-500">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Entries</div>
+              <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{data.count}</div>
+            </div>
+            <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-emerald-500">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Debit</div>
+              <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmtCurrency(data.totalDebit) || '--'}</div>
+            </div>
+            <div className="bg-white px-4 py-3 border-l-4 border-l-amber-500">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Credit</div>
+              <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmtCurrency(data.totalCredit) || '--'}</div>
+            </div>
+          </div>
+        )}
+
+        {/* Loading */}
+        {loading && (
+          <div className="text-center py-8">
+            <div className="text-xs text-slate-400 uppercase tracking-widest">Loading...</div>
+          </div>
+        )}
+
+        {/* Entries */}
+        {data && !loading && (
+          <div className="-mx-3 md:-mx-6">
+            {data.entries.map(entry => (
+              <div key={entry.id} className={`border-x border-b border-slate-300 overflow-hidden ${entry.isReversed ? 'opacity-50' : ''}`}>
+                {/* Entry Header */}
+                <div className="bg-slate-800 text-white px-4 py-2 flex items-center gap-3">
+                  <span className="font-mono text-[10px] text-slate-400">#{entry.entryNo}</span>
+                  <span className="text-xs font-medium flex-1">{entry.narration}</span>
+                  {entry.refType && (
+                    <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-slate-700 text-slate-300 border border-slate-600">
+                      {entry.refType}
+                    </span>
+                  )}
+                  {entry.isAutoGenerated && (
+                    <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-blue-400/30 bg-blue-500/20 text-blue-200">Auto</span>
+                  )}
+                  {entry.isReversed && (
+                    <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-red-400/30 bg-red-500/20 text-red-200">Reversed</span>
+                  )}
+                </div>
+                {/* Entry Lines */}
+                <table className="w-full text-xs">
+                  <tbody>
+                    {entry.lines.map((line, idx) => (
+                      <tr key={idx} className="border-b border-slate-100 even:bg-slate-50/50">
+                        <td className="px-3 py-1.5 w-16 font-mono text-[10px] text-slate-400 border-r border-slate-100">{line.account.code}</td>
+                        <td className="px-3 py-1.5 flex-1 border-r border-slate-100">
+                          {line.debit > 0 ? (
+                            <span className="font-semibold text-slate-700">{line.account.name}</span>
+                          ) : (
+                            <span className="pl-8 text-slate-500">To {line.account.name}</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-1.5 text-[10px] text-slate-400 w-24 border-r border-slate-100">{line.costCenter || ''}</td>
+                        <td className="px-3 py-1.5 text-right font-mono tabular-nums w-28 text-slate-700 border-r border-slate-100">{fmtCurrency(line.debit)}</td>
+                        <td className="px-3 py-1.5 text-right font-mono tabular-nums w-28 text-slate-700">{fmtCurrency(line.credit)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+            {data.entries.length === 0 && (
+              <div className="text-center py-16 border-x border-b border-slate-300">
+                <div className="text-xs text-slate-400 uppercase tracking-widest">No entries for {fmtDisplayDate(date)}</div>
+              </div>
+            )}
+          </div>
         )}
       </div>
-
-      {loading && <div className="text-gray-500 text-sm">Loading...</div>}
-
-      {data && !loading && (
-        <div className="space-y-3">
-          {data.entries.map(entry => (
-            <div key={entry.id} className={`bg-white rounded-lg border ${entry.isReversed ? 'opacity-50 border-red-200' : ''}`}>
-              <div className="px-4 py-2 bg-gray-50 border-b flex items-center gap-3">
-                <span className="font-mono text-xs text-gray-400">#{entry.entryNo}</span>
-                <span className="font-medium text-sm flex-1">{entry.narration}</span>
-                {entry.refType && <span className="text-xs px-2 py-0.5 rounded bg-gray-200 text-gray-600">{entry.refType}</span>}
-                {entry.isAutoGenerated && <span className="text-xs px-2 py-0.5 rounded bg-blue-50 text-blue-600">Auto</span>}
-                {entry.isReversed && <span className="text-xs px-2 py-0.5 rounded bg-red-50 text-red-600">Reversed</span>}
-              </div>
-              <table className="w-full text-sm">
-                <tbody>
-                  {entry.lines.map((line, idx) => (
-                    <tr key={idx} className="border-b last:border-0">
-                      <td className="px-4 py-1.5 w-16 font-mono text-xs text-gray-400">{line.account.code}</td>
-                      <td className="px-4 py-1.5 flex-1">
-                        {line.debit > 0 ? (
-                          <span className="font-medium">{line.account.name}</span>
-                        ) : (
-                          <span className="pl-8 text-gray-600">To {line.account.name}</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-1.5 text-xs text-gray-400">{line.costCenter || ''}</td>
-                      <td className="px-4 py-1.5 text-right font-mono w-28">{fmtCurrency(line.debit)}</td>
-                      <td className="px-4 py-1.5 text-right font-mono w-28">{fmtCurrency(line.credit)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ))}
-          {data.entries.length === 0 && (
-            <div className="text-center py-12 text-gray-400">
-              No entries for {new Date(date).toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }

@@ -43,7 +43,7 @@ export default function BalanceSheet() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const fmtCurrency = (n: number): string =>
-    '₹' + Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    '\u20B9' + Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const groupBySubType = (accs: BSAccount[]): Record<string, BSAccount[]> => {
     const groups: Record<string, BSAccount[]> = {};
@@ -55,109 +55,145 @@ export default function BalanceSheet() {
     return groups;
   };
 
-  if (loading) return <div className="p-6 text-gray-500">Loading Balance Sheet...</div>;
-  if (!data) return <div className="p-6 text-gray-500">Failed to load data</div>;
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-xs text-slate-400 uppercase tracking-widest">Loading...</div>
+      </div>
+    );
+  }
+  if (!data) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-xs text-slate-400 uppercase tracking-widest">Failed to load data</div>
+      </div>
+    );
+  }
 
-  const renderSection = (title: string, section: BSSection, color: string) => {
+  const renderSection = (title: string, section: BSSection) => {
     const groups = groupBySubType(section.accounts);
     return (
-      <div className="bg-white rounded-lg border">
-        <div className={`px-4 py-3 ${color} border-b`}>
-          <h2 className="font-bold">{title}</h2>
+      <div className="border border-slate-300 overflow-hidden">
+        <div className="bg-slate-800 text-white px-4 py-2">
+          <h2 className="text-xs font-bold uppercase tracking-wide">{title}</h2>
         </div>
-        <div className="p-4 space-y-3">
+        <div>
           {Object.entries(groups).map(([subType, accs]) => (
-            <div key={subType}>
-              <div className="text-xs font-medium text-gray-500 uppercase mb-1">
-                {subType.replace(/_/g, ' ')}
+            <React.Fragment key={subType}>
+              {/* Sub-type group header */}
+              <div className="bg-slate-200 px-3 py-1 border-b border-slate-300">
+                <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">
+                  {subType.replace(/_/g, ' ')}
+                </span>
               </div>
+              {/* Account rows */}
               {accs.map(a => (
-                <div key={a.id} className="flex justify-between py-1 text-sm">
-                  <span className="text-gray-700">
-                    {a.code !== '—' && <span className="font-mono text-xs text-gray-400 mr-1">{a.code}</span>}
+                <div key={a.id} className="flex justify-between px-3 py-1.5 text-xs hover:bg-blue-50 border-b border-slate-100">
+                  <span className="text-slate-700">
+                    {a.code !== '--' && <span className="font-mono text-[10px] text-slate-400 mr-1">{a.code}</span>}
                     {a.name}
                   </span>
-                  <span className={`font-mono ${a.balance < 0 ? 'text-red-600' : ''}`}>
+                  <span className={`font-mono tabular-nums ${a.balance < 0 ? 'text-red-600' : 'text-slate-800'}`}>
                     {a.balance < 0 ? '-' : ''}{fmtCurrency(a.balance)}
                   </span>
                 </div>
               ))}
-            </div>
+            </React.Fragment>
           ))}
-          {section.accounts.length === 0 && <div className="text-gray-400 text-sm">No entries</div>}
+          {section.accounts.length === 0 && (
+            <div className="px-3 py-6 text-xs text-slate-400 text-center uppercase tracking-widest">No entries</div>
+          )}
         </div>
-        <div className={`px-4 py-3 ${color} border-t flex justify-between font-bold`}>
+        <div className="bg-slate-800 text-white px-3 py-2 flex justify-between font-semibold text-xs">
           <span>Total {title}</span>
-          <span className="font-mono">{fmtCurrency(section.total)}</span>
+          <span className="font-mono tabular-nums">{fmtCurrency(section.total)}</span>
         </div>
       </div>
     );
   };
 
   return (
-    <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-800">Balance Sheet</h1>
-        <div className={`px-3 py-1 rounded text-sm font-medium ${data.isBalanced ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-          {data.isBalanced ? '✓ Balanced' : `✗ Unbalanced (Diff: ₹${Math.abs(data.assets.total - data.liabilitiesAndEquity).toFixed(2)})`}
-        </div>
-      </div>
-
-      {/* Date Selector */}
-      <div className="flex gap-3 items-center">
-        <label className="text-sm text-gray-600">As on:</label>
-        <input
-          type="date"
-          value={asOn}
-          onChange={e => setAsOn(e.target.value)}
-          className="border rounded px-3 py-1.5 text-sm"
-        />
-        <button
-          onClick={() => setAsOn(new Date().toISOString().split('T')[0])}
-          className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded text-sm hover:bg-blue-200"
-        >
-          Today
-        </button>
-        <button
-          onClick={() => {
-            const now = new Date();
-            const year = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
-            setAsOn(`${year + 1}-03-31`);
-          }}
-          className="px-3 py-1.5 bg-gray-100 rounded text-sm hover:bg-gray-200"
-        >
-          FY End (31 Mar)
-        </button>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        {/* Left: Assets */}
-        <div>
-          {renderSection('Assets', data.assets, 'bg-blue-50')}
-        </div>
-
-        {/* Right: Liabilities + Equity */}
-        <div className="space-y-4">
-          {renderSection('Liabilities', data.liabilities, 'bg-red-50')}
-          {renderSection('Equity', data.equity, 'bg-purple-50')}
-
-          {/* Combined Total */}
-          <div className="bg-gray-800 text-white rounded-lg p-4 flex justify-between font-bold">
-            <span>Total Liabilities + Equity</span>
-            <span className="font-mono">{fmtCurrency(data.liabilitiesAndEquity)}</span>
+    <div className="min-h-screen bg-slate-50">
+      <div className="p-3 md:p-6 space-y-0">
+        {/* Page Toolbar */}
+        <div className="bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <h1 className="text-sm font-bold tracking-wide uppercase">Balance Sheet</h1>
+            <span className="text-[10px] text-slate-400">|</span>
+            <span className="text-[10px] text-slate-400">Statement of financial position as on date</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${data.isBalanced ? 'border-emerald-400/50 bg-emerald-500/20 text-emerald-200' : 'border-red-400/50 bg-red-500/20 text-red-200'}`}>
+              {data.isBalanced ? 'Balanced' : `Unbalanced (Diff: \u20B9${Math.abs(data.assets.total - data.liabilitiesAndEquity).toFixed(2)})`}
+            </span>
           </div>
         </div>
-      </div>
 
-      {/* Bottom comparison */}
-      <div className="bg-white rounded-lg border p-4 grid grid-cols-2 gap-4">
-        <div className="text-center">
-          <div className="text-sm text-gray-500">Total Assets</div>
-          <div className="text-2xl font-bold text-blue-800 font-mono">{fmtCurrency(data.assets.total)}</div>
+        {/* Filter Toolbar */}
+        <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6 flex items-center gap-4 flex-wrap">
+          <div>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">As On Date</label>
+            <input
+              type="date"
+              value={asOn}
+              onChange={e => setAsOn(e.target.value)}
+              className="border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-slate-400 focus:border-slate-400"
+            />
+          </div>
+          <div className="flex items-end gap-2">
+            <button
+              onClick={() => setAsOn(new Date().toISOString().split('T')[0])}
+              className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700"
+            >
+              Today
+            </button>
+            <button
+              onClick={() => {
+                const now = new Date();
+                const year = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+                setAsOn(`${year + 1}-03-31`);
+              }}
+              className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50"
+            >
+              FY End (31 Mar)
+            </button>
+          </div>
         </div>
-        <div className="text-center">
-          <div className="text-sm text-gray-500">Liabilities + Equity</div>
-          <div className="text-2xl font-bold text-purple-800 font-mono">{fmtCurrency(data.liabilitiesAndEquity)}</div>
+
+        {/* Two Column Layout */}
+        <div className="grid grid-cols-2 gap-0 -mx-3 md:-mx-6 border-x border-slate-300">
+          {/* Left: Assets */}
+          <div className="border-r border-slate-300">
+            {renderSection('Assets', data.assets)}
+          </div>
+
+          {/* Right: Liabilities + Equity */}
+          <div>
+            {renderSection('Liabilities', data.liabilities)}
+            {renderSection('Equity', data.equity)}
+
+            {/* Combined Total */}
+            <div className="bg-slate-800 overflow-hidden border-t border-slate-700">
+              <div className="px-4 py-3 flex justify-between items-center">
+                <span className="text-xs font-bold text-white uppercase tracking-widest">Total Liabilities + Equity</span>
+                <span className="text-lg font-bold font-mono tabular-nums text-white">{fmtCurrency(data.liabilitiesAndEquity)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom Comparison Bar */}
+        <div className="border-x border-b border-slate-300 -mx-3 md:-mx-6 overflow-hidden">
+          <div className="grid grid-cols-2 divide-x divide-slate-300">
+            <div className="px-6 py-4 text-center bg-white">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Assets</div>
+              <div className="text-2xl font-bold text-slate-800 font-mono tabular-nums mt-1">{fmtCurrency(data.assets.total)}</div>
+            </div>
+            <div className="px-6 py-4 text-center bg-white">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Liabilities + Equity</div>
+              <div className="text-2xl font-bold text-slate-800 font-mono tabular-nums mt-1">{fmtCurrency(data.liabilitiesAndEquity)}</div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

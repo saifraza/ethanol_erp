@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { BookOpen, Search, Filter, Download, ChevronDown } from 'lucide-react';
+import { Search, ChevronDown } from 'lucide-react';
 import api from '../../services/api';
 
 interface InventoryItem {
@@ -136,206 +136,205 @@ export default function StockLedger() {
     n.toLocaleString('en-IN', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <BookOpen className="w-7 h-7 text-blue-600" />
-          <h1 className="text-2xl font-bold text-gray-800">Stock Ledger</h1>
+    <div className="min-h-screen bg-slate-50">
+      <div className="p-3 md:p-6 space-y-0">
+        {/* Page Toolbar */}
+        <div className="bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6 flex items-center justify-between">
+          <h1 className="text-sm font-bold tracking-wide uppercase">STOCK LEDGER</h1>
         </div>
-      </div>
 
-      {/* Filters */}
-      <div className="bg-white rounded-xl shadow-sm border p-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {/* Item Search Dropdown */}
-          <div className="relative md:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Item *</label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="text"
-                className="w-full pl-9 pr-8 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder="Search item by code or name..."
-                value={itemSearch}
-                onChange={(e) => {
-                  setItemSearch(e.target.value);
-                  setShowItemDropdown(true);
-                  if (!e.target.value) {
-                    setSelectedItemId('');
-                    setSelectedItem(null);
-                  }
-                }}
-                onFocus={() => setShowItemDropdown(true)}
-              />
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+        {/* Filters */}
+        <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {/* Item Search Dropdown */}
+            <div className="relative md:col-span-2">
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Item *</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  className="w-full pl-9 pr-8 border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400"
+                  placeholder="Search item by code or name..."
+                  value={itemSearch}
+                  onChange={(e) => {
+                    setItemSearch(e.target.value);
+                    setShowItemDropdown(true);
+                    if (!e.target.value) {
+                      setSelectedItemId('');
+                      setSelectedItem(null);
+                    }
+                  }}
+                  onFocus={() => setShowItemDropdown(true)}
+                />
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              </div>
+              {showItemDropdown && filteredItems.length > 0 && (
+                <div className="absolute z-20 mt-1 w-full bg-white border border-slate-300 shadow-lg max-h-60 overflow-y-auto">
+                  {filteredItems.slice(0, 50).map((item) => (
+                    <button
+                      key={item.id}
+                      className="w-full text-left px-4 py-2 hover:bg-blue-50 text-xs border-b border-slate-100 last:border-0"
+                      onClick={() => selectItem(item)}
+                    >
+                      <span className="font-medium text-slate-800">{item.code || '\u2014'}</span>
+                      <span className="text-slate-500 ml-2">{item.name}</span>
+                      <span className="text-slate-400 ml-2">({item.unit})</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-            {showItemDropdown && filteredItems.length > 0 && (
-              <div className="absolute z-20 mt-1 w-full bg-white border rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                {filteredItems.slice(0, 50).map((item) => (
-                  <button
-                    key={item.id}
-                    className="w-full text-left px-4 py-2 hover:bg-blue-50 text-sm border-b last:border-0"
-                    onClick={() => selectItem(item)}
-                  >
-                    <span className="font-medium">{item.code || '—'}</span>
-                    <span className="text-gray-500 ml-2">{item.name}</span>
-                    <span className="text-gray-400 ml-2">({item.unit})</span>
-                  </button>
+
+            {/* Warehouse Filter */}
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Warehouse</label>
+              <select
+                className="w-full border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400"
+                value={selectedWarehouseId}
+                onChange={(e) => setSelectedWarehouseId(e.target.value)}
+              >
+                <option value="">All Warehouses</option>
+                {warehouses.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.code} — {w.name}
+                  </option>
                 ))}
+              </select>
+            </div>
+
+            {/* Date Range */}
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">From</label>
+                <input
+                  type="date"
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">To</label>
+                <input
+                  type="date"
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Ledger Table */}
+        {!selectedItemId ? (
+          <div className="text-center py-16 border-x border-b border-slate-300 -mx-3 md:-mx-6 bg-white">
+            <div className="text-slate-300 text-sm">Select an item to view its stock ledger</div>
+          </div>
+        ) : loading ? (
+          <div className="min-h-[200px] bg-white flex items-center justify-center border-x border-b border-slate-300 -mx-3 md:-mx-6">
+            <div className="text-sm text-slate-400">Loading...</div>
+          </div>
+        ) : (
+          <div className="border-x border-b border-slate-300 -mx-3 md:-mx-6 overflow-hidden">
+            {selectedItem && (
+              <div className="bg-slate-100 border-b border-slate-200 px-4 py-2 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="font-semibold text-sm text-slate-800">
+                    {selectedItem.code ? `${selectedItem.code} — ` : ''}
+                    {selectedItem.name}
+                  </span>
+                  <span className="text-slate-500 text-xs">({selectedItem.unit})</span>
+                  {selectedItem.category && (
+                    <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-blue-200 bg-blue-50 text-blue-700">
+                      {selectedItem.category}
+                    </span>
+                  )}
+                </div>
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{ledgerData.length} entries</span>
               </div>
             )}
-          </div>
 
-          {/* Warehouse Filter */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Warehouse</label>
-            <select
-              className="w-full py-2 px-3 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-              value={selectedWarehouseId}
-              onChange={(e) => setSelectedWarehouseId(e.target.value)}
-            >
-              <option value="">All Warehouses</option>
-              {warehouses.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.code} — {w.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Date Range */}
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">From</label>
-              <input
-                type="date"
-                className="w-full py-2 px-3 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">To</label>
-              <input
-                type="date"
-                className="w-full py-2 px-3 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Ledger Table */}
-      {!selectedItemId ? (
-        <div className="bg-white rounded-xl shadow-sm border p-12 text-center text-gray-400">
-          <BookOpen className="w-12 h-12 mx-auto mb-3 opacity-50" />
-          <p className="text-lg">Select an item to view its stock ledger</p>
-        </div>
-      ) : loading ? (
-        <div className="bg-white rounded-xl shadow-sm border p-12 text-center text-gray-500">
-          Loading ledger...
-        </div>
-      ) : (
-        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-          {selectedItem && (
-            <div className="px-6 py-3 bg-gray-50 border-b flex items-center justify-between">
-              <div>
-                <span className="font-semibold text-gray-800">
-                  {selectedItem.code ? `${selectedItem.code} — ` : ''}
-                  {selectedItem.name}
-                </span>
-                <span className="text-gray-500 ml-2">({selectedItem.unit})</span>
-                {selectedItem.category && (
-                  <span className="ml-3 px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full">
-                    {selectedItem.category}
-                  </span>
-                )}
-              </div>
-              <span className="text-sm text-gray-500">{ledgerData.length} entries</span>
-            </div>
-          )}
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gray-50 text-gray-600 text-left">
-                  <th className="px-4 py-3 font-medium">Date</th>
-                  <th className="px-4 py-3 font-medium">Movement #</th>
-                  <th className="px-4 py-3 font-medium">Type</th>
-                  <th className="px-4 py-3 font-medium text-right">In Qty</th>
-                  <th className="px-4 py-3 font-medium text-right">Out Qty</th>
-                  <th className="px-4 py-3 font-medium text-right">Balance</th>
-                  <th className="px-4 py-3 font-medium text-right">Rate</th>
-                  <th className="px-4 py-3 font-medium text-right">Value</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ledgerData.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-gray-400">
-                      No movements found for the selected filters
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-slate-800 text-white">
+                    <th className="text-left px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Date</th>
+                    <th className="text-left px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Movement #</th>
+                    <th className="text-left px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Type</th>
+                    <th className="text-right px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">In Qty</th>
+                    <th className="text-right px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Out Qty</th>
+                    <th className="text-right px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Balance</th>
+                    <th className="text-right px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Rate</th>
+                    <th className="text-right px-3 py-2 font-medium text-[11px] uppercase tracking-wider">Value</th>
                   </tr>
-                ) : (
-                  ledgerData.map((row) => (
-                    <tr key={row.id} className="border-t hover:bg-gray-50">
-                      <td className="px-4 py-2.5 whitespace-nowrap">{formatDate(row.date)}</td>
-                      <td className="px-4 py-2.5 font-mono text-xs">
-                        {row.movementNo}
-                        {row.refNo && (
-                          <span className="text-gray-400 ml-1">({row.refNo})</span>
-                        )}
+                </thead>
+                <tbody>
+                  {ledgerData.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="text-center py-16">
+                        <div className="text-slate-300 text-sm">No movements found for the selected filters</div>
                       </td>
-                      <td className="px-4 py-2.5">
-                        <span
-                          className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
-                            row.direction === 'IN'
-                              ? 'bg-green-100 text-green-700'
-                              : 'bg-red-100 text-red-700'
-                          }`}
-                        >
-                          {MOVEMENT_LABELS[row.movementType] || row.movementType}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2.5 text-right text-green-600 font-medium">
-                        {row.inQty > 0 ? formatNum(row.inQty) : ''}
-                      </td>
-                      <td className="px-4 py-2.5 text-right text-red-600 font-medium">
-                        {row.outQty > 0 ? formatNum(row.outQty) : ''}
-                      </td>
-                      <td className="px-4 py-2.5 text-right font-semibold">{formatNum(row.balance)}</td>
-                      <td className="px-4 py-2.5 text-right text-gray-600">{formatNum(row.costRate)}</td>
-                      <td className="px-4 py-2.5 text-right text-gray-600">{formatNum(row.balanceValue)}</td>
                     </tr>
-                  ))
+                  ) : (
+                    ledgerData.map((row) => (
+                      <tr key={row.id} className="border-b border-slate-100 hover:bg-blue-50/40 even:bg-slate-50/50">
+                        <td className="px-3 py-1.5 text-slate-700 whitespace-nowrap border-r border-slate-100">{formatDate(row.date)}</td>
+                        <td className="px-3 py-1.5 font-mono text-xs text-slate-600 border-r border-slate-100">
+                          {row.movementNo}
+                          {row.refNo && (
+                            <span className="text-slate-400 ml-1">({row.refNo})</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-1.5 border-r border-slate-100">
+                          <span
+                            className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
+                              row.direction === 'IN'
+                                ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                                : 'border-red-300 bg-red-50 text-red-700'
+                            }`}
+                          >
+                            {MOVEMENT_LABELS[row.movementType] || row.movementType}
+                          </span>
+                        </td>
+                        <td className="px-3 py-1.5 text-right text-emerald-700 font-medium font-mono tabular-nums border-r border-slate-100">
+                          {row.inQty > 0 ? formatNum(row.inQty) : ''}
+                        </td>
+                        <td className="px-3 py-1.5 text-right text-red-600 font-medium font-mono tabular-nums border-r border-slate-100">
+                          {row.outQty > 0 ? formatNum(row.outQty) : ''}
+                        </td>
+                        <td className="px-3 py-1.5 text-right font-semibold text-slate-800 font-mono tabular-nums border-r border-slate-100">{formatNum(row.balance)}</td>
+                        <td className="px-3 py-1.5 text-right text-slate-500 font-mono tabular-nums border-r border-slate-100">{formatNum(row.costRate)}</td>
+                        <td className="px-3 py-1.5 text-right text-slate-500 font-mono tabular-nums">{formatNum(row.balanceValue)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+                {ledgerData.length > 0 && (
+                  <tfoot>
+                    <tr className="bg-slate-800 text-white font-semibold">
+                      <td colSpan={3} className="px-3 py-2 text-[11px] uppercase tracking-wider border-r border-slate-700">Closing Balance</td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-700">
+                        {formatNum(ledgerData.reduce((s, r) => s + r.inQty, 0))}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-700">
+                        {formatNum(ledgerData.reduce((s, r) => s + r.outQty, 0))}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-700">
+                        {formatNum(ledgerData[ledgerData.length - 1]?.balance ?? 0)}
+                      </td>
+                      <td className="px-3 py-2 border-r border-slate-700"></td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums">
+                        {formatNum(ledgerData[ledgerData.length - 1]?.balanceValue ?? 0)}
+                      </td>
+                    </tr>
+                  </tfoot>
                 )}
-              </tbody>
-              {ledgerData.length > 0 && (
-                <tfoot>
-                  <tr className="border-t-2 bg-gray-50 font-semibold">
-                    <td colSpan={3} className="px-4 py-3">Closing Balance</td>
-                    <td className="px-4 py-3 text-right text-green-600">
-                      {formatNum(ledgerData.reduce((s, r) => s + r.inQty, 0))}
-                    </td>
-                    <td className="px-4 py-3 text-right text-red-600">
-                      {formatNum(ledgerData.reduce((s, r) => s + r.outQty, 0))}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {formatNum(ledgerData[ledgerData.length - 1]?.balance ?? 0)}
-                    </td>
-                    <td className="px-4 py-3"></td>
-                    <td className="px-4 py-3 text-right">
-                      {formatNum(ledgerData[ledgerData.length - 1]?.balanceValue ?? 0)}
-                    </td>
-                  </tr>
-                </tfoot>
-              )}
-            </table>
+              </table>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

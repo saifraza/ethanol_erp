@@ -226,319 +226,348 @@ export default function StockMovements() {
     }
   };
 
-  const typeColor = (type: string) => {
+  const typeBadge = (type: string) => {
     switch (type) {
-      case 'RECEIPT': return 'bg-green-100 text-green-700';
-      case 'ISSUE': return 'bg-red-100 text-red-700';
-      case 'TRANSFER': return 'bg-blue-100 text-blue-700';
-      case 'ADJUSTMENT': return 'bg-yellow-100 text-yellow-700';
-      default: return 'bg-gray-100 text-gray-700';
+      case 'RECEIPT': return 'border-emerald-300 bg-emerald-50 text-emerald-700';
+      case 'ISSUE': return 'border-red-300 bg-red-50 text-red-700';
+      case 'TRANSFER': return 'border-blue-300 bg-blue-50 text-blue-700';
+      case 'ADJUSTMENT': return 'border-amber-300 bg-amber-50 text-amber-700';
+      default: return 'border-slate-300 bg-slate-50 text-slate-700';
     }
   };
 
   const selectedItem = items.find(i => i.id === form.itemId);
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-800">Stock Movements</h1>
-        <button onClick={openForm} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">
-          <Plus className="w-4 h-4" /> New Movement
-        </button>
-      </div>
-
-      {msg && (
-        <div className={`p-3 rounded-lg text-sm ${msg.type === 'ok' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-          {msg.text}
+    <div className="min-h-screen bg-slate-50">
+      <div className="p-3 md:p-6 space-y-0">
+        {/* Page Toolbar */}
+        <div className="bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6 flex items-center justify-between">
+          <h1 className="text-sm font-bold tracking-wide uppercase">STOCK MOVEMENTS</h1>
+          <div className="flex items-center gap-2">
+            <button onClick={openForm} className="flex items-center gap-1.5 px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">
+              <Plus className="w-3.5 h-3.5" /> New Movement
+            </button>
+          </div>
         </div>
-      )}
 
-      {/* Tabs */}
-      <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1 w-fit">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              tab === t.key ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            {t.label}
+        {/* Flash Message */}
+        {msg && (
+          <div className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium border -mx-3 md:-mx-6 ${
+            msg.type === 'ok'
+              ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+              : 'border-red-300 bg-red-50 text-red-700'
+          }`}>
+            {msg.text}
+          </div>
+        )}
+
+        {/* Tabs */}
+        <div className="bg-slate-100 border-x border-b border-slate-300 -mx-3 md:-mx-6 flex">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`px-5 py-2 text-[11px] font-bold uppercase tracking-widest border-b-2 transition-colors ${
+                tab === t.key
+                  ? 'border-blue-600 text-slate-800 bg-white'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Search + Filters Toolbar */}
+        <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6 flex items-center gap-4 flex-wrap">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search item..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400"
+            />
+          </div>
+          <button onClick={() => setShowFilters(!showFilters)}
+            className="flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">
+            <Filter className="w-3.5 h-3.5" /> Filters
           </button>
-        ))}
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search item..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-          />
         </div>
-        <button onClick={() => setShowFilters(!showFilters)}
-          className="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">
-          <Filter className="w-4 h-4" /> Filters
-        </button>
-      </div>
 
-      {showFilters && (
-        <div className="flex flex-wrap gap-3 p-4 bg-gray-50 rounded-lg">
-          <div>
-            <label className="text-xs text-gray-500">From Date</label>
-            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
-              className="block px-3 py-1.5 border rounded text-sm" />
-          </div>
-          <div>
-            <label className="text-xs text-gray-500">To Date</label>
-            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
-              className="block px-3 py-1.5 border rounded text-sm" />
-          </div>
-          <div>
-            <label className="text-xs text-gray-500">Warehouse</label>
-            <select value={warehouseFilter} onChange={(e) => setWarehouseFilter(e.target.value)}
-              className="block px-3 py-1.5 border rounded text-sm">
-              <option value="">All Warehouses</option>
-              {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-            </select>
-          </div>
-          <div className="flex items-end">
-            <button onClick={() => { setDateFrom(''); setDateTo(''); setWarehouseFilter(''); }}
-              className="px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700">Clear</button>
-          </div>
-        </div>
-      )}
-
-      {/* Table */}
-      {loading ? (
-        <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>
-      ) : movements.length === 0 ? (
-        <div className="text-center py-12 text-gray-400">
-          <ArrowLeftRight className="w-12 h-12 mx-auto mb-3 opacity-50" />
-          <p>No movements found</p>
-        </div>
-      ) : (
-        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50">
-                <tr className="text-left text-gray-500">
-                  <th className="px-4 py-3">#</th>
-                  <th className="px-4 py-3">Date</th>
-                  <th className="px-4 py-3">Item</th>
-                  <th className="px-4 py-3">Type</th>
-                  <th className="px-4 py-3">Direction</th>
-                  <th className="px-4 py-3 text-right">Qty</th>
-                  <th className="px-4 py-3 text-right">Rate</th>
-                  <th className="px-4 py-3 text-right">Value</th>
-                  <th className="px-4 py-3">Warehouse</th>
-                  <th className="px-4 py-3">Ref</th>
-                  <th className="px-4 py-3">User</th>
-                </tr>
-              </thead>
-              <tbody>
-                {movements.map((m) => (
-                  <tr key={m.id} className="border-b last:border-0 hover:bg-gray-50">
-                    <td className="px-4 py-3 text-gray-400">{m.movementNo}</td>
-                    <td className="px-4 py-3">{formatDate(m.date)}</td>
-                    <td className="px-4 py-3">
-                      <span className="font-medium">{m.item?.name ?? '-'}</span>
-                      <span className="text-xs text-gray-400 ml-1">{m.item?.code}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${typeColor(m.type)}`}>
-                        {typeIcon(m.type)} {m.type}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`text-xs font-medium ${m.direction === 'IN' ? 'text-green-600' : 'text-red-600'}`}>
-                        {m.direction}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right font-medium">{m.quantity}</td>
-                    <td className="px-4 py-3 text-right">{m.rate ? formatCurrency(m.rate) : '-'}</td>
-                    <td className="px-4 py-3 text-right font-medium">{m.totalValue ? formatCurrency(m.totalValue) : '-'}</td>
-                    <td className="px-4 py-3 text-gray-500">
-                      {m.warehouse?.name ?? '-'}
-                      {m.toWarehouse && <span className="text-xs"> &rarr; {m.toWarehouse.name}</span>}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-gray-500">
-                      {m.refType && m.refNo ? `${m.refType}: ${m.refNo}` : m.refType ?? '-'}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-gray-500">{m.createdBy?.name ?? '-'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* New Movement Form */}
-      {showForm && (
-        <div className="fixed inset-0 z-50 flex">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setShowForm(false)} />
-          <div className="ml-auto relative w-full max-w-lg bg-white shadow-xl h-full overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between z-10">
-              <h2 className="text-lg font-semibold">New Movement</h2>
-              <button onClick={() => setShowForm(false)}><X className="w-5 h-5 text-gray-400 hover:text-gray-600" /></button>
+        {/* Filter Panel */}
+        {showFilters && (
+          <div className="bg-slate-50 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6 flex items-end gap-4 flex-wrap">
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">From Date</label>
+              <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+                className="border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400" />
             </div>
-            <div className="p-6 space-y-4">
-              {/* Movement Type Selector */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Movement Type</label>
-                <div className="grid grid-cols-4 gap-2">
-                  {MOVEMENT_TYPES.map((t) => (
-                    <button
-                      key={t}
-                      onClick={() => setForm({ ...emptyForm, type: t })}
-                      className={`px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${
-                        form.type === t ? `${typeColor(t)} border-current` : 'border-gray-200 text-gray-500 hover:border-gray-300'
-                      }`}
-                    >
-                      {t}
-                    </button>
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">To Date</label>
+              <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+                className="border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Warehouse</label>
+              <select value={warehouseFilter} onChange={(e) => setWarehouseFilter(e.target.value)}
+                className="border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400">
+                <option value="">All Warehouses</option>
+                {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+              </select>
+            </div>
+            <button onClick={() => { setDateFrom(''); setDateTo(''); setWarehouseFilter(''); }}
+              className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">
+              Clear
+            </button>
+          </div>
+        )}
+
+        {/* Table */}
+        {loading ? (
+          <div className="min-h-[200px] bg-white flex items-center justify-center border-x border-b border-slate-300 -mx-3 md:-mx-6">
+            <div className="text-sm text-slate-400">Loading...</div>
+          </div>
+        ) : movements.length === 0 ? (
+          <div className="text-center py-16 bg-white border-x border-b border-slate-300 -mx-3 md:-mx-6">
+            <div className="text-slate-300 text-sm">No movements found</div>
+          </div>
+        ) : (
+          <div className="border-x border-b border-slate-300 -mx-3 md:-mx-6 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-slate-800 text-white">
+                    <th className="text-left px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">#</th>
+                    <th className="text-left px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Date</th>
+                    <th className="text-left px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Item</th>
+                    <th className="text-left px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Type</th>
+                    <th className="text-left px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Direction</th>
+                    <th className="text-right px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Qty</th>
+                    <th className="text-right px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Rate</th>
+                    <th className="text-right px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Value</th>
+                    <th className="text-left px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Warehouse</th>
+                    <th className="text-left px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Ref</th>
+                    <th className="text-left px-3 py-2 font-medium text-[11px] uppercase tracking-wider">User</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {movements.map((m) => (
+                    <tr key={m.id} className="border-b border-slate-100 hover:bg-blue-50/40 even:bg-slate-50/50">
+                      <td className="px-3 py-1.5 text-slate-400 font-mono text-xs border-r border-slate-100">{m.movementNo}</td>
+                      <td className="px-3 py-1.5 text-slate-700 whitespace-nowrap border-r border-slate-100">{formatDate(m.date)}</td>
+                      <td className="px-3 py-1.5 border-r border-slate-100">
+                        <span className="font-medium text-slate-800">{m.item?.name ?? '-'}</span>
+                        <span className="text-[11px] text-slate-400 ml-1">{m.item?.code}</span>
+                      </td>
+                      <td className="px-3 py-1.5 border-r border-slate-100">
+                        <span className={`inline-flex items-center gap-1 text-[9px] font-bold uppercase px-1.5 py-0.5 border ${typeBadge(m.type)}`}>
+                          {typeIcon(m.type)} {m.type}
+                        </span>
+                      </td>
+                      <td className="px-3 py-1.5 border-r border-slate-100">
+                        <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
+                          m.direction === 'IN'
+                            ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                            : 'border-red-300 bg-red-50 text-red-700'
+                        }`}>
+                          {m.direction}
+                        </span>
+                      </td>
+                      <td className="px-3 py-1.5 text-right font-medium font-mono tabular-nums text-slate-800 border-r border-slate-100">{m.quantity}</td>
+                      <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-600 border-r border-slate-100">{m.rate ? formatCurrency(m.rate) : '-'}</td>
+                      <td className="px-3 py-1.5 text-right font-medium font-mono tabular-nums text-slate-800 border-r border-slate-100">{m.totalValue ? formatCurrency(m.totalValue) : '-'}</td>
+                      <td className="px-3 py-1.5 text-slate-600 text-xs border-r border-slate-100">
+                        {m.warehouse?.name ?? '-'}
+                        {m.toWarehouse && <span className="text-slate-400"> &rarr; {m.toWarehouse.name}</span>}
+                      </td>
+                      <td className="px-3 py-1.5 text-xs text-slate-500 border-r border-slate-100">
+                        {m.refType && m.refNo ? `${m.refType}: ${m.refNo}` : m.refType ?? '-'}
+                      </td>
+                      <td className="px-3 py-1.5 text-xs text-slate-500">{m.createdBy?.name ?? '-'}</td>
+                    </tr>
                   ))}
-                </div>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* New Movement Drawer */}
+        {showForm && (
+          <div className="fixed inset-0 z-50 flex justify-end">
+            <div className="absolute inset-0 bg-black/20" onClick={() => setShowForm(false)} />
+            <div className="relative w-full max-w-lg bg-white shadow-xl h-full overflow-y-auto">
+              {/* Drawer Header */}
+              <div className="sticky top-0 bg-slate-800 text-white px-5 py-3 flex items-center justify-between z-10">
+                <h2 className="text-xs font-bold uppercase tracking-wide">New Movement</h2>
+                <button onClick={() => setShowForm(false)} className="p-1 text-white/70 hover:text-white">
+                  <X size={16} />
+                </button>
               </div>
 
-              {/* Item Select */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Item *</label>
-                <select value={form.itemId} onChange={(e) => setForm({ ...form, itemId: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
-                  <option value="">Select item...</option>
-                  {items.map(i => <option key={i.id} value={i.id}>{i.code} - {i.name} ({i.unit})</option>)}
-                </select>
-              </div>
-
-              {/* Warehouse */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {form.type === 'TRANSFER' ? 'From Warehouse *' : 'Warehouse *'}
-                </label>
-                <select value={form.warehouseId} onChange={(e) => setForm({ ...form, warehouseId: e.target.value, binId: '' })}
-                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
-                  <option value="">Select warehouse...</option>
-                  {warehouses.map(w => <option key={w.id} value={w.id}>{w.code} - {w.name}</option>)}
-                </select>
-              </div>
-
-              {/* Bin (receipt only) */}
-              {form.type === 'RECEIPT' && selectedWarehouseBins.length > 0 && (
+              {/* Drawer Body */}
+              <div className="p-5 space-y-4">
+                {/* Movement Type Selector */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Bin</label>
-                  <select value={form.binId} onChange={(e) => setForm({ ...form, binId: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
-                    <option value="">No specific bin</option>
-                    {selectedWarehouseBins.map(b => <option key={b.id} value={b.id}>{b.code} - {b.name}</option>)}
-                  </select>
-                </div>
-              )}
-
-              {/* To Warehouse (transfer) */}
-              {form.type === 'TRANSFER' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">To Warehouse *</label>
-                  <select value={form.toWarehouseId} onChange={(e) => setForm({ ...form, toWarehouseId: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
-                    <option value="">Select destination...</option>
-                    {warehouses.filter(w => w.id !== form.warehouseId).map(w => (
-                      <option key={w.id} value={w.id}>{w.code} - {w.name}</option>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Movement Type</label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {MOVEMENT_TYPES.map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => setForm({ ...emptyForm, type: t })}
+                        className={`px-3 py-1.5 text-xs font-medium border transition-colors ${
+                          form.type === t
+                            ? 'bg-slate-800 text-white border-slate-800'
+                            : 'border-slate-200 text-slate-500 hover:border-slate-300'
+                        }`}
+                      >
+                        {t}
+                      </button>
                     ))}
+                  </div>
+                </div>
+
+                {/* Item Select */}
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Item *</label>
+                  <select value={form.itemId} onChange={(e) => setForm({ ...form, itemId: e.target.value })}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400">
+                    <option value="">Select item...</option>
+                    {items.map(i => <option key={i.id} value={i.id}>{i.code} - {i.name} ({i.unit})</option>)}
                   </select>
                 </div>
-              )}
 
-              {/* Quantity / New Qty */}
-              {form.type === 'ADJUSTMENT' ? (
+                {/* Warehouse */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">New Quantity *</label>
-                  <input type="number" value={form.newQty} onChange={(e) => setForm({ ...form, newQty: e.target.value })}
-                    placeholder="Actual counted quantity"
-                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">
+                    {form.type === 'TRANSFER' ? 'From Warehouse *' : 'Warehouse *'}
+                  </label>
+                  <select value={form.warehouseId} onChange={(e) => setForm({ ...form, warehouseId: e.target.value, binId: '' })}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400">
+                    <option value="">Select warehouse...</option>
+                    {warehouses.map(w => <option key={w.id} value={w.id}>{w.code} - {w.name}</option>)}
+                  </select>
                 </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Quantity * {selectedItem && <span className="text-gray-400">({selectedItem.unit})</span>}
-                    </label>
-                    <input type="number" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })}
-                      className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
-                  </div>
-                  {(form.type === 'RECEIPT') && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Rate</label>
-                      <input type="number" value={form.rate} onChange={(e) => setForm({ ...form, rate: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
-                    </div>
-                  )}
-                </div>
-              )}
 
-              {/* Batch No (receipt) */}
-              {form.type === 'RECEIPT' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Batch No</label>
-                  <input type="text" value={form.batchNo} onChange={(e) => setForm({ ...form, batchNo: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
-                </div>
-              )}
-
-              {/* Reference (receipt, issue) */}
-              {(form.type === 'RECEIPT' || form.type === 'ISSUE') && (
-                <div className="grid grid-cols-2 gap-4">
+                {/* Bin (receipt only) */}
+                {form.type === 'RECEIPT' && selectedWarehouseBins.length > 0 && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Ref Type</label>
-                    <select value={form.refType} onChange={(e) => setForm({ ...form, refType: e.target.value })}
-                      className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
-                      {REF_TYPES.map(r => <option key={r} value={r}>{r}</option>)}
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Bin</label>
+                    <select value={form.binId} onChange={(e) => setForm({ ...form, binId: e.target.value })}
+                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400">
+                      <option value="">No specific bin</option>
+                      {selectedWarehouseBins.map(b => <option key={b.id} value={b.id}>{b.code} - {b.name}</option>)}
                     </select>
                   </div>
+                )}
+
+                {/* To Warehouse (transfer) */}
+                {form.type === 'TRANSFER' && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Ref No</label>
-                    <input type="text" value={form.refNo} onChange={(e) => setForm({ ...form, refNo: e.target.value })}
-                      className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">To Warehouse *</label>
+                    <select value={form.toWarehouseId} onChange={(e) => setForm({ ...form, toWarehouseId: e.target.value })}
+                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400">
+                      <option value="">Select destination...</option>
+                      {warehouses.filter(w => w.id !== form.warehouseId).map(w => (
+                        <option key={w.id} value={w.id}>{w.code} - {w.name}</option>
+                      ))}
+                    </select>
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* Narration (issue) */}
-              {form.type === 'ISSUE' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Narration</label>
-                  <textarea value={form.narration} onChange={(e) => setForm({ ...form, narration: e.target.value })}
-                    rows={2} className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
-                </div>
-              )}
+                {/* Quantity / New Qty */}
+                {form.type === 'ADJUSTMENT' ? (
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">New Quantity *</label>
+                    <input type="number" value={form.newQty} onChange={(e) => setForm({ ...form, newQty: e.target.value })}
+                      placeholder="Actual counted quantity"
+                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400" />
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">
+                        Quantity * {selectedItem && <span className="text-slate-400 normal-case tracking-normal">({selectedItem.unit})</span>}
+                      </label>
+                      <input type="number" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })}
+                        className="w-full border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400" />
+                    </div>
+                    {(form.type === 'RECEIPT') && (
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Rate</label>
+                        <input type="number" value={form.rate} onChange={(e) => setForm({ ...form, rate: e.target.value })}
+                          className="w-full border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400" />
+                      </div>
+                    )}
+                  </div>
+                )}
 
-              {/* Reason (adjustment) */}
-              {form.type === 'ADJUSTMENT' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
-                  <textarea value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })}
-                    rows={2} placeholder="Reason for adjustment"
-                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
-                </div>
-              )}
-            </div>
+                {/* Batch No (receipt) */}
+                {form.type === 'RECEIPT' && (
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Batch No</label>
+                    <input type="text" value={form.batchNo} onChange={(e) => setForm({ ...form, batchNo: e.target.value })}
+                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400" />
+                  </div>
+                )}
 
-            <div className="sticky bottom-0 bg-white border-t px-6 py-4 flex justify-end gap-3">
-              <button onClick={() => setShowForm(false)} className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">Cancel</button>
-              <button onClick={handleSubmit} disabled={saving}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                Record {form.type}
-              </button>
+                {/* Reference (receipt, issue) */}
+                {(form.type === 'RECEIPT' || form.type === 'ISSUE') && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Ref Type</label>
+                      <select value={form.refType} onChange={(e) => setForm({ ...form, refType: e.target.value })}
+                        className="w-full border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400">
+                        {REF_TYPES.map(r => <option key={r} value={r}>{r}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Ref No</label>
+                      <input type="text" value={form.refNo} onChange={(e) => setForm({ ...form, refNo: e.target.value })}
+                        className="w-full border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400" />
+                    </div>
+                  </div>
+                )}
+
+                {/* Narration (issue) */}
+                {form.type === 'ISSUE' && (
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Narration</label>
+                    <textarea value={form.narration} onChange={(e) => setForm({ ...form, narration: e.target.value })}
+                      rows={2} className="w-full border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400" />
+                  </div>
+                )}
+
+                {/* Reason (adjustment) */}
+                {form.type === 'ADJUSTMENT' && (
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Reason</label>
+                    <textarea value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })}
+                      rows={2} placeholder="Reason for adjustment"
+                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400" />
+                  </div>
+                )}
+              </div>
+
+              {/* Drawer Footer */}
+              <div className="sticky bottom-0 bg-slate-50 border-t border-slate-200 px-5 py-3 flex justify-end gap-2">
+                <button onClick={() => setShowForm(false)}
+                  className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">
+                  Cancel
+                </button>
+                <button onClick={handleSubmit} disabled={saving}
+                  className="flex items-center gap-1.5 px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">
+                  {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                  Record {form.type}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
