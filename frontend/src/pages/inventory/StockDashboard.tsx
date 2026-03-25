@@ -22,24 +22,22 @@ interface Movement {
   id: string;
   movementNo: number;
   date: string;
-  type: string;
+  movementType: string;
   direction: string;
   quantity: number;
-  rate: number;
+  costRate: number;
   totalValue: number;
   item: { name: string; code: string };
-  warehouse: { name: string };
-  createdBy?: { name: string };
+  warehouse: { name: string; code: string };
 }
 
 interface LowStockAlert {
   id: string;
   itemId: string;
-  itemName: string;
-  itemCode: string;
-  currentStock: number;
   reorderPoint: number;
-  unit: string;
+  shortfall: number;
+  isCritical: boolean;
+  item: { name: string; code: string; currentStock: number; unit: string; avgCost: number };
 }
 
 export default function StockDashboard() {
@@ -66,16 +64,32 @@ export default function StockDashboard() {
       const counts = countsRes.data;
       const movements = movementsRes.data;
 
+      // items → { items: [...] }
+      const itemList = items.items ?? [];
+      // valuation → { byCategory: { CAT: { totalValue, itemCount, items } }, grandTotal, totalItems }
+      const byCat = valuation.byCategory ?? {};
+      const catArr = Object.entries(byCat).map(([category, data]: [string, any]) => ({
+        category,
+        totalValue: data.totalValue ?? 0,
+        itemCount: data.itemCount ?? 0,
+      }));
+      // alerts → { alerts: [...], summary: { total, critical } }
+      const alertList = alerts.alerts ?? (Array.isArray(alerts) ? alerts : []);
+      // counts → { counts: [...], total }
+      const countTotal = counts.total ?? (Array.isArray(counts.counts) ? counts.counts.length : 0);
+      // movements → { movements: [...], total }
+      const movList = movements.movements ?? (Array.isArray(movements) ? movements : []);
+
       setKpis({
-        totalItems: items.total ?? items.length ?? 0,
-        totalValue: valuation.totalValue ?? 0,
-        lowStockAlerts: Array.isArray(alerts) ? alerts.length : alerts.total ?? 0,
-        pendingCounts: counts.total ?? (Array.isArray(counts) ? counts.length : 0),
+        totalItems: valuation.totalItems ?? itemList.length ?? 0,
+        totalValue: valuation.grandTotal ?? 0,
+        lowStockAlerts: alerts.summary?.total ?? alertList.length ?? 0,
+        pendingCounts: countTotal,
       });
 
-      setCategoryValues(valuation.byCategory ?? []);
-      setRecentMovements(Array.isArray(movements) ? movements : movements.movements ?? []);
-      setLowStockAlerts(Array.isArray(alerts) ? alerts.slice(0, 10) : alerts.alerts ?? []);
+      setCategoryValues(catArr);
+      setRecentMovements(movList);
+      setLowStockAlerts(alertList.slice(0, 10));
     } catch (err) {
       // Dashboard is best-effort; individual sections may fail
     } finally {
@@ -92,13 +106,11 @@ export default function StockDashboard() {
     new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
   const typeColor = (type: string) => {
-    switch (type) {
-      case 'RECEIPT': return 'bg-green-100 text-green-700';
-      case 'ISSUE': return 'bg-red-100 text-red-700';
-      case 'TRANSFER': return 'bg-blue-100 text-blue-700';
-      case 'ADJUSTMENT': return 'bg-yellow-100 text-yellow-700';
-      default: return 'bg-gray-100 text-gray-700';
-    }
+    if (type.includes('RECEIPT')) return 'bg-green-100 text-green-700';
+    if (type.includes('ISSUE')) return 'bg-red-100 text-red-700';
+    if (type.includes('TRANSFER')) return 'bg-blue-100 text-blue-700';
+    if (type.includes('ADJUST')) return 'bg-yellow-100 text-yellow-700';
+    return 'bg-gray-100 text-gray-700';
   };
 
   if (loading) {
@@ -165,14 +177,14 @@ export default function StockDashboard() {
           ) : (
             <div className="space-y-3 max-h-72 overflow-y-auto">
               {lowStockAlerts.map((a) => (
-                <div key={a.id} className="flex items-center justify-between p-3 bg-orange-50 rounded-lg">
+                <div key={a.id} className={`flex items-center justify-between p-3 rounded-lg ${a.isCritical ? 'bg-red-50' : 'bg-orange-50'}`}>
                   <div>
-                    <p className="font-medium text-gray-800">{a.itemName}</p>
-                    <p className="text-xs text-gray-500">{a.itemCode}</p>
+                    <p className="font-medium text-gray-800">{a.item?.name ?? 'Unknown'}</p>
+                    <p className="text-xs text-gray-500">{a.item?.code ?? ''}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-semibold text-orange-700">
-                      {a.currentStock} / {a.reorderPoint} {a.unit}
+                    <p className={`text-sm font-semibold ${a.isCritical ? 'text-red-700' : 'text-orange-700'}`}>
+                      {a.item?.currentStock ?? 0} / {a.reorderPoint} {a.item?.unit ?? ''}
                     </p>
                     <p className="text-xs text-gray-500">Current / Reorder</p>
                   </div>
@@ -209,13 +221,13 @@ export default function StockDashboard() {
                     <td className="py-2">{formatDate(m.date)}</td>
                     <td className="py-2 font-medium">{m.item?.name ?? '-'}</td>
                     <td className="py-2">
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${typeColor(m.type)}`}>
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${typeColor(m.movementType)}`}>
                         {m.direction === 'IN' ? <ArrowDownRight className="w-3 h-3" /> : <ArrowUpRight className="w-3 h-3" />}
-                        {m.type}
+                        {m.movementType.replace(/_/g, ' ')}
                       </span>
                     </td>
                     <td className="py-2 text-right">{m.quantity}</td>
-                    <td className="py-2 text-right">{formatCurrency(m.totalValue ?? m.quantity * (m.rate ?? 0))}</td>
+                    <td className="py-2 text-right">{formatCurrency(m.totalValue ?? m.quantity * (m.costRate ?? 0))}</td>
                     <td className="py-2 text-gray-500">{m.warehouse?.name ?? '-'}</td>
                   </tr>
                 ))}
