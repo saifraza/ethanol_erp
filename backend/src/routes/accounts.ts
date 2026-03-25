@@ -3,6 +3,7 @@ import { AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { NotFoundError } from '../shared/errors';
 import prisma from '../config/prisma';
+import { onShipmentPaymentConfirmed } from '../services/autoJournal';
 
 const router = Router();
 
@@ -242,6 +243,17 @@ router.post('/:id/confirm-payment', asyncHandler(async (req: AuthRequest, res: R
       paymentConfirmedBy: req.user?.id || null,
     },
   });
+
+  // Auto-journal: Dr Bank/Cash, Cr Receivable
+  onShipmentPaymentConfirmed(prisma, {
+    id: updated.id,
+    shipmentNo: updated.shipmentNo,
+    paymentAmount: parseFloat(b.paymentAmount),
+    paymentMode: mode,
+    paymentRef: b.paymentRef,
+    userId: req.user?.id || 'system',
+  }).catch(() => {});
+
   res.json({ success: true, shipment: updated });
 }));
 

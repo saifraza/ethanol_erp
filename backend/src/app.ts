@@ -64,9 +64,18 @@ import accountsRoutes from './routes/accounts';
 // Accounts (Bookkeeping — Chart of Accounts, Journal Entries, Ledger, Reports)
 import chartOfAccountsRoutes from './routes/chartOfAccounts';
 import journalEntryRoutes from './routes/journalEntries';
+import bankReconciliationRoutes from './routes/bankReconciliation';
+import accountsReportsRoutes from './routes/accountsReports';
+// Inventory (SAP-style)
+import inventoryWarehouseRoutes from './routes/inventoryWarehouses';
+import inventoryMovementRoutes from './routes/inventoryMovements';
+import inventoryStockRoutes from './routes/inventoryStock';
+import inventoryCountRoutes from './routes/inventoryCounts';
+import inventoryReorderRoutes from './routes/inventoryReorder';
 // WhatsApp (Baileys QR)
 import whatsappRoutes from './routes/whatsapp';
 import autoCollectRoutes from './routes/whatsappAutoCollect';
+import { errorHandler } from './shared/middleware/errorHandler';
 
 
 const app = express();
@@ -123,6 +132,12 @@ app.use('/api/ddgs-dispatch', ddgsDispatchRoutes);
 app.use('/api/ddgs-production', ddgsProductionRoutes);
 app.use('/api/dosing-recipes', dosingRecipeRoutes);
 app.use('/api/inventory', inventoryRoutes);
+// Inventory (SAP-style)
+app.use('/api/inventory/warehouses', inventoryWarehouseRoutes);
+app.use('/api/inventory/movements', inventoryMovementRoutes);
+app.use('/api/inventory/stock', inventoryStockRoutes);
+app.use('/api/inventory/counts', inventoryCountRoutes);
+app.use('/api/inventory/reorder', inventoryReorderRoutes);
 app.use('/api/issues', issueRoutes);
 app.use('/api/purchase-requisition', purchaseRequisitionRoutes);
 // Sales & Distribution
@@ -156,6 +171,8 @@ app.use('/api/accounts', accountsRoutes);
 // Accounts (Bookkeeping)
 app.use('/api/chart-of-accounts', chartOfAccountsRoutes);
 app.use('/api/journal-entries', journalEntryRoutes);
+app.use('/api/bank-reconciliation', bankReconciliationRoutes);
+app.use('/api/accounts-reports', accountsReportsRoutes);
 // WhatsApp (Baileys QR)
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/auto-collect', autoCollectRoutes);
@@ -172,6 +189,9 @@ app.get('/api/health', (req, res) => {
 app.all('/api/*', (req, res) => {
   res.status(404).json({ error: `API route not found: ${req.method} ${req.path}` });
 });
+
+// Global error handler — catches all asyncHandler errors and AppError subclasses
+app.use(errorHandler);
 
 const publicPath = path.join(__dirname, '..', 'public');
 app.use(express.static(publicPath, { maxAge: '1y', etag: true, immutable: true }));

@@ -7,9 +7,20 @@ import { authenticate, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
-router.post('/register', async (req: AuthRequest, res: Response) => {
+router.post('/register', authenticate, async (req: AuthRequest, res: Response) => {
   try {
+    // Only ADMIN users can register new accounts
+    if (!req.user || req.user.role !== 'ADMIN') {
+      res.status(403).json({ error: 'Only administrators can create new users' });
+      return;
+    }
+
     const { password, name } = req.body;
+    if (!password || !name || password.length < 6) {
+      res.status(400).json({ error: 'Name and password (min 6 chars) are required' });
+      return;
+    }
+
     const email = req.body.email || `${name.toLowerCase().replace(/\s+/g, '.')}@distillery.local`;
 
     const existing = await prisma.user.findUnique({ where: { email } });
@@ -24,18 +35,11 @@ router.post('/register', async (req: AuthRequest, res: Response) => {
         email,
         password: hash,
         name,
-        role: 'OPERATOR', // always OPERATOR — only ADMIN can promote via settings
+        role: 'OPERATOR',
       },
     });
 
-    const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role, name: user.name, allowedModules: user.allowedModules },
-      config.jwtSecret,
-      { expiresIn: '7d' }
-    );
-
     res.status(201).json({
-      token,
       user: {
         id: user.id,
         email: user.email,
@@ -45,7 +49,7 @@ router.post('/register', async (req: AuthRequest, res: Response) => {
       },
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to create user' });
   }
 });
 

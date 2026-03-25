@@ -9,7 +9,8 @@ import {
   UserCheck, ClipboardList, Send, FileText, IndianRupee,
   Building2, Box, ShoppingBag, PackageCheck, Receipt, CreditCard,
   Store, Tractor, Scale, Handshake,
-  BookOpen, Calculator, TrendingUp, Landmark
+  BookOpen, Calculator, TrendingUp, Landmark,
+  PackageSearch, ArrowRightLeft, ClipboardCheck, BarChart2, Banknote, PieChart
 } from 'lucide-react';
 
 export interface ModuleDef {
@@ -17,7 +18,7 @@ export interface ModuleDef {
   label: string;
   to: string;
   icon: any;
-  group: 'process' | 'admin' | 'sales' | 'procurement' | 'trade' | 'accounts';
+  group: 'process' | 'admin' | 'sales' | 'procurement' | 'trade' | 'accounts' | 'inventory';
   adminOnly?: boolean;
 }
 
@@ -74,9 +75,22 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'daybook', label: 'Day Book', to: '/accounts/daybook', icon: FileText, group: 'accounts' },
   { key: 'pnl', label: 'Profit & Loss', to: '/accounts/profit-loss', icon: TrendingUp, group: 'accounts' },
   { key: 'balance-sheet', label: 'Balance Sheet', to: '/accounts/balance-sheet', icon: Landmark, group: 'accounts' },
+  { key: 'bank-recon', label: 'Bank Recon', to: '/accounts/bank-reconciliation', icon: Banknote, group: 'accounts' },
+  { key: 'receivables-aging', label: 'Receivables', to: '/accounts/receivables-aging', icon: TrendingUp, group: 'accounts' },
+  { key: 'payables-aging', label: 'Payables', to: '/accounts/payables-aging', icon: CreditCard, group: 'accounts' },
+  { key: 'gst-summary', label: 'GST Summary', to: '/accounts/gst-summary', icon: PieChart, group: 'accounts' },
+
+  // ── INVENTORY (SAP-style Store Management) ──
+  { key: 'stock-dashboard', label: 'Stock Overview', to: '/inventory/dashboard', icon: Warehouse, group: 'inventory' },
+  { key: 'material-master', label: 'Item Master', to: '/inventory/items', icon: Box, group: 'inventory' },
+  { key: 'warehouses', label: 'Warehouses', to: '/inventory/warehouses', icon: Warehouse, group: 'inventory' },
+  { key: 'stock-movements', label: 'Goods Movement', to: '/inventory/movements', icon: ArrowRightLeft, group: 'inventory' },
+  { key: 'stock-ledger', label: 'Stock Ledger', to: '/inventory/ledger', icon: BookOpen, group: 'inventory' },
+  { key: 'stock-counts', label: 'Stock Count', to: '/inventory/counts', icon: ClipboardCheck, group: 'inventory' },
+  { key: 'stock-valuation', label: 'Valuation', to: '/inventory/valuation', icon: IndianRupee, group: 'inventory' },
+  { key: 'abc-analysis', label: 'ABC Analysis', to: '/inventory/abc', icon: BarChart2, group: 'inventory' },
 
   // ── ADMIN ──
-  { key: 'inventory', label: 'Store', to: '/inventory', icon: Warehouse, group: 'admin' },
   { key: 'plant-issues', label: 'Maintenance', to: '/plant-issues', icon: AlertCircle, group: 'admin' },
   { key: 'purchase-req', label: 'Indent', to: '/purchase-requisition', icon: ShoppingCart, group: 'admin' },
   { key: 'reports', label: 'Reports', to: '/reports', icon: BarChart3, group: 'admin' },
@@ -108,6 +122,10 @@ export const tradeNav = MODULE_DEFS.filter(m => m.group === 'trade').map(m => ({
 }));
 
 export const accountsNav = MODULE_DEFS.filter(m => m.group === 'accounts').map(m => ({
+  to: m.to, label: m.label, icon: m.icon, moduleKey: m.key,
+}));
+
+export const inventoryNav = MODULE_DEFS.filter(m => m.group === 'inventory').map(m => ({
   to: m.to, label: m.label, icon: m.icon, moduleKey: m.key,
 }));
 

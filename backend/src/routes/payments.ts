@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, authorize } from '../middleware/auth';
+import { onSalePaymentReceived } from '../services/autoJournal';
 
 const router = Router();
 
@@ -228,6 +229,18 @@ router.post('/', async (req: Request, res: Response) => {
         },
       });
     });
+
+    // Auto-journal: Dr Bank/Cash, Cr Receivable
+    onSalePaymentReceived(prisma, {
+      id: result!.id,
+      amount,
+      mode: b.mode || 'BANK_TRANSFER',
+      reference: b.reference,
+      paymentDate: b.paymentDate ? new Date(b.paymentDate) : new Date(),
+      customerId: b.customerId,
+      invoiceId: b.invoiceId,
+      userId: (req as any).user.id,
+    }).catch(() => {});
 
     res.status(201).json(result);
   } catch (err: any) { res.status(500).json({ error: err.message }); }

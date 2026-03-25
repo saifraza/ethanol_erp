@@ -3,6 +3,7 @@ import prisma from '../config/prisma';
 import { authenticate, authorize } from '../middleware/auth';
 import { generateInvoicePdf } from '../utils/pdfGenerator';
 import { generateIRN, cancelIRN, getIRNDetails } from '../services/eInvoice';
+import { onSaleInvoiceCreated } from '../services/autoJournal';
 
 const router = Router();
 
@@ -148,6 +149,21 @@ router.post('/', async (req: Request, res: Response) => {
         payments: true,
       },
     });
+
+    // Auto-journal: Dr Receivable, Cr Sales + GST
+    onSaleInvoiceCreated(prisma, {
+      id: invoice.id,
+      invoiceNo: invoice.invoiceNo,
+      totalAmount: invoice.totalAmount,
+      amount: invoice.amount,
+      gstAmount: invoice.gstAmount,
+      gstPercent: invoice.gstPercent,
+      productName: invoice.productName,
+      customerId: b.customerId,
+      userId: (req as any).user.id,
+      invoiceDate: invoice.invoiceDate,
+    }).catch(() => {});
+
     res.status(201).json(invoice);
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
@@ -234,6 +250,20 @@ router.post('/from-shipment/:shipmentId', async (req: Request, res: Response) =>
       where: { id: shipmentId },
       data: { invoiceRef: String(invoice.invoiceNo) },
     });
+
+    // Auto-journal: Dr Receivable, Cr Sales + GST
+    onSaleInvoiceCreated(prisma, {
+      id: invoice.id,
+      invoiceNo: invoice.invoiceNo,
+      totalAmount: invoice.totalAmount,
+      amount: invoice.amount,
+      gstAmount: invoice.gstAmount,
+      gstPercent: invoice.gstPercent,
+      productName: invoice.productName,
+      customerId: order.customerId,
+      userId: (req as any).user.id,
+      invoiceDate: invoice.invoiceDate,
+    }).catch(() => {});
 
     res.status(201).json(invoice);
   } catch (err: any) { res.status(500).json({ error: err.message }); }

@@ -33,6 +33,15 @@ const DDGSStock = React.lazy(() => import('./pages/process/DDGSStock'));
 const DDGSDispatch = React.lazy(() => import('./pages/process/DDGSDispatch'));
 const DosingRecipes = React.lazy(() => import('./pages/process/DosingRecipes'));
 const Inventory = React.lazy(() => import('./pages/Inventory'));
+// Inventory (SAP-style)
+const StockDashboard = React.lazy(() => import('./pages/inventory/StockDashboard'));
+const MaterialMaster = React.lazy(() => import('./pages/inventory/MaterialMaster'));
+const WarehousesPage = React.lazy(() => import('./pages/inventory/Warehouses'));
+const StockMovements = React.lazy(() => import('./pages/inventory/StockMovements'));
+const StockLedger = React.lazy(() => import('./pages/inventory/StockLedger'));
+const StockCount = React.lazy(() => import('./pages/inventory/StockCount'));
+const StockValuation = React.lazy(() => import('./pages/inventory/StockValuation'));
+const ABCAnalysis = React.lazy(() => import('./pages/inventory/ABCAnalysis'));
 const PlantIssues = React.lazy(() => import('./pages/PlantIssues'));
 const PurchaseRequisition = React.lazy(() => import('./pages/PurchaseRequisition'));
 // Sales & Distribution
@@ -64,6 +73,10 @@ const TrialBalance = React.lazy(() => import('./pages/accounts/TrialBalance'));
 const DayBook = React.lazy(() => import('./pages/accounts/DayBook'));
 const ProfitLoss = React.lazy(() => import('./pages/accounts/ProfitLoss'));
 const BalanceSheetPage = React.lazy(() => import('./pages/accounts/BalanceSheet'));
+const BankReconciliation = React.lazy(() => import('./pages/accounts/BankReconciliation'));
+const ReceivablesAging = React.lazy(() => import('./pages/accounts/ReceivablesAging'));
+const PayablesAging = React.lazy(() => import('./pages/accounts/PayablesAging'));
+const GSTSummary = React.lazy(() => import('./pages/accounts/GSTSummary'));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -117,6 +130,15 @@ export default function App() {
         <Route path="process/lab-sampling" element={<LabSampling />} />
         <Route path="process/dosing-recipes" element={<DosingRecipes />} />
         <Route path="inventory" element={<Inventory />} />
+        {/* Inventory (SAP-style) */}
+        <Route path="inventory/dashboard" element={<StockDashboard />} />
+        <Route path="inventory/items" element={<MaterialMaster />} />
+        <Route path="inventory/warehouses" element={<WarehousesPage />} />
+        <Route path="inventory/movements" element={<StockMovements />} />
+        <Route path="inventory/ledger" element={<StockLedger />} />
+        <Route path="inventory/counts" element={<StockCount />} />
+        <Route path="inventory/valuation" element={<StockValuation />} />
+        <Route path="inventory/abc" element={<ABCAnalysis />} />
         <Route path="plant-issues" element={<PlantIssues />} />
         <Route path="purchase-requisition" element={<PurchaseRequisition />} />
         {/* Sales & Distribution */}
@@ -149,6 +171,10 @@ export default function App() {
         <Route path="accounts/daybook" element={<DayBook />} />
         <Route path="accounts/profit-loss" element={<ProfitLoss />} />
         <Route path="accounts/balance-sheet" element={<BalanceSheetPage />} />
+        <Route path="accounts/bank-reconciliation" element={<BankReconciliation />} />
+        <Route path="accounts/receivables-aging" element={<ReceivablesAging />} />
+        <Route path="accounts/payables-aging" element={<PayablesAging />} />
+        <Route path="accounts/gst-summary" element={<GSTSummary />} />
         <Route path="reports" element={<Reports />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="document-templates" element={<DocumentTemplates />} />

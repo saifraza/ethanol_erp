@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, authorize } from '../middleware/auth';
+import { onVendorPaymentMade } from '../services/autoJournal';
 
 const router = Router();
 router.use(authenticate as any);
@@ -184,6 +185,18 @@ router.post('/', async (req: Request, res: Response) => {
 
       return newPayment;
     });
+
+    // Auto-journal: Dr Payable, Cr Bank/Cash (+TDS if any)
+    onVendorPaymentMade(prisma, {
+      id: payment.id,
+      amount,
+      mode: b.mode || 'BANK_TRANSFER',
+      reference: b.reference,
+      tdsDeducted: tdsDeducted,
+      vendorId: b.vendorId,
+      userId: (req as any).user.id,
+      paymentDate: b.paymentDate ? new Date(b.paymentDate) : new Date(),
+    }).catch(() => {});
 
     res.status(201).json(payment);
   } catch (err: any) { res.status(500).json({ error: err.message }); }
