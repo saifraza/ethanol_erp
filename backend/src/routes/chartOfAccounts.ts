@@ -237,22 +237,20 @@ router.post('/', validate(createAccountSchema), asyncHandler(async (req: AuthReq
   // Retry loop to handle rare code conflicts
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const account = await prisma.$transaction(async (tx) => {
-        const code = userCode || await generateAccountCode(req.body.type, tx);
+      const code = userCode || await generateAccountCode(req.body.type);
 
-        const existing = await tx.account.findUnique({ where: { code } });
-        if (existing) throw new ValidationError(`Account code "${code}" already exists`);
+      const existing = await prisma.account.findUnique({ where: { code } });
+      if (existing) throw new ValidationError(`Account code "${code}" already exists`);
 
-        return tx.account.create({
-          data: {
-            code,
-            name: req.body.name,
-            type: req.body.type,
-            subType: req.body.subType || null,
-            parentId: req.body.parentId || null,
-            openingBalance: req.body.openingBalance || 0,
-          },
-        });
+      const account = await prisma.account.create({
+        data: {
+          code,
+          name: req.body.name,
+          type: req.body.type,
+          subType: req.body.subType || null,
+          parentId: req.body.parentId || null,
+          openingBalance: req.body.openingBalance || 0,
+        },
       });
       return res.status(201).json(account);
     } catch (err: any) {

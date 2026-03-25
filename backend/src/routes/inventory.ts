@@ -100,24 +100,22 @@ router.post('/items', authorize('ADMIN') as any, async (req: Request, res: Respo
   // Retry loop to handle rare code conflicts
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const item = await prisma.$transaction(async (tx) => {
-        const code = userCode || await generateItemCode(category, tx);
-        return tx.inventoryItem.create({
-          data: {
-            name: b.name,
-            code,
-            category,
-            unit: b.unit || 'kg',
-            currentStock: parseFloat(b.currentStock) || 0,
-            minStock: parseFloat(b.minStock) || 0,
-            maxStock: b.maxStock ? parseFloat(b.maxStock) : null,
-            costPerUnit: parseFloat(b.costPerUnit) || 0,
-            location: b.location || null,
-            supplier: b.supplier || null,
-            leadTimeDays: b.leadTimeDays ? parseInt(b.leadTimeDays) : null,
-            remarks: b.remarks || null,
-          },
-        });
+      const code = userCode || await generateItemCode(category);
+      const item = await prisma.inventoryItem.create({
+        data: {
+          name: b.name,
+          code,
+          category,
+          unit: b.unit || 'kg',
+          currentStock: parseFloat(b.currentStock) || 0,
+          minStock: parseFloat(b.minStock) || 0,
+          maxStock: b.maxStock ? parseFloat(b.maxStock) : null,
+          costPerUnit: parseFloat(b.costPerUnit) || 0,
+          location: b.location || null,
+          supplier: b.supplier || null,
+          leadTimeDays: b.leadTimeDays ? parseInt(b.leadTimeDays) : null,
+          remarks: b.remarks || null,
+        },
       });
       return res.status(201).json(item);
     } catch (err: any) {

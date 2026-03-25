@@ -142,10 +142,8 @@ router.post('/', validate(createWarehouseSchema), asyncHandler(async (req: AuthR
   // Retry loop to handle rare code conflicts
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const warehouse = await prisma.$transaction(async (tx) => {
-        const code = await generateWarehouseCode(tx);
-        return tx.warehouse.create({ data: { ...req.body, code } });
-      });
+      const code = await generateWarehouseCode();
+      const warehouse = await prisma.warehouse.create({ data: { ...req.body, code } });
       return res.status(201).json(warehouse);
     } catch (err: any) {
       if (err.code === 'P2002' && attempt < 2) continue; // unique violation, retry
