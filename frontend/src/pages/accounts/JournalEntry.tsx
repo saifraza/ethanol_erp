@@ -146,7 +146,7 @@ export default function JournalEntry() {
   const handleReverse = async (id: string) => {
     if (!confirm('Reverse this journal entry? A new opposite entry will be created.')) return;
     try {
-      await api.post(`/api/journal-entries/${id}/reverse`);
+      await api.post(`/journal-entries/${id}/reverse`);
       await fetchEntries();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Reversal failed';

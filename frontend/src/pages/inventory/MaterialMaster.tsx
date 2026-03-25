@@ -1,9 +1,18 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Plus, X, Save, Loader2, Search, ChevronDown, ChevronRight,
-  Edit2, XCircle, Package,
+  Edit2, XCircle, Package, Sparkles, Zap,
 } from 'lucide-react';
 import api from '../../services/api';
+
+interface LookupResult {
+  name: string;
+  hsnCode: string;
+  gstPercent: number;
+  category: string;
+  unit: string;
+  score: number;
+}
 
 interface InventoryItem {
   id: string;
@@ -153,7 +162,7 @@ export default function MaterialMaster() {
         gstPercent: form.gstPercent ? parseFloat(form.gstPercent) : undefined,
       };
       if (editId) {
-        await api.put(`/api/inventory/items/${editId}`, payload);
+        await api.put(`/inventory/items/${editId}`, payload);
         setMsg({ type: 'ok', text: 'Item updated' });
       } else {
         await api.post('/inventory/items', payload);
@@ -173,7 +182,7 @@ export default function MaterialMaster() {
   const handleDeactivate = async (id: string) => {
     if (!confirm('Deactivate this item?')) return;
     try {
-      await api.put(`/api/inventory/items/${id}`, { status: 'INACTIVE' });
+      await api.put(`/inventory/items/${id}`, { status: 'INACTIVE' });
       setMsg({ type: 'ok', text: 'Item deactivated' });
       fetchItems();
     } catch {
@@ -190,7 +199,7 @@ export default function MaterialMaster() {
     setExpandLoading(true);
     try {
       const [levelsRes, movRes, ruleRes] = await Promise.all([
-        api.get(`/api/inventory/stock/levels/${id}`),
+        api.get(`/inventory/stock/levels/${id}`),
         api.get('/inventory/movements', { params: { itemId: id, limit: 5 } }),
         api.get('/inventory/reorder/rules', { params: { itemId: id } }).catch(() => ({ data: null })),
       ]);
@@ -317,6 +326,18 @@ export default function MaterialMaster() {
               <button onClick={() => setShowForm(false)}><X className="w-5 h-5 text-gray-400 hover:text-gray-600" /></button>
             </div>
             <div className="p-6 space-y-4">
+              {/* Smart Lookup — search to auto-fill */}
+              {!editId && <ItemLookupSearch onSelect={(result) => {
+                setForm(prev => ({
+                  ...prev,
+                  name: result.name,
+                  hsnCode: result.hsnCode,
+                  gstPercent: String(result.gstPercent),
+                  category: result.category,
+                  unit: result.unit,
+                }));
+              }} />}
+
               <FormField label="Code *" value={form.code} onChange={(v) => setForm({ ...form, code: v })} placeholder="e.g. RM-001" />
               <FormField label="Name *" value={form.name} onChange={(v) => setForm({ ...form, name: v })} placeholder="Item name" />
               <div>
@@ -492,5 +513,137 @@ function ItemRow({ item, expanded, expandLoading, stockLevels, itemMovements, re
         </tr>
       )}
     </>
+  );
+}
+
+/** Smart item lookup with debounced search against HSN database */
+function ItemLookupSearch({ onSelect }: { onSelect: (result: LookupResult) => void }) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<LookupResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [showResults, setShowResults] = useState(false);
+  const [selected, setSelected] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (selected || query.length < 2) {
+      setResults([]);
+      setShowResults(false);
+      return;
+    }
+
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const res = await api.get('/inventory/item-lookup', { params: { q: query } });
+        setResults(res.data ?? []);
+        setShowResults(true);
+      } catch {
+        setResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [query, selected]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setShowResults(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const handleSelect = (result: LookupResult) => {
+    setSelected(true);
+    setQuery(result.name);
+    setShowResults(false);
+    onSelect(result);
+  };
+
+  const handleClear = () => {
+    setQuery('');
+    setSelected(false);
+    setResults([]);
+  };
+
+  const categoryLabel = (cat: string) => cat.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+  const categoryColor = (cat: string) => {
+    switch (cat) {
+      case 'RAW_MATERIAL': return 'bg-amber-100 text-amber-700';
+      case 'CHEMICAL': return 'bg-purple-100 text-purple-700';
+      case 'SPARE_PART': return 'bg-blue-100 text-blue-700';
+      case 'CONSUMABLE': return 'bg-green-100 text-green-700';
+      case 'FINISHED_GOOD': return 'bg-emerald-100 text-emerald-700';
+      default: return 'bg-gray-100 text-gray-700';
+    }
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-3">
+        <div className="flex items-center gap-2 mb-2">
+          <Zap className="w-4 h-4 text-blue-600" />
+          <span className="text-xs font-semibold text-blue-700">Smart Lookup</span>
+          <span className="text-xs text-blue-500">— Search to auto-fill HSN, GST, Category & Unit</span>
+        </div>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => { setQuery(e.target.value); setSelected(false); }}
+            onFocus={() => { if (results.length > 0 && !selected) setShowResults(true); }}
+            placeholder="Type item name... e.g. 'alpha amylase', 'ball bearing', 'caustic soda'"
+            className="w-full pl-10 pr-10 py-2.5 border border-blue-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
+          />
+          {searching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-blue-500" />}
+          {selected && !searching && (
+            <button onClick={handleClear} className="absolute right-3 top-1/2 -translate-y-1/2">
+              <X className="w-4 h-4 text-gray-400 hover:text-gray-600" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Results dropdown */}
+      {showResults && results.length > 0 && (
+        <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-72 overflow-y-auto">
+          {results.map((r, i) => (
+            <button
+              key={i}
+              onClick={() => handleSelect(r)}
+              className="w-full text-left px-4 py-3 hover:bg-blue-50 border-b last:border-0 transition-colors"
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-medium text-gray-800 text-sm">{r.name}</span>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${categoryColor(r.category)}`}>
+                  {categoryLabel(r.category)}
+                </span>
+              </div>
+              <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+                <span>HSN: <strong className="text-gray-700">{r.hsnCode}</strong></span>
+                <span>GST: <strong className="text-gray-700">{r.gstPercent}%</strong></span>
+                <span>Unit: <strong className="text-gray-700">{r.unit}</strong></span>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {showResults && results.length === 0 && query.length >= 2 && !searching && (
+        <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg p-4 text-center">
+          <p className="text-sm text-gray-500">No matches found for "{query}"</p>
+          <p className="text-xs text-gray-400 mt-1">Fill the details manually below</p>
+        </div>
+      )}
+    </div>
   );
 }

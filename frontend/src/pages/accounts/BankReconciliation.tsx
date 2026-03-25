@@ -94,7 +94,7 @@ export default function BankReconciliation() {
     try {
       setLoading(true);
       const [summaryRes, unreconRes, reconRes] = await Promise.all([
-        api.get<ReconSummary>(`/api/bank-reconciliation/summary/${selectedAccountId}`),
+        api.get<ReconSummary>(`/bank-reconciliation/summary/${selectedAccountId}`),
         api.get<BankTxn[]>('/bank-reconciliation', { params: { accountId: selectedAccountId, isReconciled: 'false' } }),
         api.get<BankTxn[]>('/bank-reconciliation', { params: { accountId: selectedAccountId, isReconciled: 'true' } }),
       ]);
@@ -161,7 +161,7 @@ export default function BankReconciliation() {
     if (!matchTxn || !selectedJournalId) return;
     try {
       setMatching(true);
-      await api.post(`/api/bank-reconciliation/${matchTxn.id}/match`, { journalEntryId: selectedJournalId });
+      await api.post(`/bank-reconciliation/${matchTxn.id}/match`, { journalEntryId: selectedJournalId });
       setShowMatch(false);
       setMatchTxn(null);
       await fetchData();

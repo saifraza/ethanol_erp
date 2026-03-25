@@ -23,16 +23,41 @@ const fmtCurrency = (n: number): string => {
 export default function GSTSummary() {
   const [data, setData] = useState<GSTData | null>(null);
   const [loading, setLoading] = useState(false);
-  const [dateRange, setDateRange] = useState({ from: '', to: '' });
+  // Default to current financial year (April 1 - March 31)
+  const [dateRange, setDateRange] = useState(() => {
+    const now = new Date();
+    const fyStart = now.getMonth() >= 3
+      ? `${now.getFullYear()}-04-01`
+      : `${now.getFullYear() - 1}-04-01`;
+    const today = now.toISOString().slice(0, 10);
+    return { from: fyStart, to: today };
+  });
 
   const fetchData = useCallback(async () => {
+    if (!dateRange.from || !dateRange.to) return;
     try {
       setLoading(true);
-      const params: Record<string, string> = {};
-      if (dateRange.from) params.from = dateRange.from;
-      if (dateRange.to) params.to = dateRange.to;
-      const res = await api.get<GSTData>('/accounts-reports/gst-summary', { params });
-      setData(res.data);
+      const res = await api.get('/accounts-reports/gst-summary', {
+        params: { from: dateRange.from, to: dateRange.to },
+      });
+      const d = res.data;
+      // Backend returns { output: { cgst, sgst, igst, total }, input: {...}, netPayable }
+      // Transform to match component's GSTData interface
+      setData({
+        outputGST: [
+          { code: 'CGST', name: 'Central GST', amount: d.output?.cgst ?? 0 },
+          { code: 'SGST', name: 'State GST', amount: d.output?.sgst ?? 0 },
+          { code: 'IGST', name: 'Integrated GST', amount: d.output?.igst ?? 0 },
+        ],
+        inputGST: [
+          { code: 'CGST', name: 'Central GST', amount: d.input?.cgst ?? 0 },
+          { code: 'SGST', name: 'State GST', amount: d.input?.sgst ?? 0 },
+          { code: 'IGST', name: 'Integrated GST', amount: d.input?.igst ?? 0 },
+        ],
+        totalOutput: d.output?.total ?? 0,
+        totalInput: d.input?.total ?? 0,
+        netPayable: d.netPayable ?? 0,
+      });
     } catch (err) {
       console.error('Failed to fetch GST summary:', err);
     } finally {

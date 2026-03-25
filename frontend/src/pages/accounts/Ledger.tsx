@@ -58,7 +58,7 @@ export default function Ledger() {
       const params: Record<string, string> = {};
       if (dateRange.from) params.from = dateRange.from;
       if (dateRange.to) params.to = dateRange.to;
-      const res = await api.get<LedgerData>(`/api/journal-entries/ledger/${selectedAccountId}`, { params });
+      const res = await api.get<LedgerData>(`/journal-entries/ledger/${selectedAccountId}`, { params });
       setLedger(res.data);
     } catch (err) {
       console.error('Failed to fetch ledger:', err);

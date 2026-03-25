@@ -1307,7 +1307,7 @@ const FreightManagement: React.FC = () => {
 
   const handleAcceptQuotation = async (quoteId: string) => {
     try {
-      await api.put(`/api/freight-inquiries/quotations/${quoteId}/accept`);
+      await api.put(`/freight-inquiries/quotations/${quoteId}/accept`);
       fetchData();
     } catch (error) {
       console.error('Failed to accept quotation:', error);
@@ -1319,7 +1319,7 @@ const FreightManagement: React.FC = () => {
     data: Partial<Shipment>
   ) => {
     try {
-      await api.put(`/api/shipments/${shipmentId}`, data);
+      await api.put(`/shipments/${shipmentId}`, data);
       fetchData();
     } catch (error) {
       console.error('Failed to update shipment:', error);
@@ -1369,7 +1369,7 @@ const FreightManagement: React.FC = () => {
 
   const handleGenerateEWayBill = async (shipmentId: string) => {
     try {
-      await api.post(`/api/shipments/${shipmentId}/eway-bill`);
+      await api.post(`/shipments/${shipmentId}/eway-bill`);
       fetchData();
     } catch (error) {
       console.error('Failed to generate e-way bill:', error);
@@ -1381,7 +1381,7 @@ const FreightManagement: React.FC = () => {
       const shipment = shipments.find((s) => s.id === shipmentId);
       if (!shipment) return;
 
-      const res = await api.get(`/api/sales-orders/${shipment.soId}/pdf`, {
+      const res = await api.get(`/sales-orders/${shipment.soId}/pdf`, {
         responseType: 'blob',
       });
       const url = URL.createObjectURL(res.data);

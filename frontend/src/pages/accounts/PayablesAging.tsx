@@ -44,8 +44,29 @@ export default function PayablesAging() {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await api.get<AgingData>('/accounts-reports/payables-aging');
-      setData(res.data);
+      const res = await api.get('/accounts-reports/payables-aging');
+      const d = res.data;
+      // Backend returns { vendors: [{ vendorId, vendorName, buckets: {'0-30': N, ...}, total }], totals: {'0-30': N, ...}, grandTotal }
+      const rows: AgingRow[] = (d.vendors ?? []).map((v: { vendorId: string; vendorName: string; buckets: Record<string, number>; total: number }) => ({
+        vendorId: v.vendorId,
+        vendorName: v.vendorName,
+        bucket0to30: v.buckets?.['0-30'] ?? 0,
+        bucket31to60: v.buckets?.['31-60'] ?? 0,
+        bucket61to90: v.buckets?.['61-90'] ?? 0,
+        bucket90plus: v.buckets?.['90+'] ?? 0,
+        total: v.total ?? 0,
+      }));
+      const t = d.totals ?? {};
+      setData({
+        rows,
+        totals: {
+          bucket0to30: t['0-30'] ?? 0,
+          bucket31to60: t['31-60'] ?? 0,
+          bucket61to90: t['61-90'] ?? 0,
+          bucket90plus: t['90+'] ?? 0,
+          total: d.grandTotal ?? 0,
+        },
+      });
     } catch (err) {
       console.error('Failed to fetch payables aging:', err);
     } finally {

@@ -44,8 +44,29 @@ export default function ReceivablesAging() {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await api.get<AgingData>('/accounts-reports/receivables-aging');
-      setData(res.data);
+      const res = await api.get('/accounts-reports/receivables-aging');
+      const d = res.data;
+      // Backend returns { customers: [{ customerId, customerName, buckets: {'0-30': N, ...}, total }], totals, grandTotal }
+      const rows: AgingRow[] = (d.customers ?? []).map((c: { customerId: string; customerName: string; buckets: Record<string, number>; total: number }) => ({
+        customerId: c.customerId,
+        customerName: c.customerName,
+        bucket0to30: c.buckets?.['0-30'] ?? 0,
+        bucket31to60: c.buckets?.['31-60'] ?? 0,
+        bucket61to90: c.buckets?.['61-90'] ?? 0,
+        bucket90plus: c.buckets?.['90+'] ?? 0,
+        total: c.total ?? 0,
+      }));
+      const t = d.totals ?? {};
+      setData({
+        rows,
+        totals: {
+          bucket0to30: t['0-30'] ?? 0,
+          bucket31to60: t['31-60'] ?? 0,
+          bucket61to90: t['61-90'] ?? 0,
+          bucket90plus: t['90+'] ?? 0,
+          total: d.grandTotal ?? 0,
+        },
+      });
     } catch (err) {
       console.error('Failed to fetch receivables aging:', err);
     } finally {

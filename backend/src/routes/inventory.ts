@@ -1,9 +1,34 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, authorize } from '../middleware/auth';
+import { searchHSN } from '../data/hsnDatabase';
 
 const router = Router();
 router.use(authenticate as any);
+
+// ─── ITEM LOOKUP (Smart Search) ──────────────────
+
+// GET /item-lookup?q=search_term — search HSN database for auto-fill
+router.get('/item-lookup', async (req: Request, res: Response) => {
+  try {
+    const q = (req.query.q as string) || '';
+    if (q.length < 2) {
+      res.json([]);
+      return;
+    }
+    const results = searchHSN(q, 15);
+    res.json(results.map(r => ({
+      name: r.name,
+      hsnCode: r.hsn,
+      gstPercent: r.gst,
+      category: r.category,
+      unit: r.unit,
+      score: r.score,
+    })));
+  } catch (err: unknown) {
+    res.status(500).json({ error: 'Lookup failed' });
+  }
+});
 
 // ─── ITEMS ───────────────────────────────────────
 

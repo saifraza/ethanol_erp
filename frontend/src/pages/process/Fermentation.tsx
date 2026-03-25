@@ -442,12 +442,20 @@ export default function Fermentation() {
 
     // Use form reading if provided, otherwise latest from state
     const r = formReading ? null : getLatestReading(v, batch);
-    const sg = formReading?.spGravity || (r?.spGravity != null ? String(r.spGravity) : '');
-    const ph = formReading?.ph || (r?.ph != null ? String(r.ph) : '');
-    const temp = formReading?.temp || (r?.temp != null ? String(r.temp) : '');
-    const level = formReading?.level || (r?.level != null ? String(r.level) : '') || (batch.fermLevel ? String(batch.fermLevel) : '');
-    const alc = formReading?.alcohol || (r?.alcohol != null ? String(r.alcohol) : '');
-    const rs = formReading?.rs || (r?.rs != null ? String(r.rs) : '');
+    const val = (field: string): string => {
+      if (formReading && formReading[field]) return formReading[field];
+      if (r && (r as Record<string, unknown>)[field] != null) return String((r as Record<string, unknown>)[field]);
+      return '';
+    };
+    const sg = val('spGravity');
+    const ph = val('ph');
+    const temp = val('temp');
+    const level = val('level') || (batch.fermLevel ? String(batch.fermLevel) : '');
+    const alc = val('alcohol');
+    const rs = val('rs');
+    const rst = val('rst');
+    const ds = val('ds');
+    const vfaPpa = val('vfaPpa');
 
     // Include reading time
     const readingTime = formReading?.analysisTime
@@ -457,12 +465,16 @@ export default function Fermentation() {
         : new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
     lines.push(`Time = ${readingTime}`);
 
-    lines.push(`Sp Gravity = ${sg || '—'}`);
-    lines.push(`pH = ${ph || '—'}`);
-    lines.push(`Temp = ${temp || '—'}`);
-    lines.push(`Level = ${level ? `${level}%` : '—'}`);
+    // Only include fields that have values
+    if (sg) lines.push(`Sp Gravity = ${sg}`);
+    if (ph) lines.push(`pH = ${ph}`);
+    if (temp) lines.push(`Temp = ${temp}`);
+    if (level) lines.push(`Level = ${level}%`);
     if (alc) lines.push(`Alcohol = ${alc}%`);
     if (rs) lines.push(`RS = ${rs}%`);
+    if (rst) lines.push(`RST = ${rst}%`);
+    if (ds) lines.push(`DS = ${ds}%`);
+    if (vfaPpa) lines.push(`VFA/PPA = ${vfaPpa}`);
 
     return lines.join('\n');
   };

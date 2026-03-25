@@ -91,7 +91,7 @@ export default function ChartOfAccounts() {
       };
 
       if (editAccount) {
-        await api.put(`/api/chart-of-accounts/${editAccount.id}`, {
+        await api.put(`/chart-of-accounts/${editAccount.id}`, {
           name: payload.name,
           subType: payload.subType,
           openingBalance: payload.openingBalance,
@@ -127,7 +127,7 @@ export default function ChartOfAccounts() {
     if (account.isSystem) { alert('Cannot delete system accounts'); return; }
     if (!confirm(`Deactivate account "${account.code} - ${account.name}"?`)) return;
     try {
-      await api.delete(`/api/chart-of-accounts/${account.id}`);
+      await api.delete(`/chart-of-accounts/${account.id}`);
       await fetchAccounts();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Delete failed';

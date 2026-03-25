@@ -84,7 +84,7 @@ export default function Warehouses() {
     setSaving(true);
     try {
       if (editId) {
-        await api.put(`/api/inventory/warehouses/${editId}`, form);
+        await api.put(`/inventory/warehouses/${editId}`, form);
         setMsg({ type: 'ok', text: 'Warehouse updated' });
       } else {
         await api.post('/inventory/warehouses', form);
@@ -109,7 +109,7 @@ export default function Warehouses() {
     setNewBin({ code: '', name: '' });
     try {
       const [detailRes, stockRes] = await Promise.all([
-        api.get(`/api/inventory/warehouses/${wh.id}`),
+        api.get(`/inventory/warehouses/${wh.id}`),
         api.get('/inventory/stock/valuation', { params: { warehouseId: wh.id } }).catch(() => ({ data: { totalItems: 0, totalValue: 0 } })),
       ]);
       const detail = detailRes.data;
@@ -130,11 +130,11 @@ export default function Warehouses() {
     }
     setAddingBin(true);
     try {
-      await api.post(`/api/inventory/warehouses/${expandedId}/bins`, newBin);
+      await api.post(`/inventory/warehouses/${expandedId}/bins`, newBin);
       setMsg({ type: 'ok', text: 'Bin added' });
       setNewBin({ code: '', name: '' });
       // Refresh bins
-      const res = await api.get(`/api/inventory/warehouses/${expandedId}`);
+      const res = await api.get(`/inventory/warehouses/${expandedId}`);
       setWarehouseBins(res.data.bins ?? []);
       fetchWarehouses();
     } catch {
