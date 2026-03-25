@@ -16,9 +16,10 @@ const CATEGORY_PREFIX: Record<string, string> = {
   FINISHED_GOOD: 'FG',
 };
 
-async function generateItemCode(category: string): Promise<string> {
+async function generateItemCode(category: string, tx?: any): Promise<string> {
+  const db = tx || prisma;
   const prefix = CATEGORY_PREFIX[category] || 'ITM';
-  const last = await prisma.inventoryItem.findFirst({
+  const last = await db.inventoryItem.findFirst({
     where: { code: { startsWith: `${prefix}-` } },
     orderBy: { code: 'desc' },
     select: { code: true },
@@ -95,25 +96,59 @@ router.post('/items', authorize('ADMIN') as any, async (req: Request, res: Respo
   try {
     const b = req.body;
     const category = b.category || 'RAW_MATERIAL';
-    const code = b.code?.trim() || await generateItemCode(category);
-    const item = await prisma.inventoryItem.create({
-      data: {
-        name: b.name,
-        code,
-        category,
-        unit: b.unit || 'kg',
-        currentStock: parseFloat(b.currentStock) || 0,
-        minStock: parseFloat(b.minStock) || 0,
-        maxStock: b.maxStock ? parseFloat(b.maxStock) : null,
-        costPerUnit: parseFloat(b.costPerUnit) || 0,
-        location: b.location || null,
-        supplier: b.supplier || null,
-        leadTimeDays: b.leadTimeDays ? parseInt(b.leadTimeDays) : null,
-        remarks: b.remarks || null,
-      },
-    });
+    const userCode = b.code?.trim();
+
+    // Use transaction to prevent race conditions in auto-code generation
+    const item = await prisma.$transaction(async (tx) => {
+      const code = userCode || await generateItemCode(category, tx);
+      return tx.inventoryItem.create({
+        data: {
+          name: b.name,
+          code,
+          category,
+          unit: b.unit || 'kg',
+          currentStock: parseFloat(b.currentStock) || 0,
+          minStock: parseFloat(b.minStock) || 0,
+          maxStock: b.maxStock ? parseFloat(b.maxStock) : null,
+          costPerUnit: parseFloat(b.costPerUnit) || 0,
+          location: b.location || null,
+          supplier: b.supplier || null,
+          leadTimeDays: b.leadTimeDays ? parseInt(b.leadTimeDays) : null,
+          remarks: b.remarks || null,
+        },
+      });
+    }, { isolationLevel: 'Serializable' });
     res.status(201).json(item);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
+  } catch (err: any) {
+    // Retry once on unique constraint violation (P2002)
+    if (err.code === 'P2002') {
+      try {
+        const b = req.body;
+        const category = b.category || 'RAW_MATERIAL';
+        const item = await prisma.$transaction(async (tx) => {
+          const code = await generateItemCode(category, tx);
+          return tx.inventoryItem.create({
+            data: {
+              name: b.name, code, category,
+              unit: b.unit || 'kg',
+              currentStock: parseFloat(b.currentStock) || 0,
+              minStock: parseFloat(b.minStock) || 0,
+              maxStock: b.maxStock ? parseFloat(b.maxStock) : null,
+              costPerUnit: parseFloat(b.costPerUnit) || 0,
+              location: b.location || null,
+              supplier: b.supplier || null,
+              leadTimeDays: b.leadTimeDays ? parseInt(b.leadTimeDays) : null,
+              remarks: b.remarks || null,
+            },
+          });
+        }, { isolationLevel: 'Serializable' });
+        return res.status(201).json(item);
+      } catch (retryErr: any) {
+        return res.status(409).json({ error: 'Code conflict — please try again' });
+      }
+    }
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // PUT /items/:id — update item

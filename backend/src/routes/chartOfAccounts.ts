@@ -30,10 +30,11 @@ const TYPE_CODE_PREFIX: Record<string, number> = {
   ASSET: 1000, LIABILITY: 2000, INCOME: 3000, EXPENSE: 4000, EQUITY: 5000,
 };
 
-async function generateAccountCode(type: string): Promise<string> {
+async function generateAccountCode(type: string, tx?: any): Promise<string> {
+  const db = tx || prisma;
   const base = TYPE_CODE_PREFIX[type] || 1000;
   const max = base + 999;
-  const last = await prisma.account.findFirst({
+  const last = await db.account.findFirst({
     where: { code: { gte: String(base), lte: String(max) } },
     orderBy: { code: 'desc' },
     select: { code: true },
@@ -222,14 +223,9 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 
 // ── POST / — Create account (auto-generates code if not provided) ──
 router.post('/', validate(createAccountSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
-  // Auto-generate code if not provided
-  const code = req.body.code?.trim() || await generateAccountCode(req.body.type);
+  const userCode = req.body.code?.trim();
 
-  // Check code uniqueness
-  const existing = await prisma.account.findUnique({ where: { code } });
-  if (existing) throw new ValidationError(`Account code "${code}" already exists`);
-
-  // Validate parent exists if provided
+  // Validate parent exists if provided (can do outside transaction)
   if (req.body.parentId) {
     const parent = await prisma.account.findUnique({ where: { id: req.body.parentId } });
     if (!parent) throw new NotFoundError('Parent Account', req.body.parentId);
@@ -238,16 +234,25 @@ router.post('/', validate(createAccountSchema), asyncHandler(async (req: AuthReq
     }
   }
 
-  const account = await prisma.account.create({
-    data: {
-      code,
-      name: req.body.name,
-      type: req.body.type,
-      subType: req.body.subType || null,
-      parentId: req.body.parentId || null,
-      openingBalance: req.body.openingBalance || 0,
-    },
-  });
+  // Use transaction to prevent race conditions in auto-code generation
+  const account = await prisma.$transaction(async (tx) => {
+    const code = userCode || await generateAccountCode(req.body.type, tx);
+
+    // Check code uniqueness inside transaction
+    const existing = await tx.account.findUnique({ where: { code } });
+    if (existing) throw new ValidationError(`Account code "${code}" already exists`);
+
+    return tx.account.create({
+      data: {
+        code,
+        name: req.body.name,
+        type: req.body.type,
+        subType: req.body.subType || null,
+        parentId: req.body.parentId || null,
+        openingBalance: req.body.openingBalance || 0,
+      },
+    });
+  }, { isolationLevel: 'Serializable' });
   res.status(201).json(account);
 }));
 

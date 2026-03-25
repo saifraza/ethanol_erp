@@ -124,8 +124,9 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 }));
 
 // Helper: generate next warehouse code (WH-001, WH-002, ...)
-async function generateWarehouseCode(): Promise<string> {
-  const last = await prisma.warehouse.findFirst({
+async function generateWarehouseCode(tx?: any): Promise<string> {
+  const db = tx || prisma;
+  const last = await db.warehouse.findFirst({
     where: { code: { startsWith: 'WH-' } },
     orderBy: { code: 'desc' },
     select: { code: true },
@@ -138,8 +139,10 @@ async function generateWarehouseCode(): Promise<string> {
 // ─── POST / — create warehouse ───
 
 router.post('/', validate(createWarehouseSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
-  const code = await generateWarehouseCode();
-  const warehouse = await prisma.warehouse.create({ data: { ...req.body, code } });
+  const warehouse = await prisma.$transaction(async (tx) => {
+    const code = await generateWarehouseCode(tx);
+    return tx.warehouse.create({ data: { ...req.body, code } });
+  }, { isolationLevel: 'Serializable' });
   res.status(201).json(warehouse);
 }));
 
