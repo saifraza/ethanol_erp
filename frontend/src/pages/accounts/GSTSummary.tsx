@@ -67,135 +67,157 @@ export default function GSTSummary() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-xs text-slate-400">Loading GST Summary...</div>
+      </div>
+    );
+  }
+
   return (
-    <div className="p-6 space-y-6 max-w-4xl mx-auto">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-800">GST Summary (GSTR-3B Helper)</h1>
-        <button
-          onClick={() => window.print()}
-          className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200 print:hidden"
-        >
-          Print
-        </button>
-      </div>
-
-      {/* Date Range */}
-      <div className="bg-white rounded-lg shadow p-4 flex flex-wrap gap-4 items-end print:hidden">
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">From</label>
-          <input
-            type="date"
-            value={dateRange.from}
-            onChange={e => setDateRange(prev => ({ ...prev, from: e.target.value }))}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-          />
+    <div className="min-h-screen bg-slate-50">
+      <div className="p-3 md:p-6 space-y-0">
+        {/* ── Page toolbar ── */}
+        <div className="bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <h1 className="text-sm font-bold tracking-wide uppercase">GST Summary</h1>
+            <span className="text-[10px] text-slate-400">|</span>
+            <span className="text-[10px] text-slate-400">GSTR-3B Helper — Tax Liability and Input Credit</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => window.print()}
+              className="px-3 py-1 border border-slate-400 text-slate-300 text-[11px] hover:bg-slate-700 print:hidden"
+            >
+              Print
+            </button>
+          </div>
         </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">To</label>
-          <input
-            type="date"
-            value={dateRange.to}
-            onChange={e => setDateRange(prev => ({ ...prev, to: e.target.value }))}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-          />
+
+        {/* ── Date Range Filter ── */}
+        <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6 flex items-center gap-4 flex-wrap print:hidden">
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">From</label>
+            <input
+              type="date"
+              value={dateRange.from}
+              onChange={e => setDateRange(prev => ({ ...prev, from: e.target.value }))}
+              className="border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-slate-400 focus:border-slate-400"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">To</label>
+            <input
+              type="date"
+              value={dateRange.to}
+              onChange={e => setDateRange(prev => ({ ...prev, to: e.target.value }))}
+              className="border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-slate-400 focus:border-slate-400"
+            />
+          </div>
         </div>
+
+        {!loading && data && (
+          <>
+            {/* ── Net Payable / Refundable KPI ── */}
+            <div className="grid grid-cols-1 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+              <div className="bg-white px-4 py-4">
+                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">
+                  {data.netPayable >= 0 ? 'Net GST Payable' : 'Net GST Refundable'}
+                </div>
+                <div className={`text-2xl font-bold font-mono tabular-nums ${data.netPayable >= 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+                  {fmtCurrency(data.netPayable)}
+                </div>
+                <div className="text-[10px] text-slate-400 mt-0.5">
+                  Output GST ({fmtCurrency(data.totalOutput)}) minus Input GST ({fmtCurrency(data.totalInput)})
+                </div>
+              </div>
+            </div>
+
+            {/* ── Output and Input GST Tables ── */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-0 -mx-3 md:-mx-6">
+              {/* Output GST */}
+              <div className="border-x border-b border-slate-300 overflow-hidden">
+                <div className="bg-slate-800 text-white px-4 py-2">
+                  <h2 className="text-[11px] font-bold uppercase tracking-widest">Output GST (Liability)</h2>
+                </div>
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-slate-800 text-white">
+                      <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Code</th>
+                      <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Account</th>
+                      <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.outputGST.map(line => (
+                      <tr key={line.code} className="border-t border-slate-200 hover:bg-blue-50/30 even:bg-slate-50/50">
+                        <td className="px-3 py-1.5 text-slate-500 font-mono border-r border-slate-100">{line.code}</td>
+                        <td className="px-3 py-1.5 text-slate-700 border-r border-slate-100">{line.name}</td>
+                        <td className="px-3 py-1.5 text-right text-slate-800 font-medium font-mono tabular-nums">{fmtCurrency(line.amount)}</td>
+                      </tr>
+                    ))}
+                    {data.outputGST.length === 0 && (
+                      <tr><td colSpan={3} className="px-3 py-4 text-center text-slate-400 text-xs">No output GST entries</td></tr>
+                    )}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-slate-800 text-white font-semibold text-xs">
+                      <td colSpan={2} className="px-3 py-2">Total Output GST</td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums">{fmtCurrency(data.totalOutput)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {/* Input GST */}
+              <div className="border-r border-b border-slate-300 overflow-hidden md:border-l-0 border-l">
+                <div className="bg-slate-800 text-white px-4 py-2">
+                  <h2 className="text-[11px] font-bold uppercase tracking-widest">Input GST (Credit)</h2>
+                </div>
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-slate-800 text-white">
+                      <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Code</th>
+                      <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Account</th>
+                      <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.inputGST.map(line => (
+                      <tr key={line.code} className="border-t border-slate-200 hover:bg-blue-50/30 even:bg-slate-50/50">
+                        <td className="px-3 py-1.5 text-slate-500 font-mono border-r border-slate-100">{line.code}</td>
+                        <td className="px-3 py-1.5 text-slate-700 border-r border-slate-100">{line.name}</td>
+                        <td className="px-3 py-1.5 text-right text-slate-800 font-medium font-mono tabular-nums">{fmtCurrency(line.amount)}</td>
+                      </tr>
+                    ))}
+                    {data.inputGST.length === 0 && (
+                      <tr><td colSpan={3} className="px-3 py-4 text-center text-slate-400 text-xs">No input GST entries</td></tr>
+                    )}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-slate-800 text-white font-semibold text-xs">
+                      <td colSpan={2} className="px-3 py-2">Total Input GST</td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums">{fmtCurrency(data.totalInput)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+
+            {/* Print footer */}
+            <div className="text-center text-[10px] text-slate-400 mt-4 print:block hidden">
+              Generated from MSPIL Distillery ERP — {new Date().toLocaleDateString('en-IN')}
+            </div>
+          </>
+        )}
+
+        {!loading && !data && (
+          <div className="min-h-[200px] flex items-center justify-center border-x border-b border-slate-300 -mx-3 md:-mx-6 bg-white">
+            <div className="text-xs text-slate-400">Select a date range to view GST summary</div>
+          </div>
+        )}
       </div>
-
-      {loading && <div className="p-6 text-gray-500">Loading GST Summary...</div>}
-
-      {!loading && data && (
-        <>
-          {/* Net Payable Card */}
-          <div className={`rounded-lg shadow p-6 text-center ${data.netPayable >= 0 ? 'bg-red-50 border border-red-200' : 'bg-green-50 border border-green-200'}`}>
-            <div className="text-sm text-gray-600 uppercase tracking-wide">
-              {data.netPayable >= 0 ? 'Net GST Payable' : 'Net GST Refundable'}
-            </div>
-            <div className={`text-3xl font-bold mt-2 ${data.netPayable >= 0 ? 'text-red-700' : 'text-green-700'}`}>
-              {fmtCurrency(data.netPayable)}
-            </div>
-            <div className="text-xs text-gray-500 mt-1">Output GST ({fmtCurrency(data.totalOutput)}) minus Input GST ({fmtCurrency(data.totalInput)})</div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Output GST */}
-            <div className="bg-white rounded-lg shadow">
-              <div className="px-4 py-3 border-b bg-red-50">
-                <h2 className="text-sm font-semibold text-red-800 uppercase tracking-wide">Output GST (Liability)</h2>
-              </div>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-50 text-left">
-                    <th className="px-4 py-2 font-medium text-gray-600">Code</th>
-                    <th className="px-4 py-2 font-medium text-gray-600">Account</th>
-                    <th className="px-4 py-2 font-medium text-gray-600 text-right">Amount</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {data.outputGST.map(line => (
-                    <tr key={line.code}>
-                      <td className="px-4 py-2 text-gray-500 font-mono">{line.code}</td>
-                      <td className="px-4 py-2 text-gray-700">{line.name}</td>
-                      <td className="px-4 py-2 text-right text-gray-800 font-medium">{fmtCurrency(line.amount)}</td>
-                    </tr>
-                  ))}
-                  {data.outputGST.length === 0 && (
-                    <tr><td colSpan={3} className="px-4 py-4 text-center text-gray-400">No output GST entries</td></tr>
-                  )}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-red-50 font-semibold">
-                    <td colSpan={2} className="px-4 py-2 text-red-800">Total Output GST</td>
-                    <td className="px-4 py-2 text-right text-red-800">{fmtCurrency(data.totalOutput)}</td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-
-            {/* Input GST */}
-            <div className="bg-white rounded-lg shadow">
-              <div className="px-4 py-3 border-b bg-green-50">
-                <h2 className="text-sm font-semibold text-green-800 uppercase tracking-wide">Input GST (Credit)</h2>
-              </div>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-50 text-left">
-                    <th className="px-4 py-2 font-medium text-gray-600">Code</th>
-                    <th className="px-4 py-2 font-medium text-gray-600">Account</th>
-                    <th className="px-4 py-2 font-medium text-gray-600 text-right">Amount</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {data.inputGST.map(line => (
-                    <tr key={line.code}>
-                      <td className="px-4 py-2 text-gray-500 font-mono">{line.code}</td>
-                      <td className="px-4 py-2 text-gray-700">{line.name}</td>
-                      <td className="px-4 py-2 text-right text-gray-800 font-medium">{fmtCurrency(line.amount)}</td>
-                    </tr>
-                  ))}
-                  {data.inputGST.length === 0 && (
-                    <tr><td colSpan={3} className="px-4 py-4 text-center text-gray-400">No input GST entries</td></tr>
-                  )}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-green-50 font-semibold">
-                    <td colSpan={2} className="px-4 py-2 text-green-800">Total Input GST</td>
-                    <td className="px-4 py-2 text-right text-green-800">{fmtCurrency(data.totalInput)}</td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </div>
-
-          {/* Print footer */}
-          <div className="text-center text-xs text-gray-400 mt-4 print:block hidden">
-            Generated from MSPIL Distillery ERP — {new Date().toLocaleDateString('en-IN')}
-          </div>
-        </>
-      )}
-
-      {!loading && !data && (
-        <div className="p-6 text-gray-500 text-center">Select a date range to view GST summary</div>
-      )}
     </div>
   );
 }

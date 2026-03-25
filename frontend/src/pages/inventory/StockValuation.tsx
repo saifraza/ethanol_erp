@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { DollarSign, Printer } from 'lucide-react';
+import { Printer } from 'lucide-react';
 import api from '../../services/api';
 
 interface ValuationItem {
@@ -88,119 +88,111 @@ export default function StockValuation() {
 
   if (loading) {
     return (
-      <div className="p-6">
-        <div className="flex items-center gap-3 mb-6">
-          <DollarSign className="w-7 h-7 text-emerald-600" />
-          <h1 className="text-2xl font-bold text-gray-800">Stock Valuation</h1>
-        </div>
-        <div className="bg-white rounded-xl shadow-sm border p-12 text-center text-gray-500">
-          Loading valuation report...
-        </div>
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-sm text-slate-400">Loading...</div>
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between print:hidden">
-        <div className="flex items-center gap-3">
-          <DollarSign className="w-7 h-7 text-emerald-600" />
-          <h1 className="text-2xl font-bold text-gray-800">Stock Valuation</h1>
-        </div>
-        <button
-          onClick={() => window.print()}
-          className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50 text-sm"
-        >
-          <Printer className="w-4 h-4" />
-          Print
-        </button>
-      </div>
-
-      {/* Print Header */}
-      <div className="hidden print:block text-center mb-4">
-        <h1 className="text-xl font-bold">MSPIL — Stock Valuation Report</h1>
-        <p className="text-sm text-gray-500">
-          As on {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}
-        </p>
-      </div>
-
-      {/* Summary Card */}
-      <div className="bg-gradient-to-r from-emerald-500 to-teal-600 rounded-xl p-6 text-white print:bg-white print:text-black print:border">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div>
-            <p className="text-emerald-100 print:text-gray-500 text-sm">Total Stock Value</p>
-            <p className="text-3xl font-bold mt-1">{formatCurrency(grandTotal)}</p>
-          </div>
-          <div>
-            <p className="text-emerald-100 print:text-gray-500 text-sm">Total Items</p>
-            <p className="text-3xl font-bold mt-1">{grandQtyItems}</p>
-          </div>
-          <div>
-            <p className="text-emerald-100 print:text-gray-500 text-sm">Categories</p>
-            <p className="text-3xl font-bold mt-1">{grouped.length}</p>
+    <div className="min-h-screen bg-slate-50">
+      <div className="p-3 md:p-6 space-y-0">
+        {/* Page Toolbar */}
+        <div className="bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6 flex items-center justify-between print:hidden">
+          <h1 className="text-sm font-bold tracking-wide uppercase">STOCK VALUATION</h1>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => window.print()}
+              className="flex items-center gap-1.5 px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              Print
+            </button>
           </div>
         </div>
-      </div>
 
-      {/* Category Tables */}
-      {items.length === 0 ? (
-        <div className="bg-white rounded-xl shadow-sm border p-12 text-center text-gray-400">
-          No stock data available
+        {/* Print Header */}
+        <div className="hidden print:block text-center mb-4">
+          <h1 className="text-lg font-bold">MSPIL - Stock Valuation Report</h1>
+          <p className="text-[11px] text-slate-500">
+            As on {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}
+          </p>
         </div>
-      ) : (
-        grouped.map((group) => (
-          <div key={group.category} className="bg-white rounded-xl shadow-sm border overflow-hidden print:break-inside-avoid">
-            <div className="px-6 py-3 bg-gray-50 border-b flex items-center justify-between">
-              <h2 className="font-semibold text-gray-800">{group.category}</h2>
-              <div className="text-sm text-gray-500">
-                {group.totalItems} items | {formatCurrency(group.totalValue)}
+
+        {/* KPI Strip */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6 print:grid-cols-3">
+          <div className="bg-white border-b border-r border-slate-200 px-4 py-3 border-l-4 border-l-emerald-500">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Total Stock Value</div>
+            <div className="text-xl font-bold text-slate-800 font-mono tabular-nums">{formatCurrency(grandTotal)}</div>
+          </div>
+          <div className="bg-white border-b border-r border-slate-200 px-4 py-3 border-l-4 border-l-blue-500">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Total Items</div>
+            <div className="text-xl font-bold text-slate-800 font-mono tabular-nums">{grandQtyItems}</div>
+          </div>
+          <div className="bg-white border-b border-r border-slate-200 px-4 py-3 border-l-4 border-l-slate-500">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Categories</div>
+            <div className="text-xl font-bold text-slate-800 font-mono tabular-nums">{grouped.length}</div>
+          </div>
+        </div>
+
+        {/* Category Tables */}
+        {items.length === 0 ? (
+          <div className="text-center py-16 bg-white border-x border-b border-slate-300 -mx-3 md:-mx-6">
+            <div className="text-slate-300 text-sm">No stock data available</div>
+          </div>
+        ) : (
+          grouped.map((group) => (
+            <div key={group.category} className="border-x border-b border-slate-300 -mx-3 md:-mx-6 overflow-hidden print:break-inside-avoid">
+              {/* Category Header */}
+              <div className="bg-slate-800 text-white px-4 py-2 flex items-center justify-between">
+                <h2 className="text-xs font-bold uppercase tracking-wide">{group.category}</h2>
+                <span className="text-[11px] text-slate-300">
+                  {group.totalItems} items | {formatCurrency(group.totalValue)}
+                </span>
               </div>
-            </div>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-gray-500 text-left text-xs uppercase tracking-wide">
-                  <th className="px-4 py-2.5 font-medium">Item Code</th>
-                  <th className="px-4 py-2.5 font-medium">Name</th>
-                  <th className="px-4 py-2.5 font-medium">Unit</th>
-                  <th className="px-4 py-2.5 font-medium text-right">Qty</th>
-                  <th className="px-4 py-2.5 font-medium text-right">Avg Cost</th>
-                  <th className="px-4 py-2.5 font-medium text-right">Value</th>
-                </tr>
-              </thead>
-              <tbody>
-                {group.items.map((item) => (
-                  <tr key={item.id} className="border-t hover:bg-gray-50">
-                    <td className="px-4 py-2 font-mono text-xs text-gray-600">{item.code || '—'}</td>
-                    <td className="px-4 py-2 font-medium">{item.name}</td>
-                    <td className="px-4 py-2 text-gray-600">{item.unit}</td>
-                    <td className="px-4 py-2 text-right">{formatNum(item.currentStock)}</td>
-                    <td className="px-4 py-2 text-right text-gray-600">{formatCurrency(item.avgCost)}</td>
-                    <td className="px-4 py-2 text-right font-semibold">{formatCurrency(item.totalValue)}</td>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-slate-800 text-white">
+                    <th className="text-left px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Item Code</th>
+                    <th className="text-left px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Name</th>
+                    <th className="text-left px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Unit</th>
+                    <th className="text-right px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Qty</th>
+                    <th className="text-right px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Avg Cost</th>
+                    <th className="text-right px-3 py-2 font-medium text-[11px] uppercase tracking-wider">Value</th>
                   </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t bg-gray-50 font-semibold">
-                  <td colSpan={5} className="px-4 py-2.5 text-right text-gray-600">
-                    Category Total
-                  </td>
-                  <td className="px-4 py-2.5 text-right">{formatCurrency(group.totalValue)}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        ))
-      )}
+                </thead>
+                <tbody>
+                  {group.items.map((item) => (
+                    <tr key={item.id} className="border-b border-slate-100 hover:bg-blue-50/40 even:bg-slate-50/50">
+                      <td className="px-3 py-1.5 font-mono text-xs text-slate-500 border-r border-slate-100">{item.code || '--'}</td>
+                      <td className="px-3 py-1.5 text-slate-700 font-medium border-r border-slate-100">{item.name}</td>
+                      <td className="px-3 py-1.5 text-slate-500 border-r border-slate-100">{item.unit}</td>
+                      <td className="px-3 py-1.5 text-right text-slate-700 font-mono tabular-nums border-r border-slate-100">{formatNum(item.currentStock)}</td>
+                      <td className="px-3 py-1.5 text-right text-slate-500 font-mono tabular-nums border-r border-slate-100">{formatCurrency(item.avgCost)}</td>
+                      <td className="px-3 py-1.5 text-right text-slate-800 font-semibold font-mono tabular-nums">{formatCurrency(item.totalValue)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                {/* Category Footer */}
+                <tfoot>
+                  <tr className="bg-slate-800 text-white font-semibold">
+                    <td colSpan={5} className="px-3 py-2 text-xs border-r border-slate-700">Category Total</td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums">{formatCurrency(group.totalValue)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          ))
+        )}
 
-      {/* Grand Total */}
-      {items.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-          <div className="px-6 py-4 flex items-center justify-between bg-emerald-50">
-            <span className="text-lg font-bold text-gray-800">Grand Total</span>
-            <span className="text-lg font-bold text-emerald-700">{formatCurrency(grandTotal)}</span>
+        {/* Grand Total */}
+        {items.length > 0 && (
+          <div className="bg-slate-800 text-white px-6 py-4 flex items-center justify-between -mx-3 md:-mx-6 border-x border-b border-slate-300">
+            <span className="text-sm font-bold uppercase tracking-wider">Grand Total</span>
+            <span className="text-xl font-bold font-mono tabular-nums">{formatCurrency(grandTotal)}</span>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

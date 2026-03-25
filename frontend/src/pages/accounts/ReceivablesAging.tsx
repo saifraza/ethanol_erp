@@ -29,8 +29,8 @@ const fmtCurrency = (n: number): string => {
 
 const bucketColor = (bucket: string): string => {
   switch (bucket) {
-    case '0-30': return 'text-green-700 bg-green-50';
-    case '31-60': return 'text-yellow-700 bg-yellow-50';
+    case '0-30': return 'text-emerald-700 bg-emerald-50';
+    case '31-60': return 'text-amber-700 bg-amber-50';
     case '61-90': return 'text-orange-700 bg-orange-50';
     case '90+': return 'text-red-700 bg-red-50';
     default: return '';
@@ -76,84 +76,108 @@ export default function ReceivablesAging() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  if (loading) return <div className="p-6 text-gray-500">Loading Receivables Aging...</div>;
-  if (!data) return <div className="p-6 text-gray-500">Failed to load data</div>;
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-xs text-slate-400">Loading Receivables Aging...</div>
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-xs text-slate-400">Failed to load data</div>
+      </div>
+    );
+  }
 
   const totalReceivable = data.totals.total;
   const overdue = data.totals.bucket31to60 + data.totals.bucket61to90 + data.totals.bucket90plus;
   const critical = data.totals.bucket90plus;
 
   return (
-    <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-bold text-gray-800">Receivables Aging</h1>
+    <div className="min-h-screen bg-slate-50">
+      <div className="p-3 md:p-6 space-y-0">
+        {/* ── Page toolbar ── */}
+        <div className="bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <h1 className="text-sm font-bold tracking-wide uppercase">Receivables Aging</h1>
+            <span className="text-[10px] text-slate-400">|</span>
+            <span className="text-[10px] text-slate-400">Accounts Receivable Analysis</span>
+          </div>
+        </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="text-xs text-gray-500 uppercase tracking-wide">Total Receivable</div>
-          <div className="text-2xl font-bold text-gray-800 mt-1">{fmtCurrency(totalReceivable)}</div>
+        {/* ── KPI strip ── */}
+        <div className="grid grid-cols-3 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+          <div className="bg-white px-4 py-3 border-r border-slate-300">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Total Receivable</div>
+            <div className="text-xl font-bold text-slate-800 font-mono tabular-nums">{fmtCurrency(totalReceivable)}</div>
+          </div>
+          <div className="bg-white px-4 py-3 border-r border-slate-300">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Overdue (&gt;30 days)</div>
+            <div className="text-xl font-bold text-amber-700 font-mono tabular-nums">{fmtCurrency(overdue)}</div>
+          </div>
+          <div className="bg-white px-4 py-3">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Critical (&gt;90 days)</div>
+            <div className="text-xl font-bold text-red-700 font-mono tabular-nums">{fmtCurrency(critical)}</div>
+          </div>
         </div>
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="text-xs text-gray-500 uppercase tracking-wide">Overdue (&gt;30 days)</div>
-          <div className="text-2xl font-bold text-orange-600 mt-1">{fmtCurrency(overdue)}</div>
-        </div>
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="text-xs text-gray-500 uppercase tracking-wide">Critical (&gt;90 days)</div>
-          <div className="text-2xl font-bold text-red-600 mt-1">{fmtCurrency(critical)}</div>
-        </div>
-      </div>
 
-      {/* Aging Table */}
-      <div className="bg-white rounded-lg shadow overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-gray-50 text-left">
-              <th className="px-4 py-3 font-medium text-gray-600">Customer</th>
-              <th className="px-4 py-3 font-medium text-gray-600 text-right">0-30 days</th>
-              <th className="px-4 py-3 font-medium text-gray-600 text-right">31-60 days</th>
-              <th className="px-4 py-3 font-medium text-gray-600 text-right">61-90 days</th>
-              <th className="px-4 py-3 font-medium text-gray-600 text-right">90+ days</th>
-              <th className="px-4 py-3 font-medium text-gray-600 text-right">Total</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {data.rows.map(row => (
-              <tr key={row.customerId} className="hover:bg-gray-50">
-                <td className="px-4 py-3 font-medium text-gray-800">{row.customerName}</td>
-                <td className={`px-4 py-3 text-right rounded ${row.bucket0to30 > 0 ? bucketColor('0-30') : ''}`}>
-                  {row.bucket0to30 > 0 ? fmtCurrency(row.bucket0to30) : '—'}
-                </td>
-                <td className={`px-4 py-3 text-right rounded ${row.bucket31to60 > 0 ? bucketColor('31-60') : ''}`}>
-                  {row.bucket31to60 > 0 ? fmtCurrency(row.bucket31to60) : '—'}
-                </td>
-                <td className={`px-4 py-3 text-right rounded ${row.bucket61to90 > 0 ? bucketColor('61-90') : ''}`}>
-                  {row.bucket61to90 > 0 ? fmtCurrency(row.bucket61to90) : '—'}
-                </td>
-                <td className={`px-4 py-3 text-right rounded ${row.bucket90plus > 0 ? bucketColor('90+') : ''}`}>
-                  {row.bucket90plus > 0 ? fmtCurrency(row.bucket90plus) : '—'}
-                </td>
-                <td className="px-4 py-3 text-right font-semibold text-gray-800">{fmtCurrency(row.total)}</td>
-              </tr>
-            ))}
-            {data.rows.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-400">No receivables data</td>
-              </tr>
-            )}
-          </tbody>
-          {data.rows.length > 0 && (
-            <tfoot>
-              <tr className="bg-gray-50 font-semibold">
-                <td className="px-4 py-3 text-gray-800">Total</td>
-                <td className={`px-4 py-3 text-right ${bucketColor('0-30')}`}>{fmtCurrency(data.totals.bucket0to30)}</td>
-                <td className={`px-4 py-3 text-right ${bucketColor('31-60')}`}>{fmtCurrency(data.totals.bucket31to60)}</td>
-                <td className={`px-4 py-3 text-right ${bucketColor('61-90')}`}>{fmtCurrency(data.totals.bucket61to90)}</td>
-                <td className={`px-4 py-3 text-right ${bucketColor('90+')}`}>{fmtCurrency(data.totals.bucket90plus)}</td>
-                <td className="px-4 py-3 text-right text-gray-800">{fmtCurrency(data.totals.total)}</td>
-              </tr>
-            </tfoot>
-          )}
-        </table>
+        {/* ── Aging Table ── */}
+        <div className="border-x border-b border-slate-300 -mx-3 md:-mx-6 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-slate-800 text-white">
+                  <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Customer</th>
+                  <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">0-30 Days</th>
+                  <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">31-60 Days</th>
+                  <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">61-90 Days</th>
+                  <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">90+ Days</th>
+                  <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.rows.map(row => (
+                  <tr key={row.customerId} className="border-t border-slate-200 hover:bg-blue-50/30 even:bg-slate-50/50">
+                    <td className="px-3 py-1.5 font-medium text-slate-800 border-r border-slate-100">{row.customerName}</td>
+                    <td className={`px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100 ${row.bucket0to30 > 0 ? bucketColor('0-30') : 'text-slate-400'}`}>
+                      {row.bucket0to30 > 0 ? fmtCurrency(row.bucket0to30) : '—'}
+                    </td>
+                    <td className={`px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100 ${row.bucket31to60 > 0 ? bucketColor('31-60') : 'text-slate-400'}`}>
+                      {row.bucket31to60 > 0 ? fmtCurrency(row.bucket31to60) : '—'}
+                    </td>
+                    <td className={`px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100 ${row.bucket61to90 > 0 ? bucketColor('61-90') : 'text-slate-400'}`}>
+                      {row.bucket61to90 > 0 ? fmtCurrency(row.bucket61to90) : '—'}
+                    </td>
+                    <td className={`px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100 ${row.bucket90plus > 0 ? bucketColor('90+') : 'text-slate-400'}`}>
+                      {row.bucket90plus > 0 ? fmtCurrency(row.bucket90plus) : '—'}
+                    </td>
+                    <td className="px-3 py-1.5 text-right font-semibold text-slate-800 font-mono tabular-nums">{fmtCurrency(row.total)}</td>
+                  </tr>
+                ))}
+                {data.rows.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-8 text-center text-slate-400 text-xs">No receivables data</td>
+                  </tr>
+                )}
+              </tbody>
+              {data.rows.length > 0 && (
+                <tfoot>
+                  <tr className="bg-slate-800 text-white font-semibold text-xs">
+                    <td className="px-3 py-2 border-r border-slate-700">Total</td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-700">{fmtCurrency(data.totals.bucket0to30)}</td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-700">{fmtCurrency(data.totals.bucket31to60)}</td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-700">{fmtCurrency(data.totals.bucket61to90)}</td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-700">{fmtCurrency(data.totals.bucket90plus)}</td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums">{fmtCurrency(data.totals.total)}</td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </div>
       </div>
     </div>
   );

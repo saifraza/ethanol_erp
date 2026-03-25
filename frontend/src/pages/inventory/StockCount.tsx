@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { ClipboardCheck, Plus, X, Save, Loader2, CheckCircle, ArrowLeft } from 'lucide-react';
+import { Plus, X, Save, Loader2, CheckCircle, ArrowLeft } from 'lucide-react';
 import api from '../../services/api';
 
 interface Warehouse {
@@ -43,10 +43,10 @@ interface StockCountDetail extends StockCountSummary {
 }
 
 const STATUS_STYLES: Record<string, string> = {
-  DRAFT: 'bg-gray-100 text-gray-700',
-  IN_PROGRESS: 'bg-yellow-100 text-yellow-700',
-  COMPLETED: 'bg-blue-100 text-blue-700',
-  APPROVED: 'bg-green-100 text-green-700',
+  DRAFT: 'border-slate-300 bg-slate-50 text-slate-600',
+  IN_PROGRESS: 'border-amber-300 bg-amber-50 text-amber-700',
+  COMPLETED: 'border-blue-300 bg-blue-50 text-blue-700',
+  APPROVED: 'border-emerald-300 bg-emerald-50 text-emerald-700',
 };
 
 const COUNT_TYPE_LABELS: Record<string, string> = {
@@ -191,188 +191,195 @@ export default function StockCount() {
   // Detail View
   if (detail) {
     return (
-      <div className="p-6 space-y-6">
-        {/* Header */}
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => setDetail(null)}
-            className="p-2 rounded-lg hover:bg-gray-100"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div className="flex-1">
-            <h1 className="text-2xl font-bold text-gray-800">
-              Stock Count #{detail.countNo}
-            </h1>
-            <p className="text-sm text-gray-500 mt-0.5">
-              {detail.warehouse?.name || 'Warehouse'} | {COUNT_TYPE_LABELS[detail.countType]} |{' '}
-              {formatDate(detail.countDate)}
-            </p>
-          </div>
-          <span
-            className={`px-3 py-1 rounded-full text-sm font-medium ${STATUS_STYLES[detail.status]}`}
-          >
-            {detail.status.replace('_', ' ')}
-          </span>
-        </div>
-
-        {msg && (
-          <div
-            className={`px-4 py-3 rounded-lg text-sm ${
-              msg.type === 'ok' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-            }`}
-          >
-            {msg.text}
-          </div>
-        )}
-
-        {/* Lines Table */}
-        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gray-50 text-gray-600 text-left">
-                  <th className="px-4 py-3 font-medium">#</th>
-                  <th className="px-4 py-3 font-medium">Item</th>
-                  <th className="px-4 py-3 font-medium">Bin</th>
-                  <th className="px-4 py-3 font-medium text-right">System Qty</th>
-                  <th className="px-4 py-3 font-medium text-right">Physical Qty</th>
-                  <th className="px-4 py-3 font-medium text-right">Variance</th>
-                  <th className="px-4 py-3 font-medium text-right">Variance %</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(detail.lines || []).map((line, idx) => {
-                  const physQty =
-                    lineEdits[line.id] !== undefined && lineEdits[line.id] !== ''
-                      ? parseFloat(lineEdits[line.id])
-                      : null;
-                  const variance = physQty !== null ? physQty - line.systemQty : null;
-                  const variancePct =
-                    variance !== null && line.systemQty !== 0
-                      ? (variance / line.systemQty) * 100
-                      : variance !== null && line.systemQty === 0 && physQty !== 0
-                      ? 100
-                      : null;
-                  const isHighVariance =
-                    variancePct !== null && Math.abs(variancePct) > 5;
-                  const isEditable =
-                    detail.status === 'DRAFT' ||
-                    detail.status === 'IN_PROGRESS';
-
-                  return (
-                    <tr
-                      key={line.id}
-                      className={`border-t ${isHighVariance ? 'bg-red-50' : 'hover:bg-gray-50'}`}
-                    >
-                      <td className="px-4 py-2.5 text-gray-400">{idx + 1}</td>
-                      <td className="px-4 py-2.5">
-                        <div className="font-medium">
-                          {line.item?.code && (
-                            <span className="text-gray-500 mr-1">{line.item.code}</span>
-                          )}
-                          {line.item?.name || line.itemId}
-                        </div>
-                        {line.batch && (
-                          <div className="text-xs text-gray-400">Batch: {line.batch.batchNo}</div>
-                        )}
-                      </td>
-                      <td className="px-4 py-2.5 text-gray-600">{line.bin?.code || '—'}</td>
-                      <td className="px-4 py-2.5 text-right font-medium">
-                        {line.systemQty.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                      </td>
-                      <td className="px-4 py-2.5 text-right">
-                        {isEditable ? (
-                          <input
-                            type="number"
-                            step="0.01"
-                            className={`w-28 text-right py-1 px-2 border rounded text-sm focus:ring-2 focus:ring-blue-500 ${
-                              isHighVariance ? 'border-red-300 bg-red-50' : ''
-                            }`}
-                            value={lineEdits[line.id] ?? ''}
-                            onChange={(e) =>
-                              setLineEdits((prev) => ({ ...prev, [line.id]: e.target.value }))
-                            }
-                            placeholder="—"
-                          />
-                        ) : (
-                          <span className="font-medium">
-                            {line.physicalQty !== null
-                              ? line.physicalQty.toLocaleString('en-IN', { maximumFractionDigits: 2 })
-                              : '—'}
-                          </span>
-                        )}
-                      </td>
-                      <td
-                        className={`px-4 py-2.5 text-right font-medium ${
-                          isHighVariance
-                            ? 'text-red-600'
-                            : variance !== null && variance !== 0
-                            ? 'text-orange-600'
-                            : 'text-gray-500'
-                        }`}
-                      >
-                        {variance !== null
-                          ? variance.toLocaleString('en-IN', { maximumFractionDigits: 2 })
-                          : '—'}
-                      </td>
-                      <td
-                        className={`px-4 py-2.5 text-right font-medium ${
-                          isHighVariance ? 'text-red-600 font-bold' : 'text-gray-500'
-                        }`}
-                      >
-                        {variancePct !== null ? `${variancePct.toFixed(1)}%` : '—'}
-                      </td>
-                    </tr>
-                  );
-                })}
-                {(detail.lines || []).length === 0 && (
-                  <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
-                      No count lines found
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Action Buttons */}
-          {(detail.status === 'DRAFT' || detail.status === 'IN_PROGRESS') && (
-            <div className="px-6 py-4 bg-gray-50 border-t flex items-center justify-between">
-              <p className="text-xs text-gray-500">
-                {Object.values(lineEdits).filter((v) => v !== '').length} of{' '}
-                {detail.lines.length} items counted
-              </p>
-              <div className="flex gap-3">
-                <button
-                  onClick={handleSaveLines}
-                  disabled={saving}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm"
-                >
-                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  Save Counts
-                </button>
+      <div className="min-h-screen bg-slate-50">
+        <div className="p-3 md:p-6 space-y-0">
+          {/* Detail Toolbar */}
+          <div className="bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setDetail(null)}
+                className="p-1 hover:bg-slate-700 transition-colors"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+              <div>
+                <h1 className="text-sm font-bold tracking-wide uppercase">
+                  Stock Count #{detail.countNo}
+                </h1>
+                <p className="text-[11px] text-slate-300 mt-0.5">
+                  {detail.warehouse?.name || 'Warehouse'} | {COUNT_TYPE_LABELS[detail.countType]} | {formatDate(detail.countDate)}
+                </p>
               </div>
             </div>
-          )}
+            <span
+              className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${STATUS_STYLES[detail.status]}`}
+            >
+              {detail.status.replace('_', ' ')}
+            </span>
+          </div>
 
-          {detail.status === 'COMPLETED' && (
-            <div className="px-6 py-4 bg-gray-50 border-t flex justify-end">
-              <button
-                onClick={handleApprove}
-                disabled={approving}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 text-sm"
-              >
-                {approving ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <CheckCircle className="w-4 h-4" />
-                )}
-                Approve & Post Adjustments
-              </button>
+          {/* Flash Message */}
+          {msg && (
+            <div
+              className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium border -mx-3 md:-mx-6 ${
+                msg.type === 'ok'
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                  : 'bg-red-50 text-red-700 border-red-300'
+              }`}
+            >
+              {msg.text}
             </div>
           )}
+
+          {/* Lines Table */}
+          <div className="border-x border-b border-slate-300 -mx-3 md:-mx-6 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-slate-800 text-white">
+                    <th className="text-left px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">#</th>
+                    <th className="text-left px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Item</th>
+                    <th className="text-left px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Bin</th>
+                    <th className="text-right px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">System Qty</th>
+                    <th className="text-right px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Physical Qty</th>
+                    <th className="text-right px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Variance</th>
+                    <th className="text-right px-3 py-2 font-medium text-[11px] uppercase tracking-wider">Variance %</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(detail.lines || []).map((line, idx) => {
+                    const physQty =
+                      lineEdits[line.id] !== undefined && lineEdits[line.id] !== ''
+                        ? parseFloat(lineEdits[line.id])
+                        : null;
+                    const variance = physQty !== null ? physQty - line.systemQty : null;
+                    const variancePct =
+                      variance !== null && line.systemQty !== 0
+                        ? (variance / line.systemQty) * 100
+                        : variance !== null && line.systemQty === 0 && physQty !== 0
+                        ? 100
+                        : null;
+                    const isHighVariance =
+                      variancePct !== null && Math.abs(variancePct) > 5;
+                    const isEditable =
+                      detail.status === 'DRAFT' ||
+                      detail.status === 'IN_PROGRESS';
+
+                    return (
+                      <tr
+                        key={line.id}
+                        className={`border-b border-slate-100 ${isHighVariance ? 'bg-red-50' : 'hover:bg-blue-50/40 even:bg-slate-50/50'}`}
+                      >
+                        <td className="px-3 py-1.5 text-slate-400 text-xs border-r border-slate-100">{idx + 1}</td>
+                        <td className="px-3 py-1.5 border-r border-slate-100">
+                          <div className="text-slate-700 font-medium">
+                            {line.item?.code && (
+                              <span className="text-slate-400 font-mono text-xs mr-1.5">{line.item.code}</span>
+                            )}
+                            {line.item?.name || line.itemId}
+                          </div>
+                          {line.batch && (
+                            <div className="text-[11px] text-slate-400 mt-0.5">Batch: {line.batch.batchNo}</div>
+                          )}
+                        </td>
+                        <td className="px-3 py-1.5 text-slate-500 border-r border-slate-100">{line.bin?.code || '--'}</td>
+                        <td className="px-3 py-1.5 text-right text-slate-700 font-mono tabular-nums font-medium border-r border-slate-100">
+                          {line.systemQty.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                        </td>
+                        <td className="px-3 py-1.5 text-right border-r border-slate-100">
+                          {isEditable ? (
+                            <input
+                              type="number"
+                              step="0.01"
+                              className={`w-28 text-right border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 ${
+                                isHighVariance ? 'border-red-300 bg-red-50' : ''
+                              }`}
+                              value={lineEdits[line.id] ?? ''}
+                              onChange={(e) =>
+                                setLineEdits((prev) => ({ ...prev, [line.id]: e.target.value }))
+                              }
+                              placeholder="--"
+                            />
+                          ) : (
+                            <span className="font-mono tabular-nums font-medium text-slate-700">
+                              {line.physicalQty !== null
+                                ? line.physicalQty.toLocaleString('en-IN', { maximumFractionDigits: 2 })
+                                : '--'}
+                            </span>
+                          )}
+                        </td>
+                        <td
+                          className={`px-3 py-1.5 text-right font-mono tabular-nums font-medium border-r border-slate-100 ${
+                            isHighVariance
+                              ? 'text-red-600'
+                              : variance !== null && variance !== 0
+                              ? 'text-orange-600'
+                              : 'text-slate-400'
+                          }`}
+                        >
+                          {variance !== null
+                            ? variance.toLocaleString('en-IN', { maximumFractionDigits: 2 })
+                            : '--'}
+                        </td>
+                        <td
+                          className={`px-3 py-1.5 text-right font-mono tabular-nums font-medium ${
+                            isHighVariance ? 'text-red-600 font-bold' : 'text-slate-400'
+                          }`}
+                        >
+                          {variancePct !== null ? `${variancePct.toFixed(1)}%` : '--'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {(detail.lines || []).length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-12 text-center text-slate-300 text-sm">
+                        No count lines found
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Action Footer - Save */}
+            {(detail.status === 'DRAFT' || detail.status === 'IN_PROGRESS') && (
+              <div className="bg-slate-50 border-t border-slate-200 px-5 py-3 flex items-center justify-between">
+                <p className="text-[11px] text-slate-500">
+                  {Object.values(lineEdits).filter((v) => v !== '').length} of{' '}
+                  {detail.lines.length} items counted
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleSaveLines}
+                    disabled={saving}
+                    className="flex items-center gap-1.5 px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                    Save Counts
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Action Footer - Approve */}
+            {detail.status === 'COMPLETED' && (
+              <div className="bg-slate-50 border-t border-slate-200 px-5 py-3 flex justify-end">
+                <button
+                  onClick={handleApprove}
+                  disabled={approving}
+                  className="flex items-center gap-1.5 px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {approving ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <CheckCircle className="w-3.5 h-3.5" />
+                  )}
+                  Approve & Post Adjustments
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -380,151 +387,155 @@ export default function StockCount() {
 
   // List View
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <ClipboardCheck className="w-7 h-7 text-purple-600" />
-          <h1 className="text-2xl font-bold text-gray-800">Stock Counts</h1>
-        </div>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm"
-        >
-          <Plus className="w-4 h-4" />
-          New Count
-        </button>
-      </div>
-
-      {msg && (
-        <div
-          className={`px-4 py-3 rounded-lg text-sm ${
-            msg.type === 'ok' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-          }`}
-        >
-          {msg.text}
-        </div>
-      )}
-
-      {/* Create Modal */}
-      {showCreate && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">New Stock Count</h2>
-              <button onClick={() => setShowCreate(false)} className="p-1 hover:bg-gray-100 rounded">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Warehouse *</label>
-              <select
-                className="w-full py-2 px-3 border rounded-lg text-sm focus:ring-2 focus:ring-purple-500"
-                value={createWarehouseId}
-                onChange={(e) => setCreateWarehouseId(e.target.value)}
-              >
-                <option value="">Select warehouse...</option>
-                {warehouses.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.code} — {w.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Count Type</label>
-              <select
-                className="w-full py-2 px-3 border rounded-lg text-sm focus:ring-2 focus:ring-purple-500"
-                value={createType}
-                onChange={(e) => setCreateType(e.target.value)}
-              >
-                <option value="FULL">Full Count</option>
-                <option value="CYCLE">Cycle Count</option>
-                <option value="SPOT">Spot Check</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Remarks</label>
-              <textarea
-                className="w-full py-2 px-3 border rounded-lg text-sm focus:ring-2 focus:ring-purple-500"
-                rows={2}
-                value={createRemarks}
-                onChange={(e) => setCreateRemarks(e.target.value)}
-                placeholder="Optional notes..."
-              />
-            </div>
-
-            <div className="flex justify-end gap-3 pt-2">
-              <button
-                onClick={() => setShowCreate(false)}
-                className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCreate}
-                disabled={creating || !createWarehouseId}
-                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 text-sm"
-              >
-                {creating && <Loader2 className="w-4 h-4 animate-spin" />}
-                Create Count
-              </button>
-            </div>
+    <div className="min-h-screen bg-slate-50">
+      <div className="p-3 md:p-6 space-y-0">
+        {/* Page Toolbar */}
+        <div className="bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6 flex items-center justify-between">
+          <h1 className="text-sm font-bold tracking-wide uppercase">STOCK COUNTS</h1>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowCreate(true)}
+              className="flex items-center gap-1.5 px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              New Count
+            </button>
           </div>
         </div>
-      )}
 
-      {/* Counts List */}
-      {loading ? (
-        <div className="bg-white rounded-xl shadow-sm border p-12 text-center text-gray-500">
-          Loading...
-        </div>
-      ) : counts.length === 0 ? (
-        <div className="bg-white rounded-xl shadow-sm border p-12 text-center text-gray-400">
-          <ClipboardCheck className="w-12 h-12 mx-auto mb-3 opacity-50" />
-          <p className="text-lg">No stock counts yet</p>
-          <p className="text-sm mt-1">Create a new count to start physical inventory verification</p>
-        </div>
-      ) : (
-        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 text-gray-600 text-left">
-                <th className="px-4 py-3 font-medium">Count #</th>
-                <th className="px-4 py-3 font-medium">Date</th>
-                <th className="px-4 py-3 font-medium">Warehouse</th>
-                <th className="px-4 py-3 font-medium">Type</th>
-                <th className="px-4 py-3 font-medium text-center">Lines</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {counts.map((c) => (
-                <tr
-                  key={c.id}
-                  className="border-t hover:bg-gray-50 cursor-pointer"
-                  onClick={() => openDetail(c.id)}
+        {/* Flash Message */}
+        {msg && (
+          <div
+            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium border -mx-3 md:-mx-6 ${
+              msg.type === 'ok'
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                : 'bg-red-50 text-red-700 border-red-300'
+            }`}
+          >
+            {msg.text}
+          </div>
+        )}
+
+        {/* Create Modal */}
+        {showCreate && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="bg-white shadow-xl w-full max-w-md">
+              <div className="bg-slate-800 text-white px-5 py-3 flex items-center justify-between">
+                <h2 className="text-xs font-bold uppercase tracking-wide">New Stock Count</h2>
+                <button onClick={() => setShowCreate(false)} className="p-1 text-white/70 hover:text-white">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-5 space-y-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Warehouse *</label>
+                  <select
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400"
+                    value={createWarehouseId}
+                    onChange={(e) => setCreateWarehouseId(e.target.value)}
+                  >
+                    <option value="">Select warehouse...</option>
+                    {warehouses.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.code} -- {w.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Count Type</label>
+                  <select
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400"
+                    value={createType}
+                    onChange={(e) => setCreateType(e.target.value)}
+                  >
+                    <option value="FULL">Full Count</option>
+                    <option value="CYCLE">Cycle Count</option>
+                    <option value="SPOT">Spot Check</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Remarks</label>
+                  <textarea
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400"
+                    rows={2}
+                    value={createRemarks}
+                    onChange={(e) => setCreateRemarks(e.target.value)}
+                    placeholder="Optional notes..."
+                  />
+                </div>
+              </div>
+              <div className="bg-slate-50 border-t border-slate-200 px-5 py-3 flex justify-end gap-2">
+                <button
+                  onClick={() => setShowCreate(false)}
+                  className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50"
                 >
-                  <td className="px-4 py-3 font-medium text-purple-600">#{c.countNo}</td>
-                  <td className="px-4 py-3">{formatDate(c.countDate)}</td>
-                  <td className="px-4 py-3">{c.warehouse?.name || c.warehouseId}</td>
-                  <td className="px-4 py-3">{COUNT_TYPE_LABELS[c.countType] || c.countType}</td>
-                  <td className="px-4 py-3 text-center">{c._count?.lines ?? '—'}</td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[c.status]}`}
-                    >
-                      {c.status.replace('_', ' ')}
-                    </span>
-                  </td>
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreate}
+                  disabled={creating || !createWarehouseId}
+                  className="flex items-center gap-1.5 px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {creating && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  Create Count
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Counts List */}
+        {loading ? (
+          <div className="min-h-[200px] bg-white flex items-center justify-center border-x border-b border-slate-300 -mx-3 md:-mx-6">
+            <div className="text-sm text-slate-400">Loading...</div>
+          </div>
+        ) : counts.length === 0 ? (
+          <div className="text-center py-16 bg-white border-x border-b border-slate-300 -mx-3 md:-mx-6">
+            <div className="text-slate-300 text-sm">No stock counts yet</div>
+            <div className="text-slate-300 text-xs mt-1">Create a new count to start physical inventory verification</div>
+          </div>
+        ) : (
+          <div className="border-x border-b border-slate-300 -mx-3 md:-mx-6 overflow-hidden">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-slate-800 text-white">
+                  <th className="text-left px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Count #</th>
+                  <th className="text-left px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Date</th>
+                  <th className="text-left px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Warehouse</th>
+                  <th className="text-left px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Type</th>
+                  <th className="text-center px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Lines</th>
+                  <th className="text-left px-3 py-2 font-medium text-[11px] uppercase tracking-wider">Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </thead>
+              <tbody>
+                {counts.map((c) => (
+                  <tr
+                    key={c.id}
+                    className="border-b border-slate-100 hover:bg-blue-50/40 even:bg-slate-50/50 cursor-pointer"
+                    onClick={() => openDetail(c.id)}
+                  >
+                    <td className="px-3 py-1.5 font-medium text-slate-700 font-mono border-r border-slate-100">#{c.countNo}</td>
+                    <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">{formatDate(c.countDate)}</td>
+                    <td className="px-3 py-1.5 text-slate-700 border-r border-slate-100">{c.warehouse?.name || c.warehouseId}</td>
+                    <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">{COUNT_TYPE_LABELS[c.countType] || c.countType}</td>
+                    <td className="px-3 py-1.5 text-center text-slate-600 font-mono tabular-nums border-r border-slate-100">{c._count?.lines ?? '--'}</td>
+                    <td className="px-3 py-1.5">
+                      <span
+                        className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${STATUS_STYLES[c.status]}`}
+                      >
+                        {c.status.replace('_', ' ')}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
