@@ -33,7 +33,7 @@ export default function DayBook() {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await api.get<DayBookData>('/api/journal-entries/daybook', { params: { date } });
+      const res = await api.get<DayBookData>('/journal-entries/daybook', { params: { date } });
       setData(res.data);
     } catch (err) {
       console.error('Failed to fetch daybook:', err);

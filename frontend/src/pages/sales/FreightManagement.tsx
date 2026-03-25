@@ -1250,8 +1250,8 @@ const FreightManagement: React.FC = () => {
     try {
       setLoading(true);
       const [shipmentsRes, transportersRes] = await Promise.all([
-        api.get('/api/shipments/active'),
-        api.get('/api/transporters'),
+        api.get('/shipments/active'),
+        api.get('/transporters'),
       ]);
 
       setShipments(shipmentsRes.data);
@@ -1272,7 +1272,7 @@ const FreightManagement: React.FC = () => {
     vehicleType: string;
   }) => {
     try {
-      await api.post('/api/freight-inquiries', data);
+      await api.post('/freight-inquiries', data);
       fetchData();
     } catch (error) {
       console.error('Failed to create inquiry:', error);
@@ -1335,7 +1335,7 @@ const FreightManagement: React.FC = () => {
       formData.append('shipmentId', selectedShipment.id);
       formData.append('docType', uploadDocType);
 
-      await api.post('/api/shipment-documents/upload', formData, {
+      await api.post('/shipment-documents/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       fetchData();
@@ -1353,7 +1353,7 @@ const FreightManagement: React.FC = () => {
       const shipment = shipments.find((s) => s.id === shipmentId);
       if (!shipment) return;
 
-      await api.post('/api/transporter-payments', {
+      await api.post('/transporter-payments', {
         shipmentId,
         paymentType,
         amount: data.amount,

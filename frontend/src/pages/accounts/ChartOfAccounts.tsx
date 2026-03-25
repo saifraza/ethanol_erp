@@ -50,8 +50,8 @@ export default function ChartOfAccounts() {
     try {
       setLoading(true);
       const [flatRes, treeRes] = await Promise.all([
-        api.get<Account[]>('/api/chart-of-accounts'),
-        api.get<Account[]>('/api/chart-of-accounts/tree'),
+        api.get<Account[]>('/chart-of-accounts'),
+        api.get<Account[]>('/chart-of-accounts/tree'),
       ]);
       setAccounts(flatRes.data);
       setTree(treeRes.data);
@@ -68,7 +68,7 @@ export default function ChartOfAccounts() {
     if (!confirm('This will create the default Chart of Accounts. Continue?')) return;
     try {
       setSeeding(true);
-      await api.post('/api/chart-of-accounts/seed');
+      await api.post('/chart-of-accounts/seed');
       await fetchAccounts();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Seed failed';
@@ -97,7 +97,7 @@ export default function ChartOfAccounts() {
           openingBalance: payload.openingBalance,
         });
       } else {
-        await api.post('/api/chart-of-accounts', payload);
+        await api.post('/chart-of-accounts', payload);
       }
 
       setShowForm(false);

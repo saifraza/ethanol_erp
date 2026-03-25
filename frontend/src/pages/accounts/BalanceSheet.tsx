@@ -31,7 +31,7 @@ export default function BalanceSheet() {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await api.get<BSData>('/api/journal-entries/balance-sheet', { params: { asOn } });
+      const res = await api.get<BSData>('/journal-entries/balance-sheet', { params: { asOn } });
       setData(res.data);
     } catch (err) {
       console.error('Failed to fetch balance sheet:', err);

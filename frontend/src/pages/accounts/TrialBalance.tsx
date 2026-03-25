@@ -34,7 +34,7 @@ export default function TrialBalance() {
       const params: Record<string, string> = {};
       if (dateRange.from) params.from = dateRange.from;
       if (dateRange.to) params.to = dateRange.to;
-      const res = await api.get<TrialBalanceData>('/api/journal-entries/trial-balance', { params });
+      const res = await api.get<TrialBalanceData>('/journal-entries/trial-balance', { params });
       setData(res.data);
     } catch (err) {
       console.error('Failed to fetch trial balance:', err);

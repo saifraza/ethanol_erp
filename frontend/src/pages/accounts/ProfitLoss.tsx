@@ -29,7 +29,7 @@ export default function ProfitLoss() {
       const params: Record<string, string> = {};
       if (dateRange.from) params.from = dateRange.from;
       if (dateRange.to) params.to = dateRange.to;
-      const res = await api.get<PLData>('/api/journal-entries/profit-loss', { params });
+      const res = await api.get<PLData>('/journal-entries/profit-loss', { params });
       setData(res.data);
     } catch (err) {
       console.error('Failed to fetch P&L:', err);

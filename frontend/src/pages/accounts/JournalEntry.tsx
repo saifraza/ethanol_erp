@@ -68,7 +68,7 @@ export default function JournalEntry() {
       const params: Record<string, string> = { limit: '50', offset: String(page * 50) };
       if (dateFilter.from) params.from = dateFilter.from;
       if (dateFilter.to) params.to = dateFilter.to;
-      const res = await api.get<{ entries: JournalEntryData[]; total: number }>('/api/journal-entries', { params });
+      const res = await api.get<{ entries: JournalEntryData[]; total: number }>('/journal-entries', { params });
       setEntries(res.data.entries);
       setTotal(res.data.total);
     } catch (err) {
@@ -80,7 +80,7 @@ export default function JournalEntry() {
 
   const fetchAccounts = useCallback(async () => {
     try {
-      const res = await api.get<Account[]>('/api/chart-of-accounts');
+      const res = await api.get<Account[]>('/chart-of-accounts');
       setAccounts(res.data);
     } catch (err) {
       console.error('Failed to fetch accounts:', err);
@@ -133,7 +133,7 @@ export default function JournalEntry() {
 
       if (payload.lines.length < 2) { alert('At least 2 lines required (double entry)'); return; }
 
-      await api.post('/api/journal-entries', payload);
+      await api.post('/journal-entries', payload);
       setShowForm(false);
       setForm({ date: new Date().toISOString().split('T')[0], narration: '', refType: 'JOURNAL', lines: [emptyLine(), emptyLine()] });
       await fetchEntries();

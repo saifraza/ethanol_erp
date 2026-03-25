@@ -42,7 +42,7 @@ export default function Ledger() {
 
   const fetchAccounts = useCallback(async () => {
     try {
-      const res = await api.get<Account[]>('/api/chart-of-accounts');
+      const res = await api.get<Account[]>('/chart-of-accounts');
       setAccounts(res.data);
     } catch (err) {
       console.error('Failed to fetch accounts:', err);
