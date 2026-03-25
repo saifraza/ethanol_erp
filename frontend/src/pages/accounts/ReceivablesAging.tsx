@@ -84,17 +84,17 @@ export default function ReceivablesAging() {
     );
   }
 
-  if (!data) {
+  if (!data || !data.rows) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-xs text-slate-400">Failed to load data</div>
+        <div className="text-xs text-slate-400">No receivables aging data available</div>
       </div>
     );
   }
 
-  const totalReceivable = data.totals.total;
-  const overdue = data.totals.bucket31to60 + data.totals.bucket61to90 + data.totals.bucket90plus;
-  const critical = data.totals.bucket90plus;
+  const totalReceivable = data.totals?.total ?? 0;
+  const overdue = (data.totals?.bucket31to60 ?? 0) + (data.totals?.bucket61to90 ?? 0) + (data.totals?.bucket90plus ?? 0);
+  const critical = data.totals?.bucket90plus ?? 0;
 
   return (
     <div className="min-h-screen bg-slate-50">
