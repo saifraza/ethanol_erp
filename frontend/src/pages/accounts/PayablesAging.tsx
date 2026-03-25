@@ -44,7 +44,7 @@ export default function PayablesAging() {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await api.get<AgingData>('/api/accounts-reports/payables-aging');
+      const res = await api.get<AgingData>('/accounts-reports/payables-aging');
       setData(res.data);
     } catch (err) {
       console.error('Failed to fetch payables aging:', err);

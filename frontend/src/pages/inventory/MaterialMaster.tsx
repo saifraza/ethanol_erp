@@ -87,7 +87,7 @@ export default function MaterialMaster() {
       setLoading(true);
       const params: Record<string, string> = { limit: '500' };
       if (categoryFilter) params.category = categoryFilter;
-      const res = await api.get('/api/inventory/items', { params });
+      const res = await api.get('/inventory/items', { params });
       setItems(Array.isArray(res.data) ? res.data : res.data.items ?? []);
     } catch {
       setMsg({ type: 'err', text: 'Failed to load items' });
@@ -156,7 +156,7 @@ export default function MaterialMaster() {
         await api.put(`/api/inventory/items/${editId}`, payload);
         setMsg({ type: 'ok', text: 'Item updated' });
       } else {
-        await api.post('/api/inventory/items', payload);
+        await api.post('/inventory/items', payload);
         setMsg({ type: 'ok', text: 'Item created' });
       }
       setShowForm(false);
@@ -191,8 +191,8 @@ export default function MaterialMaster() {
     try {
       const [levelsRes, movRes, ruleRes] = await Promise.all([
         api.get(`/api/inventory/stock/levels/${id}`),
-        api.get('/api/inventory/movements', { params: { itemId: id, limit: 5 } }),
-        api.get('/api/inventory/reorder/rules', { params: { itemId: id } }).catch(() => ({ data: null })),
+        api.get('/inventory/movements', { params: { itemId: id, limit: 5 } }),
+        api.get('/inventory/reorder/rules', { params: { itemId: id } }).catch(() => ({ data: null })),
       ]);
       setStockLevels(Array.isArray(levelsRes.data) ? levelsRes.data : levelsRes.data.levels ?? []);
       const movData = movRes.data;
@@ -209,7 +209,7 @@ export default function MaterialMaster() {
   const saveReorderRule = async () => {
     if (!reorderRule || !expandedId) return;
     try {
-      await api.post('/api/inventory/reorder/rules', { ...reorderRule, itemId: expandedId });
+      await api.post('/inventory/reorder/rules', { ...reorderRule, itemId: expandedId });
       setMsg({ type: 'ok', text: 'Reorder rule saved' });
     } catch {
       setMsg({ type: 'err', text: 'Failed to save reorder rule' });

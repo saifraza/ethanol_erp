@@ -44,7 +44,7 @@ export default function ReceivablesAging() {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await api.get<AgingData>('/api/accounts-reports/receivables-aging');
+      const res = await api.get<AgingData>('/accounts-reports/receivables-aging');
       setData(res.data);
     } catch (err) {
       console.error('Failed to fetch receivables aging:', err);

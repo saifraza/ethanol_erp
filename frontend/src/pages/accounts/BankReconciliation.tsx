@@ -78,7 +78,7 @@ export default function BankReconciliation() {
 
   const fetchAccounts = useCallback(async () => {
     try {
-      const res = await api.get<Account[]>('/api/chart-of-accounts');
+      const res = await api.get<Account[]>('/chart-of-accounts');
       const bankAccounts = res.data.filter(a => a.code.startsWith('100') || a.subType === 'BANK');
       setAccounts(bankAccounts);
       if (bankAccounts.length > 0 && !selectedAccountId) {
@@ -95,8 +95,8 @@ export default function BankReconciliation() {
       setLoading(true);
       const [summaryRes, unreconRes, reconRes] = await Promise.all([
         api.get<ReconSummary>(`/api/bank-reconciliation/summary/${selectedAccountId}`),
-        api.get<BankTxn[]>('/api/bank-reconciliation', { params: { accountId: selectedAccountId, isReconciled: 'false' } }),
-        api.get<BankTxn[]>('/api/bank-reconciliation', { params: { accountId: selectedAccountId, isReconciled: 'true' } }),
+        api.get<BankTxn[]>('/bank-reconciliation', { params: { accountId: selectedAccountId, isReconciled: 'false' } }),
+        api.get<BankTxn[]>('/bank-reconciliation', { params: { accountId: selectedAccountId, isReconciled: 'true' } }),
       ]);
       setSummary(summaryRes.data);
       setUnreconciled(unreconRes.data);
@@ -115,7 +115,7 @@ export default function BankReconciliation() {
     try {
       setImporting(true);
       const transactions = JSON.parse(importText);
-      await api.post('/api/bank-reconciliation/import', { accountId: selectedAccountId, transactions });
+      await api.post('/bank-reconciliation/import', { accountId: selectedAccountId, transactions });
       setShowImport(false);
       setImportText('');
       await fetchData();
@@ -131,7 +131,7 @@ export default function BankReconciliation() {
     try {
       setAutoMatching(true);
       setAutoMatchResult(null);
-      const res = await api.post<{ matched: number; unmatched: number }>('/api/bank-reconciliation/auto-match', { accountId: selectedAccountId });
+      const res = await api.post<{ matched: number; unmatched: number }>('/bank-reconciliation/auto-match', { accountId: selectedAccountId });
       setAutoMatchResult(res.data);
       await fetchData();
     } catch (err) {
@@ -147,7 +147,7 @@ export default function BankReconciliation() {
     setShowMatch(true);
     try {
       const amount = txn.debit > 0 ? txn.debit : txn.credit;
-      const res = await api.get<JournalOption[]>('/api/bank-reconciliation/journal-suggestions', {
+      const res = await api.get<JournalOption[]>('/bank-reconciliation/journal-suggestions', {
         params: { accountId: selectedAccountId, amount, date: txn.date },
       });
       setJournalOptions(res.data);

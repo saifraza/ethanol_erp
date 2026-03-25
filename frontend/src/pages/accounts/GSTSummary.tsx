@@ -31,7 +31,7 @@ export default function GSTSummary() {
       const params: Record<string, string> = {};
       if (dateRange.from) params.from = dateRange.from;
       if (dateRange.to) params.to = dateRange.to;
-      const res = await api.get<GSTData>('/api/accounts-reports/gst-summary', { params });
+      const res = await api.get<GSTData>('/accounts-reports/gst-summary', { params });
       setData(res.data);
     } catch (err) {
       console.error('Failed to fetch GST summary:', err);

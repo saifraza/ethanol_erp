@@ -53,11 +53,11 @@ export default function StockDashboard() {
     try {
       setLoading(true);
       const [itemsRes, valuationRes, alertsRes, countsRes, movementsRes] = await Promise.all([
-        api.get('/api/inventory/items', { params: { limit: 1 } }),
-        api.get('/api/inventory/stock/valuation'),
-        api.get('/api/inventory/reorder/alerts'),
-        api.get('/api/inventory/counts', { params: { status: 'DRAFT', limit: 1 } }),
-        api.get('/api/inventory/movements', { params: { limit: 10 } }),
+        api.get('/inventory/items', { params: { limit: 1 } }),
+        api.get('/inventory/stock/valuation'),
+        api.get('/inventory/reorder/alerts'),
+        api.get('/inventory/counts', { params: { status: 'DRAFT', limit: 1 } }),
+        api.get('/inventory/movements', { params: { limit: 10 } }),
       ]);
 
       const items = itemsRes.data;

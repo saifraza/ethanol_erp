@@ -95,7 +95,7 @@ export default function StockMovements() {
       if (dateFrom) params.dateFrom = dateFrom;
       if (dateTo) params.dateTo = dateTo;
       if (searchQuery) params.search = searchQuery;
-      const res = await api.get('/api/inventory/movements', { params });
+      const res = await api.get('/inventory/movements', { params });
       setMovements(Array.isArray(res.data) ? res.data : res.data.movements ?? []);
     } catch {
       setMsg({ type: 'err', text: 'Failed to load movements' });
@@ -107,8 +107,8 @@ export default function StockMovements() {
   const fetchLookups = useCallback(async () => {
     try {
       const [whRes, itemRes] = await Promise.all([
-        api.get('/api/inventory/warehouses'),
-        api.get('/api/inventory/items', { params: { limit: 500, select: 'id,code,name,unit' } }),
+        api.get('/inventory/warehouses'),
+        api.get('/inventory/items', { params: { limit: 500, select: 'id,code,name,unit' } }),
       ]);
       setWarehouses(Array.isArray(whRes.data) ? whRes.data : whRes.data.warehouses ?? []);
       setItems(Array.isArray(itemRes.data) ? itemRes.data : itemRes.data.items ?? []);
@@ -154,7 +154,7 @@ export default function StockMovements() {
 
       switch (form.type) {
         case 'RECEIPT':
-          endpoint = '/api/inventory/movements/receipt';
+          endpoint = '/inventory/movements/receipt';
           payload = {
             itemId: form.itemId,
             warehouseId: form.warehouseId,
@@ -167,7 +167,7 @@ export default function StockMovements() {
           };
           break;
         case 'ISSUE':
-          endpoint = '/api/inventory/movements/issue';
+          endpoint = '/inventory/movements/issue';
           payload = {
             itemId: form.itemId,
             warehouseId: form.warehouseId,
@@ -178,7 +178,7 @@ export default function StockMovements() {
           };
           break;
         case 'TRANSFER':
-          endpoint = '/api/inventory/movements/transfer';
+          endpoint = '/inventory/movements/transfer';
           if (!form.toWarehouseId) { setMsg({ type: 'err', text: 'Select destination warehouse' }); setSaving(false); return; }
           payload = {
             itemId: form.itemId,
@@ -188,7 +188,7 @@ export default function StockMovements() {
           };
           break;
         case 'ADJUSTMENT':
-          endpoint = '/api/inventory/movements/adjust';
+          endpoint = '/inventory/movements/adjust';
           if (!form.newQty) { setMsg({ type: 'err', text: 'Enter new quantity' }); setSaving(false); return; }
           payload = {
             itemId: form.itemId,

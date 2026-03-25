@@ -46,7 +46,7 @@ export default function Warehouses() {
   const fetchWarehouses = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await api.get('/api/inventory/warehouses');
+      const res = await api.get('/inventory/warehouses');
       setWarehouses(Array.isArray(res.data) ? res.data : res.data.warehouses ?? []);
     } catch {
       setMsg({ type: 'err', text: 'Failed to load warehouses' });
@@ -87,7 +87,7 @@ export default function Warehouses() {
         await api.put(`/api/inventory/warehouses/${editId}`, form);
         setMsg({ type: 'ok', text: 'Warehouse updated' });
       } else {
-        await api.post('/api/inventory/warehouses', form);
+        await api.post('/inventory/warehouses', form);
         setMsg({ type: 'ok', text: 'Warehouse created' });
       }
       setShowForm(false);
@@ -110,7 +110,7 @@ export default function Warehouses() {
     try {
       const [detailRes, stockRes] = await Promise.all([
         api.get(`/api/inventory/warehouses/${wh.id}`),
-        api.get('/api/inventory/stock/valuation', { params: { warehouseId: wh.id } }).catch(() => ({ data: { totalItems: 0, totalValue: 0 } })),
+        api.get('/inventory/stock/valuation', { params: { warehouseId: wh.id } }).catch(() => ({ data: { totalItems: 0, totalValue: 0 } })),
       ]);
       const detail = detailRes.data;
       setWarehouseBins(detail.bins ?? []);
