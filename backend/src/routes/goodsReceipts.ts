@@ -29,11 +29,23 @@ async function syncGrnToInventory(
     const material = await prisma.material.findUnique({ where: { id: line.materialId }, select: { name: true } });
     if (!material) continue;
 
-    // Match to InventoryItem by name (case-insensitive)
-    const invItem = await prisma.inventoryItem.findFirst({
+    // Match to InventoryItem by name — try exact first, then contains, then startsWith
+    let invItem = await prisma.inventoryItem.findFirst({
       where: { name: { equals: material.name, mode: 'insensitive' } },
       select: { id: true, unit: true, currentStock: true, avgCost: true },
     });
+    if (!invItem) {
+      invItem = await prisma.inventoryItem.findFirst({
+        where: { name: { contains: material.name, mode: 'insensitive' } },
+        select: { id: true, unit: true, currentStock: true, avgCost: true },
+      });
+    }
+    if (!invItem) {
+      invItem = await prisma.inventoryItem.findFirst({
+        where: { name: { startsWith: material.name, mode: 'insensitive' } },
+        select: { id: true, unit: true, currentStock: true, avgCost: true },
+      });
+    }
     if (!invItem) continue; // no matching inventory item, skip
 
     const qty = line.acceptedQty;
