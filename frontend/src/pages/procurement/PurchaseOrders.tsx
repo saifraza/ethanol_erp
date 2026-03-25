@@ -69,6 +69,46 @@ interface APIResponse {
   limit: number;
 }
 
+const PLACE_OF_SUPPLY_OPTIONS = [
+  { value: '23-MP', label: '23 - Madhya Pradesh (Factory)' },
+  { value: '09-UP', label: '09 - Uttar Pradesh' },
+  { value: '33-TN', label: '33 - Tamil Nadu' },
+  { value: '27-MH', label: '27 - Maharashtra' },
+  { value: '29-KA', label: '29 - Karnataka' },
+  { value: '36-TS', label: '36 - Telangana' },
+  { value: '22-CG', label: '22 - Chhattisgarh' },
+  { value: '20-JH', label: '20 - Jharkhand' },
+  { value: '10-BH', label: '10 - Bihar' },
+  { value: '21-OR', label: '21 - Odisha' },
+  { value: '07-DL', label: '07 - Delhi' },
+  { value: '06-HR', label: '06 - Haryana' },
+  { value: '08-RJ', label: '08 - Rajasthan' },
+  { value: '24-GJ', label: '24 - Gujarat' },
+];
+
+const PAYMENT_TERMS_OPTIONS = [
+  'Advance 100%',
+  'Advance 50% + Balance on Delivery',
+  'Against Delivery',
+  'Net 7',
+  'Net 15',
+  'Net 30',
+  'Net 45',
+  'Net 60',
+  'Net 90',
+  'Credit 30 Days',
+  'Credit 45 Days',
+  'Credit 60 Days',
+];
+
+const TRANSPORT_MODE_OPTIONS = ['Road', 'Rail', 'Air', 'Ship', 'Courier', 'Hand Delivery'];
+const TRANSPORT_BY_OPTIONS = ['By Supplier', 'By Us (Self Pickup)', 'Third Party'];
+
+const SAVED_ADDRESSES = [
+  { label: 'Factory — Bachai, Narsinghpur', address: 'Village Bachai, Tehsil Gadarwara, District Narsinghpur, Madhya Pradesh - 487551' },
+  { label: 'HQ — Jabalpur', address: 'Mahakaushal Sugar & Power Industries Ltd, Wright Town, Jabalpur, Madhya Pradesh - 482002' },
+];
+
 const PurchaseOrders: React.FC = () => {
   const [pos, setPos] = useState<PurchaseOrder[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -91,6 +131,7 @@ const PurchaseOrders: React.FC = () => {
     creditDays: 0,
     deliveryAddress: '',
     transportMode: '',
+    transportBy: '',
     remarks: '',
     freightCharge: 0,
     otherCharges: 0,
@@ -266,6 +307,7 @@ const PurchaseOrders: React.FC = () => {
         creditDays: 0,
         deliveryAddress: '',
         transportMode: '',
+        transportBy: '',
         remarks: '',
         freightCharge: 0,
         otherCharges: 0,
@@ -438,32 +480,52 @@ const PurchaseOrders: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Place of Supply</label>
-                    <input type="text" value={formData.placeOfSupply} onChange={(e) => setFormData({ ...formData, placeOfSupply: e.target.value })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                    <select value={formData.placeOfSupply} onChange={(e) => setFormData({ ...formData, placeOfSupply: e.target.value })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                      <option value="">Select State</option>
+                      {PLACE_OF_SUPPLY_OPTIONS.map((s) => (<option key={s.value} value={s.value}>{s.label}</option>))}
+                    </select>
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Payment Terms</label>
-                    <input type="text" value={formData.paymentTerms} onChange={(e) => setFormData({ ...formData, paymentTerms: e.target.value })} placeholder="e.g., Net 30" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                    <select value={formData.paymentTerms} onChange={(e) => setFormData({ ...formData, paymentTerms: e.target.value })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                      <option value="">Select Terms</option>
+                      {PAYMENT_TERMS_OPTIONS.map((t) => (<option key={t} value={t}>{t}</option>))}
+                    </select>
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Credit Days</label>
-                    <input type="number" value={formData.creditDays} onChange={(e) => setFormData({ ...formData, creditDays: parseInt(e.target.value) || 0 })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                    <input type="number" value={formData.creditDays || ''} onChange={(e) => setFormData({ ...formData, creditDays: e.target.value === '' ? 0 : parseInt(e.target.value) })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                  <div className="md:col-span-2">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Delivery Address</label>
-                    <textarea value={formData.deliveryAddress} onChange={(e) => setFormData({ ...formData, deliveryAddress: e.target.value })} rows={2} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                    <div className="flex gap-1 mb-1">
+                      {SAVED_ADDRESSES.map((addr) => (
+                        <button key={addr.label} type="button" onClick={() => setFormData({ ...formData, deliveryAddress: addr.address })}
+                          className={`px-2 py-0.5 text-[10px] font-medium border ${formData.deliveryAddress === addr.address ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
+                          {addr.label}
+                        </button>
+                      ))}
+                    </div>
+                    <textarea value={formData.deliveryAddress} onChange={(e) => setFormData({ ...formData, deliveryAddress: e.target.value })} rows={2} placeholder="Select above or type custom address" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Transport Mode</label>
-                      <input type="text" value={formData.transportMode} onChange={(e) => setFormData({ ...formData, transportMode: e.target.value })} placeholder="Road, Rail, Air" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label>
-                      <input type="text" value={formData.remarks} onChange={(e) => setFormData({ ...formData, remarks: e.target.value })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
-                    </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Transport Mode</label>
+                    <select value={formData.transportMode} onChange={(e) => setFormData({ ...formData, transportMode: e.target.value })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                      <option value="">Select Mode</option>
+                      {TRANSPORT_MODE_OPTIONS.map((m) => (<option key={m} value={m}>{m}</option>))}
+                    </select>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block mt-2">Transport By</label>
+                    <select value={formData.transportBy} onChange={(e) => setFormData({ ...formData, transportBy: e.target.value })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                      <option value="">Select</option>
+                      {TRANSPORT_BY_OPTIONS.map((t) => (<option key={t} value={t}>{t}</option>))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label>
+                    <textarea value={formData.remarks} onChange={(e) => setFormData({ ...formData, remarks: e.target.value })} rows={4} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                   </div>
                 </div>
 
@@ -481,6 +543,8 @@ const PurchaseOrders: React.FC = () => {
                             <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-right border-r border-slate-700">Qty</th>
                             <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-right border-r border-slate-700">Rate</th>
                             <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-right border-r border-slate-700">Disc %</th>
+                            <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-right border-r border-slate-700">GST %</th>
+                            <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-right border-r border-slate-700">GST Amt</th>
                             <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-right border-r border-slate-700">Total</th>
                             <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-center"></th>
                           </tr>
@@ -491,13 +555,17 @@ const PurchaseOrders: React.FC = () => {
                               <td className="px-3 py-1.5 text-xs border-r border-slate-100">{line.description}</td>
                               <td className="px-3 py-1.5 text-xs border-r border-slate-100 font-mono">{line.hsnCode}</td>
                               <td className="px-2 py-1 border-r border-slate-100">
-                                <input type="number" value={line.quantity} onChange={(e) => handleUpdateLine(idx, 'quantity', parseFloat(e.target.value) || 0)} className="border border-slate-300 px-1.5 py-1 text-xs w-20 text-right focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                                <input type="number" value={line.quantity || ''} onChange={(e) => handleUpdateLine(idx, 'quantity', e.target.value === '' ? 0 : parseFloat(e.target.value))} className="border border-slate-300 px-1.5 py-1 text-xs w-20 text-right focus:outline-none focus:ring-1 focus:ring-slate-400" />
                               </td>
                               <td className="px-2 py-1 border-r border-slate-100">
-                                <input type="number" value={line.rate} onChange={(e) => handleUpdateLine(idx, 'rate', parseFloat(e.target.value) || 0)} className="border border-slate-300 px-1.5 py-1 text-xs w-20 text-right focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                                <input type="number" value={line.rate || ''} onChange={(e) => handleUpdateLine(idx, 'rate', e.target.value === '' ? 0 : parseFloat(e.target.value))} className="border border-slate-300 px-1.5 py-1 text-xs w-20 text-right focus:outline-none focus:ring-1 focus:ring-slate-400" />
                               </td>
                               <td className="px-2 py-1 border-r border-slate-100">
-                                <input type="number" value={line.discountPercent} onChange={(e) => handleUpdateLine(idx, 'discountPercent', parseFloat(e.target.value) || 0)} className="border border-slate-300 px-1.5 py-1 text-xs w-16 text-right focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                                <input type="number" value={line.discountPercent || ''} onChange={(e) => handleUpdateLine(idx, 'discountPercent', e.target.value === '' ? 0 : parseFloat(e.target.value))} className="border border-slate-300 px-1.5 py-1 text-xs w-16 text-right focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                              </td>
+                              <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums text-slate-500">{line.gstPercent}%</td>
+                              <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums text-slate-500">
+                                {(() => { const a = line.quantity * line.rate; const d = a * (line.discountPercent / 100); return ((a - d) * line.gstPercent / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 }); })()}
                               </td>
                               <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums font-semibold">
                                 {calculateLineTotal(line).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
@@ -525,15 +593,15 @@ const PurchaseOrders: React.FC = () => {
                       </div>
                       <div>
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Quantity</label>
-                        <input type="number" value={newLine.quantity || 0} onChange={(e) => setNewLine({ ...newLine, quantity: parseFloat(e.target.value) || 0 })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                        <input type="number" value={newLine.quantity || ''} onChange={(e) => setNewLine({ ...newLine, quantity: e.target.value === '' ? 0 : parseFloat(e.target.value) })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                       </div>
                       <div>
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Rate</label>
-                        <input type="number" value={newLine.rate || 0} onChange={(e) => setNewLine({ ...newLine, rate: parseFloat(e.target.value) || 0 })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                        <input type="number" value={newLine.rate || ''} onChange={(e) => setNewLine({ ...newLine, rate: e.target.value === '' ? 0 : parseFloat(e.target.value) })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                       </div>
                       <div>
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Discount %</label>
-                        <input type="number" value={newLine.discountPercent || 0} onChange={(e) => setNewLine({ ...newLine, discountPercent: parseFloat(e.target.value) || 0 })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                        <input type="number" value={newLine.discountPercent || ''} onChange={(e) => setNewLine({ ...newLine, discountPercent: e.target.value === '' ? 0 : parseFloat(e.target.value) })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                       </div>
                     </div>
                     <button type="button" onClick={handleAddLine} className="mt-3 px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 flex items-center gap-1">
@@ -547,15 +615,15 @@ const PurchaseOrders: React.FC = () => {
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                     <div>
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Freight Charge</label>
-                      <input type="number" value={formData.freightCharge} onChange={(e) => setFormData({ ...formData, freightCharge: parseFloat(e.target.value) || 0 })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                      <input type="number" value={formData.freightCharge || ''} onChange={(e) => setFormData({ ...formData, freightCharge: e.target.value === '' ? 0 : parseFloat(e.target.value) })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                     </div>
                     <div>
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Other Charges</label>
-                      <input type="number" value={formData.otherCharges} onChange={(e) => setFormData({ ...formData, otherCharges: parseFloat(e.target.value) || 0 })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                      <input type="number" value={formData.otherCharges || ''} onChange={(e) => setFormData({ ...formData, otherCharges: e.target.value === '' ? 0 : parseFloat(e.target.value) })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                     </div>
                     <div>
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Round Off</label>
-                      <input type="number" step="0.01" value={formData.roundOff} onChange={(e) => setFormData({ ...formData, roundOff: parseFloat(e.target.value) || 0 })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                      <input type="number" step="0.01" value={formData.roundOff || ''} onChange={(e) => setFormData({ ...formData, roundOff: e.target.value === '' ? 0 : parseFloat(e.target.value) })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                     </div>
                     <div className="bg-slate-800 text-white px-4 py-3">
                       <div className="text-[10px] font-bold uppercase tracking-widest text-slate-300">Grand Total</div>
