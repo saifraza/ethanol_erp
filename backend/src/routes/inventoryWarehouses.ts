@@ -10,7 +10,6 @@ const router = Router();
 // ─── Schemas ────────────────────────────────────────
 
 const createWarehouseSchema = z.object({
-  code: z.string().min(1).max(20),
   name: z.string().min(1).max(100),
   address: z.string().optional(),
 });
@@ -124,10 +123,23 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
   res.json({ ...warehouse, topItems });
 }));
 
+// Helper: generate next warehouse code (WH-001, WH-002, ...)
+async function generateWarehouseCode(): Promise<string> {
+  const last = await prisma.warehouse.findFirst({
+    where: { code: { startsWith: 'WH-' } },
+    orderBy: { code: 'desc' },
+    select: { code: true },
+  });
+  if (!last) return 'WH-001';
+  const num = parseInt(last.code.replace('WH-', ''), 10);
+  return `WH-${String(num + 1).padStart(3, '0')}`;
+}
+
 // ─── POST / — create warehouse ───
 
 router.post('/', validate(createWarehouseSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
-  const warehouse = await prisma.warehouse.create({ data: req.body });
+  const code = await generateWarehouseCode();
+  const warehouse = await prisma.warehouse.create({ data: { ...req.body, code } });
   res.status(201).json(warehouse);
 }));
 

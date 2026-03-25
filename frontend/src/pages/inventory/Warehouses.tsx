@@ -35,7 +35,7 @@ export default function Warehouses() {
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
-  const [form, setForm] = useState({ code: '', name: '', address: '' });
+  const [form, setForm] = useState({ name: '', address: '', code: '' });
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [expandLoading, setExpandLoading] = useState(false);
   const [warehouseBins, setWarehouseBins] = useState<Bin[]>([]);
@@ -66,28 +66,28 @@ export default function Warehouses() {
 
   const openCreate = () => {
     setEditId(null);
-    setForm({ code: '', name: '', address: '' });
+    setForm({ name: '', address: '', code: '' });
     setShowForm(true);
   };
 
   const openEdit = (wh: WarehouseItem) => {
     setEditId(wh.id);
-    setForm({ code: wh.code, name: wh.name, address: wh.address ?? '' });
+    setForm({ name: wh.name, address: wh.address ?? '', code: wh.code });
     setShowForm(true);
   };
 
   const handleSave = async () => {
-    if (!form.code.trim() || !form.name.trim()) {
-      setMsg({ type: 'err', text: 'Code and Name are required' });
+    if (!form.name.trim()) {
+      setMsg({ type: 'err', text: 'Name is required' });
       return;
     }
     setSaving(true);
     try {
       if (editId) {
-        await api.put(`/inventory/warehouses/${editId}`, form);
+        await api.put(`/inventory/warehouses/${editId}`, { name: form.name, address: form.address });
         setMsg({ type: 'ok', text: 'Warehouse updated' });
       } else {
-        await api.post('/inventory/warehouses', form);
+        await api.post('/inventory/warehouses', { name: form.name, address: form.address });
         setMsg({ type: 'ok', text: 'Warehouse created' });
       }
       setShowForm(false);
@@ -283,9 +283,12 @@ export default function Warehouses() {
               <button onClick={() => setShowForm(false)}><X className="w-5 h-5 text-gray-400 hover:text-gray-600" /></button>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Code *</label>
-              <input type="text" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })}
-                placeholder="e.g. WH-01" className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Code</label>
+              {editId ? (
+                <div className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500 font-mono">{form.code}</div>
+              ) : (
+                <div className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-400">Auto-generated (WH-001, WH-002, ...)</div>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>

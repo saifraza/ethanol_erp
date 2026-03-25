@@ -37,7 +37,7 @@ export default function Inventory() {
   const [showTxn, setShowTxn] = useState<string | null>(null);
   const [txnForm, setTxnForm] = useState({ type: 'IN', quantity: '', reference: '', remarks: '' });
   const [form, setForm] = useState({
-    name: '', code: '', category: 'RAW_MATERIAL', unit: 'kg',
+    name: '', category: 'RAW_MATERIAL', unit: 'kg',
     currentStock: '', minStock: '', maxStock: '', costPerUnit: '',
     location: '', supplier: '', leadTimeDays: '', remarks: '',
   });
@@ -64,7 +64,7 @@ export default function Inventory() {
     setSaving(true);
     try {
       await api.post('/inventory/items', form);
-      setForm({ name: '', code: '', category: 'RAW_MATERIAL', unit: 'kg', currentStock: '', minStock: '', maxStock: '', costPerUnit: '', location: '', supplier: '', leadTimeDays: '', remarks: '' });
+      setForm({ name: '', category: 'RAW_MATERIAL', unit: 'kg', currentStock: '', minStock: '', maxStock: '', costPerUnit: '', location: '', supplier: '', leadTimeDays: '', remarks: '' });
       setTab('items');
       load();
     } catch (e: any) { alert(e.response?.data?.error || 'Error'); }
@@ -146,8 +146,8 @@ export default function Inventory() {
                     <input className="w-full border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">SKU / Code *</label>
-                    <input className="w-full border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400" required value={form.code} onChange={e => setForm({ ...form, code: e.target.value })} />
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Item Code</label>
+                    <div className="w-full border border-slate-200 px-2.5 py-1.5 text-xs text-slate-400 bg-slate-50">Auto-generated (ITM-00001, ITM-00002, ...)</div>
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Category</label>

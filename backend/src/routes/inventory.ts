@@ -59,14 +59,27 @@ router.get('/items/:id', async (req: Request, res: Response) => {
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
+// Helper: generate next item code (ITM-00001, ITM-00002, ...)
+async function generateItemCode(): Promise<string> {
+  const last = await prisma.inventoryItem.findFirst({
+    where: { code: { startsWith: 'ITM-' } },
+    orderBy: { code: 'desc' },
+    select: { code: true },
+  });
+  if (!last) return 'ITM-00001';
+  const num = parseInt(last.code.replace('ITM-', ''), 10);
+  return `ITM-${String(num + 1).padStart(5, '0')}`;
+}
+
 // POST /items — create new item
 router.post('/items', authorize('ADMIN') as any, async (req: Request, res: Response) => {
   try {
     const b = req.body;
+    const code = await generateItemCode();
     const item = await prisma.inventoryItem.create({
       data: {
         name: b.name,
-        code: b.code,
+        code,
         category: b.category || 'RAW_MATERIAL',
         unit: b.unit || 'kg',
         currentStock: parseFloat(b.currentStock) || 0,
@@ -91,7 +104,6 @@ router.put('/items/:id', authorize('ADMIN') as any, async (req: Request, res: Re
       where: { id: req.params.id },
       data: {
         name: b.name,
-        code: b.code,
         category: b.category,
         unit: b.unit,
         minStock: b.minStock !== undefined ? parseFloat(b.minStock) : undefined,
