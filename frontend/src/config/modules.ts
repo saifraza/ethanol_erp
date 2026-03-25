@@ -18,7 +18,7 @@ export interface ModuleDef {
   label: string;
   to: string;
   icon: any;
-  group: 'process' | 'admin' | 'sales' | 'procurement' | 'trade' | 'accounts' | 'inventory';
+  group: 'process' | 'admin' | 'sales' | 'procurement' | 'trade' | 'accounts' | 'inventory' | 'logistics';
   adminOnly?: boolean;
 }
 
@@ -47,10 +47,14 @@ export const MODULE_DEFS: ModuleDef[] = [
   // ── SALES (DDGS + Ethanol outward) ──
   { key: 'customers', label: 'Buyers', to: '/sales/customers', icon: UserCheck, group: 'sales' },
   { key: 'sales-orders', label: 'Sales Pipeline', to: '/sales/pipeline', icon: ClipboardList, group: 'sales' },
-  { key: 'dispatch-requests', label: 'Logistics', to: '/sales/dispatch-requests', icon: Send, group: 'sales' },
-  { key: 'transporters', label: 'Transporters', to: '/sales/transporters', icon: Truck, group: 'sales' },
-  { key: 'shipments', label: 'Gate Register', to: '/sales/shipments', icon: Scale, group: 'sales' },
+  { key: 'dispatch-requests', label: 'Dispatch Requests', to: '/sales/dispatch-requests', icon: Send, group: 'sales' },
   { key: 'ethanol-contracts', label: 'Ethanol Supply', to: '/sales/ethanol-contracts', icon: Handshake, group: 'sales' },
+
+  // ── LOGISTICS (Transport, Gate, Shipments) ──
+  { key: 'gate-register', label: 'Gate Register', to: '/logistics/gate-register', icon: Scale, group: 'logistics' },
+  { key: 'shipments', label: 'Shipments', to: '/sales/shipments', icon: Truck, group: 'logistics' },
+  { key: 'transporters', label: 'Transporters', to: '/sales/transporters', icon: Truck, group: 'logistics' },
+  { key: 'freight-mgmt', label: 'Freight & Rates', to: '/sales/freight', icon: IndianRupee, group: 'logistics' },
 
   // ── PROCUREMENT (Grain + Chemicals inward) ──
   { key: 'vendors', label: 'Suppliers', to: '/procurement/vendors', icon: Building2, group: 'procurement' },
@@ -122,6 +126,10 @@ export const tradeNav = MODULE_DEFS.filter(m => m.group === 'trade').map(m => ({
 }));
 
 export const accountsNav = MODULE_DEFS.filter(m => m.group === 'accounts').map(m => ({
+  to: m.to, label: m.label, icon: m.icon, moduleKey: m.key,
+}));
+
+export const logisticsNav = MODULE_DEFS.filter(m => m.group === 'logistics').map(m => ({
   to: m.to, label: m.label, icon: m.icon, moduleKey: m.key,
 }));
 
