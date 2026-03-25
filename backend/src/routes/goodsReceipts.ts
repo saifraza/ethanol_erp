@@ -213,11 +213,11 @@ router.post('/', async (req: Request, res: Response) => {
     const totalAmount = processedLines.reduce((sum: number, line: any) => sum + line.amount, 0);
     const totalQty = processedLines.reduce((sum: number, line: any) => sum + line.acceptedQty, 0);
 
-    // Create GRN
+    // Create GRN — use vendor from PO to avoid frontend mismatch
     const grn = await prisma.goodsReceipt.create({
       data: {
         poId: b.poId,
-        vendorId: b.vendorId,
+        vendorId: po.vendorId,
         grnDate: b.grnDate ? new Date(b.grnDate) : new Date(),
         vehicleNo: b.vehicleNo || '',
         challanNo: b.challanNo || '',
