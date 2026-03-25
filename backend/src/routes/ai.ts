@@ -16,7 +16,17 @@ interface AIConfig {
 }
 
 async function getAIConfig(): Promise<AIConfig | null> {
-  // Check env vars — try Anthropic first (most reliable), then OpenClaw
+  // Check env vars — Gemini first (free tier), then Anthropic, then OpenClaw
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (geminiKey) {
+    return {
+      provider: 'gemini',
+      baseUrl: 'https://generativelanguage.googleapis.com',
+      apiKey: geminiKey,
+      model: 'gemini-2.0-flash',
+    };
+  }
+
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   if (anthropicKey) {
     return {
@@ -38,7 +48,7 @@ async function getAIConfig(): Promise<AIConfig | null> {
     };
   }
 
-  // Fall back to DB-stored config (AppConfig key-value table)
+  // Fall back to DB-stored config
   const row = await prisma.appConfig.findUnique({ where: { key: 'ai_config' } });
   if (row?.value) {
     try {
@@ -100,9 +110,11 @@ router.post('/chat', asyncHandler(async (req: AuthRequest, res: Response) => {
     case 'gemini':
       apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
       body = {
-        contents: [{ role: 'user', parts: [{ text: `${systemPrompt}\n\nUser: ${message}` }] }],
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        contents: [{ role: 'user', parts: [{ text: message }] }],
+        generationConfig: { maxOutputTokens: 1024 },
       };
-      headers['Authorization'] = ''; // Gemini uses key in URL
+      delete headers['Authorization']; // Gemini uses key in URL
       break;
     case 'openai':
       apiUrl = 'https://api.openai.com/v1/chat/completions';
