@@ -28,7 +28,23 @@ export default function StockValuation() {
     try {
       setLoading(true);
       const res = await api.get('/inventory/stock/valuation');
-      setItems(res.data.items || res.data || []);
+      const data = res.data;
+      // Backend returns { byCategory: { [cat]: { items } }, grandTotal, totalItems }
+      if (data.byCategory) {
+        const allItems: ValuationItem[] = [];
+        for (const cat of Object.keys(data.byCategory)) {
+          for (const item of data.byCategory[cat].items) {
+            allItems.push({ ...item, category: cat });
+          }
+        }
+        setItems(allItems);
+      } else if (Array.isArray(data.items)) {
+        setItems(data.items);
+      } else if (Array.isArray(data)) {
+        setItems(data);
+      } else {
+        setItems([]);
+      }
     } catch {
       setItems([]);
     } finally {
