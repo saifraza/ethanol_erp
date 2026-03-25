@@ -2,17 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { CreditCard, X } from 'lucide-react';
 import api from '../../services/api';
 
-interface Vendor {
-  id: string;
-  name: string;
-}
-
-interface Invoice {
-  id: string;
-  vendorInvNo: string;
-  netPayable: number;
-  balanceAmount: number;
-}
+interface Vendor { id: string; name: string; }
+interface Invoice { id: string; vendorInvNo: string; netPayable: number; balanceAmount: number; }
 
 interface Payment {
   id: string;
@@ -27,37 +18,18 @@ interface Payment {
 }
 
 interface LedgerEntry {
-  date: string;
-  type: string;
-  reference: string;
-  debit: number;
-  credit: number;
-  runningBalance: number;
+  date: string; type: string; reference: string; debit: number; credit: number; runningBalance: number;
 }
 
-interface VendorLedger {
-  vendor: Vendor;
-  ledger: LedgerEntry[];
-  currentBalance: number;
-}
+interface VendorLedger { vendor: Vendor; ledger: LedgerEntry[]; currentBalance: number; }
 
 interface Outstanding {
-  vendor: Vendor;
-  invoices: Invoice[];
-  totalOutstanding: number;
+  vendor: Vendor; invoices: Invoice[]; totalOutstanding: number;
 }
 
 interface FormData {
-  vendorId: string;
-  invoiceId: string;
-  amount: string;
-  mode: 'CASH' | 'CHEQUE' | 'BANK_TRANSFER' | 'UPI' | 'DD';
-  reference: string;
-  tdsDeducted: string;
-  tdsSection: string;
-  isAdvance: boolean;
-  remarks: string;
-  paymentDate: string;
+  vendorId: string; invoiceId: string; amount: string; mode: 'CASH' | 'CHEQUE' | 'BANK_TRANSFER' | 'UPI' | 'DD';
+  reference: string; tdsDeducted: string; tdsSection: string; isAdvance: boolean; remarks: string; paymentDate: string;
 }
 
 const VendorPayments: React.FC = () => {
@@ -72,41 +44,25 @@ const VendorPayments: React.FC = () => {
   const [error, setError] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState<FormData>({
-    vendorId: '',
-    invoiceId: '',
-    amount: '',
-    mode: 'BANK_TRANSFER',
-    reference: '',
-    tdsDeducted: '',
-    tdsSection: '',
-    isAdvance: false,
-    remarks: '',
+    vendorId: '', invoiceId: '', amount: '', mode: 'BANK_TRANSFER', reference: '',
+    tdsDeducted: '', tdsSection: '', isAdvance: false, remarks: '',
     paymentDate: new Date().toISOString().split('T')[0],
   });
 
-  useEffect(() => {
-    fetchInitialData();
-  }, []);
+  useEffect(() => { fetchInitialData(); }, []);
 
   useEffect(() => {
-    if (selectedVendor && activeTab === 'ledger') {
-      fetchVendorLedger(selectedVendor);
-    }
+    if (selectedVendor && activeTab === 'ledger') fetchVendorLedger(selectedVendor);
   }, [selectedVendor, activeTab]);
 
   useEffect(() => {
-    if (activeTab === 'outstanding') {
-      fetchOutstanding();
-    }
+    if (activeTab === 'outstanding') fetchOutstanding();
   }, [activeTab]);
 
   const fetchInitialData = async () => {
     try {
       setLoading(true);
-      const [paymentsRes, vendorsRes] = await Promise.all([
-        api.get('/vendor-payments'),
-        api.get('/vendors'),
-      ]);
+      const [paymentsRes, vendorsRes] = await Promise.all([api.get('/vendor-payments'), api.get('/vendors')]);
       setPayments(paymentsRes.data.payments || []);
       setVendors(vendorsRes.data.vendors || []);
     } catch (err) {
@@ -120,10 +76,7 @@ const VendorPayments: React.FC = () => {
   const fetchInvoices = async (vendorId: string) => {
     try {
       const res = await api.get(`/vendor-invoices?vendorId=${vendorId}`);
-      const payable = (res.data.invoices || []).filter((inv: any) =>
-        inv.balanceAmount > 0 && !['CANCELLED', 'PAID'].includes(inv.status)
-      );
-      setInvoices(payable);
+      setInvoices((res.data.invoices || []).filter((inv: any) => inv.balanceAmount > 0 && !['CANCELLED', 'PAID'].includes(inv.status)));
     } catch (err) {
       console.error('Failed to fetch invoices', err);
       setInvoices([]);
@@ -143,10 +96,7 @@ const VendorPayments: React.FC = () => {
   const fetchOutstanding = async () => {
     try {
       const res = await api.get('/vendor-payments/outstanding');
-      const sorted = (res.data.outstanding || []).sort(
-        (a: any, b: any) => b.totalOutstanding - a.totalOutstanding
-      );
-      setOutstanding(sorted);
+      setOutstanding((res.data.outstanding || []).sort((a: any, b: any) => b.totalOutstanding - a.totalOutstanding));
     } catch (err) {
       console.error('Failed to fetch outstanding', err);
       setOutstanding([]);
@@ -155,53 +105,29 @@ const VendorPayments: React.FC = () => {
 
   const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value,
-    }));
+    setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value }));
   };
 
   const handleVendorChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const vendorId = e.target.value;
     setSelectedVendor(vendorId);
     setFormData(prev => ({ ...prev, vendorId, invoiceId: '' }));
-    if (vendorId) {
-      fetchInvoices(vendorId);
-    } else {
-      setInvoices([]);
-    }
+    if (vendorId) fetchInvoices(vendorId);
+    else setInvoices([]);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const payload = {
-        vendorId: formData.vendorId,
-        invoiceId: formData.invoiceId || null,
-        amount: parseFloat(formData.amount),
-        mode: formData.mode,
-        reference: formData.reference,
-        tdsDeducted: parseFloat(formData.tdsDeducted) || 0,
-        tdsSection: formData.tdsSection,
-        isAdvance: formData.isAdvance,
-        remarks: formData.remarks,
+      await api.post('/vendor-payments', {
+        vendorId: formData.vendorId, invoiceId: formData.invoiceId || null,
+        amount: parseFloat(formData.amount), mode: formData.mode, reference: formData.reference,
+        tdsDeducted: parseFloat(formData.tdsDeducted) || 0, tdsSection: formData.tdsSection,
+        isAdvance: formData.isAdvance, remarks: formData.remarks,
         paymentDate: formData.paymentDate || new Date().toISOString().split('T')[0],
-      };
-
-      await api.post('/vendor-payments', payload);
-      setShowForm(false);
-      setFormData({
-        vendorId: '',
-        invoiceId: '',
-        amount: '',
-        mode: 'BANK_TRANSFER',
-        reference: '',
-        tdsDeducted: '',
-        tdsSection: '',
-        isAdvance: false,
-        remarks: '',
-        paymentDate: new Date().toISOString().split('T')[0],
       });
+      setShowForm(false);
+      setFormData({ vendorId: '', invoiceId: '', amount: '', mode: 'BANK_TRANSFER', reference: '', tdsDeducted: '', tdsSection: '', isAdvance: false, remarks: '', paymentDate: new Date().toISOString().split('T')[0] });
       setSelectedVendor('');
       setInvoices([]);
       fetchInitialData();
@@ -213,402 +139,275 @@ const VendorPayments: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-lg text-gray-600">Loading...</div>
+      <div className="flex items-center justify-center h-screen bg-slate-50">
+        <span className="text-xs text-slate-400 uppercase tracking-widest">Loading...</span>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="bg-gradient-to-r from-rose-600 to-rose-700 text-white p-6 shadow-md">
-        <div className="flex items-center gap-3">
-          <CreditCard size={32} />
-          <h1 className="text-3xl font-bold">Vendor Payments</h1>
-        </div>
-      </div>
-
-      <div className="p-6">
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-6">
-            {error}
+    <div className="min-h-screen bg-slate-50">
+      <div className="p-3 md:p-6 space-y-0">
+        {/* Page Toolbar */}
+        <div className="bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <CreditCard size={18} />
+            <span className="text-sm font-bold tracking-wide uppercase">Vendor Payments</span>
+            <span className="text-[10px] text-slate-400">|</span>
+            <span className="text-[10px] text-slate-400">Payment recording, ledger & outstanding</span>
           </div>
+        </div>
+
+        {error && (
+          <div className="px-4 py-2 text-xs border-x border-b -mx-3 md:-mx-6 bg-red-50 text-red-700 border-red-300">{error}</div>
         )}
 
-        <div className="flex gap-4 mb-6 border-b">
-          <button
-            onClick={() => setActiveTab('record')}
-            className={`px-6 py-3 font-medium border-b-2 transition-colors ${
-              activeTab === 'record'
-                ? 'border-rose-600 text-rose-600'
-                : 'border-transparent text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            Record Payment
-          </button>
-          <button
-            onClick={() => setActiveTab('ledger')}
-            className={`px-6 py-3 font-medium border-b-2 transition-colors ${
-              activeTab === 'ledger'
-                ? 'border-rose-600 text-rose-600'
-                : 'border-transparent text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            Vendor Ledger
-          </button>
-          <button
-            onClick={() => setActiveTab('outstanding')}
-            className={`px-6 py-3 font-medium border-b-2 transition-colors ${
-              activeTab === 'outstanding'
-                ? 'border-rose-600 text-rose-600'
-                : 'border-transparent text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            Outstanding
-          </button>
+        {/* Tabs */}
+        <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-0 -mx-3 md:-mx-6 flex gap-0">
+          {[
+            { key: 'record' as const, label: 'Record Payment' },
+            { key: 'ledger' as const, label: 'Vendor Ledger' },
+            { key: 'outstanding' as const, label: 'Outstanding' },
+          ].map(tab => (
+            <button key={tab.key} onClick={() => setActiveTab(tab.key)} className={`px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest border-b-2 transition ${activeTab === tab.key ? 'border-blue-600 text-blue-700 bg-white' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+              {tab.label}
+            </button>
+          ))}
         </div>
 
+        {/* Record Payment Tab */}
         {activeTab === 'record' && (
           <div>
-            <button
-              onClick={() => setShowForm(!showForm)}
-              className="mb-6 px-6 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors font-medium"
-            >
-              {showForm ? 'Close' : '+ Record Payment'}
-            </button>
+            <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6">
+              <button onClick={() => setShowForm(!showForm)} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">
+                {showForm ? 'CLOSE' : '+ RECORD PAYMENT'}
+              </button>
+            </div>
 
             {showForm && (
-              <div className="bg-white rounded-lg shadow p-6 mb-6">
-                <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-xl font-bold text-gray-900">Record Payment</h2>
-                  <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-600">
-                    <X size={24} />
-                  </button>
+              <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 overflow-y-auto py-4">
+                <div className="bg-white shadow-2xl w-full max-w-3xl mx-4">
+                  <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
+                    <span className="text-sm font-bold tracking-wide uppercase">Record Payment</span>
+                    <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-white"><X size={16} /></button>
+                  </div>
+
+                  <form onSubmit={handleSubmit} className="p-4 space-y-3 max-h-[80vh] overflow-y-auto">
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Vendor *</label>
+                        <select value={formData.vendorId} onChange={handleVendorChange} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                          <option value="">Select Vendor</option>
+                          {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Invoice</label>
+                        <select name="invoiceId" value={formData.invoiceId} onChange={handleFormChange} disabled={!formData.vendorId} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400 disabled:bg-slate-100">
+                          <option value="">Select Invoice</option>
+                          {invoices.map(inv => <option key={inv.id} value={inv.id}>{inv.vendorInvNo} - Bal: {inv.balanceAmount.toFixed(2)}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Payment Date *</label>
+                        <input type="date" name="paymentDate" value={formData.paymentDate} onChange={handleFormChange} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Payment Mode *</label>
+                        <select name="mode" value={formData.mode} onChange={handleFormChange} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                          <option value="CASH">Cash</option>
+                          <option value="CHEQUE">Cheque</option>
+                          <option value="BANK_TRANSFER">Bank Transfer</option>
+                          <option value="UPI">UPI</option>
+                          <option value="DD">DD</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Amount *</label>
+                        <input type="number" name="amount" value={formData.amount} onChange={handleFormChange} required step="0.01" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Reference</label>
+                        <input type="text" name="reference" value={formData.reference} onChange={handleFormChange} placeholder="Cheque/DD/Txn ID" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">TDS Deducted</label>
+                        <input type="number" name="tdsDeducted" value={formData.tdsDeducted} onChange={handleFormChange} step="0.01" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">TDS Section</label>
+                        <input type="text" name="tdsSection" value={formData.tdsSection} onChange={handleFormChange} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                      </div>
+                      <div className="flex items-end">
+                        <label className="flex items-center gap-2 text-xs">
+                          <input type="checkbox" name="isAdvance" checked={formData.isAdvance} onChange={handleFormChange} className="w-3.5 h-3.5 border-slate-300" />
+                          <span className="text-slate-600">Advance Payment</span>
+                        </label>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label>
+                      <textarea name="remarks" value={formData.remarks} onChange={handleFormChange} rows={2} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                    </div>
+                    <div className="flex gap-2 pt-3 border-t border-slate-200">
+                      <button type="submit" className="px-4 py-1.5 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">RECORD PAYMENT</button>
+                      <button type="button" onClick={() => setShowForm(false)} className="px-4 py-1.5 bg-slate-200 text-slate-700 text-[11px] font-medium hover:bg-slate-300">CANCEL</button>
+                    </div>
+                  </form>
                 </div>
-
-                <form onSubmit={handleSubmit} className="space-y-6">
-                  <div className="grid grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Vendor *</label>
-                      <select
-                        value={formData.vendorId}
-                        onChange={handleVendorChange}
-                        required
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent"
-                      >
-                        <option value="">Select Vendor</option>
-                        {vendors.map(v => (
-                          <option key={v.id} value={v.id}>{v.name}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Invoice</label>
-                      <select
-                        name="invoiceId"
-                        value={formData.invoiceId}
-                        onChange={handleFormChange}
-                        disabled={!formData.vendorId}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent disabled:bg-gray-100"
-                      >
-                        <option value="">Select Invoice</option>
-                        {invoices.map(inv => (
-                          <option key={inv.id} value={inv.id}>
-                            {inv.vendorInvNo} - Balance: ₹{inv.balanceAmount.toFixed(2)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Payment Date *</label>
-                      <input
-                        type="date"
-                        name="paymentDate"
-                        value={formData.paymentDate}
-                        onChange={handleFormChange}
-                        required
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Payment Mode *</label>
-                      <select
-                        name="mode"
-                        value={formData.mode}
-                        onChange={handleFormChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent"
-                      >
-                        <option value="CASH">Cash</option>
-                        <option value="CHEQUE">Cheque</option>
-                        <option value="BANK_TRANSFER">Bank Transfer</option>
-                        <option value="UPI">UPI</option>
-                        <option value="DD">DD</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Amount *</label>
-                      <input
-                        type="number"
-                        name="amount"
-                        value={formData.amount}
-                        onChange={handleFormChange}
-                        required
-                        step="0.01"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Reference</label>
-                      <input
-                        type="text"
-                        name="reference"
-                        value={formData.reference}
-                        onChange={handleFormChange}
-                        placeholder="Cheque/DD/Transaction ID"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">TDS Deducted</label>
-                      <input
-                        type="number"
-                        name="tdsDeducted"
-                        value={formData.tdsDeducted}
-                        onChange={handleFormChange}
-                        step="0.01"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">TDS Section</label>
-                      <input
-                        type="text"
-                        name="tdsSection"
-                        value={formData.tdsSection}
-                        onChange={handleFormChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent"
-                      />
-                    </div>
-
-                    <div className="flex items-end">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          name="isAdvance"
-                          checked={formData.isAdvance}
-                          onChange={handleFormChange}
-                          className="w-4 h-4 rounded border-gray-300"
-                        />
-                        <span className="text-sm font-medium text-gray-700">Advance Payment</span>
-                      </label>
-                    </div>
-
-                    <div></div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Remarks</label>
-                    <textarea
-                      name="remarks"
-                      value={formData.remarks}
-                      onChange={handleFormChange}
-                      rows={2}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent"
-                    />
-                  </div>
-
-                  <div className="flex gap-3 pt-4">
-                    <button
-                      type="submit"
-                      className="px-6 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors font-medium"
-                    >
-                      Record Payment
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowForm(false)}
-                      className="px-6 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors font-medium"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </form>
               </div>
             )}
 
-            <div className="space-y-4">
-              <h2 className="text-lg font-bold text-gray-900 mb-4">Recent Payments</h2>
-              {payments.length === 0 ? (
-                <div className="bg-white rounded-lg shadow p-12 text-center">
-                  <div className="text-gray-400 text-lg">No payments recorded</div>
-                </div>
-              ) : (
-                payments.slice(0, 10).map(payment => (
-                  <div key={payment.id} className="bg-white rounded-lg shadow p-4 border-l-4 border-rose-600">
-                    <div className="grid grid-cols-6 gap-3">
-                      <div>
-                        <div className="text-xs text-gray-500 uppercase font-semibold">Vendor</div>
-                        <div className="text-sm font-medium text-gray-900">{payment.vendor.name}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-gray-500 uppercase font-semibold">Invoice</div>
-                        <div className="text-sm text-gray-900">{payment.invoice?.vendorInvNo || 'Advance'}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-gray-500 uppercase font-semibold">Amount</div>
-                        <div className="text-sm font-bold text-gray-900">₹{payment.amount.toFixed(2)}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-gray-500 uppercase font-semibold">Mode</div>
-                        <div className="text-sm text-gray-900">{payment.mode}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-gray-500 uppercase font-semibold">Date</div>
-                        <div className="text-sm text-gray-900">{new Date(payment.paymentDate).toLocaleDateString()}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-gray-500 uppercase font-semibold">TDS</div>
-                        <div className="text-sm text-gray-900">₹{payment.tdsDeducted.toFixed(2)}</div>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
+            {/* Recent Payments Table */}
+            {payments.length === 0 ? (
+              <div className="text-center py-16 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+                <p className="text-xs text-slate-400 uppercase tracking-widest">No payments recorded</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto -mx-3 md:-mx-6 border-x border-slate-300">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-slate-800 text-white">
+                      <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">Vendor</th>
+                      <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">Invoice</th>
+                      <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-right border-r border-slate-700">Amount</th>
+                      <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">Mode</th>
+                      <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">Date</th>
+                      <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-right">TDS</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {payments.slice(0, 10).map(payment => (
+                      <tr key={payment.id} className="border-b border-slate-100 even:bg-slate-50/70 hover:bg-blue-50/60">
+                        <td className="px-3 py-1.5 text-xs border-r border-slate-100 font-medium">{payment.vendor.name}</td>
+                        <td className="px-3 py-1.5 text-xs border-r border-slate-100">{payment.invoice?.vendorInvNo || 'Advance'}</td>
+                        <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums font-bold">{payment.amount.toFixed(2)}</td>
+                        <td className="px-3 py-1.5 text-xs border-r border-slate-100">
+                          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-slate-300 bg-slate-50 text-slate-600">{payment.mode}</span>
+                        </td>
+                        <td className="px-3 py-1.5 text-xs border-r border-slate-100">{new Date(payment.paymentDate).toLocaleDateString()}</td>
+                        <td className="px-3 py-1.5 text-xs text-right font-mono tabular-nums">{payment.tdsDeducted.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 
+        {/* Ledger Tab */}
         {activeTab === 'ledger' && (
           <div>
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Select Vendor</label>
-              <select
-                value={selectedVendor}
-                onChange={(e) => setSelectedVendor(e.target.value)}
-                className="w-full md:w-96 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent"
-              >
+            <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Select Vendor</label>
+              <select value={selectedVendor} onChange={(e) => setSelectedVendor(e.target.value)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full md:w-96 focus:outline-none focus:ring-1 focus:ring-slate-400">
                 <option value="">Select Vendor</option>
-                {vendors.map(v => (
-                  <option key={v.id} value={v.id}>{v.name}</option>
-                ))}
+                {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
               </select>
             </div>
 
             {vendorLedger && (
-              <div>
-                <div className="grid grid-cols-3 gap-4 mb-6">
-                  <div className="bg-white rounded-lg shadow p-4">
-                    <div className="text-sm text-gray-600 font-medium">Total Invoiced</div>
-                    <div className="text-2xl font-bold text-gray-900 mt-2">
-                      ₹{vendorLedger.ledger.reduce((sum, entry) => sum + (entry.debit || 0), 0).toFixed(2)}
-                    </div>
+              <>
+                {/* Ledger KPIs */}
+                <div className="grid grid-cols-3 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+                  <div className="border-l-4 border-l-red-500 border-r border-slate-300 bg-white px-4 py-3">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total Invoiced</div>
+                    <div className="text-xl font-bold text-slate-900 mt-1 font-mono tabular-nums">{vendorLedger.ledger.reduce((sum, entry) => sum + (entry.debit || 0), 0).toFixed(2)}</div>
                   </div>
-                  <div className="bg-white rounded-lg shadow p-4">
-                    <div className="text-sm text-gray-600 font-medium">Total Paid</div>
-                    <div className="text-2xl font-bold text-gray-900 mt-2">
-                      ₹{vendorLedger.ledger.reduce((sum, entry) => sum + (entry.credit || 0), 0).toFixed(2)}
-                    </div>
+                  <div className="border-l-4 border-l-green-500 border-r border-slate-300 bg-white px-4 py-3">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total Paid</div>
+                    <div className="text-xl font-bold text-slate-900 mt-1 font-mono tabular-nums">{vendorLedger.ledger.reduce((sum, entry) => sum + (entry.credit || 0), 0).toFixed(2)}</div>
                   </div>
-                  <div className="bg-white rounded-lg shadow p-4">
-                    <div className="text-sm text-gray-600 font-medium">Current Balance</div>
-                    <div className={`text-2xl font-bold mt-2 ${vendorLedger.currentBalance > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                      ₹{vendorLedger.currentBalance.toFixed(2)}
-                    </div>
+                  <div className="border-l-4 border-l-blue-500 bg-white px-4 py-3">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Current Balance</div>
+                    <div className={`text-xl font-bold mt-1 font-mono tabular-nums ${vendorLedger.currentBalance > 0 ? 'text-red-600' : 'text-green-600'}`}>{vendorLedger.currentBalance.toFixed(2)}</div>
                   </div>
                 </div>
 
-                <div className="bg-white rounded-lg shadow overflow-hidden">
+                {/* Ledger Table */}
+                <div className="overflow-x-auto -mx-3 md:-mx-6 border-x border-slate-300">
                   <table className="w-full">
                     <thead>
-                      <tr className="bg-gray-100 border-b">
-                        <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Date</th>
-                        <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Type</th>
-                        <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Reference</th>
-                        <th className="px-6 py-3 text-right text-sm font-semibold text-gray-900">Debit</th>
-                        <th className="px-6 py-3 text-right text-sm font-semibold text-gray-900">Credit</th>
-                        <th className="px-6 py-3 text-right text-sm font-semibold text-gray-900">Running Balance</th>
+                      <tr className="bg-slate-800 text-white">
+                        <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">Date</th>
+                        <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">Type</th>
+                        <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">Reference</th>
+                        <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-right border-r border-slate-700">Debit</th>
+                        <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-right border-r border-slate-700">Credit</th>
+                        <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-right">Running Bal</th>
                       </tr>
                     </thead>
                     <tbody>
                       {vendorLedger.ledger.map((entry, idx) => (
-                        <tr key={idx} className="border-b hover:bg-gray-50">
-                          <td className="px-6 py-4 text-sm text-gray-900">{new Date(entry.date).toLocaleDateString()}</td>
-                          <td className="px-6 py-4 text-sm text-gray-900">{entry.type}</td>
-                          <td className="px-6 py-4 text-sm text-gray-900">{entry.reference}</td>
-                          <td className="px-6 py-4 text-sm text-right text-gray-900">
-                            {entry.debit > 0 ? `₹${entry.debit.toFixed(2)}` : '-'}
-                          </td>
-                          <td className="px-6 py-4 text-sm text-right text-gray-900">
-                            {entry.credit > 0 ? `₹${entry.credit.toFixed(2)}` : '-'}
-                          </td>
-                          <td className={`px-6 py-4 text-sm text-right font-medium ${entry.runningBalance > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                            ₹{entry.runningBalance.toFixed(2)}
-                          </td>
+                        <tr key={idx} className="border-b border-slate-100 even:bg-slate-50/70 hover:bg-blue-50/60">
+                          <td className="px-3 py-1.5 text-xs border-r border-slate-100">{new Date(entry.date).toLocaleDateString()}</td>
+                          <td className="px-3 py-1.5 text-xs border-r border-slate-100">{entry.type}</td>
+                          <td className="px-3 py-1.5 text-xs border-r border-slate-100">{entry.reference}</td>
+                          <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums">{entry.debit > 0 ? entry.debit.toFixed(2) : '-'}</td>
+                          <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums">{entry.credit > 0 ? entry.credit.toFixed(2) : '-'}</td>
+                          <td className={`px-3 py-1.5 text-xs text-right font-mono tabular-nums font-semibold ${entry.runningBalance > 0 ? 'text-red-600' : 'text-green-600'}`}>{entry.runningBalance.toFixed(2)}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </>
             )}
 
             {selectedVendor && !vendorLedger && (
-              <div className="bg-white rounded-lg shadow p-12 text-center">
-                <div className="text-gray-400 text-lg">No ledger data available</div>
+              <div className="text-center py-16 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+                <p className="text-xs text-slate-400 uppercase tracking-widest">No ledger data available</p>
               </div>
             )}
 
             {!selectedVendor && (
-              <div className="bg-white rounded-lg shadow p-12 text-center">
-                <div className="text-gray-400 text-lg">Select a vendor to view ledger</div>
+              <div className="text-center py-16 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+                <p className="text-xs text-slate-400 uppercase tracking-widest">Select a vendor to view ledger</p>
               </div>
             )}
           </div>
         )}
 
+        {/* Outstanding Tab */}
         {activeTab === 'outstanding' && (
-          <div>
-            <div className="bg-white rounded-lg shadow overflow-hidden">
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-gray-100 border-b">
-                    <th className="px-6 py-3 text-left text-sm font-semibold text-gray-900">Vendor Name</th>
-                    <th className="px-6 py-3 text-center text-sm font-semibold text-gray-900">Invoice Count</th>
-                    <th className="px-6 py-3 text-right text-sm font-semibold text-gray-900">Total Outstanding</th>
+          <div className="overflow-x-auto -mx-3 md:-mx-6 border-x border-slate-300">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-slate-800 text-white">
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">Vendor Name</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-center border-r border-slate-700">Invoice Count</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-right">Total Outstanding</th>
+                </tr>
+              </thead>
+              <tbody>
+                {outstanding.map((item, idx) => (
+                  <tr key={idx} className="border-b border-slate-100 even:bg-slate-50/70 hover:bg-blue-50/60">
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100 font-medium">{item.vendor.name}</td>
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-center">{item.invoices.length}</td>
+                    <td className="px-3 py-1.5 text-xs text-right font-mono tabular-nums font-bold text-red-600">{item.totalOutstanding.toFixed(2)}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {outstanding.map((item, idx) => (
-                    <tr key={idx} className="border-b hover:bg-gray-50">
-                      <td className="px-6 py-4 text-sm font-medium text-gray-900">{item.vendor.name}</td>
-                      <td className="px-6 py-4 text-sm text-center text-gray-900">{item.invoices.length}</td>
-                      <td className="px-6 py-4 text-sm text-right font-bold text-red-600">
-                        ₹{item.totalOutstanding.toFixed(2)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              {outstanding.length === 0 && (
-                <div className="p-12 text-center">
-                  <div className="text-gray-400 text-lg">No outstanding payments</div>
-                </div>
+                ))}
+              </tbody>
+              {outstanding.length > 0 && (
+                <tfoot>
+                  <tr className="bg-slate-800 text-white font-semibold">
+                    <td className="px-3 py-2 text-xs uppercase tracking-widest">Total</td>
+                    <td className="px-3 py-2 text-xs text-center">{outstanding.reduce((s, i) => s + i.invoices.length, 0)}</td>
+                    <td className="px-3 py-2 text-xs text-right font-mono tabular-nums">{outstanding.reduce((s, i) => s + i.totalOutstanding, 0).toFixed(2)}</td>
+                  </tr>
+                </tfoot>
               )}
-            </div>
+            </table>
+            {outstanding.length === 0 && (
+              <div className="text-center py-16 border-b border-slate-300">
+                <p className="text-xs text-slate-400 uppercase tracking-widest">No outstanding payments</p>
+              </div>
+            )}
           </div>
         )}
       </div>

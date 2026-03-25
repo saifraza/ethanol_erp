@@ -179,9 +179,10 @@ export default function Invoices() {
 
   const statusColor = (status: string) => {
     switch (status) {
-      case 'PAID': return 'bg-green-100 text-green-800';
-      case 'PARTIAL': return 'bg-amber-100 text-amber-800';
-      default: return 'bg-red-100 text-red-800';
+      case 'PAID': return 'bg-green-50 text-green-700 border-green-300';
+      case 'PARTIAL': return 'bg-amber-50 text-amber-700 border-amber-300';
+      case 'CANCELLED': return 'bg-slate-100 text-slate-500 border-slate-300';
+      default: return 'bg-red-50 text-red-700 border-red-300';
     }
   };
 
@@ -190,122 +191,104 @@ export default function Invoices() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-emerald-700 to-emerald-800 text-white">
-        <div className="max-w-7xl mx-auto px-4 py-5">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h1 className="text-xl font-bold flex items-center gap-2">
-                <FileText size={24} /> Invoices
-              </h1>
-              <p className="text-xs text-emerald-200 mt-1">{new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
-            </div>
-            <div className="flex items-center gap-3">
-              <button onClick={() => { loadInvoices(filters); }} className="p-2 hover:bg-emerald-600 rounded-lg transition text-sm text-emerald-100" title="Refresh">
-                <RotateCcw size={18} />
-              </button>
-              {!showCreateForm && (
-                <button onClick={() => setShowCreateForm(true)}
-                  className="bg-white text-emerald-700 px-4 py-2 rounded-lg font-semibold text-sm hover:bg-emerald-50 flex items-center gap-2 shadow-md transition">
-                  <Plus size={16} /> New Invoice
-                </button>
-              )}
-            </div>
+    <div className="min-h-screen bg-slate-50">
+      <div className="p-3 md:p-6 space-y-0">
+        {/* Page Toolbar */}
+        <div className="bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <FileText size={16} />
+            <span className="text-sm font-bold tracking-wide uppercase">Invoices</span>
+            <span className="text-[10px] text-slate-400">|</span>
+            <span className="text-[10px] text-slate-400">Sales billing & e-invoice management</span>
           </div>
-
-          {/* Stats Bar */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-emerald-600 bg-opacity-40 rounded-lg px-4 py-3 backdrop-blur-sm">
-              <p className="text-emerald-100 text-xs font-medium">Outstanding</p>
-              <p className="text-white text-xl font-bold">₹{(totalOutstanding / 100000).toFixed(1)}L</p>
-            </div>
-            <div className="bg-emerald-600 bg-opacity-40 rounded-lg px-4 py-3 backdrop-blur-sm">
-              <p className="text-emerald-100 text-xs font-medium">This Month</p>
-              <p className="text-white text-xl font-bold">₹{(thisMonthBilled / 100000).toFixed(1)}L</p>
-            </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => { loadInvoices(filters); }} className="p-1.5 hover:bg-slate-700 transition" title="Refresh">
+              <RotateCcw size={14} />
+            </button>
+            {!showCreateForm && (
+              <button onClick={() => setShowCreateForm(true)}
+                className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 flex items-center gap-1.5">
+                <Plus size={13} /> NEW INVOICE
+              </button>
+            )}
           </div>
         </div>
-      </div>
 
-      <div className="max-w-7xl mx-auto px-4 py-6">
+        {/* KPI Strip */}
+        <div className="grid grid-cols-2 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+          <div className="border-l-4 border-l-red-500 border-r border-slate-300 px-4 py-3 bg-white">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Outstanding</div>
+            <div className="text-xl font-bold text-slate-900 font-mono tabular-nums">{(totalOutstanding / 100000).toFixed(1)}L</div>
+          </div>
+          <div className="border-l-4 border-l-blue-500 px-4 py-3 bg-white">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">This Month Billed</div>
+            <div className="text-xl font-bold text-slate-900 font-mono tabular-nums">{(thisMonthBilled / 100000).toFixed(1)}L</div>
+          </div>
+        </div>
+
+        {/* Message */}
         {msg && (
-          <div className={`rounded-lg p-3 mb-4 text-sm ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+          <div className={`p-3 text-xs border mt-3 ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border-green-300' : 'bg-red-50 text-red-700 border-red-300'}`}>
             {msg.text}
           </div>
         )}
 
-        {/* Filters */}
-        <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
-          {['ALL', 'UNPAID', 'PARTIAL', 'PAID'].map(s => (
-            <button
-              key={s}
-              onClick={() => handleFilterChange({ status: s as any })}
-              className={`px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition ${filters.status === s ? 'bg-emerald-600 text-white shadow-md' : 'bg-white text-gray-600 border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50'}`}
+        {/* Secondary Toolbar - Filters */}
+        <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex gap-0">
+              {['ALL', 'UNPAID', 'PARTIAL', 'PAID'].map(s => (
+                <button
+                  key={s}
+                  onClick={() => handleFilterChange({ status: s as any })}
+                  className={`px-3 py-1 text-[11px] font-bold uppercase tracking-widest border border-slate-300 ${filters.status === s ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 hover:bg-slate-50'} ${s === 'ALL' ? '' : '-ml-px'}`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+            <select
+              value={filters.customerId || ''}
+              onChange={e => handleFilterChange({ customerId: e.target.value || undefined })}
+              className="border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 bg-white"
             >
-              {s}
-            </button>
-          ))}
-        </div>
-
-        {/* Filters Panel */}
-        <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6 shadow-sm">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-2">Customer</label>
-              <select
-                value={filters.customerId || ''}
-                onChange={e => handleFilterChange({ customerId: e.target.value || undefined })}
-                className="input-field w-full text-sm"
-              >
               <option value="">All Customers</option>
               {customers.map(c => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-2">Date Range</label>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] text-gray-500">From</label>
-                  <input
-                    type="date"
-                    value={filters.dateFrom || ''}
-                    onChange={e => handleFilterChange({ dateFrom: e.target.value || undefined })}
-                    className="input-field w-full text-sm mt-1"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] text-gray-500">To</label>
-                  <input
-                    type="date"
-                    value={filters.dateTo || ''}
-                    onChange={e => handleFilterChange({ dateTo: e.target.value || undefined })}
-                    className="input-field w-full text-sm mt-1"
-                  />
-                </div>
-              </div>
-            </div>
+            <input
+              type="date"
+              value={filters.dateFrom || ''}
+              onChange={e => handleFilterChange({ dateFrom: e.target.value || undefined })}
+              className="border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 bg-white"
+              placeholder="From"
+            />
+            <input
+              type="date"
+              value={filters.dateTo || ''}
+              onChange={e => handleFilterChange({ dateTo: e.target.value || undefined })}
+              className="border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 bg-white"
+              placeholder="To"
+            />
           </div>
         </div>
 
         {/* Create Invoice Form */}
         {showCreateForm && (
-          <div className="bg-white rounded-xl border border-emerald-200 shadow-lg mb-6 overflow-hidden">
-            <div className="bg-gradient-to-r from-emerald-700 to-emerald-800 px-4 py-3 flex items-center justify-between">
-              <h3 className="font-bold text-white text-sm">New Invoice</h3>
-              <button onClick={resetCreateForm} className="text-emerald-200 hover:text-white"><X size={18} /></button>
+          <div className="border border-slate-300 shadow-2xl bg-white mt-3">
+            <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
+              <span className="text-sm font-bold tracking-wide uppercase">New Invoice</span>
+              <button onClick={resetCreateForm} className="text-slate-400 hover:text-white"><X size={16} /></button>
             </div>
 
-            <div className="p-4 space-y-4">
+            <div className="p-4 space-y-3">
               <div>
-                <label className="text-xs text-gray-500 font-medium">Customer *</label>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Customer *</label>
                 <select
                   value={formCustomerId}
                   onChange={e => setFormCustomerId(e.target.value)}
-                  className="input-field w-full text-sm mt-1"
+                  className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
                 >
                   <option value="">Select Customer</option>
                   {customers.map(c => (
@@ -315,11 +298,11 @@ export default function Invoices() {
               </div>
 
               <div>
-                <label className="text-xs text-gray-500 font-medium">Product</label>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Product</label>
                 <select
                   value={formProduct}
                   onChange={e => setFormProduct(e.target.value)}
-                  className="input-field w-full text-sm mt-1"
+                  className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
                 >
                   {['DDGS', 'ETHANOL', 'LFO', 'HFO', 'RS'].map(p => (
                     <option key={p} value={p}>{p}</option>
@@ -329,58 +312,58 @@ export default function Invoices() {
 
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="text-xs text-gray-500 font-medium">Qty *</label>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Qty *</label>
                   <input
                     type="number"
                     step="0.01"
                     value={formQty}
                     onChange={e => setFormQty(e.target.value)}
                     placeholder="0"
-                    className="input-field w-full text-sm mt-1"
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500 font-medium">Rate *</label>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Rate *</label>
                   <input
                     type="number"
                     step="0.01"
                     value={formRate}
                     onChange={e => setFormRate(e.target.value)}
                     placeholder="0"
-                    className="input-field w-full text-sm mt-1"
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500 font-medium">GST %</label>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">GST %</label>
                   <input
                     type="number"
                     step="0.01"
                     value={formGst}
                     onChange={e => setFormGst(e.target.value)}
-                    className="input-field w-full text-sm mt-1"
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-gray-500 font-medium">Freight</label>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Freight</label>
                   <input
                     type="number"
                     step="0.01"
                     value={formFreight}
                     onChange={e => setFormFreight(e.target.value)}
                     placeholder="0"
-                    className="input-field w-full text-sm mt-1"
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500 font-medium">Challan No</label>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Challan No</label>
                   <input
                     value={formChallanNo}
                     onChange={e => setFormChallanNo(e.target.value)}
                     placeholder="Optional"
-                    className="input-field w-full text-sm mt-1"
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
                   />
                 </div>
               </div>
@@ -388,192 +371,216 @@ export default function Invoices() {
               <button
                 onClick={saveInvoice}
                 disabled={saving}
-                className="px-6 py-3 bg-emerald-600 text-white rounded-lg font-bold text-sm hover:bg-emerald-700 flex items-center justify-center gap-2 disabled:opacity-50 w-full shadow-md transition"
+                className="px-3 py-1.5 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 flex items-center justify-center gap-2 disabled:opacity-50 w-full"
               >
-                {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-                Create Invoice
+                {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                CREATE INVOICE
               </button>
             </div>
           </div>
         )}
 
-        {/* Invoice Cards */}
-        <div className="space-y-3">
-          {invoices.length > 0 ? (
-            invoices.map(inv => (
-              <div key={inv.id} className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition">
-                {/* Summary Row */}
-                <button
-                  onClick={() => setExpandedId(expandedId === inv.id ? null : inv.id)}
-                  className="w-full p-4 hover:bg-gray-50 flex items-center justify-between"
-                >
-                  <div className="text-left flex-1">
-                    <div className="font-bold text-gray-900">INV-{inv.invoiceNo}</div>
-                    <div className="text-sm text-gray-600">{inv.customer?.name || '—'}</div>
-                    <div className="text-xs text-gray-500 mt-1">{new Date(inv.invoiceDate).toLocaleDateString('en-IN')}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-bold text-lg text-gray-900">₹{inv.totalAmount.toLocaleString('en-IN')}</div>
-                    <div className="flex items-center gap-1 justify-end mt-1">
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${statusColor(inv.status)}`}>
-                        {inv.status}
-                      </span>
-                      {inv.irn && (
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700">IRN</span>
-                      )}
-                      {inv.ewbNo && (
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700">EWB</span>
-                      )}
-                    </div>
-                  </div>
-                  <ChevronDown
-                    size={20}
-                    className={`ml-2 text-gray-400 transition-transform ${expandedId === inv.id ? 'rotate-180' : ''}`}
-                  />
-                </button>
-
-                {/* Payment Progress */}
-                <div className="px-4 pb-3 border-t border-gray-100">
-                  <div className="flex justify-between text-xs text-gray-600 mb-2">
-                    <span>Paid ₹{inv.paidAmount.toLocaleString('en-IN')} / ₹{inv.totalAmount.toLocaleString('en-IN')}</span>
-                    <span>{progressPercent(inv).toFixed(0)}%</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div
-                      className={`h-2 rounded-full transition-all ${
-                        inv.status === 'PAID' ? 'bg-green-500' : inv.status === 'PARTIAL' ? 'bg-amber-500' : 'bg-red-500'
-                      }`}
-                      style={{ width: `${Math.min(progressPercent(inv), 100)}%` }}
-                    />
-                  </div>
-                </div>
-
-                {/* Expanded Details */}
-                {expandedId === inv.id && (
-                  <div className="px-4 py-3 bg-gray-50 border-t border-gray-100 space-y-3">
-                    <div className="bg-white rounded-lg p-3 space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">Product:</span>
-                        <span className="font-semibold text-gray-900">{inv.productName}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">Qty:</span>
-                        <span className="font-semibold text-gray-900">{inv.quantity} {inv.unit}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">Rate:</span>
-                        <span className="font-semibold text-gray-900">₹{inv.rate.toLocaleString('en-IN')}</span>
-                      </div>
-                      <div className="border-t border-gray-200 pt-2 flex justify-between text-sm font-semibold">
-                        <span className="text-gray-600">Base:</span>
-                        <span className="text-gray-900">₹{inv.amount.toLocaleString('en-IN')}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">GST ({inv.gstPercent}%):</span>
-                        <span className="font-semibold text-gray-900">₹{inv.gstAmount.toLocaleString('en-IN')}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">Freight:</span>
-                        <span className="font-semibold text-gray-900">₹{inv.freightCharge.toLocaleString('en-IN')}</span>
-                      </div>
-                      <div className="border-t border-gray-200 pt-2 flex justify-between text-base font-bold">
-                        <span>Total:</span>
-                        <span className="text-gray-900">₹{inv.totalAmount.toLocaleString('en-IN')}</span>
-                      </div>
-                    </div>
-
-                    {inv.balanceAmount > 0 && (
-                      <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                        <div className="text-sm font-semibold text-red-700">
-                          Balance Due: ₹{inv.balanceAmount.toLocaleString('en-IN')}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Actions */}
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => {
-                          const token = localStorage.getItem('token');
-                          window.open(`/api/invoices/${inv.id}/pdf?token=${token}`, '_blank');
-                        }}
-                        className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium text-sm flex items-center justify-center gap-2"
-                      >
-                        <Printer size={16} />
-                        Print PDF
-                      </button>
-
-                      {!inv.irn && inv.status !== 'CANCELLED' && (
-                        <button
-                          onClick={() => generateEInvoice(inv.id)}
-                          disabled={generatingEInvoice === inv.id}
-                          className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium text-sm flex items-center justify-center gap-2 disabled:opacity-50"
-                        >
-                          {generatingEInvoice === inv.id ? (
-                            <Loader2 size={16} className="animate-spin" />
-                          ) : (
-                            <FileCheck size={16} />
+        {/* Invoice Table */}
+        <div className="-mx-3 md:-mx-6 border-x border-slate-300 mt-3">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-slate-800 text-white">
+                <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">Invoice</th>
+                <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">Customer</th>
+                <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">Date</th>
+                <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-right border-r border-slate-700">Amount</th>
+                <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-right border-r border-slate-700">Balance</th>
+                <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-center border-r border-slate-700">Status</th>
+                <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-center border-r border-slate-700">Docs</th>
+                <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {invoices.length > 0 ? (
+                invoices.map(inv => (
+                  <>
+                    <tr key={inv.id} className="border-b border-slate-100 even:bg-slate-50/70 hover:bg-blue-50/60 cursor-pointer" onClick={() => setExpandedId(expandedId === inv.id ? null : inv.id)}>
+                      <td className="px-3 py-1.5 text-xs border-r border-slate-100 font-semibold text-slate-900">INV-{inv.invoiceNo}</td>
+                      <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-slate-700">{inv.customer?.name || '--'}</td>
+                      <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-slate-600">{new Date(inv.invoiceDate).toLocaleDateString('en-IN')}</td>
+                      <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums font-semibold">{inv.totalAmount.toLocaleString('en-IN')}</td>
+                      <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums text-red-700 font-semibold">{inv.balanceAmount > 0 ? inv.balanceAmount.toLocaleString('en-IN') : '--'}</td>
+                      <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-center">
+                        <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${statusColor(inv.status)}`}>
+                          {inv.status}
+                        </span>
+                      </td>
+                      <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          {inv.irn && (
+                            <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border bg-blue-50 text-blue-700 border-blue-300">IRN</span>
                           )}
-                          {generatingEInvoice === inv.id ? 'Generating...' : 'e-Invoice (IRN)'}
-                        </button>
-                      )}
-                    </div>
-
-                    {/* e-Invoice (IRN) Status */}
-                    {inv.irn && (
-                      <div className={`border rounded-lg p-3 ${inv.irnStatus === 'CANCELLED' ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'}`}>
-                        <div className={`text-sm font-semibold mb-2 ${inv.irnStatus === 'CANCELLED' ? 'text-red-700' : 'text-blue-700'}`}>
-                          e-Invoice {inv.irnStatus === 'CANCELLED' ? 'Cancelled' : 'Generated'} ✓
+                          {inv.ewbNo && (
+                            <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border bg-indigo-50 text-indigo-700 border-indigo-300">EWB</span>
+                          )}
                         </div>
-                        <div className="text-xs text-blue-600 space-y-0.5">
-                          <div>IRN: <span className="font-mono text-[10px] break-all">{inv.irn}</span></div>
-                          {inv.ackNo && <div>Ack No: {inv.ackNo}</div>}
-                          {inv.irnDate && <div>Date: {new Date(inv.irnDate).toLocaleDateString('en-IN')}</div>}
-                        </div>
-                      </div>
-                    )}
+                      </td>
+                      <td className="px-3 py-1.5 text-xs text-center">
+                        <ChevronDown
+                          size={14}
+                          className={`inline text-slate-400 transition-transform ${expandedId === inv.id ? 'rotate-180' : ''}`}
+                        />
+                      </td>
+                    </tr>
 
-                    {/* E-Way Bill Status */}
-                    {inv.ewbNo && (
-                      <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
-                        <div className="text-sm font-semibold text-indigo-700 mb-1">E-Way Bill Generated ✓</div>
-                        <div className="text-xs text-indigo-600 space-y-0.5">
-                          <div>EWB No: <span className="font-bold">{inv.ewbNo}</span></div>
-                          {inv.ewbDate && <div>Date: {new Date(inv.ewbDate).toLocaleDateString('en-IN')}</div>}
-                          {inv.ewbValidTill && <div>Valid Till: {new Date(inv.ewbValidTill).toLocaleDateString('en-IN')}</div>}
-                        </div>
-                      </div>
-                    )}
-
-                    {inv.payments && inv.payments.length > 0 && (
-                      <div>
-                        <div className="text-xs font-semibold text-gray-600 mb-2">PAYMENT HISTORY</div>
-                        <div className="space-y-2">
-                          {inv.payments.map((p, i) => (
-                            <div key={i} className="flex justify-between text-sm bg-white rounded p-2">
-                              <div>
-                                <div className="text-gray-900 font-semibold">{p.mode}</div>
-                                <div className="text-xs text-gray-500">{new Date(p.paymentDate).toLocaleDateString('en-IN')}</div>
+                    {/* Expanded Row */}
+                    {expandedId === inv.id && (
+                      <tr key={`${inv.id}-exp`}>
+                        <td colSpan={8} className="bg-slate-50 border-b border-slate-200">
+                          <div className="p-4 space-y-3">
+                            {/* Progress Bar */}
+                            <div>
+                              <div className="flex justify-between text-[10px] text-slate-500 mb-1">
+                                <span className="font-bold uppercase tracking-widest">Payment Progress</span>
+                                <span className="font-mono">{progressPercent(inv).toFixed(0)}% -- Paid {inv.paidAmount.toLocaleString('en-IN')} / {inv.totalAmount.toLocaleString('en-IN')}</span>
                               </div>
-                              <div className="text-right">
-                                <div className="text-gray-900 font-bold">₹{p.amount.toLocaleString('en-IN')}</div>
-                                {p.reference && <div className="text-xs text-gray-500">{p.reference}</div>}
+                              <div className="w-full bg-slate-200 h-1.5">
+                                <div
+                                  className={`h-1.5 transition-all ${
+                                    inv.status === 'PAID' ? 'bg-green-500' : inv.status === 'PARTIAL' ? 'bg-amber-500' : 'bg-red-500'
+                                  }`}
+                                  style={{ width: `${Math.min(progressPercent(inv), 100)}%` }}
+                                />
                               </div>
                             </div>
-                          ))}
-                        </div>
-                      </div>
+
+                            {/* Line Items */}
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                              <div>
+                                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Product</div>
+                                <div className="text-xs font-semibold text-slate-900">{inv.productName}</div>
+                              </div>
+                              <div>
+                                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Qty</div>
+                                <div className="text-xs font-semibold text-slate-900">{inv.quantity} {inv.unit}</div>
+                              </div>
+                              <div>
+                                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Rate</div>
+                                <div className="text-xs font-semibold text-slate-900 font-mono tabular-nums">{inv.rate.toLocaleString('en-IN')}</div>
+                              </div>
+                              <div>
+                                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Base Amount</div>
+                                <div className="text-xs font-semibold text-slate-900 font-mono tabular-nums">{inv.amount.toLocaleString('en-IN')}</div>
+                              </div>
+                              <div>
+                                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">GST ({inv.gstPercent}%)</div>
+                                <div className="text-xs font-semibold text-slate-900 font-mono tabular-nums">{inv.gstAmount.toLocaleString('en-IN')}</div>
+                              </div>
+                              <div>
+                                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Freight</div>
+                                <div className="text-xs font-semibold text-slate-900 font-mono tabular-nums">{inv.freightCharge.toLocaleString('en-IN')}</div>
+                              </div>
+                              <div>
+                                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Total</div>
+                                <div className="text-sm font-bold text-slate-900 font-mono tabular-nums">{inv.totalAmount.toLocaleString('en-IN')}</div>
+                              </div>
+                              {inv.balanceAmount > 0 && (
+                                <div>
+                                  <div className="text-[10px] font-bold text-red-500 uppercase tracking-widest mb-0.5">Balance Due</div>
+                                  <div className="text-sm font-bold text-red-700 font-mono tabular-nums">{inv.balanceAmount.toLocaleString('en-IN')}</div>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Actions */}
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => {
+                                  const token = localStorage.getItem('token');
+                                  window.open(`/api/invoices/${inv.id}/pdf?token=${token}`, '_blank');
+                                }}
+                                className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 flex items-center gap-1.5"
+                              >
+                                <Printer size={13} /> PRINT PDF
+                              </button>
+
+                              {!inv.irn && inv.status !== 'CANCELLED' && (
+                                <button
+                                  onClick={() => generateEInvoice(inv.id)}
+                                  disabled={generatingEInvoice === inv.id}
+                                  className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 flex items-center gap-1.5 disabled:opacity-50"
+                                >
+                                  {generatingEInvoice === inv.id ? (
+                                    <Loader2 size={13} className="animate-spin" />
+                                  ) : (
+                                    <FileCheck size={13} />
+                                  )}
+                                  {generatingEInvoice === inv.id ? 'GENERATING...' : 'E-INVOICE (IRN)'}
+                                </button>
+                              )}
+                            </div>
+
+                            {/* e-Invoice (IRN) Status */}
+                            {inv.irn && (
+                              <div className={`border p-3 ${inv.irnStatus === 'CANCELLED' ? 'bg-red-50 border-red-300' : 'bg-blue-50 border-blue-300'}`}>
+                                <div className={`text-xs font-bold mb-1 ${inv.irnStatus === 'CANCELLED' ? 'text-red-700' : 'text-blue-700'}`}>
+                                  e-Invoice {inv.irnStatus === 'CANCELLED' ? 'Cancelled' : 'Generated'}
+                                </div>
+                                <div className="text-[10px] text-blue-600 space-y-0.5">
+                                  <div>IRN: <span className="font-mono text-[10px] break-all">{inv.irn}</span></div>
+                                  {inv.ackNo && <div>Ack No: {inv.ackNo}</div>}
+                                  {inv.irnDate && <div>Date: {new Date(inv.irnDate).toLocaleDateString('en-IN')}</div>}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* E-Way Bill Status */}
+                            {inv.ewbNo && (
+                              <div className="bg-indigo-50 border border-indigo-300 p-3">
+                                <div className="text-xs font-bold text-indigo-700 mb-1">E-Way Bill Generated</div>
+                                <div className="text-[10px] text-indigo-600 space-y-0.5">
+                                  <div>EWB No: <span className="font-bold">{inv.ewbNo}</span></div>
+                                  {inv.ewbDate && <div>Date: {new Date(inv.ewbDate).toLocaleDateString('en-IN')}</div>}
+                                  {inv.ewbValidTill && <div>Valid Till: {new Date(inv.ewbValidTill).toLocaleDateString('en-IN')}</div>}
+                                </div>
+                              </div>
+                            )}
+
+                            {inv.payments && inv.payments.length > 0 && (
+                              <div>
+                                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Payment History</div>
+                                <table className="w-full border border-slate-200">
+                                  <thead>
+                                    <tr className="bg-slate-100">
+                                      <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-left border-r border-slate-200">Mode</th>
+                                      <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-left border-r border-slate-200">Date</th>
+                                      <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-right border-r border-slate-200">Amount</th>
+                                      <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-left">Reference</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {inv.payments.map((p, i) => (
+                                      <tr key={i} className="border-b border-slate-100 even:bg-slate-50/70">
+                                        <td className="px-3 py-1.5 text-xs border-r border-slate-100 font-semibold">{p.mode}</td>
+                                        <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-slate-600">{new Date(p.paymentDate).toLocaleDateString('en-IN')}</td>
+                                        <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums font-bold">{p.amount.toLocaleString('en-IN')}</td>
+                                        <td className="px-3 py-1.5 text-xs text-slate-500">{p.reference || '--'}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
                     )}
-                  </div>
-                )}
-              </div>
-            ))
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              <FileText size={48} className="mx-auto mb-2 opacity-30" />
-              <p className="text-sm">No invoices found</p>
-            </div>
-          )}
+                  </>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={8} className="text-center py-12">
+                    <span className="text-xs text-slate-400 uppercase tracking-widest">No invoices found</span>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

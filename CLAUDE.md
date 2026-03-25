@@ -64,6 +64,58 @@ When building new modules:
 2. **Build sequentially** — modules are interlinked (accounts hooks into sales/procurement, inventory links to production)
 3. **Always consider WhatsApp integration** — what readings/reports should be auto-collected or shared?
 4. **Follow existing patterns** — use the code templates below
+5. **Use SAP-style UI** for all non-plant modules (see UI Design System below)
+
+### UI Design System — Two Tiers
+
+The ERP has two distinct UI styles:
+
+**Tier 1 — Plant/Process Pages** (existing style, keep as-is):
+- Modules: Grain, Milling, Liquefaction, Fermentation, Distillation, Evaporation, Decanter, Dryer, DDGS, Lab, Dashboard
+- Style: Rounded corners, cards with shadow, colorful badges, emoji icons, relaxed spacing
+- Reason: These are used by plant operators on phones/tablets — friendlier UI is better
+
+**Tier 2 — Enterprise/Back-Office Pages** (SAP-style, use for ALL new modules):
+- Modules: Accounts, Inventory, Sales, Procurement, Trade, Admin, Reports
+- Style: Dense, professional, SAP/Oracle-like — square edges, dark headers, gridlines, compact typography
+- **All new modules MUST use Tier 2 style unless they are plant-floor data entry**
+
+#### Tier 2 SAP Design Tokens (copy-paste these exactly):
+
+| Element | Tailwind Classes |
+|---------|-----------------|
+| **Page wrapper** | `<div className="min-h-screen bg-slate-50"><div className="p-3 md:p-6 space-y-0">` |
+| **Page toolbar** | `bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6` with title: `text-sm font-bold tracking-wide uppercase` |
+| **Toolbar subtitle** | `<span className="text-[10px] text-slate-400">\|</span><span className="text-[10px] text-slate-400">description</span>` |
+| **Filter toolbar** | `bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6` |
+| **KPI strip** | `grid gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6` each card: `bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-{color}-500` |
+| **KPI label** | `text-[10px] font-bold text-slate-400 uppercase tracking-widest` |
+| **KPI value** | `text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums` |
+| **Table container** | `-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-hidden` |
+| **Table header row** | `bg-slate-800 text-white` |
+| **Table header cell** | `px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700` |
+| **Table body row** | `border-b border-slate-100 even:bg-slate-50/70 hover:bg-blue-50/60` |
+| **Table body cell** | `px-3 py-1.5 text-xs border-r border-slate-100` |
+| **Table footer row** | `bg-slate-800 text-white font-semibold` |
+| **Currency** | `font-mono tabular-nums` |
+| **Status badge** | `text-[9px] font-bold uppercase px-1.5 py-0.5 border` (NO rounded) |
+| **Button primary** | `px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700` (NO rounded) |
+| **Button secondary** | `px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50` |
+| **Form label** | `text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5` |
+| **Form input** | `border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400` (NO rounded) |
+| **Modal header** | `bg-slate-800 text-white px-4 py-2.5` with `text-xs font-bold uppercase tracking-widest` |
+| **Modal body** | `bg-white shadow-2xl` (NO rounded) |
+| **Tab active** | `text-[11px] font-bold uppercase tracking-widest border-b-2 border-blue-600` |
+| **Empty/loading** | `text-xs text-slate-400 uppercase tracking-widest` |
+
+#### SAP Design Rules:
+- **NO rounded corners** — everything is square (`rounded`, `rounded-lg`, `rounded-xl` are banned)
+- **NO emojis** in enterprise pages
+- **NO shadow-sm** — use `shadow-2xl` only for modals
+- **Edge-to-edge** tables and KPI strips with `-mx-3 md:-mx-6`
+- **Vertical gridlines** in tables: `border-r border-slate-100` on cells, `border-r border-slate-700` on headers
+- **Row striping**: `even:bg-slate-50/70`
+- **Group headers** in tables: `bg-slate-200 border-b border-slate-300` with `text-[10px] font-bold uppercase tracking-widest`
 
 ---
 
@@ -196,7 +248,7 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 export default router;
 ```
 
-### New Frontend Page (template)
+### New Frontend Page (template — SAP Tier 2 style)
 ```typescript
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../services/api';
@@ -204,6 +256,8 @@ import api from '../../services/api';
 interface MyItem {
   id: string;
   name: string;
+  status: string;
+  amount: number;
   // ... type all fields
 }
 
@@ -214,7 +268,7 @@ export default function MyPage() {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await api.get<MyItem[]>('/api/my-endpoint');
+      const res = await api.get<MyItem[]>('/my-endpoint');
       setData(res.data);
     } catch (err) {
       console.error('Failed to fetch:', err);
@@ -225,12 +279,62 @@ export default function MyPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  if (loading) return <div className="p-6 text-gray-500">Loading...</div>;
+  const fmtCurrency = (n: number) => n === 0 ? '--' : '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+
+  if (loading) return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="text-xs text-slate-400 uppercase tracking-widest">Loading...</div>
+    </div>
+  );
 
   return (
-    <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-bold text-gray-800">Page Title</h1>
-      {/* Content */}
+    <div className="min-h-screen bg-slate-50">
+      <div className="p-3 md:p-6 space-y-0">
+        {/* Page Toolbar */}
+        <div className="bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <h1 className="text-sm font-bold tracking-wide uppercase">Page Title</h1>
+            <span className="text-[10px] text-slate-400">|</span>
+            <span className="text-[10px] text-slate-400">Brief description</span>
+          </div>
+          <button className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">
+            + New Item
+          </button>
+        </div>
+
+        {/* KPI Strip */}
+        <div className="grid grid-cols-3 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+          <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-blue-500">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total</div>
+            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{data.length}</div>
+          </div>
+          {/* more KPI cards */}
+        </div>
+
+        {/* Data Table */}
+        <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-hidden">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="bg-slate-800 text-white">
+                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Name</th>
+                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Status</th>
+                <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((item, i) => (
+                <tr key={item.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                  <td className="px-3 py-1.5 text-slate-800 border-r border-slate-100">{item.name}</td>
+                  <td className="px-3 py-1.5 border-r border-slate-100">
+                    <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-slate-300 bg-slate-50 text-slate-600">{item.status}</span>
+                  </td>
+                  <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-700">{fmtCurrency(item.amount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

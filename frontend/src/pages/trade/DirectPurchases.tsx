@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Wheat, Trash2, Check, X } from 'lucide-react';
+import { Trash2, Check, X } from 'lucide-react';
 import api from '../../services/api';
 
 interface Purchase {
@@ -274,611 +274,529 @@ const DirectPurchases: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-emerald-600 to-emerald-700 text-white">
-        <div className="max-w-7xl mx-auto px-4 py-6">
-          <div className="flex items-center gap-3 mb-4">
-            <Wheat className="w-8 h-8" />
-            <h1 className="text-3xl font-bold">Direct Purchases</h1>
-          </div>
-          <p className="text-emerald-100">
-            Record cash purchases from farmers at the factory gate
-          </p>
+    <div className="space-y-0">
+      {/* Page Toolbar */}
+      <div className="bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6">
+        <h1 className="text-sm font-bold tracking-wide uppercase">Direct Purchases</h1>
+        <p className="text-[10px] text-slate-400 tracking-wide">Record cash purchases from farmers at the factory gate</p>
+      </div>
+
+      {/* KPI Strip */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+        <div className="bg-white px-4 py-3 border-l-4 border-l-blue-600 border-b md:border-b-0 border-r border-slate-200">
+          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Today's Purchases</div>
+          <div className="text-xl font-bold text-slate-800">{stats.todayCount}</div>
+        </div>
+        <div className="bg-white px-4 py-3 border-l-4 border-l-emerald-600 border-b md:border-b-0 border-r border-slate-200">
+          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Today's Qty</div>
+          <div className="text-xl font-bold text-slate-800">{stats.todayQty.toFixed(2)} MT</div>
+        </div>
+        <div className="bg-white px-4 py-3 border-l-4 border-l-amber-500 border-r border-slate-200">
+          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Today's Amount</div>
+          <div className="text-xl font-bold text-slate-800 font-mono tabular-nums">{formatCurrency(stats.todayAmount)}</div>
+        </div>
+        <div className="bg-white px-4 py-3 border-l-4 border-l-red-500">
+          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Unpaid</div>
+          <div className="text-xl font-bold text-red-700">{stats.unpaidCount}</div>
+          {stats.unpaidCount > 0 && (
+            <div className="text-[10px] text-red-500 font-mono tabular-nums">{formatCurrency(stats.unpaidAmount)}</div>
+          )}
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 py-6">
-        {/* Stats Bar */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded-lg shadow p-4">
-            <div className="text-sm font-medium text-gray-600">Today's Purchases</div>
-            <div className="text-2xl font-bold text-emerald-600 mt-1">
-              {stats.todayCount}
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-4">
-            <div className="text-sm font-medium text-gray-600">Today's Qty</div>
-            <div className="text-2xl font-bold text-emerald-600 mt-1">
-              {stats.todayQty.toFixed(2)} MT
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-4">
-            <div className="text-sm font-medium text-gray-600">Today's Amount</div>
-            <div className="text-2xl font-bold text-emerald-600 mt-1">
-              {formatCurrency(stats.todayAmount)}
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-4">
-            <div className="text-sm font-medium text-gray-600">Unpaid</div>
-            <div className="text-2xl font-bold text-orange-600 mt-1">
-              {stats.unpaidCount}
-              {stats.unpaidCount > 0 && (
-                <div className="text-xs font-normal text-orange-500 mt-1">
-                  {formatCurrency(stats.unpaidAmount)}
-                </div>
-              )}
-            </div>
-          </div>
+      {/* Quick Entry Form */}
+      <div className="border-x border-b border-slate-300 -mx-3 md:-mx-6">
+        <div className="bg-slate-100 border-b border-slate-300 px-4 py-2">
+          <h2 className="text-[11px] font-bold uppercase tracking-widest text-slate-700">Quick Entry</h2>
         </div>
 
-        {/* Quick Entry Form */}
-        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <h2 className="text-xl font-bold text-gray-800 mb-4">Quick Entry</h2>
+        {errors.submit && (
+          <div className="mx-4 mt-3 p-3 bg-red-50 border border-red-300 text-red-700 text-xs">
+            {errors.submit}
+          </div>
+        )}
 
-          {errors.submit && (
-            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
-              {errors.submit}
+        <form onSubmit={handleSubmit} className="p-4 space-y-3">
+          {/* Row 1: Seller Info */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Seller Name *</label>
+              <input
+                type="text"
+                name="sellerName"
+                value={formData.sellerName}
+                onChange={handleInputChange}
+                placeholder="e.g., Ramesh Kumar"
+                className={`w-full border px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none ${
+                  errors.sellerName ? 'border-red-500' : 'border-slate-300'
+                }`}
+              />
+              {errors.sellerName && <p className="text-red-500 text-[10px] mt-0.5">{errors.sellerName}</p>}
             </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Row 1: Seller Info */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Seller Name *
-                </label>
-                <input
-                  type="text"
-                  name="sellerName"
-                  value={formData.sellerName}
-                  onChange={handleInputChange}
-                  placeholder="e.g., Ramesh Kumar"
-                  className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none ${
-                    errors.sellerName ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                />
-                {errors.sellerName && (
-                  <p className="text-red-500 text-xs mt-1">{errors.sellerName}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Village
-                </label>
-                <input
-                  type="text"
-                  name="sellerVillage"
-                  value={formData.sellerVillage}
-                  onChange={handleInputChange}
-                  placeholder="Village name"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Phone
-                </label>
-                <input
-                  type="tel"
-                  name="sellerPhone"
-                  value={formData.sellerPhone}
-                  onChange={handleInputChange}
-                  placeholder="10-digit phone"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
-                />
-              </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Village</label>
+              <input
+                type="text"
+                name="sellerVillage"
+                value={formData.sellerVillage}
+                onChange={handleInputChange}
+                placeholder="Village name"
+                className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              />
             </div>
-
-            {/* Row 2: Material & Quantity */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Material *
-                </label>
-                <select
-                  name="materialName"
-                  value={formData.materialName}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
-                >
-                  <option value="Maize">Maize</option>
-                  <option value="Broken Rice">Broken Rice</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Quantity *
-                </label>
-                <input
-                  type="number"
-                  name="quantity"
-                  value={formData.quantity}
-                  onChange={handleInputChange}
-                  placeholder="0"
-                  step="0.01"
-                  className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none ${
-                    errors.quantity ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                />
-                {errors.quantity && (
-                  <p className="text-red-500 text-xs mt-1">{errors.quantity}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Unit
-                </label>
-                <select
-                  name="unit"
-                  value={formData.unit}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
-                >
-                  <option value="KG">KG</option>
-                  <option value="MT">MT</option>
-                  <option value="QTL">QTL</option>
-                </select>
-              </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Phone</label>
+              <input
+                type="tel"
+                name="sellerPhone"
+                value={formData.sellerPhone}
+                onChange={handleInputChange}
+                placeholder="10-digit phone"
+                className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              />
             </div>
+          </div>
 
-            {/* Row 3: Rate, Vehicle & Weight Slip */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Rate (₹) *
-                </label>
-                <input
-                  type="number"
-                  name="rate"
-                  value={formData.rate}
-                  onChange={handleInputChange}
-                  placeholder="0"
-                  step="0.01"
-                  className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none ${
-                    errors.rate ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                />
-                {errors.rate && (
-                  <p className="text-red-500 text-xs mt-1">{errors.rate}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Vehicle No
-                </label>
-                <input
-                  type="text"
-                  name="vehicleNo"
-                  value={formData.vehicleNo}
-                  onChange={handleInputChange}
-                  placeholder="e.g., MH01AB1234"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Weight Slip No
-                </label>
-                <input
-                  type="text"
-                  name="weightSlipNo"
-                  value={formData.weightSlipNo}
-                  onChange={handleInputChange}
-                  placeholder="e.g., WS001"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
-                />
-              </div>
-            </div>
-
-            {/* Row 4: Weights */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Gross Weight (kg)
-                </label>
-                <input
-                  type="number"
-                  name="grossWeight"
-                  value={formData.grossWeight}
-                  onChange={handleInputChange}
-                  placeholder="0"
-                  step="0.01"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Tare Weight (kg)
-                </label>
-                <input
-                  type="number"
-                  name="tareWeight"
-                  value={formData.tareWeight}
-                  onChange={handleInputChange}
-                  placeholder="0"
-                  step="0.01"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Net Weight (kg)
-                </label>
-                <input
-                  type="number"
-                  name="netWeight"
-                  value={formData.netWeight}
-                  disabled
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-600 outline-none"
-                />
-              </div>
-            </div>
-
-            {/* Row 5: Payment & Deductions */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Payment Mode
-                </label>
-                <select
-                  name="paymentMode"
-                  value={formData.paymentMode}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
-                >
-                  <option value="CASH">Cash</option>
-                  <option value="UPI">UPI</option>
-                  <option value="BANK_TRANSFER">Bank Transfer</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Payment Ref
-                </label>
-                <input
-                  type="text"
-                  name="paymentRef"
-                  value={formData.paymentRef}
-                  onChange={handleInputChange}
-                  placeholder="Ref/UTR/Cheque No"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Deductions (₹)
-                </label>
-                <input
-                  type="number"
-                  name="deductions"
-                  value={formData.deductions}
-                  onChange={handleInputChange}
-                  placeholder="0"
-                  step="0.01"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
-                />
-              </div>
-            </div>
-
-            {/* Row 6: Deduction Reason & Remarks */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Deduction Reason
-                </label>
-                <input
-                  type="text"
-                  name="deductionReason"
-                  value={formData.deductionReason}
-                  onChange={handleInputChange}
-                  placeholder="e.g., Moisture, Foreign matter"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Remarks
-                </label>
-                <input
-                  type="text"
-                  name="remarks"
-                  value={formData.remarks}
-                  onChange={handleInputChange}
-                  placeholder="Additional notes"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
-                />
-              </div>
-            </div>
-
-            {/* Row 7: Computed Values & Submit */}
-            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                <div>
-                  <div className="text-xs text-gray-600 font-medium">Amount</div>
-                  <div className="text-lg font-bold text-emerald-600">
-                    {formatCurrency(parseFloat(computedAmount))}
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-xs text-gray-600 font-medium">Deductions</div>
-                  <div className="text-lg font-bold text-orange-600">
-                    -{formatCurrency(formData.deductions ? parseFloat(formData.deductions) : 0)}
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-xs text-gray-600 font-medium">Net Payable</div>
-                  <div className="text-lg font-bold text-emerald-700">
-                    {formatCurrency(netPayable)}
-                  </div>
-                </div>
-
-                <div className="flex items-end">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      name="isPaid"
-                      checked={formData.isPaid}
-                      onChange={handleInputChange}
-                      className="w-5 h-5 rounded border-gray-300 text-emerald-600 focus:ring-2 focus:ring-emerald-500"
-                    />
-                    <span className="text-sm font-medium text-gray-700">Paid</span>
-                  </label>
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={submitting}
-                className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-400 text-white font-bold py-3 px-4 rounded-lg transition duration-200 text-lg"
+          {/* Row 2: Material & Quantity */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Material *</label>
+              <select
+                name="materialName"
+                value={formData.materialName}
+                onChange={handleInputChange}
+                className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
               >
-                {submitting ? 'Recording...' : `Record Purchase ₹${formatCurrency(netPayable).replace('₹', '')}`}
-              </button>
+                <option value="Maize">Maize</option>
+                <option value="Broken Rice">Broken Rice</option>
+                <option value="Other">Other</option>
+              </select>
             </div>
-          </form>
-        </div>
-
-        {/* Purchase Log */}
-        <div className="bg-white rounded-lg shadow-md overflow-hidden">
-          <div className="p-6 border-b border-gray-200">
-            <h2 className="text-xl font-bold text-gray-800">Purchase Log</h2>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Quantity *</label>
+              <input
+                type="number"
+                name="quantity"
+                value={formData.quantity}
+                onChange={handleInputChange}
+                placeholder="0"
+                step="0.01"
+                className={`w-full border px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none ${
+                  errors.quantity ? 'border-red-500' : 'border-slate-300'
+                }`}
+              />
+              {errors.quantity && <p className="text-red-500 text-[10px] mt-0.5">{errors.quantity}</p>}
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Unit</label>
+              <select
+                name="unit"
+                value={formData.unit}
+                onChange={handleInputChange}
+                className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              >
+                <option value="KG">KG</option>
+                <option value="MT">MT</option>
+                <option value="QTL">QTL</option>
+              </select>
+            </div>
           </div>
 
-          {loading ? (
-            <div className="p-8 text-center text-gray-500">Loading purchases...</div>
-          ) : purchases.length === 0 ? (
-            <div className="p-8 text-center text-gray-500">No purchases recorded yet</div>
-          ) : (
-            <>
-              {/* Desktop Table */}
-              <div className="hidden md:block overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-100 border-b border-gray-200">
-                    <tr>
-                      <th className="px-6 py-3 text-left font-medium text-gray-700">No.</th>
-                      <th className="px-6 py-3 text-left font-medium text-gray-700">Date/Time</th>
-                      <th className="px-6 py-3 text-left font-medium text-gray-700">Seller</th>
-                      <th className="px-6 py-3 text-left font-medium text-gray-700">Village</th>
-                      <th className="px-6 py-3 text-left font-medium text-gray-700">Material</th>
-                      <th className="px-6 py-3 text-right font-medium text-gray-700">Qty</th>
-                      <th className="px-6 py-3 text-right font-medium text-gray-700">Rate</th>
-                      <th className="px-6 py-3 text-right font-medium text-gray-700">Amount</th>
-                      <th className="px-6 py-3 text-right font-medium text-gray-700">Net Payable</th>
-                      <th className="px-6 py-3 text-left font-medium text-gray-700">Payment</th>
-                      <th className="px-6 py-3 text-center font-medium text-gray-700">Status</th>
-                      <th className="px-6 py-3 text-center font-medium text-gray-700">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {purchases.map((purchase, index) => {
-                      const amount = purchase.quantity * purchase.rate;
-                      const netPayable = amount - purchase.deductions;
+          {/* Row 3: Rate, Vehicle & Weight Slip */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Rate (Rs) *</label>
+              <input
+                type="number"
+                name="rate"
+                value={formData.rate}
+                onChange={handleInputChange}
+                placeholder="0"
+                step="0.01"
+                className={`w-full border px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none ${
+                  errors.rate ? 'border-red-500' : 'border-slate-300'
+                }`}
+              />
+              {errors.rate && <p className="text-red-500 text-[10px] mt-0.5">{errors.rate}</p>}
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Vehicle No</label>
+              <input
+                type="text"
+                name="vehicleNo"
+                value={formData.vehicleNo}
+                onChange={handleInputChange}
+                placeholder="e.g., MH01AB1234"
+                className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Weight Slip No</label>
+              <input
+                type="text"
+                name="weightSlipNo"
+                value={formData.weightSlipNo}
+                onChange={handleInputChange}
+                placeholder="e.g., WS001"
+                className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              />
+            </div>
+          </div>
 
-                      return (
-                        <tr
-                          key={purchase.id}
-                          className={`border-b border-gray-200 ${
-                            !purchase.isPaid ? 'bg-yellow-50' : 'hover:bg-gray-50'
+          {/* Row 4: Weights */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Gross Weight (kg)</label>
+              <input
+                type="number"
+                name="grossWeight"
+                value={formData.grossWeight}
+                onChange={handleInputChange}
+                placeholder="0"
+                step="0.01"
+                className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Tare Weight (kg)</label>
+              <input
+                type="number"
+                name="tareWeight"
+                value={formData.tareWeight}
+                onChange={handleInputChange}
+                placeholder="0"
+                step="0.01"
+                className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Net Weight (kg)</label>
+              <input
+                type="number"
+                name="netWeight"
+                value={formData.netWeight}
+                disabled
+                className="w-full border border-slate-300 px-2.5 py-1.5 text-xs bg-slate-100 text-slate-600 outline-none"
+              />
+            </div>
+          </div>
+
+          {/* Row 5: Payment & Deductions */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Payment Mode</label>
+              <select
+                name="paymentMode"
+                value={formData.paymentMode}
+                onChange={handleInputChange}
+                className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              >
+                <option value="CASH">Cash</option>
+                <option value="UPI">UPI</option>
+                <option value="BANK_TRANSFER">Bank Transfer</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Payment Ref</label>
+              <input
+                type="text"
+                name="paymentRef"
+                value={formData.paymentRef}
+                onChange={handleInputChange}
+                placeholder="Ref/UTR/Cheque No"
+                className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Deductions (Rs)</label>
+              <input
+                type="number"
+                name="deductions"
+                value={formData.deductions}
+                onChange={handleInputChange}
+                placeholder="0"
+                step="0.01"
+                className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              />
+            </div>
+          </div>
+
+          {/* Row 6: Deduction Reason & Remarks */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Deduction Reason</label>
+              <input
+                type="text"
+                name="deductionReason"
+                value={formData.deductionReason}
+                onChange={handleInputChange}
+                placeholder="e.g., Moisture, Foreign matter"
+                className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label>
+              <input
+                type="text"
+                name="remarks"
+                value={formData.remarks}
+                onChange={handleInputChange}
+                placeholder="Additional notes"
+                className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              />
+            </div>
+          </div>
+
+          {/* Row 7: Computed Values & Submit */}
+          <div className="bg-slate-50 border border-slate-300 p-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+              <div>
+                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Amount</div>
+                <div className="text-lg font-bold text-slate-800 font-mono tabular-nums">
+                  {formatCurrency(parseFloat(computedAmount))}
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Deductions</div>
+                <div className="text-lg font-bold text-orange-600 font-mono tabular-nums">
+                  -{formatCurrency(formData.deductions ? parseFloat(formData.deductions) : 0)}
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Net Payable</div>
+                <div className="text-lg font-bold text-emerald-700 font-mono tabular-nums">
+                  {formatCurrency(netPayable)}
+                </div>
+              </div>
+              <div className="flex items-end">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    name="isPaid"
+                    checked={formData.isPaid}
+                    onChange={handleInputChange}
+                    className="w-4 h-4 border-slate-300 text-blue-600 focus:ring-1 focus:ring-blue-500"
+                  />
+                  <span className="text-xs font-medium text-slate-700">Paid</span>
+                </label>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white font-bold py-2.5 px-4 text-xs uppercase tracking-wide transition duration-200"
+            >
+              {submitting ? 'Recording...' : `Record Purchase ${formatCurrency(netPayable)}`}
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {/* Purchase Log Table */}
+      <div className="border-x border-b border-slate-300 -mx-3 md:-mx-6">
+        <div className="bg-slate-100 border-b border-slate-300 px-4 py-2">
+          <h2 className="text-[11px] font-bold uppercase tracking-widest text-slate-700">Purchase Log</h2>
+        </div>
+
+        {loading ? (
+          <div className="p-8 text-center text-xs text-slate-500">Loading purchases...</div>
+        ) : purchases.length === 0 ? (
+          <div className="p-8 text-center text-xs text-slate-500">No purchases recorded yet</div>
+        ) : (
+          <>
+            {/* Desktop Table */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-slate-800 text-white">
+                    <th className="px-3 py-2 text-left text-[10px] uppercase tracking-widest font-semibold border-r border-slate-700">No.</th>
+                    <th className="px-3 py-2 text-left text-[10px] uppercase tracking-widest font-semibold border-r border-slate-700">Date/Time</th>
+                    <th className="px-3 py-2 text-left text-[10px] uppercase tracking-widest font-semibold border-r border-slate-700">Seller</th>
+                    <th className="px-3 py-2 text-left text-[10px] uppercase tracking-widest font-semibold border-r border-slate-700">Village</th>
+                    <th className="px-3 py-2 text-left text-[10px] uppercase tracking-widest font-semibold border-r border-slate-700">Material</th>
+                    <th className="px-3 py-2 text-right text-[10px] uppercase tracking-widest font-semibold border-r border-slate-700">Qty</th>
+                    <th className="px-3 py-2 text-right text-[10px] uppercase tracking-widest font-semibold border-r border-slate-700">Rate</th>
+                    <th className="px-3 py-2 text-right text-[10px] uppercase tracking-widest font-semibold border-r border-slate-700">Amount</th>
+                    <th className="px-3 py-2 text-right text-[10px] uppercase tracking-widest font-semibold border-r border-slate-700">Net Payable</th>
+                    <th className="px-3 py-2 text-left text-[10px] uppercase tracking-widest font-semibold border-r border-slate-700">Payment</th>
+                    <th className="px-3 py-2 text-center text-[10px] uppercase tracking-widest font-semibold border-r border-slate-700">Status</th>
+                    <th className="px-3 py-2 text-center text-[10px] uppercase tracking-widest font-semibold">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {purchases.map((purchase, index) => {
+                    const amount = purchase.quantity * purchase.rate;
+                    const netPayable = amount - purchase.deductions;
+
+                    return (
+                      <tr
+                        key={purchase.id}
+                        className={`border-b border-slate-200 ${
+                          !purchase.isPaid ? 'bg-yellow-50' : 'even:bg-slate-50/70'
+                        } hover:bg-blue-50/60`}
+                      >
+                        <td className="px-3 py-1.5 text-xs font-medium text-slate-900 border-r border-slate-100">
+                          {purchases.length - index}
+                        </td>
+                        <td className="px-3 py-1.5 text-xs text-slate-600 border-r border-slate-100">
+                          {formatDateTime(purchase.createdAt)}
+                        </td>
+                        <td className="px-3 py-1.5 text-xs font-medium text-slate-900 border-r border-slate-100">
+                          {purchase.sellerName}
+                        </td>
+                        <td className="px-3 py-1.5 text-xs text-slate-600 border-r border-slate-100">{purchase.sellerVillage}</td>
+                        <td className="px-3 py-1.5 text-xs text-slate-700 border-r border-slate-100">{purchase.materialName}</td>
+                        <td className="px-3 py-1.5 text-xs text-right text-slate-700 font-mono tabular-nums border-r border-slate-100">
+                          {purchase.quantity} {purchase.unit}
+                        </td>
+                        <td className="px-3 py-1.5 text-xs text-right text-slate-700 font-mono tabular-nums border-r border-slate-100">
+                          {purchase.rate.toFixed(2)}
+                        </td>
+                        <td className="px-3 py-1.5 text-xs text-right font-medium text-slate-900 font-mono tabular-nums border-r border-slate-100">
+                          {formatCurrency(amount)}
+                        </td>
+                        <td className="px-3 py-1.5 text-xs text-right font-medium text-emerald-700 font-mono tabular-nums border-r border-slate-100">
+                          {formatCurrency(netPayable)}
+                        </td>
+                        <td className="px-3 py-1.5 text-xs text-slate-700 border-r border-slate-100">
+                          {purchase.paymentMode === 'CASH'
+                            ? 'Cash'
+                            : purchase.paymentMode === 'UPI'
+                            ? 'UPI'
+                            : 'Bank'}
+                        </td>
+                        <td className="px-3 py-1.5 text-center border-r border-slate-100">
+                          {purchase.isPaid ? (
+                            <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-600 bg-green-50 text-green-700">
+                              Paid
+                            </span>
+                          ) : (
+                            <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-yellow-600 bg-yellow-50 text-yellow-700">
+                              Unpaid
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-1.5 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => handleMarkPaid(purchase.id, purchase.isPaid)}
+                              className={`p-1 hover:bg-slate-200 transition ${
+                                purchase.isPaid ? 'text-green-600' : 'text-slate-400'
+                              }`}
+                              title={purchase.isPaid ? 'Mark unpaid' : 'Mark paid'}
+                            >
+                              <Check className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(purchase.id)}
+                              className="p-1 hover:bg-red-100 text-red-600 transition"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Cards */}
+            <div className="md:hidden divide-y divide-slate-200">
+              {purchases.map((purchase, index) => {
+                const amount = purchase.quantity * purchase.rate;
+                const netPayable = amount - purchase.deductions;
+
+                return (
+                  <div
+                    key={purchase.id}
+                    className={`p-3 ${
+                      !purchase.isPaid ? 'bg-yellow-50 border-l-4 border-l-yellow-500' : ''
+                    }`}
+                  >
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <div className="text-xs font-bold text-slate-900">
+                          #{purchases.length - index}
+                        </div>
+                        <div className="text-[10px] text-slate-500">
+                          {formatDateTime(purchase.createdAt)}
+                        </div>
+                      </div>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => handleMarkPaid(purchase.id, purchase.isPaid)}
+                          className={`p-1.5 hover:bg-slate-200 transition ${
+                            purchase.isPaid ? 'text-green-600' : 'text-slate-400'
                           }`}
                         >
-                          <td className="px-6 py-3 text-gray-900 font-medium">
-                            {purchases.length - index}
-                          </td>
-                          <td className="px-6 py-3 text-gray-700 text-xs">
-                            {formatDateTime(purchase.createdAt)}
-                          </td>
-                          <td className="px-6 py-3 text-gray-900 font-medium">
-                            {purchase.sellerName}
-                          </td>
-                          <td className="px-6 py-3 text-gray-600">{purchase.sellerVillage}</td>
-                          <td className="px-6 py-3 text-gray-700">{purchase.materialName}</td>
-                          <td className="px-6 py-3 text-right text-gray-700">
-                            {purchase.quantity} {purchase.unit}
-                          </td>
-                          <td className="px-6 py-3 text-right text-gray-700">
-                            ₹{purchase.rate.toFixed(2)}
-                          </td>
-                          <td className="px-6 py-3 text-right font-medium text-gray-900">
-                            {formatCurrency(amount)}
-                          </td>
-                          <td className="px-6 py-3 text-right font-medium text-emerald-600">
-                            {formatCurrency(netPayable)}
-                          </td>
-                          <td className="px-6 py-3 text-gray-700 text-xs">
+                          <Check className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(purchase.id)}
+                          className="p-1.5 hover:bg-red-100 text-red-600 transition"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Seller:</span>
+                        <span className="font-medium text-slate-900">{purchase.sellerName}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Village:</span>
+                        <span className="text-slate-800">{purchase.sellerVillage}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Material:</span>
+                        <span className="text-slate-800">{purchase.materialName}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Qty:</span>
+                        <span className="text-slate-800 font-mono tabular-nums">{purchase.quantity} {purchase.unit}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Rate:</span>
+                        <span className="text-slate-800 font-mono tabular-nums">{purchase.rate.toFixed(2)}</span>
+                      </div>
+
+                      <div className="border-t border-slate-200 pt-1.5 mt-1.5">
+                        <div className="flex justify-between font-bold">
+                          <span className="text-slate-600">Net Payable:</span>
+                          <span className="text-emerald-700 font-mono tabular-nums">{formatCurrency(netPayable)}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500">Payment:</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-slate-700">
                             {purchase.paymentMode === 'CASH'
                               ? 'Cash'
                               : purchase.paymentMode === 'UPI'
                               ? 'UPI'
                               : 'Bank'}
-                          </td>
-                          <td className="px-6 py-3 text-center">
-                            {purchase.isPaid ? (
-                              <span className="inline-block bg-green-100 text-green-800 px-3 py-1 rounded-full text-xs font-medium">
-                                Paid
-                              </span>
-                            ) : (
-                              <span className="inline-block bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-xs font-medium">
-                                Unpaid
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-6 py-3 text-center">
-                            <div className="flex items-center justify-center gap-2">
-                              <button
-                                onClick={() => handleMarkPaid(purchase.id, purchase.isPaid)}
-                                className={`p-1.5 rounded hover:bg-gray-200 transition ${
-                                  purchase.isPaid ? 'text-green-600' : 'text-gray-400'
-                                }`}
-                                title={purchase.isPaid ? 'Mark unpaid' : 'Mark paid'}
-                              >
-                                <Check className="w-5 h-5" />
-                              </button>
-                              <button
-                                onClick={() => handleDelete(purchase.id)}
-                                className="p-1.5 rounded hover:bg-red-100 text-red-600 transition"
-                                title="Delete"
-                              >
-                                <Trash2 className="w-5 h-5" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Mobile Cards */}
-              <div className="md:hidden p-4 space-y-3">
-                {purchases.map((purchase, index) => {
-                  const amount = purchase.quantity * purchase.rate;
-                  const netPayable = amount - purchase.deductions;
-
-                  return (
-                    <div
-                      key={purchase.id}
-                      className={`p-4 rounded-lg border ${
-                        !purchase.isPaid
-                          ? 'bg-yellow-50 border-yellow-300'
-                          : 'bg-white border-gray-200'
-                      }`}
-                    >
-                      <div className="flex justify-between items-start mb-3">
-                        <div>
-                          <div className="font-bold text-gray-900">
-                            #{purchases.length - index}
-                          </div>
-                          <div className="text-xs text-gray-600">
-                            {formatDateTime(purchase.createdAt)}
-                          </div>
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleMarkPaid(purchase.id, purchase.isPaid)}
-                            className={`p-2 rounded hover:bg-gray-200 transition ${
-                              purchase.isPaid ? 'text-green-600' : 'text-gray-400'
-                            }`}
-                          >
-                            <Check className="w-5 h-5" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(purchase.id)}
-                            className="p-2 rounded hover:bg-red-100 text-red-600 transition"
-                          >
-                            <Trash2 className="w-5 h-5" />
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Seller:</span>
-                          <span className="font-medium text-gray-900">
-                            {purchase.sellerName}
                           </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Village:</span>
-                          <span className="text-gray-900">{purchase.sellerVillage}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Material:</span>
-                          <span className="text-gray-900">{purchase.materialName}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Qty:</span>
-                          <span className="text-gray-900">
-                            {purchase.quantity} {purchase.unit}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Rate:</span>
-                          <span className="text-gray-900">₹{purchase.rate.toFixed(2)}</span>
-                        </div>
-
-                        <div className="border-t border-gray-200 pt-2 mt-2">
-                          <div className="flex justify-between font-bold">
-                            <span className="text-gray-700">Net Payable:</span>
-                            <span className="text-emerald-600">
-                              {formatCurrency(netPayable)}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-600">Payment:</span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm text-gray-700">
-                              {purchase.paymentMode === 'CASH'
-                                ? 'Cash'
-                                : purchase.paymentMode === 'UPI'
-                                ? 'UPI'
-                                : 'Bank'}
-                            </span>
-                            {purchase.isPaid ? (
-                              <Check className="w-4 h-4 text-green-600" />
-                            ) : (
-                              <X className="w-4 h-4 text-yellow-600" />
-                            )}
-                          </div>
+                          {purchase.isPaid ? (
+                            <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-600 bg-green-50 text-green-700">Paid</span>
+                          ) : (
+                            <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-yellow-600 bg-yellow-50 text-yellow-700">Unpaid</span>
+                          )}
                         </div>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
-        </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

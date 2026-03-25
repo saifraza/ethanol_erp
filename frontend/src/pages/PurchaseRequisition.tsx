@@ -1,18 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
-import { ShoppingCart, Plus, Check, X, Clock, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Check, X, ChevronDown, ChevronUp } from 'lucide-react';
 
 const URGENCIES = ['ROUTINE', 'SOON', 'URGENT', 'EMERGENCY'];
 const CATEGORIES = ['SPARE_PART', 'RAW_MATERIAL', 'CONSUMABLE', 'TOOL', 'SAFETY', 'GENERAL'];
 const STATUSES = ['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'ORDERED', 'RECEIVED'];
 const URG_COLORS: Record<string, string> = {
-  ROUTINE: 'bg-gray-200 text-gray-700', SOON: 'bg-blue-100 text-blue-700',
-  URGENT: 'bg-orange-100 text-orange-700', EMERGENCY: 'bg-red-100 text-red-700',
+  ROUTINE: 'border-slate-400 bg-slate-50 text-slate-700',
+  SOON: 'border-blue-500 bg-blue-50 text-blue-700',
+  URGENT: 'border-orange-500 bg-orange-50 text-orange-700',
+  EMERGENCY: 'border-red-600 bg-red-50 text-red-700',
 };
 const STATUS_COLORS: Record<string, string> = {
-  DRAFT: 'bg-gray-100 text-gray-600', SUBMITTED: 'bg-blue-100 text-blue-700',
-  APPROVED: 'bg-green-100 text-green-700', REJECTED: 'bg-red-100 text-red-700',
-  ORDERED: 'bg-purple-100 text-purple-700', RECEIVED: 'bg-emerald-100 text-emerald-700',
+  DRAFT: 'border-slate-400 bg-slate-50 text-slate-600',
+  SUBMITTED: 'border-blue-500 bg-blue-50 text-blue-700',
+  APPROVED: 'border-green-600 bg-green-50 text-green-700',
+  REJECTED: 'border-red-600 bg-red-50 text-red-700',
+  ORDERED: 'border-purple-500 bg-purple-50 text-purple-700',
+  RECEIVED: 'border-emerald-600 bg-emerald-50 text-emerald-700',
 };
 
 interface PR {
@@ -70,144 +75,317 @@ export default function PurchaseRequisition() {
     } catch (e: any) { alert(e.response?.data?.error || 'Error'); }
   };
 
-  if (loading) return <div className="p-6 text-center text-gray-400">Loading requisitions...</div>;
+  if (loading) return <div className="p-6 text-center text-xs text-slate-400">Loading requisitions...</div>;
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <h1 className="text-xl font-bold flex items-center gap-2"><ShoppingCart size={22} /> Purchase Requisitions</h1>
-        <button onClick={() => setTab('new')} className="btn-primary text-sm flex items-center gap-1"><Plus size={16} /> New Request</button>
+    <div className="space-y-0">
+      {/* Page Toolbar */}
+      <div className="bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6 flex items-center justify-between">
+        <h1 className="text-sm font-bold tracking-wide uppercase">Purchase Requisitions</h1>
+        <button
+          onClick={() => setTab('new')}
+          className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 flex items-center gap-1"
+        >
+          <Plus size={14} /> New Request
+        </button>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+      {/* Status Filter KPI Strip */}
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
         {STATUSES.map(s => (
-          <div key={s} className={`card p-3 text-center cursor-pointer ${filterStatus === s ? 'ring-2 ring-blue-400' : ''}`}
-            onClick={() => setFilterStatus(filterStatus === s ? '' : s)}>
-            <div className="text-xs text-gray-500">{s}</div>
-            <div className="text-lg font-bold">{stats.byStatus?.[s] || 0}</div>
+          <div
+            key={s}
+            className={`bg-white px-3 py-2.5 text-center cursor-pointer border-r border-slate-200 hover:bg-blue-50/60 transition ${
+              filterStatus === s ? 'ring-2 ring-inset ring-blue-500 bg-blue-50' : ''
+            }`}
+            onClick={() => setFilterStatus(filterStatus === s ? '' : s)}
+          >
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{s}</div>
+            <div className="text-lg font-bold text-slate-800">{stats.byStatus?.[s] || 0}</div>
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        <div className="card p-3 text-center">
-          <div className="text-xs text-gray-500">Total Requests</div>
-          <div className="text-lg font-bold">{stats.total || 0}</div>
+      {/* Summary KPI Strip */}
+      <div className="grid grid-cols-3 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+        <div className="bg-white px-4 py-3 border-l-4 border-l-blue-600 border-r border-slate-200">
+          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Total Requests</div>
+          <div className="text-xl font-bold text-slate-800">{stats.total || 0}</div>
         </div>
-        <div className="card p-3 text-center">
-          <div className="text-xs text-gray-500">Pending Value</div>
-          <div className="text-lg font-bold text-orange-600">₹{((stats.pendingValue || 0) / 1000).toFixed(1)}K</div>
+        <div className="bg-white px-4 py-3 border-l-4 border-l-orange-500 border-r border-slate-200">
+          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Pending Value</div>
+          <div className="text-xl font-bold text-orange-600 font-mono tabular-nums">Rs.{((stats.pendingValue || 0) / 1000).toFixed(1)}K</div>
         </div>
-        <div className="card p-3 text-center">
-          <div className="text-xs text-gray-500">Total Value</div>
-          <div className="text-lg font-bold">₹{((stats.totalValue || 0) / 1000).toFixed(1)}K</div>
+        <div className="bg-white px-4 py-3 border-l-4 border-l-emerald-600">
+          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Total Value</div>
+          <div className="text-xl font-bold text-slate-800 font-mono tabular-nums">Rs.{((stats.totalValue || 0) / 1000).toFixed(1)}K</div>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b">
-        <button onClick={() => setTab('list')} className={`px-3 py-2 text-sm font-medium border-b-2 ${tab === 'list' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500'}`}>
+      <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-0 -mx-3 md:-mx-6 flex gap-0">
+        <button
+          onClick={() => setTab('list')}
+          className={`px-4 py-2 text-[11px] font-bold uppercase tracking-widest border-b-2 transition ${
+            tab === 'list'
+              ? 'border-blue-600 text-blue-700 bg-white'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
           All Requests ({reqs.length})
         </button>
-        <button onClick={() => setTab('new')} className={`px-3 py-2 text-sm font-medium border-b-2 ${tab === 'new' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500'}`}>
+        <button
+          onClick={() => setTab('new')}
+          className={`px-4 py-2 text-[11px] font-bold uppercase tracking-widest border-b-2 transition ${
+            tab === 'new'
+              ? 'border-blue-600 text-blue-700 bg-white'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
           + New Request
         </button>
       </div>
 
       {/* New Request Form */}
       {tab === 'new' && (
-        <form onSubmit={handleCreate} className="card p-4 space-y-3">
-          <h3 className="font-semibold">New Purchase Request</h3>
-          <input className="input-field w-full" placeholder="Request Title (e.g., Need new pump seal) *" required
-            value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} />
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <input className="input-field" placeholder="Item Name *" required value={form.itemName}
-              onChange={e => setForm({ ...form, itemName: e.target.value })} />
-            <div className="flex gap-2">
-              <input className="input-field flex-1" type="number" step="any" placeholder="Qty" value={form.quantity}
-                onChange={e => setForm({ ...form, quantity: e.target.value })} />
-              <select className="input-field w-20" value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })}>
-                {['nos', 'kg', 'ltr', 'mtr', 'set', 'pair', 'roll'].map(u => <option key={u} value={u}>{u}</option>)}
-              </select>
-            </div>
-            <input className="input-field" type="number" step="any" placeholder="Estimated Cost (₹)" value={form.estimatedCost}
-              onChange={e => setForm({ ...form, estimatedCost: e.target.value })} />
-            <select className="input-field" value={form.urgency} onChange={e => setForm({ ...form, urgency: e.target.value })}>
-              {URGENCIES.map(u => <option key={u} value={u}>{u}</option>)}
-            </select>
-            <select className="input-field" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>
-              {CATEGORIES.map(c => <option key={c} value={c}>{c.replace('_', ' ')}</option>)}
-            </select>
-            <input className="input-field" placeholder="Preferred Supplier" value={form.supplier}
-              onChange={e => setForm({ ...form, supplier: e.target.value })} />
+        <div className="border-x border-b border-slate-300 -mx-3 md:-mx-6">
+          <div className="bg-slate-100 border-b border-slate-300 px-4 py-2">
+            <h3 className="text-[11px] font-bold uppercase tracking-widest text-slate-700">New Purchase Request</h3>
           </div>
-          <textarea className="input-field w-full" rows={2} placeholder="Justification — why is this needed?"
-            value={form.justification} onChange={e => setForm({ ...form, justification: e.target.value })} />
-          <textarea className="input-field w-full" rows={2} placeholder="Additional Remarks"
-            value={form.remarks} onChange={e => setForm({ ...form, remarks: e.target.value })} />
-          <button type="submit" disabled={saving} className="btn-primary w-full md:w-auto">{saving ? 'Submitting...' : 'Submit Request'}</button>
-        </form>
+          <form onSubmit={handleCreate} className="p-4 space-y-3">
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Request Title *</label>
+              <input
+                className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                placeholder="e.g., Need new pump seal"
+                required
+                value={form.title}
+                onChange={e => setForm({ ...form, title: e.target.value })}
+              />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Item Name *</label>
+                <input
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  placeholder="Item Name"
+                  required
+                  value={form.itemName}
+                  onChange={e => setForm({ ...form, itemName: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Qty / Unit</label>
+                <div className="flex gap-2">
+                  <input
+                    className="flex-1 border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                    type="number"
+                    step="any"
+                    placeholder="Qty"
+                    value={form.quantity}
+                    onChange={e => setForm({ ...form, quantity: e.target.value })}
+                  />
+                  <select
+                    className="w-20 border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                    value={form.unit}
+                    onChange={e => setForm({ ...form, unit: e.target.value })}
+                  >
+                    {['nos', 'kg', 'ltr', 'mtr', 'set', 'pair', 'roll'].map(u => <option key={u} value={u}>{u}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Estimated Cost (Rs)</label>
+                <input
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  type="number"
+                  step="any"
+                  placeholder="Estimated Cost"
+                  value={form.estimatedCost}
+                  onChange={e => setForm({ ...form, estimatedCost: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Urgency</label>
+                <select
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  value={form.urgency}
+                  onChange={e => setForm({ ...form, urgency: e.target.value })}
+                >
+                  {URGENCIES.map(u => <option key={u} value={u}>{u}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Category</label>
+                <select
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  value={form.category}
+                  onChange={e => setForm({ ...form, category: e.target.value })}
+                >
+                  {CATEGORIES.map(c => <option key={c} value={c}>{c.replace('_', ' ')}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Preferred Supplier</label>
+                <input
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  placeholder="Preferred Supplier"
+                  value={form.supplier}
+                  onChange={e => setForm({ ...form, supplier: e.target.value })}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Justification</label>
+              <textarea
+                className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                rows={2}
+                placeholder="Why is this needed?"
+                value={form.justification}
+                onChange={e => setForm({ ...form, justification: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label>
+              <textarea
+                className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                rows={2}
+                placeholder="Additional Remarks"
+                value={form.remarks}
+                onChange={e => setForm({ ...form, remarks: e.target.value })}
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:bg-slate-400 w-full md:w-auto uppercase tracking-wide"
+            >
+              {saving ? 'Submitting...' : 'Submit Request'}
+            </button>
+          </form>
+        </div>
       )}
 
       {/* Requisition List */}
       {tab === 'list' && (
-        <div className="space-y-2">
-          {reqs.length === 0 && <div className="card p-6 text-center text-gray-400">No requisitions found</div>}
+        <div className="border-x border-b border-slate-300 -mx-3 md:-mx-6">
+          {reqs.length === 0 && (
+            <div className="p-8 text-center text-xs text-slate-400">No requisitions found</div>
+          )}
           {reqs.map(pr => {
             const isExpanded = expanded === pr.id;
             const totalCost = pr.quantity * pr.estimatedCost;
             return (
-              <div key={pr.id} className="card overflow-hidden">
-                <div className="p-3 flex items-start gap-3 cursor-pointer" onClick={() => setExpanded(isExpanded ? null : pr.id)}>
+              <div key={pr.id} className="border-b border-slate-200 last:border-b-0">
+                <div
+                  className={`px-4 py-2.5 flex items-start gap-3 cursor-pointer hover:bg-blue-50/60 transition ${
+                    isExpanded ? 'bg-slate-50' : 'even:bg-slate-50/70'
+                  }`}
+                  onClick={() => setExpanded(isExpanded ? null : pr.id)}
+                >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-medium">#{pr.reqNo} {pr.title}</span>
-                      <span className={`px-2 py-0.5 rounded-full text-xs ${URG_COLORS[pr.urgency]}`}>{pr.urgency}</span>
-                      <span className={`px-2 py-0.5 rounded-full text-xs ${STATUS_COLORS[pr.status]}`}>{pr.status}</span>
+                      <span className="text-xs font-bold text-slate-800">#{pr.reqNo} {pr.title}</span>
+                      <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${URG_COLORS[pr.urgency]}`}>{pr.urgency}</span>
+                      <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${STATUS_COLORS[pr.status]}`}>{pr.status}</span>
                     </div>
-                    <div className="text-xs text-gray-500 mt-1">
-                      {pr.itemName} · {pr.quantity} {pr.unit} · ₹{totalCost.toLocaleString()}
-                      {pr.supplier && <span> · {pr.supplier}</span>}
-                      <span> · {pr.requestedBy} · {new Date(pr.createdAt).toLocaleDateString()}</span>
+                    <div className="text-[10px] text-slate-500 mt-0.5">
+                      {pr.itemName} -- {pr.quantity} {pr.unit} -- <span className="font-mono tabular-nums">Rs.{totalCost.toLocaleString()}</span>
+                      {pr.supplier && <span> -- {pr.supplier}</span>}
+                      <span> -- {pr.requestedBy} -- {new Date(pr.createdAt).toLocaleDateString()}</span>
                     </div>
                   </div>
-                  {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                  {isExpanded ? <ChevronUp size={16} className="text-slate-400 mt-0.5" /> : <ChevronDown size={16} className="text-slate-400 mt-0.5" />}
                 </div>
 
                 {isExpanded && (
-                  <div className="border-t p-3 space-y-3 bg-gray-50">
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
-                      <div><span className="text-gray-500 text-xs">Item:</span> <strong>{pr.itemName}</strong></div>
-                      <div><span className="text-gray-500 text-xs">Qty:</span> <strong>{pr.quantity} {pr.unit}</strong></div>
-                      <div><span className="text-gray-500 text-xs">Cost/Unit:</span> <strong>₹{pr.estimatedCost}</strong></div>
-                      <div><span className="text-gray-500 text-xs">Total:</span> <strong>₹{totalCost.toLocaleString()}</strong></div>
+                  <div className="border-t border-slate-200 px-4 py-3 space-y-3 bg-slate-50">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Item</span>
+                        <div className="font-medium text-slate-800">{pr.itemName}</div>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Qty</span>
+                        <div className="font-medium text-slate-800">{pr.quantity} {pr.unit}</div>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Cost/Unit</span>
+                        <div className="font-medium text-slate-800 font-mono tabular-nums">Rs.{pr.estimatedCost}</div>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total</span>
+                        <div className="font-bold text-slate-900 font-mono tabular-nums">Rs.{totalCost.toLocaleString()}</div>
+                      </div>
                     </div>
 
-                    {pr.justification && <p className="text-sm text-gray-700"><strong>Justification:</strong> {pr.justification}</p>}
-                    {pr.remarks && <p className="text-sm text-gray-500"><strong>Remarks:</strong> {pr.remarks}</p>}
-                    {pr.approvedBy && <p className="text-sm text-green-700"><Check size={14} className="inline" /> Approved by {pr.approvedBy} on {new Date(pr.approvedAt!).toLocaleDateString()}</p>}
-                    {pr.rejectionReason && <p className="text-sm text-red-700"><X size={14} className="inline" /> Rejected: {pr.rejectionReason}</p>}
+                    {pr.justification && (
+                      <div className="text-xs text-slate-700">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Justification: </span>
+                        {pr.justification}
+                      </div>
+                    )}
+                    {pr.remarks && (
+                      <div className="text-xs text-slate-500">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Remarks: </span>
+                        {pr.remarks}
+                      </div>
+                    )}
+                    {pr.approvedBy && (
+                      <div className="text-xs text-green-700 flex items-center gap-1">
+                        <Check size={12} /> Approved by {pr.approvedBy} on {new Date(pr.approvedAt!).toLocaleDateString()}
+                      </div>
+                    )}
+                    {pr.rejectionReason && (
+                      <div className="text-xs text-red-700 flex items-center gap-1">
+                        <X size={12} /> Rejected: {pr.rejectionReason}
+                      </div>
+                    )}
 
                     {/* Actions */}
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-2 pt-1">
                       {pr.status === 'SUBMITTED' && (
                         <>
-                          <button onClick={() => updateStatus(pr.id, 'APPROVED')} className="btn-primary text-xs flex items-center gap-1"><Check size={14} /> Approve</button>
-                          <button onClick={() => {
-                            const reason = prompt('Rejection reason:');
-                            if (reason) updateStatus(pr.id, 'REJECTED', { rejectionReason: reason });
-                          }} className="btn-secondary text-xs text-red-600">Reject</button>
+                          <button
+                            onClick={() => updateStatus(pr.id, 'APPROVED')}
+                            className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 flex items-center gap-1"
+                          >
+                            <Check size={12} /> Approve
+                          </button>
+                          <button
+                            onClick={() => {
+                              const reason = prompt('Rejection reason:');
+                              if (reason) updateStatus(pr.id, 'REJECTED', { rejectionReason: reason });
+                            }}
+                            className="px-3 py-1 border border-red-500 bg-red-50 text-red-700 text-[11px] font-medium hover:bg-red-100"
+                          >
+                            Reject
+                          </button>
                         </>
                       )}
                       {pr.status === 'APPROVED' && (
-                        <button onClick={() => updateStatus(pr.id, 'ORDERED')} className="btn-secondary text-xs">Mark Ordered</button>
+                        <button
+                          onClick={() => updateStatus(pr.id, 'ORDERED')}
+                          className="px-3 py-1 border border-slate-400 bg-white text-slate-700 text-[11px] font-medium hover:bg-slate-100"
+                        >
+                          Mark Ordered
+                        </button>
                       )}
                       {pr.status === 'ORDERED' && (
-                        <button onClick={() => updateStatus(pr.id, 'RECEIVED')} className="btn-primary text-xs">Mark Received</button>
+                        <button
+                          onClick={() => updateStatus(pr.id, 'RECEIVED')}
+                          className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700"
+                        >
+                          Mark Received
+                        </button>
                       )}
                       {pr.status === 'REJECTED' && (
-                        <button onClick={() => updateStatus(pr.id, 'DRAFT')} className="btn-secondary text-xs">Resubmit</button>
+                        <button
+                          onClick={() => updateStatus(pr.id, 'DRAFT')}
+                          className="px-3 py-1 border border-slate-400 bg-white text-slate-700 text-[11px] font-medium hover:bg-slate-100"
+                        >
+                          Resubmit
+                        </button>
                       )}
                     </div>
                   </div>

@@ -2,20 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Receipt, X, Pencil } from 'lucide-react';
 import api from '../../services/api';
 
-interface Vendor {
-  id: string;
-  name: string;
-}
-
-interface PO {
-  id: string;
-  poNo: string;
-}
-
-interface GRN {
-  id: string;
-  grnNo: string;
-}
+interface Vendor { id: string; name: string; }
+interface PO { id: string; poNo: string; }
+interface GRN { id: string; grnNo: string; }
 
 interface VendorInvoice {
   id: string;
@@ -47,28 +36,19 @@ interface VendorInvoice {
 }
 
 interface FormData {
-  vendorId: string;
-  poId: string;
-  grnId: string;
-  vendorInvNo: string;
-  vendorInvDate: string;
-  invoiceDate: string;
-  dueDate: string;
-  productName: string;
-  quantity: string;
-  unit: string;
-  rate: string;
-  supplyType: 'INTRA_STATE' | 'INTER_STATE';
-  gstPercent: string;
-  isRCM: boolean;
-  freightCharge: string;
-  loadingCharge: string;
-  otherCharges: string;
-  roundOff: string;
-  tdsSection: string;
-  tdsPercent: string;
-  remarks: string;
+  vendorId: string; poId: string; grnId: string; vendorInvNo: string; vendorInvDate: string;
+  invoiceDate: string; dueDate: string; productName: string; quantity: string; unit: string;
+  rate: string; supplyType: 'INTRA_STATE' | 'INTER_STATE'; gstPercent: string; isRCM: boolean;
+  freightCharge: string; loadingCharge: string; otherCharges: string; roundOff: string;
+  tdsSection: string; tdsPercent: string; remarks: string;
 }
+
+const emptyForm: FormData = {
+  vendorId: '', poId: '', grnId: '', vendorInvNo: '', vendorInvDate: '', invoiceDate: '', dueDate: '',
+  productName: '', quantity: '', unit: '', rate: '', supplyType: 'INTRA_STATE', gstPercent: '',
+  isRCM: false, freightCharge: '', loadingCharge: '', otherCharges: '', roundOff: '',
+  tdsSection: '', tdsPercent: '', remarks: '',
+};
 
 const VendorInvoices: React.FC = () => {
   const [invoices, setInvoices] = useState<VendorInvoice[]>([]);
@@ -79,42 +59,15 @@ const VendorInvoices: React.FC = () => {
   const [error, setError] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState<FormData>({
-    vendorId: '',
-    poId: '',
-    grnId: '',
-    vendorInvNo: '',
-    vendorInvDate: '',
-    invoiceDate: '',
-    dueDate: '',
-    productName: '',
-    quantity: '',
-    unit: '',
-    rate: '',
-    supplyType: 'INTRA_STATE',
-    gstPercent: '',
-    isRCM: false,
-    freightCharge: '',
-    loadingCharge: '',
-    otherCharges: '',
-    roundOff: '',
-    tdsSection: '',
-    tdsPercent: '',
-    remarks: '',
-  });
+  const [formData, setFormData] = useState<FormData>({ ...emptyForm });
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  useEffect(() => { fetchData(); }, []);
 
   const fetchData = async () => {
     try {
       setLoading(true);
       const [invoicesRes, vendorsRes, posRes, grnsRes] = await Promise.all([
-        api.get('/vendor-invoices'),
-        api.get('/vendors'),
-        api.get('/purchase-orders'),
-        api.get('/goods-receipts'),
+        api.get('/vendor-invoices'), api.get('/vendors'), api.get('/purchase-orders'), api.get('/goods-receipts'),
       ]);
       setInvoices(invoicesRes.data.invoices || []);
       setVendors(vendorsRes.data.vendors || []);
@@ -128,100 +81,43 @@ const VendorInvoices: React.FC = () => {
     }
   };
 
-  const computeValues = () => {
-    const quantity = parseFloat(formData.quantity) || 0;
-    const rate = parseFloat(formData.rate) || 0;
-    const gstPercent = parseFloat(formData.gstPercent) || 0;
-    const freightCharge = parseFloat(formData.freightCharge) || 0;
-    const loadingCharge = parseFloat(formData.loadingCharge) || 0;
-    const otherCharges = parseFloat(formData.otherCharges) || 0;
-    const roundOff = parseFloat(formData.roundOff) || 0;
-    const tdsPercent = parseFloat(formData.tdsPercent) || 0;
-
+  const computeValues = (fd: FormData) => {
+    const quantity = parseFloat(fd.quantity) || 0;
+    const rate = parseFloat(fd.rate) || 0;
+    const gstPercent = parseFloat(fd.gstPercent) || 0;
+    const freightCharge = parseFloat(fd.freightCharge) || 0;
+    const loadingCharge = parseFloat(fd.loadingCharge) || 0;
+    const otherCharges = parseFloat(fd.otherCharges) || 0;
+    const roundOff = parseFloat(fd.roundOff) || 0;
+    const tdsPercent = parseFloat(fd.tdsPercent) || 0;
     const subtotal = quantity * rate;
-    let gst = 0;
-    let tds = 0;
-
-    if (formData.supplyType === 'INTRA_STATE') {
-      gst = (subtotal * gstPercent) / 100 / 2;
-    } else {
-      gst = (subtotal * gstPercent) / 100;
-    }
-
+    let gst = fd.supplyType === 'INTRA_STATE' ? (subtotal * gstPercent) / 100 / 2 : (subtotal * gstPercent) / 100;
     const chargesTotal = freightCharge + loadingCharge + otherCharges;
     const beforeTds = subtotal + gst + chargesTotal + roundOff;
-    tds = (beforeTds * tdsPercent) / 100;
-
-    return {
-      subtotal,
-      gst,
-      chargesTotal,
-      beforeTds,
-      tds,
-      netPayable: beforeTds - tds,
-    };
+    const tds = (beforeTds * tdsPercent) / 100;
+    return { subtotal, gst, chargesTotal, beforeTds, tds, netPayable: beforeTds - tds };
   };
 
   const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value,
-    }));
+    setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const payload = {
-        vendorId: formData.vendorId,
-        poId: formData.poId || null,
-        grnId: formData.grnId || null,
-        vendorInvNo: formData.vendorInvNo,
-        vendorInvDate: formData.vendorInvDate,
-        invoiceDate: formData.invoiceDate,
-        dueDate: formData.dueDate,
-        productName: formData.productName,
-        quantity: parseFloat(formData.quantity),
-        unit: formData.unit,
-        rate: parseFloat(formData.rate),
-        supplyType: formData.supplyType,
-        gstPercent: parseFloat(formData.gstPercent),
-        isRCM: formData.isRCM,
-        freightCharge: parseFloat(formData.freightCharge) || 0,
-        loadingCharge: parseFloat(formData.loadingCharge) || 0,
-        otherCharges: parseFloat(formData.otherCharges) || 0,
-        roundOff: parseFloat(formData.roundOff) || 0,
-        tdsSection: formData.tdsSection,
-        tdsPercent: parseFloat(formData.tdsPercent) || 0,
-        remarks: formData.remarks,
-      };
-
-      await api.post('/vendor-invoices', payload);
-      setShowForm(false);
-      setFormData({
-        vendorId: '',
-        poId: '',
-        grnId: '',
-        vendorInvNo: '',
-        vendorInvDate: '',
-        invoiceDate: '',
-        dueDate: '',
-        productName: '',
-        quantity: '',
-        unit: '',
-        rate: '',
-        supplyType: 'INTRA_STATE',
-        gstPercent: '',
-        isRCM: false,
-        freightCharge: '',
-        loadingCharge: '',
-        otherCharges: '',
-        roundOff: '',
-        tdsSection: '',
-        tdsPercent: '',
-        remarks: '',
+      await api.post('/vendor-invoices', {
+        vendorId: formData.vendorId, poId: formData.poId || null, grnId: formData.grnId || null,
+        vendorInvNo: formData.vendorInvNo, vendorInvDate: formData.vendorInvDate, invoiceDate: formData.invoiceDate,
+        dueDate: formData.dueDate, productName: formData.productName, quantity: parseFloat(formData.quantity),
+        unit: formData.unit, rate: parseFloat(formData.rate), supplyType: formData.supplyType,
+        gstPercent: parseFloat(formData.gstPercent), isRCM: formData.isRCM,
+        freightCharge: parseFloat(formData.freightCharge) || 0, loadingCharge: parseFloat(formData.loadingCharge) || 0,
+        otherCharges: parseFloat(formData.otherCharges) || 0, roundOff: parseFloat(formData.roundOff) || 0,
+        tdsSection: formData.tdsSection, tdsPercent: parseFloat(formData.tdsPercent) || 0, remarks: formData.remarks,
       });
+      setShowForm(false);
+      setFormData({ ...emptyForm });
       fetchData();
     } catch (err) {
       setError('Failed to create invoice');
@@ -240,99 +136,45 @@ const VendorInvoices: React.FC = () => {
   };
 
   const [editInvoice, setEditInvoice] = useState<VendorInvoice | null>(null);
-  const [editForm, setEditForm] = useState<FormData>({
-    vendorId: '', poId: '', grnId: '', vendorInvNo: '', vendorInvDate: '', invoiceDate: '', dueDate: '',
-    productName: '', quantity: '', unit: '', rate: '', supplyType: 'INTRA_STATE', gstPercent: '',
-    isRCM: false, freightCharge: '', loadingCharge: '', otherCharges: '', roundOff: '',
-    tdsSection: '', tdsPercent: '', remarks: '',
-  });
+  const [editForm, setEditForm] = useState<FormData>({ ...emptyForm });
   const [editSaving, setEditSaving] = useState(false);
 
   const startEdit = (inv: VendorInvoice) => {
     setEditInvoice(inv);
     setEditForm({
-      vendorId: inv.vendor?.id || '',
-      poId: (inv.po as any)?.id || '',
-      grnId: (inv.grn as any)?.id || '',
-      vendorInvNo: inv.vendorInvNo || '',
-      vendorInvDate: inv.vendorInvDate ? inv.vendorInvDate.slice(0, 10) : '',
+      vendorId: inv.vendor?.id || '', poId: (inv.po as any)?.id || '', grnId: (inv.grn as any)?.id || '',
+      vendorInvNo: inv.vendorInvNo || '', vendorInvDate: inv.vendorInvDate ? inv.vendorInvDate.slice(0, 10) : '',
       invoiceDate: inv.invoiceDate ? inv.invoiceDate.slice(0, 10) : '',
       dueDate: (inv as any).dueDate ? (inv as any).dueDate.slice(0, 10) : '',
-      productName: inv.productName || '',
-      quantity: String(inv.quantity || ''),
-      unit: inv.unit || '',
-      rate: String(inv.rate || ''),
-      supplyType: inv.supplyType || 'INTRA_STATE',
-      gstPercent: String(inv.gstPercent || ''),
-      isRCM: inv.isRCM || false,
-      freightCharge: String((inv as any).freightCharge || ''),
-      loadingCharge: String((inv as any).loadingCharge || ''),
-      otherCharges: String((inv as any).otherCharges || ''),
-      roundOff: String((inv as any).roundOff || ''),
-      tdsSection: (inv as any).tdsSection || '',
-      tdsPercent: String((inv as any).tdsPercent || ''),
+      productName: inv.productName || '', quantity: String(inv.quantity || ''), unit: inv.unit || '',
+      rate: String(inv.rate || ''), supplyType: inv.supplyType || 'INTRA_STATE',
+      gstPercent: String(inv.gstPercent || ''), isRCM: inv.isRCM || false,
+      freightCharge: String((inv as any).freightCharge || ''), loadingCharge: String((inv as any).loadingCharge || ''),
+      otherCharges: String((inv as any).otherCharges || ''), roundOff: String((inv as any).roundOff || ''),
+      tdsSection: (inv as any).tdsSection || '', tdsPercent: String((inv as any).tdsPercent || ''),
       remarks: (inv as any).remarks || '',
     });
   };
 
   const handleEditFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
-    setEditForm(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value,
-    }));
-  };
-
-  const computeEditValues = () => {
-    const quantity = parseFloat(editForm.quantity) || 0;
-    const rate = parseFloat(editForm.rate) || 0;
-    const gstPercent = parseFloat(editForm.gstPercent) || 0;
-    const freightCharge = parseFloat(editForm.freightCharge) || 0;
-    const loadingCharge = parseFloat(editForm.loadingCharge) || 0;
-    const otherCharges = parseFloat(editForm.otherCharges) || 0;
-    const roundOff = parseFloat(editForm.roundOff) || 0;
-    const tdsPercent = parseFloat(editForm.tdsPercent) || 0;
-    const subtotal = quantity * rate;
-    let gst = 0;
-    if (editForm.supplyType === 'INTRA_STATE') {
-      gst = (subtotal * gstPercent) / 100 / 2;
-    } else {
-      gst = (subtotal * gstPercent) / 100;
-    }
-    const chargesTotal = freightCharge + loadingCharge + otherCharges;
-    const beforeTds = subtotal + gst + chargesTotal + roundOff;
-    const tds = (beforeTds * tdsPercent) / 100;
-    return { subtotal, gst, chargesTotal, beforeTds, tds, netPayable: beforeTds - tds };
+    setEditForm(prev => ({ ...prev, [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value }));
   };
 
   const handleEditSave = async () => {
     if (!editInvoice) return;
     try {
       setEditSaving(true);
-      const payload = {
-        vendorId: editForm.vendorId,
-        poId: editForm.poId || null,
-        grnId: editForm.grnId || null,
-        vendorInvNo: editForm.vendorInvNo,
-        vendorInvDate: editForm.vendorInvDate,
-        invoiceDate: editForm.invoiceDate,
-        dueDate: editForm.dueDate,
-        productName: editForm.productName,
-        quantity: parseFloat(editForm.quantity),
-        unit: editForm.unit,
-        rate: parseFloat(editForm.rate),
-        supplyType: editForm.supplyType,
-        gstPercent: parseFloat(editForm.gstPercent),
-        isRCM: editForm.isRCM,
-        freightCharge: parseFloat(editForm.freightCharge) || 0,
-        loadingCharge: parseFloat(editForm.loadingCharge) || 0,
-        otherCharges: parseFloat(editForm.otherCharges) || 0,
-        roundOff: parseFloat(editForm.roundOff) || 0,
-        tdsSection: editForm.tdsSection,
-        tdsPercent: parseFloat(editForm.tdsPercent) || 0,
-        remarks: editForm.remarks,
-      };
-      await api.put(`/vendor-invoices/${editInvoice.id}`, payload);
+      await api.put(`/vendor-invoices/${editInvoice.id}`, {
+        vendorId: editForm.vendorId, poId: editForm.poId || null, grnId: editForm.grnId || null,
+        vendorInvNo: editForm.vendorInvNo, vendorInvDate: editForm.vendorInvDate, invoiceDate: editForm.invoiceDate,
+        dueDate: editForm.dueDate, productName: editForm.productName, quantity: parseFloat(editForm.quantity),
+        unit: editForm.unit, rate: parseFloat(editForm.rate), supplyType: editForm.supplyType,
+        gstPercent: parseFloat(editForm.gstPercent), isRCM: editForm.isRCM,
+        freightCharge: parseFloat(editForm.freightCharge) || 0, loadingCharge: parseFloat(editForm.loadingCharge) || 0,
+        otherCharges: parseFloat(editForm.otherCharges) || 0, roundOff: parseFloat(editForm.roundOff) || 0,
+        tdsSection: editForm.tdsSection, tdsPercent: parseFloat(editForm.tdsPercent) || 0, remarks: editForm.remarks,
+      });
       setEditInvoice(null);
       fetchData();
     } catch (err: any) {
@@ -343,9 +185,7 @@ const VendorInvoices: React.FC = () => {
     }
   };
 
-  const filteredInvoices = statusFilter === 'ALL'
-    ? invoices
-    : invoices.filter(inv => inv.status === statusFilter);
+  const filteredInvoices = statusFilter === 'ALL' ? invoices : invoices.filter(inv => inv.status === statusFilter);
 
   const stats = {
     total: invoices.length,
@@ -355,705 +195,252 @@ const VendorInvoices: React.FC = () => {
     outstanding: invoices.reduce((sum, inv) => sum + (inv.balanceAmount || 0), 0),
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'PENDING': return 'bg-yellow-100 text-yellow-800 border-yellow-300';
-      case 'VERIFIED': return 'bg-blue-100 text-blue-800 border-blue-300';
-      case 'APPROVED': return 'bg-green-100 text-green-800 border-green-300';
-      case 'PAID': return 'bg-purple-100 text-purple-800 border-purple-300';
-      case 'CANCELLED': return 'bg-red-100 text-red-800 border-red-300';
-      default: return 'bg-gray-100 text-gray-800 border-gray-300';
-    }
+  const getStatusBadge = (status: string) => {
+    const m: Record<string, string> = {
+      PENDING: 'border-yellow-400 bg-yellow-50 text-yellow-700',
+      VERIFIED: 'border-blue-400 bg-blue-50 text-blue-700',
+      APPROVED: 'border-green-400 bg-green-50 text-green-700',
+      PAID: 'border-purple-400 bg-purple-50 text-purple-700',
+      CANCELLED: 'border-red-400 bg-red-50 text-red-700',
+    };
+    return m[status] || 'border-gray-400 bg-gray-50 text-gray-700';
   };
 
-  const getMatchStatusColor = (matchStatus: string) => {
-    switch (matchStatus) {
-      case 'MATCHED': return 'bg-green-100 text-green-700';
-      case 'MISMATCH': return 'bg-red-100 text-red-700';
-      case 'UNMATCHED': return 'bg-gray-100 text-gray-700';
-      default: return 'bg-gray-100 text-gray-700';
-    }
+  const getMatchBadge = (ms: string) => {
+    const m: Record<string, string> = {
+      MATCHED: 'border-green-400 bg-green-50 text-green-700',
+      MISMATCH: 'border-red-400 bg-red-50 text-red-700',
+      UNMATCHED: 'border-gray-400 bg-gray-50 text-gray-700',
+    };
+    return m[ms] || 'border-gray-400 bg-gray-50 text-gray-700';
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-lg text-gray-600">Loading...</div>
+      <div className="flex items-center justify-center h-screen bg-slate-50">
+        <span className="text-xs text-slate-400 uppercase tracking-widest">Loading...</span>
       </div>
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="bg-gradient-to-r from-orange-600 to-orange-700 text-white p-6 shadow-md">
-        <div className="flex items-center gap-3">
-          <Receipt size={32} />
-          <h1 className="text-3xl font-bold">Vendor Invoices</h1>
+  const renderFormFields = (fd: FormData, onChange: (e: React.ChangeEvent<any>) => void) => (
+    <div className="space-y-3">
+      <div className="grid grid-cols-3 gap-3">
+        <div>
+          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Vendor *</label>
+          <select name="vendorId" value={fd.vendorId} onChange={onChange} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+            <option value="">Select Vendor</option>
+            {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">PO</label>
+          <select name="poId" value={fd.poId} onChange={onChange} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+            <option value="">Select PO</option>
+            {pos.map(p => <option key={p.id} value={p.id}>{p.poNo}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">GRN</label>
+          <select name="grnId" value={fd.grnId} onChange={onChange} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+            <option value="">Select GRN</option>
+            {grns.map(g => <option key={g.id} value={g.id}>{g.grnNo}</option>)}
+          </select>
         </div>
       </div>
-
-      <div className="p-6">
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-6">
-            {error}
+      <div className="grid grid-cols-4 gap-3">
+        <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Vendor Inv No *</label><input type="text" name="vendorInvNo" value={fd.vendorInvNo} onChange={onChange} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" /></div>
+        <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Vendor Inv Date *</label><input type="date" name="vendorInvDate" value={fd.vendorInvDate} onChange={onChange} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" /></div>
+        <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Our Inv Date *</label><input type="date" name="invoiceDate" value={fd.invoiceDate} onChange={onChange} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" /></div>
+        <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Due Date *</label><input type="date" name="dueDate" value={fd.dueDate} onChange={onChange} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" /></div>
+      </div>
+      <div className="grid grid-cols-4 gap-3">
+        <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Product *</label><input type="text" name="productName" value={fd.productName} onChange={onChange} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" /></div>
+        <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Qty *</label><input type="number" name="quantity" value={fd.quantity} onChange={onChange} required step="0.01" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" /></div>
+        <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Unit *</label><input type="text" name="unit" value={fd.unit} onChange={onChange} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" /></div>
+        <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Rate *</label><input type="number" name="rate" value={fd.rate} onChange={onChange} required step="0.01" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" /></div>
+      </div>
+      <div className="grid grid-cols-4 gap-3">
+        <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Supply Type</label><select name="supplyType" value={fd.supplyType} onChange={onChange} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"><option value="INTRA_STATE">Intra State</option><option value="INTER_STATE">Inter State</option></select></div>
+        <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">GST % *</label><input type="number" name="gstPercent" value={fd.gstPercent} onChange={onChange} required step="0.01" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" /></div>
+        <div className="flex items-end"><label className="flex items-center gap-2 text-xs"><input type="checkbox" name="isRCM" checked={fd.isRCM} onChange={onChange} className="w-3.5 h-3.5 border-slate-300" /><span className="text-slate-600">RCM</span></label></div>
+        <div></div>
+      </div>
+      <div className="grid grid-cols-4 gap-3">
+        <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Freight</label><input type="number" name="freightCharge" value={fd.freightCharge} onChange={onChange} step="0.01" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" /></div>
+        <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Loading</label><input type="number" name="loadingCharge" value={fd.loadingCharge} onChange={onChange} step="0.01" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" /></div>
+        <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Other Charges</label><input type="number" name="otherCharges" value={fd.otherCharges} onChange={onChange} step="0.01" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" /></div>
+        <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Round Off</label><input type="number" name="roundOff" value={fd.roundOff} onChange={onChange} step="0.01" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" /></div>
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">TDS Section</label><input type="text" name="tdsSection" value={fd.tdsSection} onChange={onChange} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" /></div>
+        <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">TDS %</label><input type="number" name="tdsPercent" value={fd.tdsPercent} onChange={onChange} step="0.01" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" /></div>
+        <div><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label><input type="text" name="remarks" value={fd.remarks} onChange={onChange} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" /></div>
+      </div>
+      {(fd.quantity && fd.rate && fd.gstPercent) && (() => {
+        const c = computeValues(fd);
+        return (
+          <div className="bg-slate-100 border border-slate-300 p-3">
+            <div className="grid grid-cols-3 gap-3 text-xs">
+              <div className="flex justify-between"><span className="text-slate-500">Subtotal:</span><span className="font-mono tabular-nums font-medium">{c.subtotal.toFixed(2)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">GST:</span><span className="font-mono tabular-nums font-medium">{c.gst.toFixed(2)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Charges:</span><span className="font-mono tabular-nums font-medium">{c.chargesTotal.toFixed(2)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">TDS:</span><span className="font-mono tabular-nums font-medium">{c.tds.toFixed(2)}</span></div>
+              <div className="flex justify-between font-bold border-t border-slate-300 pt-1"><span>Total:</span><span className="font-mono tabular-nums">{c.beforeTds.toFixed(2)}</span></div>
+              <div className="flex justify-between font-bold border-t border-slate-300 pt-1"><span>Net Payable:</span><span className="font-mono tabular-nums text-blue-700">{c.netPayable.toFixed(2)}</span></div>
+            </div>
           </div>
+        );
+      })()}
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <div className="p-3 md:p-6 space-y-0">
+        {/* Page Toolbar */}
+        <div className="bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Receipt size={18} />
+            <span className="text-sm font-bold tracking-wide uppercase">Vendor Invoices</span>
+            <span className="text-[10px] text-slate-400">|</span>
+            <span className="text-[10px] text-slate-400">Payable invoice management</span>
+          </div>
+          <button onClick={() => setShowForm(!showForm)} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">
+            {showForm ? 'CLOSE' : '+ CREATE INVOICE'}
+          </button>
+        </div>
+
+        {error && (
+          <div className="px-4 py-2 text-xs border-x border-b -mx-3 md:-mx-6 bg-red-50 text-red-700 border-red-300">{error}</div>
         )}
 
-        <div className="grid grid-cols-5 gap-4 mb-8">
-          <div className="bg-white rounded-lg shadow p-4">
-            <div className="text-gray-600 text-sm font-medium">Total Invoices</div>
-            <div className="text-3xl font-bold text-gray-900 mt-2">{stats.total}</div>
+        {/* KPI Strip */}
+        <div className="grid grid-cols-5 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+          <div className="border-l-4 border-l-indigo-500 border-r border-slate-300 bg-white px-4 py-3">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total</div>
+            <div className="text-2xl font-bold text-slate-900 mt-1">{stats.total}</div>
           </div>
-          <div className="bg-white rounded-lg shadow p-4">
-            <div className="text-gray-600 text-sm font-medium">Pending</div>
-            <div className="text-3xl font-bold text-yellow-600 mt-2">{stats.pending}</div>
+          <div className="border-l-4 border-l-yellow-500 border-r border-slate-300 bg-white px-4 py-3">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Pending</div>
+            <div className="text-2xl font-bold text-yellow-600 mt-1">{stats.pending}</div>
           </div>
-          <div className="bg-white rounded-lg shadow p-4">
-            <div className="text-gray-600 text-sm font-medium">Verified</div>
-            <div className="text-3xl font-bold text-blue-600 mt-2">{stats.verified}</div>
+          <div className="border-l-4 border-l-blue-500 border-r border-slate-300 bg-white px-4 py-3">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Verified</div>
+            <div className="text-2xl font-bold text-blue-600 mt-1">{stats.verified}</div>
           </div>
-          <div className="bg-white rounded-lg shadow p-4">
-            <div className="text-gray-600 text-sm font-medium">Approved</div>
-            <div className="text-3xl font-bold text-green-600 mt-2">{stats.approved}</div>
+          <div className="border-l-4 border-l-green-500 border-r border-slate-300 bg-white px-4 py-3">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Approved</div>
+            <div className="text-2xl font-bold text-green-600 mt-1">{stats.approved}</div>
           </div>
-          <div className="bg-white rounded-lg shadow p-4">
-            <div className="text-gray-600 text-sm font-medium">Total Outstanding</div>
-            <div className="text-2xl font-bold text-orange-600 mt-2">₹{stats.outstanding.toFixed(2)}</div>
+          <div className="border-l-4 border-l-orange-500 bg-white px-4 py-3">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Outstanding</div>
+            <div className="text-xl font-bold text-orange-600 mt-1 font-mono tabular-nums">{stats.outstanding.toFixed(2)}</div>
           </div>
         </div>
 
-        <div className="flex gap-2 mb-6 border-b">
+        {/* Status Tabs */}
+        <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-0 -mx-3 md:-mx-6 flex gap-0 overflow-x-auto">
           {['ALL', 'PENDING', 'VERIFIED', 'APPROVED', 'PAID'].map(status => (
-            <button
-              key={status}
-              onClick={() => setStatusFilter(status)}
-              className={`px-4 py-2 font-medium border-b-2 transition-colors ${
-                statusFilter === status
-                  ? 'border-orange-600 text-orange-600'
-                  : 'border-transparent text-gray-600 hover:text-gray-900'
-              }`}
-            >
+            <button key={status} onClick={() => setStatusFilter(status)} className={`px-3 py-2 text-[11px] font-bold uppercase tracking-widest whitespace-nowrap border-b-2 transition ${statusFilter === status ? 'border-blue-600 text-blue-700 bg-white' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
               {status}
             </button>
           ))}
         </div>
 
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="mb-6 px-6 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors font-medium"
-        >
-          {showForm ? 'Close' : '+ Create Invoice'}
-        </button>
-
+        {/* Create Invoice Form */}
         {showForm && (
-          <div className="bg-white rounded-lg shadow p-6 mb-6">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-gray-900">Create New Invoice</h2>
-              <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-600">
-                <X size={24} />
-              </button>
+          <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 overflow-y-auto py-4">
+            <div className="bg-white shadow-2xl w-full max-w-4xl mx-4">
+              <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
+                <span className="text-sm font-bold tracking-wide uppercase">Create New Invoice</span>
+                <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-white"><X size={16} /></button>
+              </div>
+              <form onSubmit={handleSubmit} className="p-4 max-h-[80vh] overflow-y-auto">
+                {renderFormFields(formData, handleFormChange)}
+                <div className="flex gap-2 pt-4 mt-4 border-t border-slate-200">
+                  <button type="submit" className="px-4 py-1.5 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">CREATE INVOICE</button>
+                  <button type="button" onClick={() => setShowForm(false)} className="px-4 py-1.5 bg-slate-200 text-slate-700 text-[11px] font-medium hover:bg-slate-300">CANCEL</button>
+                </div>
+              </form>
             </div>
-
-            <form onSubmit={handleSubmit} className="space-y-6">
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Vendor *</label>
-                  <select
-                    name="vendorId"
-                    value={formData.vendorId}
-                    onChange={handleFormChange}
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                  >
-                    <option value="">Select Vendor</option>
-                    {vendors.map(v => (
-                      <option key={v.id} value={v.id}>{v.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">PO (Optional)</label>
-                  <select
-                    name="poId"
-                    value={formData.poId}
-                    onChange={handleFormChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                  >
-                    <option value="">Select PO</option>
-                    {pos.map(p => (
-                      <option key={p.id} value={p.id}>{p.poNo}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">GRN (Optional)</label>
-                  <select
-                    name="grnId"
-                    value={formData.grnId}
-                    onChange={handleFormChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                  >
-                    <option value="">Select GRN</option>
-                    {grns.map(g => (
-                      <option key={g.id} value={g.id}>{g.grnNo}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-4 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Vendor Invoice No *</label>
-                  <input
-                    type="text"
-                    name="vendorInvNo"
-                    value={formData.vendorInvNo}
-                    onChange={handleFormChange}
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Vendor Invoice Date *</label>
-                  <input
-                    type="date"
-                    name="vendorInvDate"
-                    value={formData.vendorInvDate}
-                    onChange={handleFormChange}
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Our Invoice Date *</label>
-                  <input
-                    type="date"
-                    name="invoiceDate"
-                    value={formData.invoiceDate}
-                    onChange={handleFormChange}
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Due Date *</label>
-                  <input
-                    type="date"
-                    name="dueDate"
-                    value={formData.dueDate}
-                    onChange={handleFormChange}
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-4 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Product Name *</label>
-                  <input
-                    type="text"
-                    name="productName"
-                    value={formData.productName}
-                    onChange={handleFormChange}
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Quantity *</label>
-                  <input
-                    type="number"
-                    name="quantity"
-                    value={formData.quantity}
-                    onChange={handleFormChange}
-                    required
-                    step="0.01"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Unit *</label>
-                  <input
-                    type="text"
-                    name="unit"
-                    value={formData.unit}
-                    onChange={handleFormChange}
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Rate *</label>
-                  <input
-                    type="number"
-                    name="rate"
-                    value={formData.rate}
-                    onChange={handleFormChange}
-                    required
-                    step="0.01"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-4 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Supply Type *</label>
-                  <select
-                    name="supplyType"
-                    value={formData.supplyType}
-                    onChange={handleFormChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                  >
-                    <option value="INTRA_STATE">Intra State</option>
-                    <option value="INTER_STATE">Inter State</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">GST % *</label>
-                  <input
-                    type="number"
-                    name="gstPercent"
-                    value={formData.gstPercent}
-                    onChange={handleFormChange}
-                    required
-                    step="0.01"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div className="flex items-end">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      name="isRCM"
-                      checked={formData.isRCM}
-                      onChange={handleFormChange}
-                      className="w-4 h-4 rounded border-gray-300"
-                    />
-                    <span className="text-sm font-medium text-gray-700">RCM</span>
-                  </label>
-                </div>
-
-                <div></div>
-              </div>
-
-              <div className="grid grid-cols-4 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Freight Charge</label>
-                  <input
-                    type="number"
-                    name="freightCharge"
-                    value={formData.freightCharge}
-                    onChange={handleFormChange}
-                    step="0.01"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Loading Charge</label>
-                  <input
-                    type="number"
-                    name="loadingCharge"
-                    value={formData.loadingCharge}
-                    onChange={handleFormChange}
-                    step="0.01"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Other Charges</label>
-                  <input
-                    type="number"
-                    name="otherCharges"
-                    value={formData.otherCharges}
-                    onChange={handleFormChange}
-                    step="0.01"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Round Off</label>
-                  <input
-                    type="number"
-                    name="roundOff"
-                    value={formData.roundOff}
-                    onChange={handleFormChange}
-                    step="0.01"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">TDS Section</label>
-                  <input
-                    type="text"
-                    name="tdsSection"
-                    value={formData.tdsSection}
-                    onChange={handleFormChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">TDS %</label>
-                  <input
-                    type="number"
-                    name="tdsPercent"
-                    value={formData.tdsPercent}
-                    onChange={handleFormChange}
-                    step="0.01"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div></div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Remarks</label>
-                <textarea
-                  name="remarks"
-                  value={formData.remarks}
-                  onChange={handleFormChange}
-                  rows={2}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                />
-              </div>
-
-              {(formData.quantity && formData.rate && formData.gstPercent) && (
-                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                  {(() => {
-                    const computed = computeValues();
-                    return (
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Subtotal:</span>
-                          <span className="font-medium">₹{computed.subtotal.toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">GST:</span>
-                          <span className="font-medium">₹{computed.gst.toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Charges:</span>
-                          <span className="font-medium">₹{computed.chargesTotal.toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">TDS:</span>
-                          <span className="font-medium">₹{computed.tds.toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between border-t pt-2 font-bold text-base">
-                          <span>Total Amount:</span>
-                          <span>₹{computed.beforeTds.toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between border-t pt-2 font-bold text-base">
-                          <span>Net Payable:</span>
-                          <span className="text-orange-600">₹{computed.netPayable.toFixed(2)}</span>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
-
-              <div className="flex gap-3 pt-4">
-                <button
-                  type="submit"
-                  className="px-6 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors font-medium"
-                >
-                  Create Invoice
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowForm(false)}
-                  className="px-6 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors font-medium"
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
           </div>
         )}
 
-        <div className="space-y-4">
-          {filteredInvoices.map(invoice => (
-            <div key={invoice.id} className="bg-white rounded-lg shadow p-5 border-l-4 border-orange-600">
-              <div className="grid grid-cols-12 gap-4 mb-3">
-                <div className="col-span-2">
-                  <div className="text-xs text-gray-500 uppercase font-semibold">Invoice No</div>
-                  <div className="text-lg font-bold text-gray-900">{invoice.vendorInvNo}</div>
-                </div>
-
-                <div className="col-span-2">
-                  <div className="text-xs text-gray-500 uppercase font-semibold">Vendor</div>
-                  <div className="text-sm text-gray-900">{invoice.vendor.name}</div>
-                </div>
-
-                <div className="col-span-1">
-                  <div className="text-xs text-gray-500 uppercase font-semibold">Date</div>
-                  <div className="text-sm text-gray-900">{new Date(invoice.invoiceDate).toLocaleDateString()}</div>
-                </div>
-
-                <div className="col-span-2">
-                  <div className="text-xs text-gray-500 uppercase font-semibold">Product</div>
-                  <div className="text-sm text-gray-900">{invoice.productName}</div>
-                </div>
-
-                <div className="col-span-1">
-                  <div className="text-xs text-gray-500 uppercase font-semibold">Qty</div>
-                  <div className="text-sm text-gray-900">{invoice.quantity} {invoice.unit}</div>
-                </div>
-
-                <div className="col-span-2">
-                  <div className="text-xs text-gray-500 uppercase font-semibold">Total Amount</div>
-                  <div className="text-lg font-bold text-gray-900">₹{invoice.totalAmount.toFixed(2)}</div>
-                </div>
-
-                <div className="col-span-2">
-                  <div className="text-xs text-gray-500 uppercase font-semibold">Balance</div>
-                  <div className={`text-lg font-bold ${invoice.balanceAmount > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                    ₹{invoice.balanceAmount.toFixed(2)}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap gap-2 items-center justify-between mt-4 pt-4 border-t">
-                <div className="flex gap-2 flex-wrap">
-                  <span className={`text-xs font-semibold px-3 py-1 rounded-full border ${getStatusColor(invoice.status)}`}>
-                    {invoice.status}
-                  </span>
-                  <span className={`text-xs font-semibold px-3 py-1 rounded-full ${getMatchStatusColor(invoice.matchStatus)}`}>
-                    {invoice.matchStatus}
-                  </span>
-                </div>
-
-                <div className="flex gap-2">
-                  {invoice.status === 'PENDING' && (
-                    <>
-                      <button
-                        onClick={() => startEdit(invoice)}
-                        className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors font-medium flex items-center gap-1"
-                      >
-                        <Pencil size={14} /> Edit
-                      </button>
-                      <button
-                        onClick={() => handleStatusChange(invoice.id, 'VERIFIED')}
-                        className="px-4 py-1 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors font-medium"
-                      >
-                        Verify
-                      </button>
-                    </>
-                  )}
-                  {invoice.status === 'VERIFIED' && (
-                    <button
-                      onClick={() => handleStatusChange(invoice.id, 'APPROVED')}
-                      className="px-4 py-1 text-sm bg-green-100 text-green-700 rounded hover:bg-green-200 transition-colors font-medium"
-                    >
-                      Approve
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
-
-          {filteredInvoices.length === 0 && (
-            <div className="bg-white rounded-lg shadow p-12 text-center">
-              <div className="text-gray-400 text-lg">No invoices found</div>
-            </div>
-          )}
-        </div>
+        {/* Invoice Table */}
+        {filteredInvoices.length === 0 ? (
+          <div className="text-center py-16 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+            <p className="text-xs text-slate-400 uppercase tracking-widest">No invoices found</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto -mx-3 md:-mx-6 border-x border-slate-300">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-slate-800 text-white">
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">Invoice No</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">Vendor</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">Date</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">Product</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-right border-r border-slate-700">Qty</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-right border-r border-slate-700">Total</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-right border-r border-slate-700">Balance</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-center border-r border-slate-700">Status</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredInvoices.map(invoice => (
+                  <tr key={invoice.id} className="border-b border-slate-100 even:bg-slate-50/70 hover:bg-blue-50/60">
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100 font-bold">{invoice.vendorInvNo}</td>
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100">{invoice.vendor.name}</td>
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100">{new Date(invoice.invoiceDate).toLocaleDateString()}</td>
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100">{invoice.productName}</td>
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums">{invoice.quantity} {invoice.unit}</td>
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums font-bold">{invoice.totalAmount.toFixed(2)}</td>
+                    <td className={`px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums font-bold ${invoice.balanceAmount > 0 ? 'text-red-600' : 'text-green-600'}`}>{invoice.balanceAmount.toFixed(2)}</td>
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-center">
+                      <div className="flex flex-col items-center gap-1">
+                        <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${getStatusBadge(invoice.status)}`}>{invoice.status}</span>
+                        <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${getMatchBadge(invoice.matchStatus)}`}>{invoice.matchStatus}</span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-1.5 text-xs text-center">
+                      <div className="flex items-center justify-center gap-1 flex-wrap">
+                        {invoice.status === 'PENDING' && (
+                          <>
+                            <button onClick={() => startEdit(invoice)} className="px-2 py-0.5 bg-slate-600 text-white text-[10px] font-medium hover:bg-slate-700 flex items-center gap-0.5"><Pencil size={10} /> Edit</button>
+                            <button onClick={() => handleStatusChange(invoice.id, 'VERIFIED')} className="px-2 py-0.5 bg-blue-600 text-white text-[10px] font-medium hover:bg-blue-700">Verify</button>
+                          </>
+                        )}
+                        {invoice.status === 'VERIFIED' && (
+                          <button onClick={() => handleStatusChange(invoice.id, 'APPROVED')} className="px-2 py-0.5 bg-green-600 text-white text-[10px] font-medium hover:bg-green-700">Approve</button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Edit Invoice Modal */}
       {editInvoice && (
-        <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 overflow-y-auto py-8">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl mx-4">
-            <div className="flex justify-between items-center p-6 border-b">
-              <h2 className="text-xl font-bold text-gray-900">Edit Invoice — {editInvoice.vendorInvNo}</h2>
-              <button onClick={() => setEditInvoice(null)} className="text-gray-400 hover:text-gray-600"><X size={24} /></button>
+        <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 overflow-y-auto py-4">
+          <div className="bg-white shadow-2xl w-full max-w-4xl mx-4">
+            <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
+              <span className="text-sm font-bold tracking-wide uppercase">Edit Invoice -- {editInvoice.vendorInvNo}</span>
+              <button onClick={() => setEditInvoice(null)} className="text-slate-400 hover:text-white"><X size={16} /></button>
             </div>
-            <div className="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Vendor *</label>
-                  <select name="vendorId" value={editForm.vendorId} onChange={handleEditFormChange} required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent">
-                    <option value="">Select Vendor</option>
-                    {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">PO</label>
-                  <select name="poId" value={editForm.poId} onChange={handleEditFormChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent">
-                    <option value="">Select PO</option>
-                    {pos.map(p => <option key={p.id} value={p.id}>{p.poNo}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">GRN</label>
-                  <select name="grnId" value={editForm.grnId} onChange={handleEditFormChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent">
-                    <option value="">Select GRN</option>
-                    {grns.map(g => <option key={g.id} value={g.id}>{g.grnNo}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-4 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Vendor Invoice No *</label>
-                  <input type="text" name="vendorInvNo" value={editForm.vendorInvNo} onChange={handleEditFormChange} required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Vendor Invoice Date *</label>
-                  <input type="date" name="vendorInvDate" value={editForm.vendorInvDate} onChange={handleEditFormChange} required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Our Invoice Date *</label>
-                  <input type="date" name="invoiceDate" value={editForm.invoiceDate} onChange={handleEditFormChange} required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Due Date</label>
-                  <input type="date" name="dueDate" value={editForm.dueDate} onChange={handleEditFormChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-4 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Product Name *</label>
-                  <input type="text" name="productName" value={editForm.productName} onChange={handleEditFormChange} required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Quantity *</label>
-                  <input type="number" name="quantity" value={editForm.quantity} onChange={handleEditFormChange} required step="0.01"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Unit *</label>
-                  <input type="text" name="unit" value={editForm.unit} onChange={handleEditFormChange} required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Rate *</label>
-                  <input type="number" name="rate" value={editForm.rate} onChange={handleEditFormChange} required step="0.01"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-4 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Supply Type</label>
-                  <select name="supplyType" value={editForm.supplyType} onChange={handleEditFormChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent">
-                    <option value="INTRA_STATE">Intra State</option>
-                    <option value="INTER_STATE">Inter State</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">GST %</label>
-                  <input type="number" name="gstPercent" value={editForm.gstPercent} onChange={handleEditFormChange} step="0.01"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
-                </div>
-                <div className="flex items-end">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" name="isRCM" checked={editForm.isRCM} onChange={handleEditFormChange} className="w-4 h-4 rounded border-gray-300" />
-                    <span className="text-sm font-medium text-gray-700">RCM</span>
-                  </label>
-                </div>
-                <div></div>
-              </div>
-
-              <div className="grid grid-cols-4 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Freight</label>
-                  <input type="number" name="freightCharge" value={editForm.freightCharge} onChange={handleEditFormChange} step="0.01"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Loading</label>
-                  <input type="number" name="loadingCharge" value={editForm.loadingCharge} onChange={handleEditFormChange} step="0.01"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Other Charges</label>
-                  <input type="number" name="otherCharges" value={editForm.otherCharges} onChange={handleEditFormChange} step="0.01"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Round Off</label>
-                  <input type="number" name="roundOff" value={editForm.roundOff} onChange={handleEditFormChange} step="0.01"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">TDS Section</label>
-                  <input type="text" name="tdsSection" value={editForm.tdsSection} onChange={handleEditFormChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">TDS %</label>
-                  <input type="number" name="tdsPercent" value={editForm.tdsPercent} onChange={handleEditFormChange} step="0.01"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Remarks</label>
-                  <input type="text" name="remarks" value={editForm.remarks} onChange={handleEditFormChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent" />
-                </div>
-              </div>
-
-              {(editForm.quantity && editForm.rate && editForm.gstPercent) && (
-                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                  {(() => {
-                    const computed = computeEditValues();
-                    return (
-                      <div className="grid grid-cols-3 gap-4 text-sm">
-                        <div className="flex justify-between"><span className="text-gray-600">Subtotal:</span><span className="font-medium">₹{computed.subtotal.toFixed(2)}</span></div>
-                        <div className="flex justify-between"><span className="text-gray-600">GST:</span><span className="font-medium">₹{computed.gst.toFixed(2)}</span></div>
-                        <div className="flex justify-between"><span className="text-gray-600">Charges:</span><span className="font-medium">₹{computed.chargesTotal.toFixed(2)}</span></div>
-                        <div className="flex justify-between"><span className="text-gray-600">TDS:</span><span className="font-medium">₹{computed.tds.toFixed(2)}</span></div>
-                        <div className="flex justify-between font-bold text-base border-t pt-2"><span>Total:</span><span>₹{computed.beforeTds.toFixed(2)}</span></div>
-                        <div className="flex justify-between font-bold text-base border-t pt-2"><span>Net Payable:</span><span className="text-orange-600">₹{computed.netPayable.toFixed(2)}</span></div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
+            <div className="p-4 max-h-[75vh] overflow-y-auto">
+              {renderFormFields(editForm, handleEditFormChange)}
             </div>
-            <div className="flex gap-3 p-6 border-t">
-              <button onClick={handleEditSave} disabled={editSaving}
-                className="px-6 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors font-medium disabled:opacity-50">
-                {editSaving ? 'Saving...' : 'Save Changes'}
+            <div className="flex gap-2 p-4 border-t border-slate-200">
+              <button onClick={handleEditSave} disabled={editSaving} className="px-4 py-1.5 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">
+                {editSaving ? 'SAVING...' : 'SAVE CHANGES'}
               </button>
-              <button onClick={() => setEditInvoice(null)}
-                className="px-6 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors font-medium">
-                Cancel
-              </button>
+              <button onClick={() => setEditInvoice(null)} className="px-4 py-1.5 bg-slate-200 text-slate-700 text-[11px] font-medium hover:bg-slate-300">CANCEL</button>
             </div>
           </div>
         </div>

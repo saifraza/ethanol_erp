@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Box, Plus, X, Save, Loader2, Trash2, Search, ChevronDown } from 'lucide-react';
+import { Box, Plus, X, Save, Loader2, Trash2, Search } from 'lucide-react';
 import api from '../../services/api';
 
 interface Material {
@@ -155,17 +155,17 @@ export default function Materials() {
     }
   }
 
-  const getCategoryColor = (cat: string | undefined) => {
+  const getCategoryBadge = (cat: string | undefined) => {
     const colors: { [key: string]: string } = {
-      RAW_MATERIAL: 'bg-blue-100 text-blue-700',
-      CHEMICAL: 'bg-purple-100 text-purple-700',
-      FUEL: 'bg-orange-100 text-orange-700',
-      PACKING: 'bg-green-100 text-green-700',
-      SPARE_PART: 'bg-yellow-100 text-yellow-700',
-      CONSUMABLE: 'bg-pink-100 text-pink-700',
-      OTHER: 'bg-gray-100 text-gray-700'
+      RAW_MATERIAL: 'border-blue-400 bg-blue-50 text-blue-700',
+      CHEMICAL: 'border-purple-400 bg-purple-50 text-purple-700',
+      FUEL: 'border-orange-400 bg-orange-50 text-orange-700',
+      PACKING: 'border-green-400 bg-green-50 text-green-700',
+      SPARE_PART: 'border-yellow-400 bg-yellow-50 text-yellow-700',
+      CONSUMABLE: 'border-pink-400 bg-pink-50 text-pink-700',
+      OTHER: 'border-gray-400 bg-gray-50 text-gray-700'
     };
-    return colors[cat || 'OTHER'] || 'bg-gray-100 text-gray-700';
+    return colors[cat || 'OTHER'] || 'border-gray-400 bg-gray-50 text-gray-700';
   };
 
   const isLowStock = (current: number | undefined, min: number | undefined) => {
@@ -173,337 +173,214 @@ export default function Materials() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-teal-600 to-teal-700 text-white">
-        <div className="max-w-6xl mx-auto px-4 py-4 md:py-6">
-          <div className="flex items-center gap-3 mb-2">
-            <Box size={32} />
-            <h1 className="text-2xl md:text-3xl font-bold">Materials</h1>
+    <div className="min-h-screen bg-slate-50">
+      <div className="p-3 md:p-6 space-y-0">
+        {/* Page Toolbar */}
+        <div className="bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Box size={18} />
+            <span className="text-sm font-bold tracking-wide uppercase">Materials</span>
+            <span className="text-[10px] text-slate-400">|</span>
+            <span className="text-[10px] text-slate-400">Manage inventory materials and stock levels</span>
           </div>
-          <p className="text-teal-100">Manage inventory materials and stock levels</p>
+          <div className="flex items-center gap-2">
+            {materials.length === 0 && !showForm && (
+              <button onClick={seedMaterials} disabled={saving} className="px-3 py-1 bg-slate-600 text-white text-[11px] font-medium hover:bg-slate-500 disabled:opacity-50">
+                {saving ? <Loader2 size={12} className="animate-spin" /> : 'SEED SAMPLE'}
+              </button>
+            )}
+            {!showForm && (
+              <button onClick={() => openForm()} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 flex items-center gap-1">
+                <Plus size={12} /> ADD MATERIAL
+              </button>
+            )}
+          </div>
         </div>
-      </div>
 
-      {/* Main Content */}
-      <div className="max-w-6xl mx-auto px-4 py-6">
+        {/* Messages */}
         {msg && (
-          <div className={`rounded-lg p-3 mb-4 text-sm ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+          <div className={`px-4 py-2 text-xs border-x border-b -mx-3 md:-mx-6 ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border-green-300' : 'bg-red-50 text-red-700 border-red-300'}`}>
             {msg.text}
           </div>
         )}
 
         {/* Search Bar */}
-        <div className="mb-4">
+        <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6">
           <div className="relative">
-            <Search size={18} className="absolute left-3 top-3 text-gray-400" />
+            <Search size={14} className="absolute left-2.5 top-2 text-slate-400" />
             <input
               type="text"
               placeholder="Search by name or HSN code..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="input-field pl-10 w-full"
+              className="border border-slate-300 px-2.5 py-1.5 pl-8 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
             />
           </div>
         </div>
 
-        {/* Seed Button - Only show when no materials */}
-        {materials.length === 0 && !showForm && (
-          <button
-            onClick={seedMaterials}
-            disabled={saving}
-            className="w-full border-2 border-dashed border-teal-300 rounded-lg py-3 text-teal-600 hover:bg-teal-50 flex items-center justify-center gap-2 mb-4 font-medium text-sm disabled:opacity-50"
-          >
-            {saving ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
-            Seed Sample Materials
-          </button>
-        )}
-
-        {/* Add Material Button */}
-        {!showForm && (
-          <button
-            onClick={() => openForm()}
-            className="w-full border-2 border-dashed border-teal-300 rounded-lg py-3 text-teal-600 hover:bg-teal-50 flex items-center justify-center gap-2 mb-4 font-medium text-sm"
-          >
-            <Plus size={18} /> Add New Material
-          </button>
-        )}
-
-        {/* Material Form */}
+        {/* Material Form Modal */}
         {showForm && (
-          <div className="card mb-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="section-title !mb-0 flex items-center gap-2">
-                <Box size={16} className="text-teal-600" /> {editId ? 'Edit Material' : 'New Material'}
-              </h3>
-              <button onClick={resetForm} className="text-gray-400 hover:text-gray-600">
-                <X size={18} />
-              </button>
-            </div>
+          <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 overflow-y-auto py-4">
+            <div className="bg-white shadow-2xl w-full max-w-2xl mx-4">
+              <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
+                <span className="text-sm font-bold tracking-wide uppercase flex items-center gap-2">
+                  <Box size={14} /> {editId ? 'Edit Material' : 'New Material'}
+                </span>
+                <button onClick={resetForm} className="text-slate-400 hover:text-white"><X size={16} /></button>
+              </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-              <div>
-                <label className="text-xs text-gray-500">Material Name *</label>
-                <input
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  className="input-field w-full text-sm"
-                  placeholder="Barley Malt"
-                  autoFocus
-                />
+              <div className="p-4 space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Material Name *</label>
+                    <input value={name} onChange={e => setName(e.target.value)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="Barley Malt" autoFocus />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Category</label>
+                    <select value={category} onChange={e => setCategory(e.target.value)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                      <option value="RAW_MATERIAL">Raw Material</option>
+                      <option value="CHEMICAL">Chemical</option>
+                      <option value="FUEL">Fuel</option>
+                      <option value="PACKING">Packing</option>
+                      <option value="SPARE_PART">Spare Part</option>
+                      <option value="CONSUMABLE">Consumable</option>
+                      <option value="OTHER">Other</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Sub Category</label>
+                    <input value={subCategory} onChange={e => setSubCategory(e.target.value)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="Two Row" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">HSN Code</label>
+                    <input value={hsnCode} onChange={e => setHsnCode(e.target.value)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="1007.10" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Unit</label>
+                    <select value={unit} onChange={e => setUnit(e.target.value)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                      <option value="KG">KG (Kilogram)</option>
+                      <option value="MT">MT (Metric Ton)</option>
+                      <option value="LTR">LTR (Liter)</option>
+                      <option value="KL">KL (Kiloliter)</option>
+                      <option value="NOS">NOS (Numbers)</option>
+                      <option value="SET">SET (Set)</option>
+                      <option value="MTR">MTR (Meter)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">GST %</label>
+                    <input type="number" step="0.01" value={gstPercent} onChange={e => setGstPercent(e.target.value)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="5" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Default Rate</label>
+                    <input type="number" step="0.01" value={defaultRate} onChange={e => setDefaultRate(e.target.value)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="450" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Minimum Stock</label>
+                    <input type="number" step="0.01" value={minStock} onChange={e => setMinStock(e.target.value)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="100" />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Storage Location</label>
+                  <input value={storageLocation} onChange={e => setStorageLocation(e.target.value)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="Warehouse A - Bin 12" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label>
+                  <textarea value={remarks} onChange={e => setRemarks(e.target.value)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="Additional notes..." rows={2} />
+                </div>
               </div>
-              <div>
-                <label className="text-xs text-gray-500">Category</label>
-                <select
-                  value={category}
-                  onChange={e => setCategory(e.target.value)}
-                  className="input-field w-full text-sm"
-                >
-                  <option value="RAW_MATERIAL">Raw Material</option>
-                  <option value="CHEMICAL">Chemical</option>
-                  <option value="FUEL">Fuel</option>
-                  <option value="PACKING">Packing</option>
-                  <option value="SPARE_PART">Spare Part</option>
-                  <option value="CONSUMABLE">Consumable</option>
-                  <option value="OTHER">Other</option>
-                </select>
-              </div>
-            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-              <div>
-                <label className="text-xs text-gray-500">Sub Category</label>
-                <input
-                  value={subCategory}
-                  onChange={e => setSubCategory(e.target.value)}
-                  className="input-field w-full text-sm"
-                  placeholder="Two Row"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500">HSN Code</label>
-                <input
-                  value={hsnCode}
-                  onChange={e => setHsnCode(e.target.value)}
-                  className="input-field w-full text-sm"
-                  placeholder="1007.10"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-              <div>
-                <label className="text-xs text-gray-500">Unit</label>
-                <select
-                  value={unit}
-                  onChange={e => setUnit(e.target.value)}
-                  className="input-field w-full text-sm"
-                >
-                  <option value="KG">KG (Kilogram)</option>
-                  <option value="MT">MT (Metric Ton)</option>
-                  <option value="LTR">LTR (Liter)</option>
-                  <option value="KL">KL (Kiloliter)</option>
-                  <option value="NOS">NOS (Numbers)</option>
-                  <option value="SET">SET (Set)</option>
-                  <option value="MTR">MTR (Meter)</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-gray-500">GST %</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={gstPercent}
-                  onChange={e => setGstPercent(e.target.value)}
-                  className="input-field w-full text-sm"
-                  placeholder="5"
-                />
+              <div className="px-4 py-3 border-t border-slate-200 flex gap-2">
+                <button onClick={saveMaterial} disabled={saving} className="flex-1 py-2 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 flex items-center justify-center gap-2 disabled:opacity-50">
+                  {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                  {editId ? 'UPDATE MATERIAL' : 'CREATE MATERIAL'}
+                </button>
+                <button onClick={resetForm} className="px-4 py-2 bg-slate-200 text-slate-700 text-[11px] font-medium hover:bg-slate-300">CANCEL</button>
               </div>
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-              <div>
-                <label className="text-xs text-gray-500">Default Rate</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={defaultRate}
-                  onChange={e => setDefaultRate(e.target.value)}
-                  className="input-field w-full text-sm"
-                  placeholder="450"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500">Minimum Stock</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={minStock}
-                  onChange={e => setMinStock(e.target.value)}
-                  className="input-field w-full text-sm"
-                  placeholder="100"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-1 gap-3 mb-3">
-              <div>
-                <label className="text-xs text-gray-500">Storage Location</label>
-                <input
-                  value={storageLocation}
-                  onChange={e => setStorageLocation(e.target.value)}
-                  className="input-field w-full text-sm"
-                  placeholder="Warehouse A - Bin 12"
-                />
-              </div>
-            </div>
-
-            <div className="mb-4">
-              <label className="text-xs text-gray-500">Remarks</label>
-              <textarea
-                value={remarks}
-                onChange={e => setRemarks(e.target.value)}
-                className="input-field w-full text-sm"
-                placeholder="Additional notes..."
-                rows={2}
-              />
-            </div>
-
-            <button
-              onClick={saveMaterial}
-              disabled={saving}
-              className="w-full py-2.5 bg-teal-600 text-white rounded-lg font-medium text-sm hover:bg-teal-700 flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-              {editId ? 'Update Material' : 'Create Material'}
-            </button>
           </div>
         )}
 
         {/* Loading State */}
         {loading && (
-          <div className="text-center py-8 text-gray-400">
-            <Loader2 size={32} className="animate-spin mx-auto mb-2" />
-            Loading materials...
+          <div className="text-center py-12">
+            <Loader2 size={24} className="animate-spin mx-auto mb-2 text-slate-400" />
+            <p className="text-xs text-slate-400 uppercase tracking-widest">Loading materials...</p>
           </div>
         )}
 
-        {/* Material Cards - 2 Column Grid */}
+        {/* Materials Table */}
         {!loading && filteredMaterials.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {filteredMaterials.map(material => (
-              <div
-                key={material.id}
-                className="bg-white border rounded-lg shadow-sm hover:shadow-md transition-shadow"
-              >
-                <div className="p-4">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex-1">
-                      <h3 className="font-bold text-sm md:text-base text-gray-900">{material.name}</h3>
-                      {material.subCategory && (
-                        <p className="text-xs text-gray-500 mt-1">{material.subCategory}</p>
+          <div className="overflow-x-auto -mx-3 md:-mx-6 border-x border-slate-300">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-slate-800 text-white">
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">Material</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">Category</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">HSN</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-center border-r border-slate-700">Unit</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-right border-r border-slate-700">GST %</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-right border-r border-slate-700">Rate</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-right border-r border-slate-700">Stock</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-right border-r border-slate-700">Min Stock</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredMaterials.map(material => (
+                  <tr key={material.id} className="border-b border-slate-100 even:bg-slate-50/70 hover:bg-blue-50/60">
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100">
+                      <div className="font-semibold text-slate-900">{material.name}</div>
+                      {material.subCategory && <div className="text-[10px] text-slate-500">{material.subCategory}</div>}
+                      {material.storageLocation && <div className="text-[10px] text-slate-400">{material.storageLocation}</div>}
+                    </td>
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100">
+                      {material.category && (
+                        <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${getCategoryBadge(material.category)}`}>
+                          {material.category.replace(/_/g, ' ')}
+                        </span>
                       )}
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2 mb-3">
-                    {material.category && (
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${getCategoryColor(material.category)}`}>
-                        {material.category.replace(/_/g, ' ')}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="space-y-2 text-sm mb-3">
-                    {material.hsnCode && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">HSN Code:</span>
-                        <span className="text-gray-900 font-mono">{material.hsnCode}</span>
+                    </td>
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100 font-mono">{material.hsnCode || '-'}</td>
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-center font-medium">{material.unit}</td>
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums">{material.gstPercent !== undefined ? `${material.gstPercent}%` : '-'}</td>
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums">{material.defaultRate !== undefined ? `${material.defaultRate.toLocaleString()}` : '-'}</td>
+                    <td className={`px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums font-semibold ${isLowStock(material.currentStock, material.minStock) ? 'text-red-600' : ''}`}>
+                      {material.currentStock !== undefined ? material.currentStock : '0'}
+                      {isLowStock(material.currentStock, material.minStock) && (
+                        <span className="text-[9px] font-bold uppercase px-1 py-0 border border-red-400 bg-red-50 text-red-700 ml-1">LOW</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums">{material.minStock !== undefined ? material.minStock : '-'}</td>
+                    <td className="px-3 py-1.5 text-xs text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <button onClick={() => openForm(material)} className="px-2 py-0.5 bg-blue-600 text-white text-[10px] font-medium hover:bg-blue-700">Edit</button>
+                        <button onClick={() => deleteMaterial(material.id)} className="px-2 py-0.5 bg-red-600 text-white text-[10px] font-medium hover:bg-red-700">Del</button>
                       </div>
-                    )}
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Unit:</span>
-                      <span className="text-gray-900 font-medium">{material.unit}</span>
-                    </div>
-                    {material.gstPercent !== undefined && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">GST:</span>
-                        <span className="text-gray-900 font-medium">{material.gstPercent}%</span>
-                      </div>
-                    )}
-                    {material.defaultRate !== undefined && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Default Rate:</span>
-                        <span className="text-gray-900 font-medium">₹{material.defaultRate.toLocaleString()}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Stock Status */}
-                  <div className="mb-3 p-3 rounded bg-gray-50 border">
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs text-gray-600">Current Stock:</span>
-                      <span className={`text-sm font-semibold ${isLowStock(material.currentStock, material.minStock) ? 'text-red-600' : 'text-gray-900'}`}>
-                        {material.currentStock !== undefined ? material.currentStock : '0'} {material.unit}
-                      </span>
-                    </div>
-                    {material.minStock !== undefined && (
-                      <div className="flex justify-between items-center mt-1">
-                        <span className="text-xs text-gray-600">Min Stock:</span>
-                        <span className="text-xs text-gray-600">{material.minStock} {material.unit}</span>
-                      </div>
-                    )}
-                    {isLowStock(material.currentStock, material.minStock) && (
-                      <div className="mt-2 flex items-center gap-1 text-red-600">
-                        <div className="w-2 h-2 rounded-full bg-red-600"></div>
-                        <span className="text-xs font-medium">Low Stock Alert</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {material.storageLocation && (
-                    <div className="mb-3 text-xs">
-                      <p className="text-gray-500">Location: {material.storageLocation}</p>
-                    </div>
-                  )}
-
-                  {material.remarks && (
-                    <div className="mb-3 text-xs">
-                      <p className="text-gray-500 italic">Remarks: {material.remarks}</p>
-                    </div>
-                  )}
-
-                  <div className="flex gap-2 pt-3 border-t">
-                    <button
-                      onClick={() => openForm(material)}
-                      className="flex-1 py-2 text-xs font-medium text-teal-600 hover:bg-teal-50 rounded"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => deleteMaterial(material.id)}
-                      className="flex-1 py-2 text-xs font-medium text-red-600 hover:bg-red-50 rounded"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
 
         {/* Empty State */}
         {!loading && filteredMaterials.length === 0 && materials.length === 0 && (
-          <div className="text-center py-12">
-            <Box size={48} className="mx-auto text-gray-300 mb-3" />
-            <p className="text-gray-500">No materials yet. Create your first material to get started.</p>
+          <div className="text-center py-16 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+            <p className="text-xs text-slate-400 uppercase tracking-widest">No materials yet. Create your first material to get started.</p>
           </div>
         )}
 
         {!loading && filteredMaterials.length === 0 && materials.length > 0 && (
-          <div className="text-center py-8">
-            <p className="text-gray-500 text-sm">No materials match "{searchQuery}"</p>
+          <div className="text-center py-8 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+            <p className="text-xs text-slate-400 uppercase tracking-widest">No materials match "{searchQuery}"</p>
           </div>
         )}
       </div>

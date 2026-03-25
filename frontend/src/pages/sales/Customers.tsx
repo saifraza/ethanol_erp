@@ -188,355 +188,305 @@ export default function Customers() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-blue-700 to-blue-800 text-white">
-        <div className="max-w-7xl mx-auto px-4 py-5">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h1 className="text-xl font-bold flex items-center gap-2">
-                <Users size={24} /> Customers
-              </h1>
-              <p className="text-xs text-blue-200 mt-1">{new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
-            </div>
-            <div className="flex items-center gap-3">
-              <button onClick={loadCustomers} className="p-2 hover:bg-blue-600 rounded-lg transition text-sm text-blue-100" title="Refresh">
-                <RotateCcw size={18} />
-              </button>
-              {!showForm && (
-                <button onClick={() => openForm()}
-                  className="bg-white text-blue-700 px-4 py-2 rounded-lg font-semibold text-sm hover:bg-blue-50 flex items-center gap-2 shadow-md transition">
-                  <Plus size={16} /> New Customer
-                </button>
-              )}
-            </div>
+    <div className="min-h-screen bg-slate-50">
+      <div className="p-3 md:p-6 space-y-0">
+        {/* Page Toolbar */}
+        <div className="bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Users size={18} />
+            <span className="text-sm font-bold tracking-wide uppercase">Customers</span>
+            <span className="text-[10px] text-slate-400">|</span>
+            <span className="text-[10px] text-slate-400">{new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
           </div>
-
-          {/* Stats Bar */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-blue-600 bg-opacity-40 rounded-lg px-4 py-3 backdrop-blur-sm">
-              <p className="text-blue-100 text-xs font-medium">Total Customers</p>
-              <p className="text-white text-xl font-bold">{customers.length}</p>
-            </div>
-            <div className="bg-blue-600 bg-opacity-40 rounded-lg px-4 py-3 backdrop-blur-sm">
-              <p className="text-blue-100 text-xs font-medium">Active</p>
-              <p className="text-white text-xl font-bold">{customers.filter(c => c.active !== false).length}</p>
-            </div>
+          <div className="flex items-center gap-2">
+            <button onClick={loadCustomers} className="p-1.5 hover:bg-slate-700 transition text-slate-300" title="Refresh">
+              <RotateCcw size={14} />
+            </button>
+            {!showForm && (
+              <button onClick={() => openForm()}
+                className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 flex items-center gap-1.5">
+                <Plus size={12} /> New Customer
+              </button>
+            )}
           </div>
         </div>
-      </div>
 
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 py-6">
+        {/* KPI Strip */}
+        <div className="grid grid-cols-2 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+          <div className="border-l-4 border-l-blue-500 border-r border-slate-300 bg-white px-4 py-3">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Total Customers</div>
+            <div className="text-xl font-bold text-slate-800">{customers.length}</div>
+          </div>
+          <div className="border-l-4 border-l-green-500 bg-white px-4 py-3">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Active</div>
+            <div className="text-xl font-bold text-slate-800">{customers.filter(c => c.active !== false).length}</div>
+          </div>
+        </div>
+
+        {/* Messages */}
         {msg && (
-          <div className={`rounded-lg p-3 mb-4 text-sm ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+          <div className={`p-3 text-xs border-x border-b -mx-3 md:-mx-6 ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
             {msg.text}
           </div>
         )}
 
         {/* Search Bar */}
-        <div className="mb-4">
+        <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6">
           <div className="relative">
-            <Search size={18} className="absolute left-3 top-3 text-gray-400" />
+            <Search size={14} className="absolute left-2.5 top-2 text-slate-400" />
             <input
               type="text"
               placeholder="Search by name or short code..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="input-field pl-10 w-full"
+              className="border border-slate-300 px-2.5 py-1.5 text-xs pl-8 w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
             />
           </div>
         </div>
 
         {/* Customer Form */}
         {showForm && (
-          <div className="bg-white rounded-xl border border-blue-200 shadow-lg mb-6 overflow-hidden">
-            <div className="bg-gradient-to-r from-blue-700 to-blue-800 px-4 py-3 flex items-center justify-between">
-              <h3 className="font-bold text-white text-sm">{editId ? 'Edit Customer' : 'New Customer'}</h3>
-              <button onClick={resetForm} className="text-blue-200 hover:text-white"><X size={18} /></button>
+          <div className="border-x border-b border-slate-300 -mx-3 md:-mx-6 bg-white shadow-2xl">
+            <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
+              <h3 className="text-sm font-bold tracking-wide uppercase">{editId ? 'Edit Customer' : 'New Customer'}</h3>
+              <button onClick={resetForm} className="text-slate-400 hover:text-white"><X size={16} /></button>
             </div>
 
             <div className="p-4">
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-              <div>
-                <label className="text-xs text-gray-500">Customer Name *</label>
-                <input
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  className="input-field w-full text-sm"
-                  placeholder="ABC Beverages Ltd"
-                  autoFocus
-                />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500">Short Name</label>
-                <input
-                  value={shortName}
-                  onChange={e => setShortName(e.target.value)}
-                  className="input-field w-full text-sm"
-                  placeholder="ABC"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-              <div>
-                <label className="text-xs text-gray-500">Contact Person</label>
-                <input
-                  value={contactPerson}
-                  onChange={e => setContactPerson(e.target.value)}
-                  className="input-field w-full text-sm"
-                  placeholder="John Doe"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500">Phone</label>
-                <input
-                  value={phone}
-                  onChange={e => setPhone(e.target.value)}
-                  className="input-field w-full text-sm"
-                  placeholder="+91 XXXXX XXXXX"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-              <div>
-                <label className="text-xs text-gray-500">Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  className="input-field w-full text-sm"
-                  placeholder="contact@abc.com"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500">GST No</label>
-                <div className="flex gap-1">
-                  <input
-                    value={gstNo}
-                    onChange={e => setGstNo(e.target.value.toUpperCase())}
-                    className="input-field flex-1 text-sm font-mono"
-                    placeholder="18AABCT0000X1Z0"
-                    maxLength={15}
-                  />
-                  <button type="button" onClick={lookupGSTIN} disabled={gstLookupLoading || gstNo.trim().length !== 15}
-                    className="px-2 py-1 text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200 rounded hover:bg-blue-100 disabled:opacity-40 whitespace-nowrap"
-                    title="Fetch details from GST portal">
-                    {gstLookupLoading ? <Loader2 size={12} className="animate-spin" /> : <Search size={12} />}
-                  </button>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Customer Name *</label>
+                  <input value={name} onChange={e => setName(e.target.value)}
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
+                    placeholder="ABC Beverages Ltd" autoFocus />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Short Name</label>
+                  <input value={shortName} onChange={e => setShortName(e.target.value)}
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
+                    placeholder="ABC" />
                 </div>
               </div>
-            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-              <div>
-                <label className="text-xs text-gray-500">PAN No</label>
-                <input
-                  value={panNo}
-                  onChange={e => setPanNo(e.target.value)}
-                  className="input-field w-full text-sm"
-                  placeholder="AAACR5055K"
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Contact Person</label>
+                  <input value={contactPerson} onChange={e => setContactPerson(e.target.value)}
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
+                    placeholder="John Doe" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Phone</label>
+                  <input value={phone} onChange={e => setPhone(e.target.value)}
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
+                    placeholder="+91 XXXXX XXXXX" />
+                </div>
               </div>
-              <div>
-                <label className="text-xs text-gray-500">Credit Limit</label>
-                <input
-                  type="number"
-                  value={creditLimit}
-                  onChange={e => setCreditLimit(e.target.value)}
-                  className="input-field w-full text-sm"
-                  placeholder="100000"
-                />
-              </div>
-            </div>
 
-            <div>
-              <label className="text-xs text-gray-500">Address</label>
-              <input
-                value={address}
-                onChange={e => setAddress(e.target.value)}
-                className="input-field w-full text-sm"
-                placeholder="Street address"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 my-3">
-              <div>
-                <label className="text-xs text-gray-500">City</label>
-                <input
-                  value={city}
-                  onChange={e => setCity(e.target.value)}
-                  className="input-field w-full text-sm"
-                  placeholder="Mumbai"
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Email</label>
+                  <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
+                    placeholder="contact@abc.com" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">GST No</label>
+                  <div className="flex gap-1">
+                    <input value={gstNo} onChange={e => setGstNo(e.target.value.toUpperCase())}
+                      className="border border-slate-300 px-2.5 py-1.5 text-xs flex-1 font-mono focus:outline-none focus:ring-1 focus:ring-slate-400"
+                      placeholder="18AABCT0000X1Z0" maxLength={15} />
+                    <button type="button" onClick={lookupGSTIN} disabled={gstLookupLoading || gstNo.trim().length !== 15}
+                      className="px-2 py-1 text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-300 hover:bg-slate-200 disabled:opacity-40 whitespace-nowrap"
+                      title="Fetch details from GST portal">
+                      {gstLookupLoading ? <Loader2 size={12} className="animate-spin" /> : <Search size={12} />}
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="text-xs text-gray-500">State</label>
-                <input
-                  value={state}
-                  onChange={e => setState(e.target.value)}
-                  className="input-field w-full text-sm"
-                  placeholder="Maharashtra"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500">Pincode</label>
-                <input
-                  value={pincode}
-                  onChange={e => setPincode(e.target.value)}
-                  className="input-field w-full text-sm"
-                  placeholder="400001"
-                />
-              </div>
-            </div>
 
-            <div className="mb-4">
-              <label className="text-xs text-gray-500">Default Payment Terms</label>
-              <select
-                value={defaultTerms}
-                onChange={e => setDefaultTerms(e.target.value)}
-                className="input-field w-full text-sm"
-              >
-                <option value="ADVANCE">Advance</option>
-                <option value="COD">Cash on Delivery</option>
-                <option value="NET7">Net 7 Days</option>
-                <option value="NET15">Net 15 Days</option>
-                <option value="NET30">Net 30 Days</option>
-              </select>
-            </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">PAN No</label>
+                  <input value={panNo} onChange={e => setPanNo(e.target.value)}
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
+                    placeholder="AAACR5055K" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Credit Limit</label>
+                  <input type="number" value={creditLimit} onChange={e => setCreditLimit(e.target.value)}
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
+                    placeholder="100000" />
+                </div>
+              </div>
 
-            <button
-              onClick={saveCustomer}
-              disabled={saving}
-              className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg font-bold text-sm hover:bg-blue-700 flex items-center justify-center gap-2 disabled:opacity-50 shadow-md transition"
-            >
-              {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-              {editId ? 'Update Customer' : 'Create Customer'}
-            </button>
+              <div className="mb-3">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Address</label>
+                <input value={address} onChange={e => setAddress(e.target.value)}
+                  className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
+                  placeholder="Street address" />
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">City</label>
+                  <input value={city} onChange={e => setCity(e.target.value)}
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
+                    placeholder="Mumbai" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">State</label>
+                  <input value={state} onChange={e => setState(e.target.value)}
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
+                    placeholder="Maharashtra" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Pincode</label>
+                  <input value={pincode} onChange={e => setPincode(e.target.value)}
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
+                    placeholder="400001" />
+                </div>
+              </div>
+
+              <div className="mb-4">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Default Payment Terms</label>
+                <select value={defaultTerms} onChange={e => setDefaultTerms(e.target.value)}
+                  className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                  <option value="ADVANCE">Advance</option>
+                  <option value="COD">Cash on Delivery</option>
+                  <option value="NET7">Net 7 Days</option>
+                  <option value="NET15">Net 15 Days</option>
+                  <option value="NET30">Net 30 Days</option>
+                </select>
+              </div>
+
+              <button onClick={saveCustomer} disabled={saving}
+                className="w-full px-6 py-2.5 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 flex items-center justify-center gap-2 disabled:opacity-50">
+                {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                {editId ? 'Update Customer' : 'Create Customer'}
+              </button>
             </div>
           </div>
         )}
 
         {/* Loading State */}
         {loading && (
-          <div className="text-center py-8 text-gray-400">
-            <Loader2 size={32} className="animate-spin mx-auto mb-2" />
-            Loading customers...
+          <div className="text-center py-8">
+            <Loader2 size={24} className="animate-spin mx-auto mb-2 text-slate-400" />
+            <p className="text-xs text-slate-400 uppercase tracking-widest">Loading customers...</p>
           </div>
         )}
 
-        {/* Customer Cards */}
+        {/* Customer Table */}
         {!loading && filteredCustomers.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {filteredCustomers.map(customer => (
-              <div
-                key={customer.id}
-                className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition"
-              >
-                {/* Card Header - Collapsed View */}
-                <button
-                  onClick={() => setExpandedId(expandedId === customer.id ? null : customer.id)}
-                  className="w-full p-4 text-left hover:bg-gray-50 transition-colors"
-                >
-                  <div className="flex items-start justify-between mb-2">
-                    <div>
-                      <h3 className="font-bold text-sm md:text-base text-gray-900">{customer.name}</h3>
-                      {customer.shortName && (
-                        <p className="text-xs text-gray-500 mt-0.5">{customer.shortName}</p>
-                      )}
-                    </div>
-                    <ChevronDown
-                      size={16}
-                      className={`text-gray-400 transition-transform ${expandedId === customer.id ? 'rotate-180' : ''}`}
-                    />
-                  </div>
-                  <div className="flex flex-wrap gap-2 items-center text-xs text-gray-600">
-                    {customer.city && customer.state && (
-                      <span>{customer.city}, {customer.state}</span>
+          <div className="-mx-3 md:-mx-6 border-x border-slate-300">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-slate-800 text-white">
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">Customer</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700 hidden md:table-cell">Location</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700 hidden md:table-cell">Contact</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700 hidden md:table-cell">GST No</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-right border-r border-slate-700 hidden md:table-cell">Credit Limit</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredCustomers.map(customer => (
+                  <>
+                    <tr key={customer.id}
+                      className="border-b border-slate-100 even:bg-slate-50/70 hover:bg-blue-50/60 cursor-pointer"
+                      onClick={() => setExpandedId(expandedId === customer.id ? null : customer.id)}>
+                      <td className="px-3 py-1.5 text-xs border-r border-slate-100">
+                        <div className="font-bold text-slate-900">{customer.name}</div>
+                        {customer.shortName && <div className="text-[10px] text-slate-400">{customer.shortName}</div>}
+                        <div className="md:hidden text-[10px] text-slate-500 mt-0.5">
+                          {customer.city && customer.state && <span>{customer.city}, {customer.state}</span>}
+                        </div>
+                      </td>
+                      <td className="px-3 py-1.5 text-xs border-r border-slate-100 hidden md:table-cell text-slate-600">
+                        {customer.city && customer.state ? `${customer.city}, ${customer.state}` : '-'}
+                      </td>
+                      <td className="px-3 py-1.5 text-xs border-r border-slate-100 hidden md:table-cell text-slate-600">
+                        {customer.contactPerson || customer.phone || '-'}
+                      </td>
+                      <td className="px-3 py-1.5 text-xs border-r border-slate-100 hidden md:table-cell font-mono text-slate-600">
+                        {customer.gstNo || '-'}
+                      </td>
+                      <td className="px-3 py-1.5 text-xs border-r border-slate-100 hidden md:table-cell text-right font-mono tabular-nums text-slate-700">
+                        {customer.creditLimit ? `${customer.creditLimit.toLocaleString()}` : '-'}
+                      </td>
+                      <td className="px-3 py-1.5 text-xs text-center">
+                        <ChevronDown size={14} className={`inline text-slate-400 transition-transform ${expandedId === customer.id ? 'rotate-180' : ''}`} />
+                      </td>
+                    </tr>
+                    {expandedId === customer.id && (
+                      <tr key={customer.id + '_exp'}>
+                        <td colSpan={6} className="bg-slate-50 px-4 py-3 border-b border-slate-200">
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs mb-3">
+                            {customer.address && (
+                              <div>
+                                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Address</div>
+                                <div className="text-slate-700">{customer.address}</div>
+                              </div>
+                            )}
+                            {customer.contactPerson && (
+                              <div>
+                                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Contact</div>
+                                <div className="text-slate-700">{customer.contactPerson}</div>
+                              </div>
+                            )}
+                            {customer.email && (
+                              <div>
+                                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Email</div>
+                                <div className="text-slate-700">{customer.email}</div>
+                              </div>
+                            )}
+                            {customer.panNo && (
+                              <div>
+                                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">PAN</div>
+                                <div className="text-slate-700 font-mono">{customer.panNo}</div>
+                              </div>
+                            )}
+                            {customer.defaultTerms && (
+                              <div>
+                                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Terms</div>
+                                <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border bg-blue-50 text-blue-700 border-blue-200">
+                                  {customer.defaultTerms}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex gap-2 pt-2 border-t border-slate-200">
+                            <button onClick={() => openForm(customer)}
+                              className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">
+                              Edit
+                            </button>
+                            <button onClick={() => deleteCustomer(customer.id)}
+                              className="px-3 py-1 text-[11px] font-medium text-red-600 border border-red-200 hover:bg-red-50 flex items-center gap-1">
+                              <Trash2 size={11} /> Deactivate
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
                     )}
-                    {customer.phone && <span>{customer.phone}</span>}
-                  </div>
-                </button>
-
-                {/* Card Body - Expanded View */}
-                {expandedId === customer.id && (
-                  <div className="px-4 pb-4 border-t pt-3 bg-gray-50">
-                    <div className="space-y-2 text-sm mb-3">
-                      {customer.address && (
-                        <div>
-                          <p className="text-xs text-gray-500">Address</p>
-                          <p className="text-gray-700">{customer.address}</p>
-                        </div>
-                      )}
-                      {customer.contactPerson && (
-                        <div>
-                          <p className="text-xs text-gray-500">Contact Person</p>
-                          <p className="text-gray-700">{customer.contactPerson}</p>
-                        </div>
-                      )}
-                      {customer.email && (
-                        <div>
-                          <p className="text-xs text-gray-500">Email</p>
-                          <p className="text-gray-700">{customer.email}</p>
-                        </div>
-                      )}
-                      {customer.gstNo && (
-                        <div>
-                          <p className="text-xs text-gray-500">GST No</p>
-                          <p className="text-gray-700 font-mono text-xs">{customer.gstNo}</p>
-                        </div>
-                      )}
-                      {customer.creditLimit && (
-                        <div>
-                          <p className="text-xs text-gray-500">Credit Limit</p>
-                          <p className="text-gray-700 font-semibold">₹{(customer.creditLimit).toLocaleString()}</p>
-                        </div>
-                      )}
-                      {customer.defaultTerms && (
-                        <div>
-                          <p className="text-xs text-gray-500">Default Terms</p>
-                          <span className="inline-block px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-[10px] font-bold mt-1">
-                            {customer.defaultTerms}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex gap-2 pt-3 border-t">
-                      <button
-                        onClick={() => openForm(customer)}
-                        className="flex-1 py-2 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => deleteCustomer(customer.id)}
-                        className="flex-1 py-2 text-xs font-medium text-red-600 hover:bg-red-50 rounded"
-                      >
-                        Deactivate
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
+                  </>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
 
         {/* Empty State */}
         {!loading && filteredCustomers.length === 0 && customers.length === 0 && (
           <div className="text-center py-12">
-            <Users size={48} className="mx-auto text-gray-300 mb-3" />
-            <p className="text-gray-500">No customers yet. Create your first customer to get started.</p>
+            <p className="text-xs text-slate-400 uppercase tracking-widest">No customers yet. Create your first customer to get started.</p>
           </div>
         )}
 
         {!loading && filteredCustomers.length === 0 && customers.length > 0 && (
           <div className="text-center py-8">
-            <p className="text-gray-500 text-sm">No customers match "{searchQuery}"</p>
+            <p className="text-xs text-slate-400 uppercase tracking-widest">No customers match "{searchQuery}"</p>
           </div>
         )}
       </div>

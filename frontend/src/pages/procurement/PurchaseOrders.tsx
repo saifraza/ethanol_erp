@@ -292,17 +292,17 @@ const PurchaseOrders: React.FC = () => {
     }
   };
 
-  const getStatusColor = (status: string) => {
+  const getStatusBadge = (status: string) => {
     const colors: Record<string, string> = {
-      DRAFT: 'bg-gray-100 text-gray-800 border-gray-300',
-      APPROVED: 'bg-blue-100 text-blue-800 border-blue-300',
-      SENT: 'bg-yellow-100 text-yellow-800 border-yellow-300',
-      PARTIAL_RECEIVED: 'bg-orange-100 text-orange-800 border-orange-300',
-      RECEIVED: 'bg-green-100 text-green-800 border-green-300',
-      CLOSED: 'bg-purple-100 text-purple-800 border-purple-300',
-      CANCELLED: 'bg-red-100 text-red-800 border-red-300',
+      DRAFT: 'border-gray-400 bg-gray-50 text-gray-700',
+      APPROVED: 'border-blue-400 bg-blue-50 text-blue-700',
+      SENT: 'border-yellow-400 bg-yellow-50 text-yellow-700',
+      PARTIAL_RECEIVED: 'border-orange-400 bg-orange-50 text-orange-700',
+      RECEIVED: 'border-green-400 bg-green-50 text-green-700',
+      CLOSED: 'border-purple-400 bg-purple-50 text-purple-700',
+      CANCELLED: 'border-red-400 bg-red-50 text-red-700',
     };
-    return colors[status] || 'bg-gray-100 text-gray-800 border-gray-300';
+    return colors[status] || 'border-gray-400 bg-gray-50 text-gray-700';
   };
 
   const getNextStatusOptions = (currentStatus: string): string[] => {
@@ -339,677 +339,341 @@ const PurchaseOrders: React.FC = () => {
 
   if (loading && pos.length === 0) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50">
-        <Loader className="w-8 h-8 animate-spin text-indigo-600" />
+      <div className="flex items-center justify-center h-screen bg-slate-50">
+        <Loader className="w-6 h-6 animate-spin text-slate-400" />
+        <span className="ml-2 text-xs text-slate-400 uppercase tracking-widest">Loading...</span>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto">
+    <div className="min-h-screen bg-slate-50">
+      <div className="p-3 md:p-6 space-y-0">
+        {/* Page Toolbar */}
+        <div className="bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <ShoppingBag size={18} />
+            <span className="text-sm font-bold tracking-wide uppercase">Purchase Orders</span>
+            <span className="text-[10px] text-slate-400">|</span>
+            <span className="text-[10px] text-slate-400">Manage procurement orders</span>
+          </div>
+          <button
+            onClick={() => setShowCreateForm(!showCreateForm)}
+            className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 flex items-center gap-1"
+          >
+            <Plus size={12} /> NEW PO
+          </button>
+        </div>
+
+        {/* Messages */}
         {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3">
-            <AlertCircle className="w-5 h-5 text-red-600" />
-            <p className="text-red-800">{error}</p>
-            <button
-              onClick={() => setError('')}
-              className="ml-auto text-red-600 hover:text-red-800"
-            >
-              <X className="w-4 h-4" />
-            </button>
+          <div className="px-4 py-2 text-xs border-x border-b -mx-3 md:-mx-6 bg-red-50 text-red-700 border-red-300 flex items-center justify-between">
+            <div className="flex items-center gap-2"><AlertCircle size={14} /> {error}</div>
+            <button onClick={() => setError('')}><X size={14} /></button>
           </div>
         )}
-
         {success && (
-          <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-3">
-            <CheckCircle className="w-5 h-5 text-green-600" />
-            <p className="text-green-800">{success}</p>
-            <button
-              onClick={() => setSuccess('')}
-              className="ml-auto text-green-600 hover:text-green-800"
-            >
-              <X className="w-4 h-4" />
-            </button>
+          <div className="px-4 py-2 text-xs border-x border-b -mx-3 md:-mx-6 bg-green-50 text-green-700 border-green-300 flex items-center gap-2">
+            <CheckCircle size={14} /> {success}
           </div>
         )}
 
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-6">
-            <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-2">
-              <ShoppingBag className="w-8 h-8 text-indigo-600" />
-              Purchase Orders
-            </h1>
-            <button
-              onClick={() => setShowCreateForm(!showCreateForm)}
-              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
-            >
-              <Plus className="w-5 h-5" />
-              New PO
-            </button>
+        {/* KPI Strip */}
+        <div className="grid grid-cols-4 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+          <div className="border-l-4 border-l-indigo-500 border-r border-slate-300 bg-white px-4 py-3">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total POs</div>
+            <div className="text-2xl font-bold text-slate-900 mt-1">{stats.total}</div>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-            <div className="bg-white rounded-lg shadow p-6 border-l-4 border-indigo-600">
-              <div className="text-gray-600 text-sm font-medium">Total POs</div>
-              <div className="text-3xl font-bold text-gray-900 mt-2">{stats.total}</div>
-            </div>
-
-            <div className="bg-white rounded-lg shadow p-6 border-l-4 border-yellow-600">
-              <div className="text-gray-600 text-sm font-medium">Draft</div>
-              <div className="text-3xl font-bold text-gray-900 mt-2">{stats.draft}</div>
-            </div>
-
-            <div className="bg-white rounded-lg shadow p-6 border-l-4 border-blue-600">
-              <div className="text-gray-600 text-sm font-medium">Active (Approved/Sent)</div>
-              <div className="text-3xl font-bold text-gray-900 mt-2">{stats.active}</div>
-            </div>
-
-            <div className="bg-white rounded-lg shadow p-6 border-l-4 border-green-600">
-              <div className="text-gray-600 text-sm font-medium">Total Value</div>
-              <div className="text-2xl font-bold text-gray-900 mt-2">
-                ₹{stats.totalValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-              </div>
+          <div className="border-l-4 border-l-yellow-500 border-r border-slate-300 bg-white px-4 py-3">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Draft</div>
+            <div className="text-2xl font-bold text-slate-900 mt-1">{stats.draft}</div>
+          </div>
+          <div className="border-l-4 border-l-blue-500 border-r border-slate-300 bg-white px-4 py-3">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Active</div>
+            <div className="text-2xl font-bold text-slate-900 mt-1">{stats.active}</div>
+          </div>
+          <div className="border-l-4 border-l-green-500 bg-white px-4 py-3">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total Value</div>
+            <div className="text-xl font-bold text-slate-900 mt-1 font-mono tabular-nums">
+              {stats.totalValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
             </div>
           </div>
         </div>
 
+        {/* Create PO Form */}
         {showCreateForm && (
-          <div className="mb-8 bg-white rounded-lg shadow-lg border border-gray-200">
-            <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 px-6 py-4 rounded-t-lg">
-              <h2 className="text-xl font-bold text-white">Create New Purchase Order</h2>
-            </div>
-
-            <form onSubmit={handleSubmitPO} className="p-6 space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Vendor
-                  </label>
-                  <select
-                    value={formData.vendorId}
-                    onChange={(e) => setFormData({ ...formData, vendorId: e.target.value })}
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  >
-                    <option value="">Select Vendor</option>
-                    {vendors.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    PO Date
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.poDate}
-                    onChange={(e) => setFormData({ ...formData, poDate: e.target.value })}
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Delivery Date
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.deliveryDate}
-                    onChange={(e) => setFormData({ ...formData, deliveryDate: e.target.value })}
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Supply Type
-                  </label>
-                  <select
-                    value={formData.supplyType}
-                    onChange={(e) => setFormData({ ...formData, supplyType: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  >
-                    <option value="INTRA_STATE">Intra State</option>
-                    <option value="INTER_STATE">Inter State</option>
-                  </select>
-                </div>
+          <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 overflow-y-auto py-4">
+            <div className="bg-white shadow-2xl w-full max-w-5xl mx-4">
+              <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
+                <span className="text-sm font-bold tracking-wide uppercase">Create New Purchase Order</span>
+                <button onClick={() => setShowCreateForm(false)} className="text-slate-400 hover:text-white"><X size={16} /></button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Place of Supply
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.placeOfSupply}
-                    onChange={(e) =>
-                      setFormData({ ...formData, placeOfSupply: e.target.value })
-                    }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  />
+              <form onSubmit={handleSubmitPO} className="p-4 space-y-4 max-h-[80vh] overflow-y-auto">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Vendor *</label>
+                    <select value={formData.vendorId} onChange={(e) => setFormData({ ...formData, vendorId: e.target.value })} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                      <option value="">Select Vendor</option>
+                      {vendors.map((v) => (<option key={v.id} value={v.id}>{v.name}</option>))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">PO Date *</label>
+                    <input type="date" value={formData.poDate} onChange={(e) => setFormData({ ...formData, poDate: e.target.value })} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Delivery Date *</label>
+                    <input type="date" value={formData.deliveryDate} onChange={(e) => setFormData({ ...formData, deliveryDate: e.target.value })} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Supply Type</label>
+                    <select value={formData.supplyType} onChange={(e) => setFormData({ ...formData, supplyType: e.target.value })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                      <option value="INTRA_STATE">Intra State</option>
+                      <option value="INTER_STATE">Inter State</option>
+                    </select>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Payment Terms
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.paymentTerms}
-                    onChange={(e) =>
-                      setFormData({ ...formData, paymentTerms: e.target.value })
-                    }
-                    placeholder="e.g., Net 30"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Place of Supply</label>
+                    <input type="text" value={formData.placeOfSupply} onChange={(e) => setFormData({ ...formData, placeOfSupply: e.target.value })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Payment Terms</label>
+                    <input type="text" value={formData.paymentTerms} onChange={(e) => setFormData({ ...formData, paymentTerms: e.target.value })} placeholder="e.g., Net 30" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Credit Days</label>
+                    <input type="number" value={formData.creditDays} onChange={(e) => setFormData({ ...formData, creditDays: parseInt(e.target.value) || 0 })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Credit Days
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.creditDays}
-                    onChange={(e) =>
-                      setFormData({ ...formData, creditDays: parseInt(e.target.value) || 0 })
-                    }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Delivery Address
-                </label>
-                <textarea
-                  value={formData.deliveryAddress}
-                  onChange={(e) =>
-                    setFormData({ ...formData, deliveryAddress: e.target.value })
-                  }
-                  rows={2}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Transport Mode
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.transportMode}
-                    onChange={(e) =>
-                      setFormData({ ...formData, transportMode: e.target.value })
-                    }
-                    placeholder="e.g., Road, Rail, Air"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Delivery Address</label>
+                    <textarea value={formData.deliveryAddress} onChange={(e) => setFormData({ ...formData, deliveryAddress: e.target.value })} rows={2} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Transport Mode</label>
+                      <input type="text" value={formData.transportMode} onChange={(e) => setFormData({ ...formData, transportMode: e.target.value })} placeholder="Road, Rail, Air" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label>
+                      <input type="text" value={formData.remarks} onChange={(e) => setFormData({ ...formData, remarks: e.target.value })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                    </div>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Remarks
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.remarks}
-                    onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
+                {/* Line Items */}
+                <div className="border-t border-slate-200 pt-4">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Line Items</div>
 
-              <div className="border-t pt-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Line Items</h3>
+                  {formData.lines.length > 0 && (
+                    <div className="border border-slate-300 mb-4">
+                      <table className="w-full">
+                        <thead>
+                          <tr className="bg-slate-800 text-white">
+                            <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-left border-r border-slate-700">Material</th>
+                            <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-left border-r border-slate-700">HSN</th>
+                            <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-right border-r border-slate-700">Qty</th>
+                            <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-right border-r border-slate-700">Rate</th>
+                            <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-right border-r border-slate-700">Disc %</th>
+                            <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-right border-r border-slate-700">Total</th>
+                            <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-center"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {formData.lines.map((line, idx) => (
+                            <tr key={idx} className="border-b border-slate-100 even:bg-slate-50/70">
+                              <td className="px-3 py-1.5 text-xs border-r border-slate-100">{line.description}</td>
+                              <td className="px-3 py-1.5 text-xs border-r border-slate-100 font-mono">{line.hsnCode}</td>
+                              <td className="px-2 py-1 border-r border-slate-100">
+                                <input type="number" value={line.quantity} onChange={(e) => handleUpdateLine(idx, 'quantity', parseFloat(e.target.value) || 0)} className="border border-slate-300 px-1.5 py-1 text-xs w-20 text-right focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                              </td>
+                              <td className="px-2 py-1 border-r border-slate-100">
+                                <input type="number" value={line.rate} onChange={(e) => handleUpdateLine(idx, 'rate', parseFloat(e.target.value) || 0)} className="border border-slate-300 px-1.5 py-1 text-xs w-20 text-right focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                              </td>
+                              <td className="px-2 py-1 border-r border-slate-100">
+                                <input type="number" value={line.discountPercent} onChange={(e) => handleUpdateLine(idx, 'discountPercent', parseFloat(e.target.value) || 0)} className="border border-slate-300 px-1.5 py-1 text-xs w-16 text-right focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                              </td>
+                              <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums font-semibold">
+                                {calculateLineTotal(line).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                              </td>
+                              <td className="px-2 py-1 text-center">
+                                <button type="button" onClick={() => handleRemoveLine(idx)} className="text-red-600 hover:text-red-800"><Trash2 size={14} /></button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
 
-                <div className="space-y-4 mb-6">
-                  {formData.lines.map((line, idx) => (
-                    <div
-                      key={idx}
-                      className="bg-gray-50 border border-gray-200 rounded-lg p-4"
-                    >
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-                        <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1">
-                            Material
-                          </label>
-                          <input
-                            type="text"
-                            value={line.description}
-                            disabled
-                            className="w-full px-3 py-2 bg-gray-200 border border-gray-300 rounded text-sm text-gray-600"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1">
-                            HSN Code
-                          </label>
-                          <input
-                            type="text"
-                            value={line.hsnCode}
-                            disabled
-                            className="w-full px-3 py-2 bg-gray-200 border border-gray-300 rounded text-sm text-gray-600"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1">
-                            Quantity
-                          </label>
-                          <input
-                            type="number"
-                            value={line.quantity}
-                            onChange={(e) =>
-                              handleUpdateLine(
-                                idx,
-                                'quantity',
-                                parseFloat(e.target.value) || 0
-                              )
-                            }
-                            className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-indigo-500"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1">
-                            Rate
-                          </label>
-                          <input
-                            type="number"
-                            value={line.rate}
-                            onChange={(e) =>
-                              handleUpdateLine(idx, 'rate', parseFloat(e.target.value) || 0)
-                            }
-                            className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-indigo-500"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1">
-                            Discount %
-                          </label>
-                          <input
-                            type="number"
-                            value={line.discountPercent}
-                            onChange={(e) =>
-                              handleUpdateLine(
-                                idx,
-                                'discountPercent',
-                                parseFloat(e.target.value) || 0
-                              )
-                            }
-                            className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-indigo-500"
-                          />
-                        </div>
+                  {/* Add Line */}
+                  <div className="bg-slate-100 border border-slate-300 p-3">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Add Line Item</div>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Material</label>
+                        <select value={newLine.materialId || ''} onChange={handleMaterialSelect} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                          <option value="">Select Material</option>
+                          {materials.map((m) => (<option key={m.id} value={m.id}>{m.name || m.description}</option>))}
+                        </select>
                       </div>
-
-                      <div className="mt-3 flex items-center justify-between">
-                        <div className="text-sm">
-                          <span className="text-gray-600">Line Total: </span>
-                          <span className="font-semibold text-gray-900">
-                            ₹
-                            {calculateLineTotal(line).toLocaleString('en-IN', {
-                              maximumFractionDigits: 2,
-                            })}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <label className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              checked={line.isRCM}
-                              onChange={(e) =>
-                                handleUpdateLine(idx, 'isRCM', e.target.checked)
-                              }
-                              className="w-4 h-4 border-gray-300 rounded"
-                            />
-                            <span className="text-sm text-gray-700">RCM</span>
-                          </label>
-
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveLine(idx)}
-                            className="p-2 text-red-600 hover:bg-red-50 rounded transition"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Quantity</label>
+                        <input type="number" value={newLine.quantity || 0} onChange={(e) => setNewLine({ ...newLine, quantity: parseFloat(e.target.value) || 0 })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Rate</label>
+                        <input type="number" value={newLine.rate || 0} onChange={(e) => setNewLine({ ...newLine, rate: parseFloat(e.target.value) || 0 })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Discount %</label>
+                        <input type="number" value={newLine.discountPercent || 0} onChange={(e) => setNewLine({ ...newLine, discountPercent: parseFloat(e.target.value) || 0 })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                       </div>
                     </div>
-                  ))}
+                    <button type="button" onClick={handleAddLine} className="mt-3 px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 flex items-center gap-1">
+                      <Plus size={12} /> ADD LINE
+                    </button>
+                  </div>
                 </div>
 
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                  <h4 className="text-sm font-semibold text-gray-900 mb-4">Add Line Item</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Charges & Totals */}
+                <div className="border-t border-slate-200 pt-4">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Material
-                      </label>
-                      <select
-                        value={newLine.materialId || ''}
-                        onChange={handleMaterialSelect}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                      >
-                        <option value="">Select Material</option>
-                        {materials.map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {m.name || m.description}
-                          </option>
-                        ))}
-                      </select>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Freight Charge</label>
+                      <input type="number" value={formData.freightCharge} onChange={(e) => setFormData({ ...formData, freightCharge: parseFloat(e.target.value) || 0 })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                     </div>
-
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Quantity
-                      </label>
-                      <input
-                        type="number"
-                        value={newLine.quantity || 0}
-                        onChange={(e) =>
-                          setNewLine({
-                            ...newLine,
-                            quantity: parseFloat(e.target.value) || 0,
-                          })
-                        }
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                      />
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Other Charges</label>
+                      <input type="number" value={formData.otherCharges} onChange={(e) => setFormData({ ...formData, otherCharges: parseFloat(e.target.value) || 0 })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                     </div>
-
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Rate
-                      </label>
-                      <input
-                        type="number"
-                        value={newLine.rate || 0}
-                        onChange={(e) =>
-                          setNewLine({ ...newLine, rate: parseFloat(e.target.value) || 0 })
-                        }
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                      />
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Round Off</label>
+                      <input type="number" step="0.01" value={formData.roundOff} onChange={(e) => setFormData({ ...formData, roundOff: parseFloat(e.target.value) || 0 })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                     </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Discount %
-                      </label>
-                      <input
-                        type="number"
-                        value={newLine.discountPercent || 0}
-                        onChange={(e) =>
-                          setNewLine({
-                            ...newLine,
-                            discountPercent: parseFloat(e.target.value) || 0,
-                          })
-                        }
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                      />
+                    <div className="bg-slate-800 text-white px-4 py-3">
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-slate-300">Grand Total</div>
+                      <div className="text-xl font-bold font-mono tabular-nums mt-1">{grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</div>
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={handleAddLine}
-                    className="mt-4 w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium"
-                  >
-                    <Plus className="w-4 h-4 inline mr-2" />
-                    Add Line
+                  <div className="bg-slate-50 border border-slate-200 p-3 mt-3 text-xs space-y-1">
+                    <div className="flex justify-between"><span className="text-slate-500">Subtotal:</span><span className="font-mono tabular-nums font-medium">{subtotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span></div>
+                    <div className="flex justify-between"><span className="text-slate-500">Total GST:</span><span className="font-mono tabular-nums font-medium">{totalGst.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span></div>
+                  </div>
+                </div>
+
+                <div className="flex gap-2 justify-end pt-4 border-t border-slate-200">
+                  <button type="button" onClick={() => setShowCreateForm(false)} className="px-4 py-1.5 bg-slate-200 text-slate-700 text-[11px] font-medium hover:bg-slate-300">CANCEL</button>
+                  <button type="submit" disabled={submitting} className="px-4 py-1.5 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1">
+                    {submitting && <Loader className="w-3 h-3 animate-spin" />} CREATE PO
                   </button>
                 </div>
-              </div>
-
-              <div className="border-t pt-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Freight Charge
-                    </label>
-                    <input
-                      type="number"
-                      value={formData.freightCharge}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          freightCharge: parseFloat(e.target.value) || 0,
-                        })
-                      }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Other Charges
-                    </label>
-                    <input
-                      type="number"
-                      value={formData.otherCharges}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          otherCharges: parseFloat(e.target.value) || 0,
-                        })
-                      }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Round Off
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={formData.roundOff}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          roundOff: parseFloat(e.target.value) || 0,
-                        })
-                      }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    />
-                  </div>
-
-                  <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
-                    <div className="text-sm font-medium text-gray-700">Grand Total</div>
-                    <div className="text-2xl font-bold text-indigo-600 mt-1">
-                      ₹{grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6 text-sm space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Subtotal:</span>
-                    <span className="font-medium text-gray-900">
-                      ₹{subtotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Total GST:</span>
-                    <span className="font-medium text-gray-900">
-                      ₹{totalGst.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex gap-3 justify-end pt-6 border-t">
-                <button
-                  type="button"
-                  onClick={() => setShowCreateForm(false)}
-                  className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                >
-                  {submitting && <Loader className="w-4 h-4 animate-spin" />}
-                  Create PO
-                </button>
-              </div>
-            </form>
+              </form>
+            </div>
           </div>
         )}
 
-        <div className="mb-6">
-          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+        {/* Filters */}
+        <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6">
+          <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
             <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search by PO # or Vendor..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-              />
+              <Search size={14} className="absolute left-2.5 top-2 text-slate-400" />
+              <input type="text" placeholder="Search by PO # or Vendor..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="border border-slate-300 px-2.5 py-1.5 pl-8 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
             </div>
           </div>
-
-          <div className="mt-4 flex gap-2 overflow-x-auto pb-2">
+          <div className="mt-2 flex gap-0 overflow-x-auto">
             {statusTabs.map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setStatusFilter(tab)}
-                className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap transition ${
-                  statusFilter === tab
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-                }`}
-              >
-                {tab}
+              <button key={tab} onClick={() => setStatusFilter(tab)} className={`px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest whitespace-nowrap border-b-2 transition ${statusFilter === tab ? 'border-b-2 border-blue-600 text-blue-700 bg-white' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+                {tab.replace('_', ' ')}
               </button>
             ))}
           </div>
         </div>
 
-        <div className="grid gap-4">
-          {filteredPOs.length === 0 ? (
-            <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
-              <ShoppingBag className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-600 font-medium">No Purchase Orders found</p>
-            </div>
-          ) : (
-            filteredPOs.map((po) => (
-              <div key={po.id} className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden hover:shadow-lg transition">
-                <div className="p-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <h3 className="text-lg font-bold text-gray-900">PO-{po.poNo}</h3>
-                        <span
-                          className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border ${getStatusColor(
-                            po.status
-                          )}`}
-                        >
-                          {po.status}
-                        </span>
-                      </div>
-                      <p className="text-gray-600">{po.vendor.name}</p>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-2xl font-bold text-indigo-600">
-                        ₹{po.grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                      </div>
-                      <p className="text-sm text-gray-600 mt-1">Grand Total</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4 text-sm">
-                    <div>
-                      <p className="text-gray-600">PO Date</p>
-                      <p className="font-medium text-gray-900">
-                        {new Date(po.poDate).toLocaleDateString('en-IN')}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">Delivery Date</p>
-                      <p className="font-medium text-gray-900">
-                        {new Date(po.deliveryDate).toLocaleDateString('en-IN')}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">Supply Type</p>
-                      <p className="font-medium text-gray-900">
-                        {po.supplyType.replace('_', ' ')}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">Line Items</p>
-                      <p className="font-medium text-gray-900">{po.linesCount} items</p>
-                    </div>
-                  </div>
-
-                  <div className="border-t pt-4">
-                    <div className="flex gap-2 flex-wrap">
-                      <button
-                        onClick={() => {
-                          const token = localStorage.getItem('token');
-                          window.open(`/api/purchase-orders/${po.id}/pdf?token=${token}`, '_blank');
-                        }}
-                        className="px-4 py-2 rounded-lg font-medium text-sm transition bg-green-50 text-green-700 border border-green-300 hover:bg-green-100 flex items-center gap-1"
-                      >
-                        <FileText className="w-4 h-4" />
-                        Print PDF
-                      </button>
-                      {getNextStatusOptions(po.status).map((nextStatus) => (
+        {/* PO Table */}
+        {filteredPOs.length === 0 ? (
+          <div className="text-center py-16 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+            <p className="text-xs text-slate-400 uppercase tracking-widest">No Purchase Orders found</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto -mx-3 md:-mx-6 border-x border-slate-300">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-slate-800 text-white">
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">PO #</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">Vendor</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">Status</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">PO Date</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">Delivery</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-center border-r border-slate-700">Items</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-right border-r border-slate-700">Grand Total</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredPOs.map((po) => (
+                  <tr key={po.id} className="border-b border-slate-100 even:bg-slate-50/70 hover:bg-blue-50/60">
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100 font-bold text-slate-900">PO-{po.poNo}</td>
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100">{po.vendor.name}</td>
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100">
+                      <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${getStatusBadge(po.status)}`}>{po.status}</span>
+                    </td>
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100">{new Date(po.poDate).toLocaleDateString('en-IN')}</td>
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100">{new Date(po.deliveryDate).toLocaleDateString('en-IN')}</td>
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-center">{po.linesCount}</td>
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums font-bold">{po.grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
+                    <td className="px-3 py-1.5 text-xs text-center">
+                      <div className="flex items-center justify-center gap-1 flex-wrap">
                         <button
-                          key={nextStatus}
-                          onClick={() => handleStatusChange(po.id, nextStatus)}
-                          className={`px-4 py-2 rounded-lg font-medium text-sm transition ${
-                            nextStatus === 'CANCELLED'
-                              ? 'bg-red-50 text-red-700 border border-red-300 hover:bg-red-100'
-                              : 'bg-blue-50 text-blue-700 border border-blue-300 hover:bg-blue-100'
-                          }`}
-                        >
-                          {nextStatus === 'PARTIAL_RECEIVED'
-                            ? 'Partial Received'
-                            : nextStatus === 'CANCELLED'
-                              ? 'Cancel'
-                              : nextStatus}
-                        </button>
-                      ))}
-                      {po.status === 'DRAFT' && (
-                        <button
-                          onClick={async () => {
-                            if (!confirm(`Delete PO-${po.poNo}?`)) return;
-                            try {
-                              await api.delete(`/purchase-orders/${po.id}`);
-                              fetchData();
-                            } catch (err) { console.error(err); }
+                          onClick={() => {
+                            const token = localStorage.getItem('token');
+                            window.open(`/api/purchase-orders/${po.id}/pdf?token=${token}`, '_blank');
                           }}
-                          className="px-4 py-2 rounded-lg font-medium text-sm transition bg-red-50 text-red-700 border border-red-300 hover:bg-red-100 flex items-center gap-1"
+                          className="px-2 py-0.5 bg-green-600 text-white text-[10px] font-medium hover:bg-green-700 flex items-center gap-0.5"
                         >
-                          <Trash2 className="w-4 h-4" /> Delete
+                          <FileText size={10} /> PDF
                         </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
+                        {getNextStatusOptions(po.status).map((nextStatus) => (
+                          <button key={nextStatus} onClick={() => handleStatusChange(po.id, nextStatus)} className={`px-2 py-0.5 text-[10px] font-medium ${nextStatus === 'CANCELLED' ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
+                            {nextStatus === 'PARTIAL_RECEIVED' ? 'PARTIAL' : nextStatus === 'CANCELLED' ? 'CANCEL' : nextStatus}
+                          </button>
+                        ))}
+                        {po.status === 'DRAFT' && (
+                          <button
+                            onClick={async () => {
+                              if (!confirm(`Delete PO-${po.poNo}?`)) return;
+                              try {
+                                await api.delete(`/purchase-orders/${po.id}`);
+                                fetchData();
+                              } catch (err) { console.error(err); }
+                            }}
+                            className="px-2 py-0.5 bg-red-600 text-white text-[10px] font-medium hover:bg-red-700 flex items-center gap-0.5"
+                          >
+                            <Trash2 size={10} /> DEL
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-slate-800 text-white font-semibold">
+                  <td colSpan={6} className="px-3 py-2 text-xs text-right uppercase tracking-widest">Total</td>
+                  <td className="px-3 py-2 text-xs text-right font-mono tabular-nums">{filteredPOs.reduce((s, p) => s + p.grandTotal, 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
