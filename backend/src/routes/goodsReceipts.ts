@@ -10,7 +10,7 @@ router.use(authenticate as any);
 async function syncGrnToInventory(
   grnId: string,
   grnNo: number,
-  lines: Array<{ materialId: string | null; acceptedQty: number; rate: number; unit: string; batchNo: string; storageLocation: string }>,
+  lines: Array<{ inventoryItemId?: string | null; materialId?: string | null; acceptedQty: number; rate: number; unit: string; batchNo: string; storageLocation: string }>,
   warehouseId: string | null,
   userId: string
 ): Promise<void> {
@@ -23,30 +23,15 @@ async function syncGrnToInventory(
   if (!whId) return; // no warehouses configured, skip inventory sync
 
   for (const line of lines) {
-    if (!line.materialId || line.acceptedQty <= 0) continue;
+    // Use inventoryItemId directly (unified material master)
+    const itemId = line.inventoryItemId || line.materialId;
+    if (!itemId || line.acceptedQty <= 0) continue;
 
-    // Find the material to get its name
-    const material = await prisma.material.findUnique({ where: { id: line.materialId }, select: { name: true } });
-    if (!material) continue;
-
-    // Match to InventoryItem by name — try exact first, then contains, then startsWith
-    let invItem = await prisma.inventoryItem.findFirst({
-      where: { name: { equals: material.name, mode: 'insensitive' } },
-      select: { id: true, unit: true, currentStock: true, avgCost: true },
+    const invItem = await prisma.inventoryItem.findUnique({
+      where: { id: itemId },
+      select: { id: true, name: true, unit: true, currentStock: true, avgCost: true },
     });
-    if (!invItem) {
-      invItem = await prisma.inventoryItem.findFirst({
-        where: { name: { contains: material.name, mode: 'insensitive' } },
-        select: { id: true, unit: true, currentStock: true, avgCost: true },
-      });
-    }
-    if (!invItem) {
-      invItem = await prisma.inventoryItem.findFirst({
-        where: { name: { startsWith: material.name, mode: 'insensitive' } },
-        select: { id: true, unit: true, currentStock: true, avgCost: true },
-      });
-    }
-    if (!invItem) continue; // no matching inventory item, skip
+    if (!invItem) continue;
 
     const qty = line.acceptedQty;
     const costRate = line.rate;
@@ -67,7 +52,7 @@ async function syncGrnToInventory(
           refType: 'GRN',
           refId: grnId,
           refNo: `GRN-${grnNo}`,
-          narration: `GRN receipt for ${material.name}`,
+          narration: `GRN receipt for ${invItem.name}`,
           userId,
         },
       });
@@ -111,7 +96,7 @@ async function syncGrnToInventory(
         movementType: movement.movementType,
         direction: movement.direction,
         totalValue: movement.totalValue,
-        itemName: material.name,
+        itemName: invItem.name,
         userId,
         date: movement.date,
       }).catch(() => {});
@@ -207,7 +192,8 @@ router.post('/', async (req: Request, res: Response) => {
 
       return {
         poLineId: line.poLineId || null,
-        materialId: line.materialId || null,
+        inventoryItemId: line.inventoryItemId || line.materialId || null,
+        materialId: line.materialId || line.inventoryItemId || null,
         description: line.description || '',
         receivedQty: parseFloat(line.receivedQty) || 0,
         acceptedQty,
@@ -267,20 +253,7 @@ router.post('/', async (req: Request, res: Response) => {
         }
       }
 
-      // Update material stock
-      if (line.materialId) {
-        const material = await prisma.material.findUnique({
-          where: { id: line.materialId },
-        });
-        if (material) {
-          await prisma.material.update({
-            where: { id: line.materialId },
-            data: {
-              currentStock: material.currentStock + line.acceptedQty,
-            },
-          });
-        }
-      }
+      // Stock update handled by syncGrnToInventory (unified material master)
     }
 
     // Check if all PO lines are fully received
@@ -392,13 +365,21 @@ router.delete('/:id', async (req: Request, res: Response) => {
           });
         }
       }
-      if (line.materialId) {
-        const mat = await prisma.material.findUnique({ where: { id: line.materialId } });
-        if (mat) {
-          await prisma.material.update({
-            where: { id: line.materialId },
-            data: { currentStock: Math.max(0, mat.currentStock - line.acceptedQty) },
+      // Reverse InventoryItem stock if linked
+      const itemId = line.inventoryItemId || line.materialId;
+      if (itemId) {
+        const invItem = await prisma.inventoryItem.findUnique({ where: { id: itemId }, select: { id: true, currentStock: true, avgCost: true } });
+        if (invItem) {
+          const newStock = Math.max(0, invItem.currentStock - line.acceptedQty);
+          await prisma.inventoryItem.update({
+            where: { id: itemId },
+            data: { currentStock: newStock, totalValue: Math.round(newStock * invItem.avgCost * 100) / 100 },
           });
+          // Reverse StockLevel
+          const sl = await prisma.stockLevel.findFirst({ where: { itemId } });
+          if (sl) await prisma.stockLevel.update({ where: { id: sl.id }, data: { quantity: Math.max(0, sl.quantity - line.acceptedQty) } });
+          // Delete associated stock movements
+          await prisma.stockMovement.deleteMany({ where: { refType: 'GRN', refId: grn.id, itemId } });
         }
       }
     }

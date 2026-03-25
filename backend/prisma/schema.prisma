@@ -883,6 +883,9 @@ model InventoryItem {
   avgCost         Float    @default(0)        // weighted average cost
   totalValue      Float    @default(0)        // currentStock × avgCost
   batchTracked    Boolean  @default(false)
+  // Procurement fields (merged from Material)
+  subCategory     String?                     // e.g., ENZYME, YEAST, ACID
+  defaultRate     Float    @default(0)        // last/standard purchase rate
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   transactions    InventoryTransaction[]
@@ -890,6 +893,8 @@ model InventoryItem {
   stockLevels     StockLevel[]
   stockMovements  StockMovement[]
   reorderRule     ReorderRule?
+  poLines         POLine[]
+  grnLines        GRNLine[]
   @@index([category])
 }
 
@@ -1661,8 +1666,10 @@ model POLine {
   poId            String
   po              PurchaseOrder  @relation(fields: [poId], references: [id], onDelete: Cascade)
   lineNo          Int            @default(1)
-  materialId      String?
+  materialId      String?                      // DEPRECATED — use inventoryItemId
   material        Material?      @relation(fields: [materialId], references: [id])
+  inventoryItemId String?
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
   description     String                   // item description
   hsnCode         String?
   quantity        Float
@@ -1690,6 +1697,7 @@ model POLine {
   createdAt       DateTime       @default(now())
 
   grnLines        GRNLine[]
+  @@index([inventoryItemId])
 }
 
 // ── Goods Receipt Note (factory receives goods against PO) ──
@@ -1734,8 +1742,10 @@ model GRNLine {
   grn             GoodsReceipt @relation(fields: [grnId], references: [id], onDelete: Cascade)
   poLineId        String?
   poLine          POLine?      @relation(fields: [poLineId], references: [id])
-  materialId      String?
+  materialId      String?                    // DEPRECATED — use inventoryItemId
   material        Material?    @relation(fields: [materialId], references: [id])
+  inventoryItemId String?
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
   description     String
   receivedQty     Float
   acceptedQty     Float        @default(0)  // after quality check
@@ -1748,6 +1758,7 @@ model GRNLine {
   expiryDate      DateTime?
   remarks         String?
   createdAt       DateTime     @default(now())
+  @@index([inventoryItemId])
 }
 
 // ── Vendor Invoice (3-way match: PO + GRN + Invoice) ──

@@ -6,38 +6,6 @@ import { searchHSN } from '../data/hsnDatabase';
 const router = Router();
 router.use(authenticate as any);
 
-// ─── Auto Code Generation ────────────────────────
-
-const CATEGORY_PREFIX: Record<string, string> = {
-  RAW_MATERIAL: 'RM',
-  SPARE_PART: 'SP',
-  CONSUMABLE: 'CO',
-  CHEMICAL: 'CH',
-  FINISHED_GOOD: 'FG',
-};
-
-async function generateItemCode(category: string, tx?: any): Promise<string> {
-  const db = tx || prisma;
-  const prefix = CATEGORY_PREFIX[category] || 'ITM';
-  const last = await db.inventoryItem.findFirst({
-    where: { code: { startsWith: `${prefix}-` } },
-    orderBy: { code: 'desc' },
-    select: { code: true },
-  });
-  if (!last) return `${prefix}-00001`;
-  const num = parseInt(last.code.replace(`${prefix}-`, ''), 10) || 0;
-  return `${prefix}-${String(num + 1).padStart(5, '0')}`;
-}
-
-// GET /next-code?category=RAW_MATERIAL — Preview next auto-generated code
-router.get('/next-code', async (req: Request, res: Response) => {
-  try {
-    const category = (req.query.category as string) || 'RAW_MATERIAL';
-    const code = await generateItemCode(category);
-    res.json({ code, category });
-  } catch { res.status(500).json({ error: 'Failed to generate code' }); }
-});
-
 // ─── ITEM LOOKUP (Smart Search) ──────────────────
 
 // GET /item-lookup?q=search_term — search HSN database for auto-fill
@@ -91,38 +59,45 @@ router.get('/items/:id', async (req: Request, res: Response) => {
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-// POST /items — create new item (auto-generates code if not provided)
-router.post('/items', authorize('ADMIN') as any, async (req: Request, res: Response) => {
-  const b = req.body;
-  const category = b.category || 'RAW_MATERIAL';
-  const userCode = b.code?.trim();
+// Helper: generate next item code (ITM-00001, ITM-00002, ...)
+async function generateItemCode(): Promise<string> {
+  const last = await prisma.inventoryItem.findFirst({
+    where: { code: { startsWith: 'ITM-' } },
+    orderBy: { code: 'desc' },
+    select: { code: true },
+  });
+  if (!last) return 'ITM-00001';
+  const num = parseInt(last.code.replace('ITM-', ''), 10);
+  return `ITM-${String(num + 1).padStart(5, '0')}`;
+}
 
-  // Retry loop to handle rare code conflicts
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      const code = userCode || await generateItemCode(category);
-      const item = await prisma.inventoryItem.create({
-        data: {
-          name: b.name,
-          code,
-          category,
-          unit: b.unit || 'kg',
-          currentStock: parseFloat(b.currentStock) || 0,
-          minStock: parseFloat(b.minStock) || 0,
-          maxStock: b.maxStock ? parseFloat(b.maxStock) : null,
-          costPerUnit: parseFloat(b.costPerUnit) || 0,
-          location: b.location || null,
-          supplier: b.supplier || null,
-          leadTimeDays: b.leadTimeDays ? parseInt(b.leadTimeDays) : null,
-          remarks: b.remarks || null,
-        },
-      });
-      return res.status(201).json(item);
-    } catch (err: any) {
-      if (err.code === 'P2002' && attempt < 2) continue; // unique violation, retry
-      return res.status(err.code === 'P2002' ? 409 : 500).json({ error: err.message });
-    }
-  }
+// POST /items — create new item
+router.post('/items', authorize('ADMIN') as any, async (req: Request, res: Response) => {
+  try {
+    const b = req.body;
+    const code = await generateItemCode();
+    const item = await prisma.inventoryItem.create({
+      data: {
+        name: b.name,
+        code,
+        category: b.category || 'RAW_MATERIAL',
+        subCategory: b.subCategory || null,
+        unit: b.unit || 'kg',
+        hsnCode: b.hsnCode || null,
+        gstPercent: b.gstPercent !== undefined ? parseFloat(b.gstPercent) : 18,
+        defaultRate: b.defaultRate ? parseFloat(b.defaultRate) : 0,
+        currentStock: parseFloat(b.currentStock) || 0,
+        minStock: parseFloat(b.minStock) || 0,
+        maxStock: b.maxStock ? parseFloat(b.maxStock) : null,
+        costPerUnit: parseFloat(b.costPerUnit) || 0,
+        location: b.location || null,
+        supplier: b.supplier || null,
+        leadTimeDays: b.leadTimeDays ? parseInt(b.leadTimeDays) : null,
+        remarks: b.remarks || null,
+      },
+    });
+    res.status(201).json(item);
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
 // PUT /items/:id — update item
@@ -134,7 +109,11 @@ router.put('/items/:id', authorize('ADMIN') as any, async (req: Request, res: Re
       data: {
         name: b.name,
         category: b.category,
+        subCategory: b.subCategory,
         unit: b.unit,
+        hsnCode: b.hsnCode,
+        gstPercent: b.gstPercent !== undefined ? parseFloat(b.gstPercent) : undefined,
+        defaultRate: b.defaultRate !== undefined ? parseFloat(b.defaultRate) : undefined,
         minStock: b.minStock !== undefined ? parseFloat(b.minStock) : undefined,
         maxStock: b.maxStock !== undefined ? parseFloat(b.maxStock) : undefined,
         costPerUnit: b.costPerUnit !== undefined ? parseFloat(b.costPerUnit) : undefined,

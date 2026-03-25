@@ -28,7 +28,7 @@ interface Material {
 }
 
 interface POLine {
-  materialId: string;
+  inventoryItemId: string;
   description: string;
   hsnCode: string;
   quantity: number;
@@ -99,7 +99,7 @@ const PurchaseOrders: React.FC = () => {
   });
 
   const [newLine, setNewLine] = useState<Partial<POLine>>({
-    materialId: '',
+    inventoryItemId: '',
     description: '',
     hsnCode: '',
     quantity: 0,
@@ -168,16 +168,16 @@ const PurchaseOrders: React.FC = () => {
   };
 
   const handleAddLine = () => {
-    if (!newLine.materialId) {
+    if (!newLine.inventoryItemId) {
       setError('Please select a material');
       return;
     }
 
-    const material = materials.find((m) => m.id === newLine.materialId);
+    const material = materials.find((m) => m.id === newLine.inventoryItemId);
     if (!material) return;
 
     const lineToAdd: POLine = {
-      materialId: newLine.materialId,
+      inventoryItemId: newLine.inventoryItemId,
       description: material.name || material.description || '',
       hsnCode: material.hsnCode,
       quantity: newLine.quantity || 0,
@@ -194,7 +194,7 @@ const PurchaseOrders: React.FC = () => {
     });
 
     setNewLine({
-      materialId: '',
+      inventoryItemId: '',
       description: '',
       hsnCode: '',
       quantity: 0,
@@ -228,13 +228,13 @@ const PurchaseOrders: React.FC = () => {
   };
 
   const handleMaterialSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const materialId = e.target.value;
-    const material = materials.find((m) => m.id === materialId);
+    const inventoryItemId = e.target.value;
+    const material = materials.find((m) => m.id === inventoryItemId);
 
     if (material) {
       setNewLine({
         ...newLine,
-        materialId,
+        inventoryItemId,
         description: material.name || material.description || '',
         hsnCode: material.hsnCode,
         unit: material.unit,
@@ -518,7 +518,7 @@ const PurchaseOrders: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                       <div>
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Material</label>
-                        <select value={newLine.materialId || ''} onChange={handleMaterialSelect} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                        <select value={newLine.inventoryItemId || ''} onChange={handleMaterialSelect} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
                           <option value="">Select Material</option>
                           {materials.map((m) => (<option key={m.id} value={m.id}>{m.name || m.description}</option>))}
                         </select>

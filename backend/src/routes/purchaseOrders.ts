@@ -61,17 +61,18 @@ router.post('/', async (req: Request, res: Response) => {
   try {
     const b = req.body;
 
-    // Look up materials for auto-fill
-    const materialIds = (b.lines || []).map((l: any) => l.materialId).filter(Boolean);
-    const materialsMap: Record<string, any> = {};
-    if (materialIds.length > 0) {
-      const mats = await prisma.material.findMany({ where: { id: { in: materialIds } } });
-      mats.forEach((m: any) => { materialsMap[m.id] = m; });
+    // Look up items for auto-fill (unified material master = InventoryItem)
+    const itemIds = (b.lines || []).map((l: any) => l.materialId || l.inventoryItemId).filter(Boolean);
+    const itemsMap: Record<string, any> = {};
+    if (itemIds.length > 0) {
+      const items = await prisma.inventoryItem.findMany({ where: { id: { in: itemIds } } });
+      items.forEach((m: any) => { itemsMap[m.id] = m; });
     }
 
     // Process lines with calculations
     const processedLines = (b.lines || []).map((line: any) => {
-      const mat = line.materialId ? materialsMap[line.materialId] : null;
+      const itemId = line.materialId || line.inventoryItemId || null;
+      const mat = itemId ? itemsMap[itemId] : null;
       const quantity = parseFloat(line.quantity) || 0;
       const rate = parseFloat(line.rate) || 0;
       const discountPercent = parseFloat(line.discountPercent) || 0;
@@ -98,7 +99,8 @@ router.post('/', async (req: Request, res: Response) => {
       const lineTotal = taxableAmount + totalGst;
 
       return {
-        materialId: line.materialId || null,
+        inventoryItemId: itemId,
+        materialId: itemId, // backward compat — same ID now points to InventoryItem
         description: line.description || mat?.name || '',
         hsnCode: line.hsnCode || mat?.hsnCode || '',
         quantity,
@@ -234,17 +236,18 @@ router.put('/:id', async (req: Request, res: Response) => {
 
     // If lines are provided, rebuild them
     if (b.lines && Array.isArray(b.lines)) {
-      // Look up materials for auto-fill
-      const materialIds = b.lines.map((l: any) => l.materialId).filter(Boolean);
-      const materialsMap: Record<string, any> = {};
-      if (materialIds.length > 0) {
-        const mats = await prisma.material.findMany({ where: { id: { in: materialIds } } });
-        mats.forEach((m: any) => { materialsMap[m.id] = m; });
+      // Look up items for auto-fill (unified material master)
+      const itemIds = b.lines.map((l: any) => l.materialId || l.inventoryItemId).filter(Boolean);
+      const itemsMap: Record<string, any> = {};
+      if (itemIds.length > 0) {
+        const items = await prisma.inventoryItem.findMany({ where: { id: { in: itemIds } } });
+        items.forEach((m: any) => { itemsMap[m.id] = m; });
       }
 
       const supplyType = b.supplyType || po.supplyType;
       const processedLines = b.lines.map((line: any) => {
-        const mat = line.materialId ? materialsMap[line.materialId] : null;
+        const itemId = line.materialId || line.inventoryItemId || null;
+        const mat = itemId ? itemsMap[itemId] : null;
         const quantity = parseFloat(line.quantity) || 0;
         const rate = parseFloat(line.rate) || 0;
         const discountPercent = parseFloat(line.discountPercent) || 0;
@@ -270,7 +273,8 @@ router.put('/:id', async (req: Request, res: Response) => {
         const lineTotal = taxableAmount + totalGst;
 
         return {
-          materialId: line.materialId || null, description: line.description || mat?.name || '',
+          inventoryItemId: itemId, materialId: itemId,
+          description: line.description || mat?.name || '',
           hsnCode: line.hsnCode || mat?.hsnCode || '', quantity, unit: line.unit || mat?.unit || 'KG',
           rate, discountPercent, discountAmount, gstPercent, amount, taxableAmount,
           cgstPercent, cgstAmount, sgstPercent, sgstAmount, igstPercent, igstAmount,

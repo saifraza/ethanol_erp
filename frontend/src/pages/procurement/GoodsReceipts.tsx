@@ -4,7 +4,7 @@ import api from '../../services/api';
 
 interface GRNLine {
   poLineId: string;
-  materialId: string;
+  inventoryItemId: string;
   description: string;
   receivedQty: number;
   acceptedQty: number;
@@ -56,7 +56,8 @@ interface POLine {
   pendingQty: number;
   unit: string;
   rate: number;
-  materialId: string;
+  inventoryItemId: string;
+  materialId?: string;
 }
 
 interface WH {
@@ -146,7 +147,7 @@ export default function GoodsReceipts() {
     setSelectedPO(selected || null);
     if (selected) {
       const lines = selected.lines.map((line) => ({
-        poLineId: line.id, materialId: line.materialId, description: line.description,
+        poLineId: line.id, inventoryItemId: line.inventoryItemId || line.materialId, description: line.description,
         receivedQty: line.pendingQty, acceptedQty: line.pendingQty, rejectedQty: 0,
         unit: line.unit, rate: line.rate, storageLocation: '', batchNo: '', remarks: '',
       }));
@@ -300,7 +301,7 @@ export default function GoodsReceipts() {
                               setFormData((prev) => ({ ...prev, poId: po.id }));
                               setSelectedPO(po);
                               const lines = po.lines.map((line) => ({
-                                poLineId: line.id, materialId: line.materialId, description: line.description,
+                                poLineId: line.id, inventoryItemId: line.inventoryItemId || line.materialId, description: line.description,
                                 receivedQty: line.pendingQty, acceptedQty: line.pendingQty, rejectedQty: 0,
                                 unit: line.unit, rate: line.rate, storageLocation: '', batchNo: '', remarks: '',
                               }));
