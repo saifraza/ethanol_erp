@@ -234,26 +234,32 @@ router.post('/', validate(createAccountSchema), asyncHandler(async (req: AuthReq
     }
   }
 
-  // Use transaction to prevent race conditions in auto-code generation
-  const account = await prisma.$transaction(async (tx) => {
-    const code = userCode || await generateAccountCode(req.body.type, tx);
+  // Retry loop to handle rare code conflicts
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const account = await prisma.$transaction(async (tx) => {
+        const code = userCode || await generateAccountCode(req.body.type, tx);
 
-    // Check code uniqueness inside transaction
-    const existing = await tx.account.findUnique({ where: { code } });
-    if (existing) throw new ValidationError(`Account code "${code}" already exists`);
+        const existing = await tx.account.findUnique({ where: { code } });
+        if (existing) throw new ValidationError(`Account code "${code}" already exists`);
 
-    return tx.account.create({
-      data: {
-        code,
-        name: req.body.name,
-        type: req.body.type,
-        subType: req.body.subType || null,
-        parentId: req.body.parentId || null,
-        openingBalance: req.body.openingBalance || 0,
-      },
-    });
-  }, { isolationLevel: 'Serializable' });
-  res.status(201).json(account);
+        return tx.account.create({
+          data: {
+            code,
+            name: req.body.name,
+            type: req.body.type,
+            subType: req.body.subType || null,
+            parentId: req.body.parentId || null,
+            openingBalance: req.body.openingBalance || 0,
+          },
+        });
+      });
+      return res.status(201).json(account);
+    } catch (err: any) {
+      if (err.code === 'P2002' && attempt < 2) continue;
+      throw err;
+    }
+  }
 }));
 
 // ── PUT /:id — Update account ──

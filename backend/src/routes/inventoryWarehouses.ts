@@ -139,11 +139,19 @@ async function generateWarehouseCode(tx?: any): Promise<string> {
 // ─── POST / — create warehouse ───
 
 router.post('/', validate(createWarehouseSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
-  const warehouse = await prisma.$transaction(async (tx) => {
-    const code = await generateWarehouseCode(tx);
-    return tx.warehouse.create({ data: { ...req.body, code } });
-  }, { isolationLevel: 'Serializable' });
-  res.status(201).json(warehouse);
+  // Retry loop to handle rare code conflicts
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const warehouse = await prisma.$transaction(async (tx) => {
+        const code = await generateWarehouseCode(tx);
+        return tx.warehouse.create({ data: { ...req.body, code } });
+      });
+      return res.status(201).json(warehouse);
+    } catch (err: any) {
+      if (err.code === 'P2002' && attempt < 2) continue; // unique violation, retry
+      throw err;
+    }
+  }
 }));
 
 // ─── PUT /:id — update warehouse ───
