@@ -1,9 +1,111 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, authorize } from '../middleware/auth';
+import { onStockMovement } from '../services/autoJournal';
 
 const router = Router();
 router.use(authenticate as any);
+
+// ─── Helper: sync GRN lines to new inventory system ───
+async function syncGrnToInventory(
+  grnId: string,
+  grnNo: number,
+  lines: Array<{ materialId: string | null; acceptedQty: number; rate: number; unit: string; batchNo: string; storageLocation: string }>,
+  warehouseId: string | null,
+  userId: string
+): Promise<void> {
+  // Need a warehouse — use provided one or find default
+  let whId = warehouseId;
+  if (!whId) {
+    const defaultWh = await prisma.warehouse.findFirst({ where: { isActive: true }, orderBy: { createdAt: 'asc' }, select: { id: true } });
+    if (defaultWh) whId = defaultWh.id;
+  }
+  if (!whId) return; // no warehouses configured, skip inventory sync
+
+  for (const line of lines) {
+    if (!line.materialId || line.acceptedQty <= 0) continue;
+
+    // Find the material to get its name
+    const material = await prisma.material.findUnique({ where: { id: line.materialId }, select: { name: true } });
+    if (!material) continue;
+
+    // Match to InventoryItem by name (case-insensitive)
+    const invItem = await prisma.inventoryItem.findFirst({
+      where: { name: { equals: material.name, mode: 'insensitive' } },
+      select: { id: true, unit: true, currentStock: true, avgCost: true },
+    });
+    if (!invItem) continue; // no matching inventory item, skip
+
+    const qty = line.acceptedQty;
+    const costRate = line.rate;
+    const totalValue = Math.round(qty * costRate * 100) / 100;
+
+    await prisma.$transaction(async (tx) => {
+      // 1. Create StockMovement
+      const movement = await tx.stockMovement.create({
+        data: {
+          itemId: invItem.id,
+          movementType: 'GRN_RECEIPT',
+          direction: 'IN',
+          quantity: qty,
+          unit: invItem.unit,
+          costRate,
+          totalValue,
+          warehouseId: whId!,
+          refType: 'GRN',
+          refId: grnId,
+          refNo: `GRN-${grnNo}`,
+          narration: `GRN receipt for ${material.name}`,
+          userId,
+        },
+      });
+
+      // 2. Upsert StockLevel
+      const existing = await tx.stockLevel.findFirst({
+        where: { itemId: invItem.id, warehouseId: whId!, binId: null, batchId: null },
+      });
+      if (existing) {
+        await tx.stockLevel.update({
+          where: { id: existing.id },
+          data: { quantity: { increment: qty } },
+        });
+      } else {
+        await tx.stockLevel.create({
+          data: { itemId: invItem.id, warehouseId: whId!, binId: null, batchId: null, quantity: qty },
+        });
+      }
+
+      // 3. Update InventoryItem — weighted average cost
+      const existingQty = invItem.currentStock;
+      const existingAvgCost = invItem.avgCost;
+      const newTotalQty = existingQty + qty;
+      const newAvgCost = newTotalQty > 0
+        ? (existingQty * existingAvgCost + qty * costRate) / newTotalQty
+        : costRate;
+
+      await tx.inventoryItem.update({
+        where: { id: invItem.id },
+        data: {
+          currentStock: { increment: qty },
+          avgCost: Math.round(newAvgCost * 100) / 100,
+          totalValue: Math.round(newTotalQty * newAvgCost * 100) / 100,
+        },
+      });
+
+      // Fire-and-forget auto journal
+      onStockMovement(prisma as Parameters<typeof onStockMovement>[0], {
+        id: movement.id,
+        movementNo: movement.movementNo,
+        movementType: movement.movementType,
+        direction: movement.direction,
+        totalValue: movement.totalValue,
+        itemName: material.name,
+        userId,
+        date: movement.date,
+      }).catch(() => {});
+    });
+  }
+}
 
 // GET / — list GRNs with filters (poId, vendorId, status)
 router.get('/', async (req: Request, res: Response) => {
@@ -186,6 +288,20 @@ router.post('/', async (req: Request, res: Response) => {
         where: { id: b.poId },
         data: { status: 'PARTIAL_RECEIVED' },
       });
+    }
+
+    // Sync to inventory (new SAP system)
+    try {
+      await syncGrnToInventory(
+        grn.id,
+        grn.grnNo,
+        processedLines,
+        b.warehouseId || null,
+        (req as any).user.id
+      );
+    } catch (syncErr: any) {
+      // Log but don't fail the GRN creation
+      console.error('Inventory sync failed:', syncErr.message);
     }
 
     res.status(201).json(grn);
