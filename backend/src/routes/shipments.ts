@@ -1217,41 +1217,38 @@ router.post('/:id/send-email', async (req: Request, res: Response) => {
       where: { id: req.params.id },
       include: {
         dispatchRequest: {
-          include: { salesOrder: { include: { customer: true } } },
+          include: { order: { include: { customer: true } } },
         },
       },
     });
     if (!shipment) { res.status(404).json({ error: 'Shipment not found' }); return; }
 
-    const customer = shipment.dispatchRequest?.salesOrder?.customer;
+    const customer = (shipment as any).dispatchRequest?.order?.customer;
     const toEmail = req.body.to || customer?.email;
     if (!toEmail) { res.status(400).json({ error: 'No email address. Add customer email or provide "to" in request.' }); return; }
 
-    // Generate challan PDF as buffer
-    const pdfChunks: Buffer[] = [];
-    const token = req.headers.authorization?.split(' ')[1] || '';
-    // Fetch the challan PDF internally
+    // Generate simple challan PDF as buffer
     const challanRes = await new Promise<Buffer>((resolve, reject) => {
       const chunks: Buffer[] = [];
       const doc = new PDFDocument({ size: 'A4', margin: 40 });
       doc.on('data', (chunk: Buffer) => chunks.push(chunk));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
-      // Simple text-based challan for email
       doc.fontSize(16).text('DELIVERY CHALLAN', { align: 'center' });
       doc.moveDown();
       doc.fontSize(10).text(`Shipment: ${shipment.shipmentNo || shipment.id}`);
       doc.text(`Vehicle: ${shipment.vehicleNo || '-'}`);
-      doc.text(`Date: ${shipment.shipmentDate ? new Date(shipment.shipmentDate).toLocaleDateString('en-IN') : '-'}`);
-      doc.text(`Customer: ${customer?.name || '-'}`);
-      doc.text(`Quantity: ${shipment.quantity || '-'} ${shipment.unit || 'L'}`);
+      doc.text(`Date: ${shipment.date ? new Date(shipment.date).toLocaleDateString('en-IN') : '-'}`);
+      doc.text(`Customer: ${shipment.customerName || customer?.name || '-'}`);
+      doc.text(`Product: ${shipment.productName || '-'}`);
+      doc.text(`Qty: ${shipment.quantityBL || shipment.bags || '-'}`);
       doc.text(`Status: ${shipment.status}`);
       doc.end();
     });
 
     const shipLabel = `Shipment-${shipment.shipmentNo || shipment.id.slice(0, 8)}`;
     const subject = req.body.subject || `${shipLabel} — Delivery Challan from MSPIL`;
-    const body = req.body.body || `Dear ${customer?.name || 'Customer'},\n\nPlease find attached the delivery challan for ${shipLabel}.\n\nRegards,\nMSPIL Distillery`;
+    const body = req.body.body || `Dear ${shipment.customerName || customer?.name || 'Customer'},\n\nPlease find attached the delivery challan for ${shipLabel}.\n\nRegards,\nMSPIL Distillery`;
 
     const result = await sendEmail({
       to: toEmail, subject, text: body,

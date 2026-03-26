@@ -247,7 +247,7 @@ router.post('/:id/send-email', async (req: Request, res: Response) => {
     });
     if (!pmt) { res.status(404).json({ error: 'Payment not found' }); return; }
 
-    const toEmail = req.body.to || pmt.vendor?.email;
+    const toEmail = req.body.to || (pmt as any).vendor?.email;
     if (!toEmail) { res.status(400).json({ error: 'No email address. Add vendor email or provide "to" in request.' }); return; }
 
     const pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
@@ -265,10 +265,9 @@ router.post('/:id/send-email', async (req: Request, res: Response) => {
 
       doc.fontSize(9).font('Helvetica');
       doc.text(`Payment Date: ${pmt.paymentDate ? new Date(pmt.paymentDate).toLocaleDateString('en-IN') : '-'}`);
-      doc.text(`Vendor: ${pmt.vendor?.name || '-'}`);
-      doc.text(`Mode: ${pmt.paymentMode || '-'}`);
-      doc.text(`Reference: ${pmt.referenceNo || '-'}`);
-      doc.text(`UTR: ${pmt.utrNo || '-'}`);
+      doc.text(`Vendor: ${(pmt as any).vendor?.name || '-'}`);
+      doc.text(`Mode: ${pmt.mode || '-'}`);
+      doc.text(`Reference: ${pmt.reference || '-'}`);
       doc.moveDown();
       doc.font('Helvetica-Bold').fontSize(11);
       doc.text(`Amount Paid: Rs. ${(pmt.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`);
@@ -283,9 +282,9 @@ router.post('/:id/send-email', async (req: Request, res: Response) => {
       doc.end();
     });
 
-    const label = `Payment-${pmt.referenceNo || pmt.id.slice(0, 8)}`;
+    const label = `Payment-${pmt.reference || String(pmt.paymentNo).padStart(4, '0')}`;
     const subject = req.body.subject || `${label} — Payment Advice from MSPIL`;
-    const body = req.body.body || `Dear ${pmt.vendor?.name || 'Vendor'},\n\nPlease find attached payment advice for Rs. ${(pmt.amount || 0).toLocaleString('en-IN')} dated ${pmt.paymentDate ? new Date(pmt.paymentDate).toLocaleDateString('en-IN') : '-'}.\n\nRegards,\nMSPIL Distillery`;
+    const body = req.body.body || `Dear ${(pmt as any).vendor?.name || 'Vendor'},\n\nPlease find attached payment advice for Rs. ${(pmt.amount || 0).toLocaleString('en-IN')} dated ${pmt.paymentDate ? new Date(pmt.paymentDate).toLocaleDateString('en-IN') : '-'}.\n\nRegards,\nMSPIL Distillery`;
 
     const result = await sendEmail({
       to: toEmail, subject, text: body,

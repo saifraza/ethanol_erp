@@ -45,4 +45,36 @@ api.interceptors.response.use(
   }
 );
 
+// Detect new deploy: check buildTime on health endpoint, reload if it changes
+let knownBuildTime: string | null = null;
+async function checkForNewDeploy() {
+  try {
+    const res = await fetch('/api/health');
+    const data = await res.json();
+    if (data.buildTime) {
+      if (knownBuildTime && knownBuildTime !== data.buildTime) {
+        console.log('New deploy detected, reloading...');
+        window.location.reload();
+        return;
+      }
+      knownBuildTime = data.buildTime;
+    }
+  } catch { /* ignore */ }
+}
+// Check on first load, then every 2 minutes
+checkForNewDeploy();
+setInterval(checkForNewDeploy, 2 * 60 * 1000);
+
+// Also handle chunk load failures (old hashed JS files 404 after deploy)
+window.addEventListener('error', (e) => {
+  if (e.message?.includes('Loading chunk') || e.message?.includes('Failed to fetch dynamically imported module')) {
+    const lastReload = sessionStorage.getItem('chunk-error-reload');
+    const now = Date.now();
+    if (!lastReload || now - parseInt(lastReload) > 30000) {
+      sessionStorage.setItem('chunk-error-reload', String(now));
+      window.location.reload();
+    }
+  }
+});
+
 export default api;

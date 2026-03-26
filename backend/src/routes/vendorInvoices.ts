@@ -327,7 +327,7 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
   try {
     const inv = await prisma.vendorInvoice.findUnique({
       where: { id: req.params.id },
-      include: { vendor: true, lines: true },
+      include: { vendor: true },
     });
     if (!inv) { res.status(404).json({ error: 'Vendor invoice not found' }); return; }
 
@@ -336,45 +336,46 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
     res.setHeader('Content-Disposition', `inline; filename="VI-${inv.invoiceNo || inv.id.slice(0, 8)}.pdf"`);
     doc.pipe(res);
 
-    await drawLetterhead(doc);
+    drawLetterhead(doc, 40, 515);
     doc.moveDown(0.5);
     doc.fontSize(14).font('Helvetica-Bold').text('VENDOR INVOICE', { align: 'center' });
     doc.moveDown(0.5);
 
     doc.fontSize(9).font('Helvetica');
-    doc.text(`Invoice No: ${inv.invoiceNo || '-'}`, 40);
+    doc.text(`Invoice No: VI-${String(inv.invoiceNo).padStart(4, '0')}`, 40);
+    doc.text(`Vendor Inv No: ${inv.vendorInvNo || '-'}`);
     doc.text(`Invoice Date: ${inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString('en-IN') : '-'}`);
-    doc.text(`Vendor: ${inv.vendor?.name || '-'}`);
-    doc.text(`GSTIN: ${inv.vendor?.gstin || '-'}`);
+    doc.text(`Vendor: ${(inv as any).vendor?.name || '-'}`);
+    doc.text(`GSTIN: ${(inv as any).vendor?.gstin || '-'}`);
     doc.text(`Status: ${inv.status}`);
     doc.moveDown();
 
-    // Lines table
-    if (inv.lines && inv.lines.length > 0) {
-      const tableTop = doc.y;
-      doc.font('Helvetica-Bold').fontSize(8);
-      doc.text('Description', 40, tableTop, { width: 180 });
-      doc.text('Qty', 220, tableTop, { width: 50, align: 'right' });
-      doc.text('Rate', 270, tableTop, { width: 60, align: 'right' });
-      doc.text('GST%', 330, tableTop, { width: 40, align: 'right' });
-      doc.text('Amount', 370, tableTop, { width: 80, align: 'right' });
-      doc.moveTo(40, tableTop + 12).lineTo(555, tableTop + 12).stroke();
+    // Single line item (flat model)
+    const tableTop = doc.y;
+    doc.font('Helvetica-Bold').fontSize(8);
+    doc.text('Product', 40, tableTop, { width: 180 });
+    doc.text('Qty', 220, tableTop, { width: 50, align: 'right' });
+    doc.text('Unit', 270, tableTop, { width: 40 });
+    doc.text('Rate', 310, tableTop, { width: 60, align: 'right' });
+    doc.text('GST%', 370, tableTop, { width: 40, align: 'right' });
+    doc.text('Amount', 410, tableTop, { width: 80, align: 'right' });
+    doc.moveTo(40, tableTop + 12).lineTo(555, tableTop + 12).stroke();
 
-      let y = tableTop + 16;
-      doc.font('Helvetica').fontSize(8);
-      for (const l of inv.lines as any[]) {
-        doc.text(l.description || '-', 40, y, { width: 180 });
-        doc.text(String(l.quantity || 0), 220, y, { width: 50, align: 'right' });
-        doc.text(String(l.rate || 0), 270, y, { width: 60, align: 'right' });
-        doc.text(String(l.gstPercent || 0), 330, y, { width: 40, align: 'right' });
-        doc.text(((l.quantity || 0) * (l.rate || 0)).toLocaleString('en-IN'), 370, y, { width: 80, align: 'right' });
-        y += 14;
-      }
-    }
+    const y = tableTop + 16;
+    doc.font('Helvetica').fontSize(8);
+    doc.text(inv.productName || '-', 40, y, { width: 180 });
+    doc.text(String(inv.quantity || 0), 220, y, { width: 50, align: 'right' });
+    doc.text(inv.unit || '', 270, y, { width: 40 });
+    doc.text(String(inv.rate || 0), 310, y, { width: 60, align: 'right' });
+    doc.text(String(inv.gstPercent || 0), 370, y, { width: 40, align: 'right' });
+    doc.text(inv.subtotal.toLocaleString('en-IN'), 410, y, { width: 80, align: 'right' });
 
-    doc.moveDown(2);
+    doc.moveDown(3);
+    doc.font('Helvetica').fontSize(9);
+    doc.text(`Subtotal: Rs. ${inv.subtotal.toLocaleString('en-IN')}`, { align: 'right' });
+    doc.text(`GST: Rs. ${inv.totalGst.toLocaleString('en-IN')}`, { align: 'right' });
     doc.font('Helvetica-Bold').fontSize(10);
-    doc.text(`Grand Total: Rs. ${(inv.grandTotal || 0).toLocaleString('en-IN')}`, { align: 'right' });
+    doc.text(`Net Payable: Rs. ${inv.netPayable.toLocaleString('en-IN')}`, { align: 'right' });
 
     doc.end();
   } catch (err: any) { res.status(500).json({ error: err.message }); }
@@ -385,11 +386,11 @@ router.post('/:id/send-email', async (req: Request, res: Response) => {
   try {
     const inv = await prisma.vendorInvoice.findUnique({
       where: { id: req.params.id },
-      include: { vendor: true, lines: true },
+      include: { vendor: true },
     });
     if (!inv) { res.status(404).json({ error: 'Vendor invoice not found' }); return; }
 
-    const toEmail = req.body.to || inv.vendor?.email;
+    const toEmail = req.body.to || (inv as any).vendor?.email;
     if (!toEmail) { res.status(400).json({ error: 'No email address. Add vendor email or provide "to" in request.' }); return; }
 
     // Generate PDF buffer
@@ -402,17 +403,20 @@ router.post('/:id/send-email', async (req: Request, res: Response) => {
       doc.fontSize(14).font('Helvetica-Bold').text('VENDOR INVOICE', { align: 'center' });
       doc.moveDown();
       doc.fontSize(9).font('Helvetica');
-      doc.text(`Invoice No: ${inv.invoiceNo || '-'}`);
+      doc.text(`Invoice No: VI-${String(inv.invoiceNo).padStart(4, '0')}`);
+      doc.text(`Vendor Inv No: ${inv.vendorInvNo || '-'}`);
       doc.text(`Date: ${inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString('en-IN') : '-'}`);
-      doc.text(`Vendor: ${inv.vendor?.name || '-'}`);
-      doc.text(`Grand Total: Rs. ${(inv.grandTotal || 0).toLocaleString('en-IN')}`);
+      doc.text(`Vendor: ${(inv as any).vendor?.name || '-'}`);
+      doc.text(`Product: ${inv.productName || '-'}`);
+      doc.text(`Qty: ${inv.quantity} ${inv.unit} @ Rs.${inv.rate}`);
+      doc.text(`Net Payable: Rs. ${inv.netPayable.toLocaleString('en-IN')}`);
       doc.text(`Status: ${inv.status}`);
       doc.end();
     });
 
-    const label = `VI-${inv.invoiceNo || inv.id.slice(0, 8)}`;
+    const label = `VI-${String(inv.invoiceNo).padStart(4, '0')}`;
     const subject = req.body.subject || `${label} — Vendor Invoice from MSPIL`;
-    const body = req.body.body || `Dear ${inv.vendor?.name || 'Vendor'},\n\nPlease find attached vendor invoice ${label}.\n\nRegards,\nMSPIL Distillery`;
+    const body = req.body.body || `Dear ${(inv as any).vendor?.name || 'Vendor'},\n\nPlease find attached vendor invoice ${label}.\n\nRegards,\nMSPIL Distillery`;
 
     const result = await sendEmail({
       to: toEmail, subject, text: body,
