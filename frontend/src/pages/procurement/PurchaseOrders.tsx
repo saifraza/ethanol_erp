@@ -946,24 +946,20 @@ const PurchaseOrders: React.FC = () => {
                         {po.status === 'SENT' && (
                           po.grnCount > 0
                             ? <button onClick={() => handleStatusChange(po.id, 'RECEIVED')} className="px-2.5 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase hover:bg-green-700">
-                                Received
+                                Mark Received
                               </button>
-                            : <span className="text-[9px] text-orange-600 font-bold uppercase px-1.5 py-0.5 border border-orange-300 bg-orange-50">
-                                GRN Pending
-                              </span>
+                            : <a href="/procurement/goods-receipts" className="px-2.5 py-0.5 bg-orange-500 text-white text-[9px] font-bold uppercase hover:bg-orange-600 inline-block no-underline">
+                                Create GRN
+                              </a>
                         )}
                         {po.status === 'PARTIAL_RECEIVED' && (
-                          po.grnCount > 0
-                            ? <button onClick={() => handleStatusChange(po.id, 'RECEIVED')} className="px-2.5 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase hover:bg-green-700">
-                                Fully Received
-                              </button>
-                            : <span className="text-[9px] text-orange-600 font-bold uppercase px-1.5 py-0.5 border border-orange-300 bg-orange-50">
-                                GRN Pending
-                              </span>
+                          <a href="/procurement/goods-receipts" className="px-2.5 py-0.5 bg-orange-500 text-white text-[9px] font-bold uppercase hover:bg-orange-600 inline-block no-underline">
+                            + GRN (Partial)
+                          </a>
                         )}
                         {po.status === 'RECEIVED' && (
                           <button onClick={() => handleStatusChange(po.id, 'CLOSED')} className="px-2.5 py-0.5 bg-slate-600 text-white text-[9px] font-bold uppercase hover:bg-slate-700">
-                            Close
+                            Close PO
                           </button>
                         )}
                         {po.status === 'CLOSED' && (
