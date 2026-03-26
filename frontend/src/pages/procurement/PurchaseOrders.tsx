@@ -139,6 +139,63 @@ const PurchaseOrders: React.FC = () => {
     lines: [] as POLine[],
   });
 
+  // Vendor context: items they supply + recent POs
+  const [vendorItemsList, setVendorItemsList] = useState<{ inventoryItemId: string; itemName: string; itemCode: string; unit: string; rate: number; hsnCode: string; gstPercent: number }[]>([]);
+  const [vendorRecentPOs, setVendorRecentPOs] = useState<PurchaseOrder[]>([]);
+  const [vendorContextLoading, setVendorContextLoading] = useState(false);
+
+  const loadVendorContext = async (vendorId: string) => {
+    if (!vendorId) {
+      setVendorItemsList([]);
+      setVendorRecentPOs([]);
+      return;
+    }
+    setVendorContextLoading(true);
+    try {
+      const [itemsRes, posRes] = await Promise.all([
+        api.get(`/vendors/${vendorId}/items`),
+        api.get(`/purchase-orders?vendorId=${vendorId}&limit=5`),
+      ]);
+      const items = (Array.isArray(itemsRes.data) ? itemsRes.data : []).map((vi: any) => ({
+        inventoryItemId: vi.inventoryItemId,
+        itemName: vi.item?.name || 'Unknown',
+        itemCode: vi.item?.code || '',
+        unit: vi.item?.unit || '',
+        rate: vi.rate || 0,
+        hsnCode: vi.item?.hsnCode || '',
+        gstPercent: vi.item?.gstPercent || 0,
+      }));
+      setVendorItemsList(items);
+      const posList = posRes.data.pos || posRes.data || [];
+      setVendorRecentPOs(Array.isArray(posList) ? posList.slice(0, 5) : []);
+    } catch {
+      setVendorItemsList([]);
+      setVendorRecentPOs([]);
+    } finally {
+      setVendorContextLoading(false);
+    }
+  };
+
+  const quickAddVendorItem = (vi: typeof vendorItemsList[0]) => {
+    // Check if already in lines
+    if (formData.lines.some(l => l.inventoryItemId === vi.inventoryItemId)) {
+      setError('Item already added to PO lines');
+      return;
+    }
+    const lineToAdd: POLine = {
+      inventoryItemId: vi.inventoryItemId,
+      description: vi.itemName,
+      hsnCode: vi.hsnCode,
+      quantity: 0,
+      unit: vi.unit,
+      rate: vi.rate,
+      discountPercent: 0,
+      gstPercent: vi.gstPercent,
+      isRCM: false,
+    };
+    setFormData(prev => ({ ...prev, lines: [...prev.lines, lineToAdd] }));
+  };
+
   const [newLine, setNewLine] = useState<Partial<POLine>>({
     inventoryItemId: '',
     description: '',
@@ -487,7 +544,7 @@ const PurchaseOrders: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Vendor *</label>
-                    <select value={formData.vendorId} onChange={(e) => setFormData({ ...formData, vendorId: e.target.value })} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                    <select value={formData.vendorId} onChange={(e) => { setFormData({ ...formData, vendorId: e.target.value }); loadVendorContext(e.target.value); }} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
                       <option value="">Select Vendor</option>
                       {vendors.map((v) => (<option key={v.id} value={v.id}>{v.name}</option>))}
                     </select>
@@ -508,6 +565,63 @@ const PurchaseOrders: React.FC = () => {
                     </select>
                   </div>
                 </div>
+
+                {/* Vendor Context Panel — items they supply + recent POs */}
+                {formData.vendorId && (
+                  <div className="border border-slate-300 bg-slate-50">
+                    {vendorContextLoading ? (
+                      <div className="px-4 py-3 text-xs text-slate-400 uppercase tracking-widest">Loading vendor data...</div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 divide-x divide-slate-300">
+                        {/* Left: Items this vendor supplies */}
+                        <div className="px-3 py-2">
+                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Items Supplied by Vendor ({vendorItemsList.length})</div>
+                          {vendorItemsList.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {vendorItemsList.map(vi => {
+                                const alreadyAdded = formData.lines.some(l => l.inventoryItemId === vi.inventoryItemId);
+                                return (
+                                  <button
+                                    key={vi.inventoryItemId}
+                                    type="button"
+                                    disabled={alreadyAdded}
+                                    onClick={() => quickAddVendorItem(vi)}
+                                    className={`text-[10px] px-2 py-1 border font-medium flex items-center gap-1 ${alreadyAdded ? 'border-green-300 bg-green-50 text-green-600 cursor-default' : 'border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 cursor-pointer'}`}
+                                  >
+                                    {alreadyAdded ? <CheckCircle size={10} /> : <Plus size={10} />}
+                                    {vi.itemName}
+                                    <span className="font-mono text-[9px] opacity-70">@{vi.rate.toLocaleString('en-IN')}/{vi.unit}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="text-[10px] text-slate-400">No items linked to this vendor yet</div>
+                          )}
+                        </div>
+                        {/* Right: Recent POs */}
+                        <div className="px-3 py-2">
+                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Recent POs ({vendorRecentPOs.length})</div>
+                          {vendorRecentPOs.length > 0 ? (
+                            <div className="space-y-1">
+                              {vendorRecentPOs.map(po => (
+                                <div key={po.id} className="flex items-center justify-between text-[10px] px-2 py-1 bg-white border border-slate-200">
+                                  <span className="font-mono font-bold text-slate-700">PO-{String(po.poNo).padStart(4, '0')}</span>
+                                  <span className="text-slate-500">{new Date(po.poDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</span>
+                                  <span className={`px-1 py-0.5 border text-[9px] font-bold uppercase ${po.status === 'APPROVED' ? 'border-green-400 bg-green-50 text-green-700' : po.status === 'DRAFT' ? 'border-yellow-400 bg-yellow-50 text-yellow-700' : 'border-slate-300 bg-slate-50 text-slate-600'}`}>{po.status}</span>
+                                  <span className="font-mono tabular-nums text-slate-700">{po.grandTotal?.toLocaleString('en-IN', { minimumFractionDigits: 0 }) || '0'}</span>
+                                  <span className="text-slate-400">{po.linesCount || po.lines?.length || 0} items</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-[10px] text-slate-400">No previous POs for this vendor</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div>
