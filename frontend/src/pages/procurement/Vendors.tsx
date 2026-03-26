@@ -1,6 +1,28 @@
 import { useState, useEffect } from 'react';
-import { Building2, Plus, X, Save, Loader2, Trash2, Search, ChevronDown } from 'lucide-react';
+import { Building2, Plus, X, Save, Loader2, Trash2, Search, ChevronDown, Package } from 'lucide-react';
 import api from '../../services/api';
+
+interface InvItem {
+  id: string;
+  name: string;
+  code: string;
+  unit?: string;
+  hsnCode?: string;
+  gstPercent?: number;
+  defaultRate?: number;
+}
+
+interface VendorItemRow {
+  inventoryItemId: string;
+  itemName: string;
+  itemCode: string;
+  unit: string;
+  rate: number;
+  minOrderQty?: number;
+  leadTimeDays?: number;
+  isPreferred: boolean;
+  isNew?: boolean; // local-only, not yet saved
+}
 
 interface Vendor {
   id: string;
@@ -77,6 +99,41 @@ export default function Vendors() {
   const [tdsPercent, setTdsPercent] = useState('');
   const [remarks, setRemarks] = useState('');
 
+  // Vendor items (supply list)
+  const [vendorItems, setVendorItems] = useState<VendorItemRow[]>([]);
+  const [allItems, setAllItems] = useState<InvItem[]>([]);
+  const [itemSearch, setItemSearch] = useState('');
+  const [showItemDropdown, setShowItemDropdown] = useState(false);
+  const [newItemRate, setNewItemRate] = useState('');
+  const [selectedItem, setSelectedItem] = useState<InvItem | null>(null);
+  // For expanded row — cached vendor items per vendor
+  const [expandedVendorItems, setExpandedVendorItems] = useState<Record<string, VendorItemRow[]>>({});
+
+  const loadAllItems = async () => {
+    try {
+      const res = await api.get('/inventory/items');
+      const items = Array.isArray(res.data) ? res.data : res.data.items || [];
+      setAllItems(items);
+    } catch { /* ignore */ }
+  };
+
+  const loadVendorItems = async (vendorId: string) => {
+    try {
+      const res = await api.get(`/vendors/${vendorId}/items`);
+      const items = (Array.isArray(res.data) ? res.data : []).map((vi: any) => ({
+        inventoryItemId: vi.inventoryItemId,
+        itemName: vi.item?.name || 'Unknown',
+        itemCode: vi.item?.code || '',
+        unit: vi.item?.unit || '',
+        rate: vi.rate || 0,
+        minOrderQty: vi.minOrderQty,
+        leadTimeDays: vi.leadTimeDays,
+        isPreferred: vi.isPreferred || false,
+      }));
+      return items;
+    } catch { return []; }
+  };
+
   const loadVendors = async () => {
     try {
       setLoading(true);
@@ -91,6 +148,7 @@ export default function Vendors() {
 
   useEffect(() => {
     loadVendors();
+    loadAllItems();
   }, []);
 
   const filteredVendors = vendors.filter(v =>
@@ -131,6 +189,10 @@ export default function Vendors() {
     setRemarks('');
     setEditId(null);
     setShowForm(false);
+    setVendorItems([]);
+    setSelectedItem(null);
+    setItemSearch('');
+    setNewItemRate('');
   };
 
   const openForm = (vendor?: Vendor) => {
@@ -167,6 +229,48 @@ export default function Vendors() {
       setRemarks(vendor.remarks || '');
     }
     setShowForm(true);
+    if (vendor) {
+      loadVendorItems(vendor.id).then(setVendorItems);
+    }
+  };
+
+  const addItemToList = () => {
+    if (!selectedItem) return;
+    if (vendorItems.some(vi => vi.inventoryItemId === selectedItem.id)) {
+      setMsg({ type: 'err', text: 'Item already added' });
+      return;
+    }
+    setVendorItems(prev => [...prev, {
+      inventoryItemId: selectedItem.id,
+      itemName: selectedItem.name,
+      itemCode: selectedItem.code,
+      unit: selectedItem.unit || '',
+      rate: parseFloat(newItemRate) || selectedItem.defaultRate || 0,
+      isPreferred: false,
+      isNew: true,
+    }]);
+    setSelectedItem(null);
+    setItemSearch('');
+    setNewItemRate('');
+    setShowItemDropdown(false);
+  };
+
+  const removeItemFromList = (itemId: string) => {
+    setVendorItems(prev => prev.filter(vi => vi.inventoryItemId !== itemId));
+  };
+
+  const saveVendorItems = async (vendorId: string) => {
+    for (const vi of vendorItems) {
+      try {
+        await api.post(`/vendors/${vendorId}/items`, {
+          inventoryItemId: vi.inventoryItemId,
+          rate: vi.rate,
+          minOrderQty: vi.minOrderQty || null,
+          leadTimeDays: vi.leadTimeDays || null,
+          isPreferred: vi.isPreferred,
+        });
+      } catch { /* individual save errors are non-fatal */ }
+    }
   };
 
   async function saveVendor() {
@@ -213,9 +317,12 @@ export default function Vendors() {
 
       if (editId) {
         await api.put(`/vendors/${editId}`, payload);
+        if (vendorItems.length > 0) await saveVendorItems(editId);
         setMsg({ type: 'ok', text: 'Vendor updated!' });
       } else {
-        await api.post('/vendors', payload);
+        const res = await api.post('/vendors', payload);
+        const newVendorId = res.data.id;
+        if (vendorItems.length > 0 && newVendorId) await saveVendorItems(newVendorId);
         setMsg({ type: 'ok', text: 'Vendor created!' });
       }
 
@@ -555,6 +662,115 @@ export default function Vendors() {
                   )}
                 </div>
 
+                {/* Section 6: Items Supplied */}
+                <div>
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                    <Package size={12} /> Items Supplied
+                  </div>
+                  {/* Add item row */}
+                  <div className="flex gap-2 items-end mb-2">
+                    <div className="flex-1 relative">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Search Item</label>
+                      <input
+                        value={selectedItem ? selectedItem.name : itemSearch}
+                        onChange={e => {
+                          setItemSearch(e.target.value);
+                          setSelectedItem(null);
+                          setShowItemDropdown(true);
+                        }}
+                        onFocus={() => setShowItemDropdown(true)}
+                        className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
+                        placeholder="Type to search items..."
+                      />
+                      {showItemDropdown && itemSearch.length > 0 && (
+                        <div className="absolute z-20 top-full left-0 right-0 bg-white border border-slate-300 shadow-lg max-h-40 overflow-y-auto">
+                          {allItems
+                            .filter(it => !vendorItems.some(vi => vi.inventoryItemId === it.id))
+                            .filter(it => it.name.toLowerCase().includes(itemSearch.toLowerCase()) || it.code.toLowerCase().includes(itemSearch.toLowerCase()))
+                            .slice(0, 10)
+                            .map(it => (
+                              <div
+                                key={it.id}
+                                className="px-2.5 py-1.5 text-xs hover:bg-blue-50 cursor-pointer flex justify-between"
+                                onClick={() => {
+                                  setSelectedItem(it);
+                                  setItemSearch('');
+                                  setNewItemRate(it.defaultRate?.toString() || '');
+                                  setShowItemDropdown(false);
+                                }}
+                              >
+                                <span>{it.code} - {it.name}</span>
+                                <span className="text-slate-400">{it.unit}</span>
+                              </div>
+                            ))}
+                          {allItems.filter(it => !vendorItems.some(vi => vi.inventoryItemId === it.id)).filter(it => it.name.toLowerCase().includes(itemSearch.toLowerCase()) || it.code.toLowerCase().includes(itemSearch.toLowerCase())).length === 0 && (
+                            <div className="px-2.5 py-1.5 text-xs text-slate-400">No items found</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <div className="w-28">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Rate</label>
+                      <input
+                        type="number"
+                        value={newItemRate}
+                        onChange={e => setNewItemRate(e.target.value)}
+                        className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400 font-mono"
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={addItemToList}
+                      disabled={!selectedItem}
+                      className="px-3 py-1.5 bg-green-600 text-white text-[11px] font-medium hover:bg-green-700 disabled:opacity-40 flex items-center gap-1"
+                    >
+                      <Plus size={12} /> ADD
+                    </button>
+                  </div>
+
+                  {/* Items list */}
+                  {vendorItems.length > 0 ? (
+                    <div className="border border-slate-300 overflow-hidden">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="bg-slate-700 text-white">
+                            <th className="text-[10px] uppercase tracking-widest font-semibold px-2 py-1.5 text-left border-r border-slate-600">Code</th>
+                            <th className="text-[10px] uppercase tracking-widest font-semibold px-2 py-1.5 text-left border-r border-slate-600">Item Name</th>
+                            <th className="text-[10px] uppercase tracking-widest font-semibold px-2 py-1.5 text-left border-r border-slate-600">Unit</th>
+                            <th className="text-[10px] uppercase tracking-widest font-semibold px-2 py-1.5 text-right border-r border-slate-600">Rate</th>
+                            <th className="text-[10px] uppercase tracking-widest font-semibold px-2 py-1.5 text-center w-16"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {vendorItems.map((vi, i) => (
+                            <tr key={vi.inventoryItemId} className={`border-b border-slate-100 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                              <td className="px-2 py-1 font-mono text-slate-500 border-r border-slate-100">{vi.itemCode}</td>
+                              <td className="px-2 py-1 text-slate-800 border-r border-slate-100">{vi.itemName}</td>
+                              <td className="px-2 py-1 text-slate-500 border-r border-slate-100">{vi.unit}</td>
+                              <td className="px-2 py-1 text-right border-r border-slate-100">
+                                <input
+                                  type="number"
+                                  value={vi.rate || ''}
+                                  onChange={e => setVendorItems(prev => prev.map(v => v.inventoryItemId === vi.inventoryItemId ? { ...v, rate: parseFloat(e.target.value) || 0 } : v))}
+                                  className="border border-slate-200 px-1.5 py-0.5 text-xs w-20 text-right font-mono focus:outline-none focus:ring-1 focus:ring-slate-400"
+                                />
+                              </td>
+                              <td className="px-2 py-1 text-center">
+                                <button onClick={() => removeItemFromList(vi.inventoryItemId)} className="text-red-500 hover:text-red-700">
+                                  <Trash2 size={12} />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-slate-400 py-2 text-center border border-dashed border-slate-300">No items added yet — search and add items this vendor supplies</div>
+                  )}
+                </div>
+
                 {/* Remarks */}
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label>
@@ -599,7 +815,13 @@ export default function Vendors() {
               <tbody>
                 {filteredVendors.map(vendor => (
                   <>
-                    <tr key={vendor.id} className="border-b border-slate-100 even:bg-slate-50/70 hover:bg-blue-50/60 cursor-pointer" onClick={() => setExpandedId(expandedId === vendor.id ? null : vendor.id)}>
+                    <tr key={vendor.id} className="border-b border-slate-100 even:bg-slate-50/70 hover:bg-blue-50/60 cursor-pointer" onClick={() => {
+                      const newId = expandedId === vendor.id ? null : vendor.id;
+                      setExpandedId(newId);
+                      if (newId && !expandedVendorItems[vendor.id]) {
+                        loadVendorItems(vendor.id).then(items => setExpandedVendorItems(prev => ({ ...prev, [vendor.id]: items })));
+                      }
+                    }}>
                       <td className="px-3 py-1.5 text-xs border-r border-slate-100">
                         <div className="font-semibold text-slate-900">{vendor.name}</div>
                         {vendor.tradeName && <div className="text-[10px] text-slate-500">{vendor.tradeName}</div>}
@@ -692,6 +914,21 @@ export default function Vendors() {
                               </div>
                             )}
                           </div>
+                          {/* Items supplied */}
+                          {expandedVendorItems[vendor.id] && expandedVendorItems[vendor.id].length > 0 && (
+                            <div className="mt-3 border-t border-slate-200 pt-2">
+                              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 flex items-center gap-1">
+                                <Package size={10} /> Items Supplied ({expandedVendorItems[vendor.id].length})
+                              </div>
+                              <div className="flex flex-wrap gap-1.5">
+                                {expandedVendorItems[vendor.id].map(vi => (
+                                  <span key={vi.inventoryItemId} className="text-[10px] px-2 py-0.5 border border-blue-300 bg-blue-50 text-blue-800 font-medium">
+                                    {vi.itemName} <span className="font-mono text-blue-600">@ {vi.rate.toLocaleString('en-IN')}/{vi.unit}</span>
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     )}
