@@ -202,6 +202,8 @@ router.put('/:id/status', async (req: Request, res: Response) => {
       'SENT': ['PARTIAL_RECEIVED', 'RECEIVED', 'CLOSED', 'CANCELLED'],
       'PARTIAL_RECEIVED': ['RECEIVED', 'CLOSED'],
       'RECEIVED': ['CLOSED'],
+      'CLOSED': ['ARCHIVED'],
+      'CANCELLED': ['ARCHIVED'],
     };
 
     if (!validTransitions[po.status] || !validTransitions[po.status].includes(newStatus)) {
