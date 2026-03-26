@@ -7,19 +7,23 @@ import { sendWhatsApp } from '../services/messaging';
 const router = Router();
 router.use(authenticate as any);
 
-/** Get shift date (9am–9am cycle): before 9am → previous calendar day */
+/** IST-aware now: Railway runs UTC, we need IST (UTC+5:30) */
+function nowIST(): Date {
+  return new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+}
+
+/** Get shift date (9am–9am IST cycle): before 9am IST → previous calendar day */
 function getShiftDate(d?: Date): string {
-  const now = d || new Date();
-  const shifted = new Date(now);
-  if (shifted.getHours() < 9) shifted.setDate(shifted.getDate() - 1);
-  return shifted.toISOString().split('T')[0];
+  const ist = d ? new Date(d.getTime() + 5.5 * 60 * 60 * 1000) : nowIST();
+  if (ist.getUTCHours() < 9) ist.setUTCDate(ist.getUTCDate() - 1);
+  return ist.toISOString().split('T')[0];
 }
 
 function yesterdayShiftDate(): string {
-  const d = new Date();
-  if (d.getHours() < 9) d.setDate(d.getDate() - 1);
-  d.setDate(d.getDate() - 1);
-  return d.toISOString().split('T')[0];
+  const ist = nowIST();
+  if (ist.getUTCHours() < 9) ist.setUTCDate(ist.getUTCDate() - 1);
+  ist.setUTCDate(ist.getUTCDate() - 1);
+  return ist.toISOString().split('T')[0];
 }
 
 // GET /today — entries for current shift day + yesterday total

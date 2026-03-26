@@ -1039,8 +1039,8 @@ const FreightManagement: React.FC = () => {
         api.get('/transporters'),
       ]);
 
-      setShipments(shipmentsRes.data);
-      setTransporters(transportersRes.data);
+      setShipments(Array.isArray(shipmentsRes.data) ? shipmentsRes.data : shipmentsRes.data.shipments ?? []);
+      setTransporters(Array.isArray(transportersRes.data) ? transportersRes.data : transportersRes.data.transporters ?? []);
     } catch (error) {
       console.error('Failed to fetch data:', error);
     } finally {

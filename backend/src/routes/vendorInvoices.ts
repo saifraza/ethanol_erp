@@ -1,6 +1,9 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, authorize } from '../middleware/auth';
+import PDFDocument from 'pdfkit';
+import { sendEmail } from '../services/messaging';
+import { drawLetterhead } from '../utils/letterhead';
 
 const router = Router();
 router.use(authenticate as any);
@@ -316,6 +319,111 @@ router.put('/:id/itc', async (req: Request, res: Response) => {
       },
     });
     res.json(invoice);
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /:id/pdf — Generate Vendor Invoice PDF
+router.get('/:id/pdf', async (req: Request, res: Response) => {
+  try {
+    const inv = await prisma.vendorInvoice.findUnique({
+      where: { id: req.params.id },
+      include: { vendor: true, lines: true },
+    });
+    if (!inv) { res.status(404).json({ error: 'Vendor invoice not found' }); return; }
+
+    const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="VI-${inv.invoiceNo || inv.id.slice(0, 8)}.pdf"`);
+    doc.pipe(res);
+
+    await drawLetterhead(doc);
+    doc.moveDown(0.5);
+    doc.fontSize(14).font('Helvetica-Bold').text('VENDOR INVOICE', { align: 'center' });
+    doc.moveDown(0.5);
+
+    doc.fontSize(9).font('Helvetica');
+    doc.text(`Invoice No: ${inv.invoiceNo || '-'}`, 40);
+    doc.text(`Invoice Date: ${inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString('en-IN') : '-'}`);
+    doc.text(`Vendor: ${inv.vendor?.name || '-'}`);
+    doc.text(`GSTIN: ${inv.vendor?.gstin || '-'}`);
+    doc.text(`Status: ${inv.status}`);
+    doc.moveDown();
+
+    // Lines table
+    if (inv.lines && inv.lines.length > 0) {
+      const tableTop = doc.y;
+      doc.font('Helvetica-Bold').fontSize(8);
+      doc.text('Description', 40, tableTop, { width: 180 });
+      doc.text('Qty', 220, tableTop, { width: 50, align: 'right' });
+      doc.text('Rate', 270, tableTop, { width: 60, align: 'right' });
+      doc.text('GST%', 330, tableTop, { width: 40, align: 'right' });
+      doc.text('Amount', 370, tableTop, { width: 80, align: 'right' });
+      doc.moveTo(40, tableTop + 12).lineTo(555, tableTop + 12).stroke();
+
+      let y = tableTop + 16;
+      doc.font('Helvetica').fontSize(8);
+      for (const l of inv.lines as any[]) {
+        doc.text(l.description || '-', 40, y, { width: 180 });
+        doc.text(String(l.quantity || 0), 220, y, { width: 50, align: 'right' });
+        doc.text(String(l.rate || 0), 270, y, { width: 60, align: 'right' });
+        doc.text(String(l.gstPercent || 0), 330, y, { width: 40, align: 'right' });
+        doc.text(((l.quantity || 0) * (l.rate || 0)).toLocaleString('en-IN'), 370, y, { width: 80, align: 'right' });
+        y += 14;
+      }
+    }
+
+    doc.moveDown(2);
+    doc.font('Helvetica-Bold').fontSize(10);
+    doc.text(`Grand Total: Rs. ${(inv.grandTotal || 0).toLocaleString('en-IN')}`, { align: 'right' });
+
+    doc.end();
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /:id/send-email — Send Vendor Invoice via email
+router.post('/:id/send-email', async (req: Request, res: Response) => {
+  try {
+    const inv = await prisma.vendorInvoice.findUnique({
+      where: { id: req.params.id },
+      include: { vendor: true, lines: true },
+    });
+    if (!inv) { res.status(404).json({ error: 'Vendor invoice not found' }); return; }
+
+    const toEmail = req.body.to || inv.vendor?.email;
+    if (!toEmail) { res.status(400).json({ error: 'No email address. Add vendor email or provide "to" in request.' }); return; }
+
+    // Generate PDF buffer
+    const pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      const doc = new PDFDocument({ size: 'A4', margin: 40 });
+      doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+      doc.fontSize(14).font('Helvetica-Bold').text('VENDOR INVOICE', { align: 'center' });
+      doc.moveDown();
+      doc.fontSize(9).font('Helvetica');
+      doc.text(`Invoice No: ${inv.invoiceNo || '-'}`);
+      doc.text(`Date: ${inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString('en-IN') : '-'}`);
+      doc.text(`Vendor: ${inv.vendor?.name || '-'}`);
+      doc.text(`Grand Total: Rs. ${(inv.grandTotal || 0).toLocaleString('en-IN')}`);
+      doc.text(`Status: ${inv.status}`);
+      doc.end();
+    });
+
+    const label = `VI-${inv.invoiceNo || inv.id.slice(0, 8)}`;
+    const subject = req.body.subject || `${label} — Vendor Invoice from MSPIL`;
+    const body = req.body.body || `Dear ${inv.vendor?.name || 'Vendor'},\n\nPlease find attached vendor invoice ${label}.\n\nRegards,\nMSPIL Distillery`;
+
+    const result = await sendEmail({
+      to: toEmail, subject, text: body,
+      attachments: [{ filename: `${label}.pdf`, content: pdfBuffer, contentType: 'application/pdf' }],
+    });
+
+    if (result.success) {
+      res.json({ ok: true, messageId: result.messageId, sentTo: toEmail });
+    } else {
+      res.status(500).json({ error: result.error || 'Email send failed' });
+    }
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 

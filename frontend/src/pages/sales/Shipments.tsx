@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Truck, X, Loader2, Share2, MessageCircle, Phone, ChevronDown,
   Scale, CheckCircle, AlertCircle, FileText, Camera, Upload, Image,
-  Clock, MapPin, Trash2, Plus, ClipboardList
+  Clock, MapPin, Trash2, Plus, ClipboardList, Mail
 } from 'lucide-react';
 import api from '../../services/api';
 
@@ -891,6 +891,16 @@ export default function Shipments() {
                                         <FileText size={10} /> Invoice
                                       </button>
                                     )}
+                                    <button onClick={async () => {
+                                      if (!confirm('Send challan PDF via email?')) return;
+                                      try {
+                                        await api.post(`/shipments/${s.id}/send-email`);
+                                        alert('Email sent!');
+                                      } catch (err: any) { alert(err.response?.data?.error || 'Failed to send'); }
+                                    }}
+                                      className="py-1 px-2.5 text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg flex items-center gap-1 hover:bg-indigo-100">
+                                      <Mail size={10} /> Email
+                                    </button>
                                   </div>
                                 </div>
                               )}

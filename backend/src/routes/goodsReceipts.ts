@@ -1,9 +1,108 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, authorize } from '../middleware/auth';
+import { onStockMovement } from '../services/autoJournal';
 
 const router = Router();
 router.use(authenticate as any);
+
+// ─── Helper: sync GRN lines to new inventory system ───
+async function syncGrnToInventory(
+  grnId: string,
+  grnNo: number,
+  lines: Array<{ inventoryItemId?: string | null; materialId?: string | null; acceptedQty: number; rate: number; unit: string; batchNo: string; storageLocation: string }>,
+  warehouseId: string | null,
+  userId: string
+): Promise<void> {
+  // Need a warehouse — use provided one or find default
+  let whId = warehouseId;
+  if (!whId) {
+    const defaultWh = await prisma.warehouse.findFirst({ where: { isActive: true }, orderBy: { createdAt: 'asc' }, select: { id: true } });
+    if (defaultWh) whId = defaultWh.id;
+  }
+  if (!whId) return; // no warehouses configured, skip inventory sync
+
+  for (const line of lines) {
+    // Use inventoryItemId directly (unified material master)
+    const itemId = line.inventoryItemId || line.materialId;
+    if (!itemId || line.acceptedQty <= 0) continue;
+
+    const invItem = await prisma.inventoryItem.findUnique({
+      where: { id: itemId },
+      select: { id: true, name: true, unit: true, currentStock: true, avgCost: true },
+    });
+    if (!invItem) continue;
+
+    const qty = line.acceptedQty;
+    const costRate = line.rate;
+    const totalValue = Math.round(qty * costRate * 100) / 100;
+
+    await prisma.$transaction(async (tx) => {
+      // 1. Create StockMovement
+      const movement = await tx.stockMovement.create({
+        data: {
+          itemId: invItem.id,
+          movementType: 'GRN_RECEIPT',
+          direction: 'IN',
+          quantity: qty,
+          unit: invItem.unit,
+          costRate,
+          totalValue,
+          warehouseId: whId!,
+          refType: 'GRN',
+          refId: grnId,
+          refNo: `GRN-${grnNo}`,
+          narration: `GRN receipt for ${invItem.name}`,
+          userId,
+        },
+      });
+
+      // 2. Upsert StockLevel
+      const existing = await tx.stockLevel.findFirst({
+        where: { itemId: invItem.id, warehouseId: whId!, binId: null, batchId: null },
+      });
+      if (existing) {
+        await tx.stockLevel.update({
+          where: { id: existing.id },
+          data: { quantity: { increment: qty } },
+        });
+      } else {
+        await tx.stockLevel.create({
+          data: { itemId: invItem.id, warehouseId: whId!, binId: null, batchId: null, quantity: qty },
+        });
+      }
+
+      // 3. Update InventoryItem — weighted average cost
+      const existingQty = invItem.currentStock;
+      const existingAvgCost = invItem.avgCost;
+      const newTotalQty = existingQty + qty;
+      const newAvgCost = newTotalQty > 0
+        ? (existingQty * existingAvgCost + qty * costRate) / newTotalQty
+        : costRate;
+
+      await tx.inventoryItem.update({
+        where: { id: invItem.id },
+        data: {
+          currentStock: { increment: qty },
+          avgCost: Math.round(newAvgCost * 100) / 100,
+          totalValue: Math.round(newTotalQty * newAvgCost * 100) / 100,
+        },
+      });
+
+      // Fire-and-forget auto journal
+      onStockMovement(prisma as Parameters<typeof onStockMovement>[0], {
+        id: movement.id,
+        movementNo: movement.movementNo,
+        movementType: movement.movementType,
+        direction: movement.direction,
+        totalValue: movement.totalValue,
+        itemName: invItem.name,
+        userId,
+        date: movement.date,
+      }).catch(() => {});
+    });
+  }
+}
 
 // GET / — list GRNs with filters (poId, vendorId, status)
 router.get('/', async (req: Request, res: Response) => {
@@ -93,7 +192,8 @@ router.post('/', async (req: Request, res: Response) => {
 
       return {
         poLineId: line.poLineId || null,
-        materialId: line.materialId || null,
+        inventoryItemId: line.inventoryItemId || line.materialId || null,
+        materialId: line.materialId || line.inventoryItemId || null,
         description: line.description || '',
         receivedQty: parseFloat(line.receivedQty) || 0,
         acceptedQty,
@@ -111,11 +211,11 @@ router.post('/', async (req: Request, res: Response) => {
     const totalAmount = processedLines.reduce((sum: number, line: any) => sum + line.amount, 0);
     const totalQty = processedLines.reduce((sum: number, line: any) => sum + line.acceptedQty, 0);
 
-    // Create GRN
+    // Create GRN — use vendor from PO to avoid frontend mismatch
     const grn = await prisma.goodsReceipt.create({
       data: {
         poId: b.poId,
-        vendorId: b.vendorId,
+        vendorId: po.vendorId,
         grnDate: b.grnDate ? new Date(b.grnDate) : new Date(),
         vehicleNo: b.vehicleNo || '',
         challanNo: b.challanNo || '',
@@ -153,20 +253,7 @@ router.post('/', async (req: Request, res: Response) => {
         }
       }
 
-      // Update material stock
-      if (line.materialId) {
-        const material = await prisma.material.findUnique({
-          where: { id: line.materialId },
-        });
-        if (material) {
-          await prisma.material.update({
-            where: { id: line.materialId },
-            data: {
-              currentStock: material.currentStock + line.acceptedQty,
-            },
-          });
-        }
-      }
+      // Stock update handled by syncGrnToInventory (unified material master)
     }
 
     // Check if all PO lines are fully received
@@ -186,6 +273,20 @@ router.post('/', async (req: Request, res: Response) => {
         where: { id: b.poId },
         data: { status: 'PARTIAL_RECEIVED' },
       });
+    }
+
+    // Sync to inventory (new SAP system)
+    try {
+      await syncGrnToInventory(
+        grn.id,
+        grn.grnNo,
+        processedLines,
+        b.warehouseId || null,
+        (req as any).user.id
+      );
+    } catch (syncErr: any) {
+      // Log but don't fail the GRN creation
+      console.error('Inventory sync failed:', syncErr.message);
     }
 
     res.status(201).json(grn);
@@ -264,13 +365,21 @@ router.delete('/:id', async (req: Request, res: Response) => {
           });
         }
       }
-      if (line.materialId) {
-        const mat = await prisma.material.findUnique({ where: { id: line.materialId } });
-        if (mat) {
-          await prisma.material.update({
-            where: { id: line.materialId },
-            data: { currentStock: Math.max(0, mat.currentStock - line.acceptedQty) },
+      // Reverse InventoryItem stock if linked
+      const itemId = line.inventoryItemId || line.materialId;
+      if (itemId) {
+        const invItem = await prisma.inventoryItem.findUnique({ where: { id: itemId }, select: { id: true, currentStock: true, avgCost: true } });
+        if (invItem) {
+          const newStock = Math.max(0, invItem.currentStock - line.acceptedQty);
+          await prisma.inventoryItem.update({
+            where: { id: itemId },
+            data: { currentStock: newStock, totalValue: Math.round(newStock * invItem.avgCost * 100) / 100 },
           });
+          // Reverse StockLevel
+          const sl = await prisma.stockLevel.findFirst({ where: { itemId } });
+          if (sl) await prisma.stockLevel.update({ where: { id: sl.id }, data: { quantity: Math.max(0, sl.quantity - line.acceptedQty) } });
+          // Delete associated stock movements
+          await prisma.stockMovement.deleteMany({ where: { refType: 'GRN', refId: grn.id, itemId } });
         }
       }
     }

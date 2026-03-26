@@ -135,7 +135,7 @@ async function saveData(data: Record<string, number>): Promise<void> {
 
   await prisma.dDGSProductionEntry.create({
     data: {
-      date: now,
+      date: ist,
       shiftDate,
       entryTime,
       timeFrom,
@@ -173,7 +173,7 @@ const ddgsConfig: ModuleConfig = {
   buildSummary,
   buildErrorHint,
   saveData,
-  privateOnly: false,
+  privateOnly: true,
 };
 
 export default ddgsConfig;

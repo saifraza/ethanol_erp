@@ -883,6 +883,9 @@ model InventoryItem {
   avgCost         Float    @default(0)        // weighted average cost
   totalValue      Float    @default(0)        // currentStock × avgCost
   batchTracked    Boolean  @default(false)
+  // Procurement fields (merged from Material)
+  subCategory     String?                     // e.g., ENZYME, YEAST, ACID
+  defaultRate     Float    @default(0)        // last/standard purchase rate
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   transactions    InventoryTransaction[]
@@ -890,6 +893,9 @@ model InventoryItem {
   stockLevels     StockLevel[]
   stockMovements  StockMovement[]
   reorderRule     ReorderRule?
+  poLines         POLine[]
+  grnLines        GRNLine[]
+  vendorItems     VendorItem[]
   @@index([category])
 }
 
@@ -1581,6 +1587,28 @@ model Vendor {
   grns            GoodsReceipt[]
   vendorInvoices  VendorInvoice[]
   vendorPayments  VendorPayment[]
+  vendorItems     VendorItem[]
+}
+
+// ── Vendor-Item Pricing (what items a vendor supplies + negotiated rates) ──
+model VendorItem {
+  id              String   @id @default(cuid())
+  vendorId        String
+  vendor          Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  inventoryItemId String
+  item            InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  rate            Float    @default(0)        // last negotiated rate
+  minOrderQty     Float?                      // minimum order quantity
+  leadTimeDays    Int?                         // vendor-specific lead time
+  remarks         String?
+  isPreferred     Boolean  @default(false)     // preferred supplier for this item
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([vendorId, inventoryItemId])
+  @@index([vendorId])
+  @@index([inventoryItemId])
 }
 
 // ── Material Master (items you buy) ──
@@ -1661,8 +1689,10 @@ model POLine {
   poId            String
   po              PurchaseOrder  @relation(fields: [poId], references: [id], onDelete: Cascade)
   lineNo          Int            @default(1)
-  materialId      String?
+  materialId      String?                      // DEPRECATED — use inventoryItemId
   material        Material?      @relation(fields: [materialId], references: [id])
+  inventoryItemId String?
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
   description     String                   // item description
   hsnCode         String?
   quantity        Float
@@ -1690,6 +1720,7 @@ model POLine {
   createdAt       DateTime       @default(now())
 
   grnLines        GRNLine[]
+  @@index([inventoryItemId])
 }
 
 // ── Goods Receipt Note (factory receives goods against PO) ──
@@ -1734,8 +1765,10 @@ model GRNLine {
   grn             GoodsReceipt @relation(fields: [grnId], references: [id], onDelete: Cascade)
   poLineId        String?
   poLine          POLine?      @relation(fields: [poLineId], references: [id])
-  materialId      String?
+  materialId      String?                    // DEPRECATED — use inventoryItemId
   material        Material?    @relation(fields: [materialId], references: [id])
+  inventoryItemId String?
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
   description     String
   receivedQty     Float
   acceptedQty     Float        @default(0)  // after quality check
@@ -1748,6 +1781,7 @@ model GRNLine {
   expiryDate      DateTime?
   remarks         String?
   createdAt       DateTime     @default(now())
+  @@index([inventoryItemId])
 }
 
 // ── Vendor Invoice (3-way match: PO + GRN + Invoice) ──
@@ -2103,4 +2137,34 @@ model BankTransaction {
 
   @@index([accountId, date])
   @@index([isReconciled])
+}
+
+// ── Gate Entry (Vehicle In/Out Register) ──
+model GateEntry {
+  id              String   @id @default(cuid())
+  date            DateTime @default(now())
+  vehicleNo       String
+  capacityTon     Float    @default(0)
+  vendor          String   @default("")
+  transporterName String   @default("")
+  material        String   @default("OTHER")     // DDGS, ETHANOL, MAIZE, OTHER
+  direction       String   @default("INBOUND")   // INBOUND, OUTBOUND
+  status          String   @default("INSIDE")    // INSIDE, LOADING, LOADED, DISPATCHED, EMPTY_OUT
+  entryTime       String   @default("")
+  exitTime        String?
+  driverMobile    String   @default("")
+  rstNo           String   @default("")
+  remarks         String?
+  grossWeight     Float?
+  netWeight       Float?
+  // Links to other modules
+  grnId           String?  // Link to GRN (for inbound purchases)
+  shipmentId      String?  // Link to Shipment (for outbound sales)
+  userId          String?  // Who created this entry
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([date])
+  @@index([status])
+  @@index([vehicleNo])
 }

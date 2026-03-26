@@ -12,6 +12,7 @@ import PDFDocument from 'pdfkit';
 import path from 'path';
 import fs from 'fs';
 import { drawLetterhead } from '../utils/letterhead';
+import { sendEmail } from '../services/messaging';
 
 const router = Router();
 
@@ -1205,6 +1206,62 @@ router.get('/gstin-lookup/:gstin', async (req: Request, res: Response) => {
       res.json(result);
     } else {
       res.status(400).json(result);
+    }
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /:id/send-email — Send Shipment Challan PDF via email
+router.post('/:id/send-email', async (req: Request, res: Response) => {
+  try {
+    const shipment = await prisma.shipment.findUnique({
+      where: { id: req.params.id },
+      include: {
+        dispatchRequest: {
+          include: { salesOrder: { include: { customer: true } } },
+        },
+      },
+    });
+    if (!shipment) { res.status(404).json({ error: 'Shipment not found' }); return; }
+
+    const customer = shipment.dispatchRequest?.salesOrder?.customer;
+    const toEmail = req.body.to || customer?.email;
+    if (!toEmail) { res.status(400).json({ error: 'No email address. Add customer email or provide "to" in request.' }); return; }
+
+    // Generate challan PDF as buffer
+    const pdfChunks: Buffer[] = [];
+    const token = req.headers.authorization?.split(' ')[1] || '';
+    // Fetch the challan PDF internally
+    const challanRes = await new Promise<Buffer>((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      const doc = new PDFDocument({ size: 'A4', margin: 40 });
+      doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+      // Simple text-based challan for email
+      doc.fontSize(16).text('DELIVERY CHALLAN', { align: 'center' });
+      doc.moveDown();
+      doc.fontSize(10).text(`Shipment: ${shipment.shipmentNo || shipment.id}`);
+      doc.text(`Vehicle: ${shipment.vehicleNo || '-'}`);
+      doc.text(`Date: ${shipment.shipmentDate ? new Date(shipment.shipmentDate).toLocaleDateString('en-IN') : '-'}`);
+      doc.text(`Customer: ${customer?.name || '-'}`);
+      doc.text(`Quantity: ${shipment.quantity || '-'} ${shipment.unit || 'L'}`);
+      doc.text(`Status: ${shipment.status}`);
+      doc.end();
+    });
+
+    const shipLabel = `Shipment-${shipment.shipmentNo || shipment.id.slice(0, 8)}`;
+    const subject = req.body.subject || `${shipLabel} — Delivery Challan from MSPIL`;
+    const body = req.body.body || `Dear ${customer?.name || 'Customer'},\n\nPlease find attached the delivery challan for ${shipLabel}.\n\nRegards,\nMSPIL Distillery`;
+
+    const result = await sendEmail({
+      to: toEmail, subject, text: body,
+      attachments: [{ filename: `${shipLabel}.pdf`, content: challanRes, contentType: 'application/pdf' }],
+    });
+
+    if (result.success) {
+      res.json({ ok: true, messageId: result.messageId, sentTo: toEmail });
+    } else {
+      res.status(500).json({ error: result.error || 'Email send failed' });
     }
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });

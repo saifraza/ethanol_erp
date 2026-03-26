@@ -4,7 +4,7 @@ import api from '../../services/api';
 
 interface GRNLine {
   poLineId: string;
-  materialId: string;
+  inventoryItemId: string;
   description: string;
   receivedQty: number;
   acceptedQty: number;
@@ -56,7 +56,14 @@ interface POLine {
   pendingQty: number;
   unit: string;
   rate: number;
-  materialId: string;
+  inventoryItemId: string;
+  materialId?: string;
+}
+
+interface WH {
+  id: string;
+  code: string;
+  name: string;
 }
 
 interface Stats {
@@ -81,6 +88,17 @@ export default function GoodsReceipts() {
   });
 
   const [selectedPO, setSelectedPO] = useState<PO | null>(null);
+  const [warehouses, setWarehouses] = useState<WH[]>([]);
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState('');
+
+  const fetchWarehouses = async () => {
+    try {
+      const res = await api.get('/inventory/warehouses');
+      const list = Array.isArray(res.data) ? res.data : res.data.warehouses ?? [];
+      setWarehouses(list);
+      if (list.length > 0 && !selectedWarehouseId) setSelectedWarehouseId(list[0].id);
+    } catch (err) { console.error('Failed to load warehouses:', err); }
+  };
 
   const fetchGRNs = async () => {
     try {
@@ -119,6 +137,7 @@ export default function GoodsReceipts() {
   useEffect(() => {
     fetchGRNs();
     fetchPendingPOs();
+    fetchWarehouses();
   }, []);
 
   const handlePOChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -128,7 +147,7 @@ export default function GoodsReceipts() {
     setSelectedPO(selected || null);
     if (selected) {
       const lines = selected.lines.map((line) => ({
-        poLineId: line.id, materialId: line.materialId, description: line.description,
+        poLineId: line.id, inventoryItemId: line.inventoryItemId || line.materialId, description: line.description,
         receivedQty: line.pendingQty, acceptedQty: line.pendingQty, rejectedQty: 0,
         unit: line.unit, rate: line.rate, storageLocation: '', batchNo: '', remarks: '',
       }));
@@ -160,6 +179,7 @@ export default function GoodsReceipts() {
         poId: formData.poId, vendorId: selectedPO?.id || '', grnDate: formData.grnDate,
         vehicleNo: formData.vehicleNo, challanNo: formData.challanNo, challanDate: formData.challanDate,
         ewayBill: formData.ewayBill, remarks: formData.remarks, lines: formData.lines,
+        warehouseId: selectedWarehouseId || undefined,
       });
       setSuccessMessage('GRN created successfully');
       setShowCreateForm(false);
@@ -245,6 +265,62 @@ export default function GoodsReceipts() {
           </div>
         </div>
 
+        {/* Pending POs — Approved POs awaiting goods receipt */}
+        {pendingPOs.length > 0 && !showCreateForm && (
+          <div className="-mx-3 md:-mx-6">
+            <div className="bg-amber-50 border-x border-b border-amber-300 px-4 py-2">
+              <span className="text-[10px] font-bold text-amber-700 uppercase tracking-widest">Pending Purchase Orders — Awaiting Goods Receipt ({pendingPOs.length})</span>
+            </div>
+            <div className="border-x border-b border-slate-300 overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-amber-100">
+                    <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-left border-r border-amber-200 text-amber-800">PO #</th>
+                    <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-left border-r border-amber-200 text-amber-800">Vendor</th>
+                    <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-left border-r border-amber-200 text-amber-800">Items Pending</th>
+                    <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-right border-r border-amber-200 text-amber-800">Pending Qty</th>
+                    <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-center text-amber-800">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingPOs.map((po) => {
+                    const totalPending = po.lines.reduce((s, l) => s + l.pendingQty, 0);
+                    return (
+                      <tr key={po.id} className="border-b border-amber-100 hover:bg-amber-50/60">
+                        <td className="px-3 py-1.5 text-xs border-r border-amber-100 font-bold text-slate-800">{po.poNo}</td>
+                        <td className="px-3 py-1.5 text-xs border-r border-amber-100">{po.vendor.name}</td>
+                        <td className="px-3 py-1.5 text-xs border-r border-amber-100">
+                          {po.lines.map((l) => l.description).join(', ')}
+                        </td>
+                        <td className="px-3 py-1.5 text-xs border-r border-amber-100 text-right font-mono tabular-nums font-semibold">{totalPending.toFixed(1)}</td>
+                        <td className="px-3 py-1.5 text-xs text-center">
+                          <button
+                            onClick={() => {
+                              setShowCreateForm(true);
+                              // Auto-select this PO
+                              setFormData((prev) => ({ ...prev, poId: po.id }));
+                              setSelectedPO(po);
+                              const lines = po.lines.map((line) => ({
+                                poLineId: line.id, inventoryItemId: line.inventoryItemId || line.materialId, description: line.description,
+                                receivedQty: line.pendingQty, acceptedQty: line.pendingQty, rejectedQty: 0,
+                                unit: line.unit, rate: line.rate, storageLocation: '', batchNo: '', remarks: '',
+                              }));
+                              setFormData((prev) => ({ ...prev, poId: po.id, lines }));
+                            }}
+                            className="px-2 py-0.5 bg-blue-600 text-white text-[10px] font-medium hover:bg-blue-700"
+                          >
+                            CREATE GRN
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {/* Create GRN Form */}
         {showCreateForm && (
           <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 overflow-y-auto py-4">
@@ -282,6 +358,13 @@ export default function GoodsReceipts() {
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">E-Way Bill</label>
                     <input type="text" placeholder="12ABC34567890123" value={formData.ewayBill} onChange={(e) => setFormData((prev) => ({ ...prev, ewayBill: e.target.value }))} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Receive to Warehouse *</label>
+                    <select value={selectedWarehouseId} onChange={(e) => setSelectedWarehouseId(e.target.value)} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                      <option value="">Select Warehouse</option>
+                      {warehouses.map((wh) => (<option key={wh.id} value={wh.id}>{wh.code} - {wh.name}</option>))}
+                    </select>
                   </div>
                 </div>
 
