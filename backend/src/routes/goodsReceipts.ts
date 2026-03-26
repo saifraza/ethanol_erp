@@ -194,10 +194,12 @@ router.post('/', async (req: Request, res: Response) => {
       const rate = parseFloat(line.rate) || 0;
       const amount = acceptedQty * rate;
 
+      // Use inventoryItemId only — materialId is deprecated
+      const itemId = line.inventoryItemId || line.materialId || null;
       return {
         poLineId: line.poLineId || null,
-        inventoryItemId: line.inventoryItemId || line.materialId || null,
-        materialId: line.materialId || line.inventoryItemId || null,
+        inventoryItemId: itemId,
+        materialId: null, // deprecated, don't set FK to avoid constraint errors
         description: line.description || '',
         receivedQty: parseFloat(line.receivedQty) || 0,
         acceptedQty,
@@ -294,7 +296,10 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     res.status(201).json(grn);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
+  } catch (err: any) {
+    console.error('[GRN POST /] Error:', err.message, err.stack?.split('\n').slice(0, 3).join('\n'));
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // PUT /:id/quality — update quality status
