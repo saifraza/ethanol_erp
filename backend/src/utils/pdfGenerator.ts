@@ -113,42 +113,45 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
       const lightBg = '#F7F7F7';
 
       // ═══════════════════════════════════════════
-      // LETTERHEAD
+      // LETTERHEAD — compact
       // ═══════════════════════════════════════════
-      doc.rect(M, 25, CW, 85).fill(lightGreen);
-      // Logo
+      const lhTop = 22;
+      const lhH = 58;
+      doc.rect(M, lhTop, CW, lhH).fill(lightGreen);
+      // Logo — small
       if (fs.existsSync(LOGO_PNG)) {
-        doc.image(LOGO_PNG, M + 12, 32, { width: 60, height: 60 });
+        doc.image(LOGO_PNG, M + 8, lhTop + 5, { width: 48, height: 48 });
       }
-      // Company text block
-      const txLeft = M + 85;
-      const txWidth = CW - 95;
-      doc.font('Helvetica-Bold').fontSize(14).fillColor(darkGreen)
-        .text(COMPANY.name, txLeft, 33, { width: txWidth, align: 'center' });
-      doc.font('Helvetica-Bold').fontSize(6.5).fillColor('#2D4A2D')
-        .text(`CIN - ${COMPANY.cin}   |   GSTIN - ${COMPANY.gstin}`, txLeft, 51, { width: txWidth, align: 'center' });
-      doc.font('Helvetica').fontSize(6).fillColor('#3A5A3A')
-        .text(`Regd off : ${COMPANY.regdOff}`, txLeft, 62, { width: txWidth, align: 'center' })
-        .text(`Admin off & Factory : ${COMPANY.factory}`, txLeft, 71, { width: txWidth, align: 'center' })
-        .text(`E-mail : ${COMPANY.email}`, txLeft, 80, { width: txWidth, align: 'center' });
+      // Company text block — right of logo
+      const txLeft = M + 62;
+      const txWidth = CW - 70;
+      doc.font('Helvetica-Bold').fontSize(12).fillColor(darkGreen)
+        .text(COMPANY.name, txLeft, lhTop + 5, { width: txWidth, align: 'center' });
+      doc.font('Helvetica-Bold').fontSize(5.5).fillColor('#2D4A2D')
+        .text(`CIN - ${COMPANY.cin}  |  GSTIN - ${COMPANY.gstin}`, txLeft, lhTop + 20, { width: txWidth, align: 'center' });
+      doc.font('Helvetica').fontSize(5.5).fillColor('#3A5A3A')
+        .text(`Regd off : ${COMPANY.regdOff}`, txLeft, lhTop + 29, { width: txWidth, align: 'center' })
+        .text(`Admin off & Factory : ${COMPANY.factory}`, txLeft, lhTop + 37, { width: txWidth, align: 'center' })
+        .text(`E-mail : ${COMPANY.email}`, txLeft, lhTop + 45, { width: txWidth, align: 'center' });
       // Green border lines
-      doc.moveTo(M, 113).lineTo(M + CW, 113).lineWidth(1.5).strokeColor(green).stroke();
-      doc.moveTo(M, 115.5).lineTo(M + CW, 115.5).lineWidth(0.5).strokeColor('#7A9A10').stroke();
+      const lhBottom = lhTop + lhH;
+      doc.moveTo(M, lhBottom + 1).lineTo(M + CW, lhBottom + 1).lineWidth(1.5).strokeColor(green).stroke();
+      doc.moveTo(M, lhBottom + 3.5).lineTo(M + CW, lhBottom + 3.5).lineWidth(0.5).strokeColor('#7A9A10').stroke();
 
       // ═══════════════════════════════════════════
       // TITLE
       // ═══════════════════════════════════════════
-      doc.font('Helvetica-Bold').fontSize(14).fillColor(green)
-        .text('PURCHASE ORDER', M, 125, { width: CW, align: 'center' });
-      doc.moveTo(M, 143).lineTo(M + CW, 143).lineWidth(0.8).strokeColor('#999').stroke();
+      doc.font('Helvetica-Bold').fontSize(12).fillColor(green)
+        .text('PURCHASE ORDER', M, lhBottom + 8, { width: CW, align: 'center' });
+      doc.moveTo(M, lhBottom + 23).lineTo(M + CW, lhBottom + 23).lineWidth(0.8).strokeColor('#999').stroke();
 
       // ═══════════════════════════════════════════
       // PO DETAILS — 4-column grid
       // ═══════════════════════════════════════════
-      let y = 150;
-      const labelStyle = () => doc.font('Helvetica-Bold').fontSize(7).fillColor(grayText);
-      const valueStyle = () => doc.font('Helvetica').fontSize(8).fillColor('#000');
-      const valueBoldStyle = () => doc.font('Helvetica-Bold').fontSize(8).fillColor('#000');
+      let y = lhBottom + 28;
+      const labelStyle = () => doc.font('Helvetica-Bold').fontSize(6.5).fillColor(grayText);
+      const valueStyle = () => doc.font('Helvetica').fontSize(7.5).fillColor('#000');
+      const valueBoldStyle = () => doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#000');
 
       const col1 = M;
       const col2 = M + 130;
@@ -159,76 +162,76 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
       valueBoldStyle().text(`PO-${String(po.poNo).padStart(4, '0')}`, col2, y);
       labelStyle().text('PO Date', col3, y);
       valueStyle().text(formatDate(po.poDate), col4, y);
-      y += 14;
+      y += 12;
       labelStyle().text('Delivery Date', col1, y);
       valueStyle().text(formatDate(po.deliveryDate), col2, y);
       labelStyle().text('Supply Type', col3, y);
       valueStyle().text(po.supplyType === 'INTER_STATE' ? 'Inter State' : 'Intra State', col4, y);
       if (po.placeOfSupply) {
-        y += 14;
+        y += 12;
         labelStyle().text('Place of Supply', col1, y);
         valueStyle().text(po.placeOfSupply, col2, y);
       }
-      y += 18;
+      y += 14;
 
       // ═══════════════════════════════════════════
       // VENDOR + DELIVERY BOXES (side by side)
       // ═══════════════════════════════════════════
       const boxW = (CW - 10) / 2;
-      const boxH = 72;
+      const boxH = 65;
       const boxY = y;
 
       // Vendor box
       doc.rect(M, boxY, boxW, boxH).lineWidth(0.5).strokeColor('#CCCCCC').fillAndStroke(lightBg, '#CCCCCC');
-      doc.rect(M, boxY, boxW, 13).fill('#E8E8E8');
-      doc.font('Helvetica-Bold').fontSize(6.5).fillColor(grayText)
-        .text('VENDOR / SUPPLIER', M + 5, boxY + 3, { width: boxW - 10 });
-      let vy = boxY + 16;
-      doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#000')
-        .text(po.vendor.name, M + 5, vy, { width: boxW - 10 });
-      vy += 12;
+      doc.rect(M, boxY, boxW, 11).fill('#E8E8E8');
+      doc.font('Helvetica-Bold').fontSize(5.5).fillColor(grayText)
+        .text('VENDOR / SUPPLIER', M + 4, boxY + 2.5, { width: boxW - 8 });
+      let vy = boxY + 14;
+      doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#000')
+        .text(po.vendor.name, M + 4, vy, { width: boxW - 8 });
+      vy += 10;
       if (po.vendor.tradeName) {
-        doc.font('Helvetica').fontSize(7).fillColor(grayText)
-          .text(po.vendor.tradeName, M + 5, vy, { width: boxW - 10 });
-        vy += 9;
+        doc.font('Helvetica').fontSize(6).fillColor(grayText)
+          .text(po.vendor.tradeName, M + 4, vy, { width: boxW - 8 });
+        vy += 8;
       }
       if (po.vendor.address) {
-        doc.font('Helvetica').fontSize(7).fillColor('#333')
-          .text(po.vendor.address, M + 5, vy, { width: boxW - 10 });
-        vy += 9;
+        doc.font('Helvetica').fontSize(6).fillColor('#333')
+          .text(po.vendor.address, M + 4, vy, { width: boxW - 8 });
+        vy += 8;
       }
       const cityLine = [po.vendor.city, po.vendor.state, po.vendor.pincode].filter(Boolean).join(', ');
       if (cityLine) {
-        doc.font('Helvetica').fontSize(7).fillColor('#333')
-          .text(cityLine, M + 5, vy, { width: boxW - 10 });
-        vy += 9;
+        doc.font('Helvetica').fontSize(6).fillColor('#333')
+          .text(cityLine, M + 4, vy, { width: boxW - 8 });
+        vy += 8;
       }
       if (po.vendor.gstin) {
-        doc.font('Helvetica-Bold').fontSize(7).fillColor('#333')
-          .text(`GSTIN: ${po.vendor.gstin}`, M + 5, vy, { width: boxW - 10 });
+        doc.font('Helvetica-Bold').fontSize(6).fillColor('#333')
+          .text(`GSTIN: ${po.vendor.gstin}`, M + 4, vy, { width: boxW - 8 });
       }
 
       // Delivery box
       const dx = M + boxW + 10;
       doc.rect(dx, boxY, boxW, boxH).lineWidth(0.5).strokeColor('#CCCCCC').fillAndStroke(lightBg, '#CCCCCC');
-      doc.rect(dx, boxY, boxW, 13).fill('#E8E8E8');
-      doc.font('Helvetica-Bold').fontSize(6.5).fillColor(grayText)
-        .text('DELIVERY TO', dx + 5, boxY + 3, { width: boxW - 10 });
-      let dy = boxY + 16;
-      doc.font('Helvetica').fontSize(7.5).fillColor('#000')
-        .text(po.deliveryAddress || COMPANY.factory, dx + 5, dy, { width: boxW - 10 });
-      dy += 20;
+      doc.rect(dx, boxY, boxW, 11).fill('#E8E8E8');
+      doc.font('Helvetica-Bold').fontSize(5.5).fillColor(grayText)
+        .text('DELIVERY TO', dx + 4, boxY + 2.5, { width: boxW - 8 });
+      let dy = boxY + 14;
+      doc.font('Helvetica').fontSize(6.5).fillColor('#000')
+        .text(po.deliveryAddress || COMPANY.factory, dx + 4, dy, { width: boxW - 8 });
+      dy += 16;
       if (po.paymentTerms) {
-        doc.font('Helvetica-Bold').fontSize(6.5).fillColor(grayText).text('Payment:', dx + 5, dy);
-        doc.font('Helvetica').fontSize(7).fillColor('#333').text(po.paymentTerms, dx + 55, dy);
-        dy += 10;
+        doc.font('Helvetica-Bold').fontSize(5.5).fillColor(grayText).text('Payment:', dx + 4, dy);
+        doc.font('Helvetica').fontSize(6.5).fillColor('#333').text(po.paymentTerms, dx + 48, dy);
+        dy += 9;
       }
       if (po.transportMode) {
-        doc.font('Helvetica-Bold').fontSize(6.5).fillColor(grayText).text('Transport:', dx + 5, dy);
-        doc.font('Helvetica').fontSize(7).fillColor('#333').text(po.transportMode, dx + 55, dy);
+        doc.font('Helvetica-Bold').fontSize(5.5).fillColor(grayText).text('Transport:', dx + 4, dy);
+        doc.font('Helvetica').fontSize(6.5).fillColor('#333').text(po.transportMode, dx + 48, dy);
       }
 
-      y = boxY + boxH + 12;
+      y = boxY + boxH + 8;
 
       // ═══════════════════════════════════════════
       // LINE ITEMS TABLE
@@ -239,14 +242,14 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
         { label: 'HSN',  w: 45,  align: 'center' as const },
         { label: 'Qty',  w: 40,  align: 'right' as const },
         { label: 'Unit', w: 30,  align: 'center' as const },
-        { label: 'Rate (₹)', w: 55, align: 'right' as const },
+        { label: 'Rate (Rs.)', w: 58, align: 'right' as const },
         { label: 'GST%', w: 30,  align: 'center' as const },
-        { label: 'Taxable (₹)', w: 70, align: 'right' as const },
-        { label: 'Total (₹)', w: CW - 20 - 140 - 45 - 40 - 30 - 55 - 30 - 70, align: 'right' as const },
+        { label: 'Taxable (Rs.)', w: 72, align: 'right' as const },
+        { label: 'Total (Rs.)', w: CW - 20 - 140 - 45 - 40 - 30 - 58 - 30 - 72, align: 'right' as const },
       ];
 
       // Header
-      const rowH = 16;
+      const rowH = 14;
       doc.rect(M, y, CW, rowH).fill(green);
       let cx = M;
       tCols.forEach(col => {
@@ -299,7 +302,7 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
       doc.rect(M, y - (po.lines.length * rowH) - rowH, CW, (po.lines.length + 1) * rowH)
         .lineWidth(0.5).strokeColor('#999').stroke();
 
-      y += 8;
+      y += 5;
 
       // ═══════════════════════════════════════════
       // TOTALS — right-aligned box
@@ -315,7 +318,7 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
           .text(label, totLabelX, y, { width: 100, align: 'right' });
         doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(bold ? 9 : 8).fillColor(bold ? green : '#000')
           .text(formatINR(value), totValX, y, { width: totValW, align: 'right' });
-        y += bold ? 16 : 13;
+        y += bold ? 14 : 11;
       };
 
       // Divider line above totals
@@ -334,12 +337,11 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
       drawTotalRow('GRAND TOTAL', po.grandTotal, true);
 
       // Amount in words — full width
-      y += 2;
-      doc.font('Helvetica-Bold').fontSize(6.5).fillColor(grayText).text('Amount in Words:', M, y);
-      y += 9;
-      doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#000')
+      doc.font('Helvetica-Bold').fontSize(6).fillColor(grayText).text('Amount in Words:', M, y);
+      y += 8;
+      doc.font('Helvetica-Bold').fontSize(7).fillColor('#000')
         .text(numberToWords(po.grandTotal), M, y, { width: CW });
-      y += 14;
+      y += 11;
 
       // ═══════════════════════════════════════════
       // REMARKS
@@ -370,17 +372,9 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
       y += 8;
 
       // ═══════════════════════════════════════════
-      // BARCODE
-      // ═══════════════════════════════════════════
-      try {
-        const barcodeImg = await generateBarcode(`PO-${po.poNo}`);
-        doc.image(barcodeImg, M + CW - 130, y - 3, { width: 120, height: 22 });
-      } catch { /* barcode failed */ }
-
-      // ═══════════════════════════════════════════
       // SIGNATURES
       // ═══════════════════════════════════════════
-      y += 25;
+      y += 10;
       const sigW = CW / 3;
       const sigs = ['Prepared By', 'Approved By', 'Authorized Signatory'];
       sigs.forEach((label, i) => {
@@ -390,11 +384,13 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
           .text(label, sx, y + 24, { width: sigW, align: 'center' });
       });
 
-      // ═══════════════════════════════════════════
-      // FOOTER
-      // ═══════════════════════════════════════════
-      doc.font('Helvetica').fontSize(6).fillColor('#999')
-        .text(tmpl.footer, M, doc.page.height - 25, { width: CW, align: 'center' });
+      // Footer line after signatures
+      y += 35;
+      if (y < 815) {
+        doc.moveTo(M, y).lineTo(M + CW, y).lineWidth(0.3).strokeColor('#DDD').stroke();
+        doc.font('Helvetica').fontSize(5).fillColor('#AAA')
+          .text(tmpl.footer, M, y + 3, { width: CW, align: 'center', lineBreak: false });
+      }
 
       doc.end();
     } catch (err) {
