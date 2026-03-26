@@ -4,6 +4,7 @@ import { authenticate, authorize } from '../middleware/auth';
 import PDFDocument from 'pdfkit';
 import path from 'path';
 import fs from 'fs';
+import { sendEmail } from '../services/messaging';
 import { drawLetterhead } from '../utils/letterhead';
 import { getTemplate } from '../utils/templateHelper';
 
@@ -546,6 +547,126 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// POST /:id/send-email — Send Sales Order PDF to customer via email
+router.post('/:id/send-email', async (req: Request, res: Response) => {
+  try {
+    const order = await prisma.salesOrder.findUnique({
+      where: { id: req.params.id },
+      include: { customer: true, lines: true },
+    });
+    if (!order) { res.status(404).json({ error: 'Sales order not found' }); return; }
+
+    const toEmail = req.body.to || order.customer.email;
+    if (!toEmail) { res.status(400).json({ error: 'No email address. Add customer email or provide "to" in request.' }); return; }
+
+    // Generate PDF to buffer (reuse the PDF generation logic from /:id/pdf)
+    const tmpl = await getTemplate('SALE_ORDER');
+    const pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
+      const doc = new PDFDocument({ size: 'A4', margins: { top: 40, bottom: 0, left: 40, right: 40 } });
+      const chunks: Buffer[] = [];
+      doc.on('data', (c: Buffer) => chunks.push(c));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      // Minimal SO PDF — reuse same layout as /:id/pdf route
+      const W = doc.page.width;
+      const M = 40;
+      const CW = W - 2 * M;
+      const green = '#4A7D28';
+
+      // Letterhead
+      const LOGO = path.join(__dirname, '../../assets/MSPIL_logo_transparent.png');
+      doc.rect(M, 22, CW, 58).fill('#C5D49E');
+      if (fs.existsSync(LOGO)) doc.image(LOGO, M + 8, 27, { width: 48, height: 48 });
+      doc.font('Helvetica-Bold').fontSize(12).fillColor('#1A3B0A')
+        .text('Mahakaushal Sugar and Power Industries Ltd.', M + 62, 27, { width: CW - 70, align: 'center' });
+      doc.font('Helvetica').fontSize(5.5).fillColor('#3A5A3A')
+        .text('CIN - U01543MP2005PLC017514 | GSTIN - 23AAECM3666P1Z1', M + 62, 42, { width: CW - 70, align: 'center' })
+        .text('Village Bachai, Dist. Narsinghpur (M.P.) - 487001', M + 62, 50, { width: CW - 70, align: 'center' })
+        .text('E-mail: mspil.acc@gmail.com | mspil.power@gmail.com', M + 62, 58, { width: CW - 70, align: 'center' });
+      doc.moveTo(M, 83).lineTo(M + CW, 83).lineWidth(1.5).strokeColor(green).stroke();
+
+      // Title
+      const soLabel = `SO-${String(order.soNo).padStart(4, '0')}`;
+      doc.font('Helvetica-Bold').fontSize(12).fillColor(green)
+        .text('SALES ORDER', M, 90, { width: CW, align: 'center' });
+
+      // Details
+      let y = 108;
+      doc.font('Helvetica-Bold').fontSize(7).fillColor('#666');
+      doc.text('SO Number', M, y); doc.text('Date', M + CW / 2, y);
+      doc.font('Helvetica-Bold').fontSize(8).fillColor('#000');
+      doc.text(soLabel, M + 80, y); doc.text(new Date(order.orderDate).toLocaleDateString('en-IN'), M + CW / 2 + 80, y);
+      y += 14;
+      doc.font('Helvetica-Bold').fontSize(7).fillColor('#666').text('Customer', M, y);
+      doc.font('Helvetica-Bold').fontSize(8).fillColor('#000').text(order.customer.name, M + 80, y);
+      if (order.customer.gstNo) {
+        y += 12;
+        doc.font('Helvetica').fontSize(7).fillColor('#333').text(`GSTIN: ${order.customer.gstNo}`, M + 80, y);
+      }
+      y += 16;
+
+      // Lines table
+      const rowH = 14;
+      doc.rect(M, y, CW, rowH).fill(green);
+      doc.font('Helvetica-Bold').fontSize(6.5).fillColor('#FFF');
+      doc.text('#', M + 3, y + 4, { width: 20 });
+      doc.text('Product', M + 25, y + 4, { width: 160 });
+      doc.text('Qty', M + 190, y + 4, { width: 50, align: 'right' });
+      doc.text('Rate', M + 245, y + 4, { width: 60, align: 'right' });
+      doc.text('Amount', M + 310, y + 4, { width: CW - 315, align: 'right' });
+      y += rowH;
+
+      order.lines.forEach((line: any, i: number) => {
+        if (i % 2 === 0) doc.rect(M, y, CW, rowH).fill('#F5F5F5');
+        doc.font('Helvetica').fontSize(7).fillColor('#222');
+        doc.text(String(i + 1), M + 3, y + 4, { width: 20 });
+        doc.text(line.productName || line.description || '', M + 25, y + 4, { width: 160 });
+        doc.text(`${line.quantity} ${line.unit || ''}`, M + 190, y + 4, { width: 50, align: 'right' });
+        doc.text(`Rs.${(line.rate || 0).toLocaleString('en-IN')}`, M + 245, y + 4, { width: 60, align: 'right' });
+        doc.text(`Rs.${(line.amount || line.quantity * line.rate).toLocaleString('en-IN')}`, M + 310, y + 4, { width: CW - 315, align: 'right' });
+        y += rowH;
+      });
+
+      doc.moveTo(M, y).lineTo(M + CW, y).lineWidth(0.5).strokeColor('#999').stroke();
+      y += 8;
+
+      // Total
+      doc.font('Helvetica-Bold').fontSize(9).fillColor(green)
+        .text('TOTAL:', M + CW - 200, y, { width: 95, align: 'right' })
+        .text(`Rs.${(order.grandTotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, M + CW - 100, y, { width: 100, align: 'right' });
+      y += 20;
+
+      // Terms
+      if (tmpl.terms.length) {
+        doc.font('Helvetica-Bold').fontSize(7).fillColor('#333').text('Terms & Conditions:', M, y);
+        y += 10;
+        tmpl.terms.forEach((t: string, i: number) => {
+          doc.font('Helvetica').fontSize(6).fillColor('#666').text(`${i + 1}. ${t}`, M + 5, y, { width: CW - 10 });
+          y += 8;
+        });
+      }
+
+      doc.end();
+    });
+
+    const soLabel = `SO-${String(order.soNo).padStart(4, '0')}`;
+    const subject = req.body.subject || `${soLabel} — Sales Order from MSPIL`;
+    const body = req.body.body || `Dear ${order.customer.name},\n\nPlease find attached Sales Order ${soLabel} dated ${new Date(order.orderDate).toLocaleDateString('en-IN')}.\n\nTotal Amount: Rs.${(order.grandTotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}\n\nKindly confirm the order at your earliest.\n\nRegards,\nMahakaushal Sugar & Power Industries Ltd.\nVillage Bachai, Dist. Narsinghpur (M.P.)`;
+
+    const result = await sendEmail({
+      to: toEmail, subject, text: body,
+      attachments: [{ filename: `${soLabel}.pdf`, content: pdfBuffer, contentType: 'application/pdf' }],
+    });
+
+    if (result.success) {
+      res.json({ ok: true, messageId: result.messageId, sentTo: toEmail });
+    } else {
+      res.status(500).json({ error: result.error || 'Email send failed' });
+    }
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
 export default router;

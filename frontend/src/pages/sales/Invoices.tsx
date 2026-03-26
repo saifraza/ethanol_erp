@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FileText, Plus, X, Loader2, Save, ChevronDown, Printer, RotateCcw, FileCheck } from 'lucide-react';
+import { FileText, Plus, X, Loader2, Save, ChevronDown, Printer, RotateCcw, FileCheck, Mail } from 'lucide-react';
 import api from '../../services/api';
 
 interface Invoice {
@@ -66,6 +66,18 @@ export default function Invoices() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [emailSending, setEmailSending] = useState<string | null>(null);
+  const handleSendEmail = async (invId: string) => {
+    const emailTo = prompt('Send invoice to email:', '');
+    if (!emailTo) return;
+    setEmailSending(invId);
+    try {
+      const res = await api.post(`/invoices/${invId}/send-email`, { to: emailTo });
+      setMsg({ type: 'ok', text: `Email sent to ${res.data.sentTo}` });
+    } catch (err: any) {
+      setMsg({ type: 'err', text: err.response?.data?.error || 'Failed to send email' });
+    } finally { setEmailSending(null); }
+  };
   const [generatingEInvoice, setGeneratingEInvoice] = useState<string | null>(null);
 
   // Create invoice form
@@ -497,6 +509,14 @@ export default function Invoices() {
                                 className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 flex items-center gap-1.5"
                               >
                                 <Printer size={13} /> PRINT PDF
+                              </button>
+                              <button
+                                onClick={() => handleSendEmail(inv.id)}
+                                disabled={emailSending === inv.id}
+                                className="px-3 py-1 bg-indigo-600 text-white text-[11px] font-medium hover:bg-indigo-700 flex items-center gap-1.5 disabled:opacity-50"
+                              >
+                                {emailSending === inv.id ? <Loader2 size={13} className="animate-spin" /> : <Mail size={13} />}
+                                {emailSending === inv.id ? 'SENDING...' : 'EMAIL'}
                               </button>
 
                               {!inv.irn && inv.status !== 'CANCELLED' && (

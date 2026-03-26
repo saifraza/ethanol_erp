@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, authorize } from '../middleware/auth';
 import { generatePOPdf } from '../utils/pdfGenerator';
+import { sendEmail } from '../services/messaging';
 
 const router = Router();
 router.use(authenticate as any);
@@ -61,17 +62,18 @@ router.post('/', async (req: Request, res: Response) => {
   try {
     const b = req.body;
 
-    // Look up materials for auto-fill
-    const materialIds = (b.lines || []).map((l: any) => l.materialId).filter(Boolean);
-    const materialsMap: Record<string, any> = {};
-    if (materialIds.length > 0) {
-      const mats = await prisma.material.findMany({ where: { id: { in: materialIds } } });
-      mats.forEach((m: any) => { materialsMap[m.id] = m; });
+    // Look up items for auto-fill (unified material master = InventoryItem)
+    const itemIds = (b.lines || []).map((l: any) => l.materialId || l.inventoryItemId).filter(Boolean);
+    const itemsMap: Record<string, any> = {};
+    if (itemIds.length > 0) {
+      const items = await prisma.inventoryItem.findMany({ where: { id: { in: itemIds } } });
+      items.forEach((m: any) => { itemsMap[m.id] = m; });
     }
 
     // Process lines with calculations
     const processedLines = (b.lines || []).map((line: any) => {
-      const mat = line.materialId ? materialsMap[line.materialId] : null;
+      const itemId = line.materialId || line.inventoryItemId || null;
+      const mat = itemId ? itemsMap[itemId] : null;
       const quantity = parseFloat(line.quantity) || 0;
       const rate = parseFloat(line.rate) || 0;
       const discountPercent = parseFloat(line.discountPercent) || 0;
@@ -98,7 +100,8 @@ router.post('/', async (req: Request, res: Response) => {
       const lineTotal = taxableAmount + totalGst;
 
       return {
-        materialId: line.materialId || null,
+        inventoryItemId: itemId,
+        materialId: itemId, // backward compat — same ID now points to InventoryItem
         description: line.description || mat?.name || '',
         hsnCode: line.hsnCode || mat?.hsnCode || '',
         quantity,
@@ -234,17 +237,18 @@ router.put('/:id', async (req: Request, res: Response) => {
 
     // If lines are provided, rebuild them
     if (b.lines && Array.isArray(b.lines)) {
-      // Look up materials for auto-fill
-      const materialIds = b.lines.map((l: any) => l.materialId).filter(Boolean);
-      const materialsMap: Record<string, any> = {};
-      if (materialIds.length > 0) {
-        const mats = await prisma.material.findMany({ where: { id: { in: materialIds } } });
-        mats.forEach((m: any) => { materialsMap[m.id] = m; });
+      // Look up items for auto-fill (unified material master)
+      const itemIds = b.lines.map((l: any) => l.materialId || l.inventoryItemId).filter(Boolean);
+      const itemsMap: Record<string, any> = {};
+      if (itemIds.length > 0) {
+        const items = await prisma.inventoryItem.findMany({ where: { id: { in: itemIds } } });
+        items.forEach((m: any) => { itemsMap[m.id] = m; });
       }
 
       const supplyType = b.supplyType || po.supplyType;
       const processedLines = b.lines.map((line: any) => {
-        const mat = line.materialId ? materialsMap[line.materialId] : null;
+        const itemId = line.materialId || line.inventoryItemId || null;
+        const mat = itemId ? itemsMap[itemId] : null;
         const quantity = parseFloat(line.quantity) || 0;
         const rate = parseFloat(line.rate) || 0;
         const discountPercent = parseFloat(line.discountPercent) || 0;
@@ -270,7 +274,8 @@ router.put('/:id', async (req: Request, res: Response) => {
         const lineTotal = taxableAmount + totalGst;
 
         return {
-          materialId: line.materialId || null, description: line.description || mat?.name || '',
+          inventoryItemId: itemId, materialId: itemId,
+          description: line.description || mat?.name || '',
           hsnCode: line.hsnCode || mat?.hsnCode || '', quantity, unit: line.unit || mat?.unit || 'KG',
           rate, discountPercent, discountAmount, gstPercent, amount, taxableAmount,
           cgstPercent, cgstAmount, sgstPercent, sgstAmount, igstPercent, igstAmount,
@@ -393,9 +398,9 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
         isRCM: l.isRCM || false,
         amount: l.amount || l.quantity * l.rate,
         taxableAmount: l.taxableAmount || (l.quantity * l.rate * (1 - (l.discountPercent || 0) / 100)),
-        cgst: l.cgst || 0,
-        sgst: l.sgst || 0,
-        igst: l.igst || 0,
+        cgst: l.cgstAmount || l.cgst || 0,
+        sgst: l.sgstAmount || l.sgst || 0,
+        igst: l.igstAmount || l.igst || 0,
         lineTotal: l.lineTotal || 0,
       })),
       subtotal: po.subtotal,
@@ -409,6 +414,52 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="PO-${po.poNo}.pdf"`);
     res.send(pdfBuffer);
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /:id/send-email — Send PO PDF to vendor via email
+router.post('/:id/send-email', async (req: Request, res: Response) => {
+  try {
+    const po = await prisma.purchaseOrder.findUnique({
+      where: { id: req.params.id },
+      include: { vendor: true, lines: true },
+    });
+    if (!po) { res.status(404).json({ error: 'PO not found' }); return; }
+
+    const toEmail = req.body.to || po.vendor.email;
+    if (!toEmail) { res.status(400).json({ error: 'No email address. Add vendor email or provide "to" in request.' }); return; }
+
+    const poLabel = `PO-${String(po.poNo).padStart(4, '0')}`;
+    const pdfBuffer = await generatePOPdf({
+      poNo: po.poNo, poDate: po.poDate, deliveryDate: po.deliveryDate || po.poDate,
+      vendor: po.vendor, supplyType: po.supplyType, placeOfSupply: po.placeOfSupply,
+      paymentTerms: po.paymentTerms, creditDays: po.creditDays,
+      deliveryAddress: po.deliveryAddress, transportMode: po.transportMode, remarks: po.remarks,
+      lines: po.lines.map((l: any) => ({
+        description: l.description, hsnCode: l.hsnCode || '', quantity: l.quantity, unit: l.unit,
+        rate: l.rate, discountPercent: l.discountPercent || 0, gstPercent: l.gstPercent || 0,
+        isRCM: l.isRCM || false, amount: l.amount || l.quantity * l.rate,
+        taxableAmount: l.taxableAmount || (l.quantity * l.rate * (1 - (l.discountPercent || 0) / 100)),
+        cgst: l.cgstAmount || l.cgst || 0, sgst: l.sgstAmount || l.sgst || 0,
+        igst: l.igstAmount || l.igst || 0, lineTotal: l.lineTotal || 0,
+      })),
+      subtotal: po.subtotal, totalGst: po.totalGst, freightCharge: po.freightCharge,
+      otherCharges: po.otherCharges, roundOff: po.roundOff, grandTotal: po.grandTotal,
+    });
+
+    const subject = req.body.subject || `${poLabel} — Purchase Order from MSPIL`;
+    const body = req.body.body || `Dear ${po.vendor.name},\n\nPlease find attached Purchase Order ${poLabel} dated ${new Date(po.poDate).toLocaleDateString('en-IN')}.\n\nTotal Amount: Rs.${po.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}\nDelivery Date: ${new Date(po.deliveryDate || po.poDate).toLocaleDateString('en-IN')}\nPayment Terms: ${po.paymentTerms || 'As agreed'}\n\nKindly acknowledge receipt and confirm delivery schedule.\n\nRegards,\nMahakaushal Sugar & Power Industries Ltd.\nVillage Bachai, Dist. Narsinghpur (M.P.)`;
+
+    const result = await sendEmail({
+      to: toEmail, subject, text: body,
+      attachments: [{ filename: `${poLabel}.pdf`, content: pdfBuffer, contentType: 'application/pdf' }],
+    });
+
+    if (result.success) {
+      res.json({ ok: true, messageId: result.messageId, sentTo: toEmail });
+    } else {
+      res.status(500).json({ error: result.error || 'Email send failed' });
+    }
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
