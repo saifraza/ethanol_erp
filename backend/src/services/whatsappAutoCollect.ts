@@ -182,16 +182,25 @@ async function handleIncoming(rawPhone: string, text: string, _name: string | nu
             }
           }
 
-          // Send to private numbers
-          const privateNumbers = ((settings as any)?.whatsappNumbers || '')
+          // Send to ALL operator numbers from this module's schedule (not global whatsappNumbers)
+          // This ensures everyone in the DDGS operator list gets the summary
+          const moduleSchedule = schedules.find(s => s.module === session.module);
+          const schedulePhones = moduleSchedule ? parsePhones(moduleSchedule.phone) : [];
+          // Also include global private numbers from settings
+          const globalNumbers = ((settings as any)?.whatsappNumbers || '')
             .split(',')
             .map((p: string) => p.trim())
-            .filter((p: string) => p.length > 0 && p !== phone.replace(/^91/, ''));
-          for (const num of privateNumbers) {
+            .filter((p: string) => p.length > 0);
+          // Merge both lists, deduplicate, exclude the replier
+          const replierDigits = phone.replace(/^91/, '');
+          const allRecipients = [...new Set([...schedulePhones, ...globalNumbers])]
+            .map((p: string) => p.replace(/\D/g, ''))
+            .filter((p: string) => p.length > 0 && p !== replierDigits && p !== phone);
+          for (const num of allRecipients) {
             await sendWhatsAppMessage(num, fullReport, config.module);
           }
-          if (privateNumbers.length > 0) {
-            console.log(`[AutoCollect] Shared ${config.module} report to ${privateNumbers.length} private numbers`);
+          if (allRecipients.length > 0) {
+            console.log(`[AutoCollect] Shared ${config.module} report to ${allRecipients.length} numbers: ${allRecipients.join(', ')}`);
           }
         } catch (shareErr) {
           console.error(`[AutoCollect] Failed to share ${config.module} report:`, shareErr);

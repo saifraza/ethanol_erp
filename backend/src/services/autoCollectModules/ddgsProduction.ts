@@ -173,7 +173,7 @@ const ddgsConfig: ModuleConfig = {
   buildSummary,
   buildErrorHint,
   saveData,
-  privateOnly: false,
+  privateOnly: true,
 };
 
 export default ddgsConfig;
