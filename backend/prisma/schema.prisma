@@ -1666,6 +1666,7 @@ model PurchaseOrder {
   // Logistics
   deliveryAddress String?                   // factory address
   transportMode   String?                   // ROAD, RAIL
+  transportBy     String?                   // BY_US, BY_SUPPLIER
   // Status
   status          String   @default("DRAFT") // DRAFT, APPROVED, SENT, PARTIAL_RECEIVED, RECEIVED, CLOSED, CANCELLED
   approvedBy      String?
