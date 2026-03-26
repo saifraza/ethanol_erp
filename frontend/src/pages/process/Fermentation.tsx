@@ -898,11 +898,11 @@ export default function Fermentation() {
                       <input placeholder="Remarks..." value={readingForm.remarks || ''} onChange={e => setReadingForm(f => ({ ...f, remarks: e.target.value }))}
                         className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-gray-50 outline-none" />
                       <div className="flex gap-2.5">
-                        <button onClick={() => saveReading(false)} disabled={saving}
+                        <button onClick={() => saveReading(false)} disabled={saving || !!editingReading}
                           className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-sm hover:bg-indigo-700 active:scale-[0.98] transition-all">
-                          {saving ? <Loader2 size={14} className="animate-spin" /> : <><Send size={13} /> Save</>}
+                          {saving ? <Loader2 size={14} className="animate-spin" /> : <><Send size={13} /> {editingReading ? 'Editing below...' : 'Save'}</>}
                         </button>
-                        <button onClick={() => saveReading(true)} disabled={saving}
+                        <button onClick={() => saveReading(true)} disabled={saving || !!editingReading}
                           className="flex-1 py-2.5 bg-green-600 text-white rounded-xl text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-sm hover:bg-green-700 active:scale-[0.98] transition-all">
                           {saving ? <Loader2 size={14} className="animate-spin" /> : <><MessageCircle size={13} /> Save & Share</>}
                         </button>
