@@ -101,7 +101,7 @@ router.post('/', async (req: Request, res: Response) => {
 
       return {
         inventoryItemId: itemId,
-        materialId: itemId, // backward compat — same ID now points to InventoryItem
+        materialId: null, // deprecated — FK points to Material table, not InventoryItem
         description: line.description || mat?.name || '',
         hsnCode: line.hsnCode || mat?.hsnCode || '',
         quantity,
