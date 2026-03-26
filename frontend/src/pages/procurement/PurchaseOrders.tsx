@@ -208,7 +208,7 @@ const PurchaseOrders: React.FC = () => {
     };
   };
 
-  const handleAddLine = () => {
+  const handleAddLine = async () => {
     if (!newLine.inventoryItemId) {
       setError('Please select a material');
       return;
@@ -233,6 +233,23 @@ const PurchaseOrders: React.FC = () => {
       ...formData,
       lines: [...formData.lines, lineToAdd],
     });
+
+    // If rate changed from default, offer to save as vendor-specific rate
+    const enteredRate = newLine.rate || 0;
+    const defaultRate = material.defaultRate || 0;
+    if (formData.vendorId && enteredRate > 0 && enteredRate !== defaultRate) {
+      const saveit = confirm(`Rate ${enteredRate} differs from default ${defaultRate}. Save this rate for ${material.name} with this vendor?`);
+      if (saveit) {
+        try {
+          await api.post(`/vendors/${formData.vendorId}/items`, {
+            inventoryItemId: newLine.inventoryItemId,
+            rate: enteredRate,
+          });
+          // Also update material master defaultRate
+          await api.put(`/inventory/items/${newLine.inventoryItemId}`, { defaultRate: enteredRate });
+        } catch { /* silent fail */ }
+      }
+    }
 
     setNewLine({
       inventoryItemId: '',
@@ -268,11 +285,25 @@ const PurchaseOrders: React.FC = () => {
     });
   };
 
-  const handleMaterialSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
+  const handleMaterialSelect = async (e: React.ChangeEvent<HTMLSelectElement>) => {
     const inventoryItemId = e.target.value;
     const material = materials.find((m) => m.id === inventoryItemId);
 
     if (material) {
+      let rate = material.defaultRate || 0;
+
+      // Try to get vendor-specific rate
+      if (formData.vendorId) {
+        try {
+          const res = await api.get(`/vendors/${formData.vendorId}/items`);
+          const vendorItems = Array.isArray(res.data) ? res.data : [];
+          const vendorItem = vendorItems.find((vi: any) => vi.inventoryItemId === inventoryItemId);
+          if (vendorItem && vendorItem.rate > 0) {
+            rate = vendorItem.rate;
+          }
+        } catch { /* fallback to defaultRate */ }
+      }
+
       setNewLine({
         ...newLine,
         inventoryItemId,
@@ -280,6 +311,7 @@ const PurchaseOrders: React.FC = () => {
         hsnCode: material.hsnCode,
         unit: material.unit,
         gstPercent: material.gstPercent,
+        rate,
       });
     }
   };
@@ -615,7 +647,25 @@ const PurchaseOrders: React.FC = () => {
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                     <div>
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Freight Charge</label>
-                      <input type="number" value={formData.freightCharge || ''} onChange={(e) => setFormData({ ...formData, freightCharge: e.target.value === '' ? 0 : parseFloat(e.target.value) })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                      {formData.transportBy === 'BY_US' ? (
+                        <div className="border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-700">Logistics team will arrange</div>
+                      ) : formData.transportBy === 'BY_SUPPLIER' ? (
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={formData.freightCharge === 0 ? 'INCLUDED' : 'EXTRA'}
+                            onChange={(e) => setFormData({ ...formData, freightCharge: e.target.value === 'INCLUDED' ? 0 : formData.freightCharge })}
+                            className="border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
+                          >
+                            <option value="INCLUDED">Included in rate</option>
+                            <option value="EXTRA">Extra charge</option>
+                          </select>
+                          {formData.freightCharge !== 0 && (
+                            <input type="number" value={formData.freightCharge || ''} onChange={(e) => setFormData({ ...formData, freightCharge: e.target.value === '' ? 0 : parseFloat(e.target.value) })} placeholder="Amount" className="border border-slate-300 px-2.5 py-1.5 text-xs w-24 focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                          )}
+                        </div>
+                      ) : (
+                        <input type="number" value={formData.freightCharge || ''} onChange={(e) => setFormData({ ...formData, freightCharge: e.target.value === '' ? 0 : parseFloat(e.target.value) })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                      )}
                     </div>
                     <div>
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Other Charges</label>

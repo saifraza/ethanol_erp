@@ -185,6 +185,71 @@ router.delete('/:id', authorize('ADMIN') as any, async (req: Request, res: Respo
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
+// ─── Vendor Items (what items a vendor supplies + rates) ───
+
+// GET /:id/items — list items this vendor supplies
+router.get('/:id/items', async (req: Request, res: Response) => {
+  try {
+    const items = await prisma.vendorItem.findMany({
+      where: { vendorId: req.params.id, isActive: true },
+      include: { item: { select: { id: true, name: true, code: true, unit: true, hsnCode: true, gstPercent: true, defaultRate: true } } },
+      orderBy: { item: { name: 'asc' } },
+    });
+    res.json(items);
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /:id/items — add item to vendor's supply list
+router.post('/:id/items', async (req: Request, res: Response) => {
+  try {
+    const b = req.body;
+    const vendorItem = await prisma.vendorItem.upsert({
+      where: { vendorId_inventoryItemId: { vendorId: req.params.id, inventoryItemId: b.inventoryItemId } },
+      create: {
+        vendorId: req.params.id,
+        inventoryItemId: b.inventoryItemId,
+        rate: parseFloat(b.rate) || 0,
+        minOrderQty: b.minOrderQty ? parseFloat(b.minOrderQty) : null,
+        leadTimeDays: b.leadTimeDays ? parseInt(b.leadTimeDays) : null,
+        remarks: b.remarks || null,
+        isPreferred: b.isPreferred || false,
+      },
+      update: {
+        rate: parseFloat(b.rate) || 0,
+        minOrderQty: b.minOrderQty ? parseFloat(b.minOrderQty) : null,
+        leadTimeDays: b.leadTimeDays ? parseInt(b.leadTimeDays) : null,
+        remarks: b.remarks || null,
+        isPreferred: b.isPreferred || false,
+        isActive: true,
+      },
+    });
+    res.status(201).json(vendorItem);
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE /:id/items/:itemId — remove item from vendor's supply list
+router.delete('/:id/items/:itemId', async (req: Request, res: Response) => {
+  try {
+    await prisma.vendorItem.updateMany({
+      where: { vendorId: req.params.id, inventoryItemId: req.params.itemId },
+      data: { isActive: false },
+    });
+    res.json({ ok: true });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /by-item/:itemId — find all vendors who supply a specific item
+router.get('/by-item/:itemId', async (req: Request, res: Response) => {
+  try {
+    const vendorItems = await prisma.vendorItem.findMany({
+      where: { inventoryItemId: req.params.itemId, isActive: true },
+      include: { vendor: { select: { id: true, name: true, vendorCode: true } } },
+      orderBy: [{ isPreferred: 'desc' }, { rate: 'asc' }],
+    });
+    res.json(vendorItems);
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
 // POST /seed — seed default vendors
 router.post('/seed', authorize('ADMIN') as any, async (req: Request, res: Response) => {
   try {

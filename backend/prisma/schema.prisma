@@ -895,6 +895,7 @@ model InventoryItem {
   reorderRule     ReorderRule?
   poLines         POLine[]
   grnLines        GRNLine[]
+  vendorItems     VendorItem[]
   @@index([category])
 }
 
@@ -1586,6 +1587,28 @@ model Vendor {
   grns            GoodsReceipt[]
   vendorInvoices  VendorInvoice[]
   vendorPayments  VendorPayment[]
+  vendorItems     VendorItem[]
+}
+
+// ── Vendor-Item Pricing (what items a vendor supplies + negotiated rates) ──
+model VendorItem {
+  id              String   @id @default(cuid())
+  vendorId        String
+  vendor          Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  inventoryItemId String
+  item            InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  rate            Float    @default(0)        // last negotiated rate
+  minOrderQty     Float?                      // minimum order quantity
+  leadTimeDays    Int?                         // vendor-specific lead time
+  remarks         String?
+  isPreferred     Boolean  @default(false)     // preferred supplier for this item
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([vendorId, inventoryItemId])
+  @@index([vendorId])
+  @@index([inventoryItemId])
 }
 
 // ── Material Master (items you buy) ──
