@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Receipt, X, Pencil } from 'lucide-react';
+import { Receipt, X, Pencil, FileText, Mail, Loader2 } from 'lucide-react';
 import api from '../../services/api';
 
 interface Vendor { id: string; name: string; }
@@ -60,6 +60,18 @@ const VendorInvoices: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState<FormData>({ ...emptyForm });
+  const [emailSending, setEmailSending] = useState<string | null>(null);
+
+  const handleSendEmail = async (id: string, vendorName: string) => {
+    if (!confirm(`Send invoice PDF to ${vendorName || 'vendor'} via email?`)) return;
+    setEmailSending(id);
+    try {
+      await api.post(`/vendor-invoices/${id}/send-email`);
+      alert('Email sent successfully!');
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Failed to send email');
+    } finally { setEmailSending(null); }
+  };
 
   useEffect(() => { fetchData(); }, []);
 
@@ -405,10 +417,28 @@ const VendorInvoices: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-3 py-1.5 text-xs text-center">
-                      <div className="flex items-center justify-center gap-1 flex-wrap">
+                      <div className="flex items-center justify-center gap-0.5">
+                        <button
+                          onClick={() => {
+                            const token = localStorage.getItem('token');
+                            window.open(`/api/vendor-invoices/${invoice.id}/pdf?token=${token}`, '_blank');
+                          }}
+                          title="Download PDF"
+                          className="p-1 bg-green-600 text-white hover:bg-green-700"
+                        >
+                          <FileText size={12} />
+                        </button>
+                        <button
+                          onClick={() => handleSendEmail(invoice.id, (vendors.find(v => v.id === invoice.vendorId)?.name || ''))}
+                          disabled={emailSending === invoice.id}
+                          title="Send via Email"
+                          className="p-1 bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                        >
+                          {emailSending === invoice.id ? <Loader2 size={12} className="animate-spin" /> : <Mail size={12} />}
+                        </button>
                         {invoice.status === 'PENDING' && (
                           <>
-                            <button onClick={() => startEdit(invoice)} className="px-2 py-0.5 bg-slate-600 text-white text-[10px] font-medium hover:bg-slate-700 flex items-center gap-0.5"><Pencil size={10} /> Edit</button>
+                            <button onClick={() => startEdit(invoice)} title="Edit" className="p-1 bg-slate-600 text-white hover:bg-slate-700"><Pencil size={12} /></button>
                             <button onClick={() => handleStatusChange(invoice.id, 'VERIFIED')} className="px-2 py-0.5 bg-blue-600 text-white text-[10px] font-medium hover:bg-blue-700">Verify</button>
                           </>
                         )}

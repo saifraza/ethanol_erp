@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CreditCard, X } from 'lucide-react';
+import { CreditCard, X, Mail } from 'lucide-react';
 import api from '../../services/api';
 
 interface Vendor { id: string; name: string; }
@@ -277,7 +277,8 @@ const VendorPayments: React.FC = () => {
                       <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-right border-r border-slate-700">Amount</th>
                       <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">Mode</th>
                       <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">Date</th>
-                      <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-right">TDS</th>
+                      <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-right border-r border-slate-700">TDS</th>
+                      <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-center w-12"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -290,7 +291,20 @@ const VendorPayments: React.FC = () => {
                           <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-slate-300 bg-slate-50 text-slate-600">{payment.mode}</span>
                         </td>
                         <td className="px-3 py-1.5 text-xs border-r border-slate-100">{new Date(payment.paymentDate).toLocaleDateString()}</td>
-                        <td className="px-3 py-1.5 text-xs text-right font-mono tabular-nums">{payment.tdsDeducted.toFixed(2)}</td>
+                        <td className="px-3 py-1.5 text-xs text-right font-mono tabular-nums border-r border-slate-100">{payment.tdsDeducted.toFixed(2)}</td>
+                        <td className="px-3 py-1.5 text-xs text-center">
+                          <button
+                            onClick={async () => {
+                              if (!confirm(`Send payment advice to ${payment.vendor.name}?`)) return;
+                              try { await api.post(`/vendor-payments/${payment.id}/send-email`); alert('Email sent!'); }
+                              catch (err: any) { alert(err.response?.data?.error || 'Failed to send'); }
+                            }}
+                            title="Email Payment Advice"
+                            className="p-1 bg-indigo-600 text-white hover:bg-indigo-700"
+                          >
+                            <Mail size={12} />
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

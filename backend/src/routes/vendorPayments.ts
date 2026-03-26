@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, authorize } from '../middleware/auth';
 import { onVendorPaymentMade } from '../services/autoJournal';
+import PDFDocument from 'pdfkit';
+import { sendEmail } from '../services/messaging';
 
 const router = Router();
 router.use(authenticate as any);
@@ -233,6 +235,68 @@ router.get('/tds-report', async (req: Request, res: Response) => {
     }
 
     res.json({ report: Object.values(grouped) });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /:id/send-email — Send payment receipt/advice to vendor
+router.post('/:id/send-email', async (req: Request, res: Response) => {
+  try {
+    const pmt = await prisma.vendorPayment.findUnique({
+      where: { id: req.params.id },
+      include: { vendor: true },
+    });
+    if (!pmt) { res.status(404).json({ error: 'Payment not found' }); return; }
+
+    const toEmail = req.body.to || pmt.vendor?.email;
+    if (!toEmail) { res.status(400).json({ error: 'No email address. Add vendor email or provide "to" in request.' }); return; }
+
+    const pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      const doc = new PDFDocument({ size: 'A4', margin: 40 });
+      doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      doc.fontSize(14).font('Helvetica-Bold').text('PAYMENT ADVICE', { align: 'center' });
+      doc.moveDown();
+      doc.fontSize(10).font('Helvetica-Bold').text('MSPIL — Mahakaushal Sugar & Power Industries Ltd');
+      doc.fontSize(8).font('Helvetica').text('Village Bachai, Dist. Narsinghpur, M.P.');
+      doc.moveDown();
+
+      doc.fontSize(9).font('Helvetica');
+      doc.text(`Payment Date: ${pmt.paymentDate ? new Date(pmt.paymentDate).toLocaleDateString('en-IN') : '-'}`);
+      doc.text(`Vendor: ${pmt.vendor?.name || '-'}`);
+      doc.text(`Mode: ${pmt.paymentMode || '-'}`);
+      doc.text(`Reference: ${pmt.referenceNo || '-'}`);
+      doc.text(`UTR: ${pmt.utrNo || '-'}`);
+      doc.moveDown();
+      doc.font('Helvetica-Bold').fontSize(11);
+      doc.text(`Amount Paid: Rs. ${(pmt.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`);
+      if (pmt.tdsDeducted) {
+        doc.fontSize(9).font('Helvetica');
+        doc.text(`TDS Deducted: Rs. ${pmt.tdsDeducted.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`);
+      }
+      if (pmt.remarks) {
+        doc.moveDown();
+        doc.text(`Remarks: ${pmt.remarks}`);
+      }
+      doc.end();
+    });
+
+    const label = `Payment-${pmt.referenceNo || pmt.id.slice(0, 8)}`;
+    const subject = req.body.subject || `${label} — Payment Advice from MSPIL`;
+    const body = req.body.body || `Dear ${pmt.vendor?.name || 'Vendor'},\n\nPlease find attached payment advice for Rs. ${(pmt.amount || 0).toLocaleString('en-IN')} dated ${pmt.paymentDate ? new Date(pmt.paymentDate).toLocaleDateString('en-IN') : '-'}.\n\nRegards,\nMSPIL Distillery`;
+
+    const result = await sendEmail({
+      to: toEmail, subject, text: body,
+      attachments: [{ filename: `${label}.pdf`, content: pdfBuffer, contentType: 'application/pdf' }],
+    });
+
+    if (result.success) {
+      res.json({ ok: true, messageId: result.messageId, sentTo: toEmail });
+    } else {
+      res.status(500).json({ error: result.error || 'Email send failed' });
+    }
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 

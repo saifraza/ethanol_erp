@@ -879,28 +879,41 @@ const PurchaseOrders: React.FC = () => {
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-center">{po.linesCount}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums font-bold">{po.grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
                     <td className="px-3 py-1.5 text-xs text-center">
-                      <div className="flex items-center justify-center gap-1 flex-wrap">
+                      <div className="flex items-center justify-center gap-0.5">
                         <button
                           onClick={() => {
                             const token = localStorage.getItem('token');
                             window.open(`/api/purchase-orders/${po.id}/pdf?token=${token}`, '_blank');
                           }}
-                          className="px-2 py-0.5 bg-green-600 text-white text-[10px] font-medium hover:bg-green-700 flex items-center gap-0.5"
+                          title="Download PDF"
+                          className="p-1 bg-green-600 text-white hover:bg-green-700"
                         >
-                          <FileText size={10} /> PDF
+                          <FileText size={12} />
                         </button>
                         <button
                           onClick={() => handleSendEmail(po.id, po.vendor?.name || '')}
                           disabled={emailSending === po.id}
-                          className="px-2 py-0.5 bg-indigo-600 text-white text-[10px] font-medium hover:bg-indigo-700 flex items-center gap-0.5 disabled:opacity-50"
+                          title="Send via Email"
+                          className="p-1 bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
                         >
-                          {emailSending === po.id ? <Loader size={10} className="animate-spin" /> : <Mail size={10} />} EMAIL
+                          {emailSending === po.id ? <Loader size={12} className="animate-spin" /> : <Mail size={12} />}
                         </button>
-                        {getNextStatusOptions(po.status).map((nextStatus) => (
-                          <button key={nextStatus} onClick={() => handleStatusChange(po.id, nextStatus)} className={`px-2 py-0.5 text-[10px] font-medium ${nextStatus === 'CANCELLED' ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
-                            {nextStatus === 'PARTIAL_RECEIVED' ? 'PARTIAL' : nextStatus === 'CANCELLED' ? 'CANCEL' : nextStatus}
-                          </button>
-                        ))}
+                        {getNextStatusOptions(po.status).length > 0 && (
+                          <select
+                            value=""
+                            onChange={(e) => {
+                              if (e.target.value) handleStatusChange(po.id, e.target.value);
+                            }}
+                            className="border border-slate-300 px-1 py-0.5 text-[10px] bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-400 cursor-pointer"
+                          >
+                            <option value="">Status</option>
+                            {getNextStatusOptions(po.status).map((nextStatus) => (
+                              <option key={nextStatus} value={nextStatus}>
+                                {nextStatus === 'PARTIAL_RECEIVED' ? 'Partial Recv' : nextStatus === 'CANCELLED' ? 'Cancel' : nextStatus.charAt(0) + nextStatus.slice(1).toLowerCase()}
+                              </option>
+                            ))}
+                          </select>
+                        )}
                         {po.status === 'DRAFT' && (
                           <button
                             onClick={async () => {
@@ -910,9 +923,10 @@ const PurchaseOrders: React.FC = () => {
                                 fetchData();
                               } catch (err) { console.error(err); }
                             }}
-                            className="px-2 py-0.5 bg-red-600 text-white text-[10px] font-medium hover:bg-red-700 flex items-center gap-0.5"
+                            title="Delete"
+                            className="p-1 bg-red-600 text-white hover:bg-red-700"
                           >
-                            <Trash2 size={10} /> DEL
+                            <Trash2 size={12} />
                           </button>
                         )}
                       </div>
