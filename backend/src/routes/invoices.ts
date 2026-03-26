@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, authorize } from '../middleware/auth';
 import { generateInvoicePdf } from '../utils/pdfGenerator';
+import { sendEmail } from '../services/messaging';
 import { generateIRN, cancelIRN, getIRNDetails } from '../services/eInvoice';
 import { onSaleInvoiceCreated } from '../services/autoJournal';
 
@@ -555,6 +556,47 @@ router.get('/:id/e-invoice/details', async (req: Request, res: Response) => {
       irn,
       details: result.data,
     });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /:id/send-email — Send Invoice PDF to customer via email
+router.post('/:id/send-email', async (req: Request, res: Response) => {
+  try {
+    const invoice = await prisma.invoice.findUnique({
+      where: { id: req.params.id },
+      include: { customer: true },
+    });
+    if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
+
+    const toEmail = req.body.to || invoice.customer.email;
+    if (!toEmail) { res.status(400).json({ error: 'No email address. Add customer email or provide "to" in request.' }); return; }
+
+    const invLabel = `INV-${String(invoice.invoiceNo).padStart(4, '0')}`;
+    const pdfBuffer = await generateInvoicePdf({
+      invoiceNo: invoice.invoiceNo, invoiceDate: invoice.invoiceDate, dueDate: invoice.dueDate,
+      customer: { name: invoice.customer.name, shortName: invoice.customer.shortName,
+        gstin: invoice.customer.gstNo, address: invoice.customer.address,
+        city: invoice.customer.city, state: invoice.customer.state, pincode: invoice.customer.pincode },
+      productName: invoice.productName, quantity: invoice.quantity, unit: invoice.unit,
+      rate: invoice.rate, amount: invoice.amount, gstPercent: invoice.gstPercent,
+      gstAmount: invoice.gstAmount, freightCharge: invoice.freightCharge,
+      totalAmount: invoice.totalAmount, challanNo: invoice.challanNo, ewayBill: invoice.ewayBill,
+      remarks: invoice.remarks, orderId: invoice.orderId, shipmentId: invoice.shipmentId,
+    });
+
+    const subject = req.body.subject || `${invLabel} — Tax Invoice from MSPIL`;
+    const body = req.body.body || `Dear ${invoice.customer.name},\n\nPlease find attached Tax Invoice ${invLabel} dated ${new Date(invoice.invoiceDate).toLocaleDateString('en-IN')}.\n\nProduct: ${invoice.productName}\nQuantity: ${invoice.quantity} ${invoice.unit}\nTotal Amount: Rs.${invoice.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}\n${invoice.dueDate ? `Due Date: ${new Date(invoice.dueDate).toLocaleDateString('en-IN')}` : ''}\n\nKindly process the payment as per agreed terms.\n\nRegards,\nMahakaushal Sugar & Power Industries Ltd.\nVillage Bachai, Dist. Narsinghpur (M.P.)`;
+
+    const result = await sendEmail({
+      to: toEmail, subject, text: body,
+      attachments: [{ filename: `${invLabel}.pdf`, content: pdfBuffer, contentType: 'application/pdf' }],
+    });
+
+    if (result.success) {
+      res.json({ ok: true, messageId: result.messageId, sentTo: toEmail });
+    } else {
+      res.status(500).json({ error: result.error || 'Email send failed' });
+    }
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 

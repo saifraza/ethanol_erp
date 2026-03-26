@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ClipboardList, Plus, X, Save, Loader2, Trash2, ChevronDown, Truck, FileText, Send, CheckCircle, Clock, ArrowRight, RotateCcw } from 'lucide-react';
+import { ClipboardList, Plus, X, Save, Loader2, Trash2, ChevronDown, Truck, FileText, Send, CheckCircle, Clock, ArrowRight, RotateCcw, Mail, Printer } from 'lucide-react';
 import api from '../../services/api';
 
 interface Customer { id: string; name: string; }
@@ -32,6 +32,18 @@ export default function SalesOrders() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [emailSending, setEmailSending] = useState<string | null>(null);
+  const handleSendSOEmail = async (orderId: string) => {
+    const emailTo = prompt('Send sales order to email:', '');
+    if (!emailTo) return;
+    setEmailSending(orderId);
+    try {
+      const res = await api.post(`/sales-orders/${orderId}/send-email`, { to: emailTo });
+      setMsg({ type: 'ok', text: `Email sent to ${res.data.sentTo}` });
+    } catch (err: any) {
+      setMsg({ type: 'err', text: err.response?.data?.error || 'Failed to send email' });
+    } finally { setEmailSending(null); }
+  };
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [filterStatus, setFilterStatus] = useState('ALL');
 
@@ -617,6 +629,19 @@ export default function SalesOrders() {
                                   Create Invoice
                                 </button>
                               )}
+                              <button onClick={() => {
+                                  const token = localStorage.getItem('token');
+                                  window.open(`/api/sales-orders/${order.id}/pdf?token=${token}`, '_blank');
+                              }}
+                                className="px-3 py-1 text-[11px] font-medium text-blue-700 border border-blue-300 hover:bg-blue-50 flex items-center gap-1">
+                                <Printer size={12} /> SO PDF
+                              </button>
+                              <button onClick={() => handleSendSOEmail(order.id)}
+                                disabled={emailSending === order.id}
+                                className="px-3 py-1 text-[11px] font-medium text-indigo-700 border border-indigo-300 hover:bg-indigo-50 flex items-center gap-1 disabled:opacity-50">
+                                {emailSending === order.id ? <Loader2 size={12} className="animate-spin" /> : <Mail size={12} />}
+                                {emailSending === order.id ? 'Sending...' : 'Email SO'}
+                              </button>
                               {pipe.hasInvoice && (
                                 <button onClick={() => {
                                     const token = localStorage.getItem('token');

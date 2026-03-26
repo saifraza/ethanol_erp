@@ -10,6 +10,7 @@ import {
   Search,
   X,
   FileText,
+  Mail,
 } from 'lucide-react';
 import api from '../../services/api';
 
@@ -420,6 +421,22 @@ const PurchaseOrders: React.FC = () => {
       setTimeout(() => setSuccess(''), 3000);
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to update status');
+    }
+  };
+
+  const [emailSending, setEmailSending] = useState<string | null>(null);
+  const handleSendEmail = async (poId: string, vendorName: string) => {
+    const emailTo = prompt(`Send PO to vendor email:`, '');
+    if (!emailTo) return;
+    setEmailSending(poId);
+    try {
+      const res = await api.post(`/purchase-orders/${poId}/send-email`, { to: emailTo });
+      setSuccess(`Email sent to ${res.data.sentTo}`);
+      setTimeout(() => setSuccess(''), 4000);
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to send email');
+    } finally {
+      setEmailSending(null);
     }
   };
 
@@ -871,6 +888,13 @@ const PurchaseOrders: React.FC = () => {
                           className="px-2 py-0.5 bg-green-600 text-white text-[10px] font-medium hover:bg-green-700 flex items-center gap-0.5"
                         >
                           <FileText size={10} /> PDF
+                        </button>
+                        <button
+                          onClick={() => handleSendEmail(po.id, po.vendor?.name || '')}
+                          disabled={emailSending === po.id}
+                          className="px-2 py-0.5 bg-indigo-600 text-white text-[10px] font-medium hover:bg-indigo-700 flex items-center gap-0.5 disabled:opacity-50"
+                        >
+                          {emailSending === po.id ? <Loader size={10} className="animate-spin" /> : <Mail size={10} />} EMAIL
                         </button>
                         {getNextStatusOptions(po.status).map((nextStatus) => (
                           <button key={nextStatus} onClick={() => handleStatusChange(po.id, nextStatus)} className={`px-2 py-0.5 text-[10px] font-medium ${nextStatus === 'CANCELLED' ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
