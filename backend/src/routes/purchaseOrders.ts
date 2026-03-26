@@ -22,8 +22,9 @@ router.get('/', async (req: Request, res: Response) => {
     const pos = await prisma.purchaseOrder.findMany({
       where,
       include: {
-        vendor: true,
+        vendor: { select: { id: true, name: true, email: true } },
         lines: true,
+        grns: { select: { id: true } },
       },
       orderBy: { poDate: 'desc' },
       skip: (page - 1) * limit,
@@ -35,6 +36,7 @@ router.get('/', async (req: Request, res: Response) => {
     const posWithCounts = pos.map(po => ({
       ...po,
       linesCount: po.lines.length,
+      grnCount: po.grns?.length || 0,
     }));
 
     res.json({ pos: posWithCounts, total, page, limit });

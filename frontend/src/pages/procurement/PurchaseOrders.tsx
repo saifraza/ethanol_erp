@@ -17,6 +17,7 @@ import api from '../../services/api';
 interface Vendor {
   id: string;
   name: string;
+  email?: string;
 }
 
 interface Material {
@@ -61,6 +62,7 @@ interface PurchaseOrder {
   totalGst: number;
   lines: POLine[];
   linesCount: number;
+  grnCount: number;
 }
 
 interface APIResponse {
@@ -418,13 +420,17 @@ const PurchaseOrders: React.FC = () => {
   };
 
   const [emailSending, setEmailSending] = useState<string | null>(null);
-  const handleSendEmail = async (poId: string, vendorName: string) => {
-    const emailTo = prompt(`Send PO to vendor email:`, '');
-    if (!emailTo) return;
+  const handleSendEmail = async (poId: string, vendorEmail?: string) => {
+    let emailTo = vendorEmail;
+    if (!emailTo) {
+      const manual = prompt('Vendor has no email on file. Enter email to send PO:');
+      if (!manual) return;
+      emailTo = manual;
+    }
     setEmailSending(poId);
     try {
       const res = await api.post(`/purchase-orders/${poId}/send-email`, { to: emailTo });
-      // Auto-move to SENT after emailing
+      // Auto-advance: DRAFT → APPROVED → SENT, or APPROVED → SENT
       const po = pos.find(p => p.id === poId);
       if (po && po.status === 'DRAFT') {
         try {
@@ -437,8 +443,8 @@ const PurchaseOrders: React.FC = () => {
         } catch { /* silent */ }
       }
       await fetchData();
-      setSuccess(`Email sent successfully to ${res.data.sentTo}`);
-      setTimeout(() => setSuccess(''), 4000);
+      setSuccess(`Email sent to ${res.data.sentTo} — PO marked as SENT`);
+      setTimeout(() => setSuccess(''), 5000);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to send email');
     } finally {
@@ -885,8 +891,8 @@ const PurchaseOrders: React.FC = () => {
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-center">{po.linesCount}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums font-bold">{po.grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
                     <td className="px-3 py-1.5 text-xs">
-                      <div className="flex items-center justify-center gap-1.5">
-                        {/* Document actions — always visible */}
+                      <div className="flex items-center justify-end gap-1">
+                        {/* PDF — always */}
                         <button
                           onClick={() => {
                             const token = localStorage.getItem('token');
@@ -895,59 +901,82 @@ const PurchaseOrders: React.FC = () => {
                           title="View PDF"
                           className="px-1.5 py-0.5 border border-slate-300 text-slate-500 text-[9px] font-bold uppercase hover:bg-slate-100"
                         >
-                          <FileText size={11} className="inline -mt-px" /> PDF
+                          <FileText size={11} className="inline -mt-px" />
                         </button>
+                        {/* Email — green if vendor has email, red warning if not */}
                         <button
-                          onClick={() => handleSendEmail(po.id, po.vendor?.name || '')}
+                          onClick={() => handleSendEmail(po.id, po.vendor?.email || undefined)}
                           disabled={emailSending === po.id}
-                          title="Send via Email"
-                          className="px-1.5 py-0.5 border border-slate-300 text-slate-500 text-[9px] font-bold uppercase hover:bg-slate-100 disabled:opacity-50"
+                          title={po.vendor?.email ? `Send to ${po.vendor.email}` : 'No vendor email — click to enter'}
+                          className={`px-1.5 py-0.5 border text-[9px] font-bold uppercase disabled:opacity-50 ${
+                            po.vendor?.email
+                              ? 'border-green-400 text-green-600 hover:bg-green-50'
+                              : 'border-orange-300 text-orange-500 hover:bg-orange-50'
+                          }`}
                         >
-                          {emailSending === po.id ? <Loader size={11} className="animate-spin inline" /> : <><Mail size={11} className="inline -mt-px" /> Email</>}
+                          {emailSending === po.id ? <Loader size={11} className="animate-spin inline" /> : <Mail size={11} className="inline -mt-px" />}
                         </button>
-                        {/* Primary next action — one clear button */}
+
+                        {/* Separator */}
+                        <span className="text-slate-200">|</span>
+
+                        {/* NEXT STEP — one clear action per status */}
                         {po.status === 'DRAFT' && (
-                          <button onClick={() => handleStatusChange(po.id, 'APPROVED')} className="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-bold uppercase hover:bg-blue-700">
-                            Approve
-                          </button>
+                          <>
+                            <button onClick={() => handleStatusChange(po.id, 'APPROVED')} className="px-2.5 py-0.5 bg-blue-600 text-white text-[9px] font-bold uppercase hover:bg-blue-700">
+                              Approve
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (!confirm(`Delete PO-${po.poNo}?`)) return;
+                                try { await api.delete(`/purchase-orders/${po.id}`); fetchData(); } catch { /* */ }
+                              }}
+                              title="Delete PO"
+                              className="p-0.5 text-red-400 hover:text-red-600"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </>
                         )}
                         {po.status === 'APPROVED' && (
-                          <button onClick={() => handleStatusChange(po.id, 'SENT')} className="px-2 py-0.5 bg-yellow-600 text-white text-[9px] font-bold uppercase hover:bg-yellow-700">
-                            Mark Sent
+                          <button onClick={() => handleSendEmail(po.id, po.vendor?.email || undefined)} disabled={emailSending === po.id} className="px-2.5 py-0.5 bg-indigo-600 text-white text-[9px] font-bold uppercase hover:bg-indigo-700 disabled:opacity-50">
+                            Send to Vendor
                           </button>
                         )}
                         {po.status === 'SENT' && (
-                          <button onClick={() => handleStatusChange(po.id, 'RECEIVED')} className="px-2 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase hover:bg-green-700">
-                            Received
-                          </button>
+                          po.grnCount > 0
+                            ? <button onClick={() => handleStatusChange(po.id, 'RECEIVED')} className="px-2.5 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase hover:bg-green-700">
+                                Received
+                              </button>
+                            : <span className="text-[9px] text-orange-600 font-bold uppercase px-1.5 py-0.5 border border-orange-300 bg-orange-50">
+                                GRN Pending
+                              </span>
                         )}
                         {po.status === 'PARTIAL_RECEIVED' && (
-                          <button onClick={() => handleStatusChange(po.id, 'RECEIVED')} className="px-2 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase hover:bg-green-700">
-                            Received
-                          </button>
+                          po.grnCount > 0
+                            ? <button onClick={() => handleStatusChange(po.id, 'RECEIVED')} className="px-2.5 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase hover:bg-green-700">
+                                Fully Received
+                              </button>
+                            : <span className="text-[9px] text-orange-600 font-bold uppercase px-1.5 py-0.5 border border-orange-300 bg-orange-50">
+                                GRN Pending
+                              </span>
                         )}
                         {po.status === 'RECEIVED' && (
-                          <button onClick={() => handleStatusChange(po.id, 'CLOSED')} className="px-2 py-0.5 bg-slate-600 text-white text-[9px] font-bold uppercase hover:bg-slate-700">
+                          <button onClick={() => handleStatusChange(po.id, 'CLOSED')} className="px-2.5 py-0.5 bg-slate-600 text-white text-[9px] font-bold uppercase hover:bg-slate-700">
                             Close
                           </button>
                         )}
-                        {/* Cancel — always available unless closed/cancelled */}
-                        {!['CLOSED', 'CANCELLED'].includes(po.status) && (
-                          <button onClick={() => handleStatusChange(po.id, 'CANCELLED')} title="Cancel PO" className="px-1.5 py-0.5 border border-red-300 text-red-500 text-[9px] font-bold uppercase hover:bg-red-50">
-                            X
-                          </button>
+                        {po.status === 'CLOSED' && (
+                          <span className="text-[9px] text-slate-400 font-bold uppercase">Completed</span>
                         )}
-                        {/* Delete — only DRAFT */}
-                        {po.status === 'DRAFT' && (
-                          <button
-                            onClick={async () => {
-                              if (!confirm(`Delete PO-${po.poNo}?`)) return;
-                              try { await api.delete(`/purchase-orders/${po.id}`); fetchData(); } catch { /* */ }
-                            }}
-                            title="Delete PO"
-                            className="px-1.5 py-0.5 border border-red-300 text-red-500 text-[9px] font-bold uppercase hover:bg-red-50"
-                          >
-                            <Trash2 size={11} className="inline -mt-px" />
+                        {po.status === 'CANCELLED' && (
+                          <span className="text-[9px] text-red-400 font-bold uppercase">Cancelled</span>
+                        )}
+
+                        {/* Cancel — only if active (not closed/cancelled) */}
+                        {!['CLOSED', 'CANCELLED', 'DRAFT'].includes(po.status) && (
+                          <button onClick={() => { if (confirm(`Cancel PO-${po.poNo}?`)) handleStatusChange(po.id, 'CANCELLED'); }} title="Cancel PO" className="p-0.5 text-red-400 hover:text-red-600">
+                            <X size={12} />
                           </button>
                         )}
                       </div>
