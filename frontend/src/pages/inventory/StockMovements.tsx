@@ -50,6 +50,14 @@ const MOVEMENT_TYPES = ['RECEIPT', 'ISSUE', 'TRANSFER', 'ADJUSTMENT'] as const;
 type MovementType = typeof MOVEMENT_TYPES[number];
 
 const REF_TYPES = ['PO', 'GRN', 'SALES_ORDER', 'PRODUCTION', 'MANUAL', 'OTHER'];
+const REF_TYPE_LABELS: Record<string, string> = {
+  PO: 'Purchase Order',
+  GRN: 'Goods Receipt (GRN)',
+  SALES_ORDER: 'Sales / Dispatch',
+  PRODUCTION: 'Production / Factory Use',
+  MANUAL: 'Manual Entry',
+  OTHER: 'Other',
+};
 
 const emptyForm = {
   type: 'RECEIPT' as MovementType,
@@ -216,20 +224,36 @@ export default function StockMovements() {
   const formatDate = (d: string) =>
     new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
+  const typeLabel = (type: string) => {
+    const labels: Record<string, string> = {
+      'GRN_RECEIPT': 'GRN Receipt',
+      'PRODUCTION_RECEIPT': 'From Production',
+      'PRODUCTION_ISSUE': 'To Production',
+      'SALES_ISSUE': 'Sales Dispatch',
+      'TRANSFER': 'Warehouse Transfer',
+      'ADJUSTMENT': 'Stock Adjustment',
+      'RETURN': 'Return',
+      'SCRAP': 'Scrap / Write-off',
+      'RECEIPT': 'Receipt',
+      'ISSUE': 'Issue',
+    };
+    return labels[type] || type.replace(/_/g, ' ');
+  };
+
   const typeIcon = (type: string) => {
     switch (type) {
-      case 'RECEIPT': return <ArrowDownRight className="w-3.5 h-3.5" />;
-      case 'ISSUE': return <ArrowUpRight className="w-3.5 h-3.5" />;
+      case 'RECEIPT': case 'GRN_RECEIPT': case 'PRODUCTION_RECEIPT': return <ArrowDownRight className="w-3.5 h-3.5" />;
+      case 'ISSUE': case 'PRODUCTION_ISSUE': case 'SALES_ISSUE': return <ArrowUpRight className="w-3.5 h-3.5" />;
       case 'TRANSFER': return <ArrowLeftRight className="w-3.5 h-3.5" />;
-      case 'ADJUSTMENT': return <Sliders className="w-3.5 h-3.5" />;
+      case 'ADJUSTMENT': case 'RETURN': case 'SCRAP': return <Sliders className="w-3.5 h-3.5" />;
       default: return null;
     }
   };
 
   const typeBadge = (type: string) => {
+    if (type.includes('RECEIPT') || type === 'RETURN') return 'border-emerald-300 bg-emerald-50 text-emerald-700';
+    if (type.includes('ISSUE') || type === 'SCRAP') return 'border-red-300 bg-red-50 text-red-700';
     switch (type) {
-      case 'RECEIPT': return 'border-emerald-300 bg-emerald-50 text-emerald-700';
-      case 'ISSUE': return 'border-red-300 bg-red-50 text-red-700';
       case 'TRANSFER': return 'border-blue-300 bg-blue-50 text-blue-700';
       case 'ADJUSTMENT': return 'border-amber-300 bg-amber-50 text-amber-700';
       default: return 'border-slate-300 bg-slate-50 text-slate-700';
@@ -364,7 +388,7 @@ export default function StockMovements() {
                       </td>
                       <td className="px-3 py-1.5 border-r border-slate-100">
                         <span className={`inline-flex items-center gap-1 text-[9px] font-bold uppercase px-1.5 py-0.5 border ${typeBadge(m.type)}`}>
-                          {typeIcon(m.type)} {m.type}
+                          {typeIcon(m.type)} {typeLabel(m.type)}
                         </span>
                       </td>
                       <td className="px-3 py-1.5 border-r border-slate-100">
@@ -521,7 +545,7 @@ export default function StockMovements() {
                       <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Ref Type</label>
                       <select value={form.refType} onChange={(e) => setForm({ ...form, refType: e.target.value })}
                         className="w-full border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400">
-                        {REF_TYPES.map(r => <option key={r} value={r}>{r}</option>)}
+                        {REF_TYPES.map(r => <option key={r} value={r}>{REF_TYPE_LABELS[r] || r}</option>)}
                       </select>
                     </div>
                     <div>
