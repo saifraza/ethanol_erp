@@ -292,21 +292,14 @@ const PurchaseOrders: React.FC = () => {
       lines: [...formData.lines, lineToAdd],
     });
 
-    // If rate changed from default, offer to save as vendor-specific rate
+    // Auto-save vendor-specific rate silently (no blocking dialog)
     const enteredRate = newLine.rate || 0;
     const defaultRate = material.defaultRate || 0;
     if (formData.vendorId && enteredRate > 0 && enteredRate !== defaultRate) {
-      const saveit = confirm(`Rate ${enteredRate} differs from default ${defaultRate}. Save this rate for ${material.name} with this vendor?`);
-      if (saveit) {
-        try {
-          await api.post(`/vendors/${formData.vendorId}/items`, {
-            inventoryItemId: newLine.inventoryItemId,
-            rate: enteredRate,
-          });
-          // Also update material master defaultRate
-          await api.put(`/inventory/items/${newLine.inventoryItemId}`, { defaultRate: enteredRate });
-        } catch { /* silent fail */ }
-      }
+      api.post(`/vendors/${formData.vendorId}/items`, {
+        inventoryItemId: newLine.inventoryItemId,
+        rate: enteredRate,
+      }).catch(() => { /* silent */ });
     }
 
     setNewLine({
