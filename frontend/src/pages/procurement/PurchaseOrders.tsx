@@ -28,7 +28,7 @@ interface Material {
 }
 
 interface POLine {
-  materialId: string;
+  inventoryItemId: string;
   description: string;
   hsnCode: string;
   quantity: number;
@@ -69,6 +69,46 @@ interface APIResponse {
   limit: number;
 }
 
+const PLACE_OF_SUPPLY_OPTIONS = [
+  { value: '23-MP', label: '23 - Madhya Pradesh (Factory)' },
+  { value: '09-UP', label: '09 - Uttar Pradesh' },
+  { value: '33-TN', label: '33 - Tamil Nadu' },
+  { value: '27-MH', label: '27 - Maharashtra' },
+  { value: '29-KA', label: '29 - Karnataka' },
+  { value: '36-TS', label: '36 - Telangana' },
+  { value: '22-CG', label: '22 - Chhattisgarh' },
+  { value: '20-JH', label: '20 - Jharkhand' },
+  { value: '10-BH', label: '10 - Bihar' },
+  { value: '21-OR', label: '21 - Odisha' },
+  { value: '07-DL', label: '07 - Delhi' },
+  { value: '06-HR', label: '06 - Haryana' },
+  { value: '08-RJ', label: '08 - Rajasthan' },
+  { value: '24-GJ', label: '24 - Gujarat' },
+];
+
+const PAYMENT_TERMS_OPTIONS = [
+  'Advance 100%',
+  'Advance 50% + Balance on Delivery',
+  'Against Delivery',
+  'Net 7',
+  'Net 15',
+  'Net 30',
+  'Net 45',
+  'Net 60',
+  'Net 90',
+  'Credit 30 Days',
+  'Credit 45 Days',
+  'Credit 60 Days',
+];
+
+const TRANSPORT_MODE_OPTIONS = ['Road', 'Rail', 'Air', 'Ship', 'Courier', 'Hand Delivery'];
+const TRANSPORT_BY_OPTIONS = ['By Supplier', 'By Us (Self Pickup)', 'Third Party'];
+
+const SAVED_ADDRESSES = [
+  { label: 'Factory — Bachai, Narsinghpur', address: 'Village Bachai, Tehsil Gadarwara, District Narsinghpur, Madhya Pradesh - 487551' },
+  { label: 'HQ — Jabalpur', address: 'Mahakaushal Sugar & Power Industries Ltd, Wright Town, Jabalpur, Madhya Pradesh - 482002' },
+];
+
 const PurchaseOrders: React.FC = () => {
   const [pos, setPos] = useState<PurchaseOrder[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -91,6 +131,7 @@ const PurchaseOrders: React.FC = () => {
     creditDays: 0,
     deliveryAddress: '',
     transportMode: '',
+    transportBy: '',
     remarks: '',
     freightCharge: 0,
     otherCharges: 0,
@@ -98,8 +139,65 @@ const PurchaseOrders: React.FC = () => {
     lines: [] as POLine[],
   });
 
+  // Vendor context: items they supply + recent POs
+  const [vendorItemsList, setVendorItemsList] = useState<{ inventoryItemId: string; itemName: string; itemCode: string; unit: string; rate: number; hsnCode: string; gstPercent: number }[]>([]);
+  const [vendorRecentPOs, setVendorRecentPOs] = useState<PurchaseOrder[]>([]);
+  const [vendorContextLoading, setVendorContextLoading] = useState(false);
+
+  const loadVendorContext = async (vendorId: string) => {
+    if (!vendorId) {
+      setVendorItemsList([]);
+      setVendorRecentPOs([]);
+      return;
+    }
+    setVendorContextLoading(true);
+    try {
+      const [itemsRes, posRes] = await Promise.all([
+        api.get(`/vendors/${vendorId}/items`),
+        api.get(`/purchase-orders?vendorId=${vendorId}&limit=5`),
+      ]);
+      const items = (Array.isArray(itemsRes.data) ? itemsRes.data : []).map((vi: any) => ({
+        inventoryItemId: vi.inventoryItemId,
+        itemName: vi.item?.name || 'Unknown',
+        itemCode: vi.item?.code || '',
+        unit: vi.item?.unit || '',
+        rate: vi.rate || 0,
+        hsnCode: vi.item?.hsnCode || '',
+        gstPercent: vi.item?.gstPercent || 0,
+      }));
+      setVendorItemsList(items);
+      const posList = posRes.data.pos || posRes.data || [];
+      setVendorRecentPOs(Array.isArray(posList) ? posList.slice(0, 5) : []);
+    } catch {
+      setVendorItemsList([]);
+      setVendorRecentPOs([]);
+    } finally {
+      setVendorContextLoading(false);
+    }
+  };
+
+  const quickAddVendorItem = (vi: typeof vendorItemsList[0]) => {
+    // Check if already in lines
+    if (formData.lines.some(l => l.inventoryItemId === vi.inventoryItemId)) {
+      setError('Item already added to PO lines');
+      return;
+    }
+    const lineToAdd: POLine = {
+      inventoryItemId: vi.inventoryItemId,
+      description: vi.itemName,
+      hsnCode: vi.hsnCode,
+      quantity: 0,
+      unit: vi.unit,
+      rate: vi.rate,
+      discountPercent: 0,
+      gstPercent: vi.gstPercent,
+      isRCM: false,
+    };
+    setFormData(prev => ({ ...prev, lines: [...prev.lines, lineToAdd] }));
+  };
+
   const [newLine, setNewLine] = useState<Partial<POLine>>({
-    materialId: '',
+    inventoryItemId: '',
     description: '',
     hsnCode: '',
     quantity: 0,
@@ -167,17 +265,17 @@ const PurchaseOrders: React.FC = () => {
     };
   };
 
-  const handleAddLine = () => {
-    if (!newLine.materialId) {
+  const handleAddLine = async () => {
+    if (!newLine.inventoryItemId) {
       setError('Please select a material');
       return;
     }
 
-    const material = materials.find((m) => m.id === newLine.materialId);
+    const material = materials.find((m) => m.id === newLine.inventoryItemId);
     if (!material) return;
 
     const lineToAdd: POLine = {
-      materialId: newLine.materialId,
+      inventoryItemId: newLine.inventoryItemId,
       description: material.name || material.description || '',
       hsnCode: material.hsnCode,
       quantity: newLine.quantity || 0,
@@ -193,8 +291,25 @@ const PurchaseOrders: React.FC = () => {
       lines: [...formData.lines, lineToAdd],
     });
 
+    // If rate changed from default, offer to save as vendor-specific rate
+    const enteredRate = newLine.rate || 0;
+    const defaultRate = material.defaultRate || 0;
+    if (formData.vendorId && enteredRate > 0 && enteredRate !== defaultRate) {
+      const saveit = confirm(`Rate ${enteredRate} differs from default ${defaultRate}. Save this rate for ${material.name} with this vendor?`);
+      if (saveit) {
+        try {
+          await api.post(`/vendors/${formData.vendorId}/items`, {
+            inventoryItemId: newLine.inventoryItemId,
+            rate: enteredRate,
+          });
+          // Also update material master defaultRate
+          await api.put(`/inventory/items/${newLine.inventoryItemId}`, { defaultRate: enteredRate });
+        } catch { /* silent fail */ }
+      }
+    }
+
     setNewLine({
-      materialId: '',
+      inventoryItemId: '',
       description: '',
       hsnCode: '',
       quantity: 0,
@@ -227,18 +342,33 @@ const PurchaseOrders: React.FC = () => {
     });
   };
 
-  const handleMaterialSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const materialId = e.target.value;
-    const material = materials.find((m) => m.id === materialId);
+  const handleMaterialSelect = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const inventoryItemId = e.target.value;
+    const material = materials.find((m) => m.id === inventoryItemId);
 
     if (material) {
+      let rate = material.defaultRate || 0;
+
+      // Try to get vendor-specific rate
+      if (formData.vendorId) {
+        try {
+          const res = await api.get(`/vendors/${formData.vendorId}/items`);
+          const vendorItems = Array.isArray(res.data) ? res.data : [];
+          const vendorItem = vendorItems.find((vi: any) => vi.inventoryItemId === inventoryItemId);
+          if (vendorItem && vendorItem.rate > 0) {
+            rate = vendorItem.rate;
+          }
+        } catch { /* fallback to defaultRate */ }
+      }
+
       setNewLine({
         ...newLine,
-        materialId,
+        inventoryItemId,
         description: material.name || material.description || '',
         hsnCode: material.hsnCode,
         unit: material.unit,
         gstPercent: material.gstPercent,
+        rate,
       });
     }
   };
@@ -266,6 +396,7 @@ const PurchaseOrders: React.FC = () => {
         creditDays: 0,
         deliveryAddress: '',
         transportMode: '',
+        transportBy: '',
         remarks: '',
         freightCharge: 0,
         otherCharges: 0,
@@ -413,7 +544,7 @@ const PurchaseOrders: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Vendor *</label>
-                    <select value={formData.vendorId} onChange={(e) => setFormData({ ...formData, vendorId: e.target.value })} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                    <select value={formData.vendorId} onChange={(e) => { setFormData({ ...formData, vendorId: e.target.value }); loadVendorContext(e.target.value); }} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
                       <option value="">Select Vendor</option>
                       {vendors.map((v) => (<option key={v.id} value={v.id}>{v.name}</option>))}
                     </select>
@@ -435,35 +566,112 @@ const PurchaseOrders: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Vendor Context Panel — items they supply + recent POs */}
+                {formData.vendorId && (
+                  <div className="border border-slate-300 bg-slate-50">
+                    {vendorContextLoading ? (
+                      <div className="px-4 py-3 text-xs text-slate-400 uppercase tracking-widest">Loading vendor data...</div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 divide-x divide-slate-300">
+                        {/* Left: Items this vendor supplies */}
+                        <div className="px-3 py-2">
+                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Items Supplied by Vendor ({vendorItemsList.length})</div>
+                          {vendorItemsList.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {vendorItemsList.map(vi => {
+                                const alreadyAdded = formData.lines.some(l => l.inventoryItemId === vi.inventoryItemId);
+                                return (
+                                  <button
+                                    key={vi.inventoryItemId}
+                                    type="button"
+                                    disabled={alreadyAdded}
+                                    onClick={() => quickAddVendorItem(vi)}
+                                    className={`text-[10px] px-2 py-1 border font-medium flex items-center gap-1 ${alreadyAdded ? 'border-green-300 bg-green-50 text-green-600 cursor-default' : 'border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 cursor-pointer'}`}
+                                  >
+                                    {alreadyAdded ? <CheckCircle size={10} /> : <Plus size={10} />}
+                                    {vi.itemName}
+                                    <span className="font-mono text-[9px] opacity-70">@{vi.rate.toLocaleString('en-IN')}/{vi.unit}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="text-[10px] text-slate-400">No items linked to this vendor yet</div>
+                          )}
+                        </div>
+                        {/* Right: Recent POs */}
+                        <div className="px-3 py-2">
+                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Recent POs ({vendorRecentPOs.length})</div>
+                          {vendorRecentPOs.length > 0 ? (
+                            <div className="space-y-1">
+                              {vendorRecentPOs.map(po => (
+                                <div key={po.id} className="flex items-center justify-between text-[10px] px-2 py-1 bg-white border border-slate-200">
+                                  <span className="font-mono font-bold text-slate-700">PO-{String(po.poNo).padStart(4, '0')}</span>
+                                  <span className="text-slate-500">{new Date(po.poDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</span>
+                                  <span className={`px-1 py-0.5 border text-[9px] font-bold uppercase ${po.status === 'APPROVED' ? 'border-green-400 bg-green-50 text-green-700' : po.status === 'DRAFT' ? 'border-yellow-400 bg-yellow-50 text-yellow-700' : 'border-slate-300 bg-slate-50 text-slate-600'}`}>{po.status}</span>
+                                  <span className="font-mono tabular-nums text-slate-700">{po.grandTotal?.toLocaleString('en-IN', { minimumFractionDigits: 0 }) || '0'}</span>
+                                  <span className="text-slate-400">{po.linesCount || po.lines?.length || 0} items</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-[10px] text-slate-400">No previous POs for this vendor</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Place of Supply</label>
-                    <input type="text" value={formData.placeOfSupply} onChange={(e) => setFormData({ ...formData, placeOfSupply: e.target.value })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                    <select value={formData.placeOfSupply} onChange={(e) => setFormData({ ...formData, placeOfSupply: e.target.value })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                      <option value="">Select State</option>
+                      {PLACE_OF_SUPPLY_OPTIONS.map((s) => (<option key={s.value} value={s.value}>{s.label}</option>))}
+                    </select>
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Payment Terms</label>
-                    <input type="text" value={formData.paymentTerms} onChange={(e) => setFormData({ ...formData, paymentTerms: e.target.value })} placeholder="e.g., Net 30" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                    <select value={formData.paymentTerms} onChange={(e) => setFormData({ ...formData, paymentTerms: e.target.value })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                      <option value="">Select Terms</option>
+                      {PAYMENT_TERMS_OPTIONS.map((t) => (<option key={t} value={t}>{t}</option>))}
+                    </select>
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Credit Days</label>
-                    <input type="number" value={formData.creditDays} onChange={(e) => setFormData({ ...formData, creditDays: parseInt(e.target.value) || 0 })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                    <input type="number" value={formData.creditDays || ''} onChange={(e) => setFormData({ ...formData, creditDays: e.target.value === '' ? 0 : parseInt(e.target.value) })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                  <div className="md:col-span-2">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Delivery Address</label>
-                    <textarea value={formData.deliveryAddress} onChange={(e) => setFormData({ ...formData, deliveryAddress: e.target.value })} rows={2} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                    <div className="flex gap-1 mb-1">
+                      {SAVED_ADDRESSES.map((addr) => (
+                        <button key={addr.label} type="button" onClick={() => setFormData({ ...formData, deliveryAddress: addr.address })}
+                          className={`px-2 py-0.5 text-[10px] font-medium border ${formData.deliveryAddress === addr.address ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
+                          {addr.label}
+                        </button>
+                      ))}
+                    </div>
+                    <textarea value={formData.deliveryAddress} onChange={(e) => setFormData({ ...formData, deliveryAddress: e.target.value })} rows={2} placeholder="Select above or type custom address" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Transport Mode</label>
-                      <input type="text" value={formData.transportMode} onChange={(e) => setFormData({ ...formData, transportMode: e.target.value })} placeholder="Road, Rail, Air" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label>
-                      <input type="text" value={formData.remarks} onChange={(e) => setFormData({ ...formData, remarks: e.target.value })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
-                    </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Transport Mode</label>
+                    <select value={formData.transportMode} onChange={(e) => setFormData({ ...formData, transportMode: e.target.value })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                      <option value="">Select Mode</option>
+                      {TRANSPORT_MODE_OPTIONS.map((m) => (<option key={m} value={m}>{m}</option>))}
+                    </select>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block mt-2">Transport By</label>
+                    <select value={formData.transportBy} onChange={(e) => setFormData({ ...formData, transportBy: e.target.value })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                      <option value="">Select</option>
+                      {TRANSPORT_BY_OPTIONS.map((t) => (<option key={t} value={t}>{t}</option>))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label>
+                    <textarea value={formData.remarks} onChange={(e) => setFormData({ ...formData, remarks: e.target.value })} rows={4} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                   </div>
                 </div>
 
@@ -481,6 +689,8 @@ const PurchaseOrders: React.FC = () => {
                             <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-right border-r border-slate-700">Qty</th>
                             <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-right border-r border-slate-700">Rate</th>
                             <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-right border-r border-slate-700">Disc %</th>
+                            <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-right border-r border-slate-700">GST %</th>
+                            <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-right border-r border-slate-700">GST Amt</th>
                             <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-right border-r border-slate-700">Total</th>
                             <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-center"></th>
                           </tr>
@@ -491,13 +701,17 @@ const PurchaseOrders: React.FC = () => {
                               <td className="px-3 py-1.5 text-xs border-r border-slate-100">{line.description}</td>
                               <td className="px-3 py-1.5 text-xs border-r border-slate-100 font-mono">{line.hsnCode}</td>
                               <td className="px-2 py-1 border-r border-slate-100">
-                                <input type="number" value={line.quantity} onChange={(e) => handleUpdateLine(idx, 'quantity', parseFloat(e.target.value) || 0)} className="border border-slate-300 px-1.5 py-1 text-xs w-20 text-right focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                                <input type="number" value={line.quantity || ''} onChange={(e) => handleUpdateLine(idx, 'quantity', e.target.value === '' ? 0 : parseFloat(e.target.value))} className="border border-slate-300 px-1.5 py-1 text-xs w-20 text-right focus:outline-none focus:ring-1 focus:ring-slate-400" />
                               </td>
                               <td className="px-2 py-1 border-r border-slate-100">
-                                <input type="number" value={line.rate} onChange={(e) => handleUpdateLine(idx, 'rate', parseFloat(e.target.value) || 0)} className="border border-slate-300 px-1.5 py-1 text-xs w-20 text-right focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                                <input type="number" value={line.rate || ''} onChange={(e) => handleUpdateLine(idx, 'rate', e.target.value === '' ? 0 : parseFloat(e.target.value))} className="border border-slate-300 px-1.5 py-1 text-xs w-20 text-right focus:outline-none focus:ring-1 focus:ring-slate-400" />
                               </td>
                               <td className="px-2 py-1 border-r border-slate-100">
-                                <input type="number" value={line.discountPercent} onChange={(e) => handleUpdateLine(idx, 'discountPercent', parseFloat(e.target.value) || 0)} className="border border-slate-300 px-1.5 py-1 text-xs w-16 text-right focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                                <input type="number" value={line.discountPercent || ''} onChange={(e) => handleUpdateLine(idx, 'discountPercent', e.target.value === '' ? 0 : parseFloat(e.target.value))} className="border border-slate-300 px-1.5 py-1 text-xs w-16 text-right focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                              </td>
+                              <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums text-slate-500">{line.gstPercent}%</td>
+                              <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums text-slate-500">
+                                {(() => { const a = line.quantity * line.rate; const d = a * (line.discountPercent / 100); return ((a - d) * line.gstPercent / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 }); })()}
                               </td>
                               <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums font-semibold">
                                 {calculateLineTotal(line).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
@@ -518,22 +732,22 @@ const PurchaseOrders: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                       <div>
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Material</label>
-                        <select value={newLine.materialId || ''} onChange={handleMaterialSelect} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                        <select value={newLine.inventoryItemId || ''} onChange={handleMaterialSelect} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
                           <option value="">Select Material</option>
                           {materials.map((m) => (<option key={m.id} value={m.id}>{m.name || m.description}</option>))}
                         </select>
                       </div>
                       <div>
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Quantity</label>
-                        <input type="number" value={newLine.quantity || 0} onChange={(e) => setNewLine({ ...newLine, quantity: parseFloat(e.target.value) || 0 })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                        <input type="number" value={newLine.quantity || ''} onChange={(e) => setNewLine({ ...newLine, quantity: e.target.value === '' ? 0 : parseFloat(e.target.value) })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                       </div>
                       <div>
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Rate</label>
-                        <input type="number" value={newLine.rate || 0} onChange={(e) => setNewLine({ ...newLine, rate: parseFloat(e.target.value) || 0 })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                        <input type="number" value={newLine.rate || ''} onChange={(e) => setNewLine({ ...newLine, rate: e.target.value === '' ? 0 : parseFloat(e.target.value) })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                       </div>
                       <div>
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Discount %</label>
-                        <input type="number" value={newLine.discountPercent || 0} onChange={(e) => setNewLine({ ...newLine, discountPercent: parseFloat(e.target.value) || 0 })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                        <input type="number" value={newLine.discountPercent || ''} onChange={(e) => setNewLine({ ...newLine, discountPercent: e.target.value === '' ? 0 : parseFloat(e.target.value) })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                       </div>
                     </div>
                     <button type="button" onClick={handleAddLine} className="mt-3 px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 flex items-center gap-1">
@@ -547,15 +761,33 @@ const PurchaseOrders: React.FC = () => {
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                     <div>
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Freight Charge</label>
-                      <input type="number" value={formData.freightCharge} onChange={(e) => setFormData({ ...formData, freightCharge: parseFloat(e.target.value) || 0 })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                      {formData.transportBy === 'BY_US' ? (
+                        <div className="border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-700">Logistics team will arrange</div>
+                      ) : formData.transportBy === 'BY_SUPPLIER' ? (
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={formData.freightCharge === 0 ? 'INCLUDED' : 'EXTRA'}
+                            onChange={(e) => setFormData({ ...formData, freightCharge: e.target.value === 'INCLUDED' ? 0 : formData.freightCharge })}
+                            className="border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
+                          >
+                            <option value="INCLUDED">Included in rate</option>
+                            <option value="EXTRA">Extra charge</option>
+                          </select>
+                          {formData.freightCharge !== 0 && (
+                            <input type="number" value={formData.freightCharge || ''} onChange={(e) => setFormData({ ...formData, freightCharge: e.target.value === '' ? 0 : parseFloat(e.target.value) })} placeholder="Amount" className="border border-slate-300 px-2.5 py-1.5 text-xs w-24 focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                          )}
+                        </div>
+                      ) : (
+                        <input type="number" value={formData.freightCharge || ''} onChange={(e) => setFormData({ ...formData, freightCharge: e.target.value === '' ? 0 : parseFloat(e.target.value) })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                      )}
                     </div>
                     <div>
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Other Charges</label>
-                      <input type="number" value={formData.otherCharges} onChange={(e) => setFormData({ ...formData, otherCharges: parseFloat(e.target.value) || 0 })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                      <input type="number" value={formData.otherCharges || ''} onChange={(e) => setFormData({ ...formData, otherCharges: e.target.value === '' ? 0 : parseFloat(e.target.value) })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                     </div>
                     <div>
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Round Off</label>
-                      <input type="number" step="0.01" value={formData.roundOff} onChange={(e) => setFormData({ ...formData, roundOff: parseFloat(e.target.value) || 0 })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                      <input type="number" step="0.01" value={formData.roundOff || ''} onChange={(e) => setFormData({ ...formData, roundOff: e.target.value === '' ? 0 : parseFloat(e.target.value) })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                     </div>
                     <div className="bg-slate-800 text-white px-4 py-3">
                       <div className="text-[10px] font-bold uppercase tracking-widest text-slate-300">Grand Total</div>
