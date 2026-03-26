@@ -463,7 +463,7 @@ const PurchaseOrders: React.FC = () => {
     const matchesStatus = statusFilter === 'ALL' || po.status === statusFilter;
     const matchesSearch =
       po.poNo.toString().includes(searchTerm) ||
-      po.vendor.name.toLowerCase().includes(searchTerm.toLowerCase());
+      (po.vendor?.name || '').toLowerCase().includes(searchTerm.toLowerCase());
     return matchesStatus && matchesSearch;
   });
 
@@ -863,7 +863,7 @@ const PurchaseOrders: React.FC = () => {
                 {filteredPOs.map((po) => (
                   <tr key={po.id} className="border-b border-slate-100 even:bg-slate-50/70 hover:bg-blue-50/60">
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100 font-bold text-slate-900">PO-{po.poNo}</td>
-                    <td className="px-3 py-1.5 text-xs border-r border-slate-100">{po.vendor.name}</td>
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100">{po.vendor?.name || 'Unknown'}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100">
                       <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${getStatusBadge(po.status)}`}>{po.status}</span>
                     </td>
