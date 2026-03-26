@@ -135,7 +135,7 @@ async function saveData(data: Record<string, number>): Promise<void> {
 
   await prisma.dDGSProductionEntry.create({
     data: {
-      date: now,
+      date: ist,
       shiftDate,
       entryTime,
       timeFrom,
