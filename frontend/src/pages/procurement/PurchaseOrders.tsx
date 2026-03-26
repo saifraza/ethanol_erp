@@ -905,19 +905,26 @@ const PurchaseOrders: React.FC = () => {
                         >
                           <FileText size={11} className="inline -mt-px" />
                         </button>
-                        {/* Email — green if vendor has email, red warning if not */}
-                        <button
-                          onClick={() => handleSendEmail(po.id, po.vendor?.email || undefined)}
-                          disabled={emailSending === po.id}
-                          title={po.vendor?.email ? `Send to ${po.vendor.email}` : 'No vendor email — click to enter'}
-                          className={`px-1.5 py-0.5 border text-[9px] font-bold uppercase disabled:opacity-50 ${
-                            po.vendor?.email
-                              ? 'border-green-400 text-green-600 hover:bg-green-50'
-                              : 'border-orange-300 text-orange-500 hover:bg-orange-50'
-                          }`}
-                        >
-                          {emailSending === po.id ? <Loader size={11} className="animate-spin inline" /> : <Mail size={11} className="inline -mt-px" />}
-                        </button>
+                        {/* Email — bold green if has email, pulsing red if not */}
+                        {po.vendor?.email ? (
+                          <button
+                            onClick={() => handleSendEmail(po.id, po.vendor?.email || undefined)}
+                            disabled={emailSending === po.id}
+                            title={`Send to ${po.vendor.email}`}
+                            className="px-1.5 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase hover:bg-green-700 disabled:opacity-50"
+                          >
+                            {emailSending === po.id ? <Loader size={11} className="animate-spin inline" /> : <><Mail size={11} className="inline -mt-px" /></>}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleSendEmail(po.id, undefined)}
+                            disabled={emailSending === po.id}
+                            title="No vendor email — click to enter"
+                            className="px-1.5 py-0.5 border-2 border-dashed border-red-400 text-red-500 text-[9px] font-bold uppercase hover:bg-red-50 disabled:opacity-50 animate-pulse"
+                          >
+                            {emailSending === po.id ? <Loader size={11} className="animate-spin inline" /> : <><Mail size={11} className="inline -mt-px" /></>}
+                          </button>
+                        )}
 
                         {/* Separator */}
                         <span className="text-slate-200">|</span>
