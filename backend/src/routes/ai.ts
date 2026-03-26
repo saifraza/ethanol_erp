@@ -16,7 +16,27 @@ interface AIConfig {
 }
 
 async function getAIConfig(): Promise<AIConfig | null> {
-  // Check env vars — Gemini first (free tier), then Anthropic, then OpenClaw
+  // 1. DB config first — user's explicit choice from the UI always wins
+  const row = await prisma.appConfig.findUnique({ where: { key: 'ai_config' } });
+  if (row?.value) {
+    try {
+      return JSON.parse(row.value) as AIConfig;
+    } catch { /* fall through */ }
+  }
+
+  // 2. OpenClaw env vars — preferred (runs on same Railway project)
+  const openclawToken = process.env.OPENCLAW_GATEWAY_TOKEN;
+  const openclawUrl = process.env.OPENCLAW_URL || (openclawToken ? 'http://openclaw.railway.internal:18789' : '');
+  if (openclawUrl && openclawToken) {
+    return {
+      provider: 'openclaw',
+      baseUrl: openclawUrl,
+      apiKey: openclawToken,
+      model: 'openclaw',
+    };
+  }
+
+  // 3. Fallback env vars — Gemini, Anthropic
   const geminiKey = process.env.GEMINI_API_KEY;
   if (geminiKey) {
     return {
@@ -35,27 +55,6 @@ async function getAIConfig(): Promise<AIConfig | null> {
       apiKey: anthropicKey,
       model: 'claude-sonnet-4-20250514',
     };
-  }
-
-  const openclawToken = process.env.OPENCLAW_GATEWAY_TOKEN;
-  const openclawUrl = process.env.OPENCLAW_URL || (openclawToken ? 'http://openclaw.railway.internal:18789' : '');
-  if (openclawUrl && openclawToken) {
-    return {
-      provider: 'openclaw',
-      baseUrl: openclawUrl,
-      apiKey: openclawToken,
-      model: 'openclaw',
-    };
-  }
-
-  // Fall back to DB-stored config
-  const row = await prisma.appConfig.findUnique({ where: { key: 'ai_config' } });
-  if (row?.value) {
-    try {
-      return JSON.parse(row.value) as AIConfig;
-    } catch {
-      return null;
-    }
   }
 
   return null;
