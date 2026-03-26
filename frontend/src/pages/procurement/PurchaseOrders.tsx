@@ -424,7 +424,15 @@ const PurchaseOrders: React.FC = () => {
     setEmailSending(poId);
     try {
       const res = await api.post(`/purchase-orders/${poId}/send-email`, { to: emailTo });
-      setSuccess(`Email sent to ${res.data.sentTo}`);
+      // Auto-approve after sending email
+      const po = pos.find(p => p.id === poId);
+      if (po && (po.status === 'DRAFT' || po.status === 'SENT')) {
+        try {
+          await api.put(`/purchase-orders/${poId}/status`, { newStatus: 'APPROVED' });
+        } catch { /* silent */ }
+      }
+      await fetchData();
+      setSuccess(`Email sent to ${res.data.sentTo} — PO approved`);
       setTimeout(() => setSuccess(''), 4000);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to send email');
