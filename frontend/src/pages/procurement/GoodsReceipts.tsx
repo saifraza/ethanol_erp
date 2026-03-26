@@ -159,7 +159,14 @@ export default function GoodsReceipts() {
 
   const handleLineChange = (index: number, field: keyof GRNLine, value: string | number) => {
     const updatedLines = [...formData.lines];
-    updatedLines[index] = { ...updatedLines[index], [field]: value };
+    const line = { ...updatedLines[index], [field]: value };
+    // Auto-calculate: accepted = received - rejected
+    if (field === 'receivedQty') {
+      line.acceptedQty = Math.max(0, (value as number) - (line.rejectedQty || 0));
+    } else if (field === 'rejectedQty') {
+      line.acceptedQty = Math.max(0, (line.receivedQty || 0) - (value as number));
+    }
+    updatedLines[index] = line;
     setFormData((prev) => ({ ...prev, lines: updatedLines }));
   };
 
@@ -483,8 +490,8 @@ export default function GoodsReceipts() {
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100">{new Date(grn.grnDate).toLocaleDateString()}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100">{grn.vehicleNo}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100">{grn.challanNo}</td>
-                    <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums text-green-700 font-semibold">{grn.totalAccepted}</td>
-                    <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums text-red-600 font-semibold">{grn.totalRejected}</td>
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums text-green-700 font-semibold">{grn.lines?.reduce((s: number, l: any) => s + (l.acceptedQty || 0), 0) || '-'}</td>
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums text-red-600 font-semibold">{grn.lines?.reduce((s: number, l: any) => s + (l.rejectedQty || 0), 0) || '-'}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums font-bold">{grn.totalAmount.toFixed(2)}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100">
                       <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${getStatusBadge(grn.status)}`}>{grn.status}</span>
