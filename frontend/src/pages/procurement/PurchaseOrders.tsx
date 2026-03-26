@@ -121,6 +121,12 @@ const PurchaseOrders: React.FC = () => {
   const [success, setSuccess] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [sortField, setSortField] = useState<string>('poNo');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const toggleSort = (field: string) => {
+    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortField(field); setSortDir('desc'); }
+  };
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -486,6 +492,20 @@ const PurchaseOrders: React.FC = () => {
       po.poNo.toString().includes(searchTerm) ||
       (po.vendor?.name || '').toLowerCase().includes(searchTerm.toLowerCase());
     return matchesStatus && matchesSearch;
+  }).sort((a, b) => {
+    let av: any, bv: any;
+    switch (sortField) {
+      case 'poNo': av = a.poNo; bv = b.poNo; break;
+      case 'vendor': av = a.vendor?.name || ''; bv = b.vendor?.name || ''; break;
+      case 'status': av = a.status; bv = b.status; break;
+      case 'poDate': av = a.poDate; bv = b.poDate; break;
+      case 'deliveryDate': av = a.deliveryDate; bv = b.deliveryDate; break;
+      case 'grandTotal': av = a.grandTotal; bv = b.grandTotal; break;
+      default: av = a.poNo; bv = b.poNo;
+    }
+    if (av < bv) return sortDir === 'asc' ? -1 : 1;
+    if (av > bv) return sortDir === 'asc' ? 1 : -1;
+    return 0;
   });
 
   const stats = {
@@ -869,14 +889,27 @@ const PurchaseOrders: React.FC = () => {
           <div className="overflow-x-auto -mx-3 md:-mx-6 border-x border-slate-300">
             <table className="w-full">
               <thead>
-                <tr className="bg-slate-800 text-white">
-                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">PO #</th>
-                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">Vendor</th>
-                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">Status</th>
-                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">PO Date</th>
-                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">Delivery</th>
-                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-center border-r border-slate-700">Items</th>
-                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-right border-r border-slate-700">Grand Total</th>
+                <tr className="bg-slate-800 text-white select-none">
+                  {[
+                    { key: 'poNo', label: 'PO #', align: 'text-left' },
+                    { key: 'vendor', label: 'Vendor', align: 'text-left' },
+                    { key: 'status', label: 'Status', align: 'text-left' },
+                    { key: 'poDate', label: 'PO Date', align: 'text-left' },
+                    { key: 'deliveryDate', label: 'Delivery', align: 'text-left' },
+                    { key: '', label: 'Items', align: 'text-center' },
+                    { key: 'grandTotal', label: 'Grand Total', align: 'text-right' },
+                  ].map((col) => (
+                    <th
+                      key={col.label}
+                      onClick={() => col.key && toggleSort(col.key)}
+                      className={`text-[10px] uppercase tracking-widest font-semibold px-3 py-2 ${col.align} border-r border-slate-700 ${col.key ? 'cursor-pointer hover:bg-slate-700' : ''}`}
+                    >
+                      {col.label}
+                      {col.key && sortField === col.key && (
+                        <span className="ml-1 text-[8px]">{sortDir === 'asc' ? '▲' : '▼'}</span>
+                      )}
+                    </th>
+                  ))}
                   <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-center">Actions</th>
                 </tr>
               </thead>
