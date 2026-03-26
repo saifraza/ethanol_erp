@@ -2115,3 +2115,33 @@ model BankTransaction {
   @@index([accountId, date])
   @@index([isReconciled])
 }
+
+// ── Gate Entry (Vehicle In/Out Register) ──
+model GateEntry {
+  id              String   @id @default(cuid())
+  date            DateTime @default(now())
+  vehicleNo       String
+  capacityTon     Float    @default(0)
+  vendor          String   @default("")
+  transporterName String   @default("")
+  material        String   @default("OTHER")     // DDGS, ETHANOL, MAIZE, OTHER
+  direction       String   @default("INBOUND")   // INBOUND, OUTBOUND
+  status          String   @default("INSIDE")    // INSIDE, LOADING, LOADED, DISPATCHED, EMPTY_OUT
+  entryTime       String   @default("")
+  exitTime        String?
+  driverMobile    String   @default("")
+  rstNo           String   @default("")
+  remarks         String?
+  grossWeight     Float?
+  netWeight       Float?
+  // Links to other modules
+  grnId           String?  // Link to GRN (for inbound purchases)
+  shipmentId      String?  // Link to Shipment (for outbound sales)
+  userId          String?  // Who created this entry
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([date])
+  @@index([status])
+  @@index([vehicleNo])
+}
