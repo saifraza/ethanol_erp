@@ -191,11 +191,10 @@ async function handleIncoming(rawPhone: string, text: string, _name: string | nu
             .split(',')
             .map((p: string) => p.trim())
             .filter((p: string) => p.length > 0);
-          // Merge both lists, deduplicate, exclude the replier
-          const replierDigits = phone.replace(/^91/, '');
+          // Merge both lists, deduplicate — include replier so they also get the full summary
           const allRecipients = [...new Set([...schedulePhones, ...globalNumbers])]
             .map((p: string) => p.replace(/\D/g, ''))
-            .filter((p: string) => p.length > 0 && p !== replierDigits && p !== phone);
+            .filter((p: string) => p.length > 0);
           for (const num of allRecipients) {
             await sendWhatsAppMessage(num, fullReport, config.module);
           }
