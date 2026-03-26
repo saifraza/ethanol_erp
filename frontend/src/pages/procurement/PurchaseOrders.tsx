@@ -424,15 +424,20 @@ const PurchaseOrders: React.FC = () => {
     setEmailSending(poId);
     try {
       const res = await api.post(`/purchase-orders/${poId}/send-email`, { to: emailTo });
-      // Auto-approve after sending email
+      // Auto-move to SENT after emailing
       const po = pos.find(p => p.id === poId);
-      if (po && (po.status === 'DRAFT' || po.status === 'SENT')) {
+      if (po && po.status === 'DRAFT') {
         try {
           await api.put(`/purchase-orders/${poId}/status`, { newStatus: 'APPROVED' });
+          await api.put(`/purchase-orders/${poId}/status`, { newStatus: 'SENT' });
+        } catch { /* silent */ }
+      } else if (po && po.status === 'APPROVED') {
+        try {
+          await api.put(`/purchase-orders/${poId}/status`, { newStatus: 'SENT' });
         } catch { /* silent */ }
       }
       await fetchData();
-      setSuccess(`Email sent to ${res.data.sentTo} — PO approved`);
+      setSuccess(`Email sent successfully to ${res.data.sentTo}`);
       setTimeout(() => setSuccess(''), 4000);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to send email');
@@ -880,35 +885,39 @@ const PurchaseOrders: React.FC = () => {
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-center">{po.linesCount}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums font-bold">{po.grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
                     <td className="px-3 py-1.5 text-xs text-center">
-                      <div className="flex items-center justify-center gap-px">
+                      <div className="inline-flex items-center border border-slate-300 overflow-hidden">
                         <button
                           onClick={() => {
                             const token = localStorage.getItem('token');
                             window.open(`/api/purchase-orders/${po.id}/pdf?token=${token}`, '_blank');
                           }}
-                          className="px-2 py-1 bg-slate-700 text-white text-[9px] font-bold uppercase tracking-wider hover:bg-slate-600 border-r border-slate-500"
+                          className="w-12 py-1 bg-slate-100 text-slate-700 text-[9px] font-bold uppercase tracking-wider hover:bg-slate-200 border-r border-slate-300 text-center"
                         >
                           PDF
                         </button>
                         <button
                           onClick={() => handleSendEmail(po.id, po.vendor?.name || '')}
                           disabled={emailSending === po.id}
-                          className="px-2 py-1 bg-slate-700 text-white text-[9px] font-bold uppercase tracking-wider hover:bg-slate-600 disabled:opacity-50 border-r border-slate-500"
+                          className="w-14 py-1 bg-slate-100 text-slate-700 text-[9px] font-bold uppercase tracking-wider hover:bg-slate-200 disabled:opacity-50 border-r border-slate-300 text-center"
                         >
-                          {emailSending === po.id ? <Loader size={10} className="animate-spin" /> : 'EMAIL'}
+                          {emailSending === po.id ? <Loader size={10} className="animate-spin inline" /> : 'EMAIL'}
                         </button>
                         {getNextStatusOptions(po.status).map((nextStatus) => (
                           <button
                             key={nextStatus}
                             onClick={() => handleStatusChange(po.id, nextStatus)}
-                            className={`px-2 py-1 text-[9px] font-bold uppercase tracking-wider border-r border-opacity-30 ${
+                            className={`py-1 text-[9px] font-bold uppercase tracking-wider border-r border-slate-300 text-center ${
                               nextStatus === 'CANCELLED'
-                                ? 'bg-red-700 text-white hover:bg-red-600 border-red-400'
+                                ? 'w-16 bg-red-50 text-red-700 hover:bg-red-100'
                                 : nextStatus === 'APPROVED'
-                                ? 'bg-blue-700 text-white hover:bg-blue-600 border-blue-400'
+                                ? 'w-20 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                                : nextStatus === 'SENT'
+                                ? 'w-12 bg-yellow-50 text-yellow-700 hover:bg-yellow-100'
                                 : nextStatus === 'CLOSED'
-                                ? 'bg-slate-500 text-white hover:bg-slate-400 border-slate-300'
-                                : 'bg-slate-700 text-white hover:bg-slate-600 border-slate-500'
+                                ? 'w-16 bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                : nextStatus === 'RECEIVED'
+                                ? 'w-18 bg-green-50 text-green-700 hover:bg-green-100'
+                                : 'w-16 bg-slate-100 text-slate-600 hover:bg-slate-200'
                             }`}
                           >
                             {nextStatus === 'PARTIAL_RECEIVED' ? 'PARTIAL' : nextStatus === 'CANCELLED' ? 'CANCEL' : nextStatus}
@@ -923,7 +932,7 @@ const PurchaseOrders: React.FC = () => {
                                 fetchData();
                               } catch (err) { console.error(err); }
                             }}
-                            className="px-2 py-1 bg-red-700 text-white text-[9px] font-bold uppercase tracking-wider hover:bg-red-600"
+                            className="w-10 py-1 bg-red-50 text-red-700 text-[9px] font-bold uppercase tracking-wider hover:bg-red-100 text-center"
                           >
                             DEL
                           </button>
