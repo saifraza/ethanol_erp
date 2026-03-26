@@ -872,41 +872,40 @@ const PurchaseOrders: React.FC = () => {
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-center">{po.linesCount}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums font-bold">{po.grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
                     <td className="px-3 py-1.5 text-xs text-center">
-                      <div className="flex items-center justify-center gap-0.5">
+                      <div className="flex items-center justify-center gap-px">
                         <button
                           onClick={() => {
                             const token = localStorage.getItem('token');
                             window.open(`/api/purchase-orders/${po.id}/pdf?token=${token}`, '_blank');
                           }}
-                          title="Download PDF"
-                          className="p-1 bg-green-600 text-white hover:bg-green-700"
+                          className="px-2 py-1 bg-slate-700 text-white text-[9px] font-bold uppercase tracking-wider hover:bg-slate-600 border-r border-slate-500"
                         >
-                          <FileText size={12} />
+                          PDF
                         </button>
                         <button
                           onClick={() => handleSendEmail(po.id, po.vendor?.name || '')}
                           disabled={emailSending === po.id}
-                          title="Send via Email"
-                          className="p-1 bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                          className="px-2 py-1 bg-slate-700 text-white text-[9px] font-bold uppercase tracking-wider hover:bg-slate-600 disabled:opacity-50 border-r border-slate-500"
                         >
-                          {emailSending === po.id ? <Loader size={12} className="animate-spin" /> : <Mail size={12} />}
+                          {emailSending === po.id ? <Loader size={10} className="animate-spin" /> : 'EMAIL'}
                         </button>
-                        {getNextStatusOptions(po.status).length > 0 && (
-                          <select
-                            value=""
-                            onChange={(e) => {
-                              if (e.target.value) handleStatusChange(po.id, e.target.value);
-                            }}
-                            className="border border-slate-300 px-1 py-0.5 text-[10px] bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-400 cursor-pointer"
+                        {getNextStatusOptions(po.status).map((nextStatus) => (
+                          <button
+                            key={nextStatus}
+                            onClick={() => handleStatusChange(po.id, nextStatus)}
+                            className={`px-2 py-1 text-[9px] font-bold uppercase tracking-wider border-r border-opacity-30 ${
+                              nextStatus === 'CANCELLED'
+                                ? 'bg-red-700 text-white hover:bg-red-600 border-red-400'
+                                : nextStatus === 'APPROVED'
+                                ? 'bg-blue-700 text-white hover:bg-blue-600 border-blue-400'
+                                : nextStatus === 'CLOSED'
+                                ? 'bg-slate-500 text-white hover:bg-slate-400 border-slate-300'
+                                : 'bg-slate-700 text-white hover:bg-slate-600 border-slate-500'
+                            }`}
                           >
-                            <option value="">Status</option>
-                            {getNextStatusOptions(po.status).map((nextStatus) => (
-                              <option key={nextStatus} value={nextStatus}>
-                                {nextStatus === 'PARTIAL_RECEIVED' ? 'Partial Recv' : nextStatus === 'CANCELLED' ? 'Cancel' : nextStatus.charAt(0) + nextStatus.slice(1).toLowerCase()}
-                              </option>
-                            ))}
-                          </select>
-                        )}
+                            {nextStatus === 'PARTIAL_RECEIVED' ? 'PARTIAL' : nextStatus === 'CANCELLED' ? 'CANCEL' : nextStatus}
+                          </button>
+                        ))}
                         {po.status === 'DRAFT' && (
                           <button
                             onClick={async () => {
@@ -916,10 +915,9 @@ const PurchaseOrders: React.FC = () => {
                                 fetchData();
                               } catch (err) { console.error(err); }
                             }}
-                            title="Delete"
-                            className="p-1 bg-red-600 text-white hover:bg-red-700"
+                            className="px-2 py-1 bg-red-700 text-white text-[9px] font-bold uppercase tracking-wider hover:bg-red-600"
                           >
-                            <Trash2 size={12} />
+                            DEL
                           </button>
                         )}
                       </div>
