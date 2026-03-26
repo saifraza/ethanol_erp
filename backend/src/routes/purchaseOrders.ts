@@ -26,7 +26,7 @@ router.get('/', async (req: Request, res: Response) => {
         lines: true,
         grns: { select: { id: true } },
       },
-      orderBy: { poDate: 'desc' },
+      orderBy: [{ poNo: 'desc' }],
       skip: (page - 1) * limit,
       take: limit,
     });

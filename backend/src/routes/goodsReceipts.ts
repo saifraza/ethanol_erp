@@ -119,15 +119,19 @@ router.get('/', async (req: Request, res: Response) => {
     const grns = await prisma.goodsReceipt.findMany({
       where,
       include: {
-        po: true,
-        vendor: true,
+        po: { select: { id: true, poNo: true, status: true } },
+        vendor: { select: { id: true, name: true, email: true } },
         lines: true,
       },
       orderBy: { grnDate: 'desc' },
+      take: 200,
     });
 
     res.json({ grns });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
+  } catch (err: any) {
+    console.error('[GRN GET /] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // GET /pending-pos — list POs with pending quantities
