@@ -189,8 +189,10 @@ app.use('/api/auto-collect', autoCollectRoutes);
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
+// Build version — set at startup so frontend can detect new deploys
+const BUILD_TIME = new Date().toISOString();
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok', timestamp: new Date().toISOString(), buildTime: BUILD_TIME });
 });
 
 // 404 for unknown API routes (before SPA fallback)
@@ -202,9 +204,18 @@ app.all('/api/*', (req, res) => {
 app.use(errorHandler);
 
 const publicPath = path.join(__dirname, '..', 'public');
-app.use(express.static(publicPath, { maxAge: '1y', etag: true, immutable: true }));
+
+// Hashed assets (JS/CSS) — long cache, immutable
+app.use('/assets', express.static(path.join(publicPath, 'assets'), { maxAge: '1y', immutable: true }));
+
+// Other static files (favicon, etc.) — short cache
+app.use(express.static(publicPath, { maxAge: '1h', etag: true }));
+
+// SPA fallback — index.html must never be cached so new deploys are picked up immediately
 app.get('*', (req, res) => {
-  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   res.sendFile(path.join(publicPath, 'index.html'));
 });
 
