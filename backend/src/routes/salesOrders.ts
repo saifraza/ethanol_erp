@@ -589,7 +589,7 @@ router.post('/:id/send-email', async (req: Request, res: Response) => {
       doc.moveTo(M, 83).lineTo(M + CW, 83).lineWidth(1.5).strokeColor(green).stroke();
 
       // Title
-      const soLabel = `SO-${String(order.soNo).padStart(4, '0')}`;
+      const soLabel = `SO-${String(order.orderNo).padStart(4, '0')}`;
       doc.font('Helvetica-Bold').fontSize(12).fillColor(green)
         .text('SALES ORDER', M, 90, { width: CW, align: 'center' });
 
@@ -652,7 +652,7 @@ router.post('/:id/send-email', async (req: Request, res: Response) => {
       doc.end();
     });
 
-    const soLabel = `SO-${String(order.soNo).padStart(4, '0')}`;
+    const soLabel = `SO-${String(order.orderNo).padStart(4, '0')}`;
     const subject = req.body.subject || `${soLabel} — Sales Order from MSPIL`;
     const body = req.body.body || `Dear ${order.customer.name},\n\nPlease find attached Sales Order ${soLabel} dated ${new Date(order.orderDate).toLocaleDateString('en-IN')}.\n\nTotal Amount: Rs.${(order.grandTotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}\n\nKindly confirm the order at your earliest.\n\nRegards,\nMahakaushal Sugar & Power Industries Ltd.\nVillage Bachai, Dist. Narsinghpur (M.P.)`;
 
