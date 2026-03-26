@@ -461,6 +461,7 @@ const PurchaseOrders: React.FC = () => {
       RECEIVED: 'border-green-400 bg-green-50 text-green-700',
       CLOSED: 'border-purple-400 bg-purple-50 text-purple-700',
       CANCELLED: 'border-red-400 bg-red-50 text-red-700',
+      ARCHIVED: 'border-slate-300 bg-slate-100 text-slate-400',
     };
     return colors[status] || 'border-gray-400 bg-gray-50 text-gray-700';
   };
@@ -472,14 +473,15 @@ const PurchaseOrders: React.FC = () => {
       SENT: ['PARTIAL_RECEIVED', 'RECEIVED', 'CANCELLED'],
       PARTIAL_RECEIVED: ['RECEIVED', 'CANCELLED'],
       RECEIVED: ['CLOSED', 'CANCELLED'],
-      CLOSED: [],
-      CANCELLED: [],
+      CLOSED: ['ARCHIVED'],
+      CANCELLED: ['ARCHIVED'],
+      ARCHIVED: [],
     };
     return transitions[currentStatus] || [];
   };
 
   const filteredPOs = pos.filter((po) => {
-    const matchesStatus = statusFilter === 'ALL' || po.status === statusFilter;
+    const matchesStatus = statusFilter === 'ALL' ? po.status !== 'ARCHIVED' : po.status === statusFilter;
     const matchesSearch =
       po.poNo.toString().includes(searchTerm) ||
       (po.vendor?.name || '').toLowerCase().includes(searchTerm.toLowerCase());
@@ -495,7 +497,7 @@ const PurchaseOrders: React.FC = () => {
 
   const { subtotal, totalGst, grandTotal } = calculateTotals();
 
-  const statusTabs = ['ALL', 'DRAFT', 'APPROVED', 'SENT', 'PARTIAL_RECEIVED', 'RECEIVED', 'CLOSED'];
+  const statusTabs = ['ALL', 'DRAFT', 'APPROVED', 'SENT', 'PARTIAL_RECEIVED', 'RECEIVED', 'CLOSED', 'ARCHIVED'];
 
   if (loading && pos.length === 0) {
     return (
@@ -963,14 +965,21 @@ const PurchaseOrders: React.FC = () => {
                           </button>
                         )}
                         {po.status === 'CLOSED' && (
-                          <span className="text-[9px] text-slate-400 font-bold uppercase">Completed</span>
+                          <button onClick={() => handleStatusChange(po.id, 'ARCHIVED')} className="px-2 py-0.5 border border-slate-300 text-slate-400 text-[9px] font-bold uppercase hover:bg-slate-100">
+                            Archive
+                          </button>
                         )}
                         {po.status === 'CANCELLED' && (
-                          <span className="text-[9px] text-red-400 font-bold uppercase">Cancelled</span>
+                          <button onClick={() => handleStatusChange(po.id, 'ARCHIVED')} className="px-2 py-0.5 border border-slate-300 text-slate-400 text-[9px] font-bold uppercase hover:bg-slate-100">
+                            Archive
+                          </button>
+                        )}
+                        {po.status === 'ARCHIVED' && (
+                          <span className="text-[9px] text-slate-400 font-bold uppercase">Archived</span>
                         )}
 
                         {/* Cancel — only if active (not closed/cancelled) */}
-                        {!['CLOSED', 'CANCELLED', 'DRAFT'].includes(po.status) && (
+                        {!['CLOSED', 'CANCELLED', 'DRAFT', 'ARCHIVED'].includes(po.status) && (
                           <button onClick={() => { if (confirm(`Cancel PO-${po.poNo}?`)) handleStatusChange(po.id, 'CANCELLED'); }} title="Cancel PO" className="p-0.5 text-red-400 hover:text-red-600">
                             <X size={12} />
                           </button>
