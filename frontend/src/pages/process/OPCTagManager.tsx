@@ -347,9 +347,7 @@ export default function OPCTagManager() {
                     <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Tag</th>
                     <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Area</th>
                     <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Label</th>
-                    <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">PV / Value</th>
-                    <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">SP</th>
-                    <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">OP</th>
+                    <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Value</th>
                     <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Updated</th>
                   </tr>
                 </thead>
@@ -362,8 +360,6 @@ export default function OPCTagManager() {
                       <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-800 border-r border-slate-100 font-bold">
                         {fmtVal(t.values.PV ?? t.values.IO_VALUE)}
                       </td>
-                      <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-500 border-r border-slate-100">{fmtVal(t.values.SP)}</td>
-                      <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-500 border-r border-slate-100">{fmtVal(t.values.OP)}</td>
                       <td className="px-3 py-1.5 text-center text-slate-400">{fmtAgo(t.updatedAt)}</td>
                     </tr>
                   ))}
