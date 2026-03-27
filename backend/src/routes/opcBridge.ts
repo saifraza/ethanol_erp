@@ -300,6 +300,18 @@ router.patch('/monitor/:tag', validate(updateMonitorSchema), asyncHandler(async 
     const prismaErr = err as { code?: string };
     if (prismaErr.code === 'P2025') {
       res.status(404).json({ error: `Tag '${tag}' not found` });
+    } else if (prismaErr.code === 'P2022') {
+      // Column doesn't exist yet — try update without new columns
+      const safeData: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(data)) {
+        if (!['description', 'hhAlarm', 'llAlarm'].includes(k)) safeData[k] = v;
+      }
+      if (Object.keys(safeData).length > 0) {
+        const result = await opc.opcMonitoredTag.update({ where: { tag }, data: safeData });
+        res.json({ ok: true, tag: result, warning: 'Some columns not yet migrated — run prisma db push on OPC DB' });
+      } else {
+        res.status(503).json({ error: 'OPC database columns not yet migrated. HH/LL alarms and descriptions require a schema migration on the OPC database.' });
+      }
     } else {
       throw err;
     }

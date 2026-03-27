@@ -263,25 +263,35 @@ export async function loadSchedules(): Promise<void> {
 }
 
 export async function saveSchedules(newSchedules: AutoCollectSchedule[]): Promise<void> {
-  schedules = newSchedules;
   // Sync per-module config
-  const ddgs = schedules.find(s => s.module === 'ddgs');
+  const ddgs = newSchedules.find(s => s.module === 'ddgs');
   if (ddgs) setDdgsLanguage((ddgs as any).language || 'hi');
-  console.log('[AutoCollect] Schedules updated. New config:', JSON.stringify(schedules));
-  try {
-    const settings = await prisma.settings.findFirst();
-    if (settings) {
-      await prisma.settings.update({
-        where: { id: settings.id },
-        data: { autoCollectConfig: JSON.stringify(schedules) } as any,
-      });
-      console.log('[AutoCollect] Schedules persisted to DB');
-    } else {
-      console.warn('[AutoCollect] No settings row found — schedules NOT persisted!');
-    }
-  } catch (err) {
-    console.error('[AutoCollect] Failed to save schedules:', err);
+
+  const configJson = JSON.stringify(newSchedules);
+  console.log('[AutoCollect] Saving schedules to DB:', configJson);
+
+  // Persist to DB FIRST — only update in-memory if DB write succeeds
+  const settings = await prisma.settings.findFirst();
+  if (!settings) {
+    throw new Error('No settings row found — cannot persist schedules');
   }
+
+  await prisma.$executeRawUnsafe(
+    `UPDATE "Settings" SET "autoCollectConfig" = $1, "updatedAt" = NOW() WHERE "id" = $2`,
+    configJson,
+    settings.id
+  );
+
+  // Verify the write
+  const verify = await prisma.settings.findFirst({ select: { autoCollectConfig: true } });
+  const saved = (verify as any)?.autoCollectConfig;
+  if (!saved) {
+    throw new Error('autoCollectConfig is empty after save — DB write may have failed');
+  }
+
+  // Only update in-memory after confirmed DB write
+  schedules = newSchedules;
+  console.log('[AutoCollect] Schedules persisted to DB and verified');
 }
 
 export function getSchedules(): AutoCollectSchedule[] {
