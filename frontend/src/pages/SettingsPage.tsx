@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import api from '../services/api';
-import { Save, Smartphone, RefreshCw, LogOut, Send, Users, Lock, CheckSquare, Square } from 'lucide-react';
+import { Save, Smartphone, RefreshCw, LogOut, Send, Users, Lock, ArrowRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 interface WAGroup {
@@ -9,13 +9,26 @@ interface WAGroup {
   size: number;
 }
 
+type RouteTarget = 'group1' | 'group2' | 'private';
+
+const MODULE_LABELS: Record<string, string> = {
+  'liquefaction': 'Liquefaction', 'fermentation': 'Fermentation', 'distillation': 'Distillation',
+  'milling': 'Milling', 'evaporation': 'Evaporation', 'decanter': 'Decanter',
+  'dryer': 'Dryer', 'ethanol-product': 'Ethanol Product', 'grain': 'Grain',
+  'ddgs': 'DDGS', 'ddgs-stock': 'DDGS Stock', 'ddgs-dispatch': 'DDGS Dispatch',
+  'sales': 'Sales', 'dispatch': 'Dispatch', 'procurement': 'Procurement',
+  'accounts': 'Accounts', 'inventory': 'Inventory',
+};
+
+const ROUTE_CYCLE: RouteTarget[] = ['group1', 'group2', 'private'];
+
 export default function SettingsPage() {
   const [settings, setSettings] = useState<any>({});
   const [msg, setMsg] = useState('');
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
 
-  // WhatsApp Baileys state
+  // WhatsApp state
   const [waStatus, setWaStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
   const [waQR, setWaQR] = useState<string | null>(null);
   const [waNumber, setWaNumber] = useState<string | null>(null);
@@ -26,8 +39,7 @@ export default function SettingsPage() {
   const [groups, setGroups] = useState<WAGroup[]>([]);
   const [loadingGroups, setLoadingGroups] = useState(false);
   const [allModules, setAllModules] = useState<string[]>([]);
-  const [privateModules, setPrivateModules] = useState<string[]>([]);
-
+  const [moduleRouting, setModuleRouting] = useState<Record<string, RouteTarget>>({});
 
   const fetchWAStatus = useCallback(async () => {
     try {
@@ -91,52 +103,54 @@ export default function SettingsPage() {
     setLoadingGroups(false);
   };
 
+  // Load settings + module routing
   useEffect(() => {
-    let savedPrivate: string[] | null = null;
     api.get('/settings').then(r => {
       setSettings(r.data);
-      // Parse saved private modules
+      // Parse module routing
       try {
-        if (r.data.whatsappPrivateModules) {
-          savedPrivate = JSON.parse(r.data.whatsappPrivateModules);
-          setPrivateModules(savedPrivate!);
+        if (r.data.whatsappModuleRouting) {
+          setModuleRouting(JSON.parse(r.data.whatsappModuleRouting));
         }
       } catch { /* ignore */ }
     });
     api.get('/whatsapp/modules').then(r => {
       setAllModules(r.data.all);
-      // Only use defaults if nothing was saved in DB
-      setPrivateModules(prev => prev.length > 0 ? prev : (savedPrivate || r.data.privateModules));
+      // Use backend routing if we haven't loaded from settings yet
+      if (r.data.routing) {
+        setModuleRouting(prev => Object.keys(prev).length > 0 ? prev : r.data.routing);
+      }
     }).catch(() => {});
   }, []);
-
-  const togglePrivateModule = (mod: string) => {
-    setPrivateModules(prev => {
-      const next = prev.includes(mod) ? prev.filter(m => m !== mod) : [...prev, mod];
-      setSettings((s: any) => ({ ...s, whatsappPrivateModules: JSON.stringify(next) }));
-      return next;
-    });
-  };
-
-  const MODULE_LABELS: Record<string, string> = {
-    'liquefaction': 'Liquefaction', 'fermentation': 'Fermentation', 'distillation': 'Distillation',
-    'milling': 'Milling', 'evaporation': 'Evaporation', 'decanter': 'Decanter',
-    'dryer': 'Dryer', 'ethanol-product': 'Ethanol Product', 'grain': 'Grain',
-    'ddgs': 'DDGS', 'ddgs-stock': 'DDGS Stock', 'ddgs-dispatch': 'DDGS Dispatch',
-    'sales': 'Sales', 'dispatch': 'Dispatch', 'procurement': 'Procurement',
-    'accounts': 'Accounts', 'inventory': 'Inventory',
-  };
 
   // Fetch groups when connected
   useEffect(() => {
     if (waStatus === 'connected') fetchGroups();
   }, [waStatus]);
 
+  const cycleModuleRoute = (mod: string) => {
+    if (!isAdmin) return;
+    setModuleRouting(prev => {
+      const current = prev[mod] || 'group1';
+      const idx = ROUTE_CYCLE.indexOf(current);
+      const next = ROUTE_CYCLE[(idx + 1) % ROUTE_CYCLE.length];
+      const updated = { ...prev, [mod]: next };
+      // Sync to settings for save
+      setSettings((s: any) => ({ ...s, whatsappModuleRouting: JSON.stringify(updated) }));
+      return updated;
+    });
+  };
+
   const update = (k: string, v: string) => setSettings((s: any) => ({ ...s, [k]: v === '' ? null : parseFloat(v) }));
   const updateStr = (k: string, v: string) => setSettings((s: any) => ({ ...s, [k]: v }));
 
   const save = async () => {
-    await api.patch('/settings', settings);
+    // Ensure module routing is serialized
+    const payload = { ...settings };
+    if (typeof payload.whatsappModuleRouting === 'object') {
+      payload.whatsappModuleRouting = JSON.stringify(payload.whatsappModuleRouting);
+    }
+    await api.patch('/settings', payload);
     setMsg('Saved!'); setTimeout(() => setMsg(''), 2000);
   };
 
@@ -156,6 +170,73 @@ export default function SettingsPage() {
     { key: 'hfoTankCap', label: 'HFO Tank Capacity', unit: 'M3' },
     { key: 'lfoTankCap', label: 'LFO Tank Capacity', unit: 'M3' },
   ];
+
+  const routeColor: Record<RouteTarget, { bg: string; text: string; border: string; icon: string }> = {
+    group1: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', icon: 'text-blue-500' },
+    group2: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', icon: 'text-emerald-500' },
+    private: { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', icon: 'text-orange-500' },
+  };
+
+  const getRouteLabel = (target: RouteTarget): string => {
+    if (target === 'group1') return settings.whatsappGroupName || 'Group 1';
+    if (target === 'group2') return settings.whatsappGroup2Name || 'Group 2';
+    return 'Private';
+  };
+
+  // Group selector component
+  const GroupSelector = ({ num, jidKey, nameKey, label, color }: {
+    num: number; jidKey: string; nameKey: string; label: string; color: string;
+  }) => (
+    <div className="mt-4 pt-4 border-t first:mt-0 first:pt-0 first:border-0">
+      <div className="flex items-center gap-2 mb-2">
+        <Users size={16} className={color} />
+        <span className="text-sm font-semibold">{label}</span>
+        {settings[nameKey] && (
+          <span className="text-xs text-gray-400">({settings[nameKey]})</span>
+        )}
+      </div>
+
+      {settings[jidKey] && settings[nameKey] ? (
+        <div className="flex items-center gap-2 mb-2">
+          <span className={`inline-flex items-center gap-1 px-3 py-1.5 ${num === 1 ? 'bg-blue-100 text-blue-800' : 'bg-emerald-100 text-emerald-800'} rounded-full text-sm font-medium`}>
+            <Users size={14} /> {settings[nameKey]}
+          </span>
+          {isAdmin && (
+            <button onClick={() => { updateStr(jidKey, ''); updateStr(nameKey, ''); }}
+              className="text-xs text-red-500 hover:underline">Remove</button>
+          )}
+        </div>
+      ) : (
+        <>
+          {waStatus === 'connected' && isAdmin ? (
+            <div className="space-y-2">
+              {groups.length > 0 ? (
+                <div className="space-y-1 max-h-32 overflow-y-auto">
+                  {groups.map(g => (
+                    <button key={g.id} onClick={() => { updateStr(jidKey, g.id); updateStr(nameKey, g.subject); }}
+                      className="w-full text-left px-3 py-2 bg-gray-50 hover:bg-blue-50 rounded-lg text-sm flex justify-between items-center">
+                      <span>{g.subject}</span>
+                      <span className="text-xs text-gray-400">{g.size} members</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <button onClick={fetchGroups} disabled={loadingGroups}
+                  className="text-sm text-blue-600 hover:underline flex items-center gap-1">
+                  <RefreshCw size={12} className={loadingGroups ? 'animate-spin' : ''} />
+                  {loadingGroups ? 'Loading...' : 'Load groups'}
+                </button>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-orange-500">
+              {waStatus !== 'connected' ? 'Connect WhatsApp first to select a group.' : 'Only admins can change this.'}
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
 
   return (
     <div className="max-w-2xl">
@@ -234,61 +315,25 @@ export default function SettingsPage() {
           )}
         </div>
 
-        {/* Group Share — production data goes here */}
+        {/* WhatsApp Groups — Two groups */}
         <div className="mt-6 pt-6 border-t">
           <h2 className="text-lg font-semibold mb-1 flex items-center gap-2">
             <Users size={18} className="text-blue-600" />
-            Group Share <span className="text-xs font-normal text-gray-400">(production data)</span>
+            WhatsApp Groups
           </h2>
-          <p className="text-sm text-gray-500 mb-3">Liquefaction, Fermentation, Distillation, Milling etc. reports go to this group.</p>
+          <p className="text-sm text-gray-500 mb-3">Select two groups. Then assign each module to a group or private below.</p>
 
-          {settings.whatsappGroupJid && settings.whatsappGroupName && (
-            <div className="flex items-center gap-2 mb-3">
-              <span className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
-                <Users size={14} /> {settings.whatsappGroupName}
-              </span>
-              {isAdmin && (
-                <button onClick={() => { updateStr('whatsappGroupJid', ''); updateStr('whatsappGroupName', ''); }}
-                  className="text-xs text-red-500 hover:underline">Remove</button>
-              )}
-            </div>
-          )}
-
-          {!settings.whatsappGroupJid && waStatus === 'connected' && isAdmin && (
-            <div className="space-y-2">
-              <button onClick={fetchGroups} disabled={loadingGroups}
-                className="text-sm text-blue-600 hover:underline flex items-center gap-1">
-                <RefreshCw size={12} className={loadingGroups ? 'animate-spin' : ''} /> {loadingGroups ? 'Loading...' : 'Load my groups'}
-              </button>
-              {groups.length > 0 && (
-                <div className="space-y-1 max-h-40 overflow-y-auto">
-                  {groups.map(g => (
-                    <button key={g.id} onClick={() => { updateStr('whatsappGroupJid', g.id); updateStr('whatsappGroupName', g.subject); }}
-                      className="w-full text-left px-3 py-2 bg-gray-50 hover:bg-blue-50 rounded-lg text-sm flex justify-between items-center">
-                      <span>{g.subject}</span>
-                      <span className="text-xs text-gray-400">{g.size} members</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {groups.length === 0 && !loadingGroups && (
-                <p className="text-xs text-gray-400">No groups found. Make sure the connected number is in a group.</p>
-              )}
-            </div>
-          )}
-
-          {!settings.whatsappGroupJid && waStatus !== 'connected' && (
-            <p className="text-sm text-orange-500">Connect WhatsApp first to select a group.</p>
-          )}
+          <GroupSelector num={1} jidKey="whatsappGroupJid" nameKey="whatsappGroupName" label="Group 1" color="text-blue-600" />
+          <GroupSelector num={2} jidKey="whatsappGroup2Jid" nameKey="whatsappGroup2Name" label="Group 2" color="text-emerald-600" />
         </div>
 
-        {/* Private Numbers — sensitive data goes here */}
+        {/* Private Numbers */}
         <div className="mt-6 pt-6 border-t">
           <h2 className="text-lg font-semibold mb-1 flex items-center gap-2">
             <Lock size={18} className="text-orange-600" />
-            Private Numbers <span className="text-xs font-normal text-gray-400">(sensitive data)</span>
+            Private Numbers
           </h2>
-          <p className="text-sm text-gray-500 mb-3">Private-only modules send here. Group modules go to the group (no duplicates).</p>
+          <p className="text-sm text-gray-500 mb-3">Modules routed to "Private" send reports to these numbers only.</p>
 
           {settings.whatsappNumbers && settings.whatsappNumbers.trim() && (
             <div className="flex flex-wrap gap-2 mb-3">
@@ -298,9 +343,6 @@ export default function SettingsPage() {
                 </span>
               ))}
             </div>
-          )}
-          {(!settings.whatsappNumbers || !settings.whatsappNumbers.trim()) && (
-            <p className="text-sm text-orange-500 mb-3">No private numbers saved yet.</p>
           )}
 
           <div className="flex items-center gap-2 mb-4">
@@ -314,42 +356,34 @@ export default function SettingsPage() {
               placeholder="9876543210, 9123456789"
             />
           </div>
+        </div>
 
-          {/* Module routing — tap a module to toggle between group and private */}
-          <div className="mt-4">
-            <p className="text-sm font-medium text-gray-700 mb-2">Module Routing <span className="text-xs text-gray-400">(tap to toggle)</span></p>
-            <div className="grid grid-cols-2 gap-3">
-              {/* Group column */}
-              <div>
-                <div className="text-[10px] font-bold text-blue-600 uppercase mb-1.5 flex items-center gap-1"><Users size={11} /> Group</div>
-                <div className="space-y-1">
-                  {allModules.filter(m => !privateModules.includes(m)).map(mod => (
-                    <button key={mod} onClick={() => isAdmin && togglePrivateModule(mod)} disabled={!isAdmin}
-                      className="w-full flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors text-left">
-                      <Users size={11} /> {MODULE_LABELS[mod] || mod}
-                    </button>
-                  ))}
-                  {allModules.filter(m => !privateModules.includes(m)).length === 0 && (
-                    <p className="text-[10px] text-gray-400 italic px-2">No modules in group</p>
-                  )}
-                </div>
-              </div>
-              {/* Private column */}
-              <div>
-                <div className="text-[10px] font-bold text-orange-600 uppercase mb-1.5 flex items-center gap-1"><Lock size={11} /> Private Only</div>
-                <div className="space-y-1">
-                  {allModules.filter(m => privateModules.includes(m)).map(mod => (
-                    <button key={mod} onClick={() => isAdmin && togglePrivateModule(mod)} disabled={!isAdmin}
-                      className="w-full flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 transition-colors text-left">
-                      <Lock size={11} /> {MODULE_LABELS[mod] || mod}
-                    </button>
-                  ))}
-                  {allModules.filter(m => privateModules.includes(m)).length === 0 && (
-                    <p className="text-[10px] text-gray-400 italic px-2">No private modules</p>
-                  )}
-                </div>
-              </div>
-            </div>
+        {/* Module Routing — tap to cycle between group1, group2, private */}
+        <div className="mt-6 pt-6 border-t">
+          <h2 className="text-lg font-semibold mb-1">Report Routing</h2>
+          <p className="text-sm text-gray-500 mb-3">Tap a module to cycle its destination: <span className="font-medium text-blue-600">{settings.whatsappGroupName || 'Group 1'}</span> <ArrowRight size={12} className="inline" /> <span className="font-medium text-emerald-600">{settings.whatsappGroup2Name || 'Group 2'}</span> <ArrowRight size={12} className="inline" /> <span className="font-medium text-orange-600">Private</span></p>
+
+          <div className="space-y-1.5">
+            {allModules.map(mod => {
+              const target = (moduleRouting[mod] || 'group1') as RouteTarget;
+              const colors = routeColor[target];
+              return (
+                <button
+                  key={mod}
+                  onClick={() => cycleModuleRoute(mod)}
+                  disabled={!isAdmin}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium ${colors.bg} ${colors.text} border ${colors.border} hover:opacity-80 transition-all`}
+                >
+                  <span className="flex items-center gap-2">
+                    {target === 'private' ? <Lock size={14} /> : <Users size={14} />}
+                    {MODULE_LABELS[mod] || mod}
+                  </span>
+                  <span className={`text-[10px] font-bold uppercase tracking-wider ${colors.icon}`}>
+                    {getRouteLabel(target)}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
