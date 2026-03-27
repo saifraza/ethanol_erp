@@ -2,8 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../services/api';
 
 // ─── Tag catalog (mirrors tags.py on Windows) ───────────────────────────────
-// This lets users browse and add tags from the ERP UI without needing
-// access to the factory OPC server directly.
 const TAG_CATALOG: Record<string, Record<string, { folder: string; type: string; tags: Record<string, string> }>> = {
   Fermantation: {
     ANALOG: { folder: 'ANALOG', type: 'analog', tags: {
@@ -49,34 +47,30 @@ const TAG_CATALOG: Record<string, Record<string, { folder: string; type: string;
       LCV_150801: 'LCV 150801', LCV_150901: 'LCV 150901', LCV_150902: 'LCV 150902',
       PCV_151101: 'PCV 151101', TCV_150701: 'TCV 150701',
     }},
-    ANALOG: { folder: 'ANALOG', type: 'analog', tags: {
+    Evap_ANALOG: { folder: 'Evap_ANALOG', type: 'analog', tags: {
       LT_150101: 'Level 150101', LT_150201: 'Level 150201', LT_150301: 'Level 150301',
       LT_150401: 'Level 150401', LT_150501: 'Level 150501', LT_150601: 'Level 150601',
       LT_150701: 'Level 150701', LT_150801: 'Level 150801', LT_150901: 'Level 150901',
-      PT_151101: 'Pressure 151101',
+      PT_150301: 'Pressure 150301', PT_150901: 'Pressure 150901',
+      TE_150101: 'Temp 150101', TE_150201: 'Temp 150201', TE_150301: 'Temp 150301',
+      TE_150401: 'Temp 150401', TE_150501: 'Temp 150501', TE_150601: 'Temp 150601',
+      TE_150701: 'Temp 150701', TE_150801: 'Temp 150801', TE_150901: 'Temp 150901',
+      FE_150201: 'Flow 150201', FE_150901: 'Flow 150901',
     }},
   },
-  DRYER: {
+  Dryer: {
     PID: { folder: 'PID', type: 'pid', tags: {
-      LCV170101: 'LCV 170101', LCV170103: 'LCV 170103', LCV170104: 'LCV 170104',
-      LCV180201: 'LCV 180201', LCV190102: 'LCV 190102',
-      TCV180101: 'TCV 180101', PCV180101: 'PCV 180101', SV190102: 'SV 190102', VF_1811_PID: 'VF 1811',
+      FCV_160101: 'FCV 160101',
     }},
     ANALOG: { folder: 'ANALOG', type: 'analog', tags: {
-      LT170101: 'Level 170101', LT180201: 'Level 180201', LT190101: 'Level 190101', LT190102: 'Level 190102',
-      PT180101: 'Pressure 180101', PT180102: 'Pressure 180102', PT180103: 'Pressure 180103',
-      TE170101: 'Temp 170101', TE180101: 'Temp 180101', TE180102: 'Temp 180102',
-      TE180103: 'Temp 180103', TE180104: 'Temp 180104', TE180105: 'Temp 180105',
-      TE180106: 'Temp 180106', TE180107: 'Temp 180107',
-      FIT180101: 'Flow 180101', FIT200101: 'Flow 200101',
+      TE_160101: 'Temp 160101', TE_160102: 'Temp 160102', TE_160103: 'Temp 160103',
     }},
   },
   Liquefication: {
     PID: { folder: 'PID', type: 'pid', tags: {
       FCV_120101: 'FCV 120101', FCV_120102: 'FCV 120102', FCV_120103: 'FCV 120103',
-      FCV_120201: 'FCV 120201', LCV_120101: 'LCV 120101', PCV_120102: 'PCV 120102', PCV_120201: 'PCV 120201',
     }},
-    Analog: { folder: 'Analog', type: 'analog', tags: {
+    ANALOG: { folder: 'ANALOG', type: 'analog', tags: {
       LT_120101: 'Level 120101', LT_120102: 'Level 120102', LT_120103: 'Level 120103',
       LT_120104: 'Level 120104', LT_120201: 'Level 120201',
       PT_120101: 'Pressure 120101', PT_120201: 'Pressure 120201',
@@ -104,21 +98,14 @@ const TAG_CATALOG: Record<string, Record<string, { folder: string; type: string;
 
 // ─── Interfaces ─────────────────────────────────────────────────────────────
 
-interface MonitoredTag {
-  id?: string;
-  tag: string;
-  area: string;
-  folder: string;
-  tagType: string;
-  label: string;
-  active?: boolean;
-}
-
 interface LiveTag {
   tag: string;
   area: string;
   type: string;
   label: string;
+  description: string;
+  hhAlarm: number | null;
+  llAlarm: number | null;
   updatedAt: string | null;
   values: Record<string, number>;
 }
@@ -130,7 +117,7 @@ interface HealthData {
   lastSync: string | null;
 }
 
-type Tab = 'live' | 'monitored' | 'browse' | 'stats';
+type Tab = 'live' | 'browse' | 'stats';
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
@@ -139,7 +126,6 @@ export default function OPCTagManager() {
   const [health, setHealth] = useState<HealthData | null>(null);
   const [liveTags, setLiveTags] = useState<LiveTag[]>([]);
   const [liveLoading, setLiveLoading] = useState(false);
-  const [monitored, setMonitored] = useState<MonitoredTag[]>([]);
   const [stats, setStats] = useState<Record<string, number> | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -152,12 +138,8 @@ export default function OPCTagManager() {
 
   // Edit state
   const [editingTag, setEditingTag] = useState<string | null>(null);
-  const [editLabel, setEditLabel] = useState('');
-  const [editArea, setEditArea] = useState('');
+  const [editForm, setEditForm] = useState({ description: '', hhAlarm: '', llAlarm: '' });
   const [saving, setSaving] = useState(false);
-
-  // Live read state
-  const [liveReading, setLiveReading] = useState<string | null>(null);
 
   const checkHealth = useCallback(async () => {
     try {
@@ -181,7 +163,6 @@ export default function OPCTagManager() {
   }, [tab]);
 
   useEffect(() => {
-    if (tab === 'monitored') fetchMonitored();
     if (tab === 'stats') fetchStats();
   }, [tab]);
 
@@ -195,16 +176,6 @@ export default function OPCTagManager() {
       setError(e?.response?.data?.error || 'Failed to fetch live data');
     } finally {
       setLiveLoading(false);
-    }
-  }
-
-  async function fetchMonitored() {
-    try {
-      const res = await api.get('/opc/monitor');
-      setMonitored(res.data.tags || []);
-    } catch (err: unknown) {
-      const e = err as { response?: { data?: { error?: string } } };
-      setError(e?.response?.data?.error || 'Failed to fetch tags');
     }
   }
 
@@ -224,9 +195,9 @@ export default function OPCTagManager() {
     setAdding(prev => new Set(prev).add(tag));
     try {
       await api.post('/opc/monitor', { tag, area, folder, tagType, label });
-      setSuccess(`Added ${tag} to monitoring`);
+      setSuccess(`Added ${tag}`);
       setTimeout(() => setSuccess(''), 3000);
-      fetchMonitored();
+      fetchLive();
     } catch (err: unknown) {
       const e = err as { response?: { data?: { error?: string } } };
       setError(e?.response?.data?.error || `Failed to add ${tag}`);
@@ -239,9 +210,9 @@ export default function OPCTagManager() {
     setRemoving(prev => new Set(prev).add(tag));
     try {
       await api.delete(`/opc/monitor/${tag}`);
-      setSuccess(`Removed ${tag} from monitoring`);
+      setSuccess(`Removed ${tag}`);
       setTimeout(() => setSuccess(''), 3000);
-      setMonitored(prev => prev.filter(t => t.tag !== tag));
+      setLiveTags(prev => prev.filter(t => t.tag !== tag));
     } catch (err: unknown) {
       const e = err as { response?: { data?: { error?: string } } };
       setError(e?.response?.data?.error || `Failed to remove ${tag}`);
@@ -253,14 +224,14 @@ export default function OPCTagManager() {
   async function updateTag(tag: string) {
     setSaving(true);
     try {
-      const data: Record<string, string> = {};
-      if (editLabel) data.label = editLabel;
-      if (editArea) data.area = editArea;
+      const data: Record<string, unknown> = {};
+      if (editForm.description !== undefined) data.description = editForm.description;
+      data.hhAlarm = editForm.hhAlarm ? parseFloat(editForm.hhAlarm) : null;
+      data.llAlarm = editForm.llAlarm ? parseFloat(editForm.llAlarm) : null;
       await api.patch(`/opc/monitor/${tag}`, data);
       setSuccess(`Updated ${tag}`);
       setTimeout(() => setSuccess(''), 3000);
       setEditingTag(null);
-      fetchMonitored();
       fetchLive();
     } catch (err: unknown) {
       const e = err as { response?: { data?: { error?: string } } };
@@ -270,23 +241,9 @@ export default function OPCTagManager() {
     }
   }
 
-  async function getLiveReading(tag: string) {
-    setLiveReading(tag);
-    try {
-      await fetchLive();
-      setSuccess(`Refreshed live data`);
-      setTimeout(() => setSuccess(''), 2000);
-    } catch (err: unknown) {
-      const e = err as { response?: { data?: { error?: string } } };
-      setError(e?.response?.data?.error || 'Failed to fetch live reading');
-    } finally {
-      setLiveReading(null);
-    }
-  }
-
   // ─── Helpers ──────────────────────────────────────────────────────────
 
-  const monitoredSet = new Set(monitored.map(t => t.tag));
+  const monitoredSet = new Set(liveTags.map(t => t.tag));
 
   const fmtVal = (v: number | undefined) => v != null ? v.toFixed(2) : '--';
 
@@ -304,7 +261,20 @@ export default function OPCTagManager() {
     return `${Math.floor(diff / 3600000)}h ago`;
   };
 
+  const isStale = (iso: string | null) => {
+    if (!iso) return true;
+    return Date.now() - new Date(iso).getTime() > 10 * 60 * 1000; // >10 min
+  };
+
   const online = health?.online ?? false;
+
+  // Alarm status for a value
+  const getAlarmStatus = (value: number | undefined, hh: number | null, ll: number | null) => {
+    if (value == null) return null;
+    if (hh != null && value >= hh) return 'HH';
+    if (ll != null && value <= ll) return 'LL';
+    return null;
+  };
 
   // Get browse tags for selected area/folder
   const browseTags = browseArea && browseFolder && TAG_CATALOG[browseArea]?.[browseFolder]
@@ -324,7 +294,7 @@ export default function OPCTagManager() {
           <div className="flex items-center gap-3">
             <span className={`inline-block w-2 h-2 ${online ? 'bg-green-400' : health ? 'bg-red-400' : 'bg-yellow-400'}`} />
             <span className="text-[10px] text-slate-300">
-              {health === null ? 'LOADING...' : online ? `LIVE (${fmtAgo(health.lastScan)})` : `OFFLINE (last: ${fmtAgo(health.lastScan)})`}
+              {health === null ? 'LOADING...' : online ? `ONLINE (${fmtAgo(health.lastScan)})` : `OFFLINE (last: ${fmtAgo(health.lastScan)})`}
             </span>
             <button onClick={() => { checkHealth(); if (tab === 'live') fetchLive(); }} className="px-2 py-0.5 bg-slate-700 text-[10px] text-slate-300 hover:bg-slate-600">REFRESH</button>
           </div>
@@ -365,19 +335,19 @@ export default function OPCTagManager() {
           </div>
         )}
 
-        {/* Tabs */}
+        {/* Tabs — no more "Monitored Tags" */}
         <div className="flex gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6 bg-white">
-          {(['live', 'monitored', 'browse', 'stats'] as Tab[]).map(t => (
+          {(['live', 'browse', 'stats'] as Tab[]).map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-2 text-[11px] font-bold uppercase tracking-widest border-b-2 ${tab === t ? 'border-blue-600 text-blue-700 bg-blue-50/50' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
-              {t === 'live' ? 'Live Data' : t === 'monitored' ? 'Monitored Tags' : t === 'browse' ? 'Add Tags' : 'Statistics'}
+              {t === 'live' ? 'Live Data' : t === 'browse' ? 'Add Tags' : 'Statistics'}
             </button>
           ))}
         </div>
 
-        {/* ═══════════════════ LIVE DATA ═══════════════════ */}
+        {/* ═══════════════════ LIVE DATA (merged with monitored) ═══════════════════ */}
         {tab === 'live' && (
-          <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-hidden">
+          <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-x-auto">
             {liveTags.length === 0 ? (
               <div className="px-4 py-8 text-center">
                 <div className="text-xs text-slate-400 uppercase tracking-widest">{liveLoading ? 'Loading...' : 'No monitored tags'}</div>
@@ -388,34 +358,85 @@ export default function OPCTagManager() {
                 <thead>
                   <tr className="bg-slate-800 text-white">
                     <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Tag</th>
-                    <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Area</th>
-                    <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Label</th>
+                    <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Description</th>
                     <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Value</th>
+                    <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">LL</th>
+                    <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">HH</th>
                     <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Updated</th>
-                    <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest w-16"></th>
+                    <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest w-24">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {liveTags.map((t, i) => (
-                    <tr key={t.tag} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
-                      <td className="px-3 py-1.5 font-mono text-slate-800 border-r border-slate-100">{t.tag}</td>
-                      <td className="px-3 py-1.5 text-slate-500 border-r border-slate-100">{t.area}</td>
-                      <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">{t.label}</td>
-                      <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-800 border-r border-slate-100 font-bold">
-                        {fmtVal(t.values.PV ?? t.values.IO_VALUE)}
-                      </td>
-                      <td className="px-3 py-1.5 text-center text-slate-400 border-r border-slate-100">{fmtAgo(t.updatedAt)}</td>
-                      <td className="px-3 py-1.5 text-center">
-                        <button
-                          onClick={() => getLiveReading(t.tag)}
-                          disabled={liveReading === t.tag}
-                          className="px-2 py-0.5 bg-green-50 border border-green-200 text-green-700 text-[10px] font-bold uppercase hover:bg-green-100 disabled:opacity-50"
-                        >
-                          {liveReading === t.tag ? '...' : 'LIVE'}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {liveTags.map((t, i) => {
+                    const val = t.values.PV ?? t.values.IO_VALUE;
+                    const alarm = getAlarmStatus(val, t.hhAlarm, t.llAlarm);
+                    const stale = isStale(t.updatedAt);
+
+                    if (editingTag === t.tag) {
+                      return (
+                        <tr key={t.tag} className="border-b border-slate-100 bg-blue-50/30">
+                          <td className="px-3 py-1.5 font-mono text-slate-800 border-r border-slate-100">{t.tag}</td>
+                          <td className="px-1 py-1 border-r border-slate-100">
+                            <input value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))}
+                              className="border border-slate-300 px-2 py-1 text-xs w-full focus:outline-none focus:ring-1 focus:ring-blue-400" placeholder="e.g. Fermenter 1A Level" />
+                          </td>
+                          <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-800 border-r border-slate-100 font-bold">{fmtVal(val)}</td>
+                          <td className="px-1 py-1 border-r border-slate-100">
+                            <input type="number" step="0.1" value={editForm.llAlarm} onChange={e => setEditForm(f => ({ ...f, llAlarm: e.target.value }))}
+                              className="border border-slate-300 px-2 py-1 text-xs w-16 text-right focus:outline-none focus:ring-1 focus:ring-blue-400" placeholder="--" />
+                          </td>
+                          <td className="px-1 py-1 border-r border-slate-100">
+                            <input type="number" step="0.1" value={editForm.hhAlarm} onChange={e => setEditForm(f => ({ ...f, hhAlarm: e.target.value }))}
+                              className="border border-slate-300 px-2 py-1 text-xs w-16 text-right focus:outline-none focus:ring-1 focus:ring-blue-400" placeholder="--" />
+                          </td>
+                          <td className="px-3 py-1.5 text-center text-slate-400 border-r border-slate-100">{fmtAgo(t.updatedAt)}</td>
+                          <td className="px-2 py-1.5 text-center whitespace-nowrap">
+                            <button onClick={() => updateTag(t.tag)} disabled={saving}
+                              className="px-2 py-0.5 bg-blue-600 border border-blue-700 text-white text-[10px] font-bold uppercase hover:bg-blue-700 disabled:opacity-50 mr-1">
+                              {saving ? '...' : 'Save'}
+                            </button>
+                            <button onClick={() => setEditingTag(null)}
+                              className="px-2 py-0.5 bg-white border border-slate-300 text-slate-600 text-[10px] font-bold uppercase hover:bg-slate-50">
+                              X
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    return (
+                      <tr key={t.tag} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''} ${alarm ? 'bg-red-50/80' : ''}`}>
+                        <td className="px-3 py-1.5 font-mono text-slate-800 border-r border-slate-100">
+                          <div>{t.tag}</div>
+                          <div className="text-[9px] text-slate-400">{t.label}</div>
+                        </td>
+                        <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">{t.description || t.area}</td>
+                        <td className={`px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100 font-bold ${alarm ? 'text-red-600' : stale ? 'text-slate-400' : 'text-slate-800'}`}>
+                          {fmtVal(val)}
+                          {alarm && <span className="ml-1 text-[9px] font-bold text-red-600 bg-red-100 border border-red-300 px-1 py-0.5">{alarm}</span>}
+                        </td>
+                        <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-400 border-r border-slate-100 text-[10px]">
+                          {t.llAlarm != null ? t.llAlarm : '--'}
+                        </td>
+                        <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-400 border-r border-slate-100 text-[10px]">
+                          {t.hhAlarm != null ? t.hhAlarm : '--'}
+                        </td>
+                        <td className={`px-3 py-1.5 text-center border-r border-slate-100 ${stale ? 'text-red-400' : 'text-slate-400'}`}>
+                          {fmtAgo(t.updatedAt)}
+                        </td>
+                        <td className="px-2 py-1.5 text-center whitespace-nowrap">
+                          <button onClick={() => { setEditingTag(t.tag); setEditForm({ description: t.description || '', hhAlarm: t.hhAlarm != null ? String(t.hhAlarm) : '', llAlarm: t.llAlarm != null ? String(t.llAlarm) : '' }); }}
+                            className="px-2 py-0.5 bg-white border border-slate-300 text-slate-600 text-[10px] font-bold uppercase hover:bg-slate-50 mr-1">
+                            Edit
+                          </button>
+                          <button onClick={() => removeTag(t.tag)} disabled={removing.has(t.tag)}
+                            className="px-2 py-0.5 bg-red-50 border border-red-200 text-red-600 text-[10px] font-bold uppercase hover:bg-red-100 disabled:opacity-50">
+                            {removing.has(t.tag) ? '...' : 'X'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}
@@ -423,124 +444,23 @@ export default function OPCTagManager() {
           </div>
         )}
 
-        {/* ═══════════════════ MONITORED TAGS ═══════════════════ */}
-        {tab === 'monitored' && (
-          <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-hidden">
-            {monitored.length === 0 ? (
-              <div className="px-4 py-8 text-center">
-                <div className="text-xs text-slate-400 uppercase tracking-widest">No tags being monitored</div>
-                <div className="text-xs text-slate-400 mt-2">Go to "Add Tags" tab to start monitoring OPC tags</div>
-              </div>
-            ) : (
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="bg-slate-800 text-white">
-                    <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Tag</th>
-                    <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Area</th>
-                    <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Type</th>
-                    <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Label</th>
-                    <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {monitored.map((t, i) => (
-                    <tr key={t.tag} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
-                      <td className="px-3 py-1.5 font-mono text-slate-800 border-r border-slate-100">{t.tag}</td>
-                      {editingTag === t.tag ? (
-                        <>
-                          <td className="px-1 py-1 border-r border-slate-100">
-                            <input
-                              value={editArea}
-                              onChange={e => setEditArea(e.target.value)}
-                              className="border border-slate-300 px-2 py-1 text-xs w-full focus:outline-none focus:ring-1 focus:ring-blue-400"
-                              placeholder="Area"
-                            />
-                          </td>
-                          <td className="px-3 py-1.5 border-r border-slate-100">
-                            <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${t.tagType === 'pid' ? 'border-blue-300 bg-blue-50 text-blue-600' : 'border-slate-300 bg-slate-50 text-slate-600'}`}>{t.tagType}</span>
-                          </td>
-                          <td className="px-1 py-1 border-r border-slate-100">
-                            <input
-                              value={editLabel}
-                              onChange={e => setEditLabel(e.target.value)}
-                              className="border border-slate-300 px-2 py-1 text-xs w-full focus:outline-none focus:ring-1 focus:ring-blue-400"
-                              placeholder="Label"
-                            />
-                          </td>
-                          <td className="px-3 py-1.5 text-center whitespace-nowrap">
-                            <button
-                              onClick={() => updateTag(t.tag)}
-                              disabled={saving}
-                              className="px-2 py-0.5 bg-blue-600 border border-blue-700 text-white text-[10px] font-bold uppercase hover:bg-blue-700 disabled:opacity-50 mr-1"
-                            >
-                              {saving ? '...' : 'Save'}
-                            </button>
-                            <button
-                              onClick={() => setEditingTag(null)}
-                              className="px-2 py-0.5 bg-white border border-slate-300 text-slate-600 text-[10px] font-bold uppercase hover:bg-slate-50"
-                            >
-                              Cancel
-                            </button>
-                          </td>
-                        </>
-                      ) : (
-                        <>
-                          <td className="px-3 py-1.5 text-slate-500 border-r border-slate-100">{t.area}</td>
-                          <td className="px-3 py-1.5 border-r border-slate-100">
-                            <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${t.tagType === 'pid' ? 'border-blue-300 bg-blue-50 text-blue-600' : 'border-slate-300 bg-slate-50 text-slate-600'}`}>{t.tagType}</span>
-                          </td>
-                          <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">{t.label}</td>
-                          <td className="px-3 py-1.5 text-center whitespace-nowrap">
-                            <button
-                              onClick={() => { setEditingTag(t.tag); setEditLabel(t.label); setEditArea(t.area); }}
-                              className="px-2 py-0.5 bg-white border border-slate-300 text-slate-600 text-[10px] font-bold uppercase hover:bg-slate-50 mr-1"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => removeTag(t.tag)}
-                              disabled={removing.has(t.tag)}
-                              className="px-2 py-0.5 bg-red-50 border border-red-200 text-red-600 text-[10px] font-bold uppercase hover:bg-red-100 disabled:opacity-50"
-                            >
-                              {removing.has(t.tag) ? '...' : 'Remove'}
-                            </button>
-                          </td>
-                        </>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        )}
-
         {/* ═══════════════════ BROWSE / ADD TAGS ═══════════════════ */}
         {tab === 'browse' && (
           <>
-            {/* Filter bar */}
             <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-3 -mx-3 md:-mx-6 flex flex-wrap items-end gap-4">
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Area</label>
-                <select
-                  value={browseArea}
-                  onChange={e => { setBrowseArea(e.target.value); setBrowseFolder(''); }}
-                  className="border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 bg-white min-w-[160px]"
-                >
+                <select value={browseArea} onChange={e => { setBrowseArea(e.target.value); setBrowseFolder(''); }}
+                  className="border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 bg-white min-w-[160px]">
                   <option value="">Select area...</option>
-                  {Object.keys(TAG_CATALOG).map(a => (
-                    <option key={a} value={a}>{a}</option>
-                  ))}
+                  {Object.keys(TAG_CATALOG).map(a => <option key={a} value={a}>{a}</option>)}
                 </select>
               </div>
               {browseArea && (
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Folder</label>
-                  <select
-                    value={browseFolder}
-                    onChange={e => setBrowseFolder(e.target.value)}
-                    className="border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 bg-white min-w-[160px]"
-                  >
+                  <select value={browseFolder} onChange={e => setBrowseFolder(e.target.value)}
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 bg-white min-w-[160px]">
                     <option value="">Select folder...</option>
                     {Object.keys(TAG_CATALOG[browseArea] || {}).map(f => (
                       <option key={f} value={f}>{f} ({Object.keys(TAG_CATALOG[browseArea][f].tags).length} tags)</option>
@@ -550,18 +470,16 @@ export default function OPCTagManager() {
               )}
               {browseTags && (
                 <div className="text-xs text-slate-500 pb-1">
-                  {Object.keys(browseTags.tags).length} tags available |{' '}
-                  {Object.keys(browseTags.tags).filter(t => monitoredSet.has(t)).length} already monitored
+                  {Object.keys(browseTags.tags).length} tags | {Object.keys(browseTags.tags).filter(t => monitoredSet.has(t)).length} monitored
                 </div>
               )}
             </div>
 
-            {/* Tag list */}
             <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-hidden">
               {!browseArea || !browseFolder ? (
                 <div className="px-4 py-8 text-center">
                   <div className="text-xs text-slate-400 uppercase tracking-widest">Select an area and folder to browse tags</div>
-                  <div className="text-xs text-slate-400 mt-2">Tags added here will be synced to the factory PC within ~3 minutes</div>
+                  <div className="text-xs text-slate-400 mt-2">Tags sync to factory PC within ~3 minutes</div>
                 </div>
               ) : !browseTags || Object.keys(browseTags.tags).length === 0 ? (
                 <div className="px-4 py-8 text-center">
@@ -591,27 +509,20 @@ export default function OPCTagManager() {
                             </span>
                           </td>
                           <td className="px-3 py-1.5 text-center border-r border-slate-100">
-                            {isMonitored ? (
-                              <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-300 bg-green-50 text-green-600">Monitored</span>
-                            ) : (
-                              <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-slate-200 bg-slate-50 text-slate-400">Not Monitored</span>
-                            )}
+                            {isMonitored
+                              ? <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-300 bg-green-50 text-green-600">Active</span>
+                              : <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-slate-200 bg-slate-50 text-slate-400">--</span>}
                           </td>
                           <td className="px-3 py-1.5 text-center">
                             {isMonitored ? (
-                              <button
-                                onClick={() => removeTag(tagName)}
-                                disabled={removing.has(tagName)}
-                                className="px-2 py-0.5 bg-red-50 border border-red-200 text-red-600 text-[10px] font-bold uppercase hover:bg-red-100 disabled:opacity-50"
-                              >
+                              <button onClick={() => removeTag(tagName)} disabled={removing.has(tagName)}
+                                className="px-2 py-0.5 bg-red-50 border border-red-200 text-red-600 text-[10px] font-bold uppercase hover:bg-red-100 disabled:opacity-50">
                                 {removing.has(tagName) ? '...' : 'Remove'}
                               </button>
                             ) : (
-                              <button
-                                onClick={() => addTag(tagName, browseArea, browseTags.folder, browseTags.type, label)}
+                              <button onClick={() => addTag(tagName, browseArea, browseTags.folder, browseTags.type, label)}
                                 disabled={adding.has(tagName)}
-                                className="px-2 py-0.5 bg-blue-600 border border-blue-700 text-white text-[10px] font-bold uppercase hover:bg-blue-700 disabled:opacity-50"
-                              >
+                                className="px-2 py-0.5 bg-blue-600 border border-blue-700 text-white text-[10px] font-bold uppercase hover:bg-blue-700 disabled:opacity-50">
                                 {adding.has(tagName) ? '...' : '+ Add'}
                               </button>
                             )}
@@ -641,12 +552,20 @@ export default function OPCTagManager() {
                 ))}
               </div>
             )}
+            <div className="px-4 py-3 bg-slate-50 border-t border-slate-200">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">How it works</div>
+              <div className="text-[10px] text-slate-500 space-y-0.5">
+                <div>Factory PC scans OPC tags every 2 min, stores raw readings locally (7 day retention)</div>
+                <div>Every 2.5 min: pushes readings to cloud + pulls tag list from ERP</div>
+                <div>Every hour: computes avg/min/max aggregates (stored permanently in cloud)</div>
+                <div>HH/LL alarms: checked on each push, alerts sent to WhatsApp group (max once per 15 min per tag)</div>
+              </div>
+            </div>
           </div>
         )}
 
-        {/* Info footer */}
         <div className="mt-4 px-1 text-[10px] text-slate-400">
-          Tags added/removed here sync to the factory PC automatically (~3 min). Factory scans every 2 min, pushes to cloud every 2.5 min.
+          Tags sync to factory PC automatically (~3 min). Factory scans every 2 min, pushes to cloud every 2.5 min. Hourly averages stored permanently.
         </div>
       </div>
     </div>

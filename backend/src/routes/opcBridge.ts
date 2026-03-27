@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { z } from 'zod';
+import { waSendGroup } from '../services/whatsappClient';
 
 const router = Router();
 
@@ -29,6 +30,59 @@ function checkPushKey(req: AuthRequest, res: Response): boolean {
     return false;
   }
   return true;
+}
+
+// ==========================================================================
+// ALARM CHECKING — compare readings against HH/LL limits, WhatsApp alert
+// ==========================================================================
+
+// Track last alarm time per tag to avoid spamming (max once per 15 min)
+const _lastAlarmSent: Record<string, number> = {};
+const ALARM_COOLDOWN_MS = 15 * 60 * 1000;
+
+async function checkAlarms(opc: any, readings: { tag: string; property: string; value: number }[]) {
+  // Get tags with alarm limits set
+  const tagsWithAlarms = await opc.opcMonitoredTag.findMany({
+    where: { active: true, OR: [{ hhAlarm: { not: null } }, { llAlarm: { not: null } }] },
+    select: { tag: true, label: true, description: true, hhAlarm: true, llAlarm: true },
+  });
+  if (!tagsWithAlarms.length) return;
+
+  const alarmMap = new Map(tagsWithAlarms.map((t: any) => [t.tag, t]));
+  const alerts: string[] = [];
+  const now = Date.now();
+
+  for (const r of readings) {
+    const tagAlarm = alarmMap.get(r.tag);
+    if (!tagAlarm) continue;
+
+    // Cooldown check
+    const lastSent = _lastAlarmSent[r.tag] || 0;
+    if (now - lastSent < ALARM_COOLDOWN_MS) continue;
+
+    const name = tagAlarm.description || tagAlarm.label || r.tag;
+
+    if (tagAlarm.hhAlarm != null && r.value >= tagAlarm.hhAlarm) {
+      alerts.push(`*HH ALARM* ${name}: ${r.value} (limit: ${tagAlarm.hhAlarm})`);
+      _lastAlarmSent[r.tag] = now;
+    } else if (tagAlarm.llAlarm != null && r.value <= tagAlarm.llAlarm) {
+      alerts.push(`*LL ALARM* ${name}: ${r.value} (limit: ${tagAlarm.llAlarm})`);
+      _lastAlarmSent[r.tag] = now;
+    }
+  }
+
+  if (alerts.length > 0) {
+    const prismaMain = (await import('../config/prisma')).default;
+    const settings = await prismaMain.settings.findFirst();
+    const groupJid = (settings as any)?.whatsappGroupJid;
+    if (groupJid) {
+      const ist = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+      const time = ist.toISOString().slice(11, 19);
+      const msg = `⚠️ *OPC ALARM* (${time} IST)\n\n${alerts.join('\n')}`;
+      await waSendGroup(groupJid, msg, 'opc-alarm');
+      console.log(`[OPC] Sent ${alerts.length} alarm(s) to WhatsApp group`);
+    }
+  }
 }
 
 // ==========================================================================
@@ -84,6 +138,9 @@ router.post('/push', validate(pushReadingsSchema), asyncHandler(async (req: Auth
   await opc.opcSyncLog.create({
     data: { syncType: 'readings', tagCount: tags?.length || 0, readingCount: readings.length },
   });
+
+  // Check alarms — compare readings against HH/LL limits
+  checkAlarms(opc, readings).catch(err => console.error('[OPC] Alarm check failed:', err));
 
   res.json({ ok: true, received: readings.length });
 }));
@@ -192,22 +249,28 @@ router.post('/monitor', validate(addMonitorSchema), asyncHandler(async (req: Aut
   res.status(201).json({ ok: true, tag: result });
 }));
 
-// PATCH /api/opc/monitor/:tag — Update tag label/area
+// PATCH /api/opc/monitor/:tag — Update tag properties
 const updateMonitorSchema = z.object({
   label: z.string().min(1).optional(),
+  description: z.string().optional(),
   area: z.string().min(1).optional(),
   folder: z.string().min(1).optional(),
   tagType: z.string().optional(),
+  hhAlarm: z.number().nullable().optional(),
+  llAlarm: z.number().nullable().optional(),
 });
 
 router.patch('/monitor/:tag', validate(updateMonitorSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const opc = getOpcPrisma();
   const tag = req.params.tag;
-  const data: Record<string, string> = {};
-  if (req.body.label) data.label = req.body.label;
+  const data: Record<string, unknown> = {};
+  if (req.body.label !== undefined) data.label = req.body.label;
+  if (req.body.description !== undefined) data.description = req.body.description;
   if (req.body.area) data.area = req.body.area;
   if (req.body.folder) data.folder = req.body.folder;
   if (req.body.tagType) data.tagType = req.body.tagType;
+  if (req.body.hhAlarm !== undefined) data.hhAlarm = req.body.hhAlarm;
+  if (req.body.llAlarm !== undefined) data.llAlarm = req.body.llAlarm;
 
   if (Object.keys(data).length === 0) {
     res.status(400).json({ error: 'No fields to update' });
@@ -278,6 +341,9 @@ router.get('/live', asyncHandler(async (_req: AuthRequest, res: Response) => {
       area: t.area,
       type: t.tagType,
       label: t.label,
+      description: t.description || '',
+      hhAlarm: t.hhAlarm,
+      llAlarm: t.llAlarm,
       updatedAt: updatedAt?.toISOString() || null,
       values,
     });

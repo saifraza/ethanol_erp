@@ -10,15 +10,18 @@ datasource db {
 
 // Tags being monitored — synced from Windows SQLite
 model OpcMonitoredTag {
-  id        String   @id @default(cuid())
-  tag       String   @unique
-  area      String
-  folder    String
-  tagType   String   @default("analog")
-  label     String   @default("")
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(cuid())
+  tag         String   @unique
+  area        String
+  folder      String
+  tagType     String   @default("analog")
+  label       String   @default("")
+  description String   @default("")
+  hhAlarm     Float?   // High-High alarm limit
+  llAlarm     Float?   // Low-Low alarm limit
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([area])
   @@index([active])
