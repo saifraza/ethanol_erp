@@ -397,28 +397,90 @@ export default function Fermentation() {
     } catch (e: any) { flash('err', e?.response?.data?.error || 'Delete failed'); }
   };
 
-  /* ── OPC Live Data fetch ── */
-  const OPC_TAG_MAP: Record<string, string> = {
-    'BW-1-level': 'LT130401',
-    'BW-1-temp': 'TE130301',
+  /* ── OPC Live Data ── */
+  // Maps vessel labels to OPC tags for level and temp
+  const OPC_TAG_MAP: Record<string, { level?: string; temp?: string }> = {
+    'F-1':  { level: 'LT130101', temp: 'TE130101' },
+    'F-2':  { level: 'LT130201', temp: 'TE130201' },
+    'F-3':  { level: 'LT130301', temp: 'TE130301' },
+    'F-4':  { level: 'LT130302' },
+    'BW-1': { level: 'LT130401' },
   };
 
+  interface OpcVesselData { level?: number; temp?: number; updatedAt?: string; }
+  const [opcData, setOpcData] = useState<Record<string, OpcVesselData>>({});
+
+  // Fetch OPC data for all vessels on page load
+  const fetchAllOpcData = useCallback(async () => {
+    try {
+      const res = await api.get('/opc/live');
+      const tags: { tag: string; values: Record<string, number>; updatedAt: string }[] = res.data?.tags || [];
+      if (!tags.length) return;
+
+      // Build tag->value lookup
+      const tagValues: Record<string, { value: number; updatedAt: string }> = {};
+      for (const t of tags) {
+        const val = t.values?.IO_VALUE ?? t.values?.PV;
+        if (val != null) tagValues[t.tag] = { value: val, updatedAt: t.updatedAt };
+      }
+
+      // Map to vessels
+      const result: Record<string, OpcVesselData> = {};
+      for (const [vessel, mapping] of Object.entries(OPC_TAG_MAP)) {
+        const data: OpcVesselData = {};
+        if (mapping.level && tagValues[mapping.level]) {
+          data.level = Math.round(tagValues[mapping.level].value * 100) / 100;
+          data.updatedAt = tagValues[mapping.level].updatedAt;
+        }
+        if (mapping.temp && tagValues[mapping.temp]) {
+          data.temp = Math.round(tagValues[mapping.temp].value * 100) / 100;
+          if (!data.updatedAt) data.updatedAt = tagValues[mapping.temp].updatedAt;
+        }
+        if (data.level != null || data.temp != null) result[vessel] = data;
+      }
+      setOpcData(result);
+    } catch { /* OPC unavailable, no-op */ }
+  }, []);
+
+  useEffect(() => {
+    fetchAllOpcData();
+    const iv = setInterval(fetchAllOpcData, 60000); // Refresh every 60s
+    return () => clearInterval(iv);
+  }, [fetchAllOpcData]);
+
   const fetchOpcLive = async (vesselLabel: string) => {
-    const levelTag = OPC_TAG_MAP[`${vesselLabel}-level`];
-    if (!levelTag) { flash('err', `No OPC tag mapped for ${vesselLabel}`); return; }
+    const mapping = OPC_TAG_MAP[vesselLabel];
+    if (!mapping?.level) { flash('err', `No OPC tag mapped for ${vesselLabel}`); return; }
     setOpcLoading(true);
     try {
-      const res = await api.get(`/opc/live/${levelTag}`);
+      const res = await api.get(`/opc/live/${mapping.level}`);
       const val = res.data?.values?.IO_VALUE ?? res.data?.values?.PV;
       if (val != null) {
-        setReadingForm(f => ({ ...f, level: String(Math.round(val * 100) / 100) }));
+        const rounded = Math.round(val * 100) / 100;
+        setReadingForm(f => ({ ...f, level: String(rounded) }));
+        // Also fetch temp if mapped
+        if (mapping.temp) {
+          try {
+            const tempRes = await api.get(`/opc/live/${mapping.temp}`);
+            const tempVal = tempRes.data?.values?.IO_VALUE ?? tempRes.data?.values?.PV;
+            if (tempVal != null) setReadingForm(f => ({ ...f, temp: String(Math.round(tempVal * 100) / 100) }));
+          } catch { /* temp unavailable */ }
+        }
         const ago = res.data?.updatedAt ? Math.round((Date.now() - new Date(res.data.updatedAt).getTime()) / 1000) : null;
-        flash('ok', `Level: ${val.toFixed(2)}%${ago ? ` (${ago < 60 ? `${ago}s` : `${Math.round(ago / 60)}m`} ago)` : ''}`);
+        flash('ok', `Level: ${rounded}%${ago ? ` (${ago < 60 ? `${ago}s` : `${Math.round(ago / 60)}m`} ago)` : ''}`);
       } else {
         flash('err', 'No OPC reading available');
       }
     } catch { flash('err', 'OPC data unavailable'); }
     finally { setOpcLoading(false); }
+  };
+
+  const fmtOpcAgo = (iso?: string) => {
+    if (!iso) return '';
+    const s = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
+    if (s < 60) return `${s}s`;
+    if (s < 3600) return `${Math.round(s / 60)}m`;
+    return `${Math.round(s / 3600)}h`;
   };
 
   /* ── WhatsApp Sharing helpers ── */
@@ -685,8 +747,26 @@ export default function Fermentation() {
                     {levelStr && <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1 py-0.5 rounded">{levelStr}</span>}
                   </div>
                 )}
-                {isIdle && v.type !== 'BW' && <div className="text-[10px] text-gray-300 mt-1.5 italic">idle</div>}
-                {v.type === 'BW' && !metric1 && !getBW(v.no).length && <div className="text-[10px] text-gray-300 mt-1.5 italic">no data</div>}
+                {/* OPC Live Data on tile */}
+                {opcData[v.label] && (
+                  <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                    {opcData[v.label].level != null && (
+                      <span className="text-[9px] font-bold text-green-700 bg-green-50 border border-green-200 px-1 py-0.5">
+                        OPC {opcData[v.label].level}%
+                      </span>
+                    )}
+                    {opcData[v.label].temp != null && (
+                      <span className="text-[9px] font-bold text-orange-600 bg-orange-50 border border-orange-200 px-1 py-0.5">
+                        {opcData[v.label].temp}&deg;C
+                      </span>
+                    )}
+                    {opcData[v.label].updatedAt && (
+                      <span className="text-[8px] text-gray-400">{fmtOpcAgo(opcData[v.label].updatedAt)}</span>
+                    )}
+                  </div>
+                )}
+                {isIdle && v.type !== 'BW' && !opcData[v.label] && <div className="text-[10px] text-gray-300 mt-1.5 italic">idle</div>}
+                {v.type === 'BW' && !metric1 && !getBW(v.no).length && !opcData[v.label] && <div className="text-[10px] text-gray-300 mt-1.5 italic">no data</div>}
                 {v.type === 'BW' && !metric1 && getBW(v.no).length > 0 && <div className="text-[10px] text-gray-400 mt-1.5">has readings</div>}
                 {startTime && !isIdle && v.type !== 'BW' && (
                   <div className="text-[9px] text-gray-400 mt-1 flex items-center gap-0.5 font-medium">
@@ -896,7 +976,7 @@ export default function Fermentation() {
                         <div className="bg-blue-50 rounded-xl p-3 border border-blue-100">
                           <div className="flex items-center justify-between">
                             <label className="text-[9px] font-bold text-blue-600 uppercase tracking-wider">Level %</label>
-                            {isBW && (
+                            {OPC_TAG_MAP[selected.label] && (
                               <button
                                 onClick={() => fetchOpcLive(selected.label)}
                                 disabled={opcLoading}
