@@ -88,9 +88,12 @@ model Settings {
   ddgsBaseStock         Float    @default(1956.01)  // DDGS stock at ERP start (Ton)
   whatsappNumbers       String?  // comma-separated private numbers (sensitive data: DDGS, sales)
   whatsappEnabled       Boolean  @default(false)    // toggle auto-push on/off
-  whatsappGroupJid      String?  // WhatsApp group JID for production reports
-  whatsappGroupName     String?  // Group name (display only)
-  whatsappPrivateModules String? // JSON array of module names routed to private numbers only
+  whatsappGroupJid      String?  // WhatsApp group 1 JID
+  whatsappGroupName     String?  // Group 1 name (display only)
+  whatsappGroup2Jid     String?  // WhatsApp group 2 JID
+  whatsappGroup2Name    String?  // Group 2 name (display only)
+  whatsappPrivateModules String? // DEPRECATED — use whatsappModuleRouting instead
+  whatsappModuleRouting String?  // JSON: { "module": "group1"|"group2"|"private" }
   autoCollectConfig     String?  // JSON config for WhatsApp auto-collection schedules
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt

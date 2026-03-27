@@ -29,11 +29,55 @@ const ALL_MODULES = [
   'procurement', 'accounts', 'inventory',
 ];
 
-// Default private modules (used if none configured in Settings)
+// Default routing: module → "group1" | "group2" | "private"
+const DEFAULT_MODULE_ROUTING: Record<string, string> = {
+  'liquefaction': 'group1', 'fermentation': 'group1', 'distillation': 'group1',
+  'milling': 'group1', 'evaporation': 'group1', 'decanter': 'group1',
+  'dryer': 'group1', 'ethanol-product': 'group1', 'grain': 'group1',
+  'ddgs': 'group1', 'ddgs-stock': 'private', 'ddgs-dispatch': 'private',
+  'sales': 'private', 'dispatch': 'private', 'procurement': 'private',
+  'accounts': 'private', 'inventory': 'private',
+};
+
+// Legacy: old privateModules array → convert to new routing format
 const DEFAULT_PRIVATE_MODULES = [
   'ddgs-stock', 'ddgs-dispatch', 'sales', 'dispatch',
   'procurement', 'accounts', 'inventory',
 ];
+
+/** Read module routing from settings, with migration from old format */
+function getModuleRouting(settings: any): Record<string, string> {
+  // Try new format first
+  try {
+    const raw = settings?.whatsappModuleRouting;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+    }
+  } catch { /* ignore */ }
+
+  // Fall back to old privateModules format → convert to group1/private
+  try {
+    const raw = settings?.whatsappPrivateModules;
+    if (raw) {
+      const privMods: string[] = JSON.parse(raw);
+      const routing: Record<string, string> = {};
+      for (const m of ALL_MODULES) {
+        routing[m] = privMods.includes(m) ? 'private' : 'group1';
+      }
+      return routing;
+    }
+  } catch { /* ignore */ }
+
+  return { ...DEFAULT_MODULE_ROUTING };
+}
+
+/** Resolve a routing target to a group JID */
+function resolveGroupJid(target: string, settings: any): string | null {
+  if (target === 'group1') return settings?.whatsappGroupJid || null;
+  if (target === 'group2') return settings?.whatsappGroup2Jid || null;
+  return null;
+}
 
 // Helper to call worker API
 async function workerCall(method: 'get' | 'post', path: string, data?: any): Promise<any> {
@@ -144,88 +188,48 @@ router.post(
   })
 );
 
-// POST /api/whatsapp/send-report — smart routing: group vs private based on module
+// POST /api/whatsapp/send-report — smart routing: group1 / group2 / private based on module
 router.post(
   '/send-report',
   authenticate,
   asyncHandler(async (req: AuthRequest, res: Response) => {
-    const { message, module } = req.body as {
-      message: string;
-      module?: string;
-    };
-    if (!message) {
-      res.status(400).json({ error: 'message is required' });
-      return;
-    }
+    const { message, module } = req.body as { message: string; module?: string };
+    if (!message) { res.status(400).json({ error: 'message is required' }); return; }
 
     const settings = await prisma.settings.findFirst();
+    const routing = getModuleRouting(settings);
     const results: { target: string; success: boolean; error?: string }[] = [];
 
-    // Read private modules from settings (user-configurable) or fall back to defaults
-    const privateModules: string[] = (() => {
-      try {
-        const raw = (settings as any)?.whatsappPrivateModules;
-        if (raw) return JSON.parse(raw);
-      } catch { /* ignore parse errors */ }
-      return DEFAULT_PRIVATE_MODULES;
-    })();
-
     const mod = (module || '').toLowerCase();
-    const isPrivate = privateModules.includes(mod);
-    const isGroup = !isPrivate && ALL_MODULES.includes(mod);
-    const groupJidVal = (settings as any)?.whatsappGroupJid || null;
+    const target = routing[mod] || 'group1'; // default to group1 for unknown modules
 
-    console.log(`[WA] send-report: module="${mod}" isGroup=${isGroup} isPrivate=${isPrivate} groupJid=${groupJidVal ? groupJidVal.substring(0, 20) + '...' : 'NOT SET'} settingsId=${settings?.id || 'NONE'}`);
+    console.log(`[WA] send-report: module="${mod}" target="${target}" group1=${settings?.whatsappGroupJid ? 'SET' : 'NOT SET'} group2=${(settings as any)?.whatsappGroup2Jid ? 'SET' : 'NOT SET'}`);
 
-    // Group modules → group only (private numbers are already in the group)
-    // Private modules → private numbers only
-    if (isGroup) {
-      const groupJid = groupJidVal;
-      if (groupJid) {
-        const r = await waSendGroup(groupJid, message, module);
-        console.log(`[WA] send-report: group send result:`, JSON.stringify(r));
-        results.push({ target: 'group', ...r });
-      } else {
-        console.log(`[WA] send-report: groupJid is NULL — cannot send to group for module "${mod}"`);
-      }
-    } else if (isPrivate) {
-      const privateNumbers = (settings?.whatsappNumbers || '')
-        .split(',')
-        .map((p: string) => p.trim())
-        .filter(Boolean);
+    if (target === 'private') {
+      // Send to private numbers only
+      const privateNumbers = (settings?.whatsappNumbers || '').split(',').map((p: string) => p.trim()).filter(Boolean);
       for (const phone of privateNumbers) {
         const r = await waSend(phone, message, module);
         results.push({ target: phone, ...r });
       }
     } else {
-      // Unknown module — send to both
-      const groupJid = (settings as any)?.whatsappGroupJid;
+      // Send to the assigned group (group1 or group2)
+      const groupJid = resolveGroupJid(target, settings);
       if (groupJid) {
         const r = await waSendGroup(groupJid, message, module);
-        results.push({ target: 'group', ...r });
-      }
-      const privateNumbers = (settings?.whatsappNumbers || '')
-        .split(',')
-        .map((p: string) => p.trim())
-        .filter(Boolean);
-      for (const phone of privateNumbers) {
-        const r = await waSend(phone, message, module);
-        results.push({ target: phone, ...r });
+        results.push({ target, ...r });
       }
     }
 
-    const sent = results.filter((r) => r.success).length;
-    const failed = results.filter((r) => !r.success).length;
-
     if (results.length === 0) {
-      const reason = isGroup ? 'No WhatsApp group configured. Set group in Settings.' :
-                     isPrivate ? 'No private numbers configured. Add numbers in Settings.' :
-                     'No recipients configured.';
-      console.log(`[WA] send-report: No targets for module "${mod}" — ${reason}`);
+      const reason = target === 'private' ? 'No private numbers configured. Add numbers in Settings.'
+        : `No WhatsApp ${target} configured. Set group in Settings.`;
       res.status(400).json({ error: reason, sent: 0, failed: 0, total: 0, results: [] });
       return;
     }
 
+    const sent = results.filter((r) => r.success).length;
+    const failed = results.filter((r) => !r.success).length;
     res.json({ sent, failed, total: results.length, results });
   })
 );
@@ -237,16 +241,7 @@ router.get(
   authorize('ADMIN'),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const settings = await prisma.settings.findFirst();
-    const groupJid = (settings as any)?.whatsappGroupJid || null;
-    const groupName = (settings as any)?.whatsappGroupName || null;
-    const privateNumbers = (settings?.whatsappNumbers || '').split(',').map((p: string) => p.trim()).filter(Boolean);
-    const privateModules: string[] = (() => {
-      try {
-        const raw = (settings as any)?.whatsappPrivateModules;
-        if (raw) return JSON.parse(raw);
-      } catch { /* ignore */ }
-      return DEFAULT_PRIVATE_MODULES;
-    })();
+    const routing = getModuleRouting(settings);
     const autoCollectConfig = (() => {
       try {
         const raw = (settings as any)?.autoCollectConfig;
@@ -255,11 +250,12 @@ router.get(
       return null;
     })();
     res.json({
-      groupJid,
-      groupName,
-      privateNumbers,
-      privateModules,
-      groupModules: ALL_MODULES.filter(m => !privateModules.includes(m)),
+      group1Jid: settings?.whatsappGroupJid || null,
+      group1Name: settings?.whatsappGroupName || null,
+      group2Jid: (settings as any)?.whatsappGroup2Jid || null,
+      group2Name: (settings as any)?.whatsappGroup2Name || null,
+      privateNumbers: (settings?.whatsappNumbers || '').split(',').map((p: string) => p.trim()).filter(Boolean),
+      moduleRouting: routing,
       autoCollectConfig,
       connectionStatus: getConnectionStatus(),
       connectedNumber: getConnectedNumber(),
@@ -267,22 +263,18 @@ router.get(
   })
 );
 
-// GET /api/whatsapp/modules — list all modules for routing config
+// GET /api/whatsapp/modules — list all modules + routing config
 router.get(
   '/modules',
   authenticate,
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const settings = await prisma.settings.findFirst();
-    const privateModules: string[] = (() => {
-      try {
-        const raw = (settings as any)?.whatsappPrivateModules;
-        if (raw) return JSON.parse(raw);
-      } catch { /* ignore */ }
-      return DEFAULT_PRIVATE_MODULES;
-    })();
+    const routing = getModuleRouting(settings);
     res.json({
       all: ALL_MODULES,
-      privateModules,
+      routing,
+      // Legacy field for backward compat
+      privateModules: ALL_MODULES.filter(m => routing[m] === 'private'),
     });
   })
 );

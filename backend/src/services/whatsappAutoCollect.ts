@@ -173,33 +173,45 @@ async function handleIncoming(rawPhone: string, text: string, _name: string | nu
           const fullReport = `📊 *${config.displayName} Report* — ${istTimeStr}\n\n${summary}\n\n_Auto-collected via WhatsApp_`;
           const settings = await prisma.settings.findFirst();
 
-          // Send report to group (unless module is privateOnly)
-          if (!config.privateOnly) {
-            const groupJid = (settings as any)?.whatsappGroupJid;
+          // Determine routing target for this module
+          let moduleTarget = config.privateOnly ? 'private' : 'group1';
+          try {
+            const routingRaw = (settings as any)?.whatsappModuleRouting;
+            if (routingRaw) {
+              const routing = JSON.parse(routingRaw);
+              if (routing[config.module]) moduleTarget = routing[config.module];
+            }
+          } catch { /* ignore */ }
+
+          // Send to the correct destination based on routing
+          if (moduleTarget === 'private') {
+            // Private: send to schedule operators + global private numbers
+            const moduleSchedule = schedules.find(s => s.module === session.module);
+            const schedulePhones = moduleSchedule ? parsePhones(moduleSchedule.phone) : [];
+            const globalNumbers = ((settings as any)?.whatsappNumbers || '')
+              .split(',')
+              .map((p: string) => p.trim())
+              .filter((p: string) => p.length > 0);
+            const allRecipients = [...new Set([...schedulePhones, ...globalNumbers])]
+              .map((p: string) => p.replace(/\D/g, ''))
+              .filter((p: string) => p.length > 0);
+            for (const num of allRecipients) {
+              await sendWhatsAppMessage(num, fullReport, config.module);
+            }
+            if (allRecipients.length > 0) {
+              console.log(`[AutoCollect] Shared ${config.module} report to ${allRecipients.length} private numbers`);
+            }
+          } else {
+            // Group: send to the assigned group only (group1 or group2)
+            const groupJid = moduleTarget === 'group2'
+              ? (settings as any)?.whatsappGroup2Jid
+              : (settings as any)?.whatsappGroupJid;
             if (groupJid) {
               await sendToGroup(groupJid, fullReport, config.module);
-              console.log(`[AutoCollect] Shared ${config.module} report to group`);
+              console.log(`[AutoCollect] Shared ${config.module} report to ${moduleTarget}`);
+            } else {
+              console.log(`[AutoCollect] ${config.module} routed to ${moduleTarget} but no group JID configured`);
             }
-          }
-
-          // Send to ALL operator numbers from this module's schedule (not global whatsappNumbers)
-          // This ensures everyone in the DDGS operator list gets the summary
-          const moduleSchedule = schedules.find(s => s.module === session.module);
-          const schedulePhones = moduleSchedule ? parsePhones(moduleSchedule.phone) : [];
-          // Also include global private numbers from settings
-          const globalNumbers = ((settings as any)?.whatsappNumbers || '')
-            .split(',')
-            .map((p: string) => p.trim())
-            .filter((p: string) => p.length > 0);
-          // Merge both lists, deduplicate — include replier so they also get the full summary
-          const allRecipients = [...new Set([...schedulePhones, ...globalNumbers])]
-            .map((p: string) => p.replace(/\D/g, ''))
-            .filter((p: string) => p.length > 0);
-          for (const num of allRecipients) {
-            await sendWhatsAppMessage(num, fullReport, config.module);
-          }
-          if (allRecipients.length > 0) {
-            console.log(`[AutoCollect] Shared ${config.module} report to ${allRecipients.length} numbers: ${allRecipients.join(', ')}`);
           }
         } catch (shareErr) {
           console.error(`[AutoCollect] Failed to share ${config.module} report:`, shareErr);
