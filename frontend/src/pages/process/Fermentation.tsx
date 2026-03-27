@@ -85,6 +85,7 @@ export default function Fermentation() {
   const [fermHistory, setFermHistory] = useState<any[]>([]);
   const [historyTab, setHistoryTab] = useState<'ferm' | 'pf' | 'bw'>('ferm');
   const [bwHistory, setBwHistory] = useState<BeerWellReading[]>([]);
+  const [opcLoading, setOpcLoading] = useState(false);
   const [expandedHist, setExpandedHist] = useState<string | null>(null);
 
   const flash = (t: 'ok' | 'err', m: string) => { setMsg({ t, m }); setTimeout(() => setMsg(null), 3000); };
@@ -394,6 +395,30 @@ export default function Fermentation() {
       setSelected(null);
       load();
     } catch (e: any) { flash('err', e?.response?.data?.error || 'Delete failed'); }
+  };
+
+  /* ── OPC Live Data fetch ── */
+  const OPC_TAG_MAP: Record<string, string> = {
+    'BW-1-level': 'LT130401',
+    'BW-1-temp': 'TE130301',
+  };
+
+  const fetchOpcLive = async (vesselLabel: string) => {
+    const levelTag = OPC_TAG_MAP[`${vesselLabel}-level`];
+    if (!levelTag) { flash('err', `No OPC tag mapped for ${vesselLabel}`); return; }
+    setOpcLoading(true);
+    try {
+      const res = await api.get(`/opc/live/${levelTag}`);
+      const val = res.data?.values?.IO_VALUE ?? res.data?.values?.PV;
+      if (val != null) {
+        setReadingForm(f => ({ ...f, level: String(Math.round(val * 100) / 100) }));
+        const ago = res.data?.updatedAt ? Math.round((Date.now() - new Date(res.data.updatedAt).getTime()) / 1000) : null;
+        flash('ok', `Level: ${val.toFixed(2)}%${ago ? ` (${ago < 60 ? `${ago}s` : `${Math.round(ago / 60)}m`} ago)` : ''}`);
+      } else {
+        flash('err', 'No OPC reading available');
+      }
+    } catch { flash('err', 'OPC data unavailable'); }
+    finally { setOpcLoading(false); }
   };
 
   /* ── WhatsApp Sharing helpers ── */
@@ -869,7 +894,18 @@ export default function Fermentation() {
                       )}
                       <div className="grid grid-cols-2 gap-2.5">
                         <div className="bg-blue-50 rounded-xl p-3 border border-blue-100">
-                          <label className="text-[9px] font-bold text-blue-600 uppercase tracking-wider">Level %</label>
+                          <div className="flex items-center justify-between">
+                            <label className="text-[9px] font-bold text-blue-600 uppercase tracking-wider">Level %</label>
+                            {isBW && (
+                              <button
+                                onClick={() => fetchOpcLive(selected.label)}
+                                disabled={opcLoading}
+                                className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 bg-green-100 text-green-700 border border-green-300 rounded hover:bg-green-200 disabled:opacity-50"
+                              >
+                                {opcLoading ? '...' : 'OPC LIVE'}
+                              </button>
+                            )}
+                          </div>
                           <input type="number" step="0.1" value={readingForm.level || ''} onChange={e => setReadingForm(f => ({ ...f, level: e.target.value }))}
                             placeholder="—" className="w-full text-2xl font-black text-blue-900 bg-transparent border-none outline-none placeholder-blue-200 mt-0.5" inputMode="decimal" />
                         </div>
