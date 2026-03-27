@@ -53,20 +53,22 @@ async function checkAlarms(opc: any, readings: { tag: string; property: string; 
   const now = Date.now();
 
   for (const r of readings) {
-    const tagAlarm = alarmMap.get(r.tag);
+    const tagAlarm = alarmMap.get(r.tag) as any;
     if (!tagAlarm) continue;
 
     // Cooldown check
     const lastSent = _lastAlarmSent[r.tag] || 0;
     if (now - lastSent < ALARM_COOLDOWN_MS) continue;
 
-    const name = tagAlarm.description || tagAlarm.label || r.tag;
+    const name = (tagAlarm.description || tagAlarm.label || r.tag) as string;
+    const hh = tagAlarm.hhAlarm as number | null;
+    const ll = tagAlarm.llAlarm as number | null;
 
-    if (tagAlarm.hhAlarm != null && r.value >= tagAlarm.hhAlarm) {
-      alerts.push(`*HH ALARM* ${name}: ${r.value} (limit: ${tagAlarm.hhAlarm})`);
+    if (hh != null && r.value >= hh) {
+      alerts.push(`*HH ALARM* ${name}: ${r.value} (limit: ${hh})`);
       _lastAlarmSent[r.tag] = now;
-    } else if (tagAlarm.llAlarm != null && r.value <= tagAlarm.llAlarm) {
-      alerts.push(`*LL ALARM* ${name}: ${r.value} (limit: ${tagAlarm.llAlarm})`);
+    } else if (ll != null && r.value <= ll) {
+      alerts.push(`*LL ALARM* ${name}: ${r.value} (limit: ${ll})`);
       _lastAlarmSent[r.tag] = now;
     }
   }
