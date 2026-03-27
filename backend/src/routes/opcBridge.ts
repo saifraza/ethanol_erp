@@ -5,12 +5,12 @@ import { z } from 'zod';
 
 const router = Router();
 
-// Lazy-load OPC Prisma client (only when OPC_DATABASE_URL is set)
+// Lazy-load OPC Prisma client (only when DATABASE_URL_OPC is set)
 let _opcPrisma: any = null;
 function getOpcPrisma() {
   if (!_opcPrisma) {
-    if (!process.env.OPC_DATABASE_URL) {
-      throw new Error('OPC_DATABASE_URL not configured — OPC module disabled');
+    if (!process.env.DATABASE_URL_OPC) {
+      throw new Error('DATABASE_URL_OPC not configured — OPC module disabled');
     }
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { PrismaClient } = require('@prisma/opc-client');
