@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "dev",
-      "runtimeExecutable": "/Users/saifraza/Desktop/distillery-erp/.claude/worktrees/stupefied-wing/frontend/node_modules/.bin/vite",
-      "runtimeArgs": ["--config", "/Users/saifraza/Desktop/distillery-erp/.claude/worktrees/stupefied-wing/frontend/vite.config.ts"],
+      "runtimeExecutable": "/Users/saifraza/Desktop/distillery-erp/.claude/worktrees/nice-cannon/frontend/node_modules/.bin/vite",
+      "runtimeArgs": ["--config", "/Users/saifraza/Desktop/distillery-erp/.claude/worktrees/nice-cannon/frontend/vite.config.ts"],
       "port": 3000,
       "autoPort": true
     }
