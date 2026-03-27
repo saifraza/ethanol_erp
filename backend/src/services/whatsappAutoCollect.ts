@@ -11,7 +11,8 @@
  */
 
 import prisma from '../config/prisma';
-import { sendWhatsAppMessage, sendToGroup, registerIncomingHandler } from './whatsappBaileys';
+import { registerIncomingHandler } from './whatsappBaileys';
+import { waSend, waSendGroup } from './whatsappClient';
 import { MODULE_REGISTRY, ModuleConfig } from './autoCollectModules';
 import { setDdgsLanguage } from './autoCollectModules/ddgsProduction';
 
@@ -66,7 +67,7 @@ export async function startCollection(phone: string, moduleName: string, autoSha
   // Send first question — always private to operator
   const step = config.steps[0];
   const prompt = config.buildPrompt(step);
-  const result = await sendWhatsAppMessage(digits, prompt, `auto-collect-${moduleName}`);
+  const result = await waSend(digits, prompt, `auto-collect-${moduleName}`);
 
   if (!result.success) {
     activeSessions.delete(digits);
@@ -79,7 +80,7 @@ export async function startCollection(phone: string, moduleName: string, autoSha
 
 /** Send a message back to the operator privately */
 async function sendSessionMessage(session: ActiveSession, message: string): Promise<void> {
-  await sendWhatsAppMessage(session.phone, message, `auto-collect-${session.module}`);
+  await waSend(session.phone, message, `auto-collect-${session.module}`);
 }
 
 /**
@@ -196,7 +197,7 @@ async function handleIncoming(rawPhone: string, text: string, _name: string | nu
               .map((p: string) => p.replace(/\D/g, ''))
               .filter((p: string) => p.length > 0);
             for (const num of allRecipients) {
-              await sendWhatsAppMessage(num, fullReport, config.module);
+              await waSend(num, fullReport, config.module);
             }
             if (allRecipients.length > 0) {
               console.log(`[AutoCollect] Shared ${config.module} report to ${allRecipients.length} private numbers`);
@@ -207,7 +208,7 @@ async function handleIncoming(rawPhone: string, text: string, _name: string | nu
               ? (settings as any)?.whatsappGroup2Jid
               : (settings as any)?.whatsappGroupJid;
             if (groupJid) {
-              await sendToGroup(groupJid, fullReport, config.module);
+              await waSendGroup(groupJid, fullReport, config.module);
               console.log(`[AutoCollect] Shared ${config.module} report to ${moduleTarget}`);
             } else {
               console.log(`[AutoCollect] ${config.module} routed to ${moduleTarget} but no group JID configured`);
