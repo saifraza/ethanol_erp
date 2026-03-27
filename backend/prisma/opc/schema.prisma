@@ -1,0 +1,68 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../node_modules/@prisma/opc-client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("OPC_DATABASE_URL")
+}
+
+// Tags being monitored — synced from Windows SQLite
+model OpcMonitoredTag {
+  id        String   @id @default(cuid())
+  tag       String   @unique
+  area      String
+  folder    String
+  tagType   String   @default("analog")
+  label     String   @default("")
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([area])
+  @@index([active])
+}
+
+// Raw readings pushed every scan (keep 24h, auto-purge older)
+model OpcReading {
+  id         String   @id @default(cuid())
+  tag        String
+  property   String   // PV, SP, OP, IO_VALUE
+  value      Float
+  scannedAt  DateTime
+  receivedAt DateTime @default(now())
+
+  @@index([tag, scannedAt])
+  @@index([scannedAt])
+  @@index([tag, property, scannedAt])
+}
+
+// Hourly averages — permanent storage
+model OpcHourlyReading {
+  id        String   @id @default(cuid())
+  tag       String
+  property  String
+  hour      DateTime
+  avg       Float
+  min       Float
+  max       Float
+  count     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@unique([tag, property, hour])
+  @@index([tag, hour])
+  @@index([hour])
+}
+
+// Sync tracking — last successful push from Windows
+model OpcSyncLog {
+  id        String   @id @default(cuid())
+  syncType  String   // "readings" | "hourly" | "tags"
+  batchId   String?
+  tagCount  Int      @default(0)
+  readingCount Int   @default(0)
+  syncedAt  DateTime @default(now())
+
+  @@index([syncType, syncedAt])
+}
