@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Area, ComposedChart } from 'recharts';
 import api from '../../services/api';
 
 // ─── Tag catalog (mirrors tags.py on Windows) ───────────────────────────────
@@ -110,6 +111,25 @@ interface LiveTag {
   values: Record<string, number>;
 }
 
+interface HourlyReading {
+  hour: string;
+  avg: number;
+  min: number;
+  max: number;
+  count: number;
+}
+
+interface TagStats {
+  mean: number;
+  min: number;
+  max: number;
+  range: number;
+  stdDev: number;
+  samples: number;
+  trend: number; // % change over period
+  lastValue: number;
+}
+
 interface HealthData {
   online: boolean;
   monitoredTags: number;
@@ -140,6 +160,13 @@ export default function OPCTagManager() {
   const [editingTag, setEditingTag] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ description: '', hhAlarm: '', llAlarm: '' });
   const [saving, setSaving] = useState(false);
+
+  // Detail/history state
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [historyData, setHistoryData] = useState<HourlyReading[]>([]);
+  const [historyHours, setHistoryHours] = useState(24);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [tagStats, setTagStats] = useState<TagStats | null>(null);
 
   const checkHealth = useCallback(async () => {
     try {
@@ -177,6 +204,51 @@ export default function OPCTagManager() {
     } finally {
       setLiveLoading(false);
     }
+  }
+
+  async function fetchHistory(tag: string, hours: number = 24) {
+    setHistoryLoading(true);
+    try {
+      const t = liveTags.find(lt => lt.tag === tag);
+      const prop = t?.type === 'pid' ? 'PV' : 'IO_VALUE';
+      const res = await api.get(`/opc/history/${tag}?hours=${hours}&property=${prop}`);
+      const data: HourlyReading[] = res.data.readings || [];
+      setHistoryData(data);
+
+      // Calculate statistics
+      if (data.length > 0) {
+        const avgs = data.map(d => d.avg);
+        const allMin = Math.min(...data.map(d => d.min));
+        const allMax = Math.max(...data.map(d => d.max));
+        const mean = avgs.reduce((a, b) => a + b, 0) / avgs.length;
+        const variance = avgs.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / avgs.length;
+        const stdDev = Math.sqrt(variance);
+        const totalSamples = data.reduce((s, d) => s + d.count, 0);
+        const firstAvg = avgs[0];
+        const lastAvg = avgs[avgs.length - 1];
+        const trend = firstAvg !== 0 ? ((lastAvg - firstAvg) / firstAvg) * 100 : 0;
+
+        setTagStats({
+          mean: Math.round(mean * 100) / 100,
+          min: Math.round(allMin * 100) / 100,
+          max: Math.round(allMax * 100) / 100,
+          range: Math.round((allMax - allMin) * 100) / 100,
+          stdDev: Math.round(stdDev * 100) / 100,
+          samples: totalSamples,
+          trend: Math.round(trend * 10) / 10,
+          lastValue: Math.round(lastAvg * 100) / 100,
+        });
+      } else {
+        setTagStats(null);
+      }
+    } catch { setTagStats(null); setHistoryData([]); }
+    finally { setHistoryLoading(false); }
+  }
+
+  function selectTag(tag: string) {
+    if (selectedTag === tag) { setSelectedTag(null); return; }
+    setSelectedTag(tag);
+    fetchHistory(tag, historyHours);
   }
 
   async function fetchStats() {
@@ -404,37 +476,163 @@ export default function OPCTagManager() {
                       );
                     }
 
+                    const isSelected = selectedTag === t.tag;
                     return (
-                      <tr key={t.tag} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''} ${alarm ? 'bg-red-50/80' : ''}`}>
-                        <td className="px-3 py-1.5 font-mono text-slate-800 border-r border-slate-100">
-                          <div>{t.tag}</div>
-                          <div className="text-[9px] text-slate-400">{t.label}</div>
-                        </td>
-                        <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">{t.description || t.area}</td>
-                        <td className={`px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100 font-bold ${alarm ? 'text-red-600' : stale ? 'text-slate-400' : 'text-slate-800'}`}>
-                          {fmtVal(val)}
-                          {alarm && <span className="ml-1 text-[9px] font-bold text-red-600 bg-red-100 border border-red-300 px-1 py-0.5">{alarm}</span>}
-                        </td>
-                        <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-400 border-r border-slate-100 text-[10px]">
-                          {t.llAlarm != null ? t.llAlarm : '--'}
-                        </td>
-                        <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-400 border-r border-slate-100 text-[10px]">
-                          {t.hhAlarm != null ? t.hhAlarm : '--'}
-                        </td>
-                        <td className={`px-3 py-1.5 text-center border-r border-slate-100 ${stale ? 'text-red-400' : 'text-slate-400'}`}>
-                          {fmtAgo(t.updatedAt)}
-                        </td>
-                        <td className="px-2 py-1.5 text-center whitespace-nowrap">
-                          <button onClick={() => { setEditingTag(t.tag); setEditForm({ description: t.description || '', hhAlarm: t.hhAlarm != null ? String(t.hhAlarm) : '', llAlarm: t.llAlarm != null ? String(t.llAlarm) : '' }); }}
-                            className="px-2 py-0.5 bg-white border border-slate-300 text-slate-600 text-[10px] font-bold uppercase hover:bg-slate-50 mr-1">
-                            Edit
-                          </button>
-                          <button onClick={() => removeTag(t.tag)} disabled={removing.has(t.tag)}
-                            className="px-2 py-0.5 bg-red-50 border border-red-200 text-red-600 text-[10px] font-bold uppercase hover:bg-red-100 disabled:opacity-50">
-                            {removing.has(t.tag) ? '...' : 'X'}
-                          </button>
-                        </td>
-                      </tr>
+                      <React.Fragment key={t.tag}>
+                        <tr onClick={() => selectTag(t.tag)}
+                          className={`border-b border-slate-100 cursor-pointer ${isSelected ? 'bg-blue-50 border-blue-200' : alarm ? 'bg-red-50/80' : i % 2 ? 'bg-slate-50/70' : ''} hover:bg-blue-50/60`}>
+                          <td className="px-3 py-1.5 font-mono text-slate-800 border-r border-slate-100">
+                            <div className="flex items-center gap-1">
+                              <span className={`text-[8px] transition-transform ${isSelected ? 'rotate-90' : ''}`}>&#9654;</span>
+                              <div>
+                                <div>{t.tag}</div>
+                                <div className="text-[9px] text-slate-400">{t.label}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">{t.description || t.area}</td>
+                          <td className={`px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100 font-bold ${alarm ? 'text-red-600' : stale ? 'text-slate-400' : 'text-slate-800'}`}>
+                            {fmtVal(val)}
+                            {alarm && <span className="ml-1 text-[9px] font-bold text-red-600 bg-red-100 border border-red-300 px-1 py-0.5">{alarm}</span>}
+                          </td>
+                          <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-400 border-r border-slate-100 text-[10px]">
+                            {t.llAlarm != null ? t.llAlarm : '--'}
+                          </td>
+                          <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-400 border-r border-slate-100 text-[10px]">
+                            {t.hhAlarm != null ? t.hhAlarm : '--'}
+                          </td>
+                          <td className={`px-3 py-1.5 text-center border-r border-slate-100 ${stale ? 'text-red-400' : 'text-slate-400'}`}>
+                            {fmtAgo(t.updatedAt)}
+                          </td>
+                          <td className="px-2 py-1.5 text-center whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                            <button onClick={() => { setEditingTag(t.tag); setEditForm({ description: t.description || '', hhAlarm: t.hhAlarm != null ? String(t.hhAlarm) : '', llAlarm: t.llAlarm != null ? String(t.llAlarm) : '' }); }}
+                              className="px-2 py-0.5 bg-white border border-slate-300 text-slate-600 text-[10px] font-bold uppercase hover:bg-slate-50 mr-1">
+                              Edit
+                            </button>
+                            <button onClick={() => removeTag(t.tag)} disabled={removing.has(t.tag)}
+                              className="px-2 py-0.5 bg-red-50 border border-red-200 text-red-600 text-[10px] font-bold uppercase hover:bg-red-100 disabled:opacity-50">
+                              {removing.has(t.tag) ? '...' : 'X'}
+                            </button>
+                          </td>
+                        </tr>
+
+                        {/* ─── DETAIL PANEL ─── */}
+                        {isSelected && (
+                          <tr>
+                            <td colSpan={7} className="p-0 bg-slate-50 border-b-2 border-blue-200">
+                              <div className="p-4">
+                                {/* Header with time range buttons */}
+                                <div className="flex items-center justify-between mb-3">
+                                  <div className="text-xs font-bold text-slate-700 uppercase tracking-widest">
+                                    {t.description || t.label || t.tag} &mdash; History
+                                  </div>
+                                  <div className="flex gap-1">
+                                    {[6, 12, 24, 48, 72, 168].map(h => (
+                                      <button key={h} onClick={() => { setHistoryHours(h); fetchHistory(t.tag, h); }}
+                                        className={`px-2 py-0.5 text-[10px] font-bold border ${historyHours === h ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-100'}`}>
+                                        {h <= 24 ? `${h}h` : `${h / 24}d`}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                {historyLoading ? (
+                                  <div className="text-center py-8 text-xs text-slate-400 uppercase tracking-widest">Loading history...</div>
+                                ) : historyData.length === 0 ? (
+                                  <div className="text-center py-8 text-xs text-slate-400 uppercase tracking-widest">No hourly data yet. Data accumulates after each hour.</div>
+                                ) : (
+                                  <>
+                                    {/* Stats cards */}
+                                    {tagStats && (
+                                      <div className="grid grid-cols-4 md:grid-cols-8 gap-0 border border-slate-300 mb-3">
+                                        {[
+                                          { label: 'Mean', value: tagStats.mean, color: 'blue' },
+                                          { label: 'Min', value: tagStats.min, color: 'cyan' },
+                                          { label: 'Max', value: tagStats.max, color: 'orange' },
+                                          { label: 'Range', value: tagStats.range, color: 'purple' },
+                                          { label: 'Std Dev', value: tagStats.stdDev, color: 'slate' },
+                                          { label: 'Samples', value: tagStats.samples, color: 'slate' },
+                                          { label: 'Last', value: tagStats.lastValue, color: 'green' },
+                                          { label: 'Trend', value: `${tagStats.trend > 0 ? '+' : ''}${tagStats.trend}%`, color: tagStats.trend > 0 ? 'red' : tagStats.trend < 0 ? 'green' : 'slate' },
+                                        ].map(s => (
+                                          <div key={s.label} className="bg-white px-2 py-2 border-r border-slate-200 last:border-r-0">
+                                            <div className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{s.label}</div>
+                                            <div className={`text-sm font-bold font-mono tabular-nums mt-0.5 text-${s.color}-600`}>
+                                              {typeof s.value === 'number' ? s.value.toLocaleString() : s.value}
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+
+                                    {/* Chart */}
+                                    <div className="bg-white border border-slate-300 p-3 mb-3">
+                                      <ResponsiveContainer width="100%" height={200}>
+                                        <ComposedChart data={historyData.map(d => ({
+                                          ...d,
+                                          time: new Date(d.hour).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }),
+                                          date: new Date(d.hour).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
+                                        }))}>
+                                          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                          <XAxis dataKey="time" tick={{ fontSize: 9 }} tickLine={false} />
+                                          <YAxis tick={{ fontSize: 9 }} tickLine={false} domain={['auto', 'auto']} />
+                                          <Tooltip
+                                            contentStyle={{ fontSize: 11, border: '1px solid #cbd5e1', boxShadow: 'none' }}
+                                            formatter={(v: number, name: string) => [v.toFixed(2), name]}
+                                            labelFormatter={(label: string, payload: any[]) => payload[0]?.payload?.date ? `${payload[0].payload.date} ${label}` : label}
+                                          />
+                                          <Area type="monotone" dataKey="max" stroke="none" fill="#fed7aa" fillOpacity={0.5} />
+                                          <Area type="monotone" dataKey="min" stroke="none" fill="#bfdbfe" fillOpacity={0.5} />
+                                          <Line type="monotone" dataKey="avg" stroke="#1e40af" strokeWidth={2} dot={{ r: 2, fill: '#1e40af' }} name="Avg" />
+                                          <Line type="monotone" dataKey="max" stroke="#ea580c" strokeWidth={1} dot={false} strokeDasharray="3 3" name="Max" />
+                                          <Line type="monotone" dataKey="min" stroke="#0891b2" strokeWidth={1} dot={false} strokeDasharray="3 3" name="Min" />
+                                          {t.hhAlarm != null && <ReferenceLine y={t.hhAlarm} stroke="#dc2626" strokeDasharray="6 3" label={{ value: `HH ${t.hhAlarm}`, fontSize: 9, fill: '#dc2626', position: 'right' }} />}
+                                          {t.llAlarm != null && <ReferenceLine y={t.llAlarm} stroke="#dc2626" strokeDasharray="6 3" label={{ value: `LL ${t.llAlarm}`, fontSize: 9, fill: '#dc2626', position: 'right' }} />}
+                                          {tagStats && <ReferenceLine y={tagStats.mean} stroke="#6366f1" strokeDasharray="2 2" label={{ value: `Mean ${tagStats.mean}`, fontSize: 9, fill: '#6366f1', position: 'left' }} />}
+                                        </ComposedChart>
+                                      </ResponsiveContainer>
+                                    </div>
+
+                                    {/* Hourly data table */}
+                                    <div className="border border-slate-300 overflow-hidden max-h-[250px] overflow-y-auto">
+                                      <table className="w-full text-xs">
+                                        <thead className="sticky top-0">
+                                          <tr className="bg-slate-700 text-white">
+                                            <th className="text-left px-2 py-1.5 font-semibold text-[9px] uppercase tracking-widest border-r border-slate-600">Hour (IST)</th>
+                                            <th className="text-right px-2 py-1.5 font-semibold text-[9px] uppercase tracking-widest border-r border-slate-600">Avg</th>
+                                            <th className="text-right px-2 py-1.5 font-semibold text-[9px] uppercase tracking-widest border-r border-slate-600">Min</th>
+                                            <th className="text-right px-2 py-1.5 font-semibold text-[9px] uppercase tracking-widest border-r border-slate-600">Max</th>
+                                            <th className="text-right px-2 py-1.5 font-semibold text-[9px] uppercase tracking-widest border-r border-slate-600">Range</th>
+                                            <th className="text-right px-2 py-1.5 font-semibold text-[9px] uppercase tracking-widest">Samples</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {[...historyData].reverse().map((d, idx) => {
+                                            const hr = new Date(d.hour);
+                                            const ist = new Date(hr.getTime() + 5.5 * 60 * 60 * 1000);
+                                            const dateStr = ist.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+                                            const timeStr = ist.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
+                                            return (
+                                              <tr key={idx} className={`border-b border-slate-100 ${idx % 2 ? 'bg-slate-50/70' : ''}`}>
+                                                <td className="px-2 py-1 text-slate-600 border-r border-slate-100 font-mono">{dateStr} {timeStr}</td>
+                                                <td className="px-2 py-1 text-right font-mono tabular-nums text-slate-800 border-r border-slate-100 font-bold">{d.avg.toFixed(2)}</td>
+                                                <td className="px-2 py-1 text-right font-mono tabular-nums text-cyan-600 border-r border-slate-100">{d.min.toFixed(2)}</td>
+                                                <td className="px-2 py-1 text-right font-mono tabular-nums text-orange-600 border-r border-slate-100">{d.max.toFixed(2)}</td>
+                                                <td className="px-2 py-1 text-right font-mono tabular-nums text-slate-400 border-r border-slate-100">{(d.max - d.min).toFixed(2)}</td>
+                                                <td className="px-2 py-1 text-right font-mono tabular-nums text-slate-400">{d.count}</td>
+                                              </tr>
+                                            );
+                                          })}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     );
                   })}
                 </tbody>
