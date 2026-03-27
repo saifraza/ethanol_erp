@@ -12,6 +12,12 @@ import {
   sendToGroup,
   listGroups,
 } from '../services/whatsappBaileys';
+import { waSend, waSendGroup, waStatus } from '../services/whatsappClient';
+import axios from 'axios';
+
+const WORKER_URL = process.env.WA_WORKER_URL;
+const WORKER_KEY = process.env.WA_WORKER_API_KEY || 'mspil-wa-internal';
+const useWorker = !!WORKER_URL;
 
 const router = Router();
 
@@ -29,16 +35,27 @@ const DEFAULT_PRIVATE_MODULES = [
   'procurement', 'accounts', 'inventory',
 ];
 
+// Helper to call worker API
+async function workerCall(method: 'get' | 'post', path: string, data?: any): Promise<any> {
+  const res = await axios({ method, url: `${WORKER_URL}${path}`, data, headers: { 'x-api-key': WORKER_KEY }, timeout: 15000 });
+  return res.data;
+}
+
 // GET /api/whatsapp/status
 router.get(
   '/status',
   authenticate,
   asyncHandler(async (req: AuthRequest, res: Response) => {
-    res.json({
-      status: getConnectionStatus(),
-      qr: getQRCode(),
-      connectedNumber: getConnectedNumber(),
-    });
+    if (useWorker) {
+      try {
+        const data = await workerCall('get', '/wa/status');
+        res.json({ status: data.connected ? 'connected' : 'disconnected', qr: data.qr || null, connectedNumber: null, worker: true });
+      } catch (err: any) {
+        res.json({ status: 'worker-unreachable', qr: null, connectedNumber: null, worker: true, error: err.message });
+      }
+      return;
+    }
+    res.json({ status: getConnectionStatus(), qr: getQRCode(), connectedNumber: getConnectedNumber() });
   })
 );
 
@@ -48,12 +65,18 @@ router.post(
   authenticate,
   authorize('ADMIN'),
   asyncHandler(async (req: AuthRequest, res: Response) => {
+    if (useWorker) {
+      try {
+        const data = await workerCall('post', '/wa/connect');
+        res.json({ status: 'connected', worker: true, ...data });
+      } catch (err: any) {
+        res.status(500).json({ error: `Worker unreachable: ${err.message}` });
+      }
+      return;
+    }
     await connectWhatsApp();
     await new Promise((r) => setTimeout(r, 2000));
-    res.json({
-      status: getConnectionStatus(),
-      qr: getQRCode(),
-    });
+    res.json({ status: getConnectionStatus(), qr: getQRCode() });
   })
 );
 
@@ -63,16 +86,27 @@ router.post(
   authenticate,
   authorize('ADMIN'),
   asyncHandler(async (req: AuthRequest, res: Response) => {
+    if (useWorker) {
+      try {
+        await workerCall('post', '/wa/disconnect');
+        res.json({ status: 'disconnected', worker: true });
+      } catch (err: any) {
+        res.status(500).json({ error: `Worker unreachable: ${err.message}` });
+      }
+      return;
+    }
     await disconnectWhatsApp();
     res.json({ status: 'disconnected' });
   })
 );
 
-// GET /api/whatsapp/groups — list all groups this number is part of
+// GET /api/whatsapp/groups
 router.get(
   '/groups',
   authenticate,
   asyncHandler(async (req: AuthRequest, res: Response) => {
+    // Groups only available via local Baileys for now
+    if (useWorker) { res.json([]); return; }
     const groups = await listGroups();
     res.json(groups);
   })
@@ -85,11 +119,8 @@ router.post(
   authorize('ADMIN'),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const { phone, message } = req.body;
-    if (!phone || !message) {
-      res.status(400).json({ error: 'phone and message required' });
-      return;
-    }
-    const result = await sendWhatsAppMessage(phone, message);
+    if (!phone || !message) { res.status(400).json({ error: 'phone and message required' }); return; }
+    const result = await waSend(phone, message);
     res.json(result);
   })
 );
@@ -151,7 +182,7 @@ router.post(
     if (isGroup) {
       const groupJid = groupJidVal;
       if (groupJid) {
-        const r = await sendToGroup(groupJid, message, module);
+        const r = await waSendGroup(groupJid, message, module);
         console.log(`[WA] send-report: group send result:`, JSON.stringify(r));
         results.push({ target: 'group', ...r });
       } else {
@@ -163,14 +194,14 @@ router.post(
         .map((p: string) => p.trim())
         .filter(Boolean);
       for (const phone of privateNumbers) {
-        const r = await sendWhatsAppMessage(phone, message, module);
+        const r = await waSend(phone, message, module);
         results.push({ target: phone, ...r });
       }
     } else {
       // Unknown module — send to both
       const groupJid = (settings as any)?.whatsappGroupJid;
       if (groupJid) {
-        const r = await sendToGroup(groupJid, message, module);
+        const r = await waSendGroup(groupJid, message, module);
         results.push({ target: 'group', ...r });
       }
       const privateNumbers = (settings?.whatsappNumbers || '')
@@ -178,7 +209,7 @@ router.post(
         .map((p: string) => p.trim())
         .filter(Boolean);
       for (const phone of privateNumbers) {
-        const r = await sendWhatsAppMessage(phone, message, module);
+        const r = await waSend(phone, message, module);
         results.push({ target: phone, ...r });
       }
     }
