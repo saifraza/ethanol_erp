@@ -10,6 +10,7 @@ import {
   clearSession,
   clearAllSessions,
 } from '../services/whatsappAutoCollect';
+import prisma from '../config/prisma';
 
 const router = Router();
 
@@ -58,6 +59,23 @@ router.post(
     }
     const result = await startCollection(phone, module, autoShare !== false);
     res.json(result);
+  })
+);
+
+// GET /api/auto-collect/debug — check raw DB value for autoCollectConfig
+router.get(
+  '/debug',
+  authenticate,
+  asyncHandler(async (_req: AuthRequest, res: Response) => {
+    const settings = await prisma.settings.findFirst({
+      select: { id: true, autoCollectConfig: true, updatedAt: true },
+    });
+    res.json({
+      dbValue: (settings as any)?.autoCollectConfig || null,
+      inMemory: getSchedules(),
+      settingsId: settings?.id || null,
+      updatedAt: settings?.updatedAt || null,
+    });
   })
 );
 
