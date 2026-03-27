@@ -39,7 +39,7 @@ let sock: any = null;
 let currentQR: string | null = null;
 let connectionStatus: 'disconnected' | 'connecting' | 'connected' = 'disconnected';
 let retryCount = 0;
-const MAX_RETRIES = 5;
+const MAX_RETRIES = 20;
 
 // ── Incoming message handlers ──
 // External services (like auto-collect) can register handlers.
@@ -197,10 +197,12 @@ export async function connectWhatsApp(): Promise<void> {
         } else if (retryCount < MAX_RETRIES) {
           retryCount++;
           console.log(`[WA-Baileys] Reconnecting (attempt ${retryCount})...`);
-          setTimeout(() => connectWhatsApp(), 3000 * retryCount);
+          setTimeout(() => connectWhatsApp(), Math.min(3000 * retryCount, 30000));
         } else {
-          console.error('[WA-Baileys] Max retries reached, giving up');
+          console.warn('[WA-Baileys] Max retries reached, will retry in 5 minutes...');
+          retryCount = 0;
           sock = null;
+          setTimeout(() => connectWhatsApp(), 5 * 60 * 1000);
         }
       } else if (connection === 'open') {
         currentQR = null;

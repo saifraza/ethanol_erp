@@ -339,7 +339,28 @@ async function wasAlreadyTriggeredInSlot(module: string, slotStart: Date): Promi
   }
 }
 
+// Track failed sends for retry
+const pendingRetries: { module: string; phone: string; autoShare: boolean; attempts: number }[] = [];
+
 async function runScheduler(): Promise<void> {
+  // Retry any previously failed sends first
+  if (pendingRetries.length > 0) {
+    const retries = [...pendingRetries];
+    pendingRetries.length = 0;
+    for (const retry of retries) {
+      if (retry.attempts >= 5) {
+        console.warn(`[AutoCollect] Giving up on ${retry.module} for ${retry.phone} after ${retry.attempts} attempts`);
+        continue;
+      }
+      const result = await startCollection(retry.phone, retry.module, retry.autoShare);
+      if (!result.success) {
+        pendingRetries.push({ ...retry, attempts: retry.attempts + 1 });
+      } else {
+        console.log(`[AutoCollect] Retry succeeded for ${retry.module} → ${retry.phone} (attempt ${retry.attempts + 1})`);
+      }
+    }
+  }
+
   for (const sched of schedules) {
     if (!sched.enabled) continue;
     if (!MODULE_REGISTRY[sched.module]) continue;
@@ -368,6 +389,8 @@ async function runScheduler(): Promise<void> {
         const result = await startCollection(phone, sched.module, sched.autoShare !== false);
         if (!result.success) {
           console.error(`[AutoCollect] Failed to trigger ${sched.module} for ${phone}: ${result.error}`);
+          // Queue for retry on next tick
+          pendingRetries.push({ module: sched.module, phone, autoShare: sched.autoShare !== false, attempts: 1 });
         }
       }
     }
