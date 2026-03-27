@@ -78,6 +78,10 @@ import inventoryCountRoutes from './routes/inventoryCounts';
 import inventoryReorderRoutes from './routes/inventoryReorder';
 // Logistics (Gate Entry)
 import gateEntryRoutes from './routes/gateEntry';
+// Process reports
+import dailyEntriesRoutes from './routes/dailyEntries';
+import tankDipsRoutes from './routes/tankDips';
+import meshBioReportRoutes from './routes/meshBioReport';
 // WhatsApp (Baileys QR)
 import whatsappRoutes from './routes/whatsapp';
 import autoCollectRoutes from './routes/whatsappAutoCollect';
@@ -185,6 +189,10 @@ app.use('/api/gate-entry', gateEntryRoutes);
 app.use('/api/opc', opcBridgeRoutes);
 // AI Assistant
 app.use('/api/ai', aiRoutes);
+// Process reports
+app.use('/api/daily-entries', dailyEntriesRoutes);
+app.use('/api/tank-dips', tankDipsRoutes);
+app.use('/api/mesh-bio-report', meshBioReportRoutes);
 // WhatsApp (Baileys QR)
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/auto-collect', autoCollectRoutes);

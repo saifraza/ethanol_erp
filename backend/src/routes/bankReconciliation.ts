@@ -25,7 +25,7 @@ const importSchema = z.object({
 });
 
 const matchSchema = z.object({
-  bankTransactionId: z.string().min(1),
+  bankTransactionId: z.string().min(1).optional(),
   journalEntryId: z.string().min(1),
 });
 
@@ -80,7 +80,27 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     prisma.bankTransaction.count({ where }),
   ]);
 
-  res.json({ items, total });
+  // Enrich reconciled items with journal entry details
+  const reconciledJournalIds = items
+    .filter(i => i.reconciledWith)
+    .map(i => i.reconciledWith as string);
+
+  const journalMap = new Map<string, { id: string; entryNo: number; date: Date; narration: string }>();
+  if (reconciledJournalIds.length > 0) {
+    const journals = await prisma.journalEntry.findMany({
+      where: { id: { in: reconciledJournalIds } },
+      select: { id: true, entryNo: true, date: true, narration: true },
+    });
+    for (const j of journals) journalMap.set(j.id, j);
+  }
+
+  const enriched = items.map(i => ({
+    ...i,
+    journalEntryId: i.reconciledWith || null,
+    journalEntry: i.reconciledWith ? journalMap.get(i.reconciledWith) || null : null,
+  }));
+
+  res.json({ items: enriched, total });
 }));
 
 // ═══════════════════════════════════════════════
@@ -170,10 +190,98 @@ router.post('/import', validate(importSchema), asyncHandler(async (req: AuthRequ
 }));
 
 // ═══════════════════════════════════════════════
-// POST /match — Manual match bank txn to journal entry
+// GET /journal-suggestions — Suggest journal entries for matching a bank txn
+// ═══════════════════════════════════════════════
+router.get('/journal-suggestions', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { accountId, amount, date } = req.query;
+
+  const where: Record<string, unknown> = {};
+  if (accountId) where.accountId = accountId as string;
+
+  // Find journal lines with matching amount (±1% tolerance) and nearby date (±7 days)
+  const txnAmount = parseFloat(amount as string) || 0;
+  const txnDate = date ? new Date(date as string) : new Date();
+  const toleranceMs = 7 * 24 * 60 * 60 * 1000;
+
+  // Get already-matched journal IDs to exclude
+  const matched = await prisma.bankTransaction.findMany({
+    where: { isReconciled: true, reconciledWith: { not: null } },
+    select: { reconciledWith: true },
+    take: 500,
+  });
+  const matchedIds = new Set(matched.map(m => m.reconciledWith).filter(Boolean) as string[]);
+
+  const lines = await prisma.journalLine.findMany({
+    where: accountId ? { accountId: accountId as string } : {},
+    take: 200,
+    select: {
+      debit: true,
+      credit: true,
+      journal: { select: { id: true, entryNo: true, date: true, narration: true, refId: true } },
+    },
+  });
+
+  const suggestions = lines
+    .filter(l => !matchedIds.has(l.journal.id))
+    .filter(l => {
+      const lineAmount = Math.max(l.debit, l.credit);
+      if (txnAmount > 0 && Math.abs(lineAmount - txnAmount) / txnAmount > 0.01) return false;
+      const lineDate = new Date(l.journal.date).getTime();
+      return Math.abs(lineDate - txnDate.getTime()) <= toleranceMs;
+    })
+    .map(l => ({
+      id: l.journal.id,
+      entryNo: l.journal.entryNo,
+      date: l.journal.date,
+      narration: l.journal.narration,
+      amount: Math.max(l.debit, l.credit),
+      refId: l.journal.refId,
+    }))
+    // Deduplicate by journal id
+    .filter((v, i, arr) => arr.findIndex(x => x.id === v.id) === i)
+    .slice(0, 20);
+
+  res.json(suggestions);
+}));
+
+// ═══════════════════════════════════════════════
+// POST /:id/match — Match a specific bank txn to a journal entry (frontend-friendly URL)
+// ═══════════════════════════════════════════════
+router.post('/:id/match', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { journalEntryId } = req.body;
+  if (!journalEntryId) {
+    res.status(400).json({ error: 'journalEntryId is required' });
+    return;
+  }
+
+  const bankTxn = await prisma.bankTransaction.findUnique({ where: { id: req.params.id } });
+  if (!bankTxn) throw new NotFoundError('BankTransaction', req.params.id);
+
+  const journalEntry = await prisma.journalEntry.findUnique({ where: { id: journalEntryId } });
+  if (!journalEntry) throw new NotFoundError('JournalEntry', journalEntryId);
+
+  if (bankTxn.isReconciled) {
+    res.status(400).json({ error: 'Bank transaction is already reconciled' });
+    return;
+  }
+
+  const updated = await prisma.bankTransaction.update({
+    where: { id: req.params.id },
+    data: { isReconciled: true, reconciledWith: journalEntryId },
+  });
+
+  res.json({ success: true, bankTransaction: updated });
+}));
+
+// ═══════════════════════════════════════════════
+// POST /match — Manual match (body-based, kept for backward compat)
 // ═══════════════════════════════════════════════
 router.post('/match', validate(matchSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const { bankTransactionId, journalEntryId } = req.body;
+  if (!bankTransactionId) {
+    res.status(400).json({ error: 'bankTransactionId is required' });
+    return;
+  }
 
   const bankTxn = await prisma.bankTransaction.findUnique({ where: { id: bankTransactionId } });
   if (!bankTxn) throw new NotFoundError('BankTransaction', bankTransactionId);
@@ -188,10 +296,7 @@ router.post('/match', validate(matchSchema), asyncHandler(async (req: AuthReques
 
   const updated = await prisma.bankTransaction.update({
     where: { id: bankTransactionId },
-    data: {
-      isReconciled: true,
-      reconciledWith: journalEntryId,
-    },
+    data: { isReconciled: true, reconciledWith: journalEntryId },
   });
 
   res.json({ success: true, bankTransaction: updated });
