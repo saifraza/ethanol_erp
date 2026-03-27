@@ -149,7 +149,7 @@ app.post('/wa/send-report', authMiddleware, async (req, res) => {
 });
 
 // ── Start ──
-const PORT = parseInt(process.env.WA_WORKER_PORT || '5001');
+const PORT = parseInt(process.env.PORT || process.env.WA_WORKER_PORT || '5001');
 const HOST = '0.0.0.0';
 
 app.listen(PORT, HOST, async () => {
