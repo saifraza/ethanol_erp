@@ -24,7 +24,8 @@ import {
   disconnectWhatsApp,
   sendWhatsAppMessage,
   sendToGroup,
-  getWhatsAppStatus,
+  getConnectionStatus,
+  getQRCode,
   initWhatsApp,
 } from './services/whatsappBaileys';
 import { initAutoCollect } from './services/whatsappAutoCollect';
@@ -59,16 +60,16 @@ app.get('/wa/health', (_req, res) => {
 
 // ── Status ──
 app.get('/wa/status', authMiddleware, (_req, res) => {
-  const status = getWhatsAppStatus();
-  res.json(status);
+  res.json({ connected: getConnectionStatus() === 'connected', status: getConnectionStatus() });
 });
 
 // ── QR Code ──
 app.get('/wa/qr', authMiddleware, (_req, res) => {
-  const status = getWhatsAppStatus();
-  if (status.qr) {
-    res.json({ qr: status.qr });
-  } else if (status.connected) {
+  const qr = getQRCode();
+  const connected = getConnectionStatus() === 'connected';
+  if (qr) {
+    res.json({ qr });
+  } else if (connected) {
     res.json({ connected: true, message: 'Already connected' });
   } else {
     res.json({ connected: false, message: 'No QR available, try /wa/connect first' });
