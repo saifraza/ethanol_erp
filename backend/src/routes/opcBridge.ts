@@ -192,6 +192,41 @@ router.post('/monitor', validate(addMonitorSchema), asyncHandler(async (req: Aut
   res.status(201).json({ ok: true, tag: result });
 }));
 
+// PATCH /api/opc/monitor/:tag — Update tag label/area
+const updateMonitorSchema = z.object({
+  label: z.string().min(1).optional(),
+  area: z.string().min(1).optional(),
+  folder: z.string().min(1).optional(),
+  tagType: z.string().optional(),
+});
+
+router.patch('/monitor/:tag', validate(updateMonitorSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+  const opc = getOpcPrisma();
+  const tag = req.params.tag;
+  const data: Record<string, string> = {};
+  if (req.body.label) data.label = req.body.label;
+  if (req.body.area) data.area = req.body.area;
+  if (req.body.folder) data.folder = req.body.folder;
+  if (req.body.tagType) data.tagType = req.body.tagType;
+
+  if (Object.keys(data).length === 0) {
+    res.status(400).json({ error: 'No fields to update' });
+    return;
+  }
+
+  try {
+    const result = await opc.opcMonitoredTag.update({ where: { tag }, data });
+    res.json({ ok: true, tag: result });
+  } catch (err: unknown) {
+    const prismaErr = err as { code?: string };
+    if (prismaErr.code === 'P2025') {
+      res.status(404).json({ error: `Tag '${tag}' not found` });
+    } else {
+      throw err;
+    }
+  }
+}));
+
 // DELETE /api/opc/monitor/:tag — Remove tag from monitoring (soft-delete: set active=false)
 router.delete('/monitor/:tag', asyncHandler(async (req: AuthRequest, res: Response) => {
   const opc = getOpcPrisma();

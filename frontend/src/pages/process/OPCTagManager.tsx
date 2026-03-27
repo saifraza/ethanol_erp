@@ -150,6 +150,15 @@ export default function OPCTagManager() {
   const [adding, setAdding] = useState<Set<string>>(new Set());
   const [removing, setRemoving] = useState<Set<string>>(new Set());
 
+  // Edit state
+  const [editingTag, setEditingTag] = useState<string | null>(null);
+  const [editLabel, setEditLabel] = useState('');
+  const [editArea, setEditArea] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  // Live read state
+  const [liveReading, setLiveReading] = useState<string | null>(null);
+
   const checkHealth = useCallback(async () => {
     try {
       const res = await api.get('/opc/health');
@@ -238,6 +247,40 @@ export default function OPCTagManager() {
       setError(e?.response?.data?.error || `Failed to remove ${tag}`);
     } finally {
       setRemoving(prev => { const s = new Set(prev); s.delete(tag); return s; });
+    }
+  }
+
+  async function updateTag(tag: string) {
+    setSaving(true);
+    try {
+      const data: Record<string, string> = {};
+      if (editLabel) data.label = editLabel;
+      if (editArea) data.area = editArea;
+      await api.patch(`/opc/monitor/${tag}`, data);
+      setSuccess(`Updated ${tag}`);
+      setTimeout(() => setSuccess(''), 3000);
+      setEditingTag(null);
+      fetchMonitored();
+      fetchLive();
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string } } };
+      setError(e?.response?.data?.error || `Failed to update ${tag}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function getLiveReading(tag: string) {
+    setLiveReading(tag);
+    try {
+      await fetchLive();
+      setSuccess(`Refreshed live data`);
+      setTimeout(() => setSuccess(''), 2000);
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string } } };
+      setError(e?.response?.data?.error || 'Failed to fetch live reading');
+    } finally {
+      setLiveReading(null);
     }
   }
 
@@ -348,7 +391,8 @@ export default function OPCTagManager() {
                     <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Area</th>
                     <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Label</th>
                     <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Value</th>
-                    <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Updated</th>
+                    <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Updated</th>
+                    <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest w-16"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -360,7 +404,16 @@ export default function OPCTagManager() {
                       <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-800 border-r border-slate-100 font-bold">
                         {fmtVal(t.values.PV ?? t.values.IO_VALUE)}
                       </td>
-                      <td className="px-3 py-1.5 text-center text-slate-400">{fmtAgo(t.updatedAt)}</td>
+                      <td className="px-3 py-1.5 text-center text-slate-400 border-r border-slate-100">{fmtAgo(t.updatedAt)}</td>
+                      <td className="px-3 py-1.5 text-center">
+                        <button
+                          onClick={() => getLiveReading(t.tag)}
+                          disabled={liveReading === t.tag}
+                          className="px-2 py-0.5 bg-green-50 border border-green-200 text-green-700 text-[10px] font-bold uppercase hover:bg-green-100 disabled:opacity-50"
+                        >
+                          {liveReading === t.tag ? '...' : 'LIVE'}
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -384,31 +437,76 @@ export default function OPCTagManager() {
                   <tr className="bg-slate-800 text-white">
                     <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Tag</th>
                     <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Area</th>
-                    <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Folder</th>
                     <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Type</th>
                     <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Label</th>
-                    <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Action</th>
+                    <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {monitored.map((t, i) => (
                     <tr key={t.tag} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
                       <td className="px-3 py-1.5 font-mono text-slate-800 border-r border-slate-100">{t.tag}</td>
-                      <td className="px-3 py-1.5 text-slate-500 border-r border-slate-100">{t.area}</td>
-                      <td className="px-3 py-1.5 text-slate-500 border-r border-slate-100">{t.folder}</td>
-                      <td className="px-3 py-1.5 border-r border-slate-100">
-                        <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${t.tagType === 'pid' ? 'border-blue-300 bg-blue-50 text-blue-600' : 'border-slate-300 bg-slate-50 text-slate-600'}`}>{t.tagType}</span>
-                      </td>
-                      <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">{t.label}</td>
-                      <td className="px-3 py-1.5 text-center">
-                        <button
-                          onClick={() => removeTag(t.tag)}
-                          disabled={removing.has(t.tag)}
-                          className="px-2 py-0.5 bg-red-50 border border-red-200 text-red-600 text-[10px] font-bold uppercase hover:bg-red-100 disabled:opacity-50"
-                        >
-                          {removing.has(t.tag) ? 'Removing...' : 'Remove'}
-                        </button>
-                      </td>
+                      {editingTag === t.tag ? (
+                        <>
+                          <td className="px-1 py-1 border-r border-slate-100">
+                            <input
+                              value={editArea}
+                              onChange={e => setEditArea(e.target.value)}
+                              className="border border-slate-300 px-2 py-1 text-xs w-full focus:outline-none focus:ring-1 focus:ring-blue-400"
+                              placeholder="Area"
+                            />
+                          </td>
+                          <td className="px-3 py-1.5 border-r border-slate-100">
+                            <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${t.tagType === 'pid' ? 'border-blue-300 bg-blue-50 text-blue-600' : 'border-slate-300 bg-slate-50 text-slate-600'}`}>{t.tagType}</span>
+                          </td>
+                          <td className="px-1 py-1 border-r border-slate-100">
+                            <input
+                              value={editLabel}
+                              onChange={e => setEditLabel(e.target.value)}
+                              className="border border-slate-300 px-2 py-1 text-xs w-full focus:outline-none focus:ring-1 focus:ring-blue-400"
+                              placeholder="Label"
+                            />
+                          </td>
+                          <td className="px-3 py-1.5 text-center whitespace-nowrap">
+                            <button
+                              onClick={() => updateTag(t.tag)}
+                              disabled={saving}
+                              className="px-2 py-0.5 bg-blue-600 border border-blue-700 text-white text-[10px] font-bold uppercase hover:bg-blue-700 disabled:opacity-50 mr-1"
+                            >
+                              {saving ? '...' : 'Save'}
+                            </button>
+                            <button
+                              onClick={() => setEditingTag(null)}
+                              className="px-2 py-0.5 bg-white border border-slate-300 text-slate-600 text-[10px] font-bold uppercase hover:bg-slate-50"
+                            >
+                              Cancel
+                            </button>
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-3 py-1.5 text-slate-500 border-r border-slate-100">{t.area}</td>
+                          <td className="px-3 py-1.5 border-r border-slate-100">
+                            <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${t.tagType === 'pid' ? 'border-blue-300 bg-blue-50 text-blue-600' : 'border-slate-300 bg-slate-50 text-slate-600'}`}>{t.tagType}</span>
+                          </td>
+                          <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">{t.label}</td>
+                          <td className="px-3 py-1.5 text-center whitespace-nowrap">
+                            <button
+                              onClick={() => { setEditingTag(t.tag); setEditLabel(t.label); setEditArea(t.area); }}
+                              className="px-2 py-0.5 bg-white border border-slate-300 text-slate-600 text-[10px] font-bold uppercase hover:bg-slate-50 mr-1"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => removeTag(t.tag)}
+                              disabled={removing.has(t.tag)}
+                              className="px-2 py-0.5 bg-red-50 border border-red-200 text-red-600 text-[10px] font-bold uppercase hover:bg-red-100 disabled:opacity-50"
+                            >
+                              {removing.has(t.tag) ? '...' : 'Remove'}
+                            </button>
+                          </td>
+                        </>
+                      )}
                     </tr>
                   ))}
                 </tbody>
