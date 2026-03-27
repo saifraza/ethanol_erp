@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Area, ComposedChart } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Area, ComposedChart, Brush, Legend } from 'recharts';
 import api from '../../services/api';
 
 // ─── Tag catalog (mirrors tags.py on Windows) ───────────────────────────────
@@ -567,7 +567,7 @@ export default function OPCTagManager() {
 
                                     {/* Chart */}
                                     <div className="bg-white border border-slate-300 p-3 mb-3">
-                                      <ResponsiveContainer width="100%" height={200}>
+                                      <ResponsiveContainer width="100%" height={250}>
                                         <ComposedChart data={historyData.map(d => ({
                                           ...d,
                                           time: new Date(d.hour).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }),
@@ -577,18 +577,25 @@ export default function OPCTagManager() {
                                           <XAxis dataKey="time" tick={{ fontSize: 9 }} tickLine={false} />
                                           <YAxis tick={{ fontSize: 9 }} tickLine={false} domain={['auto', 'auto']} />
                                           <Tooltip
-                                            contentStyle={{ fontSize: 11, border: '1px solid #cbd5e1', boxShadow: 'none' }}
-                                            formatter={(v: number, name: string) => [v.toFixed(2), name]}
+                                            contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px' }}
+                                            formatter={(v: number, name: string) => {
+                                              if (name === 'maxArea' || name === 'minArea') return [null, null];
+                                              const color = name === 'Avg' ? '#1e40af' : name === 'Max' ? '#dc2626' : '#0891b2';
+                                              return [<span style={{ color, fontWeight: name === 'Avg' ? 700 : 500, fontFamily: 'monospace' }}>{v.toFixed(2)}</span>, name];
+                                            }}
                                             labelFormatter={(label: string, payload: any[]) => payload[0]?.payload?.date ? `${payload[0].payload.date} ${label}` : label}
+                                            labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }}
+                                            itemStyle={{ padding: '1px 0' }}
                                           />
-                                          <Area type="monotone" dataKey="max" stroke="none" fill="#fed7aa" fillOpacity={0.5} />
-                                          <Area type="monotone" dataKey="min" stroke="none" fill="#bfdbfe" fillOpacity={0.5} />
-                                          <Line type="monotone" dataKey="avg" stroke="#1e40af" strokeWidth={2} dot={{ r: 2, fill: '#1e40af' }} name="Avg" />
-                                          <Line type="monotone" dataKey="max" stroke="#ea580c" strokeWidth={1} dot={false} strokeDasharray="3 3" name="Max" />
-                                          <Line type="monotone" dataKey="min" stroke="#0891b2" strokeWidth={1} dot={false} strokeDasharray="3 3" name="Min" />
+                                          <Area type="monotone" dataKey="max" stroke="none" fill="#fed7aa" fillOpacity={0.5} name="maxArea" legendType="none" />
+                                          <Area type="monotone" dataKey="min" stroke="none" fill="#bfdbfe" fillOpacity={0.5} name="minArea" legendType="none" />
+                                          <Line type="monotone" dataKey="avg" stroke="#1e40af" strokeWidth={2} dot={{ r: 3, fill: '#1e40af' }} name="Avg" />
+                                          <Line type="monotone" dataKey="max" stroke="#dc2626" strokeWidth={1.5} dot={false} strokeDasharray="4 3" name="Max" />
+                                          <Line type="monotone" dataKey="min" stroke="#0891b2" strokeWidth={1.5} dot={false} strokeDasharray="4 3" name="Min" />
                                           {t.hhAlarm != null && <ReferenceLine y={t.hhAlarm} stroke="#dc2626" strokeDasharray="6 3" label={{ value: `HH ${t.hhAlarm}`, fontSize: 9, fill: '#dc2626', position: 'right' }} />}
                                           {t.llAlarm != null && <ReferenceLine y={t.llAlarm} stroke="#dc2626" strokeDasharray="6 3" label={{ value: `LL ${t.llAlarm}`, fontSize: 9, fill: '#dc2626', position: 'right' }} />}
                                           {tagStats && <ReferenceLine y={tagStats.mean} stroke="#6366f1" strokeDasharray="2 2" label={{ value: `Mean ${tagStats.mean}`, fontSize: 9, fill: '#6366f1', position: 'left' }} />}
+                                          <Brush dataKey="time" height={20} stroke="#94a3b8" fill="#f8fafc" travellerWidth={8} />
                                         </ComposedChart>
                                       </ResponsiveContainer>
                                     </div>

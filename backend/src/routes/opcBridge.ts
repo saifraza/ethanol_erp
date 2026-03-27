@@ -218,7 +218,9 @@ router.get('/health', asyncHandler(async (_req: AuthRequest, res: Response) => {
 
   const lastScan = latestReading?.scannedAt || null;
   const lastSync = latestSync?.syncedAt || null;
-  const online = lastScan ? (Date.now() - new Date(lastScan).getTime()) < 5 * 60 * 1000 : false;
+  // Use lastSync (server receive time) for online check — lastScan is factory clock time which may drift
+  const syncRef = lastSync || lastScan;
+  const online = syncRef ? (Date.now() - new Date(syncRef).getTime()) < 5 * 60 * 1000 : false;
 
   res.json({ status: 'ok', online, monitoredTags: monitoredCount, lastScan, lastSync });
 }));
