@@ -5,7 +5,7 @@ import {
   Wheat, CogIcon, Droplets, Beaker, Flame, Wind,
   Fuel, Waves, BarChart3,
   Settings, Users, Truck, Package, LayoutDashboard,
-  Warehouse, AlertCircle, ShoppingCart,
+  Warehouse, AlertCircle, ShoppingCart, Radio,
   UserCheck, ClipboardList, Send, FileText, IndianRupee,
   Building2, Box, ShoppingBag, PackageCheck, Receipt, CreditCard,
   Store, Tractor, Scale, Handshake,
@@ -43,6 +43,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'ddgs-stock', label: 'DDGS Godown', to: '/process/ddgs-stock', icon: Package, group: 'process' },
   { key: 'ddgs-dispatch', label: 'DDGS Dispatch', to: '/process/ddgs-dispatch', icon: Truck, group: 'process' },
   { key: 'water-utility', label: 'Utilities', to: '/process/water-utility', icon: Waves, group: 'process' },
+  { key: 'opc-live', label: 'OPC Live', to: '/process/opc', icon: Radio, group: 'process' },
 
   // ── SALES (DDGS + Ethanol outward) ──
   { key: 'customers', label: 'Buyers', to: '/sales/customers', icon: UserCheck, group: 'sales' },
