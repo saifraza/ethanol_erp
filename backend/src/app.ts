@@ -65,6 +65,8 @@ import accountsRoutes from './routes/accounts';
 import chartOfAccountsRoutes from './routes/chartOfAccounts';
 import journalEntryRoutes from './routes/journalEntries';
 import bankReconciliationRoutes from './routes/bankReconciliation';
+// OPC Bridge (factory automation)
+import opcBridgeRoutes from './routes/opcBridge';
 import accountsReportsRoutes from './routes/accountsReports';
 // AI Assistant
 import aiRoutes from './routes/ai';
@@ -179,6 +181,8 @@ app.use('/api/bank-reconciliation', bankReconciliationRoutes);
 app.use('/api/accounts-reports', accountsReportsRoutes);
 // Logistics (Gate Entry)
 app.use('/api/gate-entry', gateEntryRoutes);
+// OPC Bridge (factory automation — proxies to on-premise Windows service)
+app.use('/api/opc', opcBridgeRoutes);
 // AI Assistant
 app.use('/api/ai', aiRoutes);
 // WhatsApp (Baileys QR)

@@ -24,6 +24,7 @@ const Distillation = React.lazy(() => import('./pages/process/Distillation'));
 const RawMaterial = React.lazy(() => import('./pages/process/RawMaterial'));
 const DryerMonitor = React.lazy(() => import('./pages/process/DryerMonitor'));
 const Decanter = React.lazy(() => import('./pages/process/Decanter'));
+const OPCTagManager = React.lazy(() => import('./pages/process/OPCTagManager'));
 const Evaporation = React.lazy(() => import('./pages/process/Evaporation'));
 const EthanolProduct = React.lazy(() => import('./pages/process/EthanolProduct'));
 const EthanolDispatch = React.lazy(() => import('./pages/process/EthanolDispatch'));
@@ -125,6 +126,7 @@ export default function App() {
         <Route path="process/ddgs-dispatch" element={<DDGSDispatch />} />
         <Route path="process/dryer" element={<DryerMonitor />} />
         <Route path="process/decanter" element={<Decanter />} />
+        <Route path="process/opc" element={<OPCTagManager />} />
         <Route path="process/ethanol-product" element={<EthanolProduct />} />
         <Route path="process/ethanol-stock" element={<EthanolProduct />} />
         <Route path="process/ethanol-dispatch" element={<EthanolDispatch />} />
