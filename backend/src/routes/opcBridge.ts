@@ -32,7 +32,7 @@ function checkPushKey(req: AuthRequest, res: Response): boolean {
 }
 
 // ==========================================================================
-// PUSH endpoints — called by Windows service (no auth, uses API key)
+// PUSH endpoints — called by Windows service (no JWT auth, uses API key)
 // ==========================================================================
 
 const pushReadingsSchema = z.object({
@@ -122,7 +122,25 @@ router.post('/push-hourly', validate(pushHourlySchema), asyncHandler(async (req:
 }));
 
 // ==========================================================================
-// READ endpoints — called by ERP frontend (requires auth)
+// TAG PULL endpoint — called by Windows service to get master tag list
+// Uses X-OPC-Key auth (same as push)
+// ==========================================================================
+
+// GET /api/opc/monitor/pull — Factory pulls tag list from cloud (cloud-as-master)
+router.get('/monitor/pull', asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!checkPushKey(req, res)) return;
+  const opc = getOpcPrisma();
+  const tags = await opc.opcMonitoredTag.findMany({
+    where: { active: true },
+    orderBy: { area: 'asc' },
+    take: 500,
+    select: { tag: true, area: true, folder: true, tagType: true, label: true },
+  });
+  res.json({ tags, count: tags.length });
+}));
+
+// ==========================================================================
+// READ endpoints — called by ERP frontend (requires JWT auth)
 // ==========================================================================
 
 // GET /api/opc/health
@@ -147,27 +165,68 @@ router.get('/monitor', asyncHandler(async (_req: AuthRequest, res: Response) => 
   const tags = await opc.opcMonitoredTag.findMany({
     where: { active: true },
     orderBy: { area: 'asc' },
-    take: 200,
+    take: 500,
   });
   res.json({ tags, count: tags.length });
+}));
+
+// POST /api/opc/monitor — Add tag to monitor (from ERP UI)
+const addMonitorSchema = z.object({
+  tag: z.string().min(1),
+  area: z.string().min(1),
+  folder: z.string().min(1),
+  tagType: z.string().default('analog'),
+  label: z.string().optional(),
+});
+
+router.post('/monitor', validate(addMonitorSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+  const opc = getOpcPrisma();
+  const { tag, area, folder, tagType, label } = req.body;
+
+  const result = await opc.opcMonitoredTag.upsert({
+    where: { tag },
+    create: { tag, area, folder, tagType, label: label || tag, active: true },
+    update: { area, folder, tagType, label: label || tag, active: true },
+  });
+
+  res.status(201).json({ ok: true, tag: result });
+}));
+
+// DELETE /api/opc/monitor/:tag — Remove tag from monitoring (soft-delete: set active=false)
+router.delete('/monitor/:tag', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const opc = getOpcPrisma();
+  const tag = req.params.tag;
+
+  try {
+    await opc.opcMonitoredTag.update({
+      where: { tag },
+      data: { active: false },
+    });
+    res.json({ ok: true, message: `Stopped monitoring ${tag}` });
+  } catch (err: unknown) {
+    const prismaErr = err as { code?: string };
+    if (prismaErr.code === 'P2025') {
+      res.status(404).json({ error: `Tag '${tag}' not found` });
+    } else {
+      throw err;
+    }
+  }
 }));
 
 // GET /api/opc/live — Latest readings for all monitored tags
 router.get('/live', asyncHandler(async (_req: AuthRequest, res: Response) => {
   const opc = getOpcPrisma();
-  const tags = await opc.opcMonitoredTag.findMany({ where: { active: true }, take: 200 });
+  const tags = await opc.opcMonitoredTag.findMany({ where: { active: true }, take: 500 });
 
   const result = [];
   for (const t of tags) {
-    // Get latest reading per property for this tag
     const readings = await opc.opcReading.findMany({
       where: { tag: t.tag },
       orderBy: { scannedAt: 'desc' },
-      take: 10, // enough for PV+SP+OP+IO_VALUE
+      take: 10,
       select: { property: true, value: true, scannedAt: true },
     });
 
-    // Dedupe by property (keep latest)
     const values: Record<string, number> = {};
     const seen = new Set<string>();
     let updatedAt: Date | null = null;

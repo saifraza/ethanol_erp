@@ -137,9 +137,83 @@ Implementation: add `opcTag` field to relevant models, frontend fetches /api/opc
 | SQLite thread error | Ensure `check_same_thread=False` in sqlite3.connect() |
 | Push failing | Check internet on Windows. Data queues locally, retries auto. |
 
+## Production Robustness Features (Added Phase 3.5)
+
+### Log Rotation
+- `RotatingFileHandler` — 5MB per file, keeps 3 rotated files
+- Config: `LOG_MAX_BYTES`, `LOG_BACKUP_COUNT`
+
+### Graceful Shutdown
+- `threading.Event` shared across all threads
+- Handles SIGTERM, SIGINT, and Windows console events (close/logoff/shutdown)
+- 5-second grace period for threads to finish
+- PID file at `data/opc_bridge.pid` (prevents duplicate instances)
+
+### Exponential Backoff
+- Config: `BACKOFF_INITIAL_SECONDS=10`, `BACKOFF_MAX_SECONDS=600`, `BACKOFF_MULTIPLIER=2`
+- Scanner backs off when OPC is unreachable (10s → 20s → 40s → ... → 600s max)
+- Cloud sync backs off when cloud is down (same pattern)
+- Resets on success
+
+### Memory Management
+- `LRUCache` (bounded OrderedDict) replaces unbounded `_cache` dict
+- Max `OPC_CACHE_MAX_SIZE=200` entries per scanner instance
+- Periodic OPC reconnect every 30 min to avoid stale sessions
+- API browse client reconnects every 5 min with lock
+
+### Queue Cleanup
+- Synced entries deleted after `QUEUE_RETENTION_HOURS=48`
+- Failed entries (>10 attempts, >7 days old) auto-removed
+- Stale `tag_latest` entries for unmonitored tags cleaned up
+- DB VACUUM when size exceeds 50MB
+
+### Watchdog Improvements
+- Thread restart rate-limiting: max `MAX_THREAD_RESTARTS=10` per hour per thread
+- Logs error and stops restarting if thread keeps crashing
+- Shutdown-aware sleep in all threads
+
+### Windows Auto-Start
+- `install_autostart.bat` — creates Task Scheduler entry for boot + logon
+- `start_service.bat` — called by scheduler, skips if already running
+- `uninstall_autostart.bat` — removes auto-start entries
+- Dual triggers: ONSTART (1 min delay) + ONLOGON (30 sec delay)
+
+### Rate Limiting (Local API)
+- `API_RATE_LIMIT_PER_MINUTE=120` per IP
+- Sliding window with periodic cleanup
+
+### Cloud-as-Master Tag Sync
+- Factory pulls tag list from cloud on each sync cycle (`GET /api/opc/monitor/pull`)
+- Cloud is the master source of truth for monitored tags
+- Tags added/removed via ERP UI automatically sync to factory within ~3 min
+- If cloud is unreachable, factory keeps using local tag list
+- Diff-based sync: adds new tags, removes deactivated ones, updates labels
+
+### Files Changed
+| File | Changes |
+|------|---------|
+| `config.py` | Added: OPC_CACHE_MAX_SIZE, QUEUE_RETENTION_HOURS, BACKOFF_*, LOG_MAX_BYTES, LOG_BACKUP_COUNT, API_RATE_LIMIT_PER_MINUTE, WATCHDOG_CHECK_SECONDS, MAX_THREAD_RESTARTS, TAG_PULL_ENABLED |
+| `run.py` | Added: RotatingFileHandler, PID file, graceful shutdown (signal handlers + Windows console), ThreadWatchdog with rate limiting, shutdown_event threading |
+| `opc_scanner.py` | Added: LRUCache, exponential backoff, shutdown_event, periodic reconnect, queue cleanup, VACUUM, stale tag_latest cleanup |
+| `cloud_sync.py` | Added: pull_tags_from_cloud(), exponential backoff, cloud availability tracking, shutdown_event, skip retry when cloud down |
+| `api_server.py` | Added: rate limiter, ShutdownHTTPServer, thread-safe browse client, PID/uptime in health, pendingSyncs in stats |
+| `start_service.bat` | NEW: Called by Task Scheduler, skips if already running |
+| `install_autostart.bat` | NEW: Sets up Task Scheduler auto-start |
+| `uninstall_autostart.bat` | NEW: Removes auto-start |
+| `restart.bat` | Updated: Uses PID file instead of killing all python.exe |
+| `stop.bat` | Updated: Uses PID file for clean shutdown |
+| `status.bat` | Updated: Shows auto-start status, pending syncs, DB size |
+
+### ERP Changes
+| File | Changes |
+|------|---------|
+| `backend/src/routes/opcBridge.ts` | Added: `GET /monitor/pull` (X-OPC-Key auth), `POST /monitor` (JWT auth, add tag), `DELETE /monitor/:tag` (JWT auth, soft-delete) |
+| `frontend/src/pages/process/OPCTagManager.tsx` | Added: "Add Tags" tab with area/folder browser, tag catalog (176+ tags), add/remove buttons, success/error messages |
+
 ## Development Phases
 1. **OPC Connection** - DONE - cert auth, browse, read
 2. **Cloud Integration** - DONE - push API, separate DB, ERP page
 3. **Operations** - DONE - bat files, docs, memory
-4. **ERP Integration** - NEXT - browse from ERP, tag-to-field mapping, dashboard widgets
-5. **Advanced** - PLANNED - WhatsApp alerts, PID tuning, Windows Service auto-start
+3.5. **Production Robustness** - DONE - log rotation, auto-start, backoff, memory limits, tag sync
+4. **ERP Integration** - NEXT - tag-to-field mapping, dashboard widgets, trend charts
+5. **Advanced** - PLANNED - WhatsApp alerts, PID tuning
