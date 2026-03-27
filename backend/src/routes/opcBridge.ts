@@ -41,11 +41,16 @@ const _lastAlarmSent: Record<string, number> = {};
 const ALARM_COOLDOWN_MS = 15 * 60 * 1000;
 
 async function checkAlarms(opc: any, readings: { tag: string; property: string; value: number }[]) {
-  // Get tags with alarm limits set
-  const tagsWithAlarms = await opc.opcMonitoredTag.findMany({
-    where: { active: true, OR: [{ hhAlarm: { not: null } }, { llAlarm: { not: null } }] },
-    select: { tag: true, label: true, description: true, hhAlarm: true, llAlarm: true },
-  });
+  // Get tags with alarm limits set (skip if columns don't exist yet)
+  let tagsWithAlarms: any[];
+  try {
+    tagsWithAlarms = await opc.opcMonitoredTag.findMany({
+      where: { active: true, OR: [{ hhAlarm: { not: null } }, { llAlarm: { not: null } }] },
+      select: { tag: true, label: true, description: true, hhAlarm: true, llAlarm: true },
+    });
+  } catch {
+    return; // New columns not migrated yet
+  }
   if (!tagsWithAlarms.length) return;
 
   const alarmMap = new Map(tagsWithAlarms.map((t: any) => [t.tag, t]));
@@ -221,11 +226,18 @@ router.get('/health', asyncHandler(async (_req: AuthRequest, res: Response) => {
 // GET /api/opc/monitor — List monitored tags
 router.get('/monitor', asyncHandler(async (_req: AuthRequest, res: Response) => {
   const opc = getOpcPrisma();
-  const tags = await opc.opcMonitoredTag.findMany({
-    where: { active: true },
-    orderBy: { area: 'asc' },
-    take: 500,
-  });
+  let tags: any[];
+  try {
+    tags = await opc.opcMonitoredTag.findMany({
+      where: { active: true }, orderBy: { area: 'asc' }, take: 500,
+      select: { id: true, tag: true, area: true, folder: true, tagType: true, label: true, description: true, hhAlarm: true, llAlarm: true, active: true },
+    });
+  } catch {
+    tags = await opc.opcMonitoredTag.findMany({
+      where: { active: true }, orderBy: { area: 'asc' }, take: 500,
+      select: { id: true, tag: true, area: true, folder: true, tagType: true, label: true, active: true },
+    });
+  }
   res.json({ tags, count: tags.length });
 }));
 
@@ -316,7 +328,21 @@ router.delete('/monitor/:tag', asyncHandler(async (req: AuthRequest, res: Respon
 // GET /api/opc/live — Latest readings for all monitored tags
 router.get('/live', asyncHandler(async (_req: AuthRequest, res: Response) => {
   const opc = getOpcPrisma();
-  const tags = await opc.opcMonitoredTag.findMany({ where: { active: true }, take: 500 });
+  let tags: any[];
+  try {
+    tags = await opc.opcMonitoredTag.findMany({
+      where: { active: true },
+      take: 500,
+      select: { tag: true, area: true, folder: true, tagType: true, label: true, description: true, hhAlarm: true, llAlarm: true },
+    });
+  } catch {
+    // Fallback if new columns don't exist yet (pre-migration)
+    tags = await opc.opcMonitoredTag.findMany({
+      where: { active: true },
+      take: 500,
+      select: { tag: true, area: true, folder: true, tagType: true, label: true },
+    });
+  }
 
   const result = [];
   for (const t of tags) {
