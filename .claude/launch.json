@@ -2,20 +2,9 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "backend",
-      "runtimeExecutable": "/Users/saifraza/Desktop/distillery-erp/backend/node_modules/.bin/tsx",
-      "runtimeArgs": ["/Users/saifraza/Desktop/distillery-erp/backend/src/server.ts"],
-      "port": 5001,
-      "autoPort": true,
-      "env": {
-        "PORT": "5001",
-        "DOTENV_CONFIG_PATH": "/Users/saifraza/Desktop/distillery-erp/backend/.env"
-      }
-    },
-    {
-      "name": "frontend",
-      "runtimeExecutable": "/Users/saifraza/Desktop/distillery-erp/frontend/node_modules/.bin/vite",
-      "runtimeArgs": ["--config", "/Users/saifraza/Desktop/distillery-erp/frontend/vite.config.ts"],
+      "name": "dev",
+      "runtimeExecutable": "/Users/saifraza/Desktop/distillery-erp/.claude/worktrees/stupefied-wing/frontend/node_modules/.bin/vite",
+      "runtimeArgs": ["--config", "/Users/saifraza/Desktop/distillery-erp/.claude/worktrees/stupefied-wing/frontend/vite.config.ts"],
       "port": 3000,
       "autoPort": true
     }
