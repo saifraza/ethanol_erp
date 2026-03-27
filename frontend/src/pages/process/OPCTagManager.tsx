@@ -166,6 +166,7 @@ export default function OPCTagManager() {
   const [historyData, setHistoryData] = useState<HourlyReading[]>([]);
   const [historyHours, setHistoryHours] = useState(24);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [yZoom, setYZoom] = useState(0); // 0 = auto, positive = zoom in levels
   const [tagStats, setTagStats] = useState<TagStats | null>(null);
 
   const checkHealth = useCallback(async () => {
@@ -248,6 +249,7 @@ export default function OPCTagManager() {
   function selectTag(tag: string) {
     if (selectedTag === tag) { setSelectedTag(null); return; }
     setSelectedTag(tag);
+    setYZoom(0);
     fetchHistory(tag, historyHours);
   }
 
@@ -567,6 +569,13 @@ export default function OPCTagManager() {
 
                                     {/* Chart */}
                                     <div className="bg-white border border-slate-300 p-3 mb-3">
+                                      {/* Y-axis zoom controls */}
+                                      <div className="flex items-center justify-end gap-1 mb-1">
+                                        <span className="text-[9px] text-slate-400 uppercase tracking-widest mr-1">Y-Zoom</span>
+                                        <button onClick={() => setYZoom(z => Math.min(z + 1, 5))} className="w-5 h-5 flex items-center justify-center bg-slate-100 border border-slate-300 text-slate-600 text-xs font-bold hover:bg-slate-200" title="Zoom in Y axis">+</button>
+                                        <button onClick={() => setYZoom(z => Math.max(z - 1, 0))} className="w-5 h-5 flex items-center justify-center bg-slate-100 border border-slate-300 text-slate-600 text-xs font-bold hover:bg-slate-200" title="Zoom out Y axis">-</button>
+                                        {yZoom > 0 && <button onClick={() => setYZoom(0)} className="px-1.5 h-5 flex items-center justify-center bg-slate-100 border border-slate-300 text-slate-500 text-[9px] hover:bg-slate-200" title="Reset Y axis">Reset</button>}
+                                      </div>
                                       <ResponsiveContainer width="100%" height={250}>
                                         <ComposedChart data={historyData.map(d => ({
                                           ...d,
@@ -575,7 +584,15 @@ export default function OPCTagManager() {
                                         }))}>
                                           <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                                           <XAxis dataKey="time" tick={{ fontSize: 9 }} tickLine={false} />
-                                          <YAxis tick={{ fontSize: 9 }} tickLine={false} domain={['auto', 'auto']} />
+                                          <YAxis tick={{ fontSize: 9 }} tickLine={false} domain={(() => {
+                                            if (yZoom === 0 || !historyData.length) return ['auto', 'auto'] as const;
+                                            const allMin = Math.min(...historyData.map(d => d.min));
+                                            const allMax = Math.max(...historyData.map(d => d.max));
+                                            const mid = (allMin + allMax) / 2;
+                                            const range = allMax - allMin || 1;
+                                            const factor = Math.pow(0.6, yZoom); // each level zooms 40% tighter
+                                            return [mid - range * factor, mid + range * factor];
+                                          })()} />
                                           <Tooltip
                                             contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px' }}
                                             formatter={(v: number, name: string) => {
