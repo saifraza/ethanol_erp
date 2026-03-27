@@ -5,7 +5,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("OPC_DATABASE_URL")
+  url      = env("DATABASE_URL_OPC")
 }
 
 // Tags being monitored — synced from Windows SQLite
