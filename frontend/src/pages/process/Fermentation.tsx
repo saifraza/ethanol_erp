@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   FlaskConical, Beaker, Cylinder, RefreshCw, Loader2, CheckCircle, AlertCircle,
-  Plus, Trash2, Send, ChevronDown, Clock, Play, X, MessageCircle, History
+  Plus, Trash2, Send, ChevronDown, Clock, Play, X, MessageCircle, History, RotateCcw
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend, ReferenceLine } from 'recharts';
 import api from '../../services/api';
@@ -898,11 +898,11 @@ export default function Fermentation() {
                       <input placeholder="Remarks..." value={readingForm.remarks || ''} onChange={e => setReadingForm(f => ({ ...f, remarks: e.target.value }))}
                         className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-gray-50 outline-none" />
                       <div className="flex gap-2.5">
-                        <button onClick={() => saveReading(false)} disabled={saving || !!editingReading}
+                        <button onClick={() => saveReading(false)} disabled={saving}
                           className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-sm hover:bg-indigo-700 active:scale-[0.98] transition-all">
-                          {saving ? <Loader2 size={14} className="animate-spin" /> : <><Send size={13} /> {editingReading ? 'Editing below...' : 'Save'}</>}
+                          {saving ? <Loader2 size={14} className="animate-spin" /> : <><Send size={13} /> Save</>}
                         </button>
-                        <button onClick={() => saveReading(true)} disabled={saving || !!editingReading}
+                        <button onClick={() => saveReading(true)} disabled={saving}
                           className="flex-1 py-2.5 bg-green-600 text-white rounded-xl text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-sm hover:bg-green-700 active:scale-[0.98] transition-all">
                           {saving ? <Loader2 size={14} className="animate-spin" /> : <><MessageCircle size={13} /> Save & Share</>}
                         </button>
@@ -1250,6 +1250,7 @@ export default function Fermentation() {
                           <div className="col-span-1 text-right font-medium text-gray-700">{cycleTime}</div>
                           <div className="col-span-2 text-gray-500">{b.transferTime ? new Date(b.transferTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}</div>
                           <div className="col-span-1 text-right flex items-center justify-end gap-1">
+                            {isAdmin && b.phase === 'DONE' && <button title="Reactivate batch" onClick={async (e) => { e.stopPropagation(); if (!confirm(`Reactivate Batch #${b.batchNo} on F-${b.fermenterNo}? It will go back to REACTION phase.`)) return; try { await api.patch(`/fermentation/batches/${b.id}`, { phase: 'REACTION', cipEndTime: null, cipStartTime: null }); flash('ok', `Batch #${b.batchNo} reactivated`); load(); } catch { flash('err', 'Reactivate failed'); } }} className="opacity-0 group-hover:opacity-100 text-blue-400 hover:text-blue-600 transition-all"><RotateCcw size={13} /></button>}
                             {isAdmin && <button onClick={async (e) => { e.stopPropagation(); if (!confirm(`Delete Batch #${b.batchNo}?`)) return; try { await api.delete(`/fermentation/batches/${b.id}`); flash('ok', `Batch #${b.batchNo} deleted`); load(); } catch { flash('err', 'Delete failed'); } }} className="opacity-0 group-hover:opacity-100 text-red-300 hover:text-red-500 transition-all"><Trash2 size={13} /></button>}
                             <ChevronDown size={14} className={`text-gray-400 transition-transform ${isExp ? 'rotate-180' : ''}`} />
                           </div>
@@ -1440,7 +1441,7 @@ export default function Fermentation() {
                         <td className="px-3 py-2 text-gray-500">{b.transferTime ? new Date(b.transferTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
                         <td className="px-3 py-2 text-gray-500">{b.cipEndTime ? new Date(b.cipEndTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
                         <td className="px-3 py-2 text-gray-400 max-w-[120px] truncate" title={b.remarks || ''}>{b.remarks || '—'}</td>
-                        {isAdmin && <td className="px-2 py-2"><button onClick={async () => { if (!confirm(`Delete PF Batch #${b.batchNo}?`)) return; try { await api.delete(`/pre-fermentation/batches/${b.id}`); flash('ok', `PF Batch #${b.batchNo} deleted`); load(); } catch { flash('err', 'Delete failed'); } }} className="opacity-0 group-hover:opacity-100 text-red-300 hover:text-red-500 transition-all"><Trash2 size={14} /></button></td>}
+                        {isAdmin && <td className="px-2 py-2 flex items-center gap-1">{b.phase === 'DONE' && <button title="Reactivate batch" onClick={async () => { if (!confirm(`Reactivate PF Batch #${b.batchNo}?`)) return; try { await api.patch(`/pre-fermentation/batches/${b.id}`, { phase: 'SETUP', cipEndTime: null, cipStartTime: null }); flash('ok', `PF Batch #${b.batchNo} reactivated`); load(); } catch { flash('err', 'Reactivate failed'); } }} className="opacity-0 group-hover:opacity-100 text-blue-400 hover:text-blue-600 transition-all"><RotateCcw size={14} /></button>}<button onClick={async () => { if (!confirm(`Delete PF Batch #${b.batchNo}?`)) return; try { await api.delete(`/pre-fermentation/batches/${b.id}`); flash('ok', `PF Batch #${b.batchNo} deleted`); load(); } catch { flash('err', 'Delete failed'); } }} className="opacity-0 group-hover:opacity-100 text-red-300 hover:text-red-500 transition-all"><Trash2 size={14} /></button></td>}
                       </tr>
                     ))}
                   </tbody>
