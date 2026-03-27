@@ -8,7 +8,7 @@
  */
 
 import axios from 'axios';
-import { sendWhatsAppMessage, sendToGroup, getWhatsAppStatus } from './whatsappBaileys';
+import { sendWhatsAppMessage, sendToGroup, getConnectionStatus, getQRCode } from './whatsappBaileys';
 
 const WORKER_URL = process.env.WA_WORKER_URL; // e.g. https://wa-worker.railway.internal
 const API_KEY = process.env.WA_WORKER_API_KEY || 'mspil-wa-internal';
@@ -66,5 +66,5 @@ export async function waStatus(): Promise<{ connected: boolean; qr?: string }> {
       return { connected: false };
     }
   }
-  return getWhatsAppStatus();
+  return { connected: getConnectionStatus() === 'connected', qr: getQRCode() || undefined };
 }
