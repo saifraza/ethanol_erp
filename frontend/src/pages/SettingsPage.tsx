@@ -183,60 +183,69 @@ export default function SettingsPage() {
     return 'Private';
   };
 
-  // Group selector component
-  const GroupSelector = ({ num, jidKey, nameKey, label, color }: {
-    num: number; jidKey: string; nameKey: string; label: string; color: string;
-  }) => (
-    <div className="mt-4 pt-4 border-t first:mt-0 first:pt-0 first:border-0">
-      <div className="flex items-center gap-2 mb-2">
-        <Users size={16} className={color} />
-        <span className="text-sm font-semibold">{label}</span>
-        {settings[nameKey] && (
-          <span className="text-xs text-gray-400">({settings[nameKey]})</span>
-        )}
-      </div>
+  // Filter out already-selected groups from the picker
+  const availableGroups = (otherJidKey: string) =>
+    groups.filter(g => g.id !== settings[otherJidKey]);
 
-      {settings[jidKey] && settings[nameKey] ? (
+  // Group selector component
+  const GroupSelector = ({ num, jidKey, nameKey, otherJidKey, label, color }: {
+    num: number; jidKey: string; nameKey: string; otherJidKey: string; label: string; color: string;
+  }) => {
+    const filtered = availableGroups(otherJidKey);
+    return (
+      <div className="mt-4 pt-4 border-t first:mt-0 first:pt-0 first:border-0">
         <div className="flex items-center gap-2 mb-2">
-          <span className={`inline-flex items-center gap-1 px-3 py-1.5 ${num === 1 ? 'bg-blue-100 text-blue-800' : 'bg-emerald-100 text-emerald-800'} rounded-full text-sm font-medium`}>
-            <Users size={14} /> {settings[nameKey]}
-          </span>
-          {isAdmin && (
-            <button onClick={() => { updateStr(jidKey, ''); updateStr(nameKey, ''); }}
-              className="text-xs text-red-500 hover:underline">Remove</button>
+          <Users size={16} className={color} />
+          <span className="text-sm font-semibold">{label}</span>
+          {settings[nameKey] && (
+            <span className="text-xs text-gray-400">({settings[nameKey]})</span>
           )}
         </div>
-      ) : (
-        <>
-          {waStatus === 'connected' && isAdmin ? (
-            <div className="space-y-2">
-              {groups.length > 0 ? (
-                <div className="space-y-1 max-h-32 overflow-y-auto">
-                  {groups.map(g => (
-                    <button key={g.id} onClick={() => { updateStr(jidKey, g.id); updateStr(nameKey, g.subject); }}
-                      className="w-full text-left px-3 py-2 bg-gray-50 hover:bg-blue-50 rounded-lg text-sm flex justify-between items-center">
-                      <span>{g.subject}</span>
-                      <span className="text-xs text-gray-400">{g.size} members</span>
-                    </button>
-                  ))}
-                </div>
-              ) : (
+
+        {settings[jidKey] && settings[nameKey] ? (
+          <div className="flex items-center gap-2 mb-2">
+            <span className={`inline-flex items-center gap-1 px-3 py-1.5 ${num === 1 ? 'bg-blue-100 text-blue-800' : 'bg-emerald-100 text-emerald-800'} rounded-full text-sm font-medium`}>
+              <Users size={14} /> {settings[nameKey]}
+            </span>
+            {isAdmin && (
+              <button onClick={() => { updateStr(jidKey, ''); updateStr(nameKey, ''); }}
+                className="text-xs text-red-500 hover:underline">Remove</button>
+            )}
+          </div>
+        ) : (
+          <>
+            {waStatus === 'connected' && isAdmin ? (
+              <div className="space-y-2">
                 <button onClick={fetchGroups} disabled={loadingGroups}
-                  className="text-sm text-blue-600 hover:underline flex items-center gap-1">
+                  className="text-sm text-blue-600 hover:underline flex items-center gap-1 mb-2">
                   <RefreshCw size={12} className={loadingGroups ? 'animate-spin' : ''} />
                   {loadingGroups ? 'Loading...' : 'Load groups'}
                 </button>
-              )}
-            </div>
-          ) : (
-            <p className="text-sm text-orange-500">
-              {waStatus !== 'connected' ? 'Connect WhatsApp first to select a group.' : 'Only admins can change this.'}
-            </p>
-          )}
-        </>
-      )}
-    </div>
-  );
+                {filtered.length > 0 && (
+                  <div className="space-y-1 max-h-32 overflow-y-auto">
+                    {filtered.map(g => (
+                      <button key={g.id} onClick={() => { updateStr(jidKey, g.id); updateStr(nameKey, g.subject); }}
+                        className="w-full text-left px-3 py-2 bg-gray-50 hover:bg-blue-50 rounded-lg text-sm flex justify-between items-center">
+                        <span>{g.subject}</span>
+                        <span className="text-xs text-gray-400">{g.size} members</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {filtered.length === 0 && !loadingGroups && groups.length > 0 && (
+                  <p className="text-xs text-gray-400">No other groups available. Make sure the number is added to another group.</p>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-orange-500">
+                {waStatus !== 'connected' ? 'Connect WhatsApp first to select a group.' : 'Only admins can change this.'}
+              </p>
+            )}
+          </>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="max-w-2xl">
@@ -323,8 +332,8 @@ export default function SettingsPage() {
           </h2>
           <p className="text-sm text-gray-500 mb-3">Select two groups. Then assign each module to a group or private below.</p>
 
-          <GroupSelector num={1} jidKey="whatsappGroupJid" nameKey="whatsappGroupName" label="Group 1" color="text-blue-600" />
-          <GroupSelector num={2} jidKey="whatsappGroup2Jid" nameKey="whatsappGroup2Name" label="Group 2" color="text-emerald-600" />
+          <GroupSelector num={1} jidKey="whatsappGroupJid" nameKey="whatsappGroupName" otherJidKey="whatsappGroup2Jid" label="Group 1" color="text-blue-600" />
+          <GroupSelector num={2} jidKey="whatsappGroup2Jid" nameKey="whatsappGroup2Name" otherJidKey="whatsappGroupJid" label="Group 2" color="text-emerald-600" />
         </div>
 
         {/* Private Numbers */}
