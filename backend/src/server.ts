@@ -36,9 +36,14 @@ const HOST = '0.0.0.0';
 const server = app.listen(PORT, HOST, async () => {
   console.log(`Server running on http://${HOST}:${PORT}`);
   await autoSeed();
-  // Auto-reconnect WhatsApp if session exists in DB
-  initWhatsApp().catch((err) => console.error('[WA] Init error:', err));
-  // Start WhatsApp auto-collection scheduler
-  initAutoCollect().catch((err) => console.error('[AutoCollect] Init error:', err));
+
+  // If WA_WORKER_URL is set, WhatsApp runs as a separate service — skip local init
+  if (process.env.WA_WORKER_URL) {
+    console.log(`[WA] Using external WhatsApp worker at ${process.env.WA_WORKER_URL}`);
+  } else {
+    // Fallback: run WhatsApp in-process (legacy mode)
+    initWhatsApp().catch((err) => console.error('[WA] Init error:', err));
+    initAutoCollect().catch((err) => console.error('[AutoCollect] Init error:', err));
+  }
 });
 
