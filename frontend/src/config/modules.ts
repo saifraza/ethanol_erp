@@ -68,13 +68,13 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'direct-sale', label: 'Spot Sale', to: '/trade/sales', icon: Store, group: 'trade' },
 
   // ── ACCOUNTS ──
+  { key: 'cash-book', label: 'Cash Book', to: '/accounts/cash-book', icon: IndianRupee, group: 'accounts' },
+  { key: 'bank-book', label: 'Bank Book', to: '/accounts/bank-book', icon: Banknote, group: 'accounts' },
   { key: 'payments-out', label: 'Payments Out', to: '/accounts/payments-out', icon: CreditCard, group: 'accounts' },
   { key: 'payments-in', label: 'Payments In', to: '/accounts/payments-in', icon: IndianRupee, group: 'accounts' },
   { key: 'payment-desk', label: 'Payment Desk', to: '/accounts/payments', icon: IndianRupee, group: 'accounts' },
   { key: 'invoices', label: 'Sales Billing', to: '/sales/invoices', icon: FileText, group: 'accounts' },
-  { key: 'payments', label: 'Collections', to: '/sales/payments', icon: IndianRupee, group: 'accounts' },
   { key: 'vendor-invoices', label: 'Supplier Bills', to: '/procurement/vendor-invoices', icon: Receipt, group: 'accounts' },
-  { key: 'vendor-payments', label: 'Supplier Payments', to: '/procurement/vendor-payments', icon: CreditCard, group: 'accounts' },
   { key: 'chart-of-accounts', label: 'Chart of Accounts', to: '/accounts/chart', icon: BookOpen, group: 'accounts' },
   { key: 'journal-entries', label: 'Journal Entry', to: '/accounts/journal', icon: Calculator, group: 'accounts' },
   { key: 'ledger', label: 'Ledger', to: '/accounts/ledger', icon: BookOpen, group: 'accounts' },
