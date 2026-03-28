@@ -6,6 +6,7 @@ import { initWhatsApp } from './services/whatsappBaileys';
 import { initAutoCollect } from './services/whatsappAutoCollect';
 import { initTelegram } from './services/telegramBot';
 import { initTelegramAutoCollect } from './services/telegramAutoCollect';
+import { initImageHandler } from './services/telegramImageHandler';
 
 // Prevent crashes from killing the server
 process.on('uncaughtException', (err) => {
@@ -40,8 +41,10 @@ const server = app.listen(PORT, HOST, async () => {
   await autoSeed();
 
   // Initialize Telegram Bot (replaces WhatsApp)
-  initTelegram().catch((err) => console.error('[Telegram] Init error:', err));
-  initTelegramAutoCollect().catch((err) => console.error('[TG-AutoCollect] Init error:', err));
+  initTelegram().then(() => {
+    initTelegramAutoCollect().catch((err) => console.error('[TG-AutoCollect] Init error:', err));
+    initImageHandler();
+  }).catch((err) => console.error('[Telegram] Init error:', err));
 
   // Legacy WhatsApp: only init if WA_WORKER_URL is NOT set AND no Telegram token
   if (!process.env.TELEGRAM_BOT_TOKEN && !process.env.WA_WORKER_URL) {

@@ -40,7 +40,11 @@ const STEPS: CollectStep[] = [
 function buildPrompt(step: CollectStep): string {
   const nums = step.fieldLabels.join(', ');
   const example = step.fields.map((_, i) => (12 + i * 0.5).toFixed(1)).join(', ');
-  return `*${step.label} (${nums})*\nReply: ${example}`;
+  const ist = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+  const hh = ist.getUTCHours();
+  const mm = ist.getUTCMinutes();
+  const timeStr = `${hh % 12 || 12}:${String(mm).padStart(2, '0')} ${hh >= 12 ? 'PM' : 'AM'}`;
+  return `🔧 *${step.label}* — ${timeStr}\n\nDecanters: *${nums}*\nSend feed readings (comma separated)\n\nExample: \`${example}\`\n\n_Send fewer numbers if some decanters are off_\n_Type /cancel to stop_`;
 }
 
 function parseReply(text: string, step: CollectStep): Record<string, number> | null {
@@ -51,6 +55,9 @@ function parseReply(text: string, step: CollectStep): Record<string, number> | n
   // Accept partial — fewer numbers means some decanters not running
   if (nums.length > step.fields.length) return null;
 
+  // Validate range: feed values should be 0-50 (realistic range)
+  if (nums.some(v => v > 50)) return null;
+
   const data: Record<string, number> = {};
   nums.forEach((val, i) => {
     data[`${step.fields[i]}Feed`] = val;
@@ -59,10 +66,11 @@ function parseReply(text: string, step: CollectStep): Record<string, number> | n
 }
 
 function buildConfirmation(step: CollectStep, parsed: Record<string, number>): string {
-  return step.fields
+  const items = step.fields
     .filter(f => parsed[`${f}Feed`] != null)
-    .map((f, i) => `${step.fieldLabels[step.fields.indexOf(f)]}: ${parsed[`${f}Feed`]}`)
-    .join(' | ');
+    .map(f => `${step.fieldLabels[step.fields.indexOf(f)]}: *${parsed[`${f}Feed`]}*`);
+  const total = step.fields.reduce((sum, f) => sum + (parsed[`${f}Feed`] || 0), 0);
+  return items.join(' | ') + ` (Total: *${total.toFixed(1)}*)`;
 }
 
 function buildSummary(data: Record<string, number>): string {
@@ -88,7 +96,7 @@ function buildSummary(data: Record<string, number>): string {
 
 function buildErrorHint(step: CollectStep): string {
   const example = step.fields.map((_, i) => (12 + i * 0.5).toFixed(1)).join(', ');
-  return `Just send numbers: ${example}`;
+  return `Just send numbers (0-50 range): \`${example}\``;
 }
 
 async function saveData(data: Record<string, number>): Promise<void> {
@@ -100,7 +108,7 @@ async function saveData(data: Record<string, number>): Promise<void> {
   const entry: Record<string, string | number | Date | null> = {
     date: now,
     entryTime,
-    remark: 'Auto-collected via WhatsApp',
+    remark: 'Auto-collected via Telegram',
     userId: 'system',
   };
   for (const [key, val] of Object.entries(data)) {

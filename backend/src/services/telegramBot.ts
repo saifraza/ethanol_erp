@@ -19,7 +19,11 @@ let lastUpdateId = 0;
 
 // ── Incoming message handlers ──
 type IncomingHandler = (chatId: string, text: string, name: string | null) => Promise<boolean>;
+type CallbackHandler = (chatId: string, data: string, callbackQueryId: string, name: string | null) => Promise<boolean>;
+type PhotoHandler = (chatId: string, fileId: string, caption: string | null, name: string | null) => Promise<boolean>;
 const incomingHandlers: IncomingHandler[] = [];
+const callbackHandlers: CallbackHandler[] = [];
+const photoHandlers: PhotoHandler[] = [];
 
 export function registerIncomingHandler(handler: IncomingHandler): void {
   incomingHandlers.push(handler);
@@ -28,6 +32,14 @@ export function registerIncomingHandler(handler: IncomingHandler): void {
 export function removeIncomingHandler(handler: IncomingHandler): void {
   const idx = incomingHandlers.indexOf(handler);
   if (idx >= 0) incomingHandlers.splice(idx, 1);
+}
+
+export function registerCallbackHandler(handler: CallbackHandler): void {
+  callbackHandlers.push(handler);
+}
+
+export function registerPhotoHandler(handler: PhotoHandler): void {
+  photoHandlers.push(handler);
 }
 
 // ── Init ──
@@ -117,6 +129,70 @@ export async function sendTelegramGroup(
   return sendTelegramMessage(chatId, message, module);
 }
 
+/** Send message with inline keyboard buttons */
+export async function sendTelegramKeyboard(
+  chatId: string,
+  message: string,
+  buttons: { text: string; callback_data: string }[][],
+  module?: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!botApi) return { success: false, error: 'Telegram bot not connected' };
+  try {
+    await botApi.post('/sendMessage', {
+      chat_id: chatId,
+      text: message,
+      parse_mode: 'Markdown',
+      reply_markup: { inline_keyboard: buttons },
+    });
+    try {
+      await prisma.telegramMessage.create({
+        data: { direction: 'outgoing', chatId, message, module: module || null },
+      });
+    } catch { /* table may not exist yet */ }
+    return { success: true };
+  } catch (err: any) {
+    // Retry without Markdown
+    try {
+      await botApi.post('/sendMessage', {
+        chat_id: chatId, text: message,
+        reply_markup: { inline_keyboard: buttons },
+      });
+      return { success: true };
+    } catch (err2: any) {
+      const errMsg = err2.response?.data?.description || err2.message;
+      console.error(`[Telegram] Keyboard send failed: ${errMsg}`);
+      return { success: false, error: errMsg };
+    }
+  }
+}
+
+/** Download a file from Telegram (for photo/document processing) */
+export async function downloadTelegramFile(fileId: string): Promise<Buffer | null> {
+  if (!botApi) return null;
+  try {
+    const fileRes = await botApi.get(`/getFile?file_id=${fileId}`);
+    const filePath = fileRes.data.result.file_path;
+    const token = botApi.defaults.baseURL?.split('/bot')[1] || '';
+    const url = `https://api.telegram.org/file/bot${token}/${filePath}`;
+    const dlRes = await axios.get(url, { responseType: 'arraybuffer', timeout: 30000 });
+    return Buffer.from(dlRes.data);
+  } catch (err: any) {
+    console.error('[Telegram] File download failed:', err.message);
+    return null;
+  }
+}
+
+/** Answer a callback query (acknowledge button press) */
+export async function answerCallback(callbackQueryId: string, text?: string): Promise<void> {
+  if (!botApi) return;
+  try {
+    await botApi.post('/answerCallbackQuery', {
+      callback_query_id: callbackQueryId,
+      text: text || '',
+    });
+  } catch { /* best effort */ }
+}
+
 // ── Long Polling for Incoming Messages ──
 
 function startPolling(): void {
@@ -142,6 +218,52 @@ async function poll(): Promise<void> {
       const updates = res.data.result || [];
       for (const update of updates) {
         lastUpdateId = update.update_id;
+
+        // ── Callback query (inline keyboard button press) ──
+        if (update.callback_query) {
+          const cb = update.callback_query;
+          const chatId = String(cb.message?.chat?.id || cb.from?.id);
+          const data = cb.data || '';
+          const cbName = cb.from?.first_name || cb.from?.username || null;
+          console.log(`[Telegram] Callback: chatId=${chatId}, data=${data}`);
+          for (const handler of callbackHandlers) {
+            try {
+              const handled = await handler(chatId, data, cb.id, cbName);
+              if (handled) break;
+            } catch (err) {
+              console.error('[Telegram] Callback handler error:', err);
+            }
+          }
+          continue;
+        }
+
+        // ── Photo message ──
+        if (update.message?.photo && photoHandlers.length > 0) {
+          const msg = update.message;
+          const chatId = String(msg.chat.id);
+          const name = msg.from?.first_name || msg.from?.username || null;
+          const caption = msg.caption || null;
+          // Get highest resolution photo
+          const photo = msg.photo[msg.photo.length - 1];
+          const fileId = photo.file_id;
+          console.log(`[Telegram] Photo from ${chatId}, fileId=${fileId}`);
+          try {
+            await prisma.telegramMessage.create({
+              data: { direction: 'incoming', chatId, name, message: caption || '[photo]' },
+            });
+          } catch { /* table may not exist yet */ }
+          for (const handler of photoHandlers) {
+            try {
+              const handled = await handler(chatId, fileId, caption, name);
+              if (handled) break;
+            } catch (err) {
+              console.error('[Telegram] Photo handler error:', err);
+            }
+          }
+          continue;
+        }
+
+        // ── Text message ──
         if (update.message?.text) {
           const msg = update.message;
           const chatId = String(msg.chat.id);

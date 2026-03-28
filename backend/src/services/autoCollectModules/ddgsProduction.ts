@@ -143,7 +143,7 @@ async function saveData(data: Record<string, number>): Promise<void> {
       bags,
       weightPerBag,
       totalProduction,
-      remark: 'Auto-collected via WhatsApp',
+      remark: 'Auto-collected via Telegram',
       userId: 'system',
     },
   });

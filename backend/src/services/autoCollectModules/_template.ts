@@ -144,7 +144,7 @@ async function saveData(data: Record<string, number>): Promise<void> {
   //   data: {
   //     date: now,
   //     entryTime: now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
-  //     remark: 'Auto-collected via WhatsApp',
+  //     remark: 'Auto-collected via Telegram',
   //     userId: 'system',
   //     ...data,
   //   },
