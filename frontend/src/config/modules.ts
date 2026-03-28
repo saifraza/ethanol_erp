@@ -68,6 +68,8 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'direct-sale', label: 'Spot Sale', to: '/trade/sales', icon: Store, group: 'trade' },
 
   // ── ACCOUNTS ──
+  { key: 'payments-out', label: 'Payments Out', to: '/accounts/payments-out', icon: CreditCard, group: 'accounts' },
+  { key: 'payments-in', label: 'Payments In', to: '/accounts/payments-in', icon: IndianRupee, group: 'accounts' },
   { key: 'payment-desk', label: 'Payment Desk', to: '/accounts/payments', icon: IndianRupee, group: 'accounts' },
   { key: 'invoices', label: 'Sales Billing', to: '/sales/invoices', icon: FileText, group: 'accounts' },
   { key: 'payments', label: 'Collections', to: '/sales/payments', icon: IndianRupee, group: 'accounts' },
