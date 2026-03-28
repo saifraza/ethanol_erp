@@ -1,7 +1,6 @@
-import { Router, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, authorize, AuthRequest } from '../middleware/auth';
-import { asyncHandler } from '../shared/middleware';
+import { authenticate, authorize } from '../middleware/auth';
 import {
   generateEwayBill, buildEwayBillPayload, MSPIL,
   getStateCode, getHsnCode, getUnitCode, formatDateDDMMYYYY,
@@ -14,13 +13,15 @@ import path from 'path';
 import fs from 'fs';
 import { drawLetterhead } from '../utils/letterhead';
 import { sendEmail } from '../services/messaging';
+import { renderDocumentPdf } from '../services/documentRenderer';
 
 const router = Router();
 
 router.use(authenticate as any);
 
 // GET / — List shipments for a date
-router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
+  try {
     const dateStr = req.query.date as string;
     const status = req.query.status as string;
     let where: any = {};
@@ -35,7 +36,6 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       where.status = status;
     }
 
-    const take = Math.min(parseInt(req.query.limit as string) || 50, 500);
     const shipments = await prisma.shipment.findMany({
       where,
       include: {
@@ -44,7 +44,6 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         transporterPayments: { orderBy: { createdAt: 'desc' } },
       },
       orderBy: { createdAt: 'desc' },
-      take,
     });
     // Attach linked invoice IDs
     const shipmentIds = shipments.map((s: any) => s.id);
@@ -59,10 +58,12 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       linkedInvoiceNo: invMap.get(s.id)?.invoiceNo || null,
     }));
     res.json({ shipments: enriched });
-}));
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
 
 // GET /active — All active shipments + today's EXITED (for dispatch % calc)
-router.get('/active', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get('/active', async (req: Request, res: Response) => {
+  try {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
@@ -96,20 +97,22 @@ router.get('/active', asyncHandler(async (req: AuthRequest, res: Response) => {
       linkedInvoiceNo: iMap.get(s.id)?.invoiceNo || null,
     }));
     res.json({ shipments: enriched });
-}));
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
 
 // GET /config/eway-mode — Return current e-way bill mode for frontend
-router.get('/config/eway-mode', asyncHandler(async (_req: AuthRequest, res: Response) => {
+router.get('/config/eway-mode', async (_req: Request, res: Response) => {
   res.json({
     mode: process.env.EWAY_BILL_MODE || 'sandbox',
     gstin: process.env.EWAY_GSTIN || MSPIL.gstin,
     nicConfigured: !!(process.env.EWAY_NIC_URL && process.env.EWAY_NIC_CLIENT_ID),
     gspConfigured: !!(process.env.EWAY_GSP_URL && process.env.EWAY_GSP_TOKEN),
   });
-}));
+});
 
 // GET /:id — Single shipment with dispatchRequest details
-router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get('/:id', async (req: Request, res: Response) => {
+  try {
     const shipment = await prisma.shipment.findUnique({
       where: { id: req.params.id },
       include: {
@@ -118,10 +121,12 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     });
     if (!shipment) { res.status(404).json({ error: 'Shipment not found' }); return; }
     res.json(shipment);
-}));
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
 
 // POST / — Create shipment (Gate Entry) or Gate Pass
-router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
+  try {
     const b = req.body;
     const capacityTon = parseFloat(b.capacityTon) || 0;
 
@@ -139,7 +144,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       gateInTime: b.gateInTime || null,
       status: 'GATE_IN',
       remarks: b.remarks || null,
-      userId: req.user!.id,
+      userId: (req as any).user.id,
     };
 
     // Link to dispatch request if provided (sales flow)
@@ -199,10 +204,12 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       include: { dispatchRequest: { include: { orderLine: true } } },
     });
     res.status(201).json(updated);
-}));
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
 
 // PUT /:id/weighbridge — Record weighbridge data
-router.put('/:id/weighbridge', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.put('/:id/weighbridge', async (req: Request, res: Response) => {
+  try {
     const b = req.body;
     const type = b.type; // 'tare' or 'gross'
     let updateData: any = {};
@@ -250,10 +257,12 @@ router.put('/:id/weighbridge', asyncHandler(async (req: AuthRequest, res: Respon
       },
     });
     res.json(shipment);
-}));
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
 
 // POST /:id/confirm-payment — Confirm payment received for ADVANCE/COD shipments
-router.post('/:id/confirm-payment', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/:id/confirm-payment', async (req: Request, res: Response) => {
+  try {
     const b = req.body;
     const shipment = await prisma.shipment.findUnique({ where: { id: req.params.id } });
     if (!shipment) { res.status(404).json({ error: 'Shipment not found' }); return; }
@@ -278,15 +287,17 @@ router.post('/:id/confirm-payment', asyncHandler(async (req: AuthRequest, res: R
         paymentRef: b.paymentRef || null,
         paymentAmount: parseFloat(b.paymentAmount) || null,
         paymentConfirmedAt: new Date(),
-        paymentConfirmedBy: req.user!.id || null,
+        paymentConfirmedBy: (req as any).user?.id || null,
       },
       include: { dispatchRequest: { include: { orderLine: true } } },
     });
     res.json(updated);
-}));
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
 
 // PUT /:id/status — Update shipment status with transitions
-router.put('/:id/status', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.put('/:id/status', async (req: Request, res: Response) => {
+  try {
     const b = req.body;
     const newStatus = b.status;
     let updateData: any = { status: newStatus };
@@ -351,7 +362,7 @@ router.put('/:id/status', asyncHandler(async (req: AuthRequest, res: Response) =
               weightTare: existing.weightTare || 0,
               weightNet: existing.weightNet,
               remarks: `Auto from shipment #${existing.shipmentNo}`,
-              userId: req.user!.id || null,
+              userId: (req as any).user?.id || null,
             },
           });
 
@@ -373,19 +384,21 @@ router.put('/:id/status', asyncHandler(async (req: AuthRequest, res: Response) =
             });
           }
 
-          // DDGS stock deducted successfully
+          console.log(`[Stock] DDGS deducted: ${netMT.toFixed(3)} MT for ${existing.vehicleNo}`);
         } catch (stockErr) {
-          // DDGS deduction failed — don't block shipment release
+          console.error('[Stock] DDGS deduction failed:', stockErr);
           // Don't fail the shipment release if stock update fails
         }
       }
     }
 
     res.json(shipment);
-}));
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
 
 // PUT /:id — Update any shipment fields
-router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.put('/:id', async (req: Request, res: Response) => {
+  try {
     const b = req.body;
     const updateData: any = {};
 
@@ -423,13 +436,15 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
       },
     });
     res.json(shipment);
-}));
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
 
 // POST /:id/eway-bill — Generate e-way bill for a shipment
 // CORRECT FLOW: Invoice (must exist) → e-Invoice IRN (from Invoice) → EWB from IRN
 // All IRN data is stored on the INVOICE record (single source of truth)
 // Shipment just gets the EWB number + a reference back to the Invoice
-router.post('/:id/eway-bill', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/:id/eway-bill', async (req: Request, res: Response) => {
+  try {
     // Load shipment with dispatch request for transporter info
     const shipment = await prisma.shipment.findUnique({
       where: { id: req.params.id },
@@ -580,7 +595,7 @@ router.post('/:id/eway-bill', asyncHandler(async (req: AuthRequest, res: Respons
     let irn = invoice.irn as string | null;
 
     if (!irn) {
-      // Step 1: Generate e-Invoice (IRN) from Invoice
+      console.log(`[Shipment ${shipment.shipmentNo}] Step 1: Generating e-Invoice (IRN) from Invoice INV-${invoice.invoiceNo}...`);
 
       // Build IRN payload from the actual Invoice record
       const invoiceData = {
@@ -642,13 +657,13 @@ router.post('/:id/eway-bill', asyncHandler(async (req: AuthRequest, res: Respons
         } as any,
       });
 
-      // IRN generated and stored on Invoice
+      console.log(`[Shipment ${shipment.shipmentNo}] IRN generated: ${irn} (stored on Invoice INV-${invoice.invoiceNo})`);
     } else {
-      // IRN already exists on Invoice
+      console.log(`[Shipment ${shipment.shipmentNo}] Step 1: IRN already exists on Invoice INV-${invoice.invoiceNo}: ${irn}`);
     }
 
     // ── Step 2: Generate E-Way Bill from IRN ──
-    // Step 2: Generate E-Way Bill from IRN
+    console.log(`[Shipment ${shipment.shipmentNo}] Step 2: Generating E-Way Bill from IRN...`);
 
     const ewbData: Record<string, any> = {
       Distance: Math.round(distanceKm),
@@ -700,10 +715,15 @@ router.post('/:id/eway-bill', asyncHandler(async (req: AuthRequest, res: Respons
         error: `E-Way Bill generation failed: ${ewbResult.error}`,
       });
     }
-}));
+  } catch (err: any) {
+    console.error('[E-Way Bill] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // POST /:id/eway-bill/preview — Preview e-way bill payload without generating
-router.post('/:id/eway-bill/preview', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/:id/eway-bill/preview', async (req: Request, res: Response) => {
+  try {
     const shipment = await prisma.shipment.findUnique({
       where: { id: req.params.id },
       include: {
@@ -749,10 +769,12 @@ router.post('/:id/eway-bill/preview', asyncHandler(async (req: AuthRequest, res:
       mode: process.env.EWAY_BILL_MODE || 'sandbox',
       ready: !!(shipment.weightNet && shipment.weightNet > 0 && customer),
     });
-}));
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
 
 // GET /:id/challan-pdf — Generate Delivery Challan PDF
-router.get('/:id/challan-pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get('/:id/challan-pdf', async (req: Request, res: Response) => {
+  try {
     const shipment = await prisma.shipment.findUnique({
       where: { id: req.params.id },
       include: {
@@ -765,290 +787,93 @@ router.get('/:id/challan-pdf', asyncHandler(async (req: AuthRequest, res: Respon
     });
     if (!shipment) { res.status(404).json({ error: 'Shipment not found' }); return; }
 
-    // Load template from DB
-    const { getTemplate, generateBarcode } = await import('../utils/templateHelper');
-    const tmpl = await getTemplate('CHALLAN');
-
     const dr = shipment.dispatchRequest;
     const order = dr?.order;
     const customer = order?.customer;
 
-    const doc = new PDFDocument({ size: 'A4', margins: { top: 40, bottom: 0, left: 40, right: 40 } });
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename=Challan-${shipment.shipmentNo}.pdf`);
-    doc.pipe(res);
-
-    const pageW = doc.page.width;
-    const mL = 40;
-    const mR = pageW - 40;
-    const cW = mR - mL;
-
-    // Letterhead (HD vector)
-    const afterLH = drawLetterhead(doc, mL, cW);
-    doc.y = afterLH + 4;
-
-    // Title + Barcode row
-    const challanRef = shipment.challanNo || `DC-${shipment.shipmentNo}`;
-    doc.fontSize(13).font('Helvetica-Bold').fillColor('#1a3a1a').text(tmpl.title || 'DELIVERY CHALLAN', mL, doc.y, { width: cW * 0.6 });
-
-    // Generate and embed barcode
-    try {
-      const barcodeImg = await generateBarcode(challanRef);
-      doc.image(barcodeImg, mR - 140, doc.y - 5, { width: 130, height: 30 });
-    } catch { /* barcode failed, skip */ }
-    doc.y += 20;
-
-    // Thin divider
-    doc.moveTo(mL, doc.y).lineTo(mR, doc.y).lineWidth(0.5).strokeColor('#ddd').stroke();
-    doc.y += 8;
-
-    // Info grid (2 columns)
-    const lf = 'Helvetica-Bold';
-    const vf = 'Helvetica';
-    const col2 = pageW / 2 + 20;
-    const y0 = doc.y;
-
-    const info = (label: string, val: string, x: number, y: number) => {
-      doc.fontSize(8).font(lf).fillColor('#888').text(label, x, y);
-      doc.fontSize(9).font(vf).fillColor('#222').text(val, x + 90, y);
+    const challanData = {
+      challanNo: shipment.challanNo || `DC-${shipment.shipmentNo}`,
+      shipmentNo: shipment.shipmentNo,
+      date: shipment.date,
+      vehicleNo: shipment.vehicleNo,
+      driverName: shipment.driverName,
+      driverMobile: shipment.driverMobile,
+      transporterName: shipment.transporterName,
+      ewayBill: shipment.ewayBill,
+      grBiltyNo: shipment.grBiltyNo,
+      destination: shipment.destination,
+      weightGross: shipment.weightGross,
+      weightTare: shipment.weightTare,
+      weightNet: shipment.weightNet,
+      customer: customer ? {
+        name: customer.name,
+        address: customer.address,
+        city: customer.city,
+        state: customer.state,
+        pincode: customer.pincode,
+        gstNo: customer.gstNo,
+        phone: customer.phone,
+      } : { name: shipment.customerName },
+      lines: order?.lines?.map((line: any) => ({
+        productName: line.productName || shipment.productName,
+        hsnCode: line.hsnCode,
+        quantity: line.quantity,
+        unit: line.unit,
+        rate: line.rate,
+        value: line.quantity * line.rate,
+      })) || [{ productName: shipment.productName, quantity: 0, unit: 'TON', rate: 0, value: 0 }],
     };
 
-    info('Challan No:', challanRef, mL, y0);
-    info('Date:', new Date(shipment.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }), col2, y0);
-    info('Vehicle No:', shipment.vehicleNo, mL, y0 + 16);
-    info('Driver:', shipment.driverName || '—', col2, y0 + 16);
-    info('Driver Mobile:', shipment.driverMobile || '—', mL, y0 + 32);
-    info('Transporter:', shipment.transporterName || '—', col2, y0 + 32);
-    if (shipment.ewayBill) info('E-Way Bill:', shipment.ewayBill, mL, y0 + 48);
-    if (shipment.grBiltyNo) info('GR/Bilty No:', shipment.grBiltyNo, col2, y0 + 48);
-    doc.y = y0 + (shipment.ewayBill ? 68 : 52);
-
-    // Consignee box (rounded corners effect via rect)
-    const cy = doc.y;
-    doc.rect(mL, cy, cW, 55).lineWidth(0.5).strokeColor('#4a7c3f').fillOpacity(0.03).fillAndStroke('#4a7c3f', '#4a7c3f');
-    doc.fillOpacity(1);
-    doc.fontSize(8).font(lf).fillColor('#4a7c3f').text('CONSIGNEE', mL + 10, cy + 6);
-    doc.fontSize(10).font(lf).fillColor('#222').text(customer?.name || shipment.customerName, mL + 10, cy + 20);
-    const addr = customer ? [customer.address, customer.city, customer.state, customer.pincode].filter(Boolean).join(', ') : (shipment.destination || '');
-    doc.font(vf).fontSize(8).fillColor('#555').text(addr, mL + 10, cy + 33, { width: cW / 2 - 20 });
-    if (customer?.gstNo) doc.fontSize(8).font(vf).fillColor('#555').text(`GSTIN: ${customer.gstNo}`, col2, cy + 20);
-    if (customer?.phone) doc.text(`Phone: ${customer.phone}`, col2, cy + 33);
-    doc.y = cy + 65;
-
-    // Items table
-    const tY = doc.y;
-    const cols = [30, 180, 80, 60, 80, 85];
-    const hdrs = ['#', 'Product', 'Quantity', 'Unit', 'Net Wt (MT)', 'Bags'];
-    doc.rect(mL, tY, cW, 20).fill('#4a7c3f');
-    let cx = mL + 4;
-    hdrs.forEach((h, i) => {
-      doc.fontSize(8).font(lf).fillColor('#fff').text(h, cx, tY + 5, { width: cols[i], align: i > 1 ? 'right' : 'left' });
-      cx += cols[i];
-    });
-
-    let rY = tY + 22;
-    const netMT = shipment.weightNet ? (shipment.weightNet / 1000).toFixed(3) : '—';
-    const rowData = ['1', shipment.productName, order?.lines?.[0]?.quantity?.toFixed(2) || '—', order?.lines?.[0]?.unit || 'TON', netMT, shipment.bags?.toString() || '—'];
-    doc.rect(mL, rY - 2, cW, 18).fill('#f8faf8');
-    cx = mL + 4;
-    rowData.forEach((v, i) => {
-      doc.fontSize(8).font(vf).fillColor('#333').text(v, cx, rY, { width: cols[i], align: i > 1 ? 'right' : 'left' });
-      cx += cols[i];
-    });
-    rY += 20;
-    doc.moveTo(mL, rY).lineTo(mR, rY).lineWidth(0.5).strokeColor('#ddd').stroke();
-    rY += 12;
-
-    // Weights summary box
-    doc.rect(mL, rY, cW, 45).lineWidth(0.5).strokeColor('#e5e7eb').stroke();
-    doc.fontSize(9).font(lf).fillColor('#4a7c3f').text('WEIGHT SUMMARY', mL + 10, rY + 6);
-    rY += 20;
-    doc.fontSize(9).font(vf).fillColor('#333');
-    doc.text(`Tare: ${shipment.weightTare ? shipment.weightTare.toLocaleString('en-IN') + ' kg' : '—'}`, mL + 10, rY);
-    doc.text(`Gross: ${shipment.weightGross ? shipment.weightGross.toLocaleString('en-IN') + ' kg' : '—'}`, mL + 170, rY);
-    doc.font(lf).fillColor('#1a3a1a').text(`Net: ${shipment.weightNet ? shipment.weightNet.toLocaleString('en-IN') + ' kg (' + netMT + ' MT)' : '—'}`, mL + 340, rY);
-    rY += 35;
-
-    // Terms & Conditions (from template)
-    if (tmpl.terms.length > 0) {
-      doc.fontSize(8).font(lf).fillColor('#666').text('Terms & Conditions:', mL, rY);
-      rY += 12;
-      tmpl.terms.forEach((t, i) => {
-        doc.fontSize(7).font(vf).fillColor('#777').text(`${i + 1}. ${t}`, mL + 5, rY);
-        rY += 10;
-      });
-      rY += 5;
-    }
-
-    // Signatures
-    doc.fontSize(8).font(vf).fillColor('#555');
-    doc.text('________________________', mL, rY, { width: 150, align: 'center' });
-    doc.text('Authorized by MSPIL', mL, rY + 12, { width: 150, align: 'center' });
-    doc.text('________________________', pageW / 2 - 75, rY, { width: 150, align: 'center' });
-    doc.text('Transporter / Driver', pageW / 2 - 75, rY + 12, { width: 150, align: 'center' });
-    doc.text('________________________', mR - 150, rY, { width: 150, align: 'center' });
-    doc.text('Received by (Consignee)', mR - 150, rY + 12, { width: 150, align: 'center' });
-
-    // Footer — placed after signatures, not at absolute bottom (prevents page 2)
-    const fY = Math.max(rY + 30, doc.page.height - 50);
-    if (fY < doc.page.height - 10) {
-      doc.rect(mL, fY - 5, cW, 1).fill('#4a7c3f');
-      doc.fontSize(7).fillColor('#999').text(tmpl.footer, mL, fY + 2, { align: 'center', width: cW });
-    }
-
-    doc.end();
-}));
+    const pdfBuffer = await renderDocumentPdf({ docType: 'CHALLAN', data: challanData, verifyId: shipment.id });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename=Challan-${shipment.shipmentNo}.pdf`);
+    res.send(pdfBuffer);
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
 
 // GET /:id/gate-pass-pdf — Generate Gate Pass cum Challan PDF
-router.get('/:id/gate-pass-pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get('/:id/gate-pass-pdf', async (req: Request, res: Response) => {
+  try {
     const shipment = await prisma.shipment.findUnique({ where: { id: req.params.id } });
     if (!shipment) { res.status(404).json({ error: 'Shipment not found' }); return; }
 
     const items = shipment.gatePassItems ? JSON.parse(shipment.gatePassItems) : [];
     const isReturnable = shipment.gatePassType === 'RETURNABLE' || shipment.gatePassType === 'JOB_WORK';
 
-    const doc = new PDFDocument({ size: 'A4', margins: { top: 40, bottom: 0, left: 40, right: 40 } });
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename=GatePass-${shipment.shipmentNo}.pdf`);
-    doc.pipe(res);
-
-    const pageW = doc.page.width;
-    const mL = 40;
-    const mR = pageW - 40;
-    const cW = mR - mL;
-    const lf = 'Helvetica-Bold';
-    const vf = 'Helvetica';
-
-    // Letterhead (HD vector)
-    const afterLH2 = drawLetterhead(doc, mL, cW);
-    doc.y = afterLH2 + 4;
-
-    // Title
-    const gpNo = shipment.gatePassNo || `GP-${shipment.shipmentNo}`;
-    doc.fontSize(13).font(lf).fillColor('#1a3a1a').text('GATE PASS CUM CHALLAN', mL, doc.y, { width: cW * 0.5 });
-    if (isReturnable) {
-      doc.fontSize(10).font(lf).fillColor('#b91c1c').text('RETURNABLE', mL + cW * 0.5, doc.y, { width: cW * 0.5, align: 'right' });
-    } else {
-      doc.fontSize(10).font(lf).fillColor('#4a7c3f').text('NON-RETURNABLE', mL + cW * 0.5, doc.y, { width: cW * 0.5, align: 'right' });
-    }
-    doc.y += 22;
-
-    // Thin divider
-    doc.moveTo(mL, doc.y).lineTo(mR, doc.y).lineWidth(0.5).strokeColor('#ddd').stroke();
-    doc.y += 8;
-
-    // Info grid
-    const col2 = pageW / 2 + 20;
-    const y0 = doc.y;
-    const info = (label: string, val: string, x: number, y: number) => {
-      doc.fontSize(8).font(lf).fillColor('#888').text(label, x, y);
-      doc.fontSize(9).font(vf).fillColor('#222').text(val || '—', x + 85, y);
+    const gatePassData = {
+      gatePassNo: shipment.gatePassNo || `GP-${shipment.shipmentNo}`,
+      shipmentNo: shipment.shipmentNo,
+      date: shipment.date,
+      vehicleNo: shipment.vehicleNo,
+      driverName: shipment.driverName,
+      driverMobile: shipment.driverMobile,
+      transporterName: shipment.transporterName,
+      ewayBill: shipment.ewayBill,
+      isReturnable,
+      partyName: shipment.partyName,
+      partyAddress: shipment.partyAddress,
+      partyGstin: shipment.partyGstin,
+      customerName: shipment.customerName,
+      destination: shipment.destination,
+      weightGross: shipment.weightGross,
+      weightTare: shipment.weightTare,
+      weightNet: shipment.weightNet,
+      totalValue: shipment.totalValue,
+      items,
+      coveringNote: shipment.coveringNote,
+      purpose: shipment.purpose,
     };
 
-    info('Gate Pass No:', gpNo, mL, y0);
-    info('Date:', new Date(shipment.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }), col2, y0);
-    info('Vehicle No:', shipment.vehicleNo || '—', mL, y0 + 16);
-    info('Driver:', shipment.driverName || '—', col2, y0 + 16);
-    info('Purpose:', shipment.purpose || '—', mL, y0 + 32);
-    info('Transporter:', shipment.transporterName || '—', col2, y0 + 32);
-    if (shipment.ewayBill) info('E-Way Bill:', shipment.ewayBill, mL, y0 + 48);
-    doc.y = y0 + (shipment.ewayBill ? 68 : 52);
-
-    // Party box
-    const cy = doc.y;
-    doc.rect(mL, cy, cW, 50).lineWidth(0.5).strokeColor('#4a7c3f').fillOpacity(0.03).fillAndStroke('#4a7c3f', '#4a7c3f');
-    doc.fillOpacity(1);
-    doc.fontSize(8).font(lf).fillColor('#4a7c3f').text('PARTY / CONSIGNEE', mL + 10, cy + 6);
-    doc.fontSize(10).font(lf).fillColor('#222').text(shipment.partyName || shipment.customerName || '—', mL + 10, cy + 20);
-    doc.font(vf).fontSize(8).fillColor('#555').text(shipment.partyAddress || shipment.destination || '—', mL + 10, cy + 33, { width: cW / 2 - 20 });
-    if (shipment.partyGstin) doc.fontSize(8).font(vf).fillColor('#555').text(`GSTIN: ${shipment.partyGstin}`, col2, cy + 20);
-    doc.y = cy + 60;
-
-    // Items table
-    const tY = doc.y;
-    const cols = [30, 220, 60, 50, 80, 75];
-    const hdrs = ['#', 'Description', 'HSN', 'Qty', 'Unit', 'Value (₹)'];
-    doc.rect(mL, tY, cW, 20).fill('#4a7c3f');
-    let cx = mL + 4;
-    hdrs.forEach((h, i) => {
-      doc.fontSize(8).font(lf).fillColor('#fff').text(h, cx, tY + 5, { width: cols[i], align: i > 2 ? 'right' : 'left' });
-      cx += cols[i];
-    });
-
-    let rY = tY + 22;
-    let totalVal = 0;
-    items.forEach((item: any, idx: number) => {
-      const bg = idx % 2 === 0 ? '#f8faf8' : '#fff';
-      doc.rect(mL, rY - 2, cW, 18).fill(bg);
-      cx = mL + 4;
-      const rowData = [
-        (idx + 1).toString(),
-        item.desc || item.description || '—',
-        item.hsnCode || '—',
-        item.qty?.toString() || '—',
-        item.unit || 'NOS',
-        item.value ? parseFloat(item.value).toLocaleString('en-IN') : '—',
-      ];
-      rowData.forEach((v, i) => {
-        doc.fontSize(8).font(vf).fillColor('#333').text(v, cx, rY, { width: cols[i], align: i > 2 ? 'right' : 'left' });
-        cx += cols[i];
-      });
-      totalVal += parseFloat(item.value) || 0;
-      rY += 18;
-    });
-
-    // Total row
-    doc.moveTo(mL, rY).lineTo(mR, rY).lineWidth(0.5).strokeColor('#ddd').stroke();
-    rY += 4;
-    doc.fontSize(9).font(lf).fillColor('#1a3a1a').text('Total Value:', mL + 4, rY, { width: 360, align: 'right' });
-    doc.text(`₹${(shipment.totalValue || totalVal).toLocaleString('en-IN')}`, mL + 370, rY, { width: 145, align: 'right' });
-    rY += 20;
-
-    // Covering note (auto-generated authority)
-    if (isReturnable) {
-      doc.rect(mL, rY, cW, 48).lineWidth(0.5).strokeColor('#e5e7eb').stroke();
-      doc.fontSize(8).font(lf).fillColor('#4a7c3f').text('AUTHORITY NOTE', mL + 10, rY + 5);
-      const noteText = shipment.coveringNote || `This material is the sole property of M/s Mahakaushal Sugar & Power Industries Ltd., Bachai, Dist. Narsinghpur (M.P.) - 487001, GST No. 23AAECM3666P1Z1. Sent for ${shipment.purpose || 'job work'}. Material will be returned back. Hence not for sale.`;
-      doc.fontSize(7.5).font(vf).fillColor('#555').text(noteText, mL + 10, rY + 18, { width: cW - 20 });
-      rY += 56;
-    }
-
-    // Weight summary (if available)
-    if (shipment.weightTare || shipment.weightGross) {
-      doc.rect(mL, rY, cW, 35).lineWidth(0.5).strokeColor('#e5e7eb').stroke();
-      doc.fontSize(9).font(lf).fillColor('#4a7c3f').text('WEIGHT', mL + 10, rY + 6);
-      rY += 18;
-      doc.fontSize(9).font(vf).fillColor('#333');
-      doc.text(`Tare: ${shipment.weightTare ? (shipment.weightTare / 1000).toFixed(2) + ' MT' : '—'}`, mL + 10, rY);
-      doc.text(`Gross: ${shipment.weightGross ? (shipment.weightGross / 1000).toFixed(2) + ' MT' : '—'}`, mL + 170, rY);
-      doc.font(lf).text(`Net: ${shipment.weightNet ? (shipment.weightNet / 1000).toFixed(2) + ' MT' : '—'}`, mL + 340, rY);
-      rY += 25;
-    }
-
-    // Signatures
-    rY = Math.max(rY + 10, doc.page.height - 120);
-    doc.fontSize(8).font(vf).fillColor('#555');
-    doc.text('________________________', mL, rY, { width: 120, align: 'center' });
-    doc.text('Store Clerk', mL, rY + 12, { width: 120, align: 'center' });
-    doc.text('________________________', mL + 140, rY, { width: 120, align: 'center' });
-    doc.text('Store Incharge', mL + 140, rY + 12, { width: 120, align: 'center' });
-    doc.text('________________________', mL + 280, rY, { width: 120, align: 'center' });
-    doc.text('Received By', mL + 280, rY + 12, { width: 120, align: 'center' });
-    doc.text('________________________', mR - 120, rY, { width: 120, align: 'center' });
-    doc.text('Authorized Signatory', mR - 120, rY + 12, { width: 120, align: 'center' });
-
-    // Footer — after signatures, prevents page 2
-    const fY2 = Math.max(rY + 30, doc.page.height - 50);
-    if (fY2 < doc.page.height - 10) {
-      doc.rect(mL, fY2 - 5, cW, 1).fill('#4a7c3f');
-      doc.fontSize(7).fillColor('#999').text('Mahakaushal Sugar and Power Industries Ltd. | Village Bachai, Narsinghpur, M.P. - 487001', mL, fY2 + 2, { align: 'center', width: cW });
-    }
-
-    doc.end();
-}));
+    const pdfBuffer = await renderDocumentPdf({ docType: 'GATE_PASS', data: gatePassData, verifyId: shipment.id });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename=GatePass-${shipment.shipmentNo}.pdf`);
+    res.send(pdfBuffer);
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
 
 // POST /:id/eway-bill/cancel — Cancel e-way bill
-router.post('/:id/eway-bill/cancel', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/:id/eway-bill/cancel', async (req: Request, res: Response) => {
+  try {
     const shipment = await prisma.shipment.findUnique({ where: { id: req.params.id } });
     if (!shipment) { res.status(404).json({ error: 'Shipment not found' }); return; }
     if (!shipment.ewayBill) { res.status(400).json({ error: 'No e-way bill to cancel' }); return; }
@@ -1069,10 +894,12 @@ router.post('/:id/eway-bill/cancel', asyncHandler(async (req: AuthRequest, res: 
     } else {
       res.status(400).json({ success: false, error: result.error });
     }
-}));
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
 
 // PUT /:id/eway-bill/vehicle — Update vehicle number on e-way bill
-router.put('/:id/eway-bill/vehicle', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.put('/:id/eway-bill/vehicle', async (req: Request, res: Response) => {
+  try {
     const shipment = await prisma.shipment.findUnique({ where: { id: req.params.id } });
     if (!shipment) { res.status(404).json({ error: 'Shipment not found' }); return; }
     if (!shipment.ewayBill) { res.status(400).json({ error: 'No e-way bill to update' }); return; }
@@ -1098,20 +925,24 @@ router.put('/:id/eway-bill/vehicle', asyncHandler(async (req: AuthRequest, res: 
     } else {
       res.status(400).json({ success: false, error: result.error });
     }
-}));
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
 
 // GET /:id/eway-bill/details — Get e-way bill details from NIC
-router.get('/:id/eway-bill/details', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get('/:id/eway-bill/details', async (req: Request, res: Response) => {
+  try {
     const shipment = await prisma.shipment.findUnique({ where: { id: req.params.id } });
     if (!shipment) { res.status(404).json({ error: 'Shipment not found' }); return; }
     if (!shipment.ewayBill) { res.status(400).json({ error: 'No e-way bill' }); return; }
 
     const details = await getEwayBillDetails(shipment.ewayBill);
     res.json(details);
-}));
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
 
 // DELETE /:id — Delete (ADMIN only; unlinked trucks any status, linked only GATE_IN)
-router.delete('/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
+  try {
     const shipment = await prisma.shipment.findUnique({
       where: { id: req.params.id },
     });
@@ -1126,10 +957,12 @@ router.delete('/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthRe
     await prisma.shipmentDocument.deleteMany({ where: { shipmentId: req.params.id } });
     await prisma.shipment.delete({ where: { id: req.params.id } });
     res.json({ ok: true });
-}));
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
 
 // POST /:id/cancel-irn — Cancel e-Invoice IRN (within 24 hours)
-router.post('/:id/cancel-irn', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/:id/cancel-irn', async (req: Request, res: Response) => {
+  try {
     const shipment = await prisma.shipment.findUnique({ where: { id: req.params.id } });
     if (!shipment) { res.status(404).json({ error: 'Shipment not found' }); return; }
     if (!shipment.irn) { res.status(400).json({ error: 'No IRN to cancel on this shipment' }); return; }
@@ -1156,10 +989,12 @@ router.post('/:id/cancel-irn', asyncHandler(async (req: AuthRequest, res: Respon
     } else {
       res.status(400).json({ success: false, error: result.error });
     }
-}));
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
 
 // GET /gstin-lookup/:gstin — Lookup GSTIN details from NIC (for customer/vendor creation)
-router.get('/gstin-lookup/:gstin', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get('/gstin-lookup/:gstin', async (req: Request, res: Response) => {
+  try {
     const { gstin } = req.params;
     if (!gstin || gstin.length !== 15) {
       res.status(400).json({ error: 'GSTIN must be exactly 15 characters' });
@@ -1172,10 +1007,12 @@ router.get('/gstin-lookup/:gstin', asyncHandler(async (req: AuthRequest, res: Re
     } else {
       res.status(400).json(result);
     }
-}));
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
 
 // POST /:id/send-email — Send Shipment Challan PDF via email
-router.post('/:id/send-email', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/:id/send-email', async (req: Request, res: Response) => {
+  try {
     const shipment = await prisma.shipment.findUnique({
       where: { id: req.params.id },
       include: {
@@ -1223,6 +1060,7 @@ router.post('/:id/send-email', asyncHandler(async (req: AuthRequest, res: Respon
     } else {
       res.status(500).json({ error: result.error || 'Email send failed' });
     }
-}));
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
 
 export default router;
