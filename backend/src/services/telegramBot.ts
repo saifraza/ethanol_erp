@@ -155,6 +155,15 @@ async function poll(): Promise<void> {
             });
           } catch { /* table may not exist yet */ }
 
+          // Auto-reply to /start command
+          if (text === '/start') {
+            await sendTelegramMessage(chatId,
+              `Welcome to *MSPIL ERP Bot*\n\nYour Chat ID: \`${chatId}\`\n\nCopy this ID and paste it in the ERP Settings page to receive private reports.\n\nThis bot will send you plant readings and auto-collect data requests.`,
+              'system'
+            );
+            continue;
+          }
+
           // Dispatch to handlers
           for (const handler of incomingHandlers) {
             try {
