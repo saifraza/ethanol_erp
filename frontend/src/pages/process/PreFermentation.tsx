@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Plus, FlaskConical, Beaker, ArrowRight, RotateCcw, Trash2, ChevronDown, ChevronUp, Clock, Pencil, Share2, Check, X } from 'lucide-react';
+import { Plus, FlaskConical, Beaker, ArrowRight, RotateCcw, Trash2, ChevronDown, ChevronUp, Clock, Pencil, Share2, Check, X, ZoomIn, ZoomOut } from 'lucide-react';
 import api from '../../services/api';
 import { PF_CAPACITY_KL } from '../../config/constants';
 import { useAuth } from '../../context/AuthContext';
@@ -328,20 +328,57 @@ export default function PreFermentation() {
   };
 
   const LabChart = ({ readings, t0 }: { readings: LabReading[]; t0?: string | null }) => {
+    const [labYZoom, setLabYZoom] = useState(0);
     if (readings.length < 2) return null;
     const data = readings.map((r, i) => {
       let label = r.analysisTime || `#${i + 1}`;
       if (t0 && r.createdAt) { label = 'T0 ' + elapsed(t0, r.createdAt); }
       return { name: label, Gravity: r.spGravity, pH: r.ph, RS: r.rs, Alcohol: r.alcohol, Temp: r.temp };
     });
+    // Stats based on Gravity (primary metric)
+    const gravVals = readings.map(r => r.spGravity).filter((v): v is number => v !== null && !isNaN(Number(v)));
+    const gravStats = gravVals.length > 0 ? (() => {
+      const sum = gravVals.reduce((a, b) => a + Number(b), 0);
+      const mean = sum / gravVals.length;
+      const mn = Math.min(...gravVals.map(Number));
+      const mx = Math.max(...gravVals.map(Number));
+      return { mean, min: mn, max: mx, range: mx - mn, count: gravVals.length };
+    })() : null;
+    const yDomain: [string | number, string | number] = labYZoom > 0 && gravStats
+      ? [gravStats.mean - gravStats.range / (labYZoom + 1), gravStats.mean + gravStats.range / (labYZoom + 1)]
+      : ['auto', 'auto'];
     return (
       <div className="bg-white border border-slate-300 p-3 mt-3">
-        <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Lab Trend (from T0)</h4>
+        <div className="flex items-center justify-between mb-2">
+          <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Lab Trend (from T0)</h4>
+          <div className="flex items-center gap-1">
+            <span className="text-[9px] text-slate-400 uppercase tracking-widest mr-1">Y-Zoom</span>
+            <button onClick={() => setLabYZoom(z => z + 1)} className="px-1.5 py-0.5 border border-slate-300 text-slate-600 text-xs hover:bg-slate-100"><ZoomIn size={12} /></button>
+            <button onClick={() => setLabYZoom(z => Math.max(0, z - 1))} className="px-1.5 py-0.5 border border-slate-300 text-slate-600 text-xs hover:bg-slate-100"><ZoomOut size={12} /></button>
+            {labYZoom > 0 && <button onClick={() => setLabYZoom(0)} className="px-1.5 py-0.5 text-[9px] text-blue-600 hover:underline">Reset</button>}
+          </div>
+        </div>
+        {gravStats && (
+          <div className="grid grid-cols-3 md:grid-cols-5 gap-0 border border-slate-300 mb-2">
+            {[
+              { label: 'Mean', value: gravStats.mean.toFixed(3), color: 'indigo' },
+              { label: 'Min', value: gravStats.min.toFixed(3), color: 'cyan' },
+              { label: 'Max', value: gravStats.max.toFixed(3), color: 'red' },
+              { label: 'Range', value: gravStats.range.toFixed(3), color: 'amber' },
+              { label: 'Samples', value: String(gravStats.count), color: 'slate' },
+            ].map(s => (
+              <div key={s.label} className="px-2 py-2 border-r border-slate-200 last:border-r-0">
+                <div className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{s.label}</div>
+                <div className={`text-sm font-bold font-mono tabular-nums mt-0.5 text-${s.color}-600`}>{s.value}</div>
+              </div>
+            ))}
+          </div>
+        )}
         <ResponsiveContainer width="100%" height={250}>
           <LineChart data={data}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
             <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
-            <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+            <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={yDomain} />
             <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }} itemStyle={{ padding: '1px 0' }} />
             <Legend verticalAlign="top" height={30} iconType="plainline" wrapperStyle={{ fontSize: 10, color: '#64748b' }} />
             <Line type="monotone" dataKey="Gravity" stroke="#1e40af" strokeWidth={2} dot={{ r: 3, fill: '#1e40af' }} />

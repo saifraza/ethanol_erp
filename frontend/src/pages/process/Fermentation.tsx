@@ -88,6 +88,11 @@ export default function Fermentation() {
   const [opcLoading, setOpcLoading] = useState(false);
   const [expandedHist, setExpandedHist] = useState<string | null>(null);
 
+  // Y-Zoom states for each chart
+  const [yZoomGravity, setYZoomGravity] = useState(0);
+  const [yZoomPhTemp, setYZoomPhTemp] = useState(0);
+  const [yZoomHistGravity, setYZoomHistGravity] = useState(0);
+
   const flash = (t: 'ok' | 'err', m: string) => { setMsg({ t, m }); setTimeout(() => setMsg(null), 3000); };
 
   const load = useCallback(async () => {
@@ -1231,12 +1236,60 @@ export default function Fermentation() {
                         {/* Gravity + Alcohol + Level */}
                         <div className="bg-white border border-slate-300 p-3">
                           <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Gravity, Alcohol & Level</div>
+                          {/* Stats strip */}
+                          {(() => {
+                            const sgValsStats = chartData.map(d => d.sg).filter((v): v is number => v != null);
+                            if (!sgValsStats.length) return null;
+                            const min = Math.min(...sgValsStats);
+                            const max = Math.max(...sgValsStats);
+                            const mean = sgValsStats.reduce((s, v) => s + v, 0) / sgValsStats.length;
+                            const stats = { mean, min, max, range: max - min, count: sgValsStats.length };
+                            return (
+                              <div className="grid grid-cols-3 md:grid-cols-5 gap-0 border border-slate-300 mb-2">
+                                {[
+                                  { label: 'Mean SG', value: stats.mean.toFixed(3), color: 'text-indigo-600' },
+                                  { label: 'Min SG', value: stats.min.toFixed(3), color: 'text-cyan-600' },
+                                  { label: 'Max SG', value: stats.max.toFixed(3), color: 'text-red-600' },
+                                  { label: 'Range', value: stats.range.toFixed(3), color: 'text-amber-600' },
+                                  { label: 'Samples', value: String(stats.count), color: 'text-slate-600' },
+                                ].map(s => (
+                                  <div key={s.label} className="px-2 py-2 border-r border-slate-200 last:border-r-0">
+                                    <div className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{s.label}</div>
+                                    <div className={`text-sm font-bold font-mono tabular-nums mt-0.5 ${s.color}`}>{s.value}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          })()}
+                          {/* Y-Zoom controls */}
+                          <div className="flex items-center justify-end gap-1 mb-1">
+                            <span className="text-[9px] text-slate-400 uppercase tracking-widest mr-1">Y-Zoom</span>
+                            <button onClick={() => setYZoomGravity(z => Math.min(z + 1, 5))} className="w-5 h-5 flex items-center justify-center bg-slate-100 border border-slate-300 text-slate-600 text-xs font-bold hover:bg-slate-200">+</button>
+                            <button onClick={() => setYZoomGravity(z => Math.max(z - 1, 0))} className="w-5 h-5 flex items-center justify-center bg-slate-100 border border-slate-300 text-slate-600 text-xs font-bold hover:bg-slate-200">-</button>
+                            {yZoomGravity > 0 && <button onClick={() => setYZoomGravity(0)} className="px-1.5 h-5 flex items-center justify-center bg-slate-100 border border-slate-300 text-slate-500 text-[9px] hover:bg-slate-200">Reset</button>}
+                          </div>
                           <ResponsiveContainer width="100%" height={250}>
                             <ComposedChart data={chartData}>
                               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                               <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} interval="preserveStartEnd" />
-                              <YAxis yAxisId="sg" domain={[sgMin, sgMax]} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} tickFormatter={(v: number) => v.toFixed(3)} label={{ value: 'SG', angle: -90, position: 'insideLeft', fontSize: 8, fill: '#1e40af' }} />
-                              <YAxis yAxisId="alc" orientation="right" domain={[0, 'auto']} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} label={{ value: 'Alc% / Level%', angle: 90, position: 'insideRight', fontSize: 8, fill: '#10b981' }} />
+                              <YAxis yAxisId="sg" domain={(() => {
+                                if (!sgVals.length) return [1, 1.1];
+                                if (yZoomGravity === 0) return [sgMin, sgMax];
+                                const mid = (sgMin + sgMax) / 2;
+                                const range = sgMax - sgMin || 0.01;
+                                const factor = Math.pow(0.6, yZoomGravity);
+                                return [mid - range * factor, mid + range * factor];
+                              })()} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} tickFormatter={(v: number) => v.toFixed(3)} label={{ value: 'SG', angle: -90, position: 'insideLeft', fontSize: 8, fill: '#1e40af' }} />
+                              <YAxis yAxisId="alc" orientation="right" domain={(() => {
+                                const alcVals = chartData.flatMap(d => [d.alc, d.level].filter((v): v is number => v != null));
+                                if (!alcVals.length || yZoomGravity === 0) return [0, 'auto'] as [number, string];
+                                const alcMin = Math.min(...alcVals);
+                                const alcMax = Math.max(...alcVals);
+                                const mid = (alcMin + alcMax) / 2;
+                                const range = alcMax - alcMin || 1;
+                                const factor = Math.pow(0.6, yZoomGravity);
+                                return [mid - range * factor, mid + range * factor];
+                              })()} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} label={{ value: 'Alc% / Level%', angle: 90, position: 'insideRight', fontSize: 8, fill: '#10b981' }} />
                               <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }} itemStyle={{ padding: '1px 0' }} formatter={(v: number, name: string) => [name === 'Gravity' ? v?.toFixed(3) : v, name]} />
                               <Legend wrapperStyle={{ fontSize: 9 }} />
                               {phaseMarkers.map((pm, i) => (
@@ -1252,19 +1305,70 @@ export default function Fermentation() {
                         {/* pH & Temperature */}
                         <div className="bg-white border border-slate-300 p-3">
                           <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">pH & Temperature</div>
+                          {/* Stats strip */}
+                          {(() => {
+                            const phValsStats = chartData.map(d => d.ph).filter((v): v is number => v != null);
+                            const tempValsStats = chartData.map(d => d.temp).filter((v): v is number => v != null);
+                            if (!phValsStats.length && !tempValsStats.length) return null;
+                            const phMean = phValsStats.length ? phValsStats.reduce((s, v) => s + v, 0) / phValsStats.length : 0;
+                            const tempMean = tempValsStats.length ? tempValsStats.reduce((s, v) => s + v, 0) / tempValsStats.length : 0;
+                            return (
+                              <div className="grid grid-cols-3 md:grid-cols-5 gap-0 border border-slate-300 mb-2">
+                                {[
+                                  { label: 'Mean pH', value: phValsStats.length ? phMean.toFixed(2) : '--', color: 'text-amber-600' },
+                                  { label: 'pH Range', value: phValsStats.length ? `${Math.min(...phValsStats).toFixed(2)} - ${Math.max(...phValsStats).toFixed(2)}` : '--', color: 'text-amber-600' },
+                                  { label: 'Mean Temp', value: tempValsStats.length ? tempMean.toFixed(1) + '\u00b0C' : '--', color: 'text-red-600' },
+                                  { label: 'Temp Range', value: tempValsStats.length ? `${Math.min(...tempValsStats).toFixed(1)} - ${Math.max(...tempValsStats).toFixed(1)}` : '--', color: 'text-red-600' },
+                                  { label: 'Samples', value: String(Math.max(phValsStats.length, tempValsStats.length)), color: 'text-slate-600' },
+                                ].map(s => (
+                                  <div key={s.label} className="px-2 py-2 border-r border-slate-200 last:border-r-0">
+                                    <div className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{s.label}</div>
+                                    <div className={`text-sm font-bold font-mono tabular-nums mt-0.5 ${s.color}`}>{s.value}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          })()}
+                          {/* Y-Zoom controls */}
+                          <div className="flex items-center justify-end gap-1 mb-1">
+                            <span className="text-[9px] text-slate-400 uppercase tracking-widest mr-1">Y-Zoom</span>
+                            <button onClick={() => setYZoomPhTemp(z => Math.min(z + 1, 5))} className="w-5 h-5 flex items-center justify-center bg-slate-100 border border-slate-300 text-slate-600 text-xs font-bold hover:bg-slate-200">+</button>
+                            <button onClick={() => setYZoomPhTemp(z => Math.max(z - 1, 0))} className="w-5 h-5 flex items-center justify-center bg-slate-100 border border-slate-300 text-slate-600 text-xs font-bold hover:bg-slate-200">-</button>
+                            {yZoomPhTemp > 0 && <button onClick={() => setYZoomPhTemp(0)} className="px-1.5 h-5 flex items-center justify-center bg-slate-100 border border-slate-300 text-slate-500 text-[9px] hover:bg-slate-200">Reset</button>}
+                          </div>
                           <ResponsiveContainer width="100%" height={250}>
                             <ComposedChart data={chartData}>
                               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                               <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} interval="preserveStartEnd" />
-                              <YAxis yAxisId="ph" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={[0, 'auto']} label={{ value: 'pH', angle: -90, position: 'insideLeft', fontSize: 8, fill: '#f59e0b' }} />
-                              <YAxis yAxisId="temp" orientation="right" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={[0, 'auto']} label={{ value: '°C', angle: 90, position: 'insideRight', fontSize: 8, fill: '#dc2626' }} />
+                              <YAxis yAxisId="ph" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={(() => {
+                                const phVals = chartData.map(d => d.ph).filter((v): v is number => v != null);
+                                if (!phVals.length) return [0, 'auto'] as [number, string];
+                                if (yZoomPhTemp === 0) return [0, 'auto'] as [number, string];
+                                const phMin = Math.min(...phVals);
+                                const phMax = Math.max(...phVals);
+                                const mid = (phMin + phMax) / 2;
+                                const range = phMax - phMin || 1;
+                                const factor = Math.pow(0.6, yZoomPhTemp);
+                                return [mid - range * factor, mid + range * factor];
+                              })()} label={{ value: 'pH', angle: -90, position: 'insideLeft', fontSize: 8, fill: '#f59e0b' }} />
+                              <YAxis yAxisId="temp" orientation="right" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={(() => {
+                                const tempVals = chartData.map(d => d.temp).filter((v): v is number => v != null);
+                                if (!tempVals.length) return [0, 'auto'] as [number, string];
+                                if (yZoomPhTemp === 0) return [0, 'auto'] as [number, string];
+                                const tempMin = Math.min(...tempVals);
+                                const tempMax = Math.max(...tempVals);
+                                const mid = (tempMin + tempMax) / 2;
+                                const range = tempMax - tempMin || 1;
+                                const factor = Math.pow(0.6, yZoomPhTemp);
+                                return [mid - range * factor, mid + range * factor];
+                              })()} label={{ value: '\u00b0C', angle: 90, position: 'insideRight', fontSize: 8, fill: '#dc2626' }} />
                               <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }} itemStyle={{ padding: '1px 0' }} />
                               <Legend wrapperStyle={{ fontSize: 9 }} />
                               {phaseMarkers.map((pm, i) => (
                                 <ReferenceLine key={i} yAxisId="ph" x={pm.time} stroke={pm.color} strokeDasharray="4 4" strokeWidth={1.5} label={{ value: pm.label, position: 'top', fontSize: 8, fill: pm.color, fontWeight: 'bold' }} />
                               ))}
                               <Line yAxisId="ph" type="monotone" dataKey="ph" name="pH" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3, fill: '#f59e0b' }} connectNulls />
-                              <Line yAxisId="temp" type="monotone" dataKey="temp" name="Temp°C" stroke="#dc2626" strokeWidth={2} dot={{ r: 3, fill: '#dc2626' }} connectNulls />
+                              <Line yAxisId="temp" type="monotone" dataKey="temp" name="Temp\u00b0C" stroke="#dc2626" strokeWidth={2} dot={{ r: 3, fill: '#dc2626' }} connectNulls />
                               {chartData.length > 24 && <Brush dataKey="time" height={20} stroke="#1e40af" />}
                             </ComposedChart>
                           </ResponsiveContainer>
@@ -1443,12 +1547,57 @@ export default function Fermentation() {
                               return (
                                 <div>
                                   <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Gravity & Alcohol Chart</div>
+                                  {/* Stats strip */}
+                                  {sgVals.length > 0 && (() => {
+                                    const min = Math.min(...sgVals);
+                                    const max = Math.max(...sgVals);
+                                    const mean = sgVals.reduce((s, v) => s + v, 0) / sgVals.length;
+                                    return (
+                                      <div className="grid grid-cols-3 md:grid-cols-5 gap-0 border border-slate-300 mb-2">
+                                        {[
+                                          { label: 'Mean SG', value: mean.toFixed(3), color: 'text-indigo-600' },
+                                          { label: 'Min SG', value: min.toFixed(3), color: 'text-cyan-600' },
+                                          { label: 'Max SG', value: max.toFixed(3), color: 'text-red-600' },
+                                          { label: 'Range', value: (max - min).toFixed(3), color: 'text-amber-600' },
+                                          { label: 'Samples', value: String(sgVals.length), color: 'text-slate-600' },
+                                        ].map(s => (
+                                          <div key={s.label} className="px-2 py-2 border-r border-slate-200 last:border-r-0">
+                                            <div className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{s.label}</div>
+                                            <div className={`text-sm font-bold font-mono tabular-nums mt-0.5 ${s.color}`}>{s.value}</div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    );
+                                  })()}
+                                  {/* Y-Zoom controls */}
+                                  <div className="flex items-center justify-end gap-1 mb-1">
+                                    <span className="text-[9px] text-slate-400 uppercase tracking-widest mr-1">Y-Zoom</span>
+                                    <button onClick={() => setYZoomHistGravity(z => Math.min(z + 1, 5))} className="w-5 h-5 flex items-center justify-center bg-slate-100 border border-slate-300 text-slate-600 text-xs font-bold hover:bg-slate-200">+</button>
+                                    <button onClick={() => setYZoomHistGravity(z => Math.max(z - 1, 0))} className="w-5 h-5 flex items-center justify-center bg-slate-100 border border-slate-300 text-slate-600 text-xs font-bold hover:bg-slate-200">-</button>
+                                    {yZoomHistGravity > 0 && <button onClick={() => setYZoomHistGravity(0)} className="px-1.5 h-5 flex items-center justify-center bg-slate-100 border border-slate-300 text-slate-500 text-[9px] hover:bg-slate-200">Reset</button>}
+                                  </div>
                                   <ResponsiveContainer width="100%" height={250}>
                                     <ComposedChart data={cData}>
                                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                                       <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
-                                      <YAxis yAxisId="sg" domain={[sgMin2, sgMax2]} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} tickFormatter={(v: number) => v.toFixed(3)} />
-                                      <YAxis yAxisId="alc" orientation="right" domain={[0, 'auto']} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+                                      <YAxis yAxisId="sg" domain={(() => {
+                                        if (!sgVals.length) return [1, 1.1];
+                                        if (yZoomHistGravity === 0) return [sgMin2, sgMax2];
+                                        const mid = (sgMin2 + sgMax2) / 2;
+                                        const range = sgMax2 - sgMin2 || 0.01;
+                                        const factor = Math.pow(0.6, yZoomHistGravity);
+                                        return [mid - range * factor, mid + range * factor];
+                                      })()} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} tickFormatter={(v: number) => v.toFixed(3)} />
+                                      <YAxis yAxisId="alc" orientation="right" domain={(() => {
+                                        const alcVals = cData.flatMap(d => [d.alc, d.level].filter((v): v is number => v != null));
+                                        if (!alcVals.length || yZoomHistGravity === 0) return [0, 'auto'] as [number, string];
+                                        const alcMin = Math.min(...alcVals);
+                                        const alcMax = Math.max(...alcVals);
+                                        const mid = (alcMin + alcMax) / 2;
+                                        const range = alcMax - alcMin || 1;
+                                        const factor = Math.pow(0.6, yZoomHistGravity);
+                                        return [mid - range * factor, mid + range * factor];
+                                      })()} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
                                       <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }} itemStyle={{ padding: '1px 0' }} formatter={(v: number, name: string) => [name === 'Gravity' ? v?.toFixed(3) : v, name]} />
                                       <Legend wrapperStyle={{ fontSize: 8 }} />
                                       <Line yAxisId="sg" type="monotone" dataKey="sg" name="Gravity" stroke="#1e40af" strokeWidth={2} dot={{ r: 3, fill: '#1e40af' }} connectNulls />
