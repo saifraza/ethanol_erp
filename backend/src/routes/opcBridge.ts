@@ -2,7 +2,7 @@ import { Router, Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { z } from 'zod';
-import { waSendGroup } from '../services/whatsappClient';
+import { tgSendGroup } from '../services/telegramClient';
 
 const router = Router();
 
@@ -86,13 +86,13 @@ async function checkAlarms(opc: any, readings: { tag: string; property: string; 
   if (alerts.length > 0) {
     const prismaMain = (await import('../config/prisma')).default;
     const settings = await prismaMain.settings.findFirst();
-    const groupJid = (settings as any)?.whatsappGroupJid;
-    if (groupJid) {
+    const groupChatId = (settings as any)?.telegramGroupChatId;
+    if (groupChatId) {
       const ist = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
       const time = ist.toISOString().slice(11, 19);
       const msg = `⚠️ *OPC ALARM* (${time} IST)\n\n${alerts.join('\n')}`;
-      await waSendGroup(groupJid, msg, 'opc-alarm');
-      console.log(`[OPC] Sent ${alerts.length} alarm(s) to WhatsApp group`);
+      await tgSendGroup(groupChatId, msg, 'opc-alarm');
+      console.log(`[OPC] Sent ${alerts.length} alarm(s) to Telegram group`);
     }
   }
 }
@@ -254,25 +254,25 @@ router.post('/alarm-notify', validate(alarmNotifySchema), asyncHandler(async (re
     );
   }
 
-  // Send WhatsApp alert
+  // Send Telegram alert
   const prismaMain = (await import('../config/prisma')).default;
   const settings = await prismaMain.settings.findFirst();
-  const groupJid = (settings as any)?.whatsappGroupJid;
+  const groupChatId2 = (settings as any)?.telegramGroupChatId;
 
-  if (groupJid) {
+  if (groupChatId2) {
     const ist = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
     const timeStr = `${String(ist.getUTCHours()).padStart(2, '0')}:${String(ist.getUTCMinutes()).padStart(2, '0')}:${String(ist.getUTCSeconds()).padStart(2, '0')}`;
     const emoji = alarmType === 'HH' ? '🔴' : '🔵';
     const message = `${emoji} *OPC ${alarmType} ALARM* (${timeStr} IST)\n\n*${label || tag}*: ${value.toFixed(2)} (limit: ${limit})\n\n_Local alarm from factory bridge_`;
 
-    const { waSendGroup } = await import('../services/whatsappClient');
-    await waSendGroup(groupJid, message, 'opc-alarm').catch((err: Error) =>
-      console.error('[OPC] WhatsApp alarm send failed:', err.message)
+    const { tgSendGroup: tgSendGroup2 } = await import('../services/telegramClient');
+    await tgSendGroup2(groupChatId2, message, 'opc-alarm').catch((err: Error) =>
+      console.error('[OPC] Telegram alarm send failed:', err.message)
     );
   }
 
   console.log(`[OPC] Alarm: ${alarmType} on ${tag} (${label}): ${value} vs limit ${limit}`);
-  res.json({ ok: true, logged: true, whatsappSent: !!groupJid });
+  res.json({ ok: true, logged: true, telegramSent: !!groupChatId2 });
 }));
 
 // ==========================================================================
