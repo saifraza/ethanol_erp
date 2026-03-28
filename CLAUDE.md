@@ -212,6 +212,8 @@ frontend/src/
 - **Never use** `: any` type — define proper interfaces
 - **Never write** `findMany()` without `take` limit (default 50, max 500)
 - **Never write** `findMany()` for lists without `select` (don't fetch all columns)
+- **Never use** any charting library except Recharts — no Chart.js, no D3, no custom SVG charts
+- **Never create** charts without following `.claude/skills/charts-graphs.md` (OPC Live pattern)
 
 ### ALWAYS DO
 - **Always use** `AuthRequest` type for authenticated route handlers
@@ -223,6 +225,7 @@ frontend/src/
 - **Always type** function parameters and return types explicitly
 - **Always add** `take` and `select` on `findMany` calls returning lists
 - **Always use** `$transaction` for multi-step writes that must be atomic
+- **Always follow** the chart design system in `.claude/skills/charts-graphs.md` for any graph/chart work — use OPC Live as reference
 
 ---
 
@@ -415,6 +418,7 @@ For detailed guidance on specific modules, see `.claude/skills/`:
 - `session-state.md` — Current session state, uncommitted changes, known issues, next steps
 - `dashboard-analytics.md` — Dashboard performance, KPI calculations
 - `admin-settings.md` — Auth, users, settings, audit trail
+- `charts-graphs.md` — Standard chart design system (OPC Live pattern) — colors, axes, tooltips, containers, Brush, reference lines. ALL charts must follow this.
 
 ---
 
