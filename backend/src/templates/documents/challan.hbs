@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Delivery Challan</title>{{> base-styles}}</head>
+<body>
+<div class="page">
+  {{> letterhead}}
+  <div class="doc-title">DELIVERY CHALLAN</div>
+
+  <div class="details-grid">
+    <div class="detail-row"><span class="detail-label">Challan No</span><span class="detail-value bold">{{challanNo}}</span></div>
+    <div class="detail-row"><span class="detail-label">Date</span><span class="detail-value">{{formatDate date}}</span></div>
+    <div class="detail-row"><span class="detail-label">Shipment No</span><span class="detail-value">{{shipmentNo}}</span></div>
+    {{#if ewayBill}}<div class="detail-row"><span class="detail-label">E-Way Bill</span><span class="detail-value">{{ewayBill}}</span></div>{{/if}}
+    <div class="detail-row"><span class="detail-label">Vehicle No</span><span class="detail-value bold">{{vehicleNo}}</span></div>
+    {{#if grBiltyNo}}<div class="detail-row"><span class="detail-label">GR/Bilty No</span><span class="detail-value">{{grBiltyNo}}</span></div>{{/if}}
+    <div class="detail-row"><span class="detail-label">Driver</span><span class="detail-value">{{driverName}} {{#if driverMobile}}({{driverMobile}}){{/if}}</span></div>
+    {{#if transporterName}}<div class="detail-row"><span class="detail-label">Transporter</span><span class="detail-value">{{transporterName}}</span></div>{{/if}}
+  </div>
+
+  <div class="boxes">
+    <div class="box">
+      <div class="box-header">Consignee (Ship To)</div>
+      <div class="box-body">
+        <div class="name">{{customer.name}}</div>
+        {{#if customer.address}}<div class="line">{{customer.address}}</div>{{/if}}
+        <div class="line">{{join (list customer.city customer.state customer.pincode) ", "}}</div>
+        {{#if customer.gstNo}}<div class="gstin">GSTIN: {{customer.gstNo}}</div>{{/if}}
+      </div>
+    </div>
+    <div class="box">
+      <div class="box-header">Consignor (Ship From)</div>
+      <div class="box-body">
+        <div class="name">MSPIL Distillery</div>
+        <div class="line">Village Bachai, Dist. Narsinghpur (M.P.) - 487001</div>
+        <div class="gstin">GSTIN: 23AAECM3666P1Z1</div>
+        {{#if destination}}<div class="meta-row mt-4"><span class="meta-label">Destination:</span><span class="meta-val">{{destination}}</span></div>{{/if}}
+      </div>
+    </div>
+  </div>
+
+  <table class="items-table">
+    <thead>
+      <tr>
+        <th style="width:25px">#</th>
+        <th class="left">Product</th>
+        <th style="width:50px">HSN</th>
+        <th style="width:55px">Qty</th>
+        <th style="width:35px">Unit</th>
+        <th class="right" style="width:70px">Rate (Rs.)</th>
+        <th class="right" style="width:90px">Value (Rs.)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each lines}}
+      <tr>
+        <td class="center">{{inc @index}}</td>
+        <td>{{productName}}</td>
+        <td class="center">{{hsnCode}}</td>
+        <td class="center">{{formatNum quantity}}</td>
+        <td class="center">{{unit}}</td>
+        <td class="right">{{formatNum rate}}</td>
+        <td class="right">{{formatNum value}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+
+  {{#if (or weightGross weightTare weightNet)}}
+  <div class="weight-box">
+    <div class="wb-header">Weight Summary</div>
+    <div class="wb-grid">
+      <div class="wb-item"><div class="wb-label">Gross Weight</div><div class="wb-val">{{formatNum weightGross}} MT</div></div>
+      <div class="wb-item"><div class="wb-label">Tare Weight</div><div class="wb-val">{{formatNum weightTare}} MT</div></div>
+      <div class="wb-item"><div class="wb-label">Net Weight</div><div class="wb-val">{{formatNum weightNet}} MT</div></div>
+    </div>
+  </div>
+  {{/if}}
+
+  {{#if remarks}}<div class="remarks-section"><div class="label">Remarks:</div><div class="text">{{remarks}}</div></div>{{/if}}
+
+  {{> terms-footer}}
+  {{> signatures sigCount=3 sigLabels=(list "For MSPIL" "Transporter / Driver" "Consignee") sigNames=(list preparedBy driverName "")}}
+
+  <div class="footer-area">
+    {{#if qrDataUrl}}<div class="qr-block"><img src="{{qrDataUrl}}" alt="QR"><div class="qr-text">Scan to verify this document</div></div>{{/if}}
+    <div class="footer-text">{{footer}}</div>
+  </div>
+</div>
+</body>
+</html>
