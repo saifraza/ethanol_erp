@@ -55,13 +55,14 @@ export async function startCollection(phone: string, moduleName: string, autoSha
   // Inject module-specific config into collectedData
   const initialData: Record<string, number> = {};
   if (moduleName === 'ddgs') {
-    // Try to read bagWeight from AutoCollectSchedule table or fallback to 35
+    let bagWt = 35;
     try {
-      const sched = await prisma.autoCollectSchedule.findUnique({ where: { module: 'ddgs' } });
-      initialData._weightPerBag = (sched as any)?.bagWeight || 35;
-    } catch {
-      initialData._weightPerBag = 35;
-    }
+      const rows = await prisma.$queryRawUnsafe(
+        `SELECT "bagWeight" FROM "AutoCollectSchedule" WHERE module = 'ddgs' LIMIT 1`
+      ) as Array<{ bagWeight: number }>;
+      if (rows.length > 0 && rows[0].bagWeight) bagWt = rows[0].bagWeight;
+    } catch { /* table or column may not exist */ }
+    initialData._weightPerBag = bagWt;
   }
 
   const session: ActiveSession = {
