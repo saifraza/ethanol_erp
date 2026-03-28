@@ -11,6 +11,7 @@ import { setupApiToast } from './services/apiToast';
 const Login = React.lazy(() => import('./pages/Login'));
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
 const NotFound = React.lazy(() => import('./pages/NotFound'));
+const VerifyDocument = React.lazy(() => import('./pages/VerifyDocument'));
 const Reports = React.lazy(() => import('./pages/Reports'));
 const SettingsPage = React.lazy(() => import('./pages/SettingsPage'));
 const UsersPage = React.lazy(() => import('./pages/UsersPage'));
@@ -117,6 +118,7 @@ export default function App() {
       <Suspense fallback={<div className="flex items-center justify-center h-screen"><div className="text-lg text-gray-500">Loading...</div></div>}>
       <Routes>
         <Route path="/login" element={user ? <Navigate to="/" /> : <Login />} />
+        <Route path="/verify/:docType/:id" element={<VerifyDocument />} />
         <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route index element={<HomeRedirect />} />
         <Route path="dashboard" element={<Dashboard />} />
