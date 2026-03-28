@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, authorize } from '../middleware/auth';
 import { generateInvoicePdf } from '../utils/pdfGenerator';
+import { renderDocumentPdf } from '../services/documentRenderer';
 import { sendEmail } from '../services/messaging';
 import { generateIRN, cancelIRN, getIRNDetails } from '../services/eInvoice';
 import { onSaleInvoiceCreated } from '../services/autoJournal';
@@ -339,10 +340,14 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
 
     if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
 
-    const pdfBuffer = await generateInvoicePdf({
+    const isIntraState = invoice.customer.state?.toLowerCase().includes('madhya pradesh');
+    const invData = {
       invoiceNo: invoice.invoiceNo,
       invoiceDate: invoice.invoiceDate,
       dueDate: invoice.dueDate,
+      challanNo: invoice.challanNo,
+      ewayBill: invoice.ewayBill,
+      supplyType: isIntraState ? 'INTRA_STATE' : 'INTER_STATE',
       customer: {
         name: invoice.customer.name,
         shortName: invoice.customer.shortName,
@@ -359,13 +364,16 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
       amount: invoice.amount,
       gstPercent: invoice.gstPercent,
       gstAmount: invoice.gstAmount,
+      halfGst: invoice.gstAmount / 2,
       freightCharge: invoice.freightCharge,
       totalAmount: invoice.totalAmount,
-      challanNo: invoice.challanNo,
-      ewayBill: invoice.ewayBill,
       remarks: invoice.remarks,
-      orderId: invoice.orderId,
-      shipmentId: invoice.shipmentId,
+    };
+
+    const pdfBuffer = await renderDocumentPdf({
+      docType: 'INVOICE',
+      data: invData,
+      verifyId: invoice.id,
     });
 
     res.setHeader('Content-Type', 'application/pdf');

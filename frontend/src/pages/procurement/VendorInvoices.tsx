@@ -3,7 +3,8 @@ import { Receipt, X, Pencil, FileText, Mail, Loader2 } from 'lucide-react';
 import api from '../../services/api';
 
 interface Vendor { id: string; name: string; }
-interface PO { id: string; poNo: string; }
+interface POLine { description: string; quantity: number; unit: string; rate: number; gstPercent: number; isRCM: boolean; hsnCode?: string; }
+interface PO { id: string; poNo: string; vendorId: string; supplyType: string; lines: POLine[]; }
 interface GRN { id: string; grnNo: string; }
 
 interface VendorInvoice {
@@ -83,7 +84,7 @@ const VendorInvoices: React.FC = () => {
       ]);
       setInvoices(invoicesRes.data.invoices || []);
       setVendors(vendorsRes.data.vendors || []);
-      setPos(posRes.data.pos || []);
+      setPos((posRes.data.pos || []).map((p: PO) => ({ ...p, lines: p.lines || [] })));
       setGrns(grnsRes.data.grns || []);
     } catch (err) {
       setError('Failed to load data');
@@ -112,7 +113,28 @@ const VendorInvoices: React.FC = () => {
 
   const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
-    setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value }));
+    const newVal = type === 'checkbox' ? (e.target as HTMLInputElement).checked : value;
+    setFormData(prev => {
+      const updated = { ...prev, [name]: newVal };
+      // Auto-fill from PO when PO is selected
+      if (name === 'poId' && value) {
+        const selectedPO = pos.find(p => p.id === value);
+        if (selectedPO) {
+          updated.vendorId = selectedPO.vendorId || prev.vendorId;
+          updated.supplyType = (selectedPO.supplyType as 'INTRA_STATE' | 'INTER_STATE') || prev.supplyType;
+          if (selectedPO.lines && selectedPO.lines.length > 0) {
+            const line = selectedPO.lines[0];
+            updated.productName = line.description || '';
+            updated.quantity = String(line.quantity || '');
+            updated.unit = line.unit || '';
+            updated.rate = String(line.rate || '');
+            updated.gstPercent = String(line.gstPercent || '');
+            updated.isRCM = line.isRCM || false;
+          }
+        }
+      }
+      return updated;
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

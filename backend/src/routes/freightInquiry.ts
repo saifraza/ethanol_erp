@@ -6,6 +6,7 @@ import path from 'path';
 import fs from 'fs';
 import { drawLetterhead } from '../utils/letterhead';
 import { getTemplate } from '../utils/templateHelper';
+import { renderDocumentPdf } from '../services/documentRenderer';
 
 const router = Router();
 router.use(authenticate as any);
@@ -157,93 +158,25 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
     });
     if (!inquiry) { res.status(404).json({ error: 'Not found' }); return; }
 
-    const doc = new PDFDocument({ size: 'A4', margins: { top: 40, bottom: 0, left: 40, right: 40 } });
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename=Inquiry-${inquiry.inquiryNo}.pdf`);
-    doc.pipe(res);
-
-    const pageW = doc.page.width;
-    const mL = 40;
-    const cW = pageW - 80;
-
-    // Letterhead (HD vector)
-    const afterLH = drawLetterhead(doc, mL, cW);
-    doc.y = afterLH + 4;
-
-    // Title + Inquiry No on same line
-    doc.fontSize(12).font('Helvetica-Bold').fillColor('#333').text('FREIGHT INQUIRY', mL, doc.y, { continued: true, width: cW });
-    doc.fontSize(9).font('Helvetica').fillColor('#666').text(`   FI-${inquiry.inquiryNo}  |  ${new Date(inquiry.createdAt).toLocaleDateString('en-IN')}`, { align: 'right' });
-    doc.y += 6;
-
-    // Details box
-    const boxY = doc.y;
-    doc.rect(mL, boxY, cW, 85).lineWidth(0.5).strokeColor('#ccc').stroke();
-    doc.fontSize(9).font('Helvetica-Bold').fillColor('#4a7c3f').text('SHIPMENT DETAILS', mL + 8, boxY + 5, { lineBreak: false });
-
-    const col2 = pageW / 2 + 10;
-    const colValW = (pageW / 2) - 50 - 70; // constrain value width
-    const detailY = boxY + 18;
-    const labelFont = 'Helvetica-Bold';
-    const valFont = 'Helvetica';
-
-    const detail = (label: string, val: string, x: number, y: number) => {
-      doc.fontSize(8).font(labelFont).fillColor('#555').text(label, x, y, { lineBreak: false });
-      doc.font(valFont).fillColor('#333').text(val, x + 70, y, { width: colValW, lineBreak: false });
+    const inquiryData = {
+      inquiryNo: inquiry.inquiryNo,
+      createdAt: inquiry.createdAt,
+      origin: inquiry.origin,
+      destination: inquiry.destination,
+      productName: inquiry.productName,
+      quantity: inquiry.quantity,
+      unit: inquiry.unit,
+      distanceKm: inquiry.distanceKm,
+      vehicleType: inquiry.vehicleType,
+      vehicleCount: inquiry.vehicleCount,
+      loadingDate: inquiry.loadingDate,
+      remarks: inquiry.remarks,
     };
 
-    detail('Origin:', inquiry.origin || 'MSPIL, Narsinghpur', mL + 8, detailY);
-    detail('Destination:', inquiry.destination, col2, detailY);
-    detail('Product:', inquiry.productName, mL + 8, detailY + 14);
-    detail('Quantity:', `${inquiry.quantity} ${inquiry.unit}`, col2, detailY + 14);
-    detail('Distance:', inquiry.distanceKm ? `${inquiry.distanceKm} km` : 'TBD', mL + 8, detailY + 28);
-    detail('Vehicles:', `${inquiry.vehicleCount} (${inquiry.vehicleType || 'Open'})`, col2, detailY + 28);
-    detail('Loading:', inquiry.loadingDate ? new Date(inquiry.loadingDate).toLocaleDateString('en-IN') : 'TBD', mL + 8, detailY + 42);
-    doc.y = boxY + 92;
-
-    // Requirements — from template
-    const tmpl = await getTemplate('RATE_REQUEST');
-    doc.fontSize(8).font('Helvetica-Bold').fillColor('#333').text('Terms:', mL, doc.y);
-    doc.y += 10;
-    doc.fontSize(7).font('Helvetica').fillColor('#555');
-    tmpl.terms.forEach((t, i) => {
-      doc.text(`${i + 1}. ${t}`, mL + 8, doc.y);
-      doc.y += 10;
-    });
-    doc.y += 4;
-
-    // Remarks (compact)
-    if (inquiry.remarks) {
-      doc.fontSize(8).font('Helvetica-Bold').fillColor('#333').text('Remarks: ', mL, doc.y, { continued: true });
-      doc.font('Helvetica').fillColor('#555').text(inquiry.remarks);
-      doc.y += 6;
-    }
-
-    // Quotation response — compact
-    doc.fontSize(8).font('Helvetica-Bold').fillColor('#333').text('Please quote:', mL, doc.y);
-    doc.y += 10;
-    doc.fontSize(7).font('Helvetica').fillColor('#555');
-    ['Rate per MT / trip / km', 'Vehicle type & count available', 'Estimated transit days', 'Terms & conditions'].forEach(t => {
-      doc.text(`• ${t}`, mL + 8, doc.y);
-      doc.y += 10;
-    });
-    doc.y += 15;
-
-    // Signatures
-    doc.fontSize(8).font('Helvetica').fillColor('#555');
-    doc.text('________________________', mL, doc.y, { width: 200, align: 'center' });
-    doc.text('For MSPIL', mL, doc.y + 10, { width: 200, align: 'center' });
-    doc.text('________________________', pageW - 40 - 200, doc.y - 10, { width: 200, align: 'center' });
-    doc.text('Transporter', pageW - 40 - 200, doc.y, { width: 200, align: 'center' });
-
-    // Footer — placed below signatures, not at absolute bottom (prevents page 2)
-    doc.y += 30;
-    const fY = Math.min(doc.y, doc.page.height - 50);
-    if (fY < doc.page.height - 10) {
-      doc.moveTo(mL, fY).lineTo(pageW - 40, fY).lineWidth(0.5).strokeColor('#ccc').stroke();
-      doc.fontSize(7).fillColor('#888').text(tmpl.footer || 'This is a system-generated freight inquiry from MSPIL ERP.', mL, fY + 6, { align: 'center', width: cW });
-    }
-
-    doc.end();
+    const pdfBuffer = await renderDocumentPdf({ docType: 'RATE_REQUEST', data: inquiryData, verifyId: inquiry.id });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename=Inquiry-${inquiry.inquiryNo}.pdf`);
+    res.send(pdfBuffer);
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
