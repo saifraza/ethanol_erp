@@ -10,14 +10,14 @@ const router = Router();
 const ACCOUNT_CODES = {
   CASH: '1001',
   BANK: '1002',
-  TRADE_RECEIVABLE: '1003',
+  TRADE_RECEIVABLE: '1100',
   TRADE_PAYABLE: '2001',
-  GST_OUTPUT_CGST: '2101',
-  GST_OUTPUT_SGST: '2102',
-  GST_OUTPUT_IGST: '2103',
-  GST_INPUT_CGST: '2104',
-  GST_INPUT_SGST: '2105',
-  GST_INPUT_IGST: '2106',
+  GST_OUTPUT_CGST: '2100',
+  GST_OUTPUT_SGST: '2101',
+  GST_OUTPUT_IGST: '2102',
+  GST_INPUT_CGST: '1200',
+  GST_INPUT_SGST: '1201',
+  GST_INPUT_IGST: '1202',
 } as const;
 
 // ═══════════════════════════════════════════════

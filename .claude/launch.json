@@ -3,10 +3,9 @@
   "configurations": [
     {
       "name": "dev",
-      "runtimeExecutable": "/Users/saifraza/Desktop/distillery-erp/.claude/worktrees/nice-cannon/frontend/node_modules/.bin/vite",
-      "runtimeArgs": ["--config", "/Users/saifraza/Desktop/distillery-erp/.claude/worktrees/nice-cannon/frontend/vite.config.ts"],
-      "port": 3000,
-      "autoPort": true
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd backend && npx tsc --outDir dist && cp -r src/templates dist/ && cp -r src/data dist/ && PORT=5001 node dist/server.js"],
+      "port": 5001
     }
   ]
 }

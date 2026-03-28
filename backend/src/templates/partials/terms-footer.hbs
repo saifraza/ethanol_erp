@@ -1,0 +1,17 @@
+{{#if terms.length}}
+<div class="terms-section">
+  <h3>Terms &amp; Conditions:</h3>
+  <ol>
+    {{#each terms}}
+    <li>{{this}}</li>
+    {{/each}}
+  </ol>
+</div>
+{{/if}}
+
+{{#if bankDetails}}
+<div class="bank-section">
+  <h3>Bank Details:</h3>
+  <div class="bank-text">{{bankDetails}}</div>
+</div>
+{{/if}}

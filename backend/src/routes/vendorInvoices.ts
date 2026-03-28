@@ -1,6 +1,7 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, authorize } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize } from '../middleware/auth';
+import { asyncHandler } from '../shared/middleware';
 import PDFDocument from 'pdfkit';
 import { sendEmail } from '../services/messaging';
 import { drawLetterhead } from '../utils/letterhead';
@@ -9,8 +10,7 @@ const router = Router();
 router.use(authenticate as any);
 
 // GET / — list with filters (vendorId, status)
-router.get('/', async (req: Request, res: Response) => {
-  try {
+router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const vendorId = req.query.vendorId as string | undefined;
     const status = req.query.status as string | undefined;
 
@@ -26,15 +26,14 @@ router.get('/', async (req: Request, res: Response) => {
         grn: true,
       },
       orderBy: { invoiceDate: 'desc' },
+      take: 200,
     });
 
     res.json({ invoices });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /outstanding — outstanding vendor invoices grouped by vendor
-router.get('/outstanding', async (req: Request, res: Response) => {
-  try {
+router.get('/outstanding', asyncHandler(async (req: AuthRequest, res: Response) => {
     const invoices = await prisma.vendorInvoice.findMany({
       where: {
         balanceAmount: {
@@ -44,6 +43,7 @@ router.get('/outstanding', async (req: Request, res: Response) => {
       include: {
         vendor: true,
       },
+      take: 500,
     });
 
     // Group by vendor
@@ -62,12 +62,10 @@ router.get('/outstanding', async (req: Request, res: Response) => {
     }
 
     res.json({ outstanding: Object.values(grouped) });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /itc-report — ITC report
-router.get('/itc-report', async (req: Request, res: Response) => {
-  try {
+router.get('/itc-report', asyncHandler(async (req: AuthRequest, res: Response) => {
     const invoices = await prisma.vendorInvoice.findMany({
       where: {
         status: { in: ['VERIFIED', 'APPROVED', 'PAID'] },
@@ -76,6 +74,7 @@ router.get('/itc-report', async (req: Request, res: Response) => {
         vendor: true,
       },
       orderBy: { invoiceDate: 'desc' },
+      take: 500,
     });
 
     const report = invoices.map((inv: any) => ({
@@ -87,12 +86,10 @@ router.get('/itc-report', async (req: Request, res: Response) => {
     }));
 
     res.json({ report });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /:id — single with vendor, po, grn, payments
-router.get('/:id', async (req: Request, res: Response) => {
-  try {
+router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const invoice = await prisma.vendorInvoice.findUnique({
       where: { id: req.params.id },
       include: {
@@ -104,12 +101,10 @@ router.get('/:id', async (req: Request, res: Response) => {
     });
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
     res.json(invoice);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST / — create vendor invoice
-router.post('/', async (req: Request, res: Response) => {
-  try {
+router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
 
     const quantity = parseFloat(b.quantity) || 0;
@@ -208,17 +203,15 @@ router.post('/', async (req: Request, res: Response) => {
         matchStatus,
         status: 'PENDING',
         remarks: b.remarks || null,
-        userId: (req as any).user.id,
+        userId: req.user!.id,
       },
     });
 
     res.status(201).json(invoice);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // PUT /:id — edit vendor invoice (only PENDING status)
-router.put('/:id', async (req: Request, res: Response) => {
-  try {
+router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const existing = await prisma.vendorInvoice.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: 'Invoice not found' });
     if (existing.status !== 'PENDING') {
@@ -272,12 +265,10 @@ router.put('/:id', async (req: Request, res: Response) => {
       },
     });
     res.json(invoice);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // PUT /:id/status — status transitions
-router.put('/:id/status', async (req: Request, res: Response) => {
-  try {
+router.put('/:id/status', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { newStatus } = req.body;
     const invoice = await prisma.vendorInvoice.findUnique({
       where: { id: req.params.id },
@@ -287,7 +278,8 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     const validTransitions: Record<string, string[]> = {
       'PENDING': ['VERIFIED', 'CANCELLED'],
       'VERIFIED': ['APPROVED', 'CANCELLED'],
-      'APPROVED': ['PAID', 'CANCELLED'],
+      'APPROVED': ['PAID', 'PARTIAL_PAID', 'CANCELLED'],
+      'PARTIAL_PAID': ['PAID', 'CANCELLED'],
       'PAID': [],
       'CANCELLED': [],
     };
@@ -302,12 +294,10 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     });
 
     res.json(updated);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // PUT /:id/itc — update ITC status
-router.put('/:id/itc', async (req: Request, res: Response) => {
-  try {
+router.put('/:id/itc', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { itcClaimed, itcClaimedDate, itcReversed, itcReversalReason } = req.body;
     const invoice = await prisma.vendorInvoice.update({
       where: { id: req.params.id },
@@ -319,12 +309,10 @@ router.put('/:id/itc', async (req: Request, res: Response) => {
       },
     });
     res.json(invoice);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /:id/pdf — Generate Vendor Invoice PDF
-router.get('/:id/pdf', async (req: Request, res: Response) => {
-  try {
+router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
     const inv = await prisma.vendorInvoice.findUnique({
       where: { id: req.params.id },
       include: { vendor: true },
@@ -378,12 +366,10 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
     doc.text(`Net Payable: Rs. ${inv.netPayable.toLocaleString('en-IN')}`, { align: 'right' });
 
     doc.end();
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST /:id/send-email — Send Vendor Invoice via email
-router.post('/:id/send-email', async (req: Request, res: Response) => {
-  try {
+router.post('/:id/send-email', asyncHandler(async (req: AuthRequest, res: Response) => {
     const inv = await prisma.vendorInvoice.findUnique({
       where: { id: req.params.id },
       include: { vendor: true },
@@ -428,7 +414,6 @@ router.post('/:id/send-email', async (req: Request, res: Response) => {
     } else {
       res.status(500).json({ error: result.error || 'Email send failed' });
     }
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 export default router;

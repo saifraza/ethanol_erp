@@ -1,14 +1,14 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, authorize } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize } from '../middleware/auth';
+import { asyncHandler } from '../shared/middleware';
 import { getGSTINDetails } from '../services/eInvoice';
 
 const router = Router();
 router.use(authenticate as any);
 
 // GET /gstin-lookup/:gstin — Lookup GSTIN via Saral GSP for vendor auto-fill
-router.get('/gstin-lookup/:gstin', async (req: Request, res: Response) => {
-  try {
+router.get('/gstin-lookup/:gstin', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { gstin } = req.params;
     if (!gstin || gstin.length !== 15) {
       res.status(400).json({ error: 'GSTIN must be exactly 15 characters' });
@@ -47,25 +47,31 @@ router.get('/gstin-lookup/:gstin', async (req: Request, res: Response) => {
     } else {
       res.status(400).json({ success: false, error: result.error || 'GSTIN lookup failed' });
     }
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+}));
 
 // GET / — list all active vendors, ordered by name
-router.get('/', async (req: Request, res: Response) => {
-  try {
+router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const vendors = await prisma.vendor.findMany({
       where: { isActive: true },
       orderBy: { name: 'asc' },
+      take: 500,
     });
     res.json({ vendors });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
+
+// GET /by-item/:itemId — find all vendors who supply a specific item
+router.get('/by-item/:itemId', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const vendorItems = await prisma.vendorItem.findMany({
+      where: { inventoryItemId: req.params.itemId, isActive: true },
+      include: { vendor: { select: { id: true, name: true, vendorCode: true } } },
+      orderBy: [{ isPreferred: 'desc' }, { rate: 'asc' }],
+      take: 50,
+    });
+    res.json(vendorItems);
+}));
 
 // GET /:id — single vendor with outstanding balance and PO count
-router.get('/:id', async (req: Request, res: Response) => {
-  try {
+router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const vendor = await prisma.vendor.findUnique({
       where: { id: req.params.id },
     });
@@ -87,12 +93,10 @@ router.get('/:id', async (req: Request, res: Response) => {
       outstandingBalance,
       poCount,
     });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST / — create vendor
-router.post('/', async (req: Request, res: Response) => {
-  try {
+router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
     const vendor = await prisma.vendor.create({
       data: {
@@ -129,12 +133,10 @@ router.post('/', async (req: Request, res: Response) => {
       },
     });
     res.status(201).json(vendor);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // PUT /:id — update vendor
-router.put('/:id', async (req: Request, res: Response) => {
-  try {
+router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
     const vendor = await prisma.vendor.update({
       where: { id: req.params.id },
@@ -171,37 +173,32 @@ router.put('/:id', async (req: Request, res: Response) => {
       },
     });
     res.json(vendor);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // DELETE /:id — soft delete (isActive: false)
-router.delete('/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
-  try {
+router.delete('/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
     await prisma.vendor.update({
       where: { id: req.params.id },
       data: { isActive: false },
     });
     res.json({ ok: true });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // ─── Vendor Items (what items a vendor supplies + rates) ───
 
 // GET /:id/items — list items this vendor supplies
-router.get('/:id/items', async (req: Request, res: Response) => {
-  try {
+router.get('/:id/items', asyncHandler(async (req: AuthRequest, res: Response) => {
     const items = await prisma.vendorItem.findMany({
       where: { vendorId: req.params.id, isActive: true },
       include: { item: { select: { id: true, name: true, code: true, unit: true, hsnCode: true, gstPercent: true, defaultRate: true } } },
       orderBy: { item: { name: 'asc' } },
+      take: 50,
     });
     res.json(items);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST /:id/items — add item to vendor's supply list
-router.post('/:id/items', async (req: Request, res: Response) => {
-  try {
+router.post('/:id/items', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
     const vendorItem = await prisma.vendorItem.upsert({
       where: { vendorId_inventoryItemId: { vendorId: req.params.id, inventoryItemId: b.inventoryItemId } },
@@ -224,35 +221,19 @@ router.post('/:id/items', async (req: Request, res: Response) => {
       },
     });
     res.status(201).json(vendorItem);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // DELETE /:id/items/:itemId — remove item from vendor's supply list
-router.delete('/:id/items/:itemId', async (req: Request, res: Response) => {
-  try {
+router.delete('/:id/items/:itemId', asyncHandler(async (req: AuthRequest, res: Response) => {
     await prisma.vendorItem.updateMany({
       where: { vendorId: req.params.id, inventoryItemId: req.params.itemId },
       data: { isActive: false },
     });
     res.json({ ok: true });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
-
-// GET /by-item/:itemId — find all vendors who supply a specific item
-router.get('/by-item/:itemId', async (req: Request, res: Response) => {
-  try {
-    const vendorItems = await prisma.vendorItem.findMany({
-      where: { inventoryItemId: req.params.itemId, isActive: true },
-      include: { vendor: { select: { id: true, name: true, vendorCode: true } } },
-      orderBy: [{ isPreferred: 'desc' }, { rate: 'asc' }],
-    });
-    res.json(vendorItems);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST /seed — seed default vendors
-router.post('/seed', authorize('ADMIN') as any, async (req: Request, res: Response) => {
-  try {
+router.post('/seed', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
     const vendors = await prisma.vendor.createMany({
       data: [
         {
@@ -273,7 +254,6 @@ router.post('/seed', authorize('ADMIN') as any, async (req: Request, res: Respon
       skipDuplicates: true,
     });
     res.json({ created: vendors.count });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 export default router;

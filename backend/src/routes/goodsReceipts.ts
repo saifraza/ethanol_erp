@@ -1,6 +1,7 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, authorize } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize } from '../middleware/auth';
+import { asyncHandler } from '../shared/middleware';
 import { onStockMovement } from '../services/autoJournal';
 
 const router = Router();
@@ -105,8 +106,7 @@ async function syncGrnToInventory(
 }
 
 // GET / — list GRNs with filters (poId, vendorId, status)
-router.get('/', async (req: Request, res: Response) => {
-  try {
+router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const poId = req.query.poId as string | undefined;
     const vendorId = req.query.vendorId as string | undefined;
     const status = req.query.status as string | undefined;
@@ -128,15 +128,10 @@ router.get('/', async (req: Request, res: Response) => {
     });
 
     res.json({ grns });
-  } catch (err: any) {
-    console.error('[GRN GET /] Error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
+}));
 
 // GET /pending-pos — list POs with pending quantities
-router.get('/pending-pos', async (req: Request, res: Response) => {
-  try {
+router.get('/pending-pos', asyncHandler(async (req: AuthRequest, res: Response) => {
     const pos = await prisma.purchaseOrder.findMany({
       where: {
         status: {
@@ -153,16 +148,15 @@ router.get('/pending-pos', async (req: Request, res: Response) => {
           },
         },
       },
+      take: 200,
     });
 
     const filtered = pos.filter(po => po.lines.length > 0);
     res.json({ pos: filtered });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /:id — single GRN with lines, po, vendor
-router.get('/:id', async (req: Request, res: Response) => {
-  try {
+router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const grn = await prisma.goodsReceipt.findUnique({
       where: { id: req.params.id },
       include: {
@@ -173,12 +167,10 @@ router.get('/:id', async (req: Request, res: Response) => {
     });
     if (!grn) return res.status(404).json({ error: 'GRN not found' });
     res.json(grn);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST / — create GRN against a PO
-router.post('/', async (req: Request, res: Response) => {
-  try {
+router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
 
     // Get PO for validation
@@ -217,94 +209,94 @@ router.post('/', async (req: Request, res: Response) => {
     const totalAmount = processedLines.reduce((sum: number, line: any) => sum + line.amount, 0);
     const totalQty = processedLines.reduce((sum: number, line: any) => sum + line.acceptedQty, 0);
 
-    // Create GRN — use vendor from PO to avoid frontend mismatch
-    const grn = await prisma.goodsReceipt.create({
-      data: {
-        poId: b.poId,
-        vendorId: po.vendorId,
-        grnDate: b.grnDate ? new Date(b.grnDate) : new Date(),
-        vehicleNo: b.vehicleNo || '',
-        challanNo: b.challanNo || '',
-        challanDate: b.challanDate ? new Date(b.challanDate) : null,
-        ewayBill: b.ewayBill || '',
-        remarks: b.remarks || '',
-        totalAmount,
-        totalQty,
-        status: 'DRAFT',
-        userId: (req as any).user.id,
-        lines: {
-          create: processedLines,
+    // Create GRN, update PO lines, and update PO status in a single transaction
+    const { grn, poStatus } = await prisma.$transaction(async (tx) => {
+      // Step 1: Create GRN with lines
+      const grn = await tx.goodsReceipt.create({
+        data: {
+          poId: b.poId,
+          vendorId: po.vendorId,
+          grnDate: b.grnDate ? new Date(b.grnDate) : new Date(),
+          vehicleNo: b.vehicleNo || '',
+          challanNo: b.challanNo || '',
+          challanDate: b.challanDate ? new Date(b.challanDate) : null,
+          ewayBill: b.ewayBill || '',
+          remarks: b.remarks || '',
+          totalAmount,
+          totalQty,
+          status: 'DRAFT',
+          userId: req.user!.id,
+          lines: {
+            create: processedLines,
+          },
         },
-      },
-      include: { lines: true },
-    });
+        include: { lines: true },
+      });
 
-    // Update PO lines and material stocks
-    for (const line of processedLines) {
-      if (line.poLineId) {
-        const poLine = await prisma.pOLine.findUnique({
-          where: { id: line.poLineId },
-        });
-        if (poLine) {
-          const newReceivedQty = poLine.receivedQty + line.acceptedQty;
-          const newPendingQty = poLine.quantity - newReceivedQty;
-
-          await prisma.pOLine.update({
+      // Step 2: Update PO lines
+      for (const line of processedLines) {
+        if (line.poLineId) {
+          const poLine = await tx.pOLine.findUnique({
             where: { id: line.poLineId },
-            data: {
-              receivedQty: newReceivedQty,
-              pendingQty: newPendingQty,
-            },
           });
+          if (poLine) {
+            const newReceivedQty = poLine.receivedQty + line.acceptedQty;
+            const newPendingQty = poLine.quantity - newReceivedQty;
+
+            await tx.pOLine.update({
+              where: { id: line.poLineId },
+              data: {
+                receivedQty: newReceivedQty,
+                pendingQty: newPendingQty,
+              },
+            });
+          }
         }
       }
 
-      // Stock update handled by syncGrnToInventory (unified material master)
-    }
+      // Step 3: Check and update PO status
+      let poStatus = 'unchanged';
+      const updatedPoLines = await tx.pOLine.findMany({
+        where: { poId: b.poId },
+      });
+      const allFullyReceived = updatedPoLines.every((line: any) => line.pendingQty === 0);
+      const anyPartialReceived = updatedPoLines.some((line: any) => line.receivedQty > 0 && line.pendingQty > 0);
 
-    // Check if all PO lines are fully received
-    const updatedPoLines = await prisma.pOLine.findMany({
-      where: { poId: b.poId },
+      if (allFullyReceived) {
+        await tx.purchaseOrder.update({
+          where: { id: b.poId },
+          data: { status: 'RECEIVED' },
+        });
+        poStatus = 'RECEIVED';
+      } else if (anyPartialReceived) {
+        await tx.purchaseOrder.update({
+          where: { id: b.poId },
+          data: { status: 'PARTIAL_RECEIVED' },
+        });
+        poStatus = 'PARTIAL_RECEIVED';
+      }
+
+      return { grn, poStatus };
     });
-    const allFullyReceived = updatedPoLines.every((line: any) => line.pendingQty === 0);
-    const anyPartialReceived = updatedPoLines.some((line: any) => line.receivedQty > 0 && line.pendingQty > 0);
 
-    if (allFullyReceived) {
-      await prisma.purchaseOrder.update({
-        where: { id: b.poId },
-        data: { status: 'RECEIVED' },
-      });
-    } else if (anyPartialReceived) {
-      await prisma.purchaseOrder.update({
-        where: { id: b.poId },
-        data: { status: 'PARTIAL_RECEIVED' },
-      });
-    }
-
-    // Sync to inventory (new SAP system)
+    // Sync to inventory outside transaction (has its own error handling)
     try {
       await syncGrnToInventory(
         grn.id,
         grn.grnNo,
         processedLines,
         b.warehouseId || null,
-        (req as any).user.id
+        req.user!.id
       );
-    } catch (syncErr: any) {
-      // Log but don't fail the GRN creation
-      console.error('Inventory sync failed:', syncErr.message);
+    } catch (_syncErr: unknown) {
+      // Swallow — don't fail the GRN creation
     }
 
     res.status(201).json(grn);
-  } catch (err: any) {
-    console.error('[GRN POST /] Error:', err.message, err.stack?.split('\n').slice(0, 3).join('\n'));
-    res.status(500).json({ error: err.message });
-  }
-});
+}));
 
 // PUT /:id/quality — update quality status
-router.put('/:id/quality', async (req: Request, res: Response) => {
-  try {
+router.put('/:id/quality', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { qualityStatus, qualityRemarks, inspectedBy } = req.body;
     const grn = await prisma.goodsReceipt.update({
       where: { id: req.params.id },
@@ -316,12 +308,10 @@ router.put('/:id/quality', async (req: Request, res: Response) => {
       include: { lines: true },
     });
     res.json(grn);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // PUT /:id/status — status transitions
-router.put('/:id/status', async (req: Request, res: Response) => {
-  try {
+router.put('/:id/status', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { newStatus } = req.body;
     const grn = await prisma.goodsReceipt.findUnique({
       where: { id: req.params.id },
@@ -345,12 +335,10 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     });
 
     res.json(updated);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // DELETE /:id — delete GRN (DRAFT only), reverse stock and PO line updates
-router.delete('/:id', async (req: Request, res: Response) => {
-  try {
+router.delete('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const grn = await prisma.goodsReceipt.findUnique({
       where: { id: req.params.id },
       include: { lines: true },
@@ -395,7 +383,6 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
     await prisma.goodsReceipt.delete({ where: { id: req.params.id } });
     res.json({ ok: true });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 export default router;

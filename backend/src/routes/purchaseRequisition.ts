@@ -1,13 +1,13 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, authorize } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize } from '../middleware/auth';
+import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
 router.use(authenticate as any);
 
 // GET / — list requisitions (with optional status filter)
-router.get('/', async (req: Request, res: Response) => {
-  try {
+router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { status, urgency } = req.query;
     const where: any = {};
     if (status) where.status = status;
@@ -19,12 +19,10 @@ router.get('/', async (req: Request, res: Response) => {
       take: 200,
     });
     res.json({ requisitions: reqs });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /stats
-router.get('/stats', async (_req: Request, res: Response) => {
-  try {
+router.get('/stats', asyncHandler(async (_req: AuthRequest, res: Response) => {
     const reqs = await prisma.purchaseRequisition.findMany();
     const byStatus: Record<string, number> = {};
     const byUrgency: Record<string, number> = {};
@@ -38,23 +36,19 @@ router.get('/stats', async (_req: Request, res: Response) => {
       if (['DRAFT', 'SUBMITTED'].includes(r.status)) pendingValue += val;
     }
     res.json({ byStatus, byUrgency, total: reqs.length, totalValue, pendingValue });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /:id
-router.get('/:id', async (req: Request, res: Response) => {
-  try {
+router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const pr = await prisma.purchaseRequisition.findUnique({ where: { id: req.params.id } });
     if (!pr) return res.status(404).json({ error: 'Requisition not found' });
     res.json(pr);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST / — create new requisition
-router.post('/', async (req: Request, res: Response) => {
-  try {
+router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
-    const user = (req as any).user;
+    const user = req.user!;
     const pr = await prisma.purchaseRequisition.create({
       data: {
         title: b.title,
@@ -74,12 +68,10 @@ router.post('/', async (req: Request, res: Response) => {
       },
     });
     res.status(201).json(pr);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // PUT /:id — update requisition
-router.put('/:id', async (req: Request, res: Response) => {
-  try {
+router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
     const data: any = {};
     // Editable fields
@@ -97,7 +89,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     if (b.status !== undefined) {
       data.status = b.status;
       if (b.status === 'APPROVED') {
-        data.approvedBy = (req as any).user.name || (req as any).user.email;
+        data.approvedBy = req.user!.name || req.user!.email;
         data.approvedAt = new Date();
       }
       if (b.status === 'REJECTED') {
@@ -110,15 +102,12 @@ router.put('/:id', async (req: Request, res: Response) => {
       data,
     });
     res.json(pr);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // DELETE /:id
-router.delete('/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
-  try {
+router.delete('/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
     await prisma.purchaseRequisition.delete({ where: { id: req.params.id } });
     res.json({ ok: true });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 export default router;

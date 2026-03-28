@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Freight Rate Request</title>{{> base-styles}}</head>
+<body>
+<div class="page">
+  {{> letterhead}}
+  <div class="doc-title">FREIGHT RATE REQUEST</div>
+
+  <div class="details-grid">
+    <div class="detail-row"><span class="detail-label">Inquiry No</span><span class="detail-value bold">FRQ-{{inquiryNo}}</span></div>
+    <div class="detail-row"><span class="detail-label">Date</span><span class="detail-value">{{formatDate createdAt}}</span></div>
+  </div>
+
+  <div class="box" style="margin-top: 8px;">
+    <div class="box-header">Shipment Details</div>
+    <div class="box-body" style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px 20px;">
+      <div class="meta-row"><span class="meta-label">Origin:</span><span class="meta-val">{{origin}}</span></div>
+      <div class="meta-row"><span class="meta-label">Destination:</span><span class="meta-val">{{destination}}</span></div>
+      <div class="meta-row"><span class="meta-label">Product:</span><span class="meta-val">{{productName}}</span></div>
+      <div class="meta-row"><span class="meta-label">Quantity:</span><span class="meta-val">{{formatNum quantity}} {{unit}}</span></div>
+      {{#if distanceKm}}<div class="meta-row"><span class="meta-label">Distance:</span><span class="meta-val">{{distanceKm}} km</span></div>{{/if}}
+      {{#if vehicleType}}<div class="meta-row"><span class="meta-label">Vehicle Type:</span><span class="meta-val">{{vehicleType}}</span></div>{{/if}}
+      {{#if vehicleCount}}<div class="meta-row"><span class="meta-label">Vehicles Needed:</span><span class="meta-val">{{vehicleCount}}</span></div>{{/if}}
+      {{#if loadingDate}}<div class="meta-row"><span class="meta-label">Loading Date:</span><span class="meta-val">{{formatDate loadingDate}}</span></div>{{/if}}
+    </div>
+  </div>
+
+  {{#if remarks}}<div class="remarks-section"><div class="label">Remarks:</div><div class="text">{{remarks}}</div></div>{{/if}}
+
+  <div class="box" style="margin-top: 10px;">
+    <div class="box-header">Quotation Request</div>
+    <div class="box-body">
+      <div style="font-size: 8px; color: #444; line-height: 1.8;">
+        Please provide your best rate for the above shipment. Include the following in your quote:<br>
+        &bull; Rate per MT / per trip / per km<br>
+        &bull; Vehicle type and capacity<br>
+        &bull; Expected transit days<br>
+        &bull; Any additional terms &amp; conditions
+      </div>
+    </div>
+  </div>
+
+  {{> terms-footer}}
+  {{> signatures sigCount=2 sigLabels=(list "For MSPIL" "Transporter") sigNames=(list preparedBy "")}}
+
+  <div class="footer-area">
+    {{#if qrDataUrl}}<div class="qr-block"><img src="{{qrDataUrl}}" alt="QR"><div class="qr-text">Scan to verify this document</div></div>{{/if}}
+    <div class="footer-text">{{footer}}</div>
+  </div>
+</div>
+</body>
+</html>
