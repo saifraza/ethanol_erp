@@ -246,34 +246,55 @@ interface AutoCollectScheduleData {
 let schedules: AutoCollectScheduleData[] = [];
 
 export async function loadSchedules(): Promise<void> {
+  // Try the dedicated AutoCollectSchedule table first
+  let loadedFromTable = false;
   try {
-    // Load from dedicated AutoCollectSchedule table
     const rows = await prisma.autoCollectSchedule.findMany({ take: 50 });
-    schedules = rows.map(r => ({
-      module: r.module,
-      phone: r.phone,
-      intervalMinutes: r.intervalMinutes,
-      enabled: r.enabled,
-      autoShare: r.autoShare,
-      language: r.language,
-    }));
-    console.log('[AutoCollect] Loaded', schedules.length, 'schedule(s) from DB:', JSON.stringify(schedules));
-    const ddgs = schedules.find(s => s.module === 'ddgs');
-    if (ddgs) setDdgsLanguage(ddgs.language || 'hi');
+    if (rows.length > 0) {
+      schedules = rows.map(r => ({
+        module: r.module,
+        phone: r.phone,
+        intervalMinutes: r.intervalMinutes,
+        enabled: r.enabled,
+        autoShare: r.autoShare,
+        language: r.language,
+      }));
+      loadedFromTable = true;
+      console.log('[AutoCollect] Loaded', schedules.length, 'schedule(s) from AutoCollectSchedule table');
+    }
   } catch (err) {
-    // Fallback: try legacy Settings.autoCollectConfig for migration
-    console.warn('[AutoCollect] AutoCollectSchedule table not ready, trying legacy Settings:', (err as Error).message);
+    console.warn('[AutoCollect] AutoCollectSchedule table not ready:', (err as Error).message);
+  }
+
+  // If table was empty or failed, try legacy Settings.autoCollectConfig
+  if (!loadedFromTable) {
     try {
       const settings = await prisma.settings.findFirst();
       const raw = (settings as any)?.autoCollectConfig;
       if (raw) {
-        schedules = JSON.parse(raw);
-        console.log('[AutoCollect] Loaded', schedules.length, 'schedule(s) from legacy Settings');
-        const ddgs = schedules.find(s => s.module === 'ddgs');
-        if (ddgs) setDdgsLanguage((ddgs as any).language || 'hi');
+        const legacy: AutoCollectScheduleData[] = JSON.parse(raw);
+        schedules = legacy;
+        console.log('[AutoCollect] Loaded', legacy.length, 'schedule(s) from legacy Settings, migrating to table...');
+
+        // Migrate legacy data into the new table
+        for (const s of legacy) {
+          try {
+            await prisma.autoCollectSchedule.upsert({
+              where: { module: s.module },
+              create: { module: s.module, phone: s.phone || '', intervalMinutes: s.intervalMinutes || 60, enabled: s.enabled ?? false, autoShare: s.autoShare !== false, language: (s as any).language || 'hi' },
+              update: { phone: s.phone || '', intervalMinutes: s.intervalMinutes || 60, enabled: s.enabled ?? false, autoShare: s.autoShare !== false, language: (s as any).language || 'hi' },
+            });
+          } catch { /* table may not exist yet */ }
+        }
+        console.log('[AutoCollect] Migration complete');
+      } else {
+        console.log('[AutoCollect] No schedules found in DB');
       }
     } catch { /* ignore */ }
   }
+
+  const ddgs = schedules.find(s => s.module === 'ddgs');
+  if (ddgs) setDdgsLanguage(ddgs.language || 'hi');
 }
 
 export async function saveSchedules(newSchedules: AutoCollectScheduleData[]): Promise<void> {
