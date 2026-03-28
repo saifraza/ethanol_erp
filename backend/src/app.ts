@@ -81,6 +81,8 @@ import gateEntryRoutes from './routes/gateEntry';
 // Cash Vouchers & Bank Loans
 import cashVoucherRoutes from './routes/cashVouchers';
 import bankLoanRoutes from './routes/bankLoans';
+// Unified Payments (aggregation views)
+import unifiedPaymentRoutes from './routes/unifiedPayments';
 // Process reports (previously unregistered)
 import dailyEntriesRoutes from './routes/dailyEntries';
 import tankDipsRoutes from './routes/tankDips';
@@ -186,6 +188,8 @@ app.use('/api/chart-of-accounts', chartOfAccountsRoutes);
 app.use('/api/journal-entries', journalEntryRoutes);
 app.use('/api/bank-reconciliation', bankReconciliationRoutes);
 app.use('/api/accounts-reports', accountsReportsRoutes);
+// Unified Payments (aggregation views)
+app.use('/api/unified-payments', unifiedPaymentRoutes);
 // Cash Vouchers & Bank Loans
 app.use('/api/cash-vouchers', cashVoucherRoutes);
 app.use('/api/bank-loans', bankLoanRoutes);
