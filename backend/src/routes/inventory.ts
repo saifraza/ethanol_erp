@@ -53,6 +53,44 @@ router.get('/items/:id', asyncHandler(async (req: AuthRequest, res: Response) =>
   res.json(item);
 }));
 
+// GET /items/:id/details — full item with PO history + transactions
+router.get('/items/:id/details', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const item = await prisma.inventoryItem.findUnique({ where: { id: req.params.id } });
+  if (!item) return res.status(404).json({ error: 'Item not found' });
+
+  // PO history — all PO lines that reference this item
+  const poLines = await prisma.pOLine.findMany({
+    where: { inventoryItemId: req.params.id },
+    take: 20,
+    orderBy: { po: { poDate: 'desc' } },
+    select: {
+      id: true, quantity: true, rate: true, unit: true, receivedQty: true, pendingQty: true, lineTotal: true,
+      po: {
+        select: {
+          id: true, poNo: true, poDate: true, status: true, grandTotal: true,
+          vendor: { select: { id: true, name: true } },
+        },
+      },
+    },
+  });
+
+  // Recent transactions
+  const transactions = await prisma.inventoryTransaction.findMany({
+    where: { itemId: req.params.id },
+    take: 30,
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, type: true, quantity: true, reference: true, remarks: true, createdAt: true },
+  });
+
+  // Rate history (unique rates from PO lines, most recent first)
+  const rateHistory = poLines
+    .filter(p => p.rate > 0)
+    .map(p => ({ rate: p.rate, date: p.po.poDate, vendor: p.po.vendor.name, poNo: p.po.poNo }))
+    .slice(0, 10);
+
+  res.json({ item, poHistory: poLines, transactions, rateHistory });
+}));
+
 // Helper: generate next item code (ITM-00001, ITM-00002, ...)
 async function generateItemCode(): Promise<string> {
   const last = await prisma.inventoryItem.findFirst({

@@ -2,11 +2,13 @@ import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import { Plus, AlertTriangle, Search, X } from 'lucide-react';
 
-const CATEGORIES = ['RAW_MATERIAL', 'SPARE_PART', 'CONSUMABLE', 'CHEMICAL', 'FINISHED_GOOD', 'OTHER'];
-const UNITS = ['kg', 'ltr', 'nos', 'mtr', 'set', 'gm', 'pair', 'roll'];
+const CATEGORIES = ['RAW_MATERIAL', 'SPARE_PART', 'CONSUMABLE', 'CHEMICAL', 'FINISHED_GOOD', 'FUEL', 'PACKING', 'ELECTRICAL', 'MECHANICAL', 'CIVIL', 'OTHER'];
+const UNITS = ['kg', 'ltr', 'nos', 'mtr', 'set', 'gm', 'pair', 'roll', 'pcs', 'box'];
 const CAT_LABELS: Record<string, string> = {
   RAW_MATERIAL: 'Raw Material', SPARE_PART: 'Spare Part', CONSUMABLE: 'Consumable',
-  CHEMICAL: 'Chemical', FINISHED_GOOD: 'Finished Good', OTHER: 'Other',
+  CHEMICAL: 'Chemical', FINISHED_GOOD: 'Finished Good', FUEL: 'Fuel',
+  PACKING: 'Packing', ELECTRICAL: 'Electrical', MECHANICAL: 'Mechanical',
+  CIVIL: 'Civil', OTHER: 'Other',
 };
 
 const CAT_COLORS: Record<string, string> = {
@@ -39,6 +41,24 @@ export default function Inventory() {
   const DEPARTMENTS = ['Production', 'Maintenance', 'Lab', 'Boiler', 'ETP', 'Admin', 'Civil', 'Electrical', 'Other'];
   const [editItem, setEditItem] = useState<Item | null>(null);
   const [editForm, setEditForm] = useState({ name: '', category: '', unit: '', costPerUnit: '', minStock: '', maxStock: '', location: '', supplier: '', remarks: '' });
+
+  // Detail panel
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [detailTab, setDetailTab] = useState<'info' | 'po' | 'txn'>('info');
+  const [detailData, setDetailData] = useState<{ item: Item; poHistory: any[]; transactions: any[]; rateHistory: any[] } | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  const openDetail = async (itemId: string) => {
+    if (detailId === itemId) { setDetailId(null); return; }
+    setDetailId(itemId);
+    setDetailTab('info');
+    setDetailLoading(true);
+    try {
+      const res = await api.get(`/inventory/items/${itemId}/details`);
+      setDetailData(res.data);
+    } catch { setDetailData(null); }
+    setDetailLoading(false);
+  };
   const [form, setForm] = useState({
     name: '', category: 'RAW_MATERIAL', unit: 'kg',
     currentStock: '', minStock: '', maxStock: '', costPerUnit: '',
@@ -268,7 +288,9 @@ export default function Inventory() {
                       <React.Fragment key={item.id}>
                         <tr className={`border-b border-slate-100 hover:bg-blue-50/40 ${item.currentStock <= item.minStock && item.minStock > 0 ? 'bg-red-50/50' : 'even:bg-slate-50/50'}`}>
                           <td className="px-3 py-1.5 font-mono text-xs text-slate-600 border-r border-slate-100">{item.code}</td>
-                          <td className="px-3 py-1.5 font-medium text-slate-800 border-r border-slate-100">{item.name}</td>
+                          <td className="px-3 py-1.5 font-medium border-r border-slate-100">
+                            <button onClick={() => openDetail(item.id)} className="text-left text-blue-700 hover:text-blue-900 hover:underline">{item.name}</button>
+                          </td>
                           <td className="px-3 py-1.5 border-r border-slate-100">
                             <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-blue-200 bg-blue-50 text-blue-700">{CAT_LABELS[item.category]}</span>
                           </td>
@@ -339,6 +361,151 @@ export default function Inventory() {
                                     </span>
                                   ))}
                                 </div>
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                        {/* Detail Panel */}
+                        {detailId === item.id && (
+                          <tr>
+                            <td colSpan={8} className="bg-white border-b-2 border-blue-300 px-0 py-0">
+                              {detailLoading ? (
+                                <div className="p-6 text-center text-xs text-slate-400">Loading details...</div>
+                              ) : detailData ? (
+                                <div>
+                                  {/* Tabs */}
+                                  <div className="flex border-b border-slate-200 bg-slate-50">
+                                    {(['info', 'po', 'txn'] as const).map(t => (
+                                      <button key={t} onClick={() => setDetailTab(t)}
+                                        className={`px-4 py-2 text-[11px] font-bold uppercase tracking-widest border-b-2 ${detailTab === t ? 'border-blue-600 text-blue-700 bg-white' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+                                        {t === 'info' ? 'Item Info' : t === 'po' ? `PO History (${detailData.poHistory.length})` : `Transactions (${detailData.transactions.length})`}
+                                      </button>
+                                    ))}
+                                    <div className="flex-1" />
+                                    <button onClick={() => setDetailId(null)} className="px-3 text-slate-400 hover:text-slate-600"><X size={14} /></button>
+                                  </div>
+
+                                  {/* Info Tab */}
+                                  {detailTab === 'info' && (
+                                    <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+                                      {[
+                                        { label: 'Code', value: detailData.item.code },
+                                        { label: 'Category', value: CAT_LABELS[detailData.item.category] || detailData.item.category },
+                                        { label: 'Unit', value: detailData.item.unit },
+                                        { label: 'Current Stock', value: `${detailData.item.currentStock} ${detailData.item.unit}` },
+                                        { label: 'Min Stock', value: String(detailData.item.minStock) },
+                                        { label: 'Max Stock', value: String(detailData.item.maxStock || '--') },
+                                        { label: 'Cost/Unit', value: `\u20B9${detailData.item.costPerUnit}` },
+                                        { label: 'Location', value: detailData.item.location || '--' },
+                                        { label: 'Supplier', value: detailData.item.supplier || '--' },
+                                        { label: 'Remarks', value: detailData.item.remarks || '--' },
+                                      ].map(f => (
+                                        <div key={f.label}>
+                                          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{f.label}</div>
+                                          <div className="text-xs text-slate-800 font-medium mt-0.5">{f.value}</div>
+                                        </div>
+                                      ))}
+                                      {/* Rate History */}
+                                      {detailData.rateHistory.length > 0 && (
+                                        <div className="col-span-2 md:col-span-4 mt-2 border-t border-slate-100 pt-2">
+                                          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Rate History (from POs)</div>
+                                          <div className="flex gap-2 flex-wrap">
+                                            {detailData.rateHistory.map((r: any, i: number) => (
+                                              <span key={i} className="text-[10px] bg-slate-50 border border-slate-200 px-2 py-1 font-mono">
+                                                {'\u20B9'}{r.rate} <span className="text-slate-400">({r.vendor}, PO-{r.poNo}, {new Date(r.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })})</span>
+                                              </span>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* PO History Tab */}
+                                  {detailTab === 'po' && (
+                                    <div className="overflow-x-auto">
+                                      {detailData.poHistory.length === 0 ? (
+                                        <div className="p-6 text-center text-xs text-slate-400">No purchase orders for this item</div>
+                                      ) : (
+                                        <table className="w-full text-xs">
+                                          <thead>
+                                            <tr className="bg-slate-100 border-b border-slate-200">
+                                              <th className="text-left px-3 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest">PO#</th>
+                                              <th className="text-left px-3 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest">Date</th>
+                                              <th className="text-left px-3 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest">Vendor</th>
+                                              <th className="text-right px-3 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest">Qty</th>
+                                              <th className="text-right px-3 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest">Rate</th>
+                                              <th className="text-right px-3 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest">Received</th>
+                                              <th className="text-left px-3 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest">Status</th>
+                                              <th className="text-left px-3 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest">PDF</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {detailData.poHistory.map((p: any) => (
+                                              <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50">
+                                                <td className="px-3 py-1.5 font-mono text-blue-700">PO-{p.po.poNo}</td>
+                                                <td className="px-3 py-1.5 text-slate-600">{new Date(p.po.poDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</td>
+                                                <td className="px-3 py-1.5 text-slate-800 font-medium">{p.po.vendor.name}</td>
+                                                <td className="px-3 py-1.5 text-right font-mono tabular-nums">{p.quantity} {p.unit}</td>
+                                                <td className="px-3 py-1.5 text-right font-mono tabular-nums">{'\u20B9'}{p.rate}</td>
+                                                <td className="px-3 py-1.5 text-right font-mono tabular-nums">{p.receivedQty || 0}</td>
+                                                <td className="px-3 py-1.5">
+                                                  <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
+                                                    p.po.status === 'RECEIVED' || p.po.status === 'CLOSED' ? 'border-green-300 bg-green-50 text-green-700' :
+                                                    p.po.status === 'APPROVED' || p.po.status === 'SENT' ? 'border-blue-300 bg-blue-50 text-blue-700' :
+                                                    'border-slate-300 bg-slate-50 text-slate-600'
+                                                  }`}>{p.po.status}</span>
+                                                </td>
+                                                <td className="px-3 py-1.5">
+                                                  <a href={`/api/purchase-orders/${p.po.id}/pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noreferrer"
+                                                    className="text-[10px] text-blue-600 hover:underline">View</a>
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* Transactions Tab */}
+                                  {detailTab === 'txn' && (
+                                    <div className="overflow-x-auto">
+                                      {detailData.transactions.length === 0 ? (
+                                        <div className="p-6 text-center text-xs text-slate-400">No transactions</div>
+                                      ) : (
+                                        <table className="w-full text-xs">
+                                          <thead>
+                                            <tr className="bg-slate-100 border-b border-slate-200">
+                                              <th className="text-left px-3 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest">Date</th>
+                                              <th className="text-left px-3 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest">Type</th>
+                                              <th className="text-right px-3 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest">Qty</th>
+                                              <th className="text-left px-3 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest">Reference</th>
+                                              <th className="text-left px-3 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest">Remarks</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {detailData.transactions.map((t: any) => (
+                                              <tr key={t.id} className="border-b border-slate-100">
+                                                <td className="px-3 py-1.5 text-slate-600">{new Date(t.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}</td>
+                                                <td className="px-3 py-1.5">
+                                                  <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
+                                                    t.type === 'IN' ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : t.type === 'OUT' ? 'border-red-300 bg-red-50 text-red-700' : 'border-amber-300 bg-amber-50 text-amber-700'
+                                                  }`}>{t.type}</span>
+                                                </td>
+                                                <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold">{t.quantity}</td>
+                                                <td className="px-3 py-1.5 text-slate-500">{t.reference || '--'}</td>
+                                                <td className="px-3 py-1.5 text-slate-400">{t.remarks || '--'}</td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="p-6 text-center text-xs text-red-400">Failed to load details</div>
                               )}
                             </td>
                           </tr>

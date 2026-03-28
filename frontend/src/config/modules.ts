@@ -91,7 +91,6 @@ export const MODULE_DEFS: ModuleDef[] = [
 
   // ── INVENTORY (SAP-style Store Management) ──
   { key: 'inventory-store', label: 'Inventory & Store', to: '/inventory', icon: Warehouse, group: 'inventory' },
-  { key: 'material-master', label: 'Item Master', to: '/inventory/items', icon: Box, group: 'inventory' },
   { key: 'warehouses', label: 'Warehouses', to: '/inventory/warehouses', icon: Warehouse, group: 'inventory' },
   { key: 'stock-movements', label: 'Goods Movement', to: '/inventory/movements', icon: ArrowRightLeft, group: 'inventory' },
   { key: 'stock-ledger', label: 'Stock Ledger', to: '/inventory/ledger', icon: BookOpen, group: 'inventory' },
