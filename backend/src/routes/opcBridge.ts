@@ -229,6 +229,25 @@ router.get('/health', asyncHandler(async (_req: AuthRequest, res: Response) => {
   res.json({ status: 'ok', online, monitoredTags: monitoredCount, lastScan, lastSync });
 }));
 
+// GET /api/opc/bridge-health — Proxy to factory bridge's /health endpoint via Tailscale
+router.get('/bridge-health', asyncHandler(async (_req: AuthRequest, res: Response) => {
+  const BRIDGE_URL = process.env.OPC_BRIDGE_URL || 'http://100.74.209.72:8099';
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    const resp = await fetch(`${BRIDGE_URL}/health`, { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!resp.ok) {
+      res.json({ reachable: false, error: `Bridge returned ${resp.status}` });
+      return;
+    }
+    const data = await resp.json();
+    res.json({ reachable: true, ...data });
+  } catch (err) {
+    res.json({ reachable: false, error: (err as Error).message });
+  }
+}));
+
 // GET /api/opc/monitor — List monitored tags
 router.get('/monitor', asyncHandler(async (_req: AuthRequest, res: Response) => {
   const opc = getOpcPrisma();
