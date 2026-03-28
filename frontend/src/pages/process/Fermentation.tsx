@@ -405,10 +405,10 @@ export default function Fermentation() {
   /* ── OPC Live Data ── */
   // Maps vessel labels to OPC tags for level and temp
   const OPC_TAG_MAP: Record<string, { level?: string; temp?: string }> = {
-    'F-1':  { level: 'LT130101', temp: 'TE130101' },
-    'F-2':  { level: 'LT130201', temp: 'TE130201' },
+    'F-1':  { level: 'LT130201', temp: 'TE130201' },
+    'F-2':  { level: 'LT130202', temp: 'TE130202' },
     'F-3':  { level: 'LT130301', temp: 'TE130301' },
-    'F-4':  { level: 'LT130302' },
+    'F-4':  { level: 'LT130302', temp: 'TE130302' },
     'BW-1': { level: 'LT130401' },
   };
 
