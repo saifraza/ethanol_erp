@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../services/api';
-import { Plus, AlertTriangle, Search, X } from 'lucide-react';
+import { Plus, AlertTriangle, Search, X, Star, UserPlus } from 'lucide-react';
 
 const CATEGORIES = ['RAW_MATERIAL', 'SPARE_PART', 'CONSUMABLE', 'CHEMICAL', 'FINISHED_GOOD', 'FUEL', 'PACKING', 'ELECTRICAL', 'MECHANICAL', 'CIVIL', 'OTHER'];
 const UNITS = ['kg', 'ltr', 'nos', 'mtr', 'set', 'gm', 'pair', 'roll', 'pcs', 'box'];
@@ -28,6 +28,65 @@ interface Item {
   transactions?: any[];
 }
 
+interface VendorOption { id: string; name: string; gstin?: string | null; }
+interface LinkedVendor { id: string; rate: number; isPreferred: boolean; vendor: VendorOption; }
+
+/** Searchable vendor dropdown with "Add New" option */
+function VendorSelect({ value, onChange, vendors, onAddNew }: {
+  value: string;
+  onChange: (name: string, vendorId?: string) => void;
+  vendors: VendorOption[];
+  onAddNew: () => void;
+}) {
+  const [query, setQuery] = useState(value);
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { setQuery(value); }, [value]);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const filtered = vendors.filter(v =>
+    v.name.toLowerCase().includes(query.toLowerCase()) ||
+    (v.gstin && v.gstin.includes(query))
+  ).slice(0, 10);
+
+  return (
+    <div ref={ref} className="relative">
+      <input
+        className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
+        value={query}
+        onChange={e => { setQuery(e.target.value); onChange(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        placeholder="Type to search vendors..."
+      />
+      {open && query.length > 0 && (
+        <div className="absolute z-50 w-full bg-white border border-slate-300 shadow-lg max-h-48 overflow-y-auto mt-0.5">
+          {filtered.map(v => (
+            <button key={v.id} type="button"
+              className="w-full text-left px-3 py-1.5 text-xs hover:bg-blue-50 border-b border-slate-100 flex justify-between"
+              onClick={() => { onChange(v.name, v.id); setQuery(v.name); setOpen(false); }}>
+              <span className="font-medium text-slate-800">{v.name}</span>
+              {v.gstin && <span className="text-[9px] text-slate-400 font-mono">{v.gstin}</span>}
+            </button>
+          ))}
+          {filtered.length === 0 && (
+            <div className="px-3 py-2 text-xs text-slate-400">No vendors match "{query}"</div>
+          )}
+          <button type="button" onClick={() => { setOpen(false); onAddNew(); }}
+            className="w-full text-left px-3 py-1.5 text-xs text-blue-600 font-medium hover:bg-blue-50 flex items-center gap-1 border-t border-slate-200">
+            <UserPlus size={12} /> Add New Vendor
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Inventory() {
   const [items, setItems] = useState<Item[]>([]);
   const [alerts, setAlerts] = useState<Item[]>([]);
@@ -41,6 +100,61 @@ export default function Inventory() {
   const DEPARTMENTS = ['Production', 'Maintenance', 'Lab', 'Boiler', 'ETP', 'Admin', 'Civil', 'Electrical', 'Other'];
   const [editItem, setEditItem] = useState<Item | null>(null);
   const [editForm, setEditForm] = useState({ name: '', category: '', unit: '', costPerUnit: '', minStock: '', maxStock: '', location: '', supplier: '', remarks: '' });
+
+  // Vendors
+  const [vendors, setVendors] = useState<VendorOption[]>([]);
+  const [linkedVendors, setLinkedVendors] = useState<LinkedVendor[]>([]);
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [quickVendor, setQuickVendor] = useState({ name: '', gstin: '' });
+
+  const loadVendors = useCallback(async () => {
+    try {
+      const res = await api.get('/vendors');
+      setVendors(res.data.map((v: any) => ({ id: v.id, name: v.name, gstin: v.gstin })));
+    } catch { /* vendors not available */ }
+  }, []);
+
+  useEffect(() => { loadVendors(); }, [loadVendors]);
+
+  const loadLinkedVendors = async (itemId: string) => {
+    try {
+      const res = await api.get(`/inventory/items/${itemId}/vendors`);
+      setLinkedVendors(res.data);
+    } catch { setLinkedVendors([]); }
+  };
+
+  const linkVendor = async (itemId: string, vendorId: string, isPreferred: boolean) => {
+    try {
+      await api.post(`/inventory/items/${itemId}/vendors`, { vendorId, rate: 0, isPreferred });
+      loadLinkedVendors(itemId);
+      load();
+    } catch (e: any) { alert(e.response?.data?.error || 'Error linking vendor'); }
+  };
+
+  const unlinkVendor = async (itemId: string, vendorId: string) => {
+    try {
+      await api.delete(`/inventory/items/${itemId}/vendors/${vendorId}`);
+      loadLinkedVendors(itemId);
+    } catch { /* ignore */ }
+  };
+
+  const togglePreferred = async (itemId: string, vendorId: string) => {
+    try {
+      await api.post(`/inventory/items/${itemId}/vendors`, { vendorId, rate: 0, isPreferred: true });
+      loadLinkedVendors(itemId);
+      load();
+    } catch { /* ignore */ }
+  };
+
+  const handleQuickAddVendor = async () => {
+    if (!quickVendor.name.trim()) return;
+    try {
+      const res = await api.post('/inventory/vendors/quick', quickVendor);
+      setVendors(prev => [...prev, { id: res.data.id, name: res.data.name, gstin: res.data.gstin }]);
+      setShowQuickAdd(false);
+      setQuickVendor({ name: '', gstin: '' });
+    } catch (e: any) { alert(e.response?.data?.error || 'Error adding vendor'); }
+  };
 
   // Detail panel
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -111,6 +225,7 @@ export default function Inventory() {
       maxStock: String(item.maxStock || ''), location: item.location || '',
       supplier: item.supplier || '', remarks: item.remarks || '',
     });
+    loadLinkedVendors(item.id);
   };
 
   const handleEdit = async () => {
@@ -233,7 +348,12 @@ export default function Inventory() {
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Supplier</label>
-                    <input className="w-full border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400" value={form.supplier} onChange={e => setForm({ ...form, supplier: e.target.value })} />
+                    <VendorSelect
+                      value={form.supplier}
+                      onChange={(name) => setForm({ ...form, supplier: name })}
+                      vendors={vendors}
+                      onAddNew={() => setShowQuickAdd(true)}
+                    />
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Lead Time (Days)</label>
@@ -588,9 +708,31 @@ export default function Inventory() {
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Location</label>
                   <input className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" value={editForm.location} onChange={e => setEditForm({ ...editForm, location: e.target.value })} />
                 </div>
-                <div>
+                <div className="col-span-2">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Supplier</label>
-                  <input className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" value={editForm.supplier} onChange={e => setEditForm({ ...editForm, supplier: e.target.value })} />
+                  <VendorSelect
+                    value={editForm.supplier}
+                    onChange={(name, vendorId) => {
+                      setEditForm({ ...editForm, supplier: name });
+                      if (vendorId && editItem) linkVendor(editItem.id, vendorId, linkedVendors.length === 0);
+                    }}
+                    vendors={vendors}
+                    onAddNew={() => setShowQuickAdd(true)}
+                  />
+                  {/* Linked vendors chips */}
+                  {linkedVendors.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {linkedVendors.map(lv => (
+                        <span key={lv.id} className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 border ${lv.isPreferred ? 'border-amber-300 bg-amber-50 text-amber-800' : 'border-slate-300 bg-slate-50 text-slate-600'}`}>
+                          <button type="button" onClick={() => editItem && togglePreferred(editItem.id, lv.vendor.id)} title="Set as preferred">
+                            <Star size={10} className={lv.isPreferred ? 'fill-amber-400 text-amber-400' : 'text-slate-300'} />
+                          </button>
+                          {lv.vendor.name}
+                          <button type="button" onClick={() => editItem && unlinkVendor(editItem.id, lv.vendor.id)} className="text-slate-400 hover:text-red-500"><X size={10} /></button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="col-span-2">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label>
@@ -604,6 +746,34 @@ export default function Inventory() {
                 <button onClick={() => setEditItem(null)} className="px-3 py-1 bg-slate-200 text-slate-700 text-[11px] font-medium hover:bg-slate-300">Cancel</button>
                 <button onClick={handleEdit} disabled={saving} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">{saving ? 'Saving...' : 'Save'}</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Add Vendor Modal */}
+      {showQuickAdd && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white shadow-2xl w-full max-w-sm mx-4">
+            <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-widest">Add New Vendor</span>
+              <button onClick={() => setShowQuickAdd(false)} className="text-slate-400 hover:text-white"><X size={16} /></button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Vendor Name *</label>
+                <input className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
+                  value={quickVendor.name} onChange={e => setQuickVendor({ ...quickVendor, name: e.target.value })} placeholder="ABC Chemicals Ltd" />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">GSTIN (optional)</label>
+                <input className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400 font-mono"
+                  value={quickVendor.gstin} onChange={e => setQuickVendor({ ...quickVendor, gstin: e.target.value.toUpperCase() })} placeholder="23AAECM3666P1Z1" maxLength={15} />
+              </div>
+            </div>
+            <div className="border-t border-slate-200 px-4 py-3 flex justify-end gap-2">
+              <button onClick={() => setShowQuickAdd(false)} className="px-3 py-1 bg-slate-200 text-slate-700 text-[11px] font-medium hover:bg-slate-300">Cancel</button>
+              <button onClick={handleQuickAddVendor} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">Add Vendor</button>
             </div>
           </div>
         </div>
