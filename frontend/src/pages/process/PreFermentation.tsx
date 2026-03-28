@@ -339,7 +339,7 @@ export default function PreFermentation() {
         <h4 className="text-sm font-semibold mb-2">Lab Trend (from T0)</h4>
         <ResponsiveContainer width="100%" height={220}>
           <LineChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" tick={{ fontSize: 10 }} /><YAxis tick={{ fontSize: 11 }} /><Tooltip /><Legend />
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" /><XAxis dataKey="name" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} /><YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} /><Tooltip contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px' }} labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }} itemStyle={{ padding: '1px 0' }} /><Legend verticalAlign="top" height={30} iconType="plainline" wrapperStyle={{ fontSize: 10, color: '#64748b' }} />
             <Line type="monotone" dataKey="Gravity" stroke="#6366f1" strokeWidth={2} dot={{ r: 3 }} />
             <Line type="monotone" dataKey="pH" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
             <Line type="monotone" dataKey="RS" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} />
