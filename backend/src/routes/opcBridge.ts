@@ -195,16 +195,77 @@ router.post('/push-hourly', validate(pushHourlySchema), asyncHandler(async (req:
 // ==========================================================================
 
 // GET /api/opc/monitor/pull — Factory pulls tag list from cloud (cloud-as-master)
+// Includes alarm limits + pushToCloud flag so bridge knows what to monitor locally
 router.get('/monitor/pull', asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!checkPushKey(req, res)) return;
   const opc = getOpcPrisma();
-  const tags = await opc.opcMonitoredTag.findMany({
-    where: { active: true },
-    orderBy: { area: 'asc' },
-    take: 500,
-    select: { tag: true, area: true, folder: true, tagType: true, label: true },
-  });
+  let tags: Array<Record<string, unknown>>;
+  try {
+    tags = await opc.opcMonitoredTag.findMany({
+      where: { active: true },
+      orderBy: { area: 'asc' },
+      take: 500,
+      select: { tag: true, area: true, folder: true, tagType: true, label: true, hhAlarm: true, llAlarm: true, pushToCloud: true },
+    });
+  } catch {
+    // Fallback if pushToCloud column doesn't exist yet
+    tags = await opc.opcMonitoredTag.findMany({
+      where: { active: true },
+      orderBy: { area: 'asc' },
+      take: 500,
+      select: { tag: true, area: true, folder: true, tagType: true, label: true },
+    });
+  }
   res.json({ tags, count: tags.length });
+}));
+
+// POST /api/opc/alarm-notify — Bridge sends alarm notification when threshold breached locally
+const alarmNotifySchema = z.object({
+  tag: z.string().min(1),
+  label: z.string().default(''),
+  value: z.number(),
+  limit: z.number(),
+  alarmType: z.enum(['HH', 'LL']),
+  scannedAt: z.string().optional(),
+});
+
+router.post('/alarm-notify', validate(alarmNotifySchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!checkPushKey(req, res)) return;
+  const opc = getOpcPrisma();
+  const { tag, label, value, limit, alarmType } = req.body;
+
+  // Log alarm to OpcAlarmLog
+  try {
+    await opc.opcAlarmLog.create({
+      data: { tag, label, value, limit, alarmType },
+    });
+  } catch {
+    // Table may not exist in Prisma client yet — use raw SQL
+    await opc.$executeRawUnsafe(
+      `INSERT INTO "OpcAlarmLog" (id, tag, label, value, "limit", "alarmType", "sentAt") VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, NOW())`,
+      tag, label, value, limit, alarmType
+    );
+  }
+
+  // Send WhatsApp alert
+  const prismaMain = (await import('../config/prisma')).default;
+  const settings = await prismaMain.settings.findFirst();
+  const groupJid = (settings as any)?.whatsappGroupJid;
+
+  if (groupJid) {
+    const ist = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+    const timeStr = `${String(ist.getUTCHours()).padStart(2, '0')}:${String(ist.getUTCMinutes()).padStart(2, '0')}:${String(ist.getUTCSeconds()).padStart(2, '0')}`;
+    const emoji = alarmType === 'HH' ? '🔴' : '🔵';
+    const message = `${emoji} *OPC ${alarmType} ALARM* (${timeStr} IST)\n\n*${label || tag}*: ${value.toFixed(2)} (limit: ${limit})\n\n_Local alarm from factory bridge_`;
+
+    const { waSendGroup } = await import('../services/whatsappClient');
+    await waSendGroup(groupJid, message, 'opc-alarm').catch((err: Error) =>
+      console.error('[OPC] WhatsApp alarm send failed:', err.message)
+    );
+  }
+
+  console.log(`[OPC] Alarm: ${alarmType} on ${tag} (${label}): ${value} vs limit ${limit}`);
+  res.json({ ok: true, logged: true, whatsappSent: !!groupJid });
 }));
 
 // ==========================================================================

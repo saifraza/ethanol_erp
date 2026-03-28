@@ -19,6 +19,7 @@ model OpcMonitoredTag {
   description String   @default("")
   hhAlarm     Float?   // High-High alarm limit
   llAlarm     Float?   // Low-Low alarm limit
+  pushToCloud Boolean  @default(true)  // true=push readings to cloud, false=local alarm only
   active      Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -68,4 +69,19 @@ model OpcSyncLog {
   syncedAt  DateTime @default(now())
 
   @@index([syncType, syncedAt])
+}
+
+// Alarm log — permanent record of all alarms fired (local or cloud)
+model OpcAlarmLog {
+  id           String   @id @default(uuid())
+  tag          String
+  label        String   @default("")
+  value        Float
+  limit        Float
+  alarmType    String   // 'HH' or 'LL'
+  acknowledged Boolean  @default(false)
+  sentAt       DateTime @default(now())
+
+  @@index([tag, sentAt])
+  @@index([sentAt])
 }
