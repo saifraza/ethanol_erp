@@ -467,8 +467,9 @@ export default function Fermentation() {
         try {
           const prop = mapping.level!.startsWith('FCV') ? 'PV' : 'IO_VALUE';
           const res = await api.get(`/opc/history/${mapping.level}?hours=24&property=${prop}`);
-          if (Array.isArray(res.data) && res.data.length > 0) {
-            allHistory[vessel] = res.data;
+          const readings = res.data?.readings || (Array.isArray(res.data) ? res.data : []);
+          if (readings.length > 0) {
+            allHistory[vessel] = readings;
           }
         } catch { /* skip */ }
       }));
@@ -1404,6 +1405,34 @@ export default function Fermentation() {
                   </div>
                   );
                 })()}
+
+                {/* OPC Level & Temp History */}
+                {opcHistory[v.label]?.length > 0 && (
+                  <div className="mt-4">
+                    <div className="bg-white border border-slate-300 p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">OPC Level Trend (24h)</span>
+                        {opcData[v.label]?.level != null && <span className="text-[10px] font-bold text-green-700 bg-green-50 px-1.5 py-0.5 border border-green-200">Live: {opcData[v.label].level}%</span>}
+                      </div>
+                      <ResponsiveContainer width="100%" height={200}>
+                        <ComposedChart data={opcHistory[v.label].map(d => {
+                          const hr = new Date(d.hour);
+                          const ist = new Date(hr.getTime() + 5.5 * 60 * 60 * 1000);
+                          return { ...d, time: `${String(ist.getUTCHours()).padStart(2,'0')}:${String(ist.getUTCMinutes()).padStart(2,'0')}` };
+                        })}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                          <XAxis dataKey="time" tick={{ fontSize: 8, fill: '#64748b' }} tickLine={false} />
+                          <YAxis tick={{ fontSize: 8, fill: '#64748b' }} tickLine={false} domain={[0, 100]} />
+                          <Tooltip contentStyle={{ fontSize: 11, border: '1px solid #94a3b8', background: '#fff', padding: '6px 10px' }} />
+                          <Line type="monotone" dataKey="avg" stroke="#1e40af" strokeWidth={2} dot={{ r: 2, fill: '#1e40af' }} name="Level %" connectNulls />
+                          <Line type="monotone" dataKey="max" stroke="#dc2626" strokeWidth={1} dot={false} strokeDasharray="4 3" name="Max" />
+                          <Line type="monotone" dataKey="min" stroke="#0891b2" strokeWidth={1} dot={false} strokeDasharray="4 3" name="Min" />
+                          {opcHistory[v.label].length > 12 && <Brush dataKey="time" height={15} stroke="#94a3b8" fill="#f8fafc" travellerWidth={6} />}
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                )}
 
               </>
             )}
