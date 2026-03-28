@@ -73,10 +73,10 @@ const TAG_CATALOG: Record<string, Record<string, { folder: string; type: string;
       FCV_120101: 'FCV 120101', FCV_120102: 'FCV 120102', FCV_120103: 'FCV 120103',
     }},
     ANALOG: { folder: 'ANALOG', type: 'analog', tags: {
-      LT_120101: 'Level 120101', LT_120102: 'Level 120102', LT_120103: 'Level 120103',
+      LT_120101: 'Level 120101', LT_120102: 'FLT Level', LT_120103: 'ILT Level',
       LT_120104: 'Level 120104', LT_120201: 'Level 120201',
       PT_120101: 'Pressure 120101', PT_120201: 'Pressure 120201',
-      TE_120101: 'Temp 120101', TE_120201: 'Temp 120201',
+      TE_120101: 'FLT Temp', TE_120201: 'ILT Temp',
     }},
   },
   MSDH: {
