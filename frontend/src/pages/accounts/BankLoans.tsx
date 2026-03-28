@@ -39,10 +39,11 @@ interface BankLoan {
 
 interface LoanSummary {
   totalOutstanding: number;
-  monthlyEmiBurden: number;
-  nextDueDate: string | null;
-  nextDueAmount: number;
+  monthlyEMIBurden: number;
+  nextPayment: { dueDate: string; totalAmount: number; loan: { loanNo: string; bankName: string } } | null;
   activeCount: number;
+  closedCount: number;
+  restructuredCount: number;
 }
 
 const LOAN_TYPES = [
@@ -281,15 +282,15 @@ export default function BankLoans() {
             </div>
             <div className="bg-white px-4 py-3 border-r border-b md:border-b-0 border-slate-300 border-l-4 border-l-amber-500">
               <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Monthly EMI Burden</div>
-              <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmtCurrency(summary.monthlyEmiBurden)}</div>
+              <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmtCurrency(summary.monthlyEMIBurden)}</div>
             </div>
             <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-blue-500">
               <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Next Due</div>
               <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">
-                {summary.nextDueDate ? fmtCurrency(summary.nextDueAmount) : '--'}
+                {summary.nextPayment ? fmtCurrency(summary.nextPayment.totalAmount) : '--'}
               </div>
-              {summary.nextDueDate && (
-                <div className="text-[10px] text-slate-400 mt-0.5">{fmtDate(summary.nextDueDate)}</div>
+              {summary.nextPayment && (
+                <div className="text-[10px] text-slate-400 mt-0.5">{fmtDate(summary.nextPayment.dueDate)}</div>
               )}
             </div>
             <div className="bg-white px-4 py-3 border-l-4 border-l-green-500">

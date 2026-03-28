@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { FileText, Save, Loader2, Plus, Trash2, ChevronDown, CheckCircle, AlertCircle, RotateCcw } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { FileText, Save, Loader2, Plus, Trash2, ChevronDown, CheckCircle, AlertCircle, RotateCcw, Eye, Download, X } from 'lucide-react';
 import api from '../services/api';
 
 interface Template {
@@ -9,7 +9,7 @@ interface Template {
   terms: string[];
   footer: string;
   bankDetails: string | null;
-  companyInfo: any;
+  companyInfo: unknown;
   remarks: string | null;
 }
 
@@ -27,21 +27,24 @@ export default function DocumentTemplates() {
   const [saving, setSaving] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
-
-  // Editing state per template
   const [editData, setEditData] = useState<Record<string, Template>>({});
+
+  // Preview state
+  const [previewDocType, setPreviewDocType] = useState<string | null>(null);
+  const [previewHtml, setPreviewHtml] = useState<string>('');
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   const flash = (type: 'ok' | 'err', text: string) => {
     setMsg({ type, text });
     setTimeout(() => setMsg(null), 4000);
   };
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       setLoading(true);
       const res = await api.get('/document-templates');
       setTemplates(res.data.templates);
-      // Initialize edit data
       const ed: Record<string, Template> = {};
       res.data.templates.forEach((t: Template) => { ed[t.docType] = { ...t }; });
       setEditData(ed);
@@ -50,9 +53,9 @@ export default function DocumentTemplates() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
 
   const save = async (docType: string) => {
     const data = editData[docType];
@@ -68,14 +71,15 @@ export default function DocumentTemplates() {
       });
       flash('ok', `${DOC_TYPE_LABELS[docType]?.label || docType} template saved`);
       load();
-    } catch (e: any) {
-      flash('err', e.response?.data?.error || 'Save failed');
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { error?: string } } };
+      flash('err', err.response?.data?.error || 'Save failed');
     } finally {
       setSaving(null);
     }
   };
 
-  const updateField = (docType: string, field: keyof Template, value: any) => {
+  const updateField = (docType: string, field: keyof Template, value: unknown) => {
     setEditData(prev => ({
       ...prev,
       [docType]: { ...prev[docType], [field]: value },
@@ -109,6 +113,47 @@ export default function DocumentTemplates() {
     const original = templates.find(t => t.docType === docType);
     if (original) {
       setEditData(prev => ({ ...prev, [docType]: { ...original } }));
+    }
+  };
+
+  // Preview with current (unsaved) edits
+  const openPreview = async (docType: string) => {
+    setPreviewDocType(docType);
+    setPreviewLoading(true);
+    setPreviewHtml('');
+    try {
+      const data = editData[docType];
+      const res = await api.post(`/document-templates/${docType}/preview`, {
+        terms: data?.terms || [],
+        footer: data?.footer || '',
+        bankDetails: data?.bankDetails || '',
+      }, { responseType: 'text' });
+      setPreviewHtml(res.data);
+    } catch {
+      flash('err', 'Failed to load preview');
+      setPreviewDocType(null);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const downloadPreviewPdf = async () => {
+    if (!previewDocType) return;
+    setDownloadingPdf(true);
+    try {
+      const res = await api.get(`/document-templates/${previewDocType}/preview-pdf`, {
+        responseType: 'blob',
+      });
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${previewDocType.toLowerCase()}-sample.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      flash('err', 'Failed to generate PDF');
+    } finally {
+      setDownloadingPdf(false);
     }
   };
 
@@ -255,6 +300,12 @@ export default function DocumentTemplates() {
                           Save Template
                         </button>
                         <button
+                          onClick={() => openPreview(template.docType)}
+                          className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 flex items-center gap-2"
+                        >
+                          <Eye size={14} /> Preview
+                        </button>
+                        <button
                           onClick={() => resetTemplate(template.docType)}
                           className="px-4 py-2 text-gray-600 text-sm font-medium rounded-lg border hover:bg-gray-50 flex items-center gap-2"
                         >
@@ -269,6 +320,55 @@ export default function DocumentTemplates() {
           </div>
         )}
       </div>
+
+      {/* Preview Modal */}
+      {previewDocType && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50 rounded-t-lg">
+              <div>
+                <h3 className="font-semibold text-gray-900 text-sm">
+                  {DOC_TYPE_LABELS[previewDocType]?.label || previewDocType} Preview
+                </h3>
+                <p className="text-[10px] text-gray-500">Sample document with your current template settings</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={downloadPreviewPdf}
+                  disabled={downloadingPdf || previewLoading}
+                  className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {downloadingPdf ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+                  Download PDF
+                </button>
+                <button
+                  onClick={() => { setPreviewDocType(null); setPreviewHtml(''); }}
+                  className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body — iframe */}
+            <div className="flex-1 overflow-hidden bg-gray-200">
+              {previewLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <Loader2 size={32} className="animate-spin text-gray-400" />
+                </div>
+              ) : (
+                <iframe
+                  srcDoc={previewHtml}
+                  className="w-full h-full border-0"
+                  title="Document Preview"
+                  sandbox="allow-same-origin"
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
