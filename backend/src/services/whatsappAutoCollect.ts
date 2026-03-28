@@ -284,7 +284,11 @@ export async function saveSchedules(newSchedules: AutoCollectSchedule[]): Promis
   }
 }
 
-export function getSchedules(): AutoCollectSchedule[] {
+export async function getSchedules(): Promise<AutoCollectSchedule[]> {
+  // If in-memory schedules are empty, try reloading from DB (handles server restart race)
+  if (schedules.length === 0) {
+    await loadSchedules();
+  }
   return schedules;
 }
 
