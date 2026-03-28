@@ -229,55 +229,59 @@ export default function Dashboard() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="bg-white border border-slate-300 p-3">
               <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Ethanol Production (BL)</h3>
-              <ResponsiveContainer width="100%" height={220}>
+              <ResponsiveContainer width="100%" height={250}>
                 <BarChart data={t.ethanol}>
                   <CartesianGrid {...CHART_GRID} />
                   <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
                   <YAxis {...CHART_AXIS_PROPS} />
                   <Tooltip {...CHART_TOOLTIP} formatter={(v: number) => v.toFixed(0)} labelFormatter={(l: string) => `Date: ${l}`} />
                   <Bar dataKey="productionBL" fill="#3b82f6" name="Production BL" radius={[3, 3, 0, 0]} />
+                  {t.ethanol.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" tickFormatter={shortDate} />}
                 </BarChart>
               </ResponsiveContainer>
             </div>
 
             <div className="bg-white border border-slate-300 p-3">
               <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">KLPD Trend</h3>
-              <ResponsiveContainer width="100%" height={220}>
+              <ResponsiveContainer width="100%" height={250}>
                 <LineChart data={t.ethanol}>
                   <CartesianGrid {...CHART_GRID} />
                   <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
                   <YAxis {...CHART_AXIS_PROPS} />
                   <Tooltip {...CHART_TOOLTIP} />
-                  <Line type="monotone" dataKey="klpd" stroke="#6366f1" strokeWidth={2} dot={{ r: 3 }} name="KLPD" />
+                  <Line type="monotone" dataKey="klpd" stroke="#1e40af" strokeWidth={2} dot={{ r: 3, fill: '#1e40af' }} name="KLPD" />
+                  {t.ethanol.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" tickFormatter={shortDate} />}
                 </LineChart>
               </ResponsiveContainer>
             </div>
 
             <div className="bg-white border border-slate-300 p-3">
               <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Grain Stock (Ton)</h3>
-              <ResponsiveContainer width="100%" height={220}>
+              <ResponsiveContainer width="100%" height={250}>
                 <AreaChart data={t.grain}>
                   <CartesianGrid {...CHART_GRID} />
                   <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
                   <YAxis {...CHART_AXIS_PROPS} />
                   <Tooltip {...CHART_TOOLTIP} />
-                  <Area type="monotone" dataKey="siloStock" stroke="#d97706" fill="#fbbf24" fillOpacity={0.3} name="Silo Stock" />
-                  <Area type="monotone" dataKey="consumed" stroke="#ef4444" fill="#fca5a5" fillOpacity={0.2} name="Consumed" />
+                  <Area type="monotone" dataKey="siloStock" stroke="#1e40af" fill="#1e40af" fillOpacity={0.15} name="Silo Stock" />
+                  <Area type="monotone" dataKey="consumed" stroke="#dc2626" fill="#dc2626" fillOpacity={0.1} name="Consumed" strokeDasharray="4 3" />
+                  {t.grain.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" tickFormatter={shortDate} />}
                 </AreaChart>
               </ResponsiveContainer>
             </div>
 
             <div className="bg-white border border-slate-300 p-3">
               <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Ethanol Stock & Dispatch (BL)</h3>
-              <ResponsiveContainer width="100%" height={220}>
+              <ResponsiveContainer width="100%" height={250}>
                 <ComposedChart data={t.ethanol}>
                   <CartesianGrid {...CHART_GRID} />
                   <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
                   <YAxis {...CHART_AXIS_PROPS} />
                   <Tooltip {...CHART_TOOLTIP} />
                   <Legend {...CHART_LEGEND} />
-                  <Area type="monotone" dataKey="totalStock" stroke="#06b6d4" fill="#67e8f9" fillOpacity={0.3} name="Stock" />
-                  <Bar dataKey="dispatch" fill="#22c55e" name="Dispatch" radius={[3, 3, 0, 0]} />
+                  <Area type="monotone" dataKey="totalStock" stroke="#0891b2" fill="#0891b2" fillOpacity={0.15} name="Stock" />
+                  <Bar dataKey="dispatch" fill="#10b981" name="Dispatch" radius={[3, 3, 0, 0]} />
+                  {t.ethanol.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" tickFormatter={shortDate} />}
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
@@ -365,20 +369,21 @@ export default function Dashboard() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="bg-white border border-slate-300 p-3">
               <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">KLPD Trend</h3>
-              <ResponsiveContainer width="100%" height={220}>
+              <ResponsiveContainer width="100%" height={250}>
                 <LineChart data={t.ethanol}>
                   <CartesianGrid {...CHART_GRID} />
                   <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
                   <YAxis {...CHART_AXIS_PROPS} />
                   <Tooltip {...CHART_TOOLTIP} />
-                  <Line type="monotone" dataKey="klpd" stroke="#6366f1" strokeWidth={2} dot={false} name="KLPD" />
+                  <Line type="monotone" dataKey="klpd" stroke="#1e40af" strokeWidth={2} dot={{ r: 3, fill: '#1e40af' }} name="KLPD" />
+                  {t.ethanol.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" tickFormatter={shortDate} />}
                 </LineChart>
               </ResponsiveContainer>
             </div>
 
             <div className="bg-white border border-slate-300 p-3">
               <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Grain: Unloaded vs Consumed</h3>
-              <ResponsiveContainer width="100%" height={220}>
+              <ResponsiveContainer width="100%" height={250}>
                 <BarChart data={t.grain}>
                   <CartesianGrid {...CHART_GRID} />
                   <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
@@ -386,35 +391,38 @@ export default function Dashboard() {
                   <Tooltip {...CHART_TOOLTIP} />
                   <Legend {...CHART_LEGEND} />
                   <Bar dataKey="unloaded" fill="#f59e0b" name="Unloaded" radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="consumed" fill="#ef4444" name="Consumed" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="consumed" fill="#dc2626" name="Consumed" radius={[3, 3, 0, 0]} />
+                  {t.grain.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" tickFormatter={shortDate} />}
                 </BarChart>
               </ResponsiveContainer>
             </div>
 
             <div className="bg-white border border-slate-300 p-3">
               <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">DDGS Production & Dispatch</h3>
-              <ResponsiveContainer width="100%" height={220}>
+              <ResponsiveContainer width="100%" height={250}>
                 <BarChart data={t.ddgs}>
                   <CartesianGrid {...CHART_GRID} />
                   <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
                   <YAxis {...CHART_AXIS_PROPS} />
                   <Tooltip {...CHART_TOOLTIP} />
                   <Legend {...CHART_LEGEND} />
-                  <Bar dataKey="produced" fill="#22c55e" name="Produced" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="produced" fill="#10b981" name="Produced" radius={[3, 3, 0, 0]} />
                   <Bar dataKey="dispatched" fill="#3b82f6" name="Dispatched" radius={[3, 3, 0, 0]} />
+                  {t.ddgs.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" tickFormatter={shortDate} />}
                 </BarChart>
               </ResponsiveContainer>
             </div>
 
             <div className="bg-white border border-slate-300 p-3">
               <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Ethanol Stock (BL)</h3>
-              <ResponsiveContainer width="100%" height={220}>
+              <ResponsiveContainer width="100%" height={250}>
                 <AreaChart data={t.ethanol}>
                   <CartesianGrid {...CHART_GRID} />
                   <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
                   <YAxis {...CHART_AXIS_PROPS} />
                   <Tooltip {...CHART_TOOLTIP} />
-                  <Area type="monotone" dataKey="totalStock" stroke="#06b6d4" fill="#67e8f9" fillOpacity={0.3} name="Stock BL" />
+                  <Area type="monotone" dataKey="totalStock" stroke="#0891b2" fill="#0891b2" fillOpacity={0.15} name="Stock BL" />
+                  {t.ethanol.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" tickFormatter={shortDate} />}
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -435,45 +443,48 @@ export default function Dashboard() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="bg-white border border-slate-300 p-3">
               <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Distillation Strength</h3>
-              <ResponsiveContainer width="100%" height={220}>
+              <ResponsiveContainer width="100%" height={250}>
                 <LineChart data={t.distillation}>
                   <CartesianGrid {...CHART_GRID} />
                   <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
                   <YAxis {...CHART_AXIS_PROPS} domain={['auto', 'auto']} />
                   <Tooltip {...CHART_TOOLTIP} />
                   <Legend {...CHART_LEGEND} />
-                  <Line type="monotone" dataKey="ethanolStrength" stroke="#3b82f6" dot={false} strokeWidth={2} name="Ethanol %" />
-                  <Line type="monotone" dataKey="rcReflexStrength" stroke="#f59e0b" dot={false} strokeWidth={2} name="RC Reflex %" />
+                  <Line type="monotone" dataKey="ethanolStrength" stroke="#1e40af" strokeWidth={2} dot={{ r: 3, fill: '#1e40af' }} name="Ethanol %" />
+                  <Line type="monotone" dataKey="rcReflexStrength" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3, fill: '#f59e0b' }} strokeDasharray="4 3" name="RC Reflex %" />
+                  {t.distillation.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" tickFormatter={shortDate} />}
                 </LineChart>
               </ResponsiveContainer>
             </div>
 
             <div className="bg-white border border-slate-300 p-3">
               <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Liquefaction Gravity</h3>
-              <ResponsiveContainer width="100%" height={220}>
+              <ResponsiveContainer width="100%" height={250}>
                 <LineChart data={t.liquefaction}>
                   <CartesianGrid {...CHART_GRID} />
                   <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
                   <YAxis {...CHART_AXIS_PROPS} domain={['auto', 'auto']} />
                   <Tooltip {...CHART_TOOLTIP} />
                   <Legend {...CHART_LEGEND} />
-                  <Line type="monotone" dataKey="iltGravity" stroke="#3b82f6" dot={false} strokeWidth={2} name="ILT" />
-                  <Line type="monotone" dataKey="fltGravity" stroke="#22c55e" dot={false} strokeWidth={2} name="FLT" />
+                  <Line type="monotone" dataKey="iltGravity" stroke="#1e40af" strokeWidth={2} dot={{ r: 3, fill: '#1e40af' }} name="ILT" />
+                  <Line type="monotone" dataKey="fltGravity" stroke="#10b981" strokeWidth={2} dot={{ r: 3, fill: '#10b981' }} strokeDasharray="4 3" name="FLT" />
+                  {t.liquefaction.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" tickFormatter={shortDate} />}
                 </LineChart>
               </ResponsiveContainer>
             </div>
 
             <div className="bg-white border border-slate-300 p-3">
               <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Liquefaction pH</h3>
-              <ResponsiveContainer width="100%" height={220}>
+              <ResponsiveContainer width="100%" height={250}>
                 <LineChart data={t.liquefaction}>
                   <CartesianGrid {...CHART_GRID} />
                   <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
                   <YAxis {...CHART_AXIS_PROPS} domain={['auto', 'auto']} />
                   <Tooltip {...CHART_TOOLTIP} />
                   <Legend {...CHART_LEGEND} />
-                  <Line type="monotone" dataKey="iltPh" stroke="#8b5cf6" dot={false} strokeWidth={2} name="ILT pH" />
-                  <Line type="monotone" dataKey="fltPh" stroke="#ec4899" dot={false} strokeWidth={2} name="FLT pH" />
+                  <Line type="monotone" dataKey="iltPh" stroke="#1e40af" strokeWidth={2} dot={{ r: 3, fill: '#1e40af' }} name="ILT pH" />
+                  <Line type="monotone" dataKey="fltPh" stroke="#dc2626" strokeWidth={2} dot={{ r: 3, fill: '#dc2626' }} strokeDasharray="4 3" name="FLT pH" />
+                  {t.liquefaction.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" tickFormatter={shortDate} />}
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -481,17 +492,18 @@ export default function Dashboard() {
             {t.milling.length > 0 && (
               <div className="bg-white border border-slate-300 p-3">
                 <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Milling Sieve Analysis</h3>
-                <ResponsiveContainer width="100%" height={220}>
+                <ResponsiveContainer width="100%" height={250}>
                   <LineChart data={t.milling}>
                     <CartesianGrid {...CHART_GRID} />
                     <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
                     <YAxis {...CHART_AXIS_PROPS} />
                     <Tooltip {...CHART_TOOLTIP} />
                     <Legend {...CHART_LEGEND} />
-                    <Line type="monotone" dataKey="sieve1mm" stroke="#ef4444" dot={false} name="1.00mm" />
-                    <Line type="monotone" dataKey="sieve850" stroke="#f59e0b" dot={false} name="0.850mm" />
-                    <Line type="monotone" dataKey="sieve600" stroke="#22c55e" dot={false} name="0.600mm" />
-                    <Line type="monotone" dataKey="sieve300" stroke="#3b82f6" dot={false} name="0.300mm" />
+                    <Line type="monotone" dataKey="sieve1mm" stroke="#dc2626" strokeWidth={2} dot={{ r: 3, fill: '#dc2626' }} name="1.00mm" />
+                    <Line type="monotone" dataKey="sieve850" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3, fill: '#f59e0b' }} strokeDasharray="4 3" name="0.850mm" />
+                    <Line type="monotone" dataKey="sieve600" stroke="#10b981" strokeWidth={2} dot={{ r: 3, fill: '#10b981' }} strokeDasharray="4 3" name="0.600mm" />
+                    <Line type="monotone" dataKey="sieve300" stroke="#1e40af" strokeWidth={2} dot={{ r: 3, fill: '#1e40af' }} strokeDasharray="4 3" name="0.300mm" />
+                    {t.milling.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" tickFormatter={shortDate} />}
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -542,7 +554,7 @@ export default function Dashboard() {
             {data.tables.dispatchByParty.length > 0 && (
               <div className="bg-white border border-slate-300 p-3">
                 <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Dispatch by Party (BL)</h3>
-                <ResponsiveContainer width="100%" height={260}>
+                <ResponsiveContainer width="100%" height={250}>
                   <PieChart>
                     <Pie data={data.tables.dispatchByParty.slice(0, 8)} dataKey="qty" nameKey="party" cx="50%" cy="50%"
                       outerRadius={90} label={({ party, qty }: any) => `${party.slice(0, 12)}: ${fmtNum(qty)}`}
@@ -559,13 +571,14 @@ export default function Dashboard() {
 
             <div className="bg-white border border-slate-300 p-3">
               <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Daily Ethanol Dispatch (BL)</h3>
-              <ResponsiveContainer width="100%" height={260}>
+              <ResponsiveContainer width="100%" height={250}>
                 <BarChart data={t.ethanol}>
                   <CartesianGrid {...CHART_GRID} />
                   <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
                   <YAxis {...CHART_AXIS_PROPS} />
                   <Tooltip {...CHART_TOOLTIP} />
-                  <Bar dataKey="dispatch" fill="#22c55e" name="Dispatch BL" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="dispatch" fill="#10b981" name="Dispatch BL" radius={[3, 3, 0, 0]} />
+                  {t.ethanol.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" tickFormatter={shortDate} />}
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -797,7 +810,7 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
       {gravityChartData.length > 0 && (
         <div className="bg-white border border-slate-300 p-3">
           <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Gravity Drop Curves (Batch Comparison)</h3>
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer width="100%" height={250}>
             <ComposedChart data={gravityChartData}>
               <CartesianGrid {...CHART_GRID} />
               <XAxis dataKey="hour" {...CHART_AXIS_PROPS} label={{ value: 'Hours', position: 'insideBottom', offset: -5, fontSize: 10 }} />
@@ -810,10 +823,11 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
               {gravityCurves.map((c: any, i: number) => (
                 <Line key={c.batchNo} type="monotone" dataKey={`b${c.batchNo}`}
                   stroke={FERM_COLORS[i % FERM_COLORS.length]} strokeWidth={c.phase !== 'DONE' ? 2.5 : 1.5}
-                  dot={c.phase !== 'DONE'} name={`#${c.batchNo} F-${c.fermenterNo}`}
+                  dot={c.phase !== 'DONE' ? { r: 3, fill: FERM_COLORS[i % FERM_COLORS.length] } : false} name={`#${c.batchNo} F-${c.fermenterNo}`}
                   opacity={c.phase !== 'DONE' ? 1 : 0.5} />
               ))}
-              <ReferenceLine y={1.000} stroke="#ef4444" strokeDasharray="4 4" label={{ value: 'Target', fontSize: 9 }} />
+              <ReferenceLine y={1.000} stroke="#dc2626" strokeDasharray="4 4" label={{ value: 'Target', fontSize: 9 }} />
+              {gravityChartData.length > 24 && <Brush dataKey="hour" height={20} stroke="#1e40af" />}
             </ComposedChart>
           </ResponsiveContainer>
         </div>
@@ -823,7 +837,7 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
       {alcoholChartData.some((d: any) => Object.keys(d).length > 1) && (
         <div className="bg-white border border-slate-300 p-3">
           <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Alcohol Build-up Over Time</h3>
-          <ResponsiveContainer width="100%" height={260}>
+          <ResponsiveContainer width="100%" height={250}>
             <LineChart data={alcoholChartData}>
               <CartesianGrid {...CHART_GRID} />
               <XAxis dataKey="hour" {...CHART_AXIS_PROPS} />
@@ -833,9 +847,10 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
               <Line type="monotone" dataKey="avgAlcohol" stroke="#6b7280" strokeWidth={3} strokeDasharray="8 4" dot={false} name="Avg" />
               {gravityCurves.map((c: any, i: number) => (
                 <Line key={c.batchNo} type="monotone" dataKey={`b${c.batchNo}`}
-                  stroke={FERM_COLORS[i % FERM_COLORS.length]} strokeWidth={1.5} dot={false}
+                  stroke={FERM_COLORS[i % FERM_COLORS.length]} strokeWidth={2} dot={{ r: 3, fill: FERM_COLORS[i % FERM_COLORS.length] }}
                   name={`#${c.batchNo}`} opacity={c.phase !== 'DONE' ? 1 : 0.6} />
               ))}
+              {alcoholChartData.length > 24 && <Brush dataKey="hour" height={20} stroke="#1e40af" />}
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -845,7 +860,7 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
       {tempChartData.some((d: any) => Object.keys(d).length > 1) && (
         <div className="bg-white border border-slate-300 p-3">
           <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Temperature Monitoring</h3>
-          <ResponsiveContainer width="100%" height={260}>
+          <ResponsiveContainer width="100%" height={250}>
             <ComposedChart data={tempChartData}>
               <CartesianGrid {...CHART_GRID} />
               <XAxis dataKey="hour" {...CHART_AXIS_PROPS} />
@@ -853,13 +868,14 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
               <Tooltip {...CHART_TOOLTIP} />
               <Legend {...CHART_LEGEND} />
               <ReferenceArea y1={37} y2={42} fill="#fecaca" fillOpacity={0.3} />
-              <ReferenceLine y={37} stroke="#ef4444" strokeDasharray="4 4" label={{ value: '37°C limit', fontSize: 9, fill: '#ef4444' }} />
+              <ReferenceLine y={37} stroke="#dc2626" strokeDasharray="4 4" label={{ value: '37\u00b0C limit', fontSize: 9, fill: '#dc2626' }} />
               <Line type="monotone" dataKey="avgTemp" stroke="#6b7280" strokeWidth={3} strokeDasharray="8 4" dot={false} name="Avg" />
               {gravityCurves.map((c: any, i: number) => (
                 <Line key={c.batchNo} type="monotone" dataKey={`b${c.batchNo}`}
-                  stroke={FERM_COLORS[i % FERM_COLORS.length]} strokeWidth={1.5} dot={false}
+                  stroke={FERM_COLORS[i % FERM_COLORS.length]} strokeWidth={2} dot={{ r: 3, fill: FERM_COLORS[i % FERM_COLORS.length] }}
                   name={`#${c.batchNo}`} />
               ))}
+              {tempChartData.length > 24 && <Brush dataKey="hour" height={20} stroke="#1e40af" />}
             </ComposedChart>
           </ResponsiveContainer>
         </div>
@@ -911,7 +927,7 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="bg-white border border-slate-300 p-3">
             <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Chemical Consumption</h3>
-            <ResponsiveContainer width="100%" height={220}>
+            <ResponsiveContainer width="100%" height={250}>
               <BarChart data={data.chemicalSummary.slice(0, 8)} layout="vertical">
                 <CartesianGrid {...CHART_GRID} />
                 <XAxis type="number" {...CHART_AXIS_PROPS} />
@@ -950,16 +966,17 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
       {data.fermActivity && data.fermActivity.length > 0 && (
         <div className="bg-white border border-slate-300 p-3">
           <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Daily Fermentation Activity</h3>
-          <ResponsiveContainer width="100%" height={220}>
+          <ResponsiveContainer width="100%" height={250}>
             <BarChart data={data.fermActivity}>
               <CartesianGrid {...CHART_GRID} />
               <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
               <YAxis {...CHART_AXIS_PROPS} />
               <Tooltip {...CHART_TOOLTIP} />
               <Legend {...CHART_LEGEND} />
-              <Bar dataKey="started" fill="#6366f1" name="Batches Started" radius={[3, 3, 0, 0]} />
-              <Bar dataKey="completed" fill="#22c55e" name="Batches Completed" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="started" fill="#1e40af" name="Batches Started" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="completed" fill="#10b981" name="Batches Completed" radius={[3, 3, 0, 0]} />
               <Bar dataKey="readings" fill="#f59e0b" name="Lab Readings" radius={[3, 3, 0, 0]} />
+              {data.fermActivity.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" tickFormatter={shortDate} />}
             </BarChart>
           </ResponsiveContainer>
         </div>

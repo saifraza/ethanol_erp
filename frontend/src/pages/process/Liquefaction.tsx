@@ -3,7 +3,7 @@ import { Droplets, Save, Loader2, Trash2, Clock, TrendingUp, Database, AlertTria
 import api from '../../services/api';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  AreaChart, Area, BarChart, Bar
+  AreaChart, Area, BarChart, Bar, Brush
 } from 'recharts';
 
 /* ---------- types ---------- */
@@ -240,10 +240,10 @@ export default function Liquefaction() {
 
   /* ---- chart config ---- */
   const metricConfig: Record<ChartMetric, { ilt: string; flt: string; color1: string; color2: string }> = {
-    gravity: { ilt: 'iltGravity', flt: 'fltGravity', color1: '#3b82f6', color2: '#10b981' },
-    ph:      { ilt: 'iltPh',      flt: 'fltPh',      color1: '#8b5cf6', color2: '#f59e0b' },
-    rs:      { ilt: 'iltRs',      flt: 'fltRs',      color1: '#ef4444', color2: '#06b6d4' },
-    temp:    { ilt: 'iltTemp',     flt: 'fltTemp',    color1: '#f97316', color2: '#ec4899' },
+    gravity: { ilt: 'iltGravity', flt: 'fltGravity', color1: '#1e40af', color2: '#10b981' },
+    ph:      { ilt: 'iltPh',      flt: 'fltPh',      color1: '#1e40af', color2: '#f59e0b' },
+    rs:      { ilt: 'iltRs',      flt: 'fltRs',      color1: '#dc2626', color2: '#10b981' },
+    temp:    { ilt: 'iltTemp',     flt: 'fltTemp',    color1: '#1e40af', color2: '#dc2626' },
   };
   const mc = metricConfig[chartMetric];
 
@@ -521,15 +521,13 @@ export default function Liquefaction() {
       )}
 
       {/* Trends Chart */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+      <div className="bg-white border border-slate-300 p-3">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-          <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-            <TrendingUp size={18} className="text-purple-600" /> ILT vs FLT Trends
-          </h2>
+          <h2 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">ILT vs FLT Trends</h2>
           <div className="flex gap-1">
             {([['gravity', 'Sp. Gravity'], ['ph', 'pH'], ['rs', 'RS %'], ['temp', 'Temp']] as [ChartMetric, string][]).map(([k, l]) => (
               <button key={k} onClick={() => setChartMetric(k)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${chartMetric === k ? 'bg-blue-600 text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                className={`px-3 py-1.5 text-xs font-semibold transition ${chartMetric === k ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
                 {l}
               </button>
             ))}
@@ -540,7 +538,7 @@ export default function Liquefaction() {
         <div className="flex items-center gap-2 mb-3">
           <label className="text-xs text-gray-500">Filter:</label>
           <select value={selectedDate} onChange={e => setSelectedDate(e.target.value)}
-            className="text-xs border border-gray-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none">
+            className="text-xs border border-gray-300 px-2 py-1 focus:ring-1 focus:ring-slate-400 outline-none">
             <option value="all">All Dates ({entries.length})</option>
             {uniqueDates.map(d => (
               <option key={d} value={d}>{d}</option>
@@ -549,7 +547,7 @@ export default function Liquefaction() {
         </div>
 
         {chartData.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer width="100%" height={250}>
             <AreaChart data={chartData}>
               <defs>
                 <linearGradient id="gradIlt" x1="0" y1="0" x2="0" y2="1">
@@ -562,12 +560,13 @@ export default function Liquefaction() {
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="label" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} interval="preserveStartEnd" angle={-30} textAnchor="end" height={60} />
-              <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} domain={['auto', 'auto']} />
-              <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px' }} labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }} itemStyle={{ padding: '1px 0' }} />
+              <XAxis dataKey="label" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} interval="preserveStartEnd" angle={-30} textAnchor="end" height={60} />
+              <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={['auto', 'auto']} />
+              <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }} itemStyle={{ padding: '1px 0' }} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Area type="monotone" dataKey={mc.ilt} name="ILT" stroke={mc.color1} strokeWidth={2} fill="url(#gradIlt)" dot={{ r: 2 }} connectNulls />
-              <Area type="monotone" dataKey={mc.flt} name="FLT" stroke={mc.color2} strokeWidth={2} fill="url(#gradFlt)" dot={{ r: 2 }} connectNulls />
+              <Area type="monotone" dataKey={mc.ilt} name="ILT" stroke={mc.color1} strokeWidth={2} fill="url(#gradIlt)" dot={{ r: 3, fill: mc.color1 }} connectNulls />
+              <Area type="monotone" dataKey={mc.flt} name="FLT" stroke={mc.color2} strokeWidth={2} fill="url(#gradFlt)" dot={{ r: 3, fill: mc.color2 }} connectNulls />
+              {chartData.length > 24 && <Brush dataKey="label" height={20} stroke="#1e40af" travellerWidth={8} />}
             </AreaChart>
           </ResponsiveContainer>
         ) : (
@@ -577,19 +576,18 @@ export default function Liquefaction() {
 
       {/* Daily Summary Bar Chart */}
       {dailySummary.length > 1 && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-          <h2 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2">
-            <Database size={18} className="text-cyan-600" /> Daily Average Gravity
-          </h2>
-          <ResponsiveContainer width="100%" height={200}>
+        <div className="bg-white border border-slate-300 p-3">
+          <h2 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Daily Average Gravity</h2>
+          <ResponsiveContainer width="100%" height={250}>
             <BarChart data={dailySummary}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} />
-              <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} domain={['auto', 'auto']} />
-              <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px' }} labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }} itemStyle={{ padding: '1px 0' }} />
+              <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+              <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={['auto', 'auto']} />
+              <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }} itemStyle={{ padding: '1px 0' }} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar dataKey="avgIltGrav" name="ILT Gravity" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="avgFltGrav" name="FLT Gravity" fill="#10b981" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="avgIltGrav" name="ILT Gravity" fill="#1e40af" radius={[2, 2, 0, 0]} />
+              <Bar dataKey="avgFltGrav" name="FLT Gravity" fill="#10b981" radius={[2, 2, 0, 0]} />
+              {dailySummary.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" travellerWidth={8} />}
             </BarChart>
           </ResponsiveContainer>
         </div>
