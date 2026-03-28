@@ -35,7 +35,10 @@ export default function Inventory() {
   const [filterCat, setFilterCat] = useState('');
   const [search, setSearch] = useState('');
   const [showTxn, setShowTxn] = useState<string | null>(null);
-  const [txnForm, setTxnForm] = useState({ type: 'IN', quantity: '', reference: '', remarks: '' });
+  const [txnForm, setTxnForm] = useState({ type: 'IN', quantity: '', reference: '', remarks: '', department: '' });
+  const DEPARTMENTS = ['Production', 'Maintenance', 'Lab', 'Boiler', 'ETP', 'Admin', 'Civil', 'Electrical', 'Other'];
+  const [editItem, setEditItem] = useState<Item | null>(null);
+  const [editForm, setEditForm] = useState({ name: '', category: '', unit: '', costPerUnit: '', minStock: '', maxStock: '', location: '', supplier: '', remarks: '' });
   const [form, setForm] = useState({
     name: '', category: 'RAW_MATERIAL', unit: 'kg',
     currentStock: '', minStock: '', maxStock: '', costPerUnit: '',
@@ -75,9 +78,40 @@ export default function Inventory() {
     try {
       await api.post('/inventory/transaction', { itemId, ...txnForm });
       setShowTxn(null);
-      setTxnForm({ type: 'IN', quantity: '', reference: '', remarks: '' });
+      setTxnForm({ type: 'IN', quantity: '', reference: '', remarks: '', department: '' });
       load();
     } catch (e: any) { alert(e.response?.data?.error || 'Error'); }
+  };
+
+  const openEdit = (item: Item) => {
+    setEditItem(item);
+    setEditForm({
+      name: item.name, category: item.category, unit: item.unit,
+      costPerUnit: String(item.costPerUnit || ''), minStock: String(item.minStock || ''),
+      maxStock: String(item.maxStock || ''), location: item.location || '',
+      supplier: item.supplier || '', remarks: item.remarks || '',
+    });
+  };
+
+  const handleEdit = async () => {
+    if (!editItem) return;
+    try {
+      setSaving(true);
+      await api.put(`/inventory/items/${editItem.id}`, {
+        name: editForm.name,
+        category: editForm.category,
+        unit: editForm.unit,
+        costPerUnit: parseFloat(editForm.costPerUnit) || 0,
+        minStock: parseFloat(editForm.minStock) || 0,
+        maxStock: editForm.maxStock ? parseFloat(editForm.maxStock) : null,
+        location: editForm.location || null,
+        supplier: editForm.supplier || null,
+        remarks: editForm.remarks || null,
+      });
+      setEditItem(null);
+      load();
+    } catch (e: any) { alert(e.response?.data?.error || 'Error saving'); }
+    setSaving(false);
   };
 
   const filtered = items.filter(i =>
@@ -243,10 +277,16 @@ export default function Inventory() {
                           <td className="px-3 py-1.5 text-right text-slate-700 font-mono tabular-nums border-r border-slate-100">{'\u20B9'}{item.costPerUnit}</td>
                           <td className="px-3 py-1.5 text-slate-500 border-r border-slate-100">{item.location || '\u2014'}</td>
                           <td className="px-3 py-1.5">
-                            <button onClick={() => setShowTxn(showTxn === item.id ? null : item.id)}
-                              className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">
-                              {showTxn === item.id ? 'Close' : 'Stock In/Out'}
-                            </button>
+                            <div className="flex gap-1">
+                              <button onClick={() => setShowTxn(showTxn === item.id ? null : item.id)}
+                                className="px-2 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">
+                                {showTxn === item.id ? 'Close' : 'Stock In/Out'}
+                              </button>
+                              <button onClick={() => openEdit(item)}
+                                className="px-2 py-1 bg-white border border-blue-300 text-blue-600 text-[11px] font-medium hover:bg-blue-50">
+                                Edit
+                              </button>
+                            </div>
                           </td>
                         </tr>
                         {showTxn === item.id && (
@@ -271,6 +311,15 @@ export default function Inventory() {
                                   <input className="border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 w-40" placeholder="PO, Issue#" value={txnForm.reference}
                                     onChange={e => setTxnForm({ ...txnForm, reference: e.target.value })} />
                                 </div>
+                                {txnForm.type === 'OUT' && (
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Department</label>
+                                    <select className="border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400" value={txnForm.department} onChange={e => setTxnForm({ ...txnForm, department: e.target.value })}>
+                                      <option value="">Select</option>
+                                      {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                                    </select>
+                                  </div>
+                                )}
                                 <div>
                                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Remarks</label>
                                   <input className="border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 w-40" placeholder="Remarks" value={txnForm.remarks}
@@ -329,6 +378,69 @@ export default function Inventory() {
           </div>
         )}
       </div>
+
+      {/* Edit Item Modal */}
+      {editItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white shadow-2xl w-full max-w-lg mx-4">
+            <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-widest">Edit Item — {editItem.code}</span>
+              <button onClick={() => setEditItem(null)} className="text-slate-400 hover:text-white"><X size={16} /></button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Name</label>
+                  <input className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Category</label>
+                  <select className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" value={editForm.category} onChange={e => setEditForm({ ...editForm, category: e.target.value })}>
+                    {CATEGORIES.map(c => <option key={c} value={c}>{CAT_LABELS[c] || c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Unit</label>
+                  <select className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" value={editForm.unit} onChange={e => setEditForm({ ...editForm, unit: e.target.value })}>
+                    {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Cost/Unit (INR)</label>
+                  <input type="number" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" value={editForm.costPerUnit} onChange={e => setEditForm({ ...editForm, costPerUnit: e.target.value })} />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Min Stock</label>
+                  <input type="number" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" value={editForm.minStock} onChange={e => setEditForm({ ...editForm, minStock: e.target.value })} />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Max Stock</label>
+                  <input type="number" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" value={editForm.maxStock} onChange={e => setEditForm({ ...editForm, maxStock: e.target.value })} />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Location</label>
+                  <input className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" value={editForm.location} onChange={e => setEditForm({ ...editForm, location: e.target.value })} />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Supplier</label>
+                  <input className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" value={editForm.supplier} onChange={e => setEditForm({ ...editForm, supplier: e.target.value })} />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label>
+                  <input className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" value={editForm.remarks} onChange={e => setEditForm({ ...editForm, remarks: e.target.value })} />
+                </div>
+              </div>
+            </div>
+            <div className="border-t border-slate-200 px-4 py-3 flex items-center justify-between">
+              <span className="text-[10px] text-slate-400">Current Stock: {editItem.currentStock} {editItem.unit}</span>
+              <div className="flex gap-2">
+                <button onClick={() => setEditItem(null)} className="px-3 py-1 bg-slate-200 text-slate-700 text-[11px] font-medium hover:bg-slate-300">Cancel</button>
+                <button onClick={handleEdit} disabled={saving} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">{saving ? 'Saving...' : 'Save'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
