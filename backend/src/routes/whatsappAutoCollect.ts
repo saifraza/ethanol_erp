@@ -27,7 +27,7 @@ router.get(
   '/schedules',
   authenticate,
   asyncHandler(async (_req: AuthRequest, res: Response) => {
-    res.json(getSchedules());
+    res.json(await getSchedules());
   })
 );
 
@@ -42,7 +42,7 @@ router.post(
       return;
     }
     await saveSchedules(schedules);
-    res.json({ success: true, schedules: getSchedules() });
+    res.json({ success: true, schedules: await getSchedules() });
   })
 );
 
