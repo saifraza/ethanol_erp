@@ -604,12 +604,13 @@ export default function OPCTagManager() {
                                           <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                                           <XAxis dataKey="time" tick={{ fontSize: 9 }} tickLine={false} />
                                           <YAxis tick={{ fontSize: 9 }} tickLine={false} domain={(() => {
-                                            if (yZoom === 0 || !historyData.length) return ['auto', 'auto'] as const;
-                                            const allMin = Math.min(...historyData.map(d => d.min));
+                                            if (!historyData.length) return [0, 'auto'] as const;
                                             const allMax = Math.max(...historyData.map(d => d.max));
+                                            if (yZoom === 0) return [0, Math.ceil(allMax * 1.1)] as const; // start from 0, 10% headroom
+                                            const allMin = Math.min(...historyData.map(d => d.min));
                                             const mid = (allMin + allMax) / 2;
                                             const range = allMax - allMin || 1;
-                                            const factor = Math.pow(0.6, yZoom); // each level zooms 40% tighter
+                                            const factor = Math.pow(0.6, yZoom);
                                             return [mid - range * factor, mid + range * factor];
                                           })()} />
                                           <Tooltip
