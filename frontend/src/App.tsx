@@ -84,6 +84,8 @@ const CashVouchers = React.lazy(() => import('./pages/accounts/CashVouchers'));
 const BankLoans = React.lazy(() => import('./pages/accounts/BankLoans'));
 const PaymentsOut = React.lazy(() => import('./pages/accounts/PaymentsOut'));
 const PaymentsIn = React.lazy(() => import('./pages/accounts/PaymentsIn'));
+const CashBook = React.lazy(() => import('./pages/accounts/CashBook'));
+const BankBook = React.lazy(() => import('./pages/accounts/BankBook'));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -189,6 +191,8 @@ export default function App() {
         <Route path="accounts/bank-loans" element={<BankLoans />} />
         <Route path="accounts/payments-out" element={<PaymentsOut />} />
         <Route path="accounts/payments-in" element={<PaymentsIn />} />
+        <Route path="accounts/cash-book" element={<CashBook />} />
+        <Route path="accounts/bank-book" element={<BankBook />} />
         <Route path="reports" element={<Reports />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="document-templates" element={<DocumentTemplates />} />
