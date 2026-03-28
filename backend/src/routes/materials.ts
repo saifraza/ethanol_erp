@@ -142,6 +142,100 @@ router.post('/seed', authorize('ADMIN') as any, async (req: Request, res: Respon
   } catch (err: unknown) { res.status(500).json({ error: 'Seed failed' }); }
 });
 
+// POST /seed-chemicals — bulk seed all plant chemicals with department-wise rates
+router.post('/seed-chemicals', authorize('ADMIN') as any, async (req: Request, res: Response) => {
+  try {
+    const seeds: Array<{ name: string; unit: string; subCategory: string; defaultRate: number; remarks: string }> = [
+      // ─── CPU (Condensate Polishing Unit) ───
+      { name: 'Caustic Soda NaOH 100% - CPU', unit: 'kg', subCategory: 'CPU', defaultRate: 70.00, remarks: 'Monthly req: 3,000 kg' },
+      { name: 'SMBS 100% Powder - CPU', unit: 'kg', subCategory: 'CPU', defaultRate: 300.00, remarks: 'Monthly req: 500 kg' },
+      { name: 'Antiscalant 98% - CPU', unit: 'kg', subCategory: 'CPU', defaultRate: 250.00, remarks: 'Monthly req: 500 kg' },
+      { name: 'HCl 33% Commercial Grade - CPU', unit: 'kg', subCategory: 'CPU', defaultRate: 15.00, remarks: 'Monthly req: 200 kg' },
+      { name: 'RO CIP Enhancer - CPU', unit: 'kg', subCategory: 'CPU', defaultRate: 500.00, remarks: 'Monthly req: 500 kg' },
+      { name: 'RO Biocide - CPU', unit: 'kg', subCategory: 'CPU', defaultRate: 500.00, remarks: 'Monthly req: 300 kg' },
+      { name: 'Cartridge Filter 20µ/60mm/40" - CPU', unit: 'nos', subCategory: 'CPU', defaultRate: 300.00, remarks: 'Monthly req: 500 nos' },
+      { name: 'Cartridge Filter 20µ/60mm/30" - CPU', unit: 'nos', subCategory: 'CPU', defaultRate: 250.00, remarks: 'Monthly req: 150 nos' },
+      { name: 'Cartridge Filter 05µ/60mm/40" - CPU', unit: 'nos', subCategory: 'CPU', defaultRate: 200.00, remarks: 'Monthly req: 700 nos' },
+      { name: 'Cartridge Filter 20µ/07mm/32" - CPU', unit: 'nos', subCategory: 'CPU', defaultRate: 500.00, remarks: 'Monthly req: 70 nos' },
+      { name: 'Urea - CPU', unit: 'kg', subCategory: 'CPU', defaultRate: 10.00, remarks: 'Monthly req: 150 kg' },
+      { name: 'DAP - CPU', unit: 'kg', subCategory: 'CPU', defaultRate: 20.00, remarks: 'Monthly req: 90 kg' },
+      { name: 'Hypo (Sodium Hypochlorite) - CPU', unit: 'kg', subCategory: 'CPU', defaultRate: 30.00, remarks: 'Monthly req: 150 kg' },
+      { name: 'Polyelectrolyte - CPU', unit: 'kg', subCategory: 'CPU', defaultRate: 500.00, remarks: 'Monthly req: 60 kg' },
+      { name: 'Alum Solid - CPU', unit: 'kg', subCategory: 'CPU', defaultRate: 30.00, remarks: 'Monthly req: 90 kg' },
+      { name: 'Aerobic Culture - CPU', unit: 'kg', subCategory: 'CPU', defaultRate: 100.00, remarks: 'Monthly req: 300 kg' },
+      { name: 'Cow Dung - CPU', unit: 'kg', subCategory: 'CPU', defaultRate: 5.00, remarks: 'Monthly req: 4,000 kg' },
+
+      // ─── WTP (Water Treatment Plant) ───
+      { name: 'HCl 33% Commercial Grade - WTP', unit: 'kg', subCategory: 'WTP', defaultRate: 15.00, remarks: 'Monthly req: 15,000 kg' },
+      { name: 'NaOH 100% - WTP', unit: 'kg', subCategory: 'WTP', defaultRate: 70.00, remarks: 'Monthly req: 4,500 kg' },
+      { name: 'SMBS 100% LR Grade - WTP', unit: 'kg', subCategory: 'WTP', defaultRate: 300.00, remarks: 'Monthly req: 150 kg' },
+      { name: 'Antiscalant 98% - WTP', unit: 'kg', subCategory: 'WTP', defaultRate: 250.00, remarks: 'Monthly req: 150 kg' },
+      { name: 'NaCl 100% - WTP', unit: 'kg', subCategory: 'WTP', defaultRate: 8.00, remarks: 'Monthly req: 15,000 kg' },
+      { name: 'RO CIP Enhancer - WTP', unit: 'kg', subCategory: 'WTP', defaultRate: 500.00, remarks: 'Monthly req: 200 kg' },
+      { name: 'RO Biocide - WTP', unit: 'kg', subCategory: 'WTP', defaultRate: 500.00, remarks: 'Monthly req: 200 kg' },
+      { name: 'Cartridge Filter 05µ/60mm/40" - WTP', unit: 'nos', subCategory: 'WTP', defaultRate: 200.00, remarks: 'Monthly req: 200 nos' },
+
+      // ─── Cooling Tower ───
+      { name: 'Indion-9061', unit: 'kg', subCategory: 'COOLING_TOWER', defaultRate: 472.00, remarks: 'Monthly req: 1,000 kg' },
+      { name: 'Indion-9078', unit: 'kg', subCategory: 'COOLING_TOWER', defaultRate: 278.00, remarks: 'Monthly req: 500 kg' },
+      { name: 'Indion-7615', unit: 'kg', subCategory: 'COOLING_TOWER', defaultRate: 285.00, remarks: 'Monthly req: 200 kg' },
+      { name: 'Indion-5700', unit: 'kg', subCategory: 'COOLING_TOWER', defaultRate: 295.00, remarks: 'Monthly req: 250 kg' },
+
+      // ─── Fermentation ───
+      { name: 'Liquozyme ZPH (Alpha Amylase)', unit: 'kg', subCategory: 'FERMENTATION', defaultRate: 1156.40, remarks: 'Monthly req: 3,700 kg' },
+      { name: 'Spirizyme ADV Ultra T (Glucoamylase)', unit: 'kg', subCategory: 'FERMENTATION', defaultRate: 568.40, remarks: 'Monthly req: 8,214 kg' },
+      { name: 'Ethanol Red Dry Yeast', unit: 'kg', subCategory: 'FERMENTATION', defaultRate: 821.28, remarks: 'Monthly req: 4,070 kg' },
+      { name: 'Alcozym G Pro(I)', unit: 'kg', subCategory: 'FERMENTATION', defaultRate: 3835.00, remarks: 'Monthly req: 185 kg' },
+      { name: 'Bactoferm', unit: 'kg', subCategory: 'FERMENTATION', defaultRate: 24780.00, remarks: 'Monthly req: 18.5 kg' },
+      { name: 'Urea - Fermentation', unit: 'kg', subCategory: 'FERMENTATION', defaultRate: 35.40, remarks: 'Monthly req: 62,900 kg' },
+      { name: 'DAP - Fermentation', unit: 'kg', subCategory: 'FERMENTATION', defaultRate: 37.76, remarks: 'Monthly req: 1,850 kg' },
+      { name: 'Formalin', unit: 'kg', subCategory: 'FERMENTATION', defaultRate: 47.20, remarks: 'Monthly req: 703 kg' },
+      { name: 'Antifoam - Fermentation', unit: 'kg', subCategory: 'FERMENTATION', defaultRate: 159.30, remarks: 'Monthly req: 3,700 kg' },
+      { name: 'Ammonia Liquid', unit: 'ltr', subCategory: 'FERMENTATION', defaultRate: 47.20, remarks: 'Monthly req: 55,500 ltr' },
+      { name: 'Caustic Soda NaOH - Fermentation', unit: 'kg', subCategory: 'FERMENTATION', defaultRate: 70.00, remarks: 'Monthly req: 5,550 kg' },
+
+      // ─── Ethanol Denaturing ───
+      { name: 'Crotonaldehyde', unit: 'kg', subCategory: 'ETHANOL_DENATURING', defaultRate: 145.00, remarks: 'Monthly req: 18,000 kg' },
+      { name: 'Denatonium Benzoate', unit: 'kg', subCategory: 'ETHANOL_DENATURING', defaultRate: 1100.00, remarks: 'Monthly req: 3,600 kg' },
+    ];
+
+    let created = 0;
+    let skipped = 0;
+    const results: Array<{ name: string; status: string }> = [];
+
+    for (const s of seeds) {
+      const exists = await prisma.inventoryItem.findFirst({
+        where: { name: { equals: s.name, mode: 'insensitive' } },
+        select: { id: true },
+      });
+      if (exists) {
+        skipped++;
+        results.push({ name: s.name, status: 'exists' });
+        continue;
+      }
+      const code = await generateItemCode();
+      await prisma.inventoryItem.create({
+        data: {
+          name: s.name,
+          code,
+          category: 'CHEMICAL',
+          subCategory: s.subCategory,
+          unit: s.unit,
+          gstPercent: 18,
+          defaultRate: s.defaultRate,
+          costPerUnit: s.defaultRate,
+          remarks: s.remarks,
+          isActive: true,
+        },
+      });
+      created++;
+      results.push({ name: s.name, status: 'created' });
+    }
+
+    res.json({ created, skipped, total: seeds.length, results });
+  } catch (err: unknown) { res.status(500).json({ error: 'Chemical seed failed' }); }
+});
+
 // POST /migrate — one-time migration: link old Material records to InventoryItem
 router.post('/migrate', authorize('ADMIN') as any, async (req: Request, res: Response) => {
   try {
