@@ -1,16 +1,17 @@
-import { Router, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest, authorize } from '../middleware/auth';
-import { asyncHandler } from '../shared/middleware';
+import { authenticate, authorize } from '../middleware/auth';
 import PDFDocument from 'pdfkit';
 import { sendEmail } from '../services/messaging';
 import { drawLetterhead } from '../utils/letterhead';
+import { renderDocumentPdf } from '../services/documentRenderer';
 
 const router = Router();
 router.use(authenticate as any);
 
 // GET / — list with filters (vendorId, status)
-router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
+  try {
     const vendorId = req.query.vendorId as string | undefined;
     const status = req.query.status as string | undefined;
 
@@ -26,14 +27,15 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         grn: true,
       },
       orderBy: { invoiceDate: 'desc' },
-      take: 200,
     });
 
     res.json({ invoices });
-}));
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
 
 // GET /outstanding — outstanding vendor invoices grouped by vendor
-router.get('/outstanding', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get('/outstanding', async (req: Request, res: Response) => {
+  try {
     const invoices = await prisma.vendorInvoice.findMany({
       where: {
         balanceAmount: {
@@ -43,7 +45,6 @@ router.get('/outstanding', asyncHandler(async (req: AuthRequest, res: Response) 
       include: {
         vendor: true,
       },
-      take: 500,
     });
 
     // Group by vendor
@@ -62,10 +63,12 @@ router.get('/outstanding', asyncHandler(async (req: AuthRequest, res: Response) 
     }
 
     res.json({ outstanding: Object.values(grouped) });
-}));
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
 
 // GET /itc-report — ITC report
-router.get('/itc-report', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get('/itc-report', async (req: Request, res: Response) => {
+  try {
     const invoices = await prisma.vendorInvoice.findMany({
       where: {
         status: { in: ['VERIFIED', 'APPROVED', 'PAID'] },
@@ -74,7 +77,6 @@ router.get('/itc-report', asyncHandler(async (req: AuthRequest, res: Response) =
         vendor: true,
       },
       orderBy: { invoiceDate: 'desc' },
-      take: 500,
     });
 
     const report = invoices.map((inv: any) => ({
@@ -86,10 +88,12 @@ router.get('/itc-report', asyncHandler(async (req: AuthRequest, res: Response) =
     }));
 
     res.json({ report });
-}));
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
 
 // GET /:id — single with vendor, po, grn, payments
-router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get('/:id', async (req: Request, res: Response) => {
+  try {
     const invoice = await prisma.vendorInvoice.findUnique({
       where: { id: req.params.id },
       include: {
@@ -101,10 +105,12 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     });
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
     res.json(invoice);
-}));
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
 
 // POST / — create vendor invoice
-router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
+  try {
     const b = req.body;
 
     const quantity = parseFloat(b.quantity) || 0;
@@ -203,15 +209,17 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         matchStatus,
         status: 'PENDING',
         remarks: b.remarks || null,
-        userId: req.user!.id,
+        userId: (req as any).user.id,
       },
     });
 
     res.status(201).json(invoice);
-}));
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
 
 // PUT /:id — edit vendor invoice (only PENDING status)
-router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.put('/:id', async (req: Request, res: Response) => {
+  try {
     const existing = await prisma.vendorInvoice.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: 'Invoice not found' });
     if (existing.status !== 'PENDING') {
@@ -265,10 +273,12 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
       },
     });
     res.json(invoice);
-}));
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
 
 // PUT /:id/status — status transitions
-router.put('/:id/status', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.put('/:id/status', async (req: Request, res: Response) => {
+  try {
     const { newStatus } = req.body;
     const invoice = await prisma.vendorInvoice.findUnique({
       where: { id: req.params.id },
@@ -278,8 +288,7 @@ router.put('/:id/status', asyncHandler(async (req: AuthRequest, res: Response) =
     const validTransitions: Record<string, string[]> = {
       'PENDING': ['VERIFIED', 'CANCELLED'],
       'VERIFIED': ['APPROVED', 'CANCELLED'],
-      'APPROVED': ['PAID', 'PARTIAL_PAID', 'CANCELLED'],
-      'PARTIAL_PAID': ['PAID', 'CANCELLED'],
+      'APPROVED': ['PAID', 'CANCELLED'],
       'PAID': [],
       'CANCELLED': [],
     };
@@ -294,10 +303,12 @@ router.put('/:id/status', asyncHandler(async (req: AuthRequest, res: Response) =
     });
 
     res.json(updated);
-}));
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
 
 // PUT /:id/itc — update ITC status
-router.put('/:id/itc', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.put('/:id/itc', async (req: Request, res: Response) => {
+  try {
     const { itcClaimed, itcClaimedDate, itcReversed, itcReversalReason } = req.body;
     const invoice = await prisma.vendorInvoice.update({
       where: { id: req.params.id },
@@ -309,67 +320,47 @@ router.put('/:id/itc', asyncHandler(async (req: AuthRequest, res: Response) => {
       },
     });
     res.json(invoice);
-}));
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
 
 // GET /:id/pdf — Generate Vendor Invoice PDF
-router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get('/:id/pdf', async (req: Request, res: Response) => {
+  try {
     const inv = await prisma.vendorInvoice.findUnique({
       where: { id: req.params.id },
       include: { vendor: true },
     });
     if (!inv) { res.status(404).json({ error: 'Vendor invoice not found' }); return; }
 
-    const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    const viData = {
+      invoiceNo: inv.invoiceNo,
+      vendorInvNo: inv.vendorInvNo,
+      invoiceDate: inv.invoiceDate,
+      status: inv.status,
+      vendor: {
+        name: (inv as any).vendor?.name,
+        gstin: (inv as any).vendor?.gstin,
+      },
+      productName: inv.productName,
+      quantity: inv.quantity,
+      unit: inv.unit,
+      rate: inv.rate,
+      gstPercent: inv.gstPercent,
+      subtotal: inv.subtotal,
+      totalGst: inv.totalGst,
+      netPayable: inv.netPayable,
+    };
+
+    const pdfBuffer = await renderDocumentPdf({ docType: 'VENDOR_INVOICE', data: viData, verifyId: inv.id });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="VI-${inv.invoiceNo || inv.id.slice(0, 8)}.pdf"`);
-    doc.pipe(res);
-
-    drawLetterhead(doc, 40, 515);
-    doc.moveDown(0.5);
-    doc.fontSize(14).font('Helvetica-Bold').text('VENDOR INVOICE', { align: 'center' });
-    doc.moveDown(0.5);
-
-    doc.fontSize(9).font('Helvetica');
-    doc.text(`Invoice No: VI-${String(inv.invoiceNo).padStart(4, '0')}`, 40);
-    doc.text(`Vendor Inv No: ${inv.vendorInvNo || '-'}`);
-    doc.text(`Invoice Date: ${inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString('en-IN') : '-'}`);
-    doc.text(`Vendor: ${(inv as any).vendor?.name || '-'}`);
-    doc.text(`GSTIN: ${(inv as any).vendor?.gstin || '-'}`);
-    doc.text(`Status: ${inv.status}`);
-    doc.moveDown();
-
-    // Single line item (flat model)
-    const tableTop = doc.y;
-    doc.font('Helvetica-Bold').fontSize(8);
-    doc.text('Product', 40, tableTop, { width: 180 });
-    doc.text('Qty', 220, tableTop, { width: 50, align: 'right' });
-    doc.text('Unit', 270, tableTop, { width: 40 });
-    doc.text('Rate', 310, tableTop, { width: 60, align: 'right' });
-    doc.text('GST%', 370, tableTop, { width: 40, align: 'right' });
-    doc.text('Amount', 410, tableTop, { width: 80, align: 'right' });
-    doc.moveTo(40, tableTop + 12).lineTo(555, tableTop + 12).stroke();
-
-    const y = tableTop + 16;
-    doc.font('Helvetica').fontSize(8);
-    doc.text(inv.productName || '-', 40, y, { width: 180 });
-    doc.text(String(inv.quantity || 0), 220, y, { width: 50, align: 'right' });
-    doc.text(inv.unit || '', 270, y, { width: 40 });
-    doc.text(String(inv.rate || 0), 310, y, { width: 60, align: 'right' });
-    doc.text(String(inv.gstPercent || 0), 370, y, { width: 40, align: 'right' });
-    doc.text(inv.subtotal.toLocaleString('en-IN'), 410, y, { width: 80, align: 'right' });
-
-    doc.moveDown(3);
-    doc.font('Helvetica').fontSize(9);
-    doc.text(`Subtotal: Rs. ${inv.subtotal.toLocaleString('en-IN')}`, { align: 'right' });
-    doc.text(`GST: Rs. ${inv.totalGst.toLocaleString('en-IN')}`, { align: 'right' });
-    doc.font('Helvetica-Bold').fontSize(10);
-    doc.text(`Net Payable: Rs. ${inv.netPayable.toLocaleString('en-IN')}`, { align: 'right' });
-
-    doc.end();
-}));
+    res.send(pdfBuffer);
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
 
 // POST /:id/send-email — Send Vendor Invoice via email
-router.post('/:id/send-email', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/:id/send-email', async (req: Request, res: Response) => {
+  try {
     const inv = await prisma.vendorInvoice.findUnique({
       where: { id: req.params.id },
       include: { vendor: true },
@@ -380,25 +371,25 @@ router.post('/:id/send-email', asyncHandler(async (req: AuthRequest, res: Respon
     if (!toEmail) { res.status(400).json({ error: 'No email address. Add vendor email or provide "to" in request.' }); return; }
 
     // Generate PDF buffer
-    const pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
-      const chunks: Buffer[] = [];
-      const doc = new PDFDocument({ size: 'A4', margin: 40 });
-      doc.on('data', (chunk: Buffer) => chunks.push(chunk));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-      doc.on('error', reject);
-      doc.fontSize(14).font('Helvetica-Bold').text('VENDOR INVOICE', { align: 'center' });
-      doc.moveDown();
-      doc.fontSize(9).font('Helvetica');
-      doc.text(`Invoice No: VI-${String(inv.invoiceNo).padStart(4, '0')}`);
-      doc.text(`Vendor Inv No: ${inv.vendorInvNo || '-'}`);
-      doc.text(`Date: ${inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString('en-IN') : '-'}`);
-      doc.text(`Vendor: ${(inv as any).vendor?.name || '-'}`);
-      doc.text(`Product: ${inv.productName || '-'}`);
-      doc.text(`Qty: ${inv.quantity} ${inv.unit} @ Rs.${inv.rate}`);
-      doc.text(`Net Payable: Rs. ${inv.netPayable.toLocaleString('en-IN')}`);
-      doc.text(`Status: ${inv.status}`);
-      doc.end();
-    });
+    const viData = {
+      invoiceNo: inv.invoiceNo,
+      vendorInvNo: inv.vendorInvNo,
+      invoiceDate: inv.invoiceDate,
+      status: inv.status,
+      vendor: {
+        name: (inv as any).vendor?.name,
+        gstin: (inv as any).vendor?.gstin,
+      },
+      productName: inv.productName,
+      quantity: inv.quantity,
+      unit: inv.unit,
+      rate: inv.rate,
+      gstPercent: inv.gstPercent,
+      subtotal: inv.subtotal,
+      totalGst: inv.totalGst,
+      netPayable: inv.netPayable,
+    };
+    const pdfBuffer = await renderDocumentPdf({ docType: 'VENDOR_INVOICE', data: viData, verifyId: inv.id });
 
     const label = `VI-${String(inv.invoiceNo).padStart(4, '0')}`;
     const subject = req.body.subject || `${label} — Vendor Invoice from MSPIL`;
@@ -414,6 +405,7 @@ router.post('/:id/send-email', asyncHandler(async (req: AuthRequest, res: Respon
     } else {
       res.status(500).json({ error: result.error || 'Email send failed' });
     }
-}));
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
 
 export default router;
