@@ -279,13 +279,23 @@ router.post('/monitor', validate(addMonitorSchema), asyncHandler(async (req: Aut
   const opc = getOpcPrisma();
   const { tag, area, folder, tagType, label } = req.body;
 
-  const result = await opc.opcMonitoredTag.upsert({
-    where: { tag },
-    create: { tag, area, folder, tagType, label: label || tag, active: true },
-    update: { area, folder, tagType, label: label || tag, active: true },
-  });
-
-  res.status(201).json({ ok: true, tag: result });
+  try {
+    const result = await opc.opcMonitoredTag.upsert({
+      where: { tag },
+      create: { tag, area, folder, tagType, label: label || tag, active: true },
+      update: { area, folder, tagType, label: label || tag, active: true },
+    });
+    res.status(201).json({ ok: true, tag: result });
+  } catch {
+    // Fallback: new columns (description, hhAlarm, llAlarm) may not exist yet — use raw SQL
+    await opc.$executeRawUnsafe(
+      `INSERT INTO "OpcMonitoredTag" (id, tag, area, folder, "tagType", label, active, "createdAt", "updatedAt")
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, true, NOW(), NOW())
+       ON CONFLICT (tag) DO UPDATE SET area = $2, folder = $3, "tagType" = $4, label = $5, active = true, "updatedAt" = NOW()`,
+      tag, area, folder, tagType, label || tag
+    );
+    res.status(201).json({ ok: true, tag: { tag, area, folder, tagType, label: label || tag } });
+  }
 }));
 
 // PATCH /api/opc/monitor/:tag — Update tag properties
