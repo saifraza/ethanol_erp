@@ -2296,6 +2296,7 @@ model AutoCollectSchedule {
   enabled         Boolean  @default(false)
   autoShare       Boolean  @default(true)
   language        String   @default("hi")
+  bagWeight       Int      @default(35)    // kg per bag (DDGS module)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

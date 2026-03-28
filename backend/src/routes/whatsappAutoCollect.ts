@@ -54,7 +54,7 @@ router.put(
   authenticate,
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const moduleName = req.params.module;
-    const { phone, intervalMinutes, enabled, autoShare, language } = req.body;
+    const { phone, intervalMinutes, enabled, autoShare, language, bagWeight } = req.body;
 
     if (!phone && enabled !== false) {
       res.status(400).json({ error: 'phone is required when enabling a schedule' });
@@ -71,6 +71,7 @@ router.put(
         enabled: enabled ?? false,
         autoShare: autoShare !== false,
         language: language || 'hi',
+        bagWeight: bagWeight || 35,
       },
       update: {
         phone: phone || '',
@@ -78,6 +79,7 @@ router.put(
         enabled: enabled ?? false,
         autoShare: autoShare !== false,
         language: language || 'hi',
+        bagWeight: bagWeight || 35,
       },
     });
 

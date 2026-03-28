@@ -52,11 +52,23 @@ export async function startCollection(phone: string, moduleName: string, autoSha
     return { success: false, error: `Active session already exists for ${digits}` };
   }
 
+  // Inject module-specific config into collectedData
+  const initialData: Record<string, number> = {};
+  if (moduleName === 'ddgs') {
+    // Try to read bagWeight from AutoCollectSchedule table or fallback to 35
+    try {
+      const sched = await prisma.autoCollectSchedule.findUnique({ where: { module: 'ddgs' } });
+      initialData._weightPerBag = (sched as any)?.bagWeight || 35;
+    } catch {
+      initialData._weightPerBag = 35;
+    }
+  }
+
   const session: ActiveSession = {
     phone: digits,
     module: moduleName,
     stepIndex: 0,
-    collectedData: {},
+    collectedData: initialData,
     startedAt: new Date(),
     expiresAt: new Date(Date.now() + 30 * 60 * 1000), // 30 min timeout
     autoShare,
