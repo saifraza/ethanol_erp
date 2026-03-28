@@ -345,13 +345,26 @@ router.get('/cash-book', asyncHandler(async (req: AuthRequest, res: Response) =>
 }));
 
 // ═══════════════════════════════════════════════
-// GET /bank-book — Bank account ledger with running balance
+// GET /bank-book — Bank account ledger with running balance (supports multiple bank accounts)
 // ═══════════════════════════════════════════════
 router.get('/bank-book', asyncHandler(async (req: AuthRequest, res: Response) => {
-  const account = await getAccountByCode(ACCOUNT_CODES.BANK);
+  const accountId = req.query.accountId as string | undefined;
   const from = req.query.from as string | undefined;
   const to = req.query.to as string | undefined;
   const take = Math.min(parseInt(req.query.limit as string) || 200, 500);
+
+  // If accountId provided, use that; otherwise default to primary bank (1002)
+  let account: { id: string; code: string; name: string; openingBalance: number };
+  if (accountId) {
+    const found = await prisma.account.findUnique({
+      where: { id: accountId },
+      select: { id: true, code: true, name: true, openingBalance: true },
+    });
+    if (!found) throw new NotFoundError('Account', accountId);
+    account = found;
+  } else {
+    account = await getAccountByCode(ACCOUNT_CODES.BANK);
+  }
 
   const ledger = await buildLedger(account.id, account.openingBalance, from, to, take);
 
@@ -360,6 +373,24 @@ router.get('/bank-book', asyncHandler(async (req: AuthRequest, res: Response) =>
     openingBalance: account.openingBalance,
     ...ledger,
   });
+}));
+
+// GET /bank-accounts — List all bank-type accounts for bank book selector
+// ═══════════════════════════════════════════════
+router.get('/bank-accounts', asyncHandler(async (_req: AuthRequest, res: Response) => {
+  const accounts = await prisma.account.findMany({
+    where: {
+      OR: [
+        { subType: 'BANK' },
+        { code: { startsWith: '100' } }, // 1001=Cash, 1002+=Bank accounts
+      ],
+      code: { not: '1001' }, // exclude cash (that's the cash book)
+    },
+    select: { id: true, code: true, name: true, openingBalance: true },
+    orderBy: { code: 'asc' },
+    take: 50,
+  });
+  res.json(accounts);
 }));
 
 // ═══════════════════════════════════════════════
