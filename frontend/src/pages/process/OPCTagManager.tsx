@@ -6,11 +6,12 @@ import api from '../../services/api';
 const TAG_CATALOG: Record<string, Record<string, { folder: string; type: string; tags: Record<string, string> }>> = {
   Fermantation: {
     ANALOG: { folder: 'ANALOG', type: 'analog', tags: {
-      LT130101: 'Fermenter 1A Level', LT130102: 'Fermenter 1B Level',
+      LT130101: 'PF-1 Level', LT130102: 'PF-2 Level',
       LT130201: 'Fermenter 1 Level', LT130202: 'Fermenter 2 Level',
       LT130301: 'Fermenter 3 Level', LT130302: 'Fermenter 4 Level',
       LT130401: 'Beer Well Level',
-      TE130101: 'Fermenter 1A Temp', TE130201: 'Fermenter 1 Temp', TE130202: 'Fermenter 2 Temp',
+      TE130101: 'PF-1 Temp', TE130102: 'PF-2 Temp',
+      TE130201: 'Fermenter 1 Temp', TE130202: 'Fermenter 2 Temp',
       TE130301: 'Fermenter 3 Temp', TE130302: 'Fermenter 4 Temp',
       FE130701: 'Beer Well Flow',
     }},
