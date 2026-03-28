@@ -47,6 +47,35 @@ router.post(
   })
 );
 
+// PUT /api/auto-collect/schedules/:module — save a single module's schedule (safe, no race condition)
+router.put(
+  '/schedules/:module',
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const moduleName = req.params.module;
+    const { phone, intervalMinutes, enabled, autoShare, language } = req.body;
+
+    if (!phone && enabled !== false) {
+      res.status(400).json({ error: 'phone is required when enabling a schedule' });
+      return;
+    }
+
+    // Read current schedules from DB (not memory — avoids race conditions)
+    const settings = await prisma.settings.findFirst({ select: { id: true, autoCollectConfig: true } });
+    const current = settings?.autoCollectConfig
+      ? JSON.parse(settings.autoCollectConfig as string) as Array<{ module: string; phone: string; intervalMinutes: number; enabled: boolean; autoShare?: boolean; [key: string]: unknown }>
+      : [];
+
+    // Replace this module's entry, keep all others
+    const others = current.filter(s => s.module !== moduleName);
+    const newEntry = { module: moduleName, phone: phone || '', intervalMinutes: intervalMinutes || 60, enabled: enabled ?? false, autoShare: autoShare !== false, ...(language ? { language } : {}) };
+    const updated = [...others, newEntry];
+
+    await saveSchedules(updated);
+    res.json({ success: true, schedules: getSchedules() });
+  })
+);
+
 // POST /api/auto-collect/trigger — manually trigger a collection now
 router.post(
   '/trigger',
