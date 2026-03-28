@@ -137,6 +137,41 @@ export default function Dashboard() {
   const [days, setDays] = useState(7);
   const [activeTab, setActiveTab] = useState<'overview' | 'fermentation' | 'production' | 'quality' | 'dispatch'>('overview');
 
+  // OPC live tank levels
+  interface TankLevel { label: string; level: number; temp?: number; color: string; }
+  const [tankLevels, setTankLevels] = useState<TankLevel[]>([]);
+  const OPC_TANK_MAP = [
+    { tag: 'LT130201', tempTag: 'TE130201', label: 'F-1', color: '#3b82f6' },
+    { tag: 'LT130202', tempTag: 'TE130202', label: 'F-2', color: '#8b5cf6' },
+    { tag: 'LT130301', tempTag: 'TE130301', label: 'F-3', color: '#10b981' },
+    { tag: 'LT130302', tempTag: 'TE130302', label: 'F-4', color: '#f59e0b' },
+    { tag: 'LT130101', tempTag: 'TE130101', label: 'PF-1', color: '#6366f1' },
+    { tag: 'LT130102', tempTag: 'TE130102', label: 'PF-2', color: '#a855f7' },
+    { tag: 'LT130401', tempTag: undefined, label: 'BW', color: '#0891b2' },
+  ];
+
+  useEffect(() => {
+    const fetchTanks = () => {
+      api.get('/opc/live').then(r => {
+        const tags: { tag: string; values: Record<string, number> }[] = r.data?.tags || [];
+        const lookup: Record<string, number> = {};
+        for (const t of tags) {
+          const v = t.values?.IO_VALUE ?? t.values?.PV;
+          if (v != null) lookup[t.tag] = v;
+        }
+        setTankLevels(OPC_TANK_MAP.map(m => ({
+          label: m.label,
+          level: Math.round((lookup[m.tag] || 0) * 100) / 100,
+          temp: m.tempTag ? Math.round((lookup[m.tempTag] || 0) * 100) / 100 : undefined,
+          color: m.color,
+        })));
+      }).catch(() => {});
+    };
+    fetchTanks();
+    const iv = setInterval(fetchTanks, 60000);
+    return () => clearInterval(iv);
+  }, []);
+
   const fetchData = (d: number) => {
     setLoading(true);
     api.get(`/dashboard/analytics?days=${d}`).then(r => { setData(r.data); setLoading(false); }).catch(() => setLoading(false));
@@ -224,6 +259,57 @@ export default function Dashboard() {
             <KPI label="Wash Distilled" value={k.washDistilled.toFixed(0)} unit="KL" icon={Flame} color="bg-orange-600" sub="Total wash" />
             <KPI label="Active Fermenters" value={data.live.fermenters.length + data.live.preFermenters.length} unit="" icon={Activity} color="bg-teal-600" sub={`${data.live.fermenters.length} F + ${data.live.preFermenters.length} PF`} />
           </div>
+
+          {/* OPC Tank Levels — Animated */}
+          {tankLevels.length > 0 && (
+            <div className="bg-white border border-slate-300 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Live Tank Levels (OPC)</span>
+                <span className="text-[9px] text-slate-400">Auto-refresh 60s</span>
+              </div>
+              <div className="flex gap-3 justify-center flex-wrap">
+                {tankLevels.map(tank => {
+                  const pct = Math.min(Math.max(tank.level, 0), 100);
+                  const fillColor = pct > 80 ? '#dc2626' : pct > 60 ? tank.color : pct < 10 ? '#94a3b8' : tank.color;
+                  return (
+                    <div key={tank.label} className="flex flex-col items-center" style={{ width: 70 }}>
+                      {/* Tank SVG */}
+                      <div className="relative" style={{ width: 50, height: 80 }}>
+                        <svg width="50" height="80" viewBox="0 0 50 80">
+                          {/* Tank outline */}
+                          <rect x="5" y="5" width="40" height="65" rx="4" fill="#f1f5f9" stroke="#cbd5e1" strokeWidth="1.5" />
+                          {/* Liquid fill — animated */}
+                          <rect
+                            x="6" y={6 + 63 * (1 - pct / 100)} width="38"
+                            height={63 * pct / 100}
+                            rx="3" fill={fillColor} opacity={0.7}
+                            style={{ transition: 'y 1s ease, height 1s ease' }}
+                          />
+                          {/* Liquid wave effect */}
+                          {pct > 2 && pct < 98 && (
+                            <ellipse
+                              cx="25" cy={6 + 63 * (1 - pct / 100) + 2}
+                              rx="18" ry="2" fill={fillColor} opacity={0.5}
+                            />
+                          )}
+                          {/* Level text inside tank */}
+                          <text x="25" y="45" textAnchor="middle" fontSize="11" fontWeight="bold"
+                            fill={pct > 40 ? '#fff' : '#334155'} fontFamily="monospace">
+                            {pct.toFixed(0)}%
+                          </text>
+                        </svg>
+                      </div>
+                      {/* Label */}
+                      <div className="text-[10px] font-bold text-slate-700 mt-1">{tank.label}</div>
+                      {tank.temp != null && tank.temp > 0 && (
+                        <div className="text-[9px] text-orange-600 font-mono">{tank.temp}&deg;C</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Charts — 2x2 grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
