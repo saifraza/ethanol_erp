@@ -181,8 +181,7 @@ export default function OPCTagManager() {
       const e = err as { response?: { data?: { error?: string } } };
       setError(e?.response?.data?.error || 'OPC service unavailable');
     }
-    // Also check bridge health (non-blocking)
-    api.get('/opc/bridge-health').then(r => setBridgeHealth(r.data)).catch(() => setBridgeHealth(null));
+    // Bridge health check disabled — Railway can't reach factory Tailscale IP
   }, []);
 
   useEffect(() => { checkHealth(); }, [checkHealth]);
@@ -332,7 +331,7 @@ export default function OPCTagManager() {
   };
 
   const fmtAgo = (iso: string | null) => {
-    if (!iso) return 'never';
+    if (!iso) return 'awaiting scan';
     const diff = Date.now() - new Date(iso).getTime();
     if (diff < 60000) return `${Math.floor(diff / 1000)}s ago`;
     if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
@@ -413,21 +412,7 @@ export default function OPCTagManager() {
           </div>
         )}
 
-        {/* Bridge Status */}
-        {bridgeHealth && (
-          <div className={`px-4 py-1.5 -mx-3 md:-mx-6 border-x border-b border-slate-300 flex items-center gap-4 text-[10px] ${bridgeHealth.reachable ? 'bg-emerald-50' : 'bg-red-50'}`}>
-            <span className={`font-bold uppercase tracking-widest ${bridgeHealth.reachable ? 'text-emerald-700' : 'text-red-700'}`}>
-              Bridge: {bridgeHealth.reachable ? 'REACHABLE' : 'UNREACHABLE'}
-            </span>
-            {bridgeHealth.reachable && (
-              <>
-                <span className="text-slate-500">Pending Syncs: <span className={`font-mono font-bold ${(bridgeHealth.pendingSyncs || 0) > 10 ? 'text-red-600' : 'text-slate-700'}`}>{bridgeHealth.pendingSyncs || 0}</span></span>
-                <span className="text-slate-500">Uptime: <span className="font-mono text-slate-700">{bridgeHealth.uptimeSeconds ? `${Math.floor(bridgeHealth.uptimeSeconds / 3600)}h ${Math.floor((bridgeHealth.uptimeSeconds % 3600) / 60)}m` : '--'}</span></span>
-                <span className="text-slate-500">OPC Tags: <span className="font-mono text-slate-700">{bridgeHealth.monitoredTags || '--'}</span></span>
-              </>
-            )}
-          </div>
-        )}
+        {/* Bridge status is determined by lastSync in the health endpoint — no separate bridge check needed */}
 
         {/* Tabs — no more "Monitored Tags" */}
         <div className="flex gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6 bg-white">
@@ -483,7 +468,7 @@ export default function OPCTagManager() {
                             <input type="number" step="0.1" value={editForm.hhAlarm} onChange={e => setEditForm(f => ({ ...f, hhAlarm: e.target.value }))}
                               className="border border-slate-300 px-2 py-1 text-xs w-16 text-right focus:outline-none focus:ring-1 focus:ring-blue-400" placeholder="--" />
                           </td>
-                          <td className="px-3 py-1.5 text-center text-slate-400 border-r border-slate-100">{fmtAgo(t.updatedAt)}</td>
+                          <td className={`px-3 py-1.5 text-center border-r border-slate-100 ${t.updatedAt ? 'text-slate-400' : 'text-amber-500 text-[10px] uppercase tracking-widest'}`}>{fmtAgo(t.updatedAt)}</td>
                           <td className="px-2 py-1.5 text-center whitespace-nowrap">
                             <button onClick={() => updateTag(t.tag)} disabled={saving}
                               className="px-2 py-0.5 bg-blue-600 border border-blue-700 text-white text-[10px] font-bold uppercase hover:bg-blue-700 disabled:opacity-50 mr-1">
