@@ -86,7 +86,7 @@ function buildConfirmation(_step: CollectStep, parsed: Record<string, number>): 
 
 function buildSummary(data: Record<string, number>): string {
   const bags = data.bags || 0;
-  const weightPerBag = 50; // kg
+  const weightPerBag = data._weightPerBag || 35; // kg — configurable via schedule
   const totalKg = bags * weightPerBag;
   const totalTon = totalKg / 1000;
   const { labelFrom, labelTo } = getTimeWindow();
@@ -123,7 +123,7 @@ async function saveData(data: Record<string, number>): Promise<void> {
   const ist = nowIST();
   const bags = data.bags || 0;
 
-  const weightPerBag = 50; // kg — standard DDGS bag weight
+  const weightPerBag = data._weightPerBag || 35; // kg — configurable via schedule
   const totalProduction = (bags * weightPerBag) / 1000; // convert to Ton
 
   const shiftDate = getShiftDate();

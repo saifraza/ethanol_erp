@@ -69,6 +69,7 @@ export default function DDGSStock() {
   const [acStatus, setAcStatus] = useState('');
   const [acAutoShare, setAcAutoShare] = useState(true);
   const [acLang, setAcLang] = useState<'hi' | 'en'>('hi');
+  const [acBagWeight, setAcBagWeight] = useState('35');
   const [acDirty, setAcDirty] = useState(false);
   const [activeSessions, setActiveSessions] = useState<{ phone: string; module: string; step: number; totalSteps: number }[]>([]);
 
@@ -107,6 +108,7 @@ export default function DDGSStock() {
         setAcEnabled(s.enabled || false);
         setAcAutoShare(s.autoShare !== false);
         setAcLang(s.language === 'en' ? 'en' : 'hi');
+        setAcBagWeight(String(s.bagWeight || 35));
         setAcPhones(s.phone || '');
         setAcDirty(false);
       }
@@ -472,6 +474,12 @@ export default function DDGSStock() {
                     className="border rounded px-2 py-1 w-20 text-sm" />
                   <span className="text-[10px] text-gray-400">min</span>
                 </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-gray-400">Bag</span>
+                  <input type="number" value={acBagWeight} onChange={e => { setAcBagWeight(e.target.value); setAcDirty(true); }}
+                    className="w-12 border border-gray-300 rounded px-1.5 py-0.5 text-xs text-center" />
+                  <span className="text-[10px] text-gray-400">kg</span>
+                </div>
                 <label className="flex items-center gap-2 text-sm cursor-pointer">
                   <input type="checkbox" checked={acEnabled} onChange={e => { setAcEnabled(e.target.checked); setAcDirty(true); }} className="w-4 h-4" />
                   <span className={acEnabled ? 'text-green-700 font-semibold text-xs' : 'text-gray-500 text-xs'}>
@@ -500,7 +508,7 @@ export default function DDGSStock() {
                   if (!phone) { setAcStatus('Add at least one phone number'); return; }
                   try {
                     await api.put('/auto-collect/schedules/ddgs', {
-                      phone, intervalMinutes: parseInt(acInterval) || 60, enabled: acEnabled, autoShare: acAutoShare, language: acLang,
+                      phone, intervalMinutes: parseInt(acInterval) || 60, enabled: acEnabled, autoShare: acAutoShare, language: acLang, bagWeight: parseInt(acBagWeight) || 35,
                     });
                     setAcDirty(false);
                     setAcStatus(`Schedule saved (${acEnabled ? 'enabled' : 'disabled'}, ${acInterval}min${acAutoShare ? ', auto-share' : ''})`);
