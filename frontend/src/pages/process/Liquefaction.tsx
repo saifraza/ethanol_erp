@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
-import { Droplets, Save, Loader2, Trash2, Clock, TrendingUp, Database, AlertTriangle, ChevronDown, ChevronUp, FlaskConical, Eye, X, Share2, Camera, CheckCircle, XCircle, Pencil } from 'lucide-react';
+import { Droplets, Save, Loader2, Trash2, Clock, TrendingUp, Database, AlertTriangle, ChevronDown, ChevronUp, FlaskConical, Eye, X, Share2, Camera, CheckCircle, XCircle, Pencil, ZoomIn, ZoomOut } from 'lucide-react';
 import api from '../../services/api';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -246,6 +246,31 @@ export default function Liquefaction() {
     temp:    { ilt: 'iltTemp',     flt: 'fltTemp',    color1: '#1e40af', color2: '#dc2626' },
   };
   const mc = metricConfig[chartMetric];
+
+  /* ---- chart stats for current metric ---- */
+  const trendStats = useMemo(() => {
+    const iltKey = mc.ilt as keyof typeof chartData[0];
+    const vals = chartData.map(d => d[iltKey] as number | null).filter((v): v is number => v !== null && !isNaN(Number(v)));
+    if (vals.length === 0) return { mean: 0, min: 0, max: 0, range: 0, count: 0 };
+    const sum = vals.reduce((a, b) => a + Number(b), 0);
+    const mean = sum / vals.length;
+    const mn = Math.min(...vals.map(Number));
+    const mx = Math.max(...vals.map(Number));
+    return { mean, min: mn, max: mx, range: mx - mn, count: vals.length };
+  }, [chartData, mc.ilt]);
+
+  const dailyBarStats = useMemo(() => {
+    const vals = dailySummary.map(d => d.avgIltGrav).filter((v): v is number => v !== null && !isNaN(Number(v)));
+    if (vals.length === 0) return { mean: 0, min: 0, max: 0, range: 0, count: 0 };
+    const sum = vals.reduce((a, b) => a + Number(b), 0);
+    const mean = sum / vals.length;
+    const mn = Math.min(...vals.map(Number));
+    const mx = Math.max(...vals.map(Number));
+    return { mean, min: mn, max: mx, range: mx - mn, count: vals.length };
+  }, [dailySummary]);
+
+  const [trendYZoom, setTrendYZoom] = useState(0);
+  const [barYZoom, setBarYZoom] = useState(0);
 
   /* ---- input helper (inline, stable via key) ---- */
   const numInput = (label: string, field: keyof FormState, step = '0.001') => (
@@ -524,13 +549,21 @@ export default function Liquefaction() {
       <div className="bg-white border border-slate-300 p-3">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           <h2 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">ILT vs FLT Trends</h2>
-          <div className="flex gap-1">
-            {([['gravity', 'Sp. Gravity'], ['ph', 'pH'], ['rs', 'RS %'], ['temp', 'Temp']] as [ChartMetric, string][]).map(([k, l]) => (
-              <button key={k} onClick={() => setChartMetric(k)}
-                className={`px-3 py-1.5 text-xs font-semibold transition ${chartMetric === k ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                {l}
-              </button>
-            ))}
+          <div className="flex items-center gap-3">
+            <div className="flex gap-1">
+              {([['gravity', 'Sp. Gravity'], ['ph', 'pH'], ['rs', 'RS %'], ['temp', 'Temp']] as [ChartMetric, string][]).map(([k, l]) => (
+                <button key={k} onClick={() => setChartMetric(k)}
+                  className={`px-3 py-1.5 text-xs font-semibold transition ${chartMetric === k ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="text-[9px] text-slate-400 uppercase tracking-widest mr-1">Y-Zoom</span>
+              <button onClick={() => setTrendYZoom(z => z + 1)} className="px-1.5 py-0.5 border border-slate-300 text-slate-600 text-xs hover:bg-slate-100"><ZoomIn size={12} /></button>
+              <button onClick={() => setTrendYZoom(z => Math.max(0, z - 1))} className="px-1.5 py-0.5 border border-slate-300 text-slate-600 text-xs hover:bg-slate-100"><ZoomOut size={12} /></button>
+              {trendYZoom > 0 && <button onClick={() => setTrendYZoom(0)} className="px-1.5 py-0.5 text-[9px] text-blue-600 hover:underline">Reset</button>}
+            </div>
           </div>
         </div>
 
@@ -546,30 +579,52 @@ export default function Liquefaction() {
           </select>
         </div>
 
-        {chartData.length > 0 ? (
-          <ResponsiveContainer width="100%" height={250}>
-            <AreaChart data={chartData}>
-              <defs>
-                <linearGradient id="gradIlt" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={mc.color1} stopOpacity={0.15} />
-                  <stop offset="95%" stopColor={mc.color1} stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="gradFlt" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={mc.color2} stopOpacity={0.15} />
-                  <stop offset="95%" stopColor={mc.color2} stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="label" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} interval="preserveStartEnd" angle={-30} textAnchor="end" height={60} />
-              <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={['auto', 'auto']} />
-              <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }} itemStyle={{ padding: '1px 0' }} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Area type="monotone" dataKey={mc.ilt} name="ILT" stroke={mc.color1} strokeWidth={2} fill="url(#gradIlt)" dot={{ r: 3, fill: mc.color1 }} connectNulls />
-              <Area type="monotone" dataKey={mc.flt} name="FLT" stroke={mc.color2} strokeWidth={2} fill="url(#gradFlt)" dot={{ r: 3, fill: mc.color2 }} connectNulls />
-              {chartData.length > 24 && <Brush dataKey="label" height={20} stroke="#1e40af" travellerWidth={8} />}
-            </AreaChart>
-          </ResponsiveContainer>
-        ) : (
+        {trendStats.count > 0 && (
+          <div className="grid grid-cols-3 md:grid-cols-5 gap-0 border border-slate-300 mb-2">
+            {[
+              { label: 'Mean', value: trendStats.mean.toFixed(2), color: 'indigo' },
+              { label: 'Min', value: trendStats.min.toFixed(2), color: 'cyan' },
+              { label: 'Max', value: trendStats.max.toFixed(2), color: 'red' },
+              { label: 'Range', value: trendStats.range.toFixed(2), color: 'amber' },
+              { label: 'Samples', value: String(trendStats.count), color: 'slate' },
+            ].map(s => (
+              <div key={s.label} className="px-2 py-2 border-r border-slate-200 last:border-r-0">
+                <div className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{s.label}</div>
+                <div className={`text-sm font-bold font-mono tabular-nums mt-0.5 text-${s.color}-600`}>{s.value}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {chartData.length > 0 ? (() => {
+          const yDomain: [string | number, string | number] = trendYZoom > 0 && trendStats.count > 0
+            ? [trendStats.mean - trendStats.range / (trendYZoom + 1), trendStats.mean + trendStats.range / (trendYZoom + 1)]
+            : ['auto', 'auto'];
+          return (
+            <ResponsiveContainer width="100%" height={250}>
+              <AreaChart data={chartData}>
+                <defs>
+                  <linearGradient id="gradIlt" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={mc.color1} stopOpacity={0.15} />
+                    <stop offset="95%" stopColor={mc.color1} stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="gradFlt" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={mc.color2} stopOpacity={0.15} />
+                    <stop offset="95%" stopColor={mc.color2} stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="label" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} interval="preserveStartEnd" angle={-30} textAnchor="end" height={60} />
+                <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={yDomain} />
+                <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }} itemStyle={{ padding: '1px 0' }} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Area type="monotone" dataKey={mc.ilt} name="ILT" stroke={mc.color1} strokeWidth={2} fill="url(#gradIlt)" dot={{ r: 3, fill: mc.color1 }} connectNulls />
+                <Area type="monotone" dataKey={mc.flt} name="FLT" stroke={mc.color2} strokeWidth={2} fill="url(#gradFlt)" dot={{ r: 3, fill: mc.color2 }} connectNulls />
+                {chartData.length > 24 && <Brush dataKey="label" height={20} stroke="#1e40af" travellerWidth={8} />}
+              </AreaChart>
+            </ResponsiveContainer>
+          );
+        })() : (
           <div className="text-center text-gray-400 py-12">No data to display</div>
         )}
       </div>
@@ -577,19 +632,50 @@ export default function Liquefaction() {
       {/* Daily Summary Bar Chart */}
       {dailySummary.length > 1 && (
         <div className="bg-white border border-slate-300 p-3">
-          <h2 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Daily Average Gravity</h2>
-          <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={dailySummary}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
-              <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={['auto', 'auto']} />
-              <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }} itemStyle={{ padding: '1px 0' }} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar dataKey="avgIltGrav" name="ILT Gravity" fill="#1e40af" radius={[2, 2, 0, 0]} />
-              <Bar dataKey="avgFltGrav" name="FLT Gravity" fill="#10b981" radius={[2, 2, 0, 0]} />
-              {dailySummary.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" travellerWidth={8} />}
-            </BarChart>
-          </ResponsiveContainer>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Daily Average Gravity</h2>
+            <div className="flex items-center gap-1">
+              <span className="text-[9px] text-slate-400 uppercase tracking-widest mr-1">Y-Zoom</span>
+              <button onClick={() => setBarYZoom(z => z + 1)} className="px-1.5 py-0.5 border border-slate-300 text-slate-600 text-xs hover:bg-slate-100"><ZoomIn size={12} /></button>
+              <button onClick={() => setBarYZoom(z => Math.max(0, z - 1))} className="px-1.5 py-0.5 border border-slate-300 text-slate-600 text-xs hover:bg-slate-100"><ZoomOut size={12} /></button>
+              {barYZoom > 0 && <button onClick={() => setBarYZoom(0)} className="px-1.5 py-0.5 text-[9px] text-blue-600 hover:underline">Reset</button>}
+            </div>
+          </div>
+          {dailyBarStats.count > 0 && (
+            <div className="grid grid-cols-3 md:grid-cols-5 gap-0 border border-slate-300 mb-2">
+              {[
+                { label: 'Mean', value: dailyBarStats.mean.toFixed(3), color: 'indigo' },
+                { label: 'Min', value: dailyBarStats.min.toFixed(3), color: 'cyan' },
+                { label: 'Max', value: dailyBarStats.max.toFixed(3), color: 'red' },
+                { label: 'Range', value: dailyBarStats.range.toFixed(3), color: 'amber' },
+                { label: 'Days', value: String(dailyBarStats.count), color: 'slate' },
+              ].map(s => (
+                <div key={s.label} className="px-2 py-2 border-r border-slate-200 last:border-r-0">
+                  <div className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{s.label}</div>
+                  <div className={`text-sm font-bold font-mono tabular-nums mt-0.5 text-${s.color}-600`}>{s.value}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          {(() => {
+            const yDomain: [string | number, string | number] = barYZoom > 0 && dailyBarStats.count > 0
+              ? [dailyBarStats.mean - dailyBarStats.range / (barYZoom + 1), dailyBarStats.mean + dailyBarStats.range / (barYZoom + 1)]
+              : ['auto', 'auto'];
+            return (
+              <ResponsiveContainer width="100%" height={250}>
+                <BarChart data={dailySummary}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+                  <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={yDomain} />
+                  <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }} itemStyle={{ padding: '1px 0' }} />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Bar dataKey="avgIltGrav" name="ILT Gravity" fill="#1e40af" radius={[2, 2, 0, 0]} />
+                  <Bar dataKey="avgFltGrav" name="FLT Gravity" fill="#10b981" radius={[2, 2, 0, 0]} />
+                  {dailySummary.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" travellerWidth={8} />}
+                </BarChart>
+              </ResponsiveContainer>
+            );
+          })()}
         </div>
       )}
 

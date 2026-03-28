@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { Flame, Save, Loader2, ChevronDown, ChevronUp, Trash2, Eye, X, Share2, Camera } from 'lucide-react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
+import { Flame, Save, Loader2, ChevronDown, ChevronUp, Trash2, Eye, X, Share2, Camera, ZoomIn, ZoomOut } from 'lucide-react';
 import api from '../../services/api';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
@@ -114,6 +114,19 @@ export default function Distillation() {
     time: `${e.date?.split('T')[0]?.slice(5)} ${e.analysisTime?.slice(0, 5) || ''}`,
     ethanol: e.ethanolStrength, rcReflex: e.rcReflexStrength
   }));
+
+  /* ---- chart stats ---- */
+  const chartStats = useMemo(() => {
+    const vals = entries.map(e => e.ethanolStrength).filter((v): v is number => v !== null && v !== undefined && !isNaN(Number(v)));
+    if (vals.length === 0) return { mean: 0, min: 0, max: 0, range: 0, count: 0 };
+    const sum = vals.reduce((a, b) => a + Number(b), 0);
+    const mean = sum / vals.length;
+    const min = Math.min(...vals.map(Number));
+    const max = Math.max(...vals.map(Number));
+    return { mean, min, max, range: max - min, count: vals.length };
+  }, [entries]);
+
+  const [yZoom, setYZoom] = useState(0);
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -308,20 +321,49 @@ export default function Distillation() {
 
       {/* Trends */}
       <div className="bg-white border border-slate-300 p-3 mb-4">
-        <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Trends</h3>
-        {chartData.length > 0 && (
-          <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} interval="preserveStartEnd" />
-              <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
-              <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }} itemStyle={{ padding: '1px 0' }} />
-              <Legend verticalAlign="top" height={30} iconType="plainline" wrapperStyle={{ fontSize: 10, color: '#64748b' }} />
-              <Line type="monotone" dataKey="ethanol" name="Ethanol %" stroke="#dc2626" strokeWidth={2} dot={{ r: 3, fill: '#dc2626' }} connectNulls />
-              <Line type="monotone" dataKey="rcReflex" name="RC Reflex" stroke="#1e40af" strokeWidth={2} dot={{ r: 3, fill: '#1e40af' }} connectNulls />
-            </LineChart>
-          </ResponsiveContainer>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Trends</h3>
+          <div className="flex items-center gap-1">
+            <span className="text-[9px] text-slate-400 uppercase tracking-widest mr-1">Y-Zoom</span>
+            <button onClick={() => setYZoom(z => z + 1)} className="px-1.5 py-0.5 border border-slate-300 text-slate-600 text-xs hover:bg-slate-100"><ZoomIn size={12} /></button>
+            <button onClick={() => setYZoom(z => Math.max(0, z - 1))} className="px-1.5 py-0.5 border border-slate-300 text-slate-600 text-xs hover:bg-slate-100"><ZoomOut size={12} /></button>
+            {yZoom > 0 && <button onClick={() => setYZoom(0)} className="px-1.5 py-0.5 text-[9px] text-blue-600 hover:underline">Reset</button>}
+          </div>
+        </div>
+        {chartStats.count > 0 && (
+          <div className="grid grid-cols-3 md:grid-cols-5 gap-0 border border-slate-300 mb-2">
+            {[
+              { label: 'Mean', value: chartStats.mean.toFixed(2), color: 'indigo' },
+              { label: 'Min', value: chartStats.min.toFixed(2), color: 'cyan' },
+              { label: 'Max', value: chartStats.max.toFixed(2), color: 'red' },
+              { label: 'Range', value: chartStats.range.toFixed(2), color: 'amber' },
+              { label: 'Samples', value: String(chartStats.count), color: 'slate' },
+            ].map(s => (
+              <div key={s.label} className="px-2 py-2 border-r border-slate-200 last:border-r-0">
+                <div className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{s.label}</div>
+                <div className={`text-sm font-bold font-mono tabular-nums mt-0.5 text-${s.color}-600`}>{s.value}</div>
+              </div>
+            ))}
+          </div>
         )}
+        {chartData.length > 0 && (() => {
+          const yDomain: [string | number, string | number] = yZoom > 0 && chartStats.count > 0
+            ? [chartStats.mean - chartStats.range / (yZoom + 1), chartStats.mean + chartStats.range / (yZoom + 1)]
+            : ['auto', 'auto'];
+          return (
+            <ResponsiveContainer width="100%" height={250}>
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} interval="preserveStartEnd" />
+                <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={yDomain} />
+                <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }} itemStyle={{ padding: '1px 0' }} />
+                <Legend verticalAlign="top" height={30} iconType="plainline" wrapperStyle={{ fontSize: 10, color: '#64748b' }} />
+                <Line type="monotone" dataKey="ethanol" name="Ethanol %" stroke="#dc2626" strokeWidth={2} dot={{ r: 3, fill: '#dc2626' }} connectNulls />
+                <Line type="monotone" dataKey="rcReflex" name="RC Reflex" stroke="#1e40af" strokeWidth={2} dot={{ r: 3, fill: '#1e40af' }} connectNulls />
+              </LineChart>
+            </ResponsiveContainer>
+          );
+        })()}
       </div>
 
       {/* History */}

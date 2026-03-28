@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { CogIcon, Save, Loader2, ChevronDown, ChevronUp, Trash2, TrendingUp, Eye, X, Share2 } from 'lucide-react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { CogIcon, Save, Loader2, ChevronDown, ChevronUp, Trash2, TrendingUp, Eye, X, Share2, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import ProcessPage, { InputCard, Field } from './ProcessPage';
 import api from '../../services/api';
 import {
@@ -46,8 +46,80 @@ const CHART_VIEWS: { key: ChartView; label: string }[] = [
   { key: 'load', label: 'Mill Load' },
 ];
 
+// ─── Stats & Zoom Helpers ───────────────────
+function calcStats(values: number[]): { mean: number; min: number; max: number; range: number; count: number } {
+  const filtered = values.filter(v => v != null && !isNaN(v));
+  if (filtered.length === 0) return { mean: 0, min: 0, max: 0, range: 0, count: 0 };
+  const min = Math.min(...filtered);
+  const max = Math.max(...filtered);
+  return {
+    mean: filtered.reduce((s, v) => s + v, 0) / filtered.length,
+    min, max,
+    range: max - min,
+    count: filtered.length,
+  };
+}
+
+function StatsStrip({ values }: { values: number[] }) {
+  const { mean, min, max, range, count } = calcStats(values);
+  const items = [
+    { label: 'Mean', value: mean.toFixed(2), color: 'text-indigo-600' },
+    { label: 'Min', value: min.toFixed(2), color: 'text-cyan-600' },
+    { label: 'Max', value: max.toFixed(2), color: 'text-red-600' },
+    { label: 'Range', value: range.toFixed(2), color: 'text-amber-600' },
+    { label: 'Samples', value: String(count), color: 'text-slate-600' },
+  ];
+  return (
+    <div className="grid grid-cols-3 md:grid-cols-5 gap-0 border border-slate-300 mb-2">
+      {items.map(s => (
+        <div key={s.label} className="px-2 py-2 border-r border-slate-200 last:border-r-0">
+          <div className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{s.label}</div>
+          <div className={`text-sm font-bold font-mono tabular-nums mt-0.5 ${s.color}`}>{s.value}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function YZoomControls({ zoom, onZoom, onReset }: { zoom: number; onZoom: (dir: 1 | -1) => void; onReset: () => void }) {
+  return (
+    <div className="flex items-center gap-1 justify-end mb-1">
+      <span className="text-[9px] text-slate-400 uppercase tracking-widest mr-1">Y-Zoom</span>
+      <button onClick={() => onZoom(1)} className="p-1 border border-slate-300 bg-white hover:bg-slate-50 text-slate-600" title="Zoom In (Y)">
+        <ZoomIn size={13} />
+      </button>
+      <button onClick={() => onZoom(-1)} className="p-1 border border-slate-300 bg-white hover:bg-slate-50 text-slate-600" title="Zoom Out (Y)">
+        <ZoomOut size={13} />
+      </button>
+      {zoom !== 0 && (
+        <button onClick={onReset} className="p-1 border border-slate-300 bg-white hover:bg-slate-50 text-slate-600 flex items-center gap-0.5 px-1.5 text-[10px]" title="Reset Zoom">
+          <RotateCcw size={11} /> Reset
+        </button>
+      )}
+    </div>
+  );
+}
+
+function useYZoom(dataMin: number, dataMax: number, zoom: number): [number, number] {
+  return useMemo(() => {
+    if (zoom === 0) return [dataMin, dataMax] as [number, number];
+    const mid = (dataMin + dataMax) / 2;
+    const halfRange = (dataMax - dataMin) / 2;
+    const factor = Math.pow(0.75, zoom); // each zoom step narrows by 25%
+    const newHalf = Math.max(halfRange * factor, 0.1);
+    return [mid - newHalf, mid + newHalf] as [number, number];
+  }, [dataMin, dataMax, zoom]);
+}
+
 function MillingChartInner({ entries }: { entries: any[] }) {
   const [view, setView] = useState<ChartView>('coarse');
+  const [zoomCoarse, setZoomCoarse] = useState(0);
+  const [zoomFine, setZoomFine] = useState(0);
+  const [zoomSieve, setZoomSieve] = useState(0);
+  const [zoomParticle, setZoomParticle] = useState(0);
+  const [zoomRpm, setZoomRpm] = useState(0);
+  const [zoomLoad, setZoomLoad] = useState(0);
+
   if (entries.length < 1) return null;
 
   const chartData = entries.map(e => ({
@@ -63,11 +135,33 @@ function MillingChartInner({ entries }: { entries: any[] }) {
 
   const avgFine = entries.reduce((s: number, e: any) => s + e.totalFine, 0) / entries.length;
 
+  // Pre-compute value arrays for stats
+  const coarseVals = chartData.map(d => d.coarse);
+  const fineVals = chartData.map(d => d.fine);
+  const allSieveVals = chartData.flatMap(d => [d.s1mm, d.s850, d.s600, d.s300, d.fine].filter(v => v != null && !isNaN(v)));
+  const allRpmVals = chartData.flatMap(d => [d.aRpm, d.bRpm, d.cRpm].filter(v => v != null && !isNaN(v)));
+  const allLoadVals = chartData.flatMap(d => [d.aLoad, d.bLoad, d.cLoad].filter(v => v != null && !isNaN(v)));
+
   const tooltipStyle = {
     contentStyle: { fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' },
     labelStyle: { fontWeight: 700, marginBottom: 4, color: '#1e293b' },
     itemStyle: { padding: '1px 0' },
   };
+
+  // Y-zoom domains
+  const coarseStats = calcStats(coarseVals);
+  const coarseDomain = useYZoom(coarseStats.min * 0.9, coarseStats.max * 1.1, zoomCoarse);
+  const fineStats = calcStats(fineVals);
+  const fineDomain = useYZoom(fineStats.min * 0.9, fineStats.max * 1.1, zoomFine);
+  const sieveStats = calcStats(allSieveVals);
+  const sieveDomain = useYZoom(Math.max(0, sieveStats.min * 0.9), sieveStats.max * 1.1, zoomSieve);
+  const particleAllVals = [...coarseVals, ...fineVals];
+  const particleStats = calcStats(particleAllVals);
+  const particleDomain = useYZoom(0, particleStats.max * 1.1, zoomParticle);
+  const rpmStats = calcStats(allRpmVals);
+  const rpmDomain = useYZoom(rpmStats.min * 0.9, rpmStats.max * 1.1, zoomRpm);
+  const loadStats = calcStats(allLoadVals);
+  const loadDomain = useYZoom(loadStats.min * 0.9, loadStats.max * 1.1, zoomLoad);
 
   return (
     <div>
@@ -82,17 +176,18 @@ function MillingChartInner({ entries }: { entries: any[] }) {
 
       {/* Total Coarse % trend (1mm + 0.850mm) */}
       {view === 'coarse' && (() => {
-        const coarseVals = chartData.map(d => d.coarse);
         const avgCoarse = coarseVals.reduce((s, v) => s + v, 0) / coarseVals.length;
         return (
           <>
+            <StatsStrip values={coarseVals} />
+            <YZoomControls zoom={zoomCoarse} onZoom={d => setZoomCoarse(z => z + d)} onReset={() => setZoomCoarse(0)} />
             <div className="bg-white border border-slate-300 p-3">
               <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Total Coarse % Trend</div>
               <ResponsiveContainer width="100%" height={250}>
                 <ComposedChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
-                  <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={['auto', 'auto']} unit="%" />
+                  <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={zoomCoarse !== 0 ? coarseDomain : ['auto', 'auto']} unit="%" />
                   <Tooltip {...tooltipStyle} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
                   <ReferenceLine y={avgCoarse} stroke="#6b7280" strokeDasharray="5 5" strokeOpacity={0.5} label={{ value: `avg ${avgCoarse.toFixed(1)}%`, fontSize: 10, fill: '#9ca3af' }} />
@@ -103,22 +198,6 @@ function MillingChartInner({ entries }: { entries: any[] }) {
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
-            {entries.length >= 2 && (
-              <div className="flex items-center justify-center gap-8 mt-3 pt-3 border-t">
-                <div className="text-center">
-                  <p className="text-xs text-gray-400">Average</p>
-                  <p className="text-xl font-bold text-orange-500">{avgCoarse.toFixed(2)}%</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-xs text-gray-400">Min</p>
-                  <p className="text-lg font-semibold text-green-600">{Math.min(...coarseVals).toFixed(2)}%</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-xs text-gray-400">Max</p>
-                  <p className="text-lg font-semibold text-red-500">{Math.max(...coarseVals).toFixed(2)}%</p>
-                </div>
-              </div>
-            )}
           </>
         );
       })()}
@@ -126,13 +205,15 @@ function MillingChartInner({ entries }: { entries: any[] }) {
       {/* Total Fine % trend */}
       {view === 'fine' && (
         <>
+          <StatsStrip values={fineVals} />
+          <YZoomControls zoom={zoomFine} onZoom={d => setZoomFine(z => z + d)} onReset={() => setZoomFine(0)} />
           <div className="bg-white border border-slate-300 p-3">
             <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Total Fine % Trend</div>
             <ResponsiveContainer width="100%" height={250}>
               <ComposedChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                 <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
-                <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={['auto', 'auto']} unit="%" />
+                <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={zoomFine !== 0 ? fineDomain : ['auto', 'auto']} unit="%" />
                 <Tooltip {...tooltipStyle} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 <ReferenceLine y={avgFine} stroke="#6b7280" strokeDasharray="5 5" strokeOpacity={0.5} label={{ value: `avg ${avgFine.toFixed(1)}%`, fontSize: 10, fill: '#9ca3af' }} />
@@ -141,57 +222,47 @@ function MillingChartInner({ entries }: { entries: any[] }) {
               </ComposedChart>
             </ResponsiveContainer>
           </div>
-          {entries.length >= 2 && (
-            <div className="flex items-center justify-center gap-8 mt-3 pt-3 border-t">
-              <div className="text-center">
-                <p className="text-xs text-gray-400">Average</p>
-                <p className="text-xl font-bold text-purple-600">{avgFine.toFixed(2)}%</p>
-              </div>
-              <div className="text-center">
-                <p className="text-xs text-gray-400">Min</p>
-                <p className="text-lg font-semibold text-green-600">{Math.min(...entries.map((e: any) => e.totalFine)).toFixed(2)}%</p>
-              </div>
-              <div className="text-center">
-                <p className="text-xs text-gray-400">Max</p>
-                <p className="text-lg font-semibold text-red-500">{Math.max(...entries.map((e: any) => e.totalFine)).toFixed(2)}%</p>
-              </div>
-            </div>
-          )}
         </>
       )}
 
       {/* Sieve breakdown — line chart per fraction */}
       {view === 'sieve' && (
-        <div className="bg-white border border-slate-300 p-3">
-          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Sieve Breakdown</div>
-          <ResponsiveContainer width="100%" height={250}>
-            <ComposedChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
-              <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={['auto', 'auto']} unit="%" />
-              <Tooltip {...tooltipStyle} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Line type="monotone" dataKey="s600" name="0.600mm" stroke="#1e40af" strokeWidth={2} dot={{ r: 3, fill: '#1e40af' }} />
-              <Line type="monotone" dataKey="fine" name="Fine (<0.3mm)" stroke="#0891b2" strokeWidth={2} dot={{ r: 3, fill: '#0891b2' }} />
-              <Line type="monotone" dataKey="s300" name="0.300mm" stroke="#10b981" strokeWidth={2} dot={{ r: 3, fill: '#10b981' }} />
-              <Line type="monotone" dataKey="s850" name="0.850mm" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3, fill: '#f59e0b' }} strokeDasharray="4 3" />
-              <Line type="monotone" dataKey="s1mm" name="1.00mm" stroke="#dc2626" strokeWidth={2} dot={{ r: 3, fill: '#dc2626' }} strokeDasharray="4 3" />
-              {chartData.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" />}
-            </ComposedChart>
-          </ResponsiveContainer>
-        </div>
+        <>
+          <StatsStrip values={chartData.map(d => d.s600).filter(v => v != null)} />
+          <YZoomControls zoom={zoomSieve} onZoom={d => setZoomSieve(z => z + d)} onReset={() => setZoomSieve(0)} />
+          <div className="bg-white border border-slate-300 p-3">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Sieve Breakdown (stats: 0.600mm)</div>
+            <ResponsiveContainer width="100%" height={250}>
+              <ComposedChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+                <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={zoomSieve !== 0 ? sieveDomain : ['auto', 'auto']} unit="%" />
+                <Tooltip {...tooltipStyle} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Line type="monotone" dataKey="s600" name="0.600mm" stroke="#1e40af" strokeWidth={2} dot={{ r: 3, fill: '#1e40af' }} />
+                <Line type="monotone" dataKey="fine" name="Fine (<0.3mm)" stroke="#0891b2" strokeWidth={2} dot={{ r: 3, fill: '#0891b2' }} />
+                <Line type="monotone" dataKey="s300" name="0.300mm" stroke="#10b981" strokeWidth={2} dot={{ r: 3, fill: '#10b981' }} />
+                <Line type="monotone" dataKey="s850" name="0.850mm" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3, fill: '#f59e0b' }} strokeDasharray="4 3" />
+                <Line type="monotone" dataKey="s1mm" name="1.00mm" stroke="#dc2626" strokeWidth={2} dot={{ r: 3, fill: '#dc2626' }} strokeDasharray="4 3" />
+                {chartData.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" />}
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </>
       )}
 
       {/* Coarse & Fines — Bar histogram */}
       {view === 'particle' && (
         <>
+          <StatsStrip values={coarseVals} />
+          <YZoomControls zoom={zoomParticle} onZoom={d => setZoomParticle(z => z + d)} onReset={() => setZoomParticle(0)} />
           <div className="bg-white border border-slate-300 p-3">
-            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Coarse & Fines Distribution</div>
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Coarse & Fines Distribution (stats: Coarse)</div>
             <ResponsiveContainer width="100%" height={250}>
               <BarChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }} barCategoryGap="20%">
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
                 <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
-                <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={[0, 'auto']} unit="%" />
+                <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={zoomParticle !== 0 ? particleDomain : [0, 'auto']} unit="%" />
                 <Tooltip {...tooltipStyle} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 <Bar dataKey="coarse" name="Coarse (>0.85mm)" fill="#3b82f6" radius={[3, 3, 0, 0]} />
@@ -200,74 +271,55 @@ function MillingChartInner({ entries }: { entries: any[] }) {
               </BarChart>
             </ResponsiveContainer>
           </div>
-          {entries.length >= 2 && (() => {
-            const coarseVals = entries.map((e: any) => Math.round(((e.sieve_1mm || 0) + (e.sieve_850 || 0)) * 100) / 100);
-            const fineVals = entries.map((e: any) => e.totalFine);
-            const avgCoarse = coarseVals.reduce((s: number, v: number) => s + v, 0) / coarseVals.length;
-            const avgFines = fineVals.reduce((s: number, v: number) => s + v, 0) / fineVals.length;
-            return (
-              <div className="flex items-start justify-center gap-10 mt-3 pt-3 border-t">
-                <div>
-                  <p className="text-xs font-semibold text-orange-500 text-center mb-2">Coarse (&gt;0.85mm)</p>
-                  <div className="flex gap-6">
-                    <div className="text-center"><p className="text-xs text-gray-400">Average</p><p className="text-xl font-bold text-orange-500">{avgCoarse.toFixed(2)}%</p></div>
-                    <div className="text-center"><p className="text-xs text-gray-400">Min</p><p className="text-lg font-semibold text-green-600">{Math.min(...coarseVals).toFixed(2)}%</p></div>
-                    <div className="text-center"><p className="text-xs text-gray-400">Max</p><p className="text-lg font-semibold text-red-500">{Math.max(...coarseVals).toFixed(2)}%</p></div>
-                  </div>
-                </div>
-                <div className="w-px bg-gray-200 self-stretch" />
-                <div>
-                  <p className="text-xs font-semibold text-purple-600 text-center mb-2">Fines (&lt;0.3mm)</p>
-                  <div className="flex gap-6">
-                    <div className="text-center"><p className="text-xs text-gray-400">Average</p><p className="text-xl font-bold text-purple-600">{avgFines.toFixed(2)}%</p></div>
-                    <div className="text-center"><p className="text-xs text-gray-400">Min</p><p className="text-lg font-semibold text-green-600">{Math.min(...fineVals).toFixed(2)}%</p></div>
-                    <div className="text-center"><p className="text-xs text-gray-400">Max</p><p className="text-lg font-semibold text-red-500">{Math.max(...fineVals).toFixed(2)}%</p></div>
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
         </>
       )}
 
       {/* RPM per mill */}
       {view === 'rpm' && (
-        <div className="bg-white border border-slate-300 p-3">
-          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Mill RPM</div>
-          <ResponsiveContainer width="100%" height={250}>
-            <ComposedChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
-              <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={['auto', 'auto']} unit=" rpm" />
-              <Tooltip {...tooltipStyle} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Line type="monotone" dataKey="aRpm" name="Mill A" stroke="#1e40af" strokeWidth={2} dot={{ r: 3, fill: '#1e40af' }} />
-              <Line type="monotone" dataKey="bRpm" name="Mill B" stroke="#10b981" strokeWidth={2} dot={{ r: 3, fill: '#10b981' }} />
-              <Line type="monotone" dataKey="cRpm" name="Mill C" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3, fill: '#f59e0b' }} />
-              {chartData.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" />}
-            </ComposedChart>
-          </ResponsiveContainer>
-        </div>
+        <>
+          <StatsStrip values={allRpmVals} />
+          <YZoomControls zoom={zoomRpm} onZoom={d => setZoomRpm(z => z + d)} onReset={() => setZoomRpm(0)} />
+          <div className="bg-white border border-slate-300 p-3">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Mill RPM (stats: all mills)</div>
+            <ResponsiveContainer width="100%" height={250}>
+              <ComposedChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+                <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={zoomRpm !== 0 ? rpmDomain : ['auto', 'auto']} unit=" rpm" />
+                <Tooltip {...tooltipStyle} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Line type="monotone" dataKey="aRpm" name="Mill A" stroke="#1e40af" strokeWidth={2} dot={{ r: 3, fill: '#1e40af' }} />
+                <Line type="monotone" dataKey="bRpm" name="Mill B" stroke="#10b981" strokeWidth={2} dot={{ r: 3, fill: '#10b981' }} />
+                <Line type="monotone" dataKey="cRpm" name="Mill C" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3, fill: '#f59e0b' }} />
+                {chartData.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" />}
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </>
       )}
 
       {/* Load per mill */}
       {view === 'load' && (
-        <div className="bg-white border border-slate-300 p-3">
-          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Mill Load</div>
-          <ResponsiveContainer width="100%" height={250}>
-            <ComposedChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
-              <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={['auto', 'auto']} unit=" A" />
-              <Tooltip {...tooltipStyle} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Line type="monotone" dataKey="aLoad" name="Mill A" stroke="#1e40af" strokeWidth={2} dot={{ r: 3, fill: '#1e40af' }} />
-              <Line type="monotone" dataKey="bLoad" name="Mill B" stroke="#10b981" strokeWidth={2} dot={{ r: 3, fill: '#10b981' }} />
-              <Line type="monotone" dataKey="cLoad" name="Mill C" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3, fill: '#f59e0b' }} />
-              {chartData.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" />}
-            </ComposedChart>
-          </ResponsiveContainer>
-        </div>
+        <>
+          <StatsStrip values={allLoadVals} />
+          <YZoomControls zoom={zoomLoad} onZoom={d => setZoomLoad(z => z + d)} onReset={() => setZoomLoad(0)} />
+          <div className="bg-white border border-slate-300 p-3">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Mill Load (stats: all mills)</div>
+            <ResponsiveContainer width="100%" height={250}>
+              <ComposedChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+                <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={zoomLoad !== 0 ? loadDomain : ['auto', 'auto']} unit=" A" />
+                <Tooltip {...tooltipStyle} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Line type="monotone" dataKey="aLoad" name="Mill A" stroke="#1e40af" strokeWidth={2} dot={{ r: 3, fill: '#1e40af' }} />
+                <Line type="monotone" dataKey="bLoad" name="Mill B" stroke="#10b981" strokeWidth={2} dot={{ r: 3, fill: '#10b981' }} />
+                <Line type="monotone" dataKey="cLoad" name="Mill C" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3, fill: '#f59e0b' }} />
+                {chartData.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" />}
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </>
       )}
     </div>
   );
