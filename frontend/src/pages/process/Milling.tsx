@@ -98,9 +98,9 @@ function MillingChartInner({ entries }: { entries: any[] }) {
           <>
             <ResponsiveContainer width="100%" height={280}>
               <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} domain={['auto', 'auto']} unit="%" />
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} />
+                <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} domain={['auto', 'auto']} unit="%" />
                 <Tooltip content={<CustomTooltip />} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 <ReferenceLine y={avgCoarse} stroke="#6b7280" strokeDasharray="5 5" strokeOpacity={0.5} label={{ value: `avg ${avgCoarse.toFixed(1)}%`, fontSize: 10, fill: '#9ca3af' }} />
@@ -134,9 +134,9 @@ function MillingChartInner({ entries }: { entries: any[] }) {
         <>
           <ResponsiveContainer width="100%" height={280}>
             <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} domain={['auto', 'auto']} unit="%" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} />
+              <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} domain={['auto', 'auto']} unit="%" />
               <Tooltip content={<CustomTooltip />} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               <ReferenceLine y={avgFine} stroke="#6b7280" strokeDasharray="5 5" strokeOpacity={0.5} label={{ value: `avg ${avgFine.toFixed(1)}%`, fontSize: 10, fill: '#9ca3af' }} />
@@ -166,9 +166,9 @@ function MillingChartInner({ entries }: { entries: any[] }) {
       {view === 'sieve' && (
         <ResponsiveContainer width="100%" height={280}>
           <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} domain={['auto', 'auto']} unit="%" />
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} />
+            <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} domain={['auto', 'auto']} unit="%" />
             <Tooltip content={<CustomTooltip />} />
             <Legend wrapperStyle={{ fontSize: 12 }} />
             <Line type="monotone" dataKey="s600" name="0.600mm" stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 4, fill: '#3b82f6' }} />
@@ -185,9 +185,9 @@ function MillingChartInner({ entries }: { entries: any[] }) {
         <>
           <ResponsiveContainer width="100%" height={280}>
             <BarChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }} barCategoryGap="20%">
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-              <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} domain={[0, 'auto']} unit="%" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+              <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} />
+              <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} domain={[0, 'auto']} unit="%" />
               <Tooltip content={<CustomTooltip />} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               <Bar dataKey="coarse" name="Coarse (>0.85mm)" fill="#f97316" radius={[3, 3, 0, 0]} />
@@ -228,9 +228,9 @@ function MillingChartInner({ entries }: { entries: any[] }) {
       {view === 'rpm' && (
         <ResponsiveContainer width="100%" height={280}>
           <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} domain={['auto', 'auto']} unit=" rpm" />
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} />
+            <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} domain={['auto', 'auto']} unit=" rpm" />
             <Tooltip content={<CustomTooltip />} />
             <Legend wrapperStyle={{ fontSize: 12 }} />
             <Line type="monotone" dataKey="aRpm" name="Mill A" stroke={MILL_COLORS.A} strokeWidth={2} dot={{ r: 4 }} />
@@ -244,9 +244,9 @@ function MillingChartInner({ entries }: { entries: any[] }) {
       {view === 'load' && (
         <ResponsiveContainer width="100%" height={280}>
           <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} domain={['auto', 'auto']} unit=" A" />
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} />
+            <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} domain={['auto', 'auto']} unit=" A" />
             <Tooltip content={<CustomTooltip />} />
             <Legend wrapperStyle={{ fontSize: 12 }} />
             <Line type="monotone" dataKey="aLoad" name="Mill A" stroke={MILL_COLORS.A} strokeWidth={2} dot={{ r: 4 }} />
