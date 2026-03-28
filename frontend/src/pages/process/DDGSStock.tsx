@@ -489,11 +489,8 @@ export default function DDGSStock() {
                   const phone = acPhones.trim();
                   if (!phone) { setAcStatus('Add at least one phone number'); return; }
                   try {
-                    await api.post('/auto-collect/schedules', {
-                      schedules: [
-                        ...(await api.get('/auto-collect/schedules').then(r => (r.data || []).filter((s: { module: string }) => s.module !== 'ddgs'))),
-                        { module: 'ddgs', phone, intervalMinutes: parseInt(acInterval) || 60, enabled: acEnabled, autoShare: acAutoShare, language: acLang },
-                      ]
+                    await api.put('/auto-collect/schedules/ddgs', {
+                      phone, intervalMinutes: parseInt(acInterval) || 60, enabled: acEnabled, autoShare: acAutoShare, language: acLang,
                     });
                     setAcDirty(false);
                     setAcStatus(`Schedule saved (${acEnabled ? 'enabled' : 'disabled'}, ${acInterval}min${acAutoShare ? ', auto-share' : ''})`);

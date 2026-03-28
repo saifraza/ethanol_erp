@@ -449,9 +449,8 @@ export default function Decanter() {
                   const phone = acPhones.trim();
                   if (!phone) { setAcStatus('Add at least one phone number'); return; }
                   try {
-                    const existing = await api.get('/auto-collect/schedules').then(r => (r.data || []).filter((s: { module: string }) => s.module !== 'decanter')).catch(() => []);
-                    await api.post('/auto-collect/schedules', {
-                      schedules: [...existing, { module: 'decanter', phone, intervalMinutes: parseInt(acInterval) || 120, enabled: acEnabled, autoShare: acAutoShare }]
+                    await api.put('/auto-collect/schedules/decanter', {
+                      phone, intervalMinutes: parseInt(acInterval) || 120, enabled: acEnabled, autoShare: acAutoShare,
                     });
                     setAcDirty(false);
                     setAcStatus(`Schedule saved (${acEnabled ? 'enabled' : 'disabled'}, ${acInterval}min${acAutoShare ? ', auto-share' : ''})`);
