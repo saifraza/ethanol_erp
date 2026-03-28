@@ -90,7 +90,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'bank-loans', label: 'Bank Loans', to: '/accounts/bank-loans', icon: Landmark, group: 'accounts' },
 
   // ── INVENTORY (SAP-style Store Management) ──
-  { key: 'stock-dashboard', label: 'Stock Overview', to: '/inventory/dashboard', icon: Warehouse, group: 'inventory' },
+  { key: 'inventory-store', label: 'Inventory & Store', to: '/inventory', icon: Warehouse, group: 'inventory' },
   { key: 'material-master', label: 'Item Master', to: '/inventory/items', icon: Box, group: 'inventory' },
   { key: 'warehouses', label: 'Warehouses', to: '/inventory/warehouses', icon: Warehouse, group: 'inventory' },
   { key: 'stock-movements', label: 'Goods Movement', to: '/inventory/movements', icon: ArrowRightLeft, group: 'inventory' },
