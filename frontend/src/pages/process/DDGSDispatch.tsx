@@ -92,9 +92,9 @@ export default function DDGSDispatch() {
       resetForm();
       await loadDispatches();
 
-      // Share to WhatsApp if requested
+      // Share to Telegram if requested
       if (share) {
-        await shareWhatsApp();
+        await shareTelegram();
       }
     } catch (err: any) { setMsg({ type: 'err', text: err.response?.data?.error || 'Save failed' }); }
     setSaving(false);
@@ -121,16 +121,16 @@ export default function DDGSDispatch() {
   const totalNet = dispatches.reduce((s, d) => s + (d.weightNet || 0), 0);
   const totalBags = dispatches.reduce((s, d) => s + (d.bags || 0), 0);
 
-  async function shareWhatsApp() {
+  async function shareTelegram() {
     const lines = dispatches.map((d, i) =>
       `${i + 1}. ${d.vehicleNo} → ${d.partyName || '-'} | ${d.bags} bags | ${(d.weightNet * 1000).toFixed(0)} KG`
     ).join('\n');
     const text = `*DDGS Dispatch Report*\n📅 ${date}\n\n${lines}\n\n*Total: ${(totalNet * 1000).toFixed(0)} KG (${totalNet.toFixed(2)} MT) | ${totalBags} bags | ${dispatches.length} trucks*`;
     try {
-      await api.post('/whatsapp/send-report', { message: text, module: 'ddgs-dispatch' });
-      setMsg({ type: 'ok', text: 'Report sent to WhatsApp' });
+      await api.post('/telegram/send-report', { message: text, module: 'ddgs-dispatch' });
+      setMsg({ type: 'ok', text: 'Report sent to Telegram' });
     } catch (err: any) {
-      setMsg({ type: 'err', text: err.response?.data?.error || 'Failed to send WhatsApp' });
+      setMsg({ type: 'err', text: err.response?.data?.error || 'Failed to send Telegram' });
     }
   }
 
@@ -309,11 +309,11 @@ export default function DDGSDispatch() {
         )}
       </div>
 
-      {/* WhatsApp share */}
+      {/* Telegram share */}
       {dispatches.length > 0 && (
-        <button onClick={shareWhatsApp}
+        <button onClick={shareTelegram}
           className="w-full flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 mb-5">
-          <Share2 size={16} /> Share on WhatsApp
+          <Share2 size={16} /> Share on Telegram
         </button>
       )}
 

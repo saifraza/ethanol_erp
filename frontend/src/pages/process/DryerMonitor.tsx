@@ -48,8 +48,8 @@ export default function DryerMonitor() {
 
       if (share) {
         const text = buildPreviewText();
-        await api.post('/whatsapp/send-report', { message: text, module: 'dryer' });
-        setMsg({ type: 'ok', text: 'Saved and shared via WhatsApp' });
+        await api.post('/telegram/send-report', { message: text, module: 'dryer' });
+        setMsg({ type: 'ok', text: 'Saved and shared via Telegram' });
       } else {
         setMsg({ type: 'ok', text: `Saved at ${new Date().toLocaleTimeString()}` });
       }

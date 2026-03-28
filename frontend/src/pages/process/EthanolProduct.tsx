@@ -175,7 +175,7 @@ export default function EthanolProduct() {
       setMsg({ type: 'ok', text: `Saved at ${now}` });
 
       if (share) {
-        // Generate report and share to WhatsApp
+        // Generate report and share to Telegram
         const tankLines = TANKS.map(t => {
           if (form[`${t.key}Empty`]) return `${t.label}: Empty`;
           return `${t.label}: ${(form[`${t.key}Volume`] || 0).toFixed(0)}L @ ${(form[`${t.key}Strength`] || 0).toFixed(1)}%`;
@@ -187,10 +187,10 @@ export default function EthanolProduct() {
         const klpd = form.klpd || 0;
         const text = `*Ethanol Stock Report*\n📅 ${date} ${time}\n\n${tankLines}\n\nStock: ${totalStock.toFixed(1)} BL (${avgStrength.toFixed(2)}%)\nDispatch: ${todayDispatch.toFixed(1)} BL\nProd BL: ${productionBL.toFixed(2)}\nFlow: ${klpd.toFixed(2)} KLPD${dispLines}${remarks ? '\n\nRemarks: ' + remarks : ''}`;
         try {
-          await api.post('/whatsapp/send-report', { message: text, module: 'ethanol-product' });
-          setMsg({ type: 'ok', text: 'Saved & shared to WhatsApp' });
+          await api.post('/telegram/send-report', { message: text, module: 'ethanol-product' });
+          setMsg({ type: 'ok', text: 'Saved & shared to Telegram' });
         } catch (err: any) {
-          setMsg({ type: 'ok', text: 'Saved but WhatsApp share failed' });
+          setMsg({ type: 'ok', text: 'Saved but Telegram share failed' });
         }
       }
 
@@ -328,8 +328,8 @@ export default function EthanolProduct() {
             const prevLine = lastPrevStock != null && lastPrevDate ? `\nPrev Stock: ${lastPrevStock.toFixed(0)} BL (${fmtDtTime(lastPrevDate)})` : '';
             const text = `*Ethananol Stock Status*\n📅 ${fmtDtTime(lastEntry.date)}\n${prevLine}\nStock: ${lastEntry.totalStock?.toFixed(0)} BL\nStrength: ${lastEntry.avgStrength?.toFixed(1)}%\nProd: ${lastEntry.productionBL?.toFixed(0)} BL${lastPrevDate ? ` (${fmtDtTime(lastPrevDate)} → ${fmtDtTime(lastEntry.date)})` : ''}\nKLPD: ${lastEntry.klpd?.toFixed(1)}${dispInfo}${newDispInfo}${newTruckLines}\n\n📦 *Current Stock: ${curStock.toFixed(0)} BL*\n🚛 Total Dispatched: ${(allTimeDispatched/100000).toFixed(2)} L BL (${allTimeDispatchCount} trucks)\n🏭 Total Produced: ${(totalProduced/100000).toFixed(2)} L BL`;
             try {
-              await api.post('/whatsapp/send-report', { message: text, module: 'ethanol-product' });
-              setMsg({ type: 'ok', text: 'Status shared to WhatsApp' });
+              await api.post('/telegram/send-report', { message: text, module: 'ethanol-product' });
+              setMsg({ type: 'ok', text: 'Status shared to Telegram' });
             } catch (err: any) {
               setMsg({ type: 'err', text: err.response?.data?.error || 'Failed to share' });
             }
@@ -610,13 +610,13 @@ export default function EthanolProduct() {
                 const dispLines = dispatchList.length > 0 ? '\n\n*Dispatch:*\n' + dispatchList.map((d: any) => `${d.vehicleNo} → ${d.destination || '-'} | ${d.quantityBL?.toFixed(0)} BL${d.strength ? ` @ ${d.strength}%` : ''} | ${d.partyName}`).join('\n') : '';
                 const text = `*Ethanol Stock Report*\n📅 ${date} ${time}\n\n${tankLines}\n\nStock: ${totalStock.toFixed(1)} BL (${avgStrength.toFixed(2)}%)\nDispatch: ${todayDispatch.toFixed(1)} BL\nProd BL: ${productionBL.toFixed(2)}\nFlow: ${klpd.toFixed(2)} KLPD${dispLines}${remarks ? '\n\nRemarks: ' + remarks : ''}`;
                 try {
-                  await api.post('/whatsapp/send-report', { message: text, module: 'ethanol-product' });
-                  setMsg({ type: 'ok', text: 'Report shared to WhatsApp' });
+                  await api.post('/telegram/send-report', { message: text, module: 'ethanol-product' });
+                  setMsg({ type: 'ok', text: 'Report shared to Telegram' });
                 } catch (err: any) {
                   setMsg({ type: 'err', text: err.response?.data?.error || 'Failed to share' });
                 }
               }} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
-                <Share2 size={16} /> WhatsApp
+                <Share2 size={16} /> Telegram
               </button>
               <button onClick={async () => { await handleSave(false); setShowPreview(false); }} disabled={saving}
                 className="flex-1 flex items-center justify-center gap-2 bg-purple-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50">

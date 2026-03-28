@@ -107,10 +107,10 @@ export default function Evaporation() {
   const shareReport = async () => {
     const text = buildPreviewText();
     try {
-      await api.post('/whatsapp/send-report', { message: text, module: 'evaporation' });
-      setMsg({ type: 'ok', text: 'Report shared on WhatsApp' });
+      await api.post('/telegram/send-report', { message: text, module: 'evaporation' });
+      setMsg({ type: 'ok', text: 'Report shared on Telegram' });
     } catch (err: any) {
-      setMsg({ type: 'err', text: err.response?.data?.error || 'Failed to share on WhatsApp' });
+      setMsg({ type: 'err', text: err.response?.data?.error || 'Failed to share on Telegram' });
     }
   };
 

@@ -210,9 +210,9 @@ export default function Fermentation() {
         const batch = getVesselBatch(selected);
         const text = buildVesselReport(selected, batch, f);
         try {
-          await api.post('/whatsapp/send-report', { message: text, module: 'fermentation' });
-          flash('ok', 'Shared on WhatsApp');
-        } catch { flash('err', 'WhatsApp send failed'); }
+          await api.post('/telegram/send-report', { message: text, module: 'fermentation' });
+          flash('ok', 'Shared on Telegram');
+        } catch { flash('err', 'Telegram send failed'); }
       }
       setReadingForm({});
       load();
@@ -488,7 +488,7 @@ export default function Fermentation() {
     return `${Math.round(s / 3600)}h`;
   };
 
-  /* ── WhatsApp Sharing helpers ── */
+  /* ── Telegram Sharing helpers ── */
   const getLatestReading = (v: Vessel, batch: any): LabReading | null => {
     if (v.type === 'FERM') {
       const entries = fermEntries[v.no] || [];
@@ -576,9 +576,9 @@ export default function Fermentation() {
     const batch = v.type === 'PF' ? getActivePF(v.no) : v.type === 'FERM' ? getActiveFerm(v.no) : null;
     const text = buildVesselReport(v, batch);
     try {
-      await api.post('/whatsapp/send-report', { message: text, module: 'fermentation' });
-      flash('ok', `${v.label} shared on WhatsApp`);
-    } catch { flash('err', 'WhatsApp send failed'); }
+      await api.post('/telegram/send-report', { message: text, module: 'fermentation' });
+      flash('ok', `${v.label} shared on Telegram`);
+    } catch { flash('err', 'Telegram send failed'); }
   };
 
   const shareAllFermentation = async () => {
@@ -646,9 +646,9 @@ export default function Fermentation() {
     }
 
     try {
-      await api.post('/whatsapp/send-report', { message: lines.join('\n'), module: 'fermentation' });
-      flash('ok', 'Full report shared on WhatsApp');
-    } catch { flash('err', 'WhatsApp send failed'); }
+      await api.post('/telegram/send-report', { message: lines.join('\n'), module: 'fermentation' });
+      flash('ok', 'Full report shared on Telegram');
+    } catch { flash('err', 'Telegram send failed'); }
   };
 
   /* ═══ RENDER ═══ */
@@ -666,7 +666,7 @@ export default function Fermentation() {
           <h1 className="text-lg font-extrabold flex items-center gap-2 tracking-tight"><FlaskConical size={20} /> Fermentation</h1>
           <div className="flex items-center gap-3">
             <span className="text-xs text-indigo-300 font-medium">{new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
-            <button onClick={shareAllFermentation} title="Share all fermentation status on WhatsApp"
+            <button onClick={shareAllFermentation} title="Share all fermentation status on Telegram"
               className="p-1.5 rounded-lg bg-green-600 hover:bg-green-500 active:bg-green-700 transition-colors">
               <MessageCircle size={16} />
             </button>
@@ -783,11 +783,11 @@ export default function Fermentation() {
                     <Clock size={8} className="text-gray-300" />{fmtTime(startTime)} ({elapsed(startTime)})
                   </div>
                 )}
-                {/* Small WhatsApp share icon on active vessels */}
+                {/* Small Telegram share icon on active vessels */}
                 {!isIdle && v.type !== 'BW' && (
                   <button onClick={(e) => shareVessel(v, e)}
                     className="absolute bottom-1.5 right-1.5 p-1 rounded-full bg-green-100 text-green-700 hover:bg-green-200 active:bg-green-300 transition-colors"
-                    title={`Share ${v.label} on WhatsApp`}>
+                    title={`Share on Telegram`}>
                     <MessageCircle size={10} />
                   </button>
                 )}

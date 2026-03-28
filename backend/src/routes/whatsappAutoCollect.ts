@@ -10,7 +10,7 @@ import {
   getAvailableModules,
   clearSession,
   clearAllSessions,
-} from '../services/whatsappAutoCollect';
+} from '../services/telegramAutoCollect';
 import prisma from '../config/prisma';
 
 const router = Router();
@@ -90,36 +90,19 @@ router.put(
 );
 
 // POST /api/auto-collect/trigger — manually trigger a collection now
-// If WA_WORKER_URL is set, proxy to the worker so the session lives where replies arrive
+// With Telegram, sessions always run in-process (no worker needed)
 router.post(
   '/trigger',
   authenticate,
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const { phone, module, autoShare } = req.body;
+    // "phone" field now holds Telegram chat ID
     if (!phone || !module) {
-      res.status(400).json({ error: 'phone and module are required' });
+      res.status(400).json({ error: 'chatId (phone) and module are required' });
       return;
     }
-
-    const workerUrl = process.env.WA_WORKER_URL;
-    if (workerUrl) {
-      // Proxy to worker — session must live on the worker where replies arrive
-      try {
-        const axios = (await import('axios')).default;
-        const apiKey = process.env.WA_WORKER_API_KEY || 'mspil-wa-internal';
-        const resp = await axios.post(`${workerUrl}/wa/auto-collect/trigger`, { phone, module, autoShare }, {
-          headers: { 'x-api-key': apiKey },
-          timeout: 15000,
-        });
-        res.json(resp.data);
-      } catch (err: unknown) {
-        const axErr = err as { response?: { data?: { error?: string } }; message?: string };
-        res.status(502).json({ success: false, error: axErr.response?.data?.error || axErr.message || 'Worker unreachable' });
-      }
-    } else {
-      const result = await startCollection(phone, module, autoShare !== false);
-      res.json(result);
-    }
+    const result = await startCollection(phone, module, autoShare !== false);
+    res.json(result);
   })
 );
 
@@ -140,24 +123,12 @@ router.get(
   })
 );
 
-// GET /api/auto-collect/sessions — active collection sessions (proxy to worker if external)
+// GET /api/auto-collect/sessions — active collection sessions
 router.get(
   '/sessions',
   authenticate,
   asyncHandler(async (_req: AuthRequest, res: Response) => {
-    const workerUrl = process.env.WA_WORKER_URL;
-    if (workerUrl) {
-      try {
-        const axios = (await import('axios')).default;
-        const apiKey = process.env.WA_WORKER_API_KEY || 'mspil-wa-internal';
-        const resp = await axios.get(`${workerUrl}/wa/auto-collect/sessions`, { headers: { 'x-api-key': apiKey }, timeout: 10000 });
-        res.json(resp.data);
-      } catch {
-        res.json(getActiveSessions()); // fallback to local
-      }
-    } else {
-      res.json(getActiveSessions());
-    }
+    res.json(getActiveSessions());
   })
 );
 

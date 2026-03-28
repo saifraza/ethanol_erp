@@ -169,18 +169,18 @@ export default function Liquefaction() {
       const resp = await api.post('/liquefaction', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       setLastSavedId(resp.data.id);
 
-      // Send WhatsApp if "Save & Share" was clicked
+      // Send Telegram if "Save & Share" was clicked
       if (share) {
         try {
           const t = buildReportText(form);
-          const waRes = await api.post('/whatsapp/send-report', { message: t, module: 'liquefaction' });
+          const waRes = await api.post('/telegram/send-report', { message: t, module: 'liquefaction' });
           if (waRes.data.sent > 0) {
             setMsg({ type: 'ok', text: `Saved & sent to ${waRes.data.sent} number(s)` });
           } else {
-            setMsg({ type: 'ok', text: 'Saved! WhatsApp send failed: ' + (waRes.data.results?.[0]?.error || 'not connected') });
+            setMsg({ type: 'ok', text: 'Saved! Telegram send failed: ' + (waRes.data.results?.[0]?.error || 'not connected') });
           }
         } catch {
-          setMsg({ type: 'ok', text: 'Saved! WhatsApp send failed.' });
+          setMsg({ type: 'ok', text: 'Saved! Telegram send failed.' });
         }
       } else {
         setMsg({ type: 'ok', text: `Saved at ${new Date().toLocaleTimeString()}` });

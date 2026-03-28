@@ -116,7 +116,7 @@ export default function GrainUnloadingTrucks() {
       await api.post('/grain-truck', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
 
-      // Auto-send WhatsApp notification for each truck unload
+      // Auto-send Telegram notification for each truck unload
       const netWt = ((parseNumberInput(weightGross) ?? 0) - (parseNumberInput(weightTare) ?? 0)).toFixed(2);
       const qw = parseNumberInput(quarantineWeight) ?? 0;
       const toSiloWt = (parseFloat(netWt) - qw).toFixed(2);
@@ -141,7 +141,7 @@ export default function GrainUnloadingTrucks() {
         `📊 Today: ${truckList.length} trucks · ${totalNetToday.toFixed(2)} Ton to silo`,
       ].filter(Boolean).join('\n');
 
-      api.post('/whatsapp/send-report', { message: waLines, module: 'grain' }).catch(() => {});
+      api.post('/telegram/send-report', { message: waLines, module: 'grain' }).catch(() => {});
 
       setMsg({ type: 'ok', text: `Truck saved at ${now}` });
       resetForm();
@@ -214,14 +214,14 @@ export default function GrainUnloadingTrucks() {
     return null;
   })();
 
-  function shareWhatsApp() {
+  function shareTelegram() {
     const lines = trucks.map((t, i) => {
       const tSilo = t.weightNet - (t.quarantineWeight || 0);
       return `${i+1}. ${t.uidRst ? `[${t.uidRst}] ` : ''}${t.vehicleNo} | ${t.supplier || '-'} | Net: ${t.weightNet.toFixed(1)} Ton → Silo: ${tSilo.toFixed(1)} Ton${t.quarantineWeight > 0 ? ` | Q: ${t.quarantineWeight.toFixed(1)} Ton` : ''}`;
     }).join('\n');
     const text = `*Grain Unloading Report*\n📅 ${date}\n\n${lines}\n\n*To Silo: ${totalNet.toFixed(1)} Ton (${truckCount} trucks)*${quarantineTotal > 0 ? `\n⚠️ Quarantine: ${quarantineTotal.toFixed(1)} Ton` : ''}`;
 
-    api.post('/whatsapp/send-report', { message: text, module: 'grain' }).catch(() => {});
+    api.post('/telegram/send-report', { message: text, module: 'grain' }).catch(() => {});
   }
 
   const fmtDt = (d: string) => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -452,7 +452,7 @@ export default function GrainUnloadingTrucks() {
                 <button onClick={() => {
                   const tSilo = t.weightNet - (t.quarantineWeight || 0);
                   const text = `*Grain Truck*\n${t.uidRst ? `UID/RST: ${t.uidRst}\n` : ''}Vehicle: ${t.vehicleNo}\n${t.supplier ? `Supplier: ${t.supplier}\n` : ''}Gross: ${t.weightGross} Ton | Tare: ${t.weightTare} Ton | Net: ${t.weightNet.toFixed(1)} Ton${t.bags > 0 ? ` | Bags: ${t.bags}` : ''}\nTo Silo: ${tSilo.toFixed(1)} Ton${t.quarantineWeight > 0 ? ` | Quarantine: ${t.quarantineWeight.toFixed(1)} Ton` : ''}${t.moisture != null ? `\nM: ${t.moisture}%` : ''}${t.starchPercent != null ? ` | S: ${t.starchPercent}%` : ''}${t.damagedPercent != null ? ` | D: ${t.damagedPercent}%` : ''}${t.foreignMatter != null ? ` | FM: ${t.foreignMatter}%` : ''}${t.quarantineReason ? `\nReason: ${t.quarantineReason}` : ''}${t.remarks ? `\nRemarks: ${t.remarks}` : ''}`;
-                  api.post('/whatsapp/send-report', { message: text, module: 'grain' }).catch(() => {});
+                  api.post('/telegram/send-report', { message: text, module: 'grain' }).catch(() => {});
                 }} className="text-green-500 hover:text-green-700"><Share2 size={14} /></button>
                 {t.photoUrl && (
                   <button onClick={() => setPhotoPreview(`${API_BASE}${t.photoUrl}`)}
@@ -470,11 +470,11 @@ export default function GrainUnloadingTrucks() {
         )}
       </div>
 
-      {/* WhatsApp share */}
+      {/* Telegram share */}
       {trucks.length > 0 && (
-        <button onClick={shareWhatsApp}
+        <button onClick={shareTelegram}
           className="w-full flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 mb-5">
-          <Share2 size={16} /> Share on WhatsApp
+          <Share2 size={16} /> Share on Telegram
         </button>
       )}
 
