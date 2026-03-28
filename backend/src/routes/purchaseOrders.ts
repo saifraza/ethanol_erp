@@ -405,6 +405,8 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
       otherCharges: po.otherCharges,
       roundOff: po.roundOff,
       grandTotal: po.grandTotal,
+      preparedBy: (po as any).createdByName || '',
+      approvedBy: (po as any).approvedByName || '',
     };
 
     const pdfBuffer = await renderDocumentPdf({
