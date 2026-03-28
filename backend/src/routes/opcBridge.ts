@@ -241,7 +241,7 @@ router.get('/bridge-health', asyncHandler(async (_req: AuthRequest, res: Respons
       res.json({ reachable: false, error: `Bridge returned ${resp.status}` });
       return;
     }
-    const data = await resp.json();
+    const data = await resp.json() as Record<string, unknown>;
     res.json({ reachable: true, ...data });
   } catch (err) {
     res.json({ reachable: false, error: (err as Error).message });
