@@ -213,6 +213,87 @@ router.get('/alerts', asyncHandler(async (_req: AuthRequest, res: Response) => {
   res.json({ alerts: lowStock });
 }));
 
+// ─── ITEM-VENDOR LINKS (Multi-supplier) ─────────
+
+// GET /items/:id/vendors — vendors linked to this item
+router.get('/items/:id/vendors', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const vendors = await prisma.vendorItem.findMany({
+    where: { inventoryItemId: req.params.id, isActive: true },
+    select: {
+      id: true, rate: true, minOrderQty: true, leadTimeDays: true, isPreferred: true, remarks: true,
+      vendor: { select: { id: true, name: true, gstin: true, category: true } },
+    },
+    orderBy: [{ isPreferred: 'desc' }, { rate: 'asc' }],
+    take: 20,
+  });
+  res.json(vendors);
+}));
+
+// POST /items/:id/vendors — link a vendor to this item
+router.post('/items/:id/vendors', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { vendorId, rate, minOrderQty, leadTimeDays, isPreferred, remarks } = req.body;
+  if (!vendorId) { res.status(400).json({ error: 'vendorId required' }); return; }
+
+  // If marking as preferred, unmark others first
+  if (isPreferred) {
+    await prisma.vendorItem.updateMany({
+      where: { inventoryItemId: req.params.id, isPreferred: true },
+      data: { isPreferred: false },
+    });
+  }
+
+  const link = await prisma.vendorItem.upsert({
+    where: { vendorId_inventoryItemId: { vendorId, inventoryItemId: req.params.id } },
+    create: {
+      vendorId,
+      inventoryItemId: req.params.id,
+      rate: parseFloat(rate) || 0,
+      minOrderQty: minOrderQty ? parseFloat(minOrderQty) : null,
+      leadTimeDays: leadTimeDays ? parseInt(leadTimeDays) : null,
+      isPreferred: isPreferred || false,
+      remarks: remarks || null,
+    },
+    update: {
+      rate: parseFloat(rate) || 0,
+      minOrderQty: minOrderQty ? parseFloat(minOrderQty) : null,
+      leadTimeDays: leadTimeDays ? parseInt(leadTimeDays) : null,
+      isPreferred: isPreferred || false,
+      remarks: remarks || null,
+      isActive: true,
+    },
+    include: { vendor: { select: { id: true, name: true, gstin: true } } },
+  });
+
+  // Update the supplier display name on the item to the preferred vendor
+  if (isPreferred) {
+    const vendor = await prisma.vendor.findUnique({ where: { id: vendorId }, select: { name: true } });
+    if (vendor) {
+      await prisma.inventoryItem.update({ where: { id: req.params.id }, data: { supplier: vendor.name } });
+    }
+  }
+
+  res.json(link);
+}));
+
+// DELETE /items/:id/vendors/:vendorId — unlink vendor
+router.delete('/items/:id/vendors/:vendorId', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+  await prisma.vendorItem.updateMany({
+    where: { inventoryItemId: req.params.id, vendorId: req.params.vendorId },
+    data: { isActive: false },
+  });
+  res.json({ ok: true });
+}));
+
+// POST /vendors/quick — quick-add a new vendor (minimal fields)
+router.post('/vendors/quick', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { name, gstin } = req.body;
+  if (!name) { res.status(400).json({ error: 'name required' }); return; }
+  const vendor = await prisma.vendor.create({
+    data: { name, gstin: gstin || null, category: 'GENERAL', isActive: true },
+  });
+  res.json(vendor);
+}));
+
 // GET /summary — category-wise totals
 router.get('/summary', asyncHandler(async (_req: AuthRequest, res: Response) => {
   const items = await prisma.inventoryItem.findMany({ where: { isActive: true } });

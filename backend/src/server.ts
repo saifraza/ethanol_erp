@@ -7,6 +7,7 @@ import { initAutoCollect } from './services/whatsappAutoCollect';
 import { initTelegram } from './services/telegramBot';
 import { initTelegramAutoCollect } from './services/telegramAutoCollect';
 import { initImageHandler } from './services/telegramImageHandler';
+import { startInventoryAlerts } from './services/inventoryAlerts';
 
 // Prevent crashes from killing the server
 process.on('uncaughtException', (err) => {
@@ -51,6 +52,9 @@ const server = app.listen(PORT, HOST, async () => {
     initWhatsApp().catch((err) => console.error('[WA] Init error:', err));
     initAutoCollect().catch((err) => console.error('[AutoCollect] Init error:', err));
   }
+
+  // Inventory low stock alerts via Telegram
+  startInventoryAlerts();
 
   // OPC health watchdog — monitors bridge connectivity, sends Telegram alerts
   if (process.env.DATABASE_URL_OPC) {
