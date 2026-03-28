@@ -1,6 +1,7 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, authorize } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize } from '../middleware/auth';
+import { asyncHandler } from '../shared/middleware';
 import { generatePOPdf } from '../utils/pdfGenerator';
 import { sendEmail } from '../services/messaging';
 
@@ -8,12 +9,11 @@ const router = Router();
 router.use(authenticate as any);
 
 // GET / — list POs with filters (status, vendorId), pagination
-router.get('/', async (req: Request, res: Response) => {
-  try {
+router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const status = req.query.status as string | undefined;
     const vendorId = req.query.vendorId as string | undefined;
     const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 500;
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 500);
 
     const where: any = {};
     if (status) where.status = status;
@@ -40,12 +40,10 @@ router.get('/', async (req: Request, res: Response) => {
     }));
 
     res.json({ pos: posWithCounts, total, page, limit });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /:id — single PO with all lines, vendor, GRNs
-router.get('/:id', async (req: Request, res: Response) => {
-  try {
+router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const po = await prisma.purchaseOrder.findUnique({
       where: { id: req.params.id },
       include: {
@@ -56,12 +54,10 @@ router.get('/:id', async (req: Request, res: Response) => {
     });
     if (!po) return res.status(404).json({ error: 'PO not found' });
     res.json(po);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST / — create PO with lines in a transaction
-router.post('/', async (req: Request, res: Response) => {
-  try {
+router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
 
     // Look up items for auto-fill (unified material master = InventoryItem)
@@ -174,7 +170,7 @@ router.post('/', async (req: Request, res: Response) => {
         grandTotal,
         tdsAmount,
         status: 'DRAFT',
-        userId: (req as any).user.id,
+        userId: req.user!.id,
         lines: {
           create: processedLines,
         },
@@ -183,12 +179,10 @@ router.post('/', async (req: Request, res: Response) => {
     });
 
     res.status(201).json(po);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // PUT /:id/status — status transitions
-router.put('/:id/status', async (req: Request, res: Response) => {
-  try {
+router.put('/:id/status', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { newStatus } = req.body;
     const po = await prisma.purchaseOrder.findUnique({
       where: { id: req.params.id },
@@ -212,7 +206,7 @@ router.put('/:id/status', async (req: Request, res: Response) => {
 
     const updateData: any = { status: newStatus };
     if (newStatus === 'APPROVED') {
-      updateData.approvedBy = (req as any).user.id;
+      updateData.approvedBy = req.user!.id;
       updateData.approvedAt = new Date();
     }
 
@@ -223,12 +217,10 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     });
 
     res.json(updated);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // PUT /:id — update PO details and lines (only if DRAFT)
-router.put('/:id', async (req: Request, res: Response) => {
-  try {
+router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const po = await prisma.purchaseOrder.findUnique({
       where: { id: req.params.id },
       include: { lines: true },
@@ -288,9 +280,6 @@ router.put('/:id', async (req: Request, res: Response) => {
         };
       });
 
-      // Delete old lines and create new ones
-      await prisma.pOLine.deleteMany({ where: { poId: po.id } });
-
       const subtotal = processedLines.reduce((s: number, l: any) => s + l.amount, 0);
       const totalCgst = processedLines.reduce((s: number, l: any) => s + l.cgstAmount, 0);
       const totalSgst = processedLines.reduce((s: number, l: any) => s + l.sgstAmount, 0);
@@ -305,23 +294,27 @@ router.put('/:id', async (req: Request, res: Response) => {
       let tdsAmount = 0;
       if (vendor?.tdsApplicable) tdsAmount = subtotal * ((vendor.tdsPercent || 0) / 100);
 
-      const updated = await prisma.purchaseOrder.update({
-        where: { id: po.id },
-        data: {
-          vendorId: b.vendorId || po.vendorId,
-          poDate: b.poDate ? new Date(b.poDate) : po.poDate,
-          deliveryDate: b.deliveryDate ? new Date(b.deliveryDate) : po.deliveryDate,
-          supplyType: supplyType, placeOfSupply: b.placeOfSupply ?? po.placeOfSupply,
-          paymentTerms: b.paymentTerms ?? po.paymentTerms,
-          creditDays: b.creditDays !== undefined ? parseInt(b.creditDays) : po.creditDays,
-          deliveryAddress: b.deliveryAddress ?? po.deliveryAddress,
-          transportMode: b.transportMode ?? po.transportMode,
-          remarks: b.remarks ?? po.remarks,
-          subtotal, totalCgst, totalSgst, totalIgst, totalGst,
-          freightCharge, otherCharges, roundOff, grandTotal, tdsAmount,
-          lines: { create: processedLines },
-        },
-        include: { lines: true },
+      // Delete old lines and update PO atomically
+      const updated = await prisma.$transaction(async (tx) => {
+        await tx.pOLine.deleteMany({ where: { poId: po.id } });
+        return tx.purchaseOrder.update({
+          where: { id: po.id },
+          data: {
+            vendorId: b.vendorId || po.vendorId,
+            poDate: b.poDate ? new Date(b.poDate) : po.poDate,
+            deliveryDate: b.deliveryDate ? new Date(b.deliveryDate) : po.deliveryDate,
+            supplyType: supplyType, placeOfSupply: b.placeOfSupply ?? po.placeOfSupply,
+            paymentTerms: b.paymentTerms ?? po.paymentTerms,
+            creditDays: b.creditDays !== undefined ? parseInt(b.creditDays) : po.creditDays,
+            deliveryAddress: b.deliveryAddress ?? po.deliveryAddress,
+            transportMode: b.transportMode ?? po.transportMode,
+            remarks: b.remarks ?? po.remarks,
+            subtotal, totalCgst, totalSgst, totalIgst, totalGst,
+            freightCharge, otherCharges, roundOff, grandTotal, tdsAmount,
+            lines: { create: processedLines },
+          },
+          include: { lines: true },
+        });
       });
       return res.json(updated);
     }
@@ -346,12 +339,10 @@ router.put('/:id', async (req: Request, res: Response) => {
     });
 
     res.json(updated);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // DELETE /:id — delete only if DRAFT
-router.delete('/:id', async (req: Request, res: Response) => {
-  try {
+router.delete('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const po = await prisma.purchaseOrder.findUnique({
       where: { id: req.params.id },
     });
@@ -365,12 +356,10 @@ router.delete('/:id', async (req: Request, res: Response) => {
     });
 
     res.json({ ok: true });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /:id/pdf — Generate PO PDF with letterhead
-router.get('/:id/pdf', async (req: Request, res: Response) => {
-  try {
+router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
     const po = await prisma.purchaseOrder.findUnique({
       where: { id: req.params.id },
       include: {
@@ -420,12 +409,10 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="PO-${po.poNo}.pdf"`);
     res.send(pdfBuffer);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST /:id/send-email — Send PO PDF to vendor via email
-router.post('/:id/send-email', async (req: Request, res: Response) => {
-  try {
+router.post('/:id/send-email', asyncHandler(async (req: AuthRequest, res: Response) => {
     const po = await prisma.purchaseOrder.findUnique({
       where: { id: req.params.id },
       include: { vendor: true, lines: true },
@@ -466,7 +453,6 @@ router.post('/:id/send-email', async (req: Request, res: Response) => {
     } else {
       res.status(500).json({ error: result.error || 'Email send failed' });
     }
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 export default router;

@@ -84,6 +84,8 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'receivables-aging', label: 'Receivables', to: '/accounts/receivables-aging', icon: TrendingUp, group: 'accounts' },
   { key: 'payables-aging', label: 'Payables', to: '/accounts/payables-aging', icon: CreditCard, group: 'accounts' },
   { key: 'gst-summary', label: 'GST Summary', to: '/accounts/gst-summary', icon: PieChart, group: 'accounts' },
+  { key: 'cash-vouchers', label: 'Cash Vouchers', to: '/accounts/cash-vouchers', icon: Receipt, group: 'accounts' },
+  { key: 'bank-loans', label: 'Bank Loans', to: '/accounts/bank-loans', icon: Landmark, group: 'accounts' },
 
   // ── INVENTORY (SAP-style Store Management) ──
   { key: 'stock-dashboard', label: 'Stock Overview', to: '/inventory/dashboard', icon: Warehouse, group: 'inventory' },

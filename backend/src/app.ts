@@ -78,6 +78,12 @@ import inventoryCountRoutes from './routes/inventoryCounts';
 import inventoryReorderRoutes from './routes/inventoryReorder';
 // Logistics (Gate Entry)
 import gateEntryRoutes from './routes/gateEntry';
+// Cash Vouchers & Bank Loans
+import cashVoucherRoutes from './routes/cashVouchers';
+import bankLoanRoutes from './routes/bankLoans';
+// Orphaned routes (previously unregistered)
+import dailyEntryRoutes from './routes/dailyEntries';
+import tankDipRoutes from './routes/tankDips';
 // WhatsApp (Baileys QR)
 import whatsappRoutes from './routes/whatsapp';
 import autoCollectRoutes from './routes/whatsappAutoCollect';
@@ -179,6 +185,12 @@ app.use('/api/chart-of-accounts', chartOfAccountsRoutes);
 app.use('/api/journal-entries', journalEntryRoutes);
 app.use('/api/bank-reconciliation', bankReconciliationRoutes);
 app.use('/api/accounts-reports', accountsReportsRoutes);
+// Cash Vouchers & Bank Loans
+app.use('/api/cash-vouchers', cashVoucherRoutes);
+app.use('/api/bank-loans', bankLoanRoutes);
+// Orphaned routes (previously unregistered)
+app.use('/api/daily-entries', dailyEntryRoutes);
+app.use('/api/tank-dips', tankDipRoutes);
 // Logistics (Gate Entry)
 app.use('/api/gate-entry', gateEntryRoutes);
 // OPC Bridge (factory automation — proxies to on-premise Windows service)

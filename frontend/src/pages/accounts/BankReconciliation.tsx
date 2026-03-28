@@ -95,12 +95,12 @@ export default function BankReconciliation() {
       setLoading(true);
       const [summaryRes, unreconRes, reconRes] = await Promise.all([
         api.get<ReconSummary>(`/bank-reconciliation/summary/${selectedAccountId}`),
-        api.get<BankTxn[]>('/bank-reconciliation', { params: { accountId: selectedAccountId, isReconciled: 'false' } }),
-        api.get<BankTxn[]>('/bank-reconciliation', { params: { accountId: selectedAccountId, isReconciled: 'true' } }),
+        api.get<{ items: BankTxn[]; total: number }>('/bank-reconciliation', { params: { accountId: selectedAccountId, isReconciled: 'false' } }),
+        api.get<{ items: BankTxn[]; total: number }>('/bank-reconciliation', { params: { accountId: selectedAccountId, isReconciled: 'true' } }),
       ]);
       setSummary(summaryRes.data);
-      setUnreconciled(unreconRes.data);
-      setReconciled(reconRes.data);
+      setUnreconciled(unreconRes.data.items || []);
+      setReconciled(reconRes.data.items || []);
     } catch (err) {
       console.error('Failed to fetch reconciliation data:', err);
     } finally {
@@ -131,8 +131,8 @@ export default function BankReconciliation() {
     try {
       setAutoMatching(true);
       setAutoMatchResult(null);
-      const res = await api.post<{ matched: number; unmatched: number }>('/bank-reconciliation/auto-match', { accountId: selectedAccountId });
-      setAutoMatchResult(res.data);
+      const res = await api.post<{ matchedCount: number; unmatchedCount: number }>('/bank-reconciliation/auto-match', { accountId: selectedAccountId });
+      setAutoMatchResult({ matched: res.data.matchedCount, unmatched: res.data.unmatchedCount });
       await fetchData();
     } catch (err) {
       console.error('Auto match failed:', err);

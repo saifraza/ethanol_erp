@@ -1,13 +1,13 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate } from '../middleware/auth';
+import { authenticate, AuthRequest } from '../middleware/auth';
+import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
 router.use(authenticate as any);
 
 // GET / — List transporter payments
-router.get('/', async (req: Request, res: Response) => {
-  try {
+router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const status = req.query.status as string | undefined;
     const shipmentId = req.query.shipmentId as string | undefined;
     const where: any = {};
@@ -22,14 +22,13 @@ router.get('/', async (req: Request, res: Response) => {
         },
       },
       orderBy: { createdAt: 'desc' },
+      take: 50,
     });
     res.json({ payments });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /summary — Payment summary per transporter
-router.get('/summary', async (req: Request, res: Response) => {
-  try {
+router.get('/summary', asyncHandler(async (req: AuthRequest, res: Response) => {
     const payments = await prisma.transporterPayment.findMany({
       select: {
         transporterName: true,
@@ -53,12 +52,10 @@ router.get('/summary', async (req: Request, res: Response) => {
     }
 
     res.json({ summary: Object.values(summary) });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST / — Create transporter payment (advance or balance)
-router.post('/', async (req: Request, res: Response) => {
-  try {
+router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
 
     // If creating advance, check shipment exists
@@ -78,17 +75,15 @@ router.post('/', async (req: Request, res: Response) => {
         freightTotal: b.freightTotal ? parseFloat(b.freightTotal) : null,
         status: b.status || 'PENDING',
         remarks: b.remarks || null,
-        userId: (req as any).user.id,
+        userId: req.user!.id,
       },
       include: { shipment: { select: { vehicleNo: true, customerName: true } } },
     });
     res.status(201).json(payment);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // PUT /:id — Update payment (mark as paid, etc.)
-router.put('/:id', async (req: Request, res: Response) => {
-  try {
+router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
     const data: any = {};
     if (b.status !== undefined) data.status = b.status;
@@ -105,15 +100,12 @@ router.put('/:id', async (req: Request, res: Response) => {
       data,
     });
     res.json(payment);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // DELETE /:id
-router.delete('/:id', async (req: Request, res: Response) => {
-  try {
+router.delete('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     await prisma.transporterPayment.delete({ where: { id: req.params.id } });
     res.json({ ok: true });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 export default router;
