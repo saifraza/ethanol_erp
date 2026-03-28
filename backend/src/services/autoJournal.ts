@@ -20,30 +20,35 @@ const ACCT = {
   // Assets
   CASH: '1001',
   SBI_BANK: '1002',
-  TRADE_RECEIVABLE: '1003',
-  INVENTORY: '1004',
+  HDFC_BANK: '1003',
+  TRADE_RECEIVABLE: '1100',
+  INVENTORY: '1400',
+  ADVANCE_TO_SUPPLIERS: '1600',
   // Liabilities
   TRADE_PAYABLE: '2001',
-  GST_OUTPUT_CGST: '2101',
-  GST_OUTPUT_SGST: '2102',
-  GST_OUTPUT_IGST: '2103',
-  GST_INPUT_CGST: '2104',
-  GST_INPUT_SGST: '2105',
-  GST_INPUT_IGST: '2106',
-  TDS_PAYABLE: '2107',
+  GST_OUTPUT_CGST: '2100',
+  GST_OUTPUT_SGST: '2101',
+  GST_OUTPUT_IGST: '2102',
+  GST_INPUT_CGST: '1200',
+  GST_INPUT_SGST: '1201',
+  GST_INPUT_IGST: '1202',
+  TDS_PAYABLE: '2200',
+  LOANS_BANK: '2400',
   // Income
   ETHANOL_SALES: '3001',
   DDGS_SALES: '3002',
   OTHER_INCOME: '3003',
+  INTEREST_INCOME: '3004',
   // Expenses
   GRAIN_PURCHASE: '4001',
   CHEMICAL_PURCHASE: '4002',
   UTILITY_EXPENSE: '4003',
-  SALARY_EXPENSE: '4004',
-  MAINTENANCE_EXPENSE: '4005',
-  TRANSPORT_EXPENSE: '4006',
-  DEPRECIATION: '4007',
-  OTHER_EXPENSE: '4008',
+  TRANSPORT_EXPENSE: '4010',
+  SALARY_EXPENSE: '4020',
+  MAINTENANCE_EXPENSE: '4030',
+  OTHER_EXPENSE: '4040',
+  DEPRECIATION: '4050',
+  INTEREST_EXPENSE: '4090',
   COGS: '4009',
   // Equity
   CAPITAL: '5001',
@@ -106,6 +111,17 @@ async function createJournalEntry(
     lines: { accountId: string; debit: number; credit: number; narration?: string; costCenter?: string }[];
   }
 ): Promise<string> {
+  // Dedup check: skip if a non-reversed entry already exists for same refType+refId
+  if (params.refType && params.refId) {
+    const existing = await tx.journalEntry.findFirst({
+      where: { refType: params.refType, refId: params.refId, isReversed: false },
+    });
+    if (existing) {
+      console.warn(`[AutoJournal] Skipping duplicate: ${params.refType}/${params.refId} already has entry #${existing.entryNo}`);
+      return existing.id;
+    }
+  }
+
   // Validate debits = credits
   const totalDebit = params.lines.reduce((s, l) => s + l.debit, 0);
   const totalCredit = params.lines.reduce((s, l) => s + l.credit, 0);

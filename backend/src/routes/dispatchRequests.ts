@@ -1,14 +1,14 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, authorize } from '../middleware/auth';
+import { authenticate, authorize, AuthRequest } from '../middleware/auth';
+import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
 
 router.use(authenticate as any);
 
 // GET / — List dispatch requests with filters
-router.get('/', async (req: Request, res: Response) => {
-  try {
+router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const status = req.query.status as string | undefined;
     const orderId = req.query.orderId as string | undefined;
     const page = parseInt(req.query.page as string) || 1;
@@ -45,14 +45,10 @@ router.get('/', async (req: Request, res: Response) => {
       dispatchRequests: drs,
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+}));
 
 // GET /factory — Factory view: only DRs with status != COMPLETED/CANCELLED
-router.get('/factory', async (req: Request, res: Response) => {
-  try {
+router.get('/factory', asyncHandler(async (req: AuthRequest, res: Response) => {
     const drs = await prisma.dispatchRequest.findMany({
       where: {
         status: {
@@ -85,17 +81,14 @@ router.get('/factory', async (req: Request, res: Response) => {
         },
       },
       orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
+      take: 50,
     });
 
     res.json(drs);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+}));
 
 // GET /:id — Single DR with full details
-router.get('/:id', async (req: Request, res: Response) => {
-  try {
+router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const dr = await prisma.dispatchRequest.findUnique({
       where: { id: req.params.id },
       include: {
@@ -120,14 +113,10 @@ router.get('/:id', async (req: Request, res: Response) => {
     }
 
     res.json(dr);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+}));
 
 // POST / — Create dispatch request
-router.post('/', async (req: Request, res: Response) => {
-  try {
+router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
 
     // Validate required fields
@@ -205,7 +194,7 @@ router.post('/', async (req: Request, res: Response) => {
         vehicleCount: parseInt(b.vehicleCount) || 0,
         remarks: b.remarks || null,
         status: 'SCHEDULED',
-        userId: (req as any).user.id,
+        userId: req.user!.id,
       },
       include: {
         order: {
@@ -240,19 +229,15 @@ router.post('/', async (req: Request, res: Response) => {
         vehicleCount: dr.vehicleCount || 1,
         loadingDate: dr.deliveryDate || null,
         status: 'OPEN',
-        userId: (req as any).user.id,
+        userId: req.user!.id,
       },
     });
 
     res.status(201).json(dr);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+}));
 
 // PUT /:id/status — Update DR status (factory actions)
-router.put('/:id/status', async (req: Request, res: Response) => {
-  try {
+router.put('/:id/status', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { status, acceptedBy } = req.body;
 
     if (!status) {
@@ -345,14 +330,10 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     }
 
     res.json(updated);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+}));
 
 // PUT /:id — Update DR details (logistics info)
-router.put('/:id', async (req: Request, res: Response) => {
-  try {
+router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const dr = await prisma.dispatchRequest.findUnique({
       where: { id: req.params.id },
     });
@@ -400,14 +381,10 @@ router.put('/:id', async (req: Request, res: Response) => {
     });
 
     res.json(updated);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+}));
 
 // GET /by-dr/:drId — Get freight inquiry for a dispatch request with quotations
-router.get('/by-dr/:drId', async (req: Request, res: Response) => {
-  try {
+router.get('/by-dr/:drId', asyncHandler(async (req: AuthRequest, res: Response) => {
     const freightInquiry = await prisma.freightInquiry.findFirst({
       where: { dispatchRequestId: req.params.drId },
       include: {
@@ -424,14 +401,10 @@ router.get('/by-dr/:drId', async (req: Request, res: Response) => {
     }
 
     res.json(freightInquiry);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+}));
 
 // DELETE /:id — Delete dispatch request (only if no shipments started)
-router.delete('/:id', async (req: Request, res: Response) => {
-  try {
+router.delete('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const dr = await prisma.dispatchRequest.findUnique({
       where: { id: req.params.id },
       include: { _count: { select: { shipments: true } } },
@@ -454,9 +427,6 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
     await prisma.dispatchRequest.delete({ where: { id: req.params.id } });
     res.json({ ok: true });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+}));
 
 export default router;

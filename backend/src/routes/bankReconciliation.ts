@@ -170,10 +170,123 @@ router.post('/import', validate(importSchema), asyncHandler(async (req: AuthRequ
 }));
 
 // ═══════════════════════════════════════════════
+// GET /journal-suggestions — Find journal entries that could match a bank txn
+// ═══════════════════════════════════════════════
+router.get('/journal-suggestions', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const accountId = req.query.accountId as string;
+  const amount = parseFloat(req.query.amount as string);
+  const date = req.query.date as string;
+
+  if (!accountId || isNaN(amount) || !date) {
+    res.status(400).json({ error: 'accountId, amount, and date are required' });
+    return;
+  }
+
+  const txnDate = new Date(date);
+  const dateFrom = new Date(txnDate);
+  dateFrom.setDate(dateFrom.getDate() - 7);
+  const dateTo = new Date(txnDate);
+  dateTo.setDate(dateTo.getDate() + 7);
+
+  // Find journal lines for this account where debit or credit is close to the amount
+  const journalLines = await prisma.journalLine.findMany({
+    where: {
+      accountId,
+      journal: {
+        date: { gte: dateFrom, lte: dateTo },
+        isReversed: false,
+      },
+      OR: [
+        { debit: { gte: amount - 1, lte: amount + 1 } },
+        { credit: { gte: amount - 1, lte: amount + 1 } },
+      ],
+    },
+    take: 10,
+    select: {
+      id: true,
+      debit: true,
+      credit: true,
+      journal: {
+        select: {
+          id: true,
+          entryNo: true,
+          date: true,
+          narration: true,
+          refType: true,
+        },
+      },
+    },
+  });
+
+  // Filter out already-reconciled journal entries
+  const reconciledJournalIds = await prisma.bankTransaction.findMany({
+    where: { accountId, isReconciled: true, reconciledWith: { not: null } },
+    select: { reconciledWith: true },
+    take: 500,
+  });
+  const matchedSet = new Set(reconciledJournalIds.map(r => r.reconciledWith).filter(Boolean) as string[]);
+
+  const suggestions = journalLines
+    .filter(l => !matchedSet.has(l.journal.id))
+    .map(l => ({
+      id: l.journal.id,
+      entryNo: l.journal.entryNo,
+      date: l.journal.date,
+      narration: l.journal.narration,
+      refType: l.journal.refType,
+      amount: l.debit > 0 ? l.debit : l.credit,
+    }));
+
+  // Deduplicate by journal id
+  const seen = new Set<string>();
+  const unique = suggestions.filter(s => {
+    if (seen.has(s.id)) return false;
+    seen.add(s.id);
+    return true;
+  });
+
+  res.json(unique);
+}));
+
+// ═══════════════════════════════════════════════
 // POST /match — Manual match bank txn to journal entry
 // ═══════════════════════════════════════════════
 router.post('/match', validate(matchSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const { bankTransactionId, journalEntryId } = req.body;
+
+  const bankTxn = await prisma.bankTransaction.findUnique({ where: { id: bankTransactionId } });
+  if (!bankTxn) throw new NotFoundError('BankTransaction', bankTransactionId);
+
+  const journalEntry = await prisma.journalEntry.findUnique({ where: { id: journalEntryId } });
+  if (!journalEntry) throw new NotFoundError('JournalEntry', journalEntryId);
+
+  if (bankTxn.isReconciled) {
+    res.status(400).json({ error: 'Bank transaction is already reconciled' });
+    return;
+  }
+
+  const updated = await prisma.bankTransaction.update({
+    where: { id: bankTransactionId },
+    data: {
+      isReconciled: true,
+      reconciledWith: journalEntryId,
+    },
+  });
+
+  res.json({ success: true, bankTransaction: updated });
+}));
+
+// ═══════════════════════════════════════════════
+// POST /:id/match — Match bank txn (id from URL) to journal entry
+// ═══════════════════════════════════════════════
+router.post('/:id/match', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const bankTransactionId = req.params.id;
+  const { journalEntryId } = req.body;
+
+  if (!journalEntryId) {
+    res.status(400).json({ error: 'journalEntryId is required' });
+    return;
+  }
 
   const bankTxn = await prisma.bankTransaction.findUnique({ where: { id: bankTransactionId } });
   if (!bankTxn) throw new NotFoundError('BankTransaction', bankTransactionId);

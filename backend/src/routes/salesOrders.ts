@@ -1,6 +1,7 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, authorize } from '../middleware/auth';
+import { authenticate, authorize, AuthRequest } from '../middleware/auth';
+import { asyncHandler } from '../shared/middleware';
 import PDFDocument from 'pdfkit';
 import path from 'path';
 import fs from 'fs';
@@ -13,12 +14,11 @@ const router = Router();
 router.use(authenticate as any);
 
 // GET / — List sales orders with filters
-router.get('/', async (req: Request, res: Response) => {
-  try {
+router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const status = req.query.status as string | undefined;
     const customerId = req.query.customerId as string | undefined;
     const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 500);
     const skip = (page - 1) * limit;
 
     let where: any = {};
@@ -53,14 +53,10 @@ router.get('/', async (req: Request, res: Response) => {
       orders,
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+}));
 
 // GET /:id — Single order with all details
-router.get('/:id', async (req: Request, res: Response) => {
-  try {
+router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const order = await prisma.salesOrder.findUnique({
       where: { id: req.params.id },
       include: {
@@ -79,14 +75,10 @@ router.get('/:id', async (req: Request, res: Response) => {
     }
 
     res.json(order);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+}));
 
 // POST / — Create sales order with lines
-router.post('/', async (req: Request, res: Response) => {
-  try {
+router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
 
     // Accept both "lines" and "lineItems" from frontend
@@ -168,7 +160,7 @@ router.post('/', async (req: Request, res: Response) => {
         totalGst,
         totalAmount,
         grandTotal,
-        userId: (req as any).user.id,
+        userId: req.user!.id,
         lines: {
           create: processedLines,
         },
@@ -180,14 +172,10 @@ router.post('/', async (req: Request, res: Response) => {
     });
 
     res.status(201).json(order);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+}));
 
 // PUT /:id/status — Update order status
-router.put('/:id/status', async (req: Request, res: Response) => {
-  try {
+router.put('/:id/status', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { status } = req.body;
 
     if (!status) {
@@ -231,14 +219,10 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     });
 
     res.json(updated);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+}));
 
 // PUT /:id — Update order details (only if DRAFT)
-router.put('/:id', async (req: Request, res: Response) => {
-  try {
+router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const order = await prisma.salesOrder.findUnique({
       where: { id: req.params.id },
     });
@@ -279,14 +263,10 @@ router.put('/:id', async (req: Request, res: Response) => {
     });
 
     res.json(updated);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+}));
 
 // DELETE /:id — Delete order (only if DRAFT). Delete with lines (cascade).
-router.delete('/:id', async (req: Request, res: Response) => {
-  try {
+router.delete('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const order = await prisma.salesOrder.findUnique({
       where: { id: req.params.id },
     });
@@ -296,28 +276,29 @@ router.delete('/:id', async (req: Request, res: Response) => {
       return;
     }
 
-    // Delete related records first (cascade)
-    // Delete shipments under dispatch requests
-    const drs = await prisma.dispatchRequest.findMany({
-      where: { orderId: req.params.id },
-      select: { id: true },
-    });
-    const drIds = drs.map(d => d.id);
-    if (drIds.length > 0) {
-      await prisma.shipment.deleteMany({ where: { dispatchRequestId: { in: drIds } } });
+    if (order.status !== 'DRAFT') {
+      res.status(400).json({ error: 'Only DRAFT orders can be deleted. Cancel the order instead.' });
+      return;
     }
-    await prisma.dispatchRequest.deleteMany({ where: { orderId: req.params.id } });
-    await prisma.invoice.deleteMany({ where: { orderId: req.params.id } });
-    await prisma.salesOrderLine.deleteMany({ where: { orderId: req.params.id } });
 
-    // Delete order
-    await prisma.salesOrder.delete({ where: { id: req.params.id } });
+    // Delete related records and order in a single transaction
+    await prisma.$transaction(async (tx) => {
+      const drs = await tx.dispatchRequest.findMany({
+        where: { orderId: req.params.id },
+        select: { id: true },
+      });
+      const drIds = drs.map(d => d.id);
+      if (drIds.length > 0) {
+        await tx.shipment.deleteMany({ where: { dispatchRequestId: { in: drIds } } });
+      }
+      await tx.dispatchRequest.deleteMany({ where: { orderId: req.params.id } });
+      await tx.invoice.deleteMany({ where: { orderId: req.params.id } });
+      await tx.salesOrderLine.deleteMany({ where: { orderId: req.params.id } });
+      await tx.salesOrder.delete({ where: { id: req.params.id } });
+    });
 
     res.json({ ok: true });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+}));
 
 // HSN code mapping for products
 function getSOHsnCode(productName: string): string {
@@ -330,8 +311,7 @@ function getSOHsnCode(productName: string): string {
 }
 
 // GET /:id/pdf — Generate Sales Order PDF document
-router.get('/:id/pdf', async (req: Request, res: Response) => {
-  try {
+router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
     const order = await prisma.salesOrder.findUnique({
       where: { id: req.params.id },
       include: {
@@ -544,14 +524,10 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
     doc.text('Customer Acceptance', rightEdge - 140, sigY + 10, { width: 140, align: 'center', lineBreak: false });
 
     doc.end();
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+}));
 
 // POST /:id/send-email — Send Sales Order PDF to customer via email
-router.post('/:id/send-email', async (req: Request, res: Response) => {
-  try {
+router.post('/:id/send-email', asyncHandler(async (req: AuthRequest, res: Response) => {
     const order = await prisma.salesOrder.findUnique({
       where: { id: req.params.id },
       include: { customer: true, lines: true },
@@ -666,7 +642,6 @@ router.post('/:id/send-email', async (req: Request, res: Response) => {
     } else {
       res.status(500).json({ error: result.error || 'Email send failed' });
     }
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 export default router;

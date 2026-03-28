@@ -1,6 +1,7 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate } from '../middleware/auth';
+import { authenticate, AuthRequest } from '../middleware/auth';
+import { asyncHandler } from '../shared/middleware';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -33,19 +34,17 @@ const upload = multer({
 });
 
 // GET /shipment/:shipmentId — List documents for a shipment
-router.get('/shipment/:shipmentId', async (req: Request, res: Response) => {
-  try {
+router.get('/shipment/:shipmentId', asyncHandler(async (req: AuthRequest, res: Response) => {
     const docs = await prisma.shipmentDocument.findMany({
       where: { shipmentId: req.params.shipmentId },
       orderBy: { createdAt: 'desc' },
+      take: 50,
     });
     res.json({ documents: docs });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST /upload — Upload document for a shipment
-router.post('/upload', upload.single('file'), async (req: Request, res: Response) => {
-  try {
+router.post('/upload', upload.single('file'), asyncHandler(async (req: AuthRequest, res: Response) => {
     if (!req.file) { res.status(400).json({ error: 'No file uploaded' }); return; }
 
     const b = req.body;
@@ -57,17 +56,15 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
         filePath: `shipment-docs/${req.file.filename}`,
         fileSize: req.file.size,
         mimeType: req.file.mimetype,
-        uploadedBy: (req as any).user.id,
+        uploadedBy: req.user!.id,
         remarks: b.remarks || null,
       },
     });
     res.status(201).json(doc);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST /upload-general — Upload general document (quotation, etc.) not tied to shipment
-router.post('/upload-general', upload.single('file'), async (req: Request, res: Response) => {
-  try {
+router.post('/upload-general', upload.single('file'), asyncHandler(async (req: AuthRequest, res: Response) => {
     if (!req.file) { res.status(400).json({ error: 'No file uploaded' }); return; }
 
     const b = req.body;
@@ -80,17 +77,15 @@ router.post('/upload-general', upload.single('file'), async (req: Request, res: 
         filePath: `shipment-docs/${req.file.filename}`,
         fileSize: req.file.size,
         mimeType: req.file.mimetype,
-        uploadedBy: (req as any).user.id,
+        uploadedBy: req.user!.id,
         remarks: [b.inquiryId ? `FI:${b.inquiryId}` : '', b.quotationId ? `Q:${b.quotationId}` : '', b.remarks || ''].filter(Boolean).join(' | ') || null,
       },
     });
     res.status(201).json(doc);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /file/:id — Serve document file (inline for PDF/images)
-router.get('/file/:id', async (req: Request, res: Response) => {
-  try {
+router.get('/file/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const doc = await prisma.shipmentDocument.findUnique({ where: { id: req.params.id } });
     if (!doc) { res.status(404).json({ error: 'Document not found' }); return; }
 
@@ -109,12 +104,10 @@ router.get('/file/:id', async (req: Request, res: Response) => {
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', `${isViewable ? 'inline' : 'attachment'}; filename="${doc.fileName}"`);
     fs.createReadStream(filePath).pipe(res);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // DELETE /:id — Delete document
-router.delete('/:id', async (req: Request, res: Response) => {
-  try {
+router.delete('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const doc = await prisma.shipmentDocument.findUnique({ where: { id: req.params.id } });
     if (!doc) { res.status(404).json({ error: 'Not found' }); return; }
 
@@ -124,7 +117,6 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
     await prisma.shipmentDocument.delete({ where: { id: req.params.id } });
     res.json({ ok: true });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 export default router;
