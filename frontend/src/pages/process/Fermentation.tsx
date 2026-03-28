@@ -453,6 +453,32 @@ export default function Fermentation() {
     return () => clearInterval(iv);
   }, [fetchAllOpcData]);
 
+  // OPC History for live charts
+  interface OpcHistoryPoint { hour: string; avg: number; min: number; max: number; }
+  const [opcHistory, setOpcHistory] = useState<Record<string, OpcHistoryPoint[]>>({});
+  const [opcHistoryLoading, setOpcHistoryLoading] = useState(false);
+
+  const fetchOpcHistory = useCallback(async () => {
+    try {
+      setOpcHistoryLoading(true);
+      const allHistory: Record<string, OpcHistoryPoint[]> = {};
+      const tagPairs = Object.entries(OPC_TAG_MAP).filter(([, m]) => m.level);
+      await Promise.all(tagPairs.map(async ([vessel, mapping]) => {
+        try {
+          const prop = mapping.level!.startsWith('FCV') ? 'PV' : 'IO_VALUE';
+          const res = await api.get(`/opc/history/${mapping.level}?hours=24&property=${prop}`);
+          if (Array.isArray(res.data) && res.data.length > 0) {
+            allHistory[vessel] = res.data;
+          }
+        } catch { /* skip */ }
+      }));
+      setOpcHistory(allHistory);
+    } catch { /* skip */ }
+    finally { setOpcHistoryLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchOpcHistory(); }, [fetchOpcHistory]);
+
   const fetchOpcLive = async (vesselLabel: string) => {
     const mapping = OPC_TAG_MAP[vesselLabel];
     if (!mapping?.level) { flash('err', `No OPC tag mapped for ${vesselLabel}`); return; }
@@ -1384,6 +1410,74 @@ export default function Fermentation() {
           </div>
         );
       })()}
+
+      {/* ═══ OPC LIVE TRENDS ═══ */}
+      {Object.keys(opcHistory).length > 0 && (
+        <div className="px-3 mt-4">
+          <div className="bg-white border border-slate-300 p-3">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">OPC Live Trends (24h)</span>
+              <button onClick={fetchOpcHistory} disabled={opcHistoryLoading}
+                className="px-2 py-0.5 text-[9px] text-slate-400 border border-slate-300 hover:bg-slate-50">
+                {opcHistoryLoading ? 'Loading...' : 'Refresh'}
+              </button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {['F-1', 'F-2', 'F-3', 'F-4'].filter(v => opcHistory[v]?.length).map(vessel => {
+                const data = opcHistory[vessel].map(d => {
+                  const hr = new Date(d.hour);
+                  const ist = new Date(hr.getTime() + 5.5 * 60 * 60 * 1000);
+                  return { ...d, time: `${String(ist.getUTCHours()).padStart(2,'0')}:${String(ist.getUTCMinutes()).padStart(2,'0')}` };
+                });
+                const currentLevel = opcData[vessel]?.level;
+                const currentTemp = opcData[vessel]?.temp;
+                return (
+                  <div key={vessel} className="border border-slate-200 p-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">{vessel} Level</span>
+                      <div className="flex gap-2">
+                        {currentLevel != null && <span className="text-[10px] font-bold text-green-700 bg-green-50 px-1.5 py-0.5 border border-green-200">{currentLevel}%</span>}
+                        {currentTemp != null && <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-1.5 py-0.5 border border-orange-200">{currentTemp}&deg;C</span>}
+                      </div>
+                    </div>
+                    <ResponsiveContainer width="100%" height={150}>
+                      <ComposedChart data={data}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="time" tick={{ fontSize: 8, fill: '#64748b' }} tickLine={false} />
+                        <YAxis tick={{ fontSize: 8, fill: '#64748b' }} tickLine={false} domain={[0, 100]} />
+                        <Tooltip contentStyle={{ fontSize: 11, border: '1px solid #94a3b8', background: '#fff', padding: '6px 10px' }} />
+                        <Line type="monotone" dataKey="avg" stroke="#1e40af" strokeWidth={2} dot={{ r: 2, fill: '#1e40af' }} name="Level %" connectNulls />
+                        <Line type="monotone" dataKey="max" stroke="#dc2626" strokeWidth={1} dot={false} strokeDasharray="4 3" name="Max" />
+                        <Line type="monotone" dataKey="min" stroke="#0891b2" strokeWidth={1} dot={false} strokeDasharray="4 3" name="Min" />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                );
+              })}
+            </div>
+            {/* PF + Beer Well */}
+            {(opcHistory['BW-1']?.length) && (
+              <div className="mt-3 border border-slate-200 p-2">
+                <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Beer Well Level</span>
+                {opcData['BW-1']?.level != null && <span className="ml-2 text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 border border-amber-200">{opcData['BW-1'].level}%</span>}
+                <ResponsiveContainer width="100%" height={150}>
+                  <ComposedChart data={opcHistory['BW-1'].map(d => {
+                    const hr = new Date(d.hour);
+                    const ist = new Date(hr.getTime() + 5.5 * 60 * 60 * 1000);
+                    return { ...d, time: `${String(ist.getUTCHours()).padStart(2,'0')}:${String(ist.getUTCMinutes()).padStart(2,'0')}` };
+                  })}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="time" tick={{ fontSize: 8, fill: '#64748b' }} tickLine={false} />
+                    <YAxis tick={{ fontSize: 8, fill: '#64748b' }} tickLine={false} domain={[0, 100]} />
+                    <Tooltip contentStyle={{ fontSize: 11, border: '1px solid #94a3b8', background: '#fff', padding: '6px 10px' }} />
+                    <Line type="monotone" dataKey="avg" stroke="#f59e0b" strokeWidth={2} dot={{ r: 2, fill: '#f59e0b' }} name="Level %" connectNulls />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ═══ BATCH HISTORY ═══ */}
       <div className="px-3 mt-6">
