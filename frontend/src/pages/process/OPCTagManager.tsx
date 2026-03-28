@@ -7,10 +7,11 @@ const TAG_CATALOG: Record<string, Record<string, { folder: string; type: string;
   Fermantation: {
     ANALOG: { folder: 'ANALOG', type: 'analog', tags: {
       LT130101: 'Fermenter 1A Level', LT130102: 'Fermenter 1B Level',
-      LT130201: 'Fermenter 2A Level', LT130202: 'Fermenter 2B Level',
-      LT130301: 'Fermenter 3A Level', LT130302: 'Fermenter 3B Level',
+      LT130201: 'Fermenter 1 Level', LT130202: 'Fermenter 2 Level',
+      LT130301: 'Fermenter 3 Level', LT130302: 'Fermenter 4 Level',
       LT130401: 'Beer Well Level',
-      TE130101: 'Fermenter 1A Temp', TE130201: 'Fermenter 2A Temp', TE130301: 'Fermenter 3A Temp',
+      TE130101: 'Fermenter 1A Temp', TE130201: 'Fermenter 1 Temp', TE130202: 'Fermenter 2 Temp',
+      TE130301: 'Fermenter 3 Temp', TE130302: 'Fermenter 4 Temp',
       FE130701: 'Beer Well Flow',
     }},
     PID: { folder: 'PID', type: 'pid', tags: {
