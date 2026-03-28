@@ -85,8 +85,12 @@ async function sendSessionMessage(session: ActiveSession, message: string): Prom
 }
 
 async function handleIncoming(chatId: string, text: string, _name: string | null): Promise<boolean> {
+  console.log(`[TG-AutoCollect] handleIncoming: chatId=${chatId}, text=${text}, activeSessions=${JSON.stringify([...activeSessions.keys()])}`);
   const session = activeSessions.get(chatId);
-  if (!session) return false;
+  if (!session) {
+    console.log(`[TG-AutoCollect] No session found for chatId=${chatId}`);
+    return false;
+  }
 
   if (new Date() > session.expiresAt) {
     activeSessions.delete(chatId);
@@ -348,6 +352,7 @@ export function stopScheduler(): void {
 
 export async function initTelegramAutoCollect(): Promise<void> {
   registerIncomingHandler(handleIncoming);
+  console.log(`[TG-AutoCollect] Incoming handler registered`);
   await loadSchedules();
   startScheduler();
   console.log(`[TG-AutoCollect] Initialized with modules: ${Object.keys(MODULE_REGISTRY).join(', ')}`);

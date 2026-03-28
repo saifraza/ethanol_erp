@@ -165,13 +165,18 @@ async function poll(): Promise<void> {
           }
 
           // Dispatch to handlers
+          console.log(`[Telegram] Dispatching to ${incomingHandlers.length} handler(s): chatId=${chatId}, text=${text}`);
+          let wasHandled = false;
           for (const handler of incomingHandlers) {
             try {
               const handled = await handler(chatId, text, name);
-              if (handled) break;
+              if (handled) { wasHandled = true; break; }
             } catch (err) {
               console.error('[Telegram] Handler error:', err);
             }
+          }
+          if (!wasHandled) {
+            console.log(`[Telegram] Message not handled by any handler: chatId=${chatId}`);
           }
         }
       }
