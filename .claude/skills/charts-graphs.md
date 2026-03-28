@@ -427,11 +427,11 @@ function MyChart({ data, title }: { data: DataPoint[]; title: string }) {
 | Module | File | Current Charts | Compliant? | Notes |
 |--------|------|---------------|------------|-------|
 | **OPC Live** | `OPCTagManager.tsx` | ComposedChart (Line+Area+Brush+RefLine) | REFERENCE | This IS the standard |
-| **Dashboard** | `Dashboard.tsx` | BarChart, LineChart, AreaChart, ComposedChart | NEEDS UPDATE | Uses `rounded-xl shadow-sm`, missing Brush, old tooltip style, inconsistent container styling |
-| **Fermentation** | `Fermentation.tsx` | LineChart (dual Y-axis) | NEEDS UPDATE | No Brush, basic tooltip, `rounded-lg shadow-sm` container, missing tickLine:false |
-| **Pre-Fermentation** | `PreFermentation.tsx` | LineChart (dual Y-axis) | NEEDS UPDATE | Same issues as Fermentation |
-| **Milling** | `Milling.tsx` | LineChart x5, BarChart x1 | NEEDS UPDATE | No Brush, `rounded-xl` containers, activeDot inconsistent, missing axis styling |
-| **Liquefaction** | `Liquefaction.tsx` | AreaChart, BarChart | NEEDS UPDATE | Uses SVG gradient defs (acceptable but non-standard), `rounded` containers |
+| **Dashboard** | `Dashboard.tsx` | BarChart, LineChart, AreaChart, ComposedChart + SVG tank animation | COMPLIANT | Updated 2026-03-28. Animated SVG tanks show live OPC levels for all vessels |
+| **Fermentation** | `Fermentation.tsx` | ComposedChart (dual Y-axis) + OPC level charts | COMPLIANT | Updated 2026-03-28. OPC trends in tile grid + inside vessel Charts tab. History API response uses `.readings` array |
+| **Pre-Fermentation** | `PreFermentation.tsx` | ComposedChart (dual Y-axis) + stats | COMPLIANT | Updated 2026-03-28 |
+| **Milling** | `Milling.tsx` | ComposedChart x6 + stats + Y-zoom | COMPLIANT | Updated 2026-03-28 |
+| **Liquefaction** | `Liquefaction.tsx` | AreaChart, BarChart + stats + Y-zoom | COMPLIANT | Updated 2026-03-28 |
 | **Distillation** | `Distillation.tsx` | LineChart | NEEDS UPDATE | Basic chart, no Brush, rounded containers, minimal styling |
 | **Reports** | `Reports.tsx` | (check if has charts) | TBD | |
 | **Sales Dashboard** | `SalesDashboard.tsx` | No recharts | N/A | Could benefit from charts |
