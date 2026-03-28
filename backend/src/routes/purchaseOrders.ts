@@ -3,6 +3,7 @@ import prisma from '../config/prisma';
 import { authenticate, AuthRequest, authorize } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { generatePOPdf } from '../utils/pdfGenerator';
+import { renderDocumentPdf } from '../services/documentRenderer';
 import { sendEmail } from '../services/messaging';
 
 const router = Router();
@@ -370,7 +371,7 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
 
     if (!po) { res.status(404).json({ error: 'PO not found' }); return; }
 
-    const pdfBuffer = await generatePOPdf({
+    const poData = {
       poNo: po.poNo,
       poDate: po.poDate,
       deliveryDate: po.deliveryDate || po.poDate,
@@ -404,6 +405,12 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
       otherCharges: po.otherCharges,
       roundOff: po.roundOff,
       grandTotal: po.grandTotal,
+    };
+
+    const pdfBuffer = await renderDocumentPdf({
+      docType: 'PURCHASE_ORDER',
+      data: poData,
+      verifyId: po.id,
     });
 
     res.setHeader('Content-Type', 'application/pdf');

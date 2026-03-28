@@ -99,10 +99,10 @@ export default function CashVouchers() {
       if (dateTo) params.to = dateTo;
 
       const [vRes, sRes] = await Promise.all([
-        api.get<CashVoucher[]>('/cash-vouchers', { params }),
+        api.get<{ items: CashVoucher[]; total: number }>('/cash-vouchers', { params }),
         api.get<Summary>('/cash-vouchers/summary', { params }),
       ]);
-      setVouchers(vRes.data);
+      setVouchers(vRes.data.items);
       setSummary(sRes.data);
     } catch (err) {
       console.error('Failed to fetch cash vouchers:', err);

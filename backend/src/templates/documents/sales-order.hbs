@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Sale Order</title>{{> base-styles}}</head>
+<body>
+<div class="page">
+  {{> letterhead}}
+  <div class="doc-title">SALE ORDER</div>
+
+  <div class="details-grid">
+    <div class="detail-row"><span class="detail-label">Order No</span><span class="detail-value bold">SO-{{orderNo}}</span></div>
+    <div class="detail-row"><span class="detail-label">Order Date</span><span class="detail-value">{{formatDate orderDate}}</span></div>
+    {{#if deliveryDate}}<div class="detail-row"><span class="detail-label">Delivery Date</span><span class="detail-value">{{formatDate deliveryDate}}</span></div>{{/if}}
+    {{#if poNumber}}<div class="detail-row"><span class="detail-label">PO Number</span><span class="detail-value">{{poNumber}}</span></div>{{/if}}
+    {{#if paymentTerms}}<div class="detail-row"><span class="detail-label">Payment Terms</span><span class="detail-value">{{paymentTerms}}</span></div>{{/if}}
+    {{#if logisticsBy}}<div class="detail-row"><span class="detail-label">Logistics By</span><span class="detail-value">{{logisticsBy}}</span></div>{{/if}}
+  </div>
+
+  <div class="boxes">
+    <div class="box">
+      <div class="box-header">Customer</div>
+      <div class="box-body">
+        <div class="name">{{customer.name}}</div>
+        {{#if customer.address}}<div class="line">{{customer.address}}</div>{{/if}}
+        <div class="line">{{join (list customer.city customer.state customer.pincode) ", "}}</div>
+        {{#if customer.gstNo}}<div class="gstin">GSTIN: {{customer.gstNo}}</div>{{/if}}
+        {{#if customer.contactPerson}}<div class="meta-row mt-4"><span class="meta-label">Contact:</span><span class="meta-val">{{customer.contactPerson}} {{#if customer.phone}}({{customer.phone}}){{/if}}</span></div>{{/if}}
+      </div>
+    </div>
+    <div class="box">
+      <div class="box-header">From</div>
+      <div class="box-body">
+        <div class="name">MSPIL Distillery</div>
+        <div class="line">Village Bachai, Tehsil Gadarwara, District Narsinghpur, Madhya Pradesh - 487551</div>
+        <div class="gstin">GSTIN: 23AAECM3666P1Z1</div>
+      </div>
+    </div>
+  </div>
+
+  <table class="items-table">
+    <thead>
+      <tr>
+        <th style="width:25px">#</th>
+        <th class="left">Product</th>
+        <th style="width:50px">HSN</th>
+        <th style="width:45px">Qty</th>
+        <th style="width:35px">Unit</th>
+        <th class="right" style="width:70px">Rate (Rs.)</th>
+        <th style="width:40px">GST%</th>
+        <th class="right" style="width:80px">GST Amt</th>
+        <th class="right" style="width:85px">Total (Rs.)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each lines}}
+      <tr>
+        <td class="center">{{inc @index}}</td>
+        <td>{{productName}}</td>
+        <td class="center">{{hsnCode}}</td>
+        <td class="center">{{formatNum quantity}}</td>
+        <td class="center">{{unit}}</td>
+        <td class="right">{{formatNum rate}}</td>
+        <td class="center">{{gstPercent}}%</td>
+        <td class="right">{{formatNum gstAmount}}</td>
+        <td class="right">{{formatNum totalAmount}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+
+  <div class="totals-section">
+    <div class="totals-box">
+      <div class="total-row"><span class="label">Subtotal</span><span class="value">{{formatINR totalAmount}}</span></div>
+      <div class="total-row"><span class="label">GST</span><span class="value">{{formatINR totalGst}}</span></div>
+      {{#if freightRate}}<div class="total-row"><span class="label">Freight</span><span class="value">{{formatINR freightRate}}</span></div>{{/if}}
+      <div class="total-row grand"><span class="label">GRAND TOTAL</span><span class="value">{{formatINR grandTotal}}</span></div>
+    </div>
+  </div>
+
+  <div class="amount-words">
+    <div class="label">Amount in Words:</div>
+    <div class="text">{{numberToWords grandTotal}}</div>
+  </div>
+
+  {{#if remarks}}<div class="remarks-section"><div class="label">Remarks:</div><div class="text">{{remarks}}</div></div>{{/if}}
+
+  {{> terms-footer}}
+  {{> signatures sigCount=3 sigLabels=(list "Prepared By" "Approved By" "Authorized Signatory") sigNames=(list preparedBy approvedBy authorizedSignatory)}}
+
+  <div class="footer-area">
+    {{#if qrDataUrl}}<div class="qr-block"><img src="{{qrDataUrl}}" alt="QR"><div class="qr-text">Scan to verify this document</div></div>{{/if}}
+    <div class="footer-text">{{footer}}</div>
+  </div>
+</div>
+</body>
+</html>
