@@ -251,6 +251,7 @@ export default function StockMovements() {
   };
 
   const typeBadge = (type: string) => {
+    if (!type) return 'border-slate-300 bg-slate-50 text-slate-700';
     if (type.includes('RECEIPT') || type === 'RETURN') return 'border-emerald-300 bg-emerald-50 text-emerald-700';
     if (type.includes('ISSUE') || type === 'SCRAP') return 'border-red-300 bg-red-50 text-red-700';
     switch (type) {
