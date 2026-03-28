@@ -561,10 +561,10 @@ export default function Liquefaction() {
                   <stop offset="95%" stopColor={mc.color2} stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" angle={-30} textAnchor="end" height={60} />
-              <YAxis tick={{ fontSize: 10 }} domain={['auto', 'auto']} />
-              <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="label" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} interval="preserveStartEnd" angle={-30} textAnchor="end" height={60} />
+              <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} domain={['auto', 'auto']} />
+              <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px' }} labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }} itemStyle={{ padding: '1px 0' }} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               <Area type="monotone" dataKey={mc.ilt} name="ILT" stroke={mc.color1} strokeWidth={2} fill="url(#gradIlt)" dot={{ r: 2 }} connectNulls />
               <Area type="monotone" dataKey={mc.flt} name="FLT" stroke={mc.color2} strokeWidth={2} fill="url(#gradFlt)" dot={{ r: 2 }} connectNulls />
@@ -583,10 +583,10 @@ export default function Liquefaction() {
           </h2>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={dailySummary}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-              <YAxis tick={{ fontSize: 10 }} domain={['auto', 'auto']} />
-              <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} />
+              <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} domain={['auto', 'auto']} />
+              <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px' }} labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }} itemStyle={{ padding: '1px 0' }} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               <Bar dataKey="avgIltGrav" name="ILT Gravity" fill="#3b82f6" radius={[4, 4, 0, 0]} />
               <Bar dataKey="avgFltGrav" name="FLT Gravity" fill="#10b981" radius={[4, 4, 0, 0]} />

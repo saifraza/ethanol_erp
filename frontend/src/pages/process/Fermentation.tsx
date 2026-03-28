@@ -1233,11 +1233,11 @@ export default function Fermentation() {
                           <div className="text-[9px] font-bold text-gray-400 uppercase mb-1">Gravity, Alcohol & Level</div>
                           <ResponsiveContainer width="100%" height={200}>
                             <LineChart data={chartData}>
-                              <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                              <XAxis dataKey="time" tick={{ fontSize: 8 }} interval="preserveStartEnd" />
-                              <YAxis yAxisId="sg" domain={[sgMin, sgMax]} tick={{ fontSize: 8 }} tickFormatter={(v: number) => v.toFixed(3)} label={{ value: 'SG', angle: -90, position: 'insideLeft', fontSize: 8, fill: '#6366f1' }} />
-                              <YAxis yAxisId="alc" orientation="right" domain={[0, 'auto']} tick={{ fontSize: 8 }} label={{ value: 'Alc% / Level%', angle: 90, position: 'insideRight', fontSize: 8, fill: '#10b981' }} />
-                              <Tooltip contentStyle={{ fontSize: 10 }} formatter={(v: number, name: string) => [name === 'Gravity' ? v?.toFixed(3) : v, name]} />
+                              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                              <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} interval="preserveStartEnd" />
+                              <YAxis yAxisId="sg" domain={[sgMin, sgMax]} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} tickFormatter={(v: number) => v.toFixed(3)} label={{ value: 'SG', angle: -90, position: 'insideLeft', fontSize: 8, fill: '#6366f1' }} />
+                              <YAxis yAxisId="alc" orientation="right" domain={[0, 'auto']} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} label={{ value: 'Alc% / Level%', angle: 90, position: 'insideRight', fontSize: 8, fill: '#10b981' }} />
+                              <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px' }} labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }} itemStyle={{ padding: '1px 0' }} formatter={(v: number, name: string) => [name === 'Gravity' ? v?.toFixed(3) : v, name]} />
                               <Legend wrapperStyle={{ fontSize: 9 }} />
                               {phaseMarkers.map((pm, i) => (
                                 <ReferenceLine key={i} yAxisId="sg" x={pm.time} stroke={pm.color} strokeDasharray="4 4" strokeWidth={1.5} label={{ value: pm.label, position: 'top', fontSize: 8, fill: pm.color, fontWeight: 'bold' }} />
@@ -1253,11 +1253,11 @@ export default function Fermentation() {
                           <div className="text-[9px] font-bold text-gray-400 uppercase mb-1">pH & Temperature</div>
                           <ResponsiveContainer width="100%" height={150}>
                             <LineChart data={chartData}>
-                              <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                              <XAxis dataKey="time" tick={{ fontSize: 8 }} interval="preserveStartEnd" />
-                              <YAxis yAxisId="ph" tick={{ fontSize: 8 }} domain={[0, 'auto']} label={{ value: 'pH', angle: -90, position: 'insideLeft', fontSize: 8, fill: '#f59e0b' }} />
-                              <YAxis yAxisId="temp" orientation="right" tick={{ fontSize: 8 }} domain={[0, 'auto']} label={{ value: '°C', angle: 90, position: 'insideRight', fontSize: 8, fill: '#ef4444' }} />
-                              <Tooltip contentStyle={{ fontSize: 10 }} />
+                              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                              <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} interval="preserveStartEnd" />
+                              <YAxis yAxisId="ph" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} domain={[0, 'auto']} label={{ value: 'pH', angle: -90, position: 'insideLeft', fontSize: 8, fill: '#f59e0b' }} />
+                              <YAxis yAxisId="temp" orientation="right" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} domain={[0, 'auto']} label={{ value: '°C', angle: 90, position: 'insideRight', fontSize: 8, fill: '#ef4444' }} />
+                              <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px' }} labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }} itemStyle={{ padding: '1px 0' }} />
                               <Legend wrapperStyle={{ fontSize: 9 }} />
                               {phaseMarkers.map((pm, i) => (
                                 <ReferenceLine key={i} yAxisId="ph" x={pm.time} stroke={pm.color} strokeDasharray="4 4" strokeWidth={1.5} label={{ value: pm.label, position: 'top', fontSize: 8, fill: pm.color, fontWeight: 'bold' }} />
@@ -1443,11 +1443,11 @@ export default function Fermentation() {
                                   <div className="text-[10px] font-bold text-gray-400 uppercase mb-1">Gravity & Alcohol Chart</div>
                                   <ResponsiveContainer width="100%" height={160}>
                                     <LineChart data={cData}>
-                                      <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                                      <XAxis dataKey="time" tick={{ fontSize: 8 }} />
-                                      <YAxis yAxisId="sg" domain={[sgMin2, sgMax2]} tick={{ fontSize: 8 }} tickFormatter={(v: number) => v.toFixed(3)} />
-                                      <YAxis yAxisId="alc" orientation="right" domain={[0, 'auto']} tick={{ fontSize: 8 }} />
-                                      <Tooltip contentStyle={{ fontSize: 9 }} formatter={(v: number, name: string) => [name === 'Gravity' ? v?.toFixed(3) : v, name]} />
+                                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                      <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} />
+                                      <YAxis yAxisId="sg" domain={[sgMin2, sgMax2]} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} tickFormatter={(v: number) => v.toFixed(3)} />
+                                      <YAxis yAxisId="alc" orientation="right" domain={[0, 'auto']} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} />
+                                      <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px' }} labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }} itemStyle={{ padding: '1px 0' }} formatter={(v: number, name: string) => [name === 'Gravity' ? v?.toFixed(3) : v, name]} />
                                       <Legend wrapperStyle={{ fontSize: 8 }} />
                                       <Line yAxisId="sg" dataKey="sg" name="Gravity" stroke="#6366f1" strokeWidth={2} dot={{ r: 2 }} connectNulls />
                                       <Line yAxisId="alc" dataKey="alc" name="Alc%" stroke="#10b981" strokeWidth={2} dot={{ r: 2 }} connectNulls />

@@ -9,8 +9,19 @@ import {
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area, Legend, BarChart, Bar, PieChart, Pie, Cell, ComposedChart,
-  ReferenceLine, ReferenceArea
+  ReferenceLine, ReferenceArea, Brush
 } from 'recharts';
+
+// ─── OPC-Live standard chart config ───
+const CHART_GRID = { strokeDasharray: '3 3', stroke: '#e2e8f0' };
+const CHART_AXIS = { fontSize: 9, fill: '#64748b' };
+const CHART_AXIS_PROPS = { tick: CHART_AXIS, tickLine: false, axisLine: { stroke: '#cbd5e1' } };
+const CHART_TOOLTIP = {
+  contentStyle: { fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' },
+  labelStyle: { fontWeight: 700, marginBottom: 4, color: '#1e293b' },
+  itemStyle: { padding: '1px 0' },
+};
+const CHART_LEGEND = { verticalAlign: 'top' as const, height: 30, iconType: 'plainline' as const, wrapperStyle: { fontSize: 10, color: '#64748b' } };
 
 const PERIOD_OPTIONS = [
   { label: 'Today', days: 1 },
@@ -64,7 +75,7 @@ function SectionHeader({ title, icon: Icon }: { title: string; icon: any }) {
 
 function FermCard({ b, type }: { b: any; type: 'F' | 'PF' }) {
   return (
-    <div className="bg-white rounded-lg border shadow-sm p-3">
+    <div className="bg-white border border-slate-300 p-3">
       <div className="flex justify-between items-center mb-2">
         <span className="font-semibold text-sm">{type}{b.fermenterNo} — #{b.batchNo}</span>
         <span className="text-[10px] px-2 py-0.5 rounded-full text-white font-bold"
@@ -216,57 +227,57 @@ export default function Dashboard() {
 
           {/* Charts — 2x2 grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="bg-white rounded-xl shadow-sm border p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Ethanol Production (BL)</h3>
+            <div className="bg-white border border-slate-300 p-3">
+              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Ethanol Production (BL)</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={t.ethanol}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" fontSize={10} tickFormatter={shortDate} />
-                  <YAxis fontSize={10} />
-                  <Tooltip formatter={(v: number) => v.toFixed(0)} labelFormatter={(l: string) => `Date: ${l}`} />
-                  <Bar dataKey="productionBL" fill="#3b82f6" name="Production BL" radius={[4, 4, 0, 0]} />
+                  <CartesianGrid {...CHART_GRID} />
+                  <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
+                  <YAxis {...CHART_AXIS_PROPS} />
+                  <Tooltip {...CHART_TOOLTIP} formatter={(v: number) => v.toFixed(0)} labelFormatter={(l: string) => `Date: ${l}`} />
+                  <Bar dataKey="productionBL" fill="#3b82f6" name="Production BL" radius={[3, 3, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">KLPD Trend</h3>
+            <div className="bg-white border border-slate-300 p-3">
+              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">KLPD Trend</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={t.ethanol}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" fontSize={10} tickFormatter={shortDate} />
-                  <YAxis fontSize={10} />
-                  <Tooltip />
+                  <CartesianGrid {...CHART_GRID} />
+                  <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
+                  <YAxis {...CHART_AXIS_PROPS} />
+                  <Tooltip {...CHART_TOOLTIP} />
                   <Line type="monotone" dataKey="klpd" stroke="#6366f1" strokeWidth={2} dot={{ r: 3 }} name="KLPD" />
                 </LineChart>
               </ResponsiveContainer>
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Grain Stock (Ton)</h3>
+            <div className="bg-white border border-slate-300 p-3">
+              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Grain Stock (Ton)</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <AreaChart data={t.grain}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" fontSize={10} tickFormatter={shortDate} />
-                  <YAxis fontSize={10} />
-                  <Tooltip />
+                  <CartesianGrid {...CHART_GRID} />
+                  <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
+                  <YAxis {...CHART_AXIS_PROPS} />
+                  <Tooltip {...CHART_TOOLTIP} />
                   <Area type="monotone" dataKey="siloStock" stroke="#d97706" fill="#fbbf24" fillOpacity={0.3} name="Silo Stock" />
                   <Area type="monotone" dataKey="consumed" stroke="#ef4444" fill="#fca5a5" fillOpacity={0.2} name="Consumed" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Ethanol Stock & Dispatch (BL)</h3>
+            <div className="bg-white border border-slate-300 p-3">
+              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Ethanol Stock & Dispatch (BL)</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <ComposedChart data={t.ethanol}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" fontSize={10} tickFormatter={shortDate} />
-                  <YAxis fontSize={10} />
-                  <Tooltip />
-                  <Legend />
+                  <CartesianGrid {...CHART_GRID} />
+                  <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
+                  <YAxis {...CHART_AXIS_PROPS} />
+                  <Tooltip {...CHART_TOOLTIP} />
+                  <Legend {...CHART_LEGEND} />
                   <Area type="monotone" dataKey="totalStock" stroke="#06b6d4" fill="#67e8f9" fillOpacity={0.3} name="Stock" />
-                  <Bar dataKey="dispatch" fill="#22c55e" name="Dispatch" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="dispatch" fill="#22c55e" name="Dispatch" radius={[3, 3, 0, 0]} />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
@@ -276,7 +287,7 @@ export default function Dashboard() {
           {data.tables.recentDispatches.length > 0 && (
             <>
               <SectionHeader title="Recent Dispatches" icon={Truck} />
-              <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+              <div className="bg-white border border-slate-300 overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50 text-gray-600 text-xs">
@@ -352,57 +363,57 @@ export default function Dashboard() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="bg-white rounded-xl shadow-sm border p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">KLPD Trend</h3>
+            <div className="bg-white border border-slate-300 p-3">
+              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">KLPD Trend</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={t.ethanol}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" fontSize={10} tickFormatter={shortDate} />
-                  <YAxis fontSize={10} />
-                  <Tooltip />
+                  <CartesianGrid {...CHART_GRID} />
+                  <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
+                  <YAxis {...CHART_AXIS_PROPS} />
+                  <Tooltip {...CHART_TOOLTIP} />
                   <Line type="monotone" dataKey="klpd" stroke="#6366f1" strokeWidth={2} dot={false} name="KLPD" />
                 </LineChart>
               </ResponsiveContainer>
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Grain: Unloaded vs Consumed</h3>
+            <div className="bg-white border border-slate-300 p-3">
+              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Grain: Unloaded vs Consumed</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={t.grain}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" fontSize={10} tickFormatter={shortDate} />
-                  <YAxis fontSize={10} />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="unloaded" fill="#f59e0b" name="Unloaded" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="consumed" fill="#ef4444" name="Consumed" radius={[4, 4, 0, 0]} />
+                  <CartesianGrid {...CHART_GRID} />
+                  <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
+                  <YAxis {...CHART_AXIS_PROPS} />
+                  <Tooltip {...CHART_TOOLTIP} />
+                  <Legend {...CHART_LEGEND} />
+                  <Bar dataKey="unloaded" fill="#f59e0b" name="Unloaded" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="consumed" fill="#ef4444" name="Consumed" radius={[3, 3, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">DDGS Production & Dispatch</h3>
+            <div className="bg-white border border-slate-300 p-3">
+              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">DDGS Production & Dispatch</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={t.ddgs}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" fontSize={10} tickFormatter={shortDate} />
-                  <YAxis fontSize={10} />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="produced" fill="#22c55e" name="Produced" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="dispatched" fill="#3b82f6" name="Dispatched" radius={[4, 4, 0, 0]} />
+                  <CartesianGrid {...CHART_GRID} />
+                  <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
+                  <YAxis {...CHART_AXIS_PROPS} />
+                  <Tooltip {...CHART_TOOLTIP} />
+                  <Legend {...CHART_LEGEND} />
+                  <Bar dataKey="produced" fill="#22c55e" name="Produced" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="dispatched" fill="#3b82f6" name="Dispatched" radius={[3, 3, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Ethanol Stock (BL)</h3>
+            <div className="bg-white border border-slate-300 p-3">
+              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Ethanol Stock (BL)</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <AreaChart data={t.ethanol}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" fontSize={10} tickFormatter={shortDate} />
-                  <YAxis fontSize={10} />
-                  <Tooltip />
+                  <CartesianGrid {...CHART_GRID} />
+                  <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
+                  <YAxis {...CHART_AXIS_PROPS} />
+                  <Tooltip {...CHART_TOOLTIP} />
                   <Area type="monotone" dataKey="totalStock" stroke="#06b6d4" fill="#67e8f9" fillOpacity={0.3} name="Stock BL" />
                 </AreaChart>
               </ResponsiveContainer>
@@ -422,45 +433,45 @@ export default function Dashboard() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="bg-white rounded-xl shadow-sm border p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Distillation Strength</h3>
+            <div className="bg-white border border-slate-300 p-3">
+              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Distillation Strength</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={t.distillation}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" fontSize={10} tickFormatter={shortDate} />
-                  <YAxis fontSize={10} domain={['auto', 'auto']} />
-                  <Tooltip />
-                  <Legend />
+                  <CartesianGrid {...CHART_GRID} />
+                  <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
+                  <YAxis {...CHART_AXIS_PROPS} domain={['auto', 'auto']} />
+                  <Tooltip {...CHART_TOOLTIP} />
+                  <Legend {...CHART_LEGEND} />
                   <Line type="monotone" dataKey="ethanolStrength" stroke="#3b82f6" dot={false} strokeWidth={2} name="Ethanol %" />
                   <Line type="monotone" dataKey="rcReflexStrength" stroke="#f59e0b" dot={false} strokeWidth={2} name="RC Reflex %" />
                 </LineChart>
               </ResponsiveContainer>
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Liquefaction Gravity</h3>
+            <div className="bg-white border border-slate-300 p-3">
+              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Liquefaction Gravity</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={t.liquefaction}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" fontSize={10} tickFormatter={shortDate} />
-                  <YAxis fontSize={10} domain={['auto', 'auto']} />
-                  <Tooltip />
-                  <Legend />
+                  <CartesianGrid {...CHART_GRID} />
+                  <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
+                  <YAxis {...CHART_AXIS_PROPS} domain={['auto', 'auto']} />
+                  <Tooltip {...CHART_TOOLTIP} />
+                  <Legend {...CHART_LEGEND} />
                   <Line type="monotone" dataKey="iltGravity" stroke="#3b82f6" dot={false} strokeWidth={2} name="ILT" />
                   <Line type="monotone" dataKey="fltGravity" stroke="#22c55e" dot={false} strokeWidth={2} name="FLT" />
                 </LineChart>
               </ResponsiveContainer>
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Liquefaction pH</h3>
+            <div className="bg-white border border-slate-300 p-3">
+              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Liquefaction pH</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={t.liquefaction}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" fontSize={10} tickFormatter={shortDate} />
-                  <YAxis fontSize={10} domain={['auto', 'auto']} />
-                  <Tooltip />
-                  <Legend />
+                  <CartesianGrid {...CHART_GRID} />
+                  <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
+                  <YAxis {...CHART_AXIS_PROPS} domain={['auto', 'auto']} />
+                  <Tooltip {...CHART_TOOLTIP} />
+                  <Legend {...CHART_LEGEND} />
                   <Line type="monotone" dataKey="iltPh" stroke="#8b5cf6" dot={false} strokeWidth={2} name="ILT pH" />
                   <Line type="monotone" dataKey="fltPh" stroke="#ec4899" dot={false} strokeWidth={2} name="FLT pH" />
                 </LineChart>
@@ -468,15 +479,15 @@ export default function Dashboard() {
             </div>
 
             {t.milling.length > 0 && (
-              <div className="bg-white rounded-xl shadow-sm border p-4">
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">Milling Sieve Analysis</h3>
+              <div className="bg-white border border-slate-300 p-3">
+                <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Milling Sieve Analysis</h3>
                 <ResponsiveContainer width="100%" height={220}>
                   <LineChart data={t.milling}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" fontSize={10} tickFormatter={shortDate} />
-                    <YAxis fontSize={10} />
-                    <Tooltip />
-                    <Legend />
+                    <CartesianGrid {...CHART_GRID} />
+                    <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
+                    <YAxis {...CHART_AXIS_PROPS} />
+                    <Tooltip {...CHART_TOOLTIP} />
+                    <Legend {...CHART_LEGEND} />
                     <Line type="monotone" dataKey="sieve1mm" stroke="#ef4444" dot={false} name="1.00mm" />
                     <Line type="monotone" dataKey="sieve850" stroke="#f59e0b" dot={false} name="0.850mm" />
                     <Line type="monotone" dataKey="sieve600" stroke="#22c55e" dot={false} name="0.600mm" />
@@ -488,8 +499,8 @@ export default function Dashboard() {
           </div>
 
           {data.tables.rawMaterial.length > 0 && (
-            <div className="bg-white rounded-xl shadow-sm border p-4 overflow-x-auto">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Recent Raw Material</h3>
+            <div className="bg-white border border-slate-300 p-3 overflow-x-auto">
+              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Recent Raw Material</h3>
               <table className="w-full text-xs">
                 <thead><tr className="border-b text-gray-500">
                   <th className="text-left py-2 pr-3">Date</th>
@@ -529,8 +540,8 @@ export default function Dashboard() {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {data.tables.dispatchByParty.length > 0 && (
-              <div className="bg-white rounded-xl shadow-sm border p-4">
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">Dispatch by Party (BL)</h3>
+              <div className="bg-white border border-slate-300 p-3">
+                <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Dispatch by Party (BL)</h3>
                 <ResponsiveContainer width="100%" height={260}>
                   <PieChart>
                     <Pie data={data.tables.dispatchByParty.slice(0, 8)} dataKey="qty" nameKey="party" cx="50%" cy="50%"
@@ -540,29 +551,29 @@ export default function Dashboard() {
                         <Cell key={i} fill={COLORS[i % COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(v: number) => `${v.toFixed(0)} BL`} />
+                    <Tooltip {...CHART_TOOLTIP} formatter={(v: number) => `${v.toFixed(0)} BL`} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
             )}
 
-            <div className="bg-white rounded-xl shadow-sm border p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Daily Ethanol Dispatch (BL)</h3>
+            <div className="bg-white border border-slate-300 p-3">
+              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Daily Ethanol Dispatch (BL)</h3>
               <ResponsiveContainer width="100%" height={260}>
                 <BarChart data={t.ethanol}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" fontSize={10} tickFormatter={shortDate} />
-                  <YAxis fontSize={10} />
-                  <Tooltip />
-                  <Bar dataKey="dispatch" fill="#22c55e" name="Dispatch BL" radius={[4, 4, 0, 0]} />
+                  <CartesianGrid {...CHART_GRID} />
+                  <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
+                  <YAxis {...CHART_AXIS_PROPS} />
+                  <Tooltip {...CHART_TOOLTIP} />
+                  <Bar dataKey="dispatch" fill="#22c55e" name="Dispatch BL" radius={[3, 3, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </div>
 
           {data.tables.recentDispatches.length > 0 && (
-            <div className="bg-white rounded-xl shadow-sm border p-4 overflow-x-auto">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Recent Dispatches</h3>
+            <div className="bg-white border border-slate-300 p-3 overflow-x-auto">
+              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Recent Dispatches</h3>
               <table className="w-full text-xs">
                 <thead><tr className="border-b text-gray-500">
                   <th className="text-left py-2 pr-3">Date</th>
@@ -589,8 +600,8 @@ export default function Dashboard() {
           )}
 
           {data.tables.dispatchByParty.length > 0 && (
-            <div className="bg-white rounded-xl shadow-sm border p-4 overflow-x-auto">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Party-wise Summary</h3>
+            <div className="bg-white border border-slate-300 p-3 overflow-x-auto">
+              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Party-wise Summary</h3>
               <table className="w-full text-xs">
                 <thead><tr className="border-b text-gray-500">
                   <th className="text-left py-2 pr-3">Party</th>
@@ -689,8 +700,8 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
   return (
     <div className="space-y-4">
       {/* ─── Plant Pipeline Flow ─── */}
-      <div className="bg-white rounded-xl shadow-sm border p-4">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2"><Zap size={14} /> Plant Pipeline</h3>
+      <div className="bg-white border border-slate-300 p-3">
+        <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-2"><Zap size={14} /> Plant Pipeline</h3>
         <div className="flex items-center gap-1 overflow-x-auto pb-2">
           <PipelineStep label="Grain In" value={pipe.grainIn.toFixed(0)} unit="T" icon={Wheat} color="bg-amber-600" />
           <PipelineStep label="Consumed" value={pipe.grainConsumed.toFixed(0)} unit="T" icon={Flame} color="bg-orange-600" />
@@ -730,7 +741,7 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
           <SectionHeader title="Active Batch Predictions" icon={Brain} />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {data.predictions.map((p: any) => (
-              <div key={`pred-${p.batchNo}`} className="bg-white rounded-xl border shadow-sm p-4">
+              <div key={`pred-${p.batchNo}`} className="bg-white border border-slate-300 p-3">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
                     <FlaskConical size={18} className="text-emerald-600" />
@@ -784,15 +795,15 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
 
       {/* ─── Gravity Curves Chart ─── */}
       {gravityChartData.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Gravity Drop Curves (Batch Comparison)</h3>
+        <div className="bg-white border border-slate-300 p-3">
+          <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Gravity Drop Curves (Batch Comparison)</h3>
           <ResponsiveContainer width="100%" height={300}>
             <ComposedChart data={gravityChartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="hour" fontSize={10} label={{ value: 'Hours', position: 'insideBottom', offset: -5, fontSize: 10 }} />
-              <YAxis fontSize={10} domain={['auto', 'auto']} label={{ value: 'Gravity', angle: -90, position: 'insideLeft', fontSize: 10 }} />
-              <Tooltip />
-              <Legend />
+              <CartesianGrid {...CHART_GRID} />
+              <XAxis dataKey="hour" {...CHART_AXIS_PROPS} label={{ value: 'Hours', position: 'insideBottom', offset: -5, fontSize: 10 }} />
+              <YAxis {...CHART_AXIS_PROPS} domain={['auto', 'auto']} label={{ value: 'Gravity', angle: -90, position: 'insideLeft', fontSize: 10 }} />
+              <Tooltip {...CHART_TOOLTIP} />
+              <Legend {...CHART_LEGEND} />
               {/* Avg curve — thick dashed */}
               <Line type="monotone" dataKey="avgGravity" stroke="#6b7280" strokeWidth={3} strokeDasharray="8 4" dot={false} name="Avg (historical)" />
               {/* Per-batch curves */}
@@ -810,15 +821,15 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
 
       {/* ─── Alcohol Build-up Chart ─── */}
       {alcoholChartData.some((d: any) => Object.keys(d).length > 1) && (
-        <div className="bg-white rounded-xl shadow-sm border p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Alcohol Build-up Over Time</h3>
+        <div className="bg-white border border-slate-300 p-3">
+          <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Alcohol Build-up Over Time</h3>
           <ResponsiveContainer width="100%" height={260}>
             <LineChart data={alcoholChartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="hour" fontSize={10} />
-              <YAxis fontSize={10} label={{ value: 'Alcohol %', angle: -90, position: 'insideLeft', fontSize: 10 }} />
-              <Tooltip />
-              <Legend />
+              <CartesianGrid {...CHART_GRID} />
+              <XAxis dataKey="hour" {...CHART_AXIS_PROPS} />
+              <YAxis {...CHART_AXIS_PROPS} label={{ value: 'Alcohol %', angle: -90, position: 'insideLeft', fontSize: 10 }} />
+              <Tooltip {...CHART_TOOLTIP} />
+              <Legend {...CHART_LEGEND} />
               <Line type="monotone" dataKey="avgAlcohol" stroke="#6b7280" strokeWidth={3} strokeDasharray="8 4" dot={false} name="Avg" />
               {gravityCurves.map((c: any, i: number) => (
                 <Line key={c.batchNo} type="monotone" dataKey={`b${c.batchNo}`}
@@ -832,15 +843,15 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
 
       {/* ─── Temperature Monitoring ─── */}
       {tempChartData.some((d: any) => Object.keys(d).length > 1) && (
-        <div className="bg-white rounded-xl shadow-sm border p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Temperature Monitoring</h3>
+        <div className="bg-white border border-slate-300 p-3">
+          <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Temperature Monitoring</h3>
           <ResponsiveContainer width="100%" height={260}>
             <ComposedChart data={tempChartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="hour" fontSize={10} />
-              <YAxis fontSize={10} domain={[25, 42]} />
-              <Tooltip />
-              <Legend />
+              <CartesianGrid {...CHART_GRID} />
+              <XAxis dataKey="hour" {...CHART_AXIS_PROPS} />
+              <YAxis {...CHART_AXIS_PROPS} domain={[25, 42]} />
+              <Tooltip {...CHART_TOOLTIP} />
+              <Legend {...CHART_LEGEND} />
               <ReferenceArea y1={37} y2={42} fill="#fecaca" fillOpacity={0.3} />
               <ReferenceLine y={37} stroke="#ef4444" strokeDasharray="4 4" label={{ value: '37°C limit', fontSize: 9, fill: '#ef4444' }} />
               <Line type="monotone" dataKey="avgTemp" stroke="#6b7280" strokeWidth={3} strokeDasharray="8 4" dot={false} name="Avg" />
@@ -856,8 +867,8 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
 
       {/* ─── Batch Comparison Table ─── */}
       {data.batchComparison && data.batchComparison.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border p-4 overflow-x-auto">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Batch Comparison</h3>
+        <div className="bg-white border border-slate-300 p-3 overflow-x-auto">
+          <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Batch Comparison</h3>
           <table className="w-full text-xs">
             <thead><tr className="border-b text-gray-500">
               <th className="text-left py-2 pr-2">Batch</th>
@@ -898,21 +909,21 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
       {/* ─── Chemical Consumption ─── */}
       {data.chemicalSummary && data.chemicalSummary.length > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="bg-white rounded-xl shadow-sm border p-4">
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">Chemical Consumption</h3>
+          <div className="bg-white border border-slate-300 p-3">
+            <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Chemical Consumption</h3>
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={data.chemicalSummary.slice(0, 8)} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" fontSize={10} />
-                <YAxis dataKey="name" type="category" fontSize={10} width={80} />
-                <Tooltip formatter={(v: number, name: string) => [v.toFixed(1), name === 'total' ? 'Total' : 'Avg/batch']} />
-                <Bar dataKey="total" fill="#f59e0b" name="Total" radius={[0, 4, 4, 0]} />
+                <CartesianGrid {...CHART_GRID} />
+                <XAxis type="number" {...CHART_AXIS_PROPS} />
+                <YAxis dataKey="name" type="category" {...CHART_AXIS_PROPS} width={80} />
+                <Tooltip {...CHART_TOOLTIP} formatter={(v: number, name: string) => [v.toFixed(1), name === 'total' ? 'Total' : 'Avg/batch']} />
+                <Bar dataKey="total" fill="#f59e0b" name="Total" radius={[0, 3, 3, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
 
-          <div className="bg-white rounded-xl shadow-sm border p-4 overflow-x-auto">
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">Chemical Details</h3>
+          <div className="bg-white border border-slate-300 p-3 overflow-x-auto">
+            <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Chemical Details</h3>
             <table className="w-full text-xs">
               <thead><tr className="border-b text-gray-500">
                 <th className="text-left py-2 pr-3">Chemical</th>
@@ -937,18 +948,18 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
 
       {/* ─── Fermentation Activity Timeline ─── */}
       {data.fermActivity && data.fermActivity.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Daily Fermentation Activity</h3>
+        <div className="bg-white border border-slate-300 p-3">
+          <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Daily Fermentation Activity</h3>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={data.fermActivity}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="date" fontSize={10} tickFormatter={shortDate} />
-              <YAxis fontSize={10} />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey="started" fill="#6366f1" name="Batches Started" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="completed" fill="#22c55e" name="Batches Completed" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="readings" fill="#f59e0b" name="Lab Readings" radius={[4, 4, 0, 0]} />
+              <CartesianGrid {...CHART_GRID} />
+              <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
+              <YAxis {...CHART_AXIS_PROPS} />
+              <Tooltip {...CHART_TOOLTIP} />
+              <Legend {...CHART_LEGEND} />
+              <Bar dataKey="started" fill="#6366f1" name="Batches Started" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="completed" fill="#22c55e" name="Batches Completed" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="readings" fill="#f59e0b" name="Lab Readings" radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -956,8 +967,8 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
 
       {/* ─── PF Analytics Table ─── */}
       {data.pfAnalytics && data.pfAnalytics.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border p-4 overflow-x-auto">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Pre-Fermenter History</h3>
+        <div className="bg-white border border-slate-300 p-3 overflow-x-auto">
+          <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Pre-Fermenter History</h3>
           <table className="w-full text-xs">
             <thead><tr className="border-b text-gray-500">
               <th className="text-left py-2 pr-2">Batch</th>
