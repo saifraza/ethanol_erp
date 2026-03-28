@@ -525,6 +525,8 @@ router.get('/live/:tag', asyncHandler(async (req: AuthRequest, res: Response) =>
 }));
 
 // GET /api/opc/history/:tag?hours=24&property=PV
+// For <=6h: returns raw readings (~every 2 min) for sharp graphs
+// For >6h: returns hourly aggregates (avg/min/max)
 router.get('/history/:tag', asyncHandler(async (req: AuthRequest, res: Response) => {
   const opc = getOpcPrisma();
   const tag = req.params.tag;
@@ -532,14 +534,33 @@ router.get('/history/:tag', asyncHandler(async (req: AuthRequest, res: Response)
   const property = (req.query.property as string) || 'PV';
   const cutoff = new Date(Date.now() - hours * 3600 * 1000);
 
-  const readings = await opc.opcHourlyReading.findMany({
-    where: { tag, property, hour: { gte: cutoff } },
-    orderBy: { hour: 'asc' },
-    take: 500,
-    select: { hour: true, avg: true, min: true, max: true, count: true },
-  });
-
-  res.json({ tag, property, hours, readings, count: readings.length });
+  if (hours <= 6) {
+    // Raw readings for short ranges — much sharper graphs
+    const raw = await opc.opcReading.findMany({
+      where: { tag, property, scannedAt: { gte: cutoff } },
+      orderBy: { scannedAt: 'asc' },
+      take: 500,
+      select: { scannedAt: true, value: true },
+    });
+    // Format to match hourly structure so frontend works with both
+    const readings = raw.map((r: { scannedAt: Date; value: number }) => ({
+      hour: r.scannedAt,
+      avg: r.value,
+      min: r.value,
+      max: r.value,
+      count: 1,
+    }));
+    res.json({ tag, property, hours, readings, count: readings.length, resolution: 'raw' });
+  } else {
+    // Hourly aggregates for longer ranges
+    const readings = await opc.opcHourlyReading.findMany({
+      where: { tag, property, hour: { gte: cutoff } },
+      orderBy: { hour: 'asc' },
+      take: 500,
+      select: { hour: true, avg: true, min: true, max: true, count: true },
+    });
+    res.json({ tag, property, hours, readings, count: readings.length, resolution: 'hourly' });
+  }
 }));
 
 // GET /api/opc/stats
