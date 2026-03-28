@@ -118,14 +118,18 @@ router.post('/push', validate(pushReadingsSchema), asyncHandler(async (req: Auth
   const opc = getOpcPrisma();
   const { readings, tags } = req.body;
 
-  // Upsert monitored tags if provided
+  // Upsert monitored tags if provided (non-blocking — don't fail the push if tag sync fails)
   if (tags && tags.length > 0) {
-    for (const t of tags) {
-      await opc.opcMonitoredTag.upsert({
-        where: { tag: t.tag },
-        create: { tag: t.tag, area: t.area, folder: t.folder, tagType: t.tagType, label: t.label || t.tag },
-        update: { area: t.area, folder: t.folder, tagType: t.tagType, label: t.label || t.tag, active: true },
-      });
+    try {
+      for (const t of tags) {
+        await opc.opcMonitoredTag.upsert({
+          where: { tag: t.tag },
+          create: { tag: t.tag, area: t.area, folder: t.folder, tagType: t.tagType, label: t.label || t.tag },
+          update: { area: t.area, folder: t.folder, tagType: t.tagType, label: t.label || t.tag, active: true },
+        });
+      }
+    } catch (tagErr) {
+      console.error('[OPC] Tag upsert failed (schema columns may not be migrated):', (tagErr as Error).message);
     }
   }
 
