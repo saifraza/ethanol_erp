@@ -77,6 +77,7 @@ const TAG_CATALOG: Record<string, Record<string, { folder: string; type: string;
       LT_120104: 'Level 120104', LT_120201: 'Level 120201',
       PT_120101: 'Pressure 120101', PT_120201: 'Pressure 120201',
       TE_120101: 'FLT Temp', TE_120201: 'ILT Temp',
+      MG_120103: 'Flow 120103', MG_120104: 'Flow 120104', MG_120301: 'Flow 120301',
     }},
   },
   MSDH: {
