@@ -45,5 +45,10 @@ const server = app.listen(PORT, HOST, async () => {
     initWhatsApp().catch((err) => console.error('[WA] Init error:', err));
     initAutoCollect().catch((err) => console.error('[AutoCollect] Init error:', err));
   }
+
+  // OPC health watchdog — monitors bridge connectivity, sends WhatsApp alerts
+  if (process.env.DATABASE_URL_OPC) {
+    import('./services/opcHealthWatchdog').then(m => m.startOpcWatchdog()).catch(() => {});
+  }
 });
 
