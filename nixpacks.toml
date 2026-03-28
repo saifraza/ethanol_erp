@@ -20,5 +20,4 @@ aptPkgs = [
 ]
 
 [variables]
-PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = "true"
-PUPPETEER_EXECUTABLE_PATH = "/usr/bin/chromium"
+# Let pdfRenderer.ts auto-detect Chromium path (system or bundled)
