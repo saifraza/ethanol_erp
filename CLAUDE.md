@@ -23,22 +23,46 @@ WhatsApp is a **key feature** of this ERP. Plant operators submit hourly reading
 - Auto-collect bots ask questions on schedule, parse replies, save to DB, and share summary reports to groups
 - Every new module should consider WhatsApp integration from day one
 
-**WhatsApp Auto-Collect Architecture:**
-- `backend/src/services/whatsappBaileys.ts` — WhatsApp connection via Baileys (QR auth)
-- `backend/src/services/whatsappAutoCollect.ts` — Generic conversation engine + scheduler
-- `backend/src/services/autoCollectModules/` — Module-specific bots (one file per module)
-- `backend/src/services/autoCollectModules/_template.ts` — Template for new modules
-- Each module implements: `buildPrompt`, `parseReply`, `buildConfirmation`, `buildSummary`, `saveData`
-- `ModuleConfig.privateOnly` controls group sharing (`false` = send report to group + private)
-- Schedules stored in DB (`AutoCollectSchedule` model), configured via Settings UI
-- IST timezone: always use `nowIST()` pattern, NEVER `toLocaleTimeString()` on server
+**WhatsApp Two-Service Architecture (CRITICAL):**
+- WhatsApp runs as a **SEPARATE Railway service** (`mspil-whatsapp` repo, https://github.com/saifraza/mspil-whatsapp.git)
+- The main ERP does NOT run WhatsApp — it proxies to the worker via `WA_WORKER_URL` env var
+- **Reason**: WhatsApp Baileys connection is fragile; if it crashes, it shouldn't take down the ERP
+- Both services share the same PostgreSQL database on Railway
+- The worker auto-deploys from `mspil-whatsapp` repo — **changes to WhatsApp code must be pushed to BOTH repos**
+
+**Worker service** (`mspil-whatsapp` repo):
+- `src/whatsapp-server.ts` — Express server with send/trigger/sessions endpoints
+- `src/services/whatsappBaileys.ts` — WhatsApp connection via Baileys (QR auth)
+- `src/services/whatsappAutoCollect.ts` — Auto-collect conversation engine + scheduler
+- `src/services/autoCollectModules/` — Module-specific bots (one file per module)
+- Incoming message replies are handled HERE (not on main ERP)
+- Auto-collect sessions (`activeSessions` map) live in worker memory
+- **URL**: `http://mspil-whatsapp.railway.internal:5001` (Railway internal)
+
+**Main ERP proxies** (`backend/src/services/whatsappClient.ts`):
+- `waSend()` → `POST /wa/send` on worker
+- `waSendGroup()` → `POST /wa/send-group` on worker
+- `/api/auto-collect/trigger` → `POST /wa/auto-collect/trigger` on worker
+- `/api/auto-collect/sessions` → `GET /wa/auto-collect/sessions` on worker
+
+**Schedules** are stored in `AutoCollectSchedule` DB table (shared by both services):
+- Each module has one row: `module` (unique key), `phone`, `intervalMinutes`, `enabled`, etc.
+- Frontend saves via `PUT /api/auto-collect/schedules/:module` on main ERP
+- Worker loads via `prisma.autoCollectSchedule.findMany()` on startup + after saves
+- Legacy fallback: also checks `Settings.autoCollectConfig` JSON blob and auto-migrates
+
+**NEVER DO with WhatsApp:**
+- Never create auto-collect sessions on the main ERP server — they must be on the worker
+- Never store schedules as JSON blobs — use the `AutoCollectSchedule` model
+- Never import from `whatsappBaileys` directly on the main ERP — use `whatsappClient`
 
 **Adding a new WhatsApp auto-collect module:**
-1. Copy `_template.ts` → `yourModule.ts` in `autoCollectModules/`
+1. Copy `_template.ts` → `yourModule.ts` in `autoCollectModules/` (BOTH repos)
 2. Define `STEPS` (field groups), implement `buildPrompt`, `parseReply`, `saveData`
-3. Register in `autoCollectModules/index.ts`
+3. Register in `autoCollectModules/index.ts` (BOTH repos)
 4. Add schedule via Settings UI or seed data
 5. Set `privateOnly: false` if reports should go to WhatsApp group
+6. **Push changes to BOTH `ethanol_erp` AND `mspil-whatsapp` repos**
 
 ### WhatsApp Report Sharing
 Beyond auto-collect, the ERP also supports one-click WhatsApp sharing from the web UI:
