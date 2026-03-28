@@ -504,6 +504,7 @@ export default function DDGSStock() {
                     });
                     setAcDirty(false);
                     setAcStatus(`Schedule saved (${acEnabled ? 'enabled' : 'disabled'}, ${acInterval}min${acAutoShare ? ', auto-share' : ''})`);
+                    loadAutoCollect(); // Reload to confirm saved values
                   } catch { setAcStatus('Failed to save'); }
                   setTimeout(() => setAcStatus(''), 3000);
                 }} className={`px-3 py-1.5 text-white rounded text-xs font-medium ${acDirty ? 'bg-orange-500 hover:bg-orange-600 animate-pulse' : 'bg-cyan-600 hover:bg-cyan-700'}`}>
