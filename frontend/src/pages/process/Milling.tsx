@@ -363,8 +363,8 @@ export default function Milling() {
       if (share) {
         try {
           const text = buildReportText();
-          await api.post('/whatsapp/send-report', { message: text, module: 'milling' });
-          setMsg({ type: 'ok', text: `Saved at ${now} and shared via WhatsApp` });
+          await api.post('/telegram/send-report', { message: text, module: 'milling' });
+          setMsg({ type: 'ok', text: `Saved at ${now} and shared via Telegram` });
         } catch (shareErr: any) {
           const errMsg = shareErr.response?.data?.error || 'Sharing failed';
           setMsg({ type: 'err', text: `Saved at ${now}, but ${errMsg}` });

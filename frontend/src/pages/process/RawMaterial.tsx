@@ -135,8 +135,8 @@ export default function RawMaterial() {
 
   const doShare = async (text: string) => {
     try {
-      await api.post('/whatsapp/send-report', { message: text, module: 'grain' });
-      setMsg({ type: 'ok', text: 'Shared via WhatsApp!' });
+      await api.post('/telegram/send-report', { message: text, module: 'grain' });
+      setMsg({ type: 'ok', text: 'Shared via Telegram!' });
     } catch {
       setMsg({ type: 'err', text: 'Failed to share' });
     }

@@ -812,7 +812,7 @@ export default function OPCTagManager() {
                 <div>Factory PC scans OPC tags every 2 min, stores raw readings locally (7 day retention)</div>
                 <div>Every 2.5 min: pushes readings to cloud + pulls tag list from ERP</div>
                 <div>Every hour: computes avg/min/max aggregates (stored permanently in cloud)</div>
-                <div>HH/LL alarms: checked on each push, alerts sent to WhatsApp group (max once per 15 min per tag)</div>
+                <div>HH/LL alarms: checked on each push, alerts sent to Telegram group (max once per 15 min per tag)</div>
               </div>
             </div>
           </div>

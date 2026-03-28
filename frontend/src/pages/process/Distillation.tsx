@@ -55,9 +55,9 @@ export default function Distillation() {
       await api.post('/distillation', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       if (share) {
         try {
-          await api.post('/whatsapp/send-report', { message: buildPreviewText(), module: 'distillation' });
-          setMsg({ type: 'ok', text: 'Saved & shared on WhatsApp' });
-        } catch { setMsg({ type: 'ok', text: 'Saved! WhatsApp send failed' }); }
+          await api.post('/telegram/send-report', { message: buildPreviewText(), module: 'distillation' });
+          setMsg({ type: 'ok', text: 'Saved & shared on Telegram' });
+        } catch { setMsg({ type: 'ok', text: 'Saved! Telegram send failed' }); }
       } else {
         setMsg({ type: 'ok', text: `Saved at ${new Date().toLocaleTimeString()}` });
       }
@@ -103,8 +103,8 @@ export default function Distillation() {
   const shareReport = async () => {
     try {
       const text = buildPreviewText();
-      await api.post('/whatsapp/send-report', { message: text, module: 'distillation' });
-      setMsg({ type: 'ok', text: 'Report shared via WhatsApp' });
+      await api.post('/telegram/send-report', { message: text, module: 'distillation' });
+      setMsg({ type: 'ok', text: 'Report shared via Telegram' });
     } catch (err: any) {
       setMsg({ type: 'err', text: err.response?.data?.error || 'Failed to share report' });
     }

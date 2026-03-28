@@ -61,7 +61,7 @@ export default function DDGSStock() {
   const [stockEntries, setStockEntries] = useState<any[]>([]);
   const [showPreview, setShowPreview] = useState(false);
 
-  // WhatsApp auto-collect state
+  // Telegram auto-collect state
   const [showAutoCollect, setShowAutoCollect] = useState(false);
   const [acPhones, setAcPhones] = useState('');
   const [acInterval, setAcInterval] = useState('60');
@@ -71,7 +71,7 @@ export default function DDGSStock() {
   const [acLang, setAcLang] = useState<'hi' | 'en'>('hi');
   const [acBagWeight, setAcBagWeight] = useState('35');
   const [acDirty, setAcDirty] = useState(false);
-  const [activeSessions, setActiveSessions] = useState<{ phone: string; module: string; step: number; totalSteps: number }[]>([]);
+  const [activeSessions, setActiveSessions] = useState<{ phone?: string; chatId?: string; module: string; step: number; totalSteps: number }[]>([]);
 
   const sd = shiftDate();
 
@@ -143,7 +143,7 @@ export default function DDGSStock() {
         bags, weightPerBag, timeFrom, timeTo, operatorName, remark, shiftDate: sd,
       });
 
-      // Auto-send WhatsApp for each DDGS production entry
+      // Auto-send Telegram for each DDGS production entry
       const wt = (parseFloat(bags) * parseFloat(weightPerBag) / 1000).toFixed(2);
       const waMsg = [
         `📦 *DDGS Production*`,
@@ -152,7 +152,7 @@ export default function DDGSStock() {
         remark ? `Note: ${remark}` : '',
         `Today total: ${todayBags + parseFloat(bags)} bags`,
       ].filter(Boolean).join('\n');
-      api.post('/whatsapp/send-report', { message: waMsg, module: 'ddgs' }).catch(() => {});
+      api.post('/telegram/send-report', { message: waMsg, module: 'ddgs' }).catch(() => {});
 
       setMsg({ type: 'ok', text: `Added ${bags} bags` });
       setBags(''); setRemark('');
@@ -418,8 +418,8 @@ export default function DDGSStock() {
               </button>
               <button onClick={async () => {
                 await saveDailyStock();
-                await api.post('/whatsapp/send-report', { message: previewText, module: 'ddgs-stock' }).catch(() => {});
-                setMsg({ type: 'ok', text: 'Saved & shared on WhatsApp' });
+                await api.post('/telegram/send-report', { message: previewText, module: 'ddgs-stock' }).catch(() => {});
+                setMsg({ type: 'ok', text: 'Saved & shared on Telegram' });
                 setShowPreview(false);
               }} disabled={saving}
                 className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
@@ -430,14 +430,14 @@ export default function DDGSStock() {
         </div>
       )}
 
-      {/* WhatsApp Auto-Collection */}
+      {/* Telegram Auto-Collection */}
       {isAdmin && (
         <div className="bg-white rounded-lg shadow-sm border mb-4">
           <button onClick={() => setShowAutoCollect(!showAutoCollect)}
             className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition">
             <div className="flex items-center gap-2">
-              <MessageCircle size={18} className="text-green-600" />
-              <span className="text-sm font-semibold text-gray-700">WhatsApp Auto-Collection</span>
+              <MessageCircle size={18} className="text-blue-500" />
+              <span className="text-sm font-semibold text-gray-700">Telegram Auto-Collection</span>
               {acEnabled && <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium">ON</span>}
             </div>
             {showAutoCollect ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
@@ -445,25 +445,25 @@ export default function DDGSStock() {
           {showAutoCollect && (
             <div className="px-4 pb-4 space-y-3">
               <p className="text-xs text-gray-500">
-                Bot sends hourly WhatsApp messages asking operators for DDGS bags packed. Operator replies with a number → data auto-saved.
+                Bot sends hourly Telegram messages asking operators for DDGS bags packed. Operator replies with a number - data auto-saved.
               </p>
 
-              {/* Phone numbers */}
+              {/* Telegram Chat IDs */}
               <div>
-                <label className="text-[10px] text-gray-500 uppercase mb-1 block">Operator Numbers</label>
+                <label className="text-[10px] text-gray-500 uppercase mb-1 block">Operator Telegram Chat IDs</label>
                 <input type="text" value={acPhones} onChange={e => { setAcPhones(e.target.value); setAcDirty(true); }}
-                  placeholder="e.g. 9876543210, 9123456789" className="border rounded px-2 py-1.5 w-full text-sm" />
+                  placeholder="e.g. 123456789, 987654321" className="border rounded px-2 py-1.5 w-full text-sm" />
                 {acPhones ? (
                   <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                     <span className="text-[9px] text-gray-400">Saved:</span>
                     {acPhones.split(',').map(p => p.trim()).filter(Boolean).map((p, i) => (
-                      <span key={i} className="text-[10px] bg-green-100 text-green-800 px-2 py-0.5 rounded-full font-medium">{p}</span>
+                      <span key={i} className="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-medium">{p}</span>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-[9px] text-orange-500 mt-1">No numbers saved. Add operator phone numbers above.</p>
+                  <p className="text-[9px] text-orange-500 mt-1">No chat IDs saved. Add operator Telegram chat IDs above.</p>
                 )}
-                <p className="text-[9px] text-gray-400 mt-1">Comma-separated. Bot sends to all numbers at each interval.</p>
+                <p className="text-[9px] text-gray-400 mt-1">Comma-separated. Bot sends to all chat IDs at each interval. Operators need to message @EthanolERP_bot first to get their chat ID.</p>
               </div>
 
               {/* Interval + Enable */}
@@ -505,7 +505,7 @@ export default function DDGSStock() {
               <div className="flex gap-2 flex-wrap">
                 <button onClick={async () => {
                   const phone = acPhones.trim();
-                  if (!phone) { setAcStatus('Add at least one phone number'); return; }
+                  if (!phone) { setAcStatus('Add at least one Telegram chat ID'); return; }
                   try {
                     await api.put('/auto-collect/schedules/ddgs', {
                       phone, intervalMinutes: parseInt(acInterval) || 60, enabled: acEnabled, autoShare: acAutoShare, language: acLang, bagWeight: parseInt(acBagWeight) || 35,
@@ -520,7 +520,7 @@ export default function DDGSStock() {
                 </button>
                 <button onClick={async () => {
                   const phoneList = acPhones.split(',').map(p => p.trim()).filter(Boolean);
-                  if (!phoneList.length) { setAcStatus('No phone numbers configured'); return; }
+                  if (!phoneList.length) { setAcStatus('No Telegram chat IDs configured'); return; }
                   try {
                     const r = await api.post('/auto-collect/trigger', { phone: phoneList[0], module: 'ddgs', autoShare: acAutoShare });
                     setAcStatus(r.data.success ? `Sent to ${phoneList[0]}` : r.data.error);
@@ -544,9 +544,9 @@ export default function DDGSStock() {
                     }} className="text-[10px] text-red-500 hover:text-red-700 font-medium">Reset All</button>
                   </div>
                   {activeSessions.map(s => (
-                    <div key={s.phone} className="flex items-center gap-2 text-xs bg-green-50 rounded p-1.5">
-                      <Loader2 size={12} className="animate-spin text-green-600" />
-                      <span>{s.phone} — step {s.step}/{s.totalSteps}</span>
+                    <div key={s.chatId || s.phone} className="flex items-center gap-2 text-xs bg-blue-50 rounded p-1.5">
+                      <Loader2 size={12} className="animate-spin text-blue-600" />
+                      <span>{s.chatId || s.phone} — step {s.step}/{s.totalSteps}</span>
                     </div>
                   ))}
                 </div>

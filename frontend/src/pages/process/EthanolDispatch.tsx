@@ -65,11 +65,11 @@ export default function EthanolDispatch() {
       await api.post('/dispatch', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
 
-      // Auto-send WhatsApp for each dispatch truck
+      // Auto-send Telegram for each dispatch truck
       try {
         const msg = `🚛 *Ethanol Dispatch* — ${now}\nVehicle: ${vehicleNo}\nParty: ${partyName || '-'}\nDestination: ${destination || '-'}\nQuantity: ${quantityBL} BL${strength ? ` @ ${strength}%` : ''}\nBatch: ${batchNo || '-'}${remarks ? `\nRemarks: ${remarks}` : ''}`;
-        await api.post('/whatsapp/send-report', { message: msg, module: 'dispatch' });
-      } catch (_) { /* WhatsApp send is best-effort */ }
+        await api.post('/telegram/send-report', { message: msg, module: 'dispatch' });
+      } catch (_) { /* Telegram send is best-effort */ }
 
       setMsg({ type: 'ok', text: `Dispatch saved at ${now}` });
       resetForm();
@@ -93,16 +93,16 @@ export default function EthanolDispatch() {
 
   const totalBL = dispatches.reduce((s, d) => s + (d.quantityBL || 0), 0);
 
-  async function shareWhatsApp() {
+  async function shareTelegram() {
     const lines = dispatches.map((d: any, i: number) =>
       `${i+1}. ${d.batchNo ? `[${d.batchNo}] ` : ''}${d.vehicleNo} → ${d.destination || '-'} | ${d.quantityBL} BL${d.strength ? ` @ ${d.strength}%` : ''} | ${d.partyName}`
     ).join('\n');
     const text = `*Ethanol Dispatch Report*\n📅 ${date}\n\n${lines}\n\n*Total: ${totalBL.toFixed(1)} BL (${dispatches.length} trucks)*`;
     try {
-      await api.post('/whatsapp/send-report', { message: text, module: 'dispatch' });
-      setMsg({ type: 'ok', text: 'Report shared via WhatsApp' });
+      await api.post('/telegram/send-report', { message: text, module: 'dispatch' });
+      setMsg({ type: 'ok', text: 'Report shared via Telegram' });
     } catch (_) {
-      setMsg({ type: 'err', text: 'WhatsApp share failed' });
+      setMsg({ type: 'err', text: 'Telegram share failed' });
     }
   }
 
@@ -256,11 +256,11 @@ export default function EthanolDispatch() {
         )}
       </div>
 
-      {/* WhatsApp share */}
+      {/* Telegram share */}
       {dispatches.length > 0 && (
-        <button onClick={shareWhatsApp}
+        <button onClick={shareTelegram}
           className="w-full flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 mb-5">
-          <Share2 size={16} /> Share on WhatsApp
+          <Share2 size={16} /> Share on Telegram
         </button>
       )}
 
