@@ -141,7 +141,7 @@ export default function App() {
         <Route path="process/water-utility" element={<WaterUtility />} />
         <Route path="process/lab-sampling" element={<LabSampling />} />
         <Route path="process/dosing-recipes" element={<DosingRecipes />} />
-        <Route path="inventory" element={<Inventory />} />
+        <Route path="inventory" element={<Navigate to="/inventory/dashboard" replace />} />
         {/* Inventory (SAP-style) */}
         <Route path="inventory/dashboard" element={<StockDashboard />} />
         <Route path="inventory/items" element={<MaterialMaster />} />
