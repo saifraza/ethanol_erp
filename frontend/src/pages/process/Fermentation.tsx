@@ -1420,7 +1420,7 @@ export default function Fermentation() {
                         <ComposedChart data={opcHistory[selected.label].map((d: OpcHistoryPoint) => {
                           const hr = new Date(d.hour);
                           const ist = new Date(hr.getTime() + 5.5 * 60 * 60 * 1000);
-                          return { ...d, time: `${String(ist.getUTCHours()).padStart(2,'0')}:${String(ist.getUTCMinutes()).padStart(2,'0')}` };
+                          return { ...d, time: `${String(ist.getUTCHours() % 12 || 12).padStart(2,'0')}:${String(ist.getUTCMinutes()).padStart(2,'0')} ${ist.getUTCHours() >= 12 ? 'pm' : 'am'}` };
                         })}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                           <XAxis dataKey="time" tick={{ fontSize: 8, fill: '#64748b' }} tickLine={false} />
@@ -1458,7 +1458,7 @@ export default function Fermentation() {
                 const data = opcHistory[vessel].map(d => {
                   const hr = new Date(d.hour);
                   const ist = new Date(hr.getTime() + 5.5 * 60 * 60 * 1000);
-                  return { ...d, time: `${String(ist.getUTCHours()).padStart(2,'0')}:${String(ist.getUTCMinutes()).padStart(2,'0')}` };
+                  return { ...d, time: `${String(ist.getUTCHours() % 12 || 12).padStart(2,'0')}:${String(ist.getUTCMinutes()).padStart(2,'0')} ${ist.getUTCHours() >= 12 ? 'pm' : 'am'}` };
                 });
                 const currentLevel = opcData[vessel]?.level;
                 const currentTemp = opcData[vessel]?.temp;
@@ -1495,7 +1495,7 @@ export default function Fermentation() {
                   <ComposedChart data={opcHistory['BW-1'].map(d => {
                     const hr = new Date(d.hour);
                     const ist = new Date(hr.getTime() + 5.5 * 60 * 60 * 1000);
-                    return { ...d, time: `${String(ist.getUTCHours()).padStart(2,'0')}:${String(ist.getUTCMinutes()).padStart(2,'0')}` };
+                    return { ...d, time: `${String(ist.getUTCHours() % 12 || 12).padStart(2,'0')}:${String(ist.getUTCMinutes()).padStart(2,'0')} ${ist.getUTCHours() >= 12 ? 'pm' : 'am'}` };
                   })}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis dataKey="time" tick={{ fontSize: 8, fill: '#64748b' }} tickLine={false} />
