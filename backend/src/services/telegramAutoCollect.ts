@@ -210,14 +210,30 @@ let schedules: AutoCollectScheduleConfig[] = [];
 
 export async function loadSchedules(): Promise<void> {
   try {
-    const settings = await prisma.settings.findFirst();
-    const raw = (settings as any)?.autoCollectConfig;
-    if (raw) {
-      schedules = JSON.parse(raw);
-      console.log('[TG-AutoCollect] Loaded', schedules.length, 'schedule(s)');
-      const ddgs = schedules.find(s => s.module === 'ddgs');
-      if (ddgs) setDdgsLanguage((ddgs as any).language || 'hi');
+    // Primary: read from AutoCollectSchedule table
+    const dbSchedules = await prisma.autoCollectSchedule.findMany();
+    if (dbSchedules.length > 0) {
+      schedules = dbSchedules.map((s: any) => ({
+        module: s.module,
+        phone: s.phone,
+        intervalMinutes: s.intervalMinutes,
+        enabled: s.enabled,
+        autoShare: s.autoShare !== false,
+        language: s.language || 'hi',
+        bagWeight: s.bagWeight || 35,
+      }));
+      console.log('[TG-AutoCollect] Loaded', schedules.length, 'schedule(s) from DB table');
+    } else {
+      // Fallback: legacy JSON in Settings.autoCollectConfig
+      const settings = await prisma.settings.findFirst();
+      const raw = (settings as any)?.autoCollectConfig;
+      if (raw) {
+        schedules = JSON.parse(raw);
+        console.log('[TG-AutoCollect] Loaded', schedules.length, 'schedule(s) from legacy JSON');
+      }
     }
+    const ddgs = schedules.find(s => s.module === 'ddgs');
+    if (ddgs) setDdgsLanguage((ddgs as any).language || 'hi');
   } catch (err) {
     console.error('[TG-AutoCollect] Failed to load schedules:', err);
   }
