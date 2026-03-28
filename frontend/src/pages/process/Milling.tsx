@@ -3,9 +3,9 @@ import { CogIcon, Save, Loader2, ChevronDown, ChevronUp, Trash2, TrendingUp, Eye
 import ProcessPage, { InputCard, Field } from './ProcessPage';
 import api from '../../services/api';
 import {
-  LineChart, Line, BarChart, Bar,
+  ComposedChart, Line, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  ReferenceLine
+  ReferenceLine, Brush
 } from 'recharts';
 
 interface MillForm {
@@ -45,7 +45,6 @@ const CHART_VIEWS: { key: ChartView; label: string }[] = [
   { key: 'rpm', label: 'Mill RPM' },
   { key: 'load', label: 'Mill Load' },
 ];
-const MILL_COLORS = { A: '#3b82f6', B: '#10b981', C: '#f59e0b' };
 
 function MillingChartInner({ entries }: { entries: any[] }) {
   const [view, setView] = useState<ChartView>('coarse');
@@ -64,27 +63,18 @@ function MillingChartInner({ entries }: { entries: any[] }) {
 
   const avgFine = entries.reduce((s: number, e: any) => s + e.totalFine, 0) / entries.length;
 
-  const CustomTooltip = ({ active, payload }: any) => {
-    if (!active || !payload?.length) return null;
-    return (
-      <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-xs">
-        <p className="font-semibold text-gray-700 mb-1">{payload[0]?.payload?.fullDate} {payload[0]?.payload?.time && `@ ${payload[0].payload.time}`}</p>
-        {payload.map((p: any, i: number) => (
-          <p key={i} style={{ color: p.color }} className="flex justify-between gap-4">
-            <span>{p.name}:</span>
-            <span className="font-mono font-semibold">{typeof p.value === 'number' ? p.value.toFixed(2) : p.value}</span>
-          </p>
-        ))}
-      </div>
-    );
+  const tooltipStyle = {
+    contentStyle: { fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' },
+    labelStyle: { fontWeight: 700, marginBottom: 4, color: '#1e293b' },
+    itemStyle: { padding: '1px 0' },
   };
 
   return (
     <div>
-      <div className="flex gap-1 mb-4 bg-gray-100 rounded-lg p-1 w-fit">
+      <div className="flex gap-1 mb-4 bg-slate-100 border border-slate-300 p-1 w-fit">
         {CHART_VIEWS.map(v => (
           <button key={v.key} onClick={() => setView(v.key)}
-            className={`px-3 py-1.5 text-xs rounded-md font-medium transition-all ${view === v.key ? 'bg-white text-stone-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+            className={`px-3 py-1.5 text-[11px] font-medium transition-all ${view === v.key ? 'bg-white text-slate-800 border border-slate-300' : 'text-slate-500 hover:text-slate-700'}`}>
             {v.label}
           </button>
         ))}
@@ -96,19 +86,23 @@ function MillingChartInner({ entries }: { entries: any[] }) {
         const avgCoarse = coarseVals.reduce((s, v) => s + v, 0) / coarseVals.length;
         return (
           <>
-            <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} />
-                <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} domain={['auto', 'auto']} unit="%" />
-                <Tooltip content={<CustomTooltip />} />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                <ReferenceLine y={avgCoarse} stroke="#6b7280" strokeDasharray="5 5" strokeOpacity={0.5} label={{ value: `avg ${avgCoarse.toFixed(1)}%`, fontSize: 10, fill: '#9ca3af' }} />
-                <Line type="monotone" dataKey="coarse" name="Total Coarse %" stroke="#f97316" strokeWidth={2.5} dot={{ r: 4, fill: '#f97316' }} activeDot={{ r: 6 }} />
-                <Line type="monotone" dataKey="s1mm" name="1.00mm" stroke="#ef4444" strokeWidth={1.5} dot={{ r: 2 }} strokeDasharray="4 2" />
-                <Line type="monotone" dataKey="s850" name="0.850mm" stroke="#f59e0b" strokeWidth={1.5} dot={{ r: 2 }} strokeDasharray="4 2" />
-              </LineChart>
-            </ResponsiveContainer>
+            <div className="bg-white border border-slate-300 p-3">
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Total Coarse % Trend</div>
+              <ResponsiveContainer width="100%" height={250}>
+                <ComposedChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+                  <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={['auto', 'auto']} unit="%" />
+                  <Tooltip {...tooltipStyle} />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <ReferenceLine y={avgCoarse} stroke="#6b7280" strokeDasharray="5 5" strokeOpacity={0.5} label={{ value: `avg ${avgCoarse.toFixed(1)}%`, fontSize: 10, fill: '#9ca3af' }} />
+                  <Line type="monotone" dataKey="coarse" name="Total Coarse %" stroke="#1e40af" strokeWidth={2} dot={{ r: 3, fill: '#1e40af' }} activeDot={{ r: 5 }} />
+                  <Line type="monotone" dataKey="s1mm" name="1.00mm" stroke="#dc2626" strokeWidth={2} dot={{ r: 3, fill: '#dc2626' }} strokeDasharray="4 3" />
+                  <Line type="monotone" dataKey="s850" name="0.850mm" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3, fill: '#f59e0b' }} strokeDasharray="4 3" />
+                  {chartData.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" />}
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
             {entries.length >= 2 && (
               <div className="flex items-center justify-center gap-8 mt-3 pt-3 border-t">
                 <div className="text-center">
@@ -132,17 +126,21 @@ function MillingChartInner({ entries }: { entries: any[] }) {
       {/* Total Fine % trend */}
       {view === 'fine' && (
         <>
-          <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} />
-              <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} domain={['auto', 'auto']} unit="%" />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <ReferenceLine y={avgFine} stroke="#6b7280" strokeDasharray="5 5" strokeOpacity={0.5} label={{ value: `avg ${avgFine.toFixed(1)}%`, fontSize: 10, fill: '#9ca3af' }} />
-              <Line type="monotone" dataKey="fine" name="Total Fine %" stroke="#8b5cf6" strokeWidth={2.5} dot={{ r: 4, fill: '#8b5cf6' }} activeDot={{ r: 6 }} />
-            </LineChart>
-          </ResponsiveContainer>
+          <div className="bg-white border border-slate-300 p-3">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Total Fine % Trend</div>
+            <ResponsiveContainer width="100%" height={250}>
+              <ComposedChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+                <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={['auto', 'auto']} unit="%" />
+                <Tooltip {...tooltipStyle} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <ReferenceLine y={avgFine} stroke="#6b7280" strokeDasharray="5 5" strokeOpacity={0.5} label={{ value: `avg ${avgFine.toFixed(1)}%`, fontSize: 10, fill: '#9ca3af' }} />
+                <Line type="monotone" dataKey="fine" name="Total Fine %" stroke="#1e40af" strokeWidth={2} dot={{ r: 3, fill: '#1e40af' }} activeDot={{ r: 5 }} />
+                {chartData.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" />}
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
           {entries.length >= 2 && (
             <div className="flex items-center justify-center gap-8 mt-3 pt-3 border-t">
               <div className="text-center">
@@ -164,36 +162,44 @@ function MillingChartInner({ entries }: { entries: any[] }) {
 
       {/* Sieve breakdown — line chart per fraction */}
       {view === 'sieve' && (
-        <ResponsiveContainer width="100%" height={280}>
-          <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-            <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} />
-            <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} domain={['auto', 'auto']} unit="%" />
-            <Tooltip content={<CustomTooltip />} />
-            <Legend wrapperStyle={{ fontSize: 12 }} />
-            <Line type="monotone" dataKey="s600" name="0.600mm" stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 4, fill: '#3b82f6' }} />
-            <Line type="monotone" dataKey="fine" name="Fine (<0.3mm)" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3, fill: '#8b5cf6' }} />
-            <Line type="monotone" dataKey="s300" name="0.300mm" stroke="#10b981" strokeWidth={2} dot={{ r: 3, fill: '#10b981' }} />
-            <Line type="monotone" dataKey="s850" name="0.850mm" stroke="#f97316" strokeWidth={2} dot={{ r: 3, fill: '#f97316' }} />
-            <Line type="monotone" dataKey="s1mm" name="1.00mm" stroke="#ef4444" strokeWidth={2} dot={{ r: 3, fill: '#ef4444' }} />
-          </LineChart>
-        </ResponsiveContainer>
+        <div className="bg-white border border-slate-300 p-3">
+          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Sieve Breakdown</div>
+          <ResponsiveContainer width="100%" height={250}>
+            <ComposedChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+              <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={['auto', 'auto']} unit="%" />
+              <Tooltip {...tooltipStyle} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Line type="monotone" dataKey="s600" name="0.600mm" stroke="#1e40af" strokeWidth={2} dot={{ r: 3, fill: '#1e40af' }} />
+              <Line type="monotone" dataKey="fine" name="Fine (<0.3mm)" stroke="#0891b2" strokeWidth={2} dot={{ r: 3, fill: '#0891b2' }} />
+              <Line type="monotone" dataKey="s300" name="0.300mm" stroke="#10b981" strokeWidth={2} dot={{ r: 3, fill: '#10b981' }} />
+              <Line type="monotone" dataKey="s850" name="0.850mm" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3, fill: '#f59e0b' }} strokeDasharray="4 3" />
+              <Line type="monotone" dataKey="s1mm" name="1.00mm" stroke="#dc2626" strokeWidth={2} dot={{ r: 3, fill: '#dc2626' }} strokeDasharray="4 3" />
+              {chartData.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" />}
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
       )}
 
       {/* Coarse & Fines — Bar histogram */}
       {view === 'particle' && (
         <>
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }} barCategoryGap="20%">
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-              <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} />
-              <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} domain={[0, 'auto']} unit="%" />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar dataKey="coarse" name="Coarse (>0.85mm)" fill="#f97316" radius={[3, 3, 0, 0]} />
-              <Bar dataKey="fine" name="Fines (<0.3mm)" fill="#8b5cf6" radius={[3, 3, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <div className="bg-white border border-slate-300 p-3">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Coarse & Fines Distribution</div>
+            <ResponsiveContainer width="100%" height={250}>
+              <BarChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }} barCategoryGap="20%">
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+                <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={[0, 'auto']} unit="%" />
+                <Tooltip {...tooltipStyle} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Bar dataKey="coarse" name="Coarse (>0.85mm)" fill="#3b82f6" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="fine" name="Fines (<0.3mm)" fill="#0891b2" radius={[3, 3, 0, 0]} />
+                {chartData.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" />}
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
           {entries.length >= 2 && (() => {
             const coarseVals = entries.map((e: any) => Math.round(((e.sieve_1mm || 0) + (e.sieve_850 || 0)) * 100) / 100);
             const fineVals = entries.map((e: any) => e.totalFine);
@@ -226,34 +232,42 @@ function MillingChartInner({ entries }: { entries: any[] }) {
 
       {/* RPM per mill */}
       {view === 'rpm' && (
-        <ResponsiveContainer width="100%" height={280}>
-          <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-            <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} />
-            <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} domain={['auto', 'auto']} unit=" rpm" />
-            <Tooltip content={<CustomTooltip />} />
-            <Legend wrapperStyle={{ fontSize: 12 }} />
-            <Line type="monotone" dataKey="aRpm" name="Mill A" stroke={MILL_COLORS.A} strokeWidth={2} dot={{ r: 4 }} />
-            <Line type="monotone" dataKey="bRpm" name="Mill B" stroke={MILL_COLORS.B} strokeWidth={2} dot={{ r: 4 }} />
-            <Line type="monotone" dataKey="cRpm" name="Mill C" stroke={MILL_COLORS.C} strokeWidth={2} dot={{ r: 4 }} />
-          </LineChart>
-        </ResponsiveContainer>
+        <div className="bg-white border border-slate-300 p-3">
+          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Mill RPM</div>
+          <ResponsiveContainer width="100%" height={250}>
+            <ComposedChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+              <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={['auto', 'auto']} unit=" rpm" />
+              <Tooltip {...tooltipStyle} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Line type="monotone" dataKey="aRpm" name="Mill A" stroke="#1e40af" strokeWidth={2} dot={{ r: 3, fill: '#1e40af' }} />
+              <Line type="monotone" dataKey="bRpm" name="Mill B" stroke="#10b981" strokeWidth={2} dot={{ r: 3, fill: '#10b981' }} />
+              <Line type="monotone" dataKey="cRpm" name="Mill C" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3, fill: '#f59e0b' }} />
+              {chartData.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" />}
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
       )}
 
       {/* Load per mill */}
       {view === 'load' && (
-        <ResponsiveContainer width="100%" height={280}>
-          <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-            <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} />
-            <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} domain={['auto', 'auto']} unit=" A" />
-            <Tooltip content={<CustomTooltip />} />
-            <Legend wrapperStyle={{ fontSize: 12 }} />
-            <Line type="monotone" dataKey="aLoad" name="Mill A" stroke={MILL_COLORS.A} strokeWidth={2} dot={{ r: 4 }} />
-            <Line type="monotone" dataKey="bLoad" name="Mill B" stroke={MILL_COLORS.B} strokeWidth={2} dot={{ r: 4 }} />
-            <Line type="monotone" dataKey="cLoad" name="Mill C" stroke={MILL_COLORS.C} strokeWidth={2} dot={{ r: 4 }} />
-          </LineChart>
-        </ResponsiveContainer>
+        <div className="bg-white border border-slate-300 p-3">
+          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Mill Load</div>
+          <ResponsiveContainer width="100%" height={250}>
+            <ComposedChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+              <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={['auto', 'auto']} unit=" A" />
+              <Tooltip {...tooltipStyle} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Line type="monotone" dataKey="aLoad" name="Mill A" stroke="#1e40af" strokeWidth={2} dot={{ r: 3, fill: '#1e40af' }} />
+              <Line type="monotone" dataKey="bLoad" name="Mill B" stroke="#10b981" strokeWidth={2} dot={{ r: 3, fill: '#10b981' }} />
+              <Line type="monotone" dataKey="cLoad" name="Mill C" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3, fill: '#f59e0b' }} />
+              {chartData.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" />}
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
       )}
     </div>
   );

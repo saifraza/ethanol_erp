@@ -307,18 +307,18 @@ export default function Distillation() {
       )}
 
       {/* Trends */}
-      <div className="bg-white rounded-lg shadow-sm border p-4 mb-4">
-        <h3 className="text-sm font-semibold text-purple-700 mb-3 uppercase tracking-wide">Trends</h3>
+      <div className="bg-white border border-slate-300 p-3 mb-4">
+        <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Trends</h3>
         {chartData.length > 0 && (
           <ResponsiveContainer width="100%" height={250}>
             <LineChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} interval="preserveStartEnd" />
-              <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} />
-              <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px' }} labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }} itemStyle={{ padding: '1px 0' }} />
+              <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} interval="preserveStartEnd" />
+              <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+              <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }} itemStyle={{ padding: '1px 0' }} />
               <Legend verticalAlign="top" height={30} iconType="plainline" wrapperStyle={{ fontSize: 10, color: '#64748b' }} />
-              <Line type="monotone" dataKey="ethanol" name="Ethanol %" stroke="#ef4444" strokeWidth={2} dot={{ r: 2 }} connectNulls />
-              <Line type="monotone" dataKey="rcReflex" name="RC Reflex" stroke="#3b82f6" strokeWidth={2} dot={{ r: 2 }} connectNulls />
+              <Line type="monotone" dataKey="ethanol" name="Ethanol %" stroke="#dc2626" strokeWidth={2} dot={{ r: 3, fill: '#dc2626' }} connectNulls />
+              <Line type="monotone" dataKey="rcReflex" name="RC Reflex" stroke="#1e40af" strokeWidth={2} dot={{ r: 3, fill: '#1e40af' }} connectNulls />
             </LineChart>
           </ResponsiveContainer>
         )}

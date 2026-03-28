@@ -3,7 +3,7 @@ import {
   FlaskConical, Beaker, Cylinder, RefreshCw, Loader2, CheckCircle, AlertCircle,
   Plus, Trash2, Send, ChevronDown, Clock, Play, X, MessageCircle, History, RotateCcw
 } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend, ReferenceLine } from 'recharts';
+import { ComposedChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend, ReferenceLine, Brush } from 'recharts';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { FERM_CAPACITY_KL } from '../../config/constants';
@@ -1229,42 +1229,44 @@ export default function Fermentation() {
                     ) : (
                       <>
                         {/* Gravity + Alcohol + Level */}
-                        <div>
-                          <div className="text-[9px] font-bold text-gray-400 uppercase mb-1">Gravity, Alcohol & Level</div>
-                          <ResponsiveContainer width="100%" height={200}>
-                            <LineChart data={chartData}>
+                        <div className="bg-white border border-slate-300 p-3">
+                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Gravity, Alcohol & Level</div>
+                          <ResponsiveContainer width="100%" height={250}>
+                            <ComposedChart data={chartData}>
                               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                              <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} interval="preserveStartEnd" />
-                              <YAxis yAxisId="sg" domain={[sgMin, sgMax]} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} tickFormatter={(v: number) => v.toFixed(3)} label={{ value: 'SG', angle: -90, position: 'insideLeft', fontSize: 8, fill: '#6366f1' }} />
-                              <YAxis yAxisId="alc" orientation="right" domain={[0, 'auto']} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} label={{ value: 'Alc% / Level%', angle: 90, position: 'insideRight', fontSize: 8, fill: '#10b981' }} />
-                              <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px' }} labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }} itemStyle={{ padding: '1px 0' }} formatter={(v: number, name: string) => [name === 'Gravity' ? v?.toFixed(3) : v, name]} />
+                              <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} interval="preserveStartEnd" />
+                              <YAxis yAxisId="sg" domain={[sgMin, sgMax]} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} tickFormatter={(v: number) => v.toFixed(3)} label={{ value: 'SG', angle: -90, position: 'insideLeft', fontSize: 8, fill: '#1e40af' }} />
+                              <YAxis yAxisId="alc" orientation="right" domain={[0, 'auto']} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} label={{ value: 'Alc% / Level%', angle: 90, position: 'insideRight', fontSize: 8, fill: '#10b981' }} />
+                              <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }} itemStyle={{ padding: '1px 0' }} formatter={(v: number, name: string) => [name === 'Gravity' ? v?.toFixed(3) : v, name]} />
                               <Legend wrapperStyle={{ fontSize: 9 }} />
                               {phaseMarkers.map((pm, i) => (
                                 <ReferenceLine key={i} yAxisId="sg" x={pm.time} stroke={pm.color} strokeDasharray="4 4" strokeWidth={1.5} label={{ value: pm.label, position: 'top', fontSize: 8, fill: pm.color, fontWeight: 'bold' }} />
                               ))}
-                              <Line yAxisId="sg" dataKey="sg" name="Gravity" stroke="#6366f1" strokeWidth={2} dot={{ r: 3 }} connectNulls />
-                              <Line yAxisId="alc" dataKey="alc" name="Alcohol%" stroke="#10b981" strokeWidth={2} dot={{ r: 2 }} connectNulls />
-                              <Line yAxisId="alc" dataKey="level" name="Level%" stroke="#8b5cf6" strokeWidth={1.5} dot={{ r: 2 }} strokeDasharray="4 2" connectNulls />
-                            </LineChart>
+                              <Line yAxisId="sg" type="monotone" dataKey="sg" name="Gravity" stroke="#1e40af" strokeWidth={2} dot={{ r: 3, fill: '#1e40af' }} connectNulls />
+                              <Line yAxisId="alc" type="monotone" dataKey="alc" name="Alcohol%" stroke="#10b981" strokeWidth={2} dot={{ r: 3, fill: '#10b981' }} connectNulls />
+                              <Line yAxisId="alc" type="monotone" dataKey="level" name="Level%" stroke="#0891b2" strokeWidth={2} dot={{ r: 3, fill: '#0891b2' }} strokeDasharray="4 3" connectNulls />
+                              {chartData.length > 24 && <Brush dataKey="time" height={20} stroke="#1e40af" />}
+                            </ComposedChart>
                           </ResponsiveContainer>
                         </div>
                         {/* pH & Temperature */}
-                        <div>
-                          <div className="text-[9px] font-bold text-gray-400 uppercase mb-1">pH & Temperature</div>
-                          <ResponsiveContainer width="100%" height={150}>
-                            <LineChart data={chartData}>
+                        <div className="bg-white border border-slate-300 p-3">
+                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">pH & Temperature</div>
+                          <ResponsiveContainer width="100%" height={250}>
+                            <ComposedChart data={chartData}>
                               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                              <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} interval="preserveStartEnd" />
-                              <YAxis yAxisId="ph" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} domain={[0, 'auto']} label={{ value: 'pH', angle: -90, position: 'insideLeft', fontSize: 8, fill: '#f59e0b' }} />
-                              <YAxis yAxisId="temp" orientation="right" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} domain={[0, 'auto']} label={{ value: '°C', angle: 90, position: 'insideRight', fontSize: 8, fill: '#ef4444' }} />
-                              <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px' }} labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }} itemStyle={{ padding: '1px 0' }} />
+                              <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} interval="preserveStartEnd" />
+                              <YAxis yAxisId="ph" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={[0, 'auto']} label={{ value: 'pH', angle: -90, position: 'insideLeft', fontSize: 8, fill: '#f59e0b' }} />
+                              <YAxis yAxisId="temp" orientation="right" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} domain={[0, 'auto']} label={{ value: '°C', angle: 90, position: 'insideRight', fontSize: 8, fill: '#dc2626' }} />
+                              <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }} itemStyle={{ padding: '1px 0' }} />
                               <Legend wrapperStyle={{ fontSize: 9 }} />
                               {phaseMarkers.map((pm, i) => (
                                 <ReferenceLine key={i} yAxisId="ph" x={pm.time} stroke={pm.color} strokeDasharray="4 4" strokeWidth={1.5} label={{ value: pm.label, position: 'top', fontSize: 8, fill: pm.color, fontWeight: 'bold' }} />
                               ))}
-                              <Line yAxisId="ph" dataKey="ph" name="pH" stroke="#f59e0b" strokeWidth={2} dot={{ r: 2 }} connectNulls />
-                              <Line yAxisId="temp" dataKey="temp" name="Temp°C" stroke="#ef4444" strokeWidth={2} dot={{ r: 2 }} connectNulls />
-                            </LineChart>
+                              <Line yAxisId="ph" type="monotone" dataKey="ph" name="pH" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3, fill: '#f59e0b' }} connectNulls />
+                              <Line yAxisId="temp" type="monotone" dataKey="temp" name="Temp°C" stroke="#dc2626" strokeWidth={2} dot={{ r: 3, fill: '#dc2626' }} connectNulls />
+                              {chartData.length > 24 && <Brush dataKey="time" height={20} stroke="#1e40af" />}
+                            </ComposedChart>
                           </ResponsiveContainer>
                         </div>
                       </>
@@ -1440,19 +1442,20 @@ export default function Fermentation() {
                               const sgMax2 = sgVals.length ? Math.ceil((Math.max(...sgVals) + 0.005) * 1000) / 1000 : 1.1;
                               return (
                                 <div>
-                                  <div className="text-[10px] font-bold text-gray-400 uppercase mb-1">Gravity & Alcohol Chart</div>
-                                  <ResponsiveContainer width="100%" height={160}>
-                                    <LineChart data={cData}>
+                                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Gravity & Alcohol Chart</div>
+                                  <ResponsiveContainer width="100%" height={250}>
+                                    <ComposedChart data={cData}>
                                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                                      <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} />
-                                      <YAxis yAxisId="sg" domain={[sgMin2, sgMax2]} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} tickFormatter={(v: number) => v.toFixed(3)} />
-                                      <YAxis yAxisId="alc" orientation="right" domain={[0, 'auto']} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} />
-                                      <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px' }} labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }} itemStyle={{ padding: '1px 0' }} formatter={(v: number, name: string) => [name === 'Gravity' ? v?.toFixed(3) : v, name]} />
+                                      <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+                                      <YAxis yAxisId="sg" domain={[sgMin2, sgMax2]} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} tickFormatter={(v: number) => v.toFixed(3)} />
+                                      <YAxis yAxisId="alc" orientation="right" domain={[0, 'auto']} tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+                                      <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }} itemStyle={{ padding: '1px 0' }} formatter={(v: number, name: string) => [name === 'Gravity' ? v?.toFixed(3) : v, name]} />
                                       <Legend wrapperStyle={{ fontSize: 8 }} />
-                                      <Line yAxisId="sg" dataKey="sg" name="Gravity" stroke="#6366f1" strokeWidth={2} dot={{ r: 2 }} connectNulls />
-                                      <Line yAxisId="alc" dataKey="alc" name="Alc%" stroke="#10b981" strokeWidth={2} dot={{ r: 2 }} connectNulls />
-                                      <Line yAxisId="alc" dataKey="level" name="Level%" stroke="#8b5cf6" strokeWidth={1} dot={{ r: 1.5 }} strokeDasharray="3 2" connectNulls />
-                                    </LineChart>
+                                      <Line yAxisId="sg" type="monotone" dataKey="sg" name="Gravity" stroke="#1e40af" strokeWidth={2} dot={{ r: 3, fill: '#1e40af' }} connectNulls />
+                                      <Line yAxisId="alc" type="monotone" dataKey="alc" name="Alc%" stroke="#10b981" strokeWidth={2} dot={{ r: 3, fill: '#10b981' }} connectNulls />
+                                      <Line yAxisId="alc" type="monotone" dataKey="level" name="Level%" stroke="#0891b2" strokeWidth={2} dot={{ r: 3, fill: '#0891b2' }} strokeDasharray="4 3" connectNulls />
+                                      {cData.length > 24 && <Brush dataKey="time" height={20} stroke="#1e40af" />}
+                                    </ComposedChart>
                                   </ResponsiveContainer>
                                 </div>
                               );

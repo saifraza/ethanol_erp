@@ -335,16 +335,20 @@ export default function PreFermentation() {
       return { name: label, Gravity: r.spGravity, pH: r.ph, RS: r.rs, Alcohol: r.alcohol, Temp: r.temp };
     });
     return (
-      <div className="bg-white rounded-lg border p-3 mt-3">
-        <h4 className="text-sm font-semibold mb-2">Lab Trend (from T0)</h4>
-        <ResponsiveContainer width="100%" height={220}>
+      <div className="bg-white border border-slate-300 p-3 mt-3">
+        <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Lab Trend (from T0)</h4>
+        <ResponsiveContainer width="100%" height={250}>
           <LineChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" /><XAxis dataKey="name" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} /><YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} /><Tooltip contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px' }} labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }} itemStyle={{ padding: '1px 0' }} /><Legend verticalAlign="top" height={30} iconType="plainline" wrapperStyle={{ fontSize: 10, color: '#64748b' }} />
-            <Line type="monotone" dataKey="Gravity" stroke="#6366f1" strokeWidth={2} dot={{ r: 3 }} />
-            <Line type="monotone" dataKey="pH" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
-            <Line type="monotone" dataKey="RS" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} />
-            <Line type="monotone" dataKey="Alcohol" stroke="#ef4444" strokeWidth={2} dot={{ r: 3 }} />
-            <Line type="monotone" dataKey="Temp" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3 }} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+            <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+            <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #94a3b8', background: '#fff', padding: '8px 12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }} itemStyle={{ padding: '1px 0' }} />
+            <Legend verticalAlign="top" height={30} iconType="plainline" wrapperStyle={{ fontSize: 10, color: '#64748b' }} />
+            <Line type="monotone" dataKey="Gravity" stroke="#1e40af" strokeWidth={2} dot={{ r: 3, fill: '#1e40af' }} />
+            <Line type="monotone" dataKey="pH" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3, fill: '#f59e0b' }} />
+            <Line type="monotone" dataKey="RS" stroke="#10b981" strokeWidth={2} dot={{ r: 3, fill: '#10b981' }} />
+            <Line type="monotone" dataKey="Alcohol" stroke="#dc2626" strokeWidth={2} dot={{ r: 3, fill: '#dc2626' }} />
+            <Line type="monotone" dataKey="Temp" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3, fill: '#8b5cf6' }} />
           </LineChart>
         </ResponsiveContainer>
       </div>
