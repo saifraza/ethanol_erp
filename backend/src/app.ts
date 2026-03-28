@@ -90,6 +90,7 @@ import meshBioReportRoutes from './routes/meshBioReport';
 // WhatsApp (Baileys QR)
 import whatsappRoutes from './routes/whatsapp';
 import autoCollectRoutes from './routes/whatsappAutoCollect';
+import telegramRoutes from './routes/telegram';
 import { errorHandler } from './shared/middleware/errorHandler';
 
 
@@ -203,9 +204,11 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/daily-entries', dailyEntriesRoutes);
 app.use('/api/tank-dips', tankDipsRoutes);
 app.use('/api/mesh-bio-report', meshBioReportRoutes);
-// WhatsApp (Baileys QR)
+// WhatsApp (Baileys QR) — legacy, kept for backward compat
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/auto-collect', autoCollectRoutes);
+// Telegram Bot API (replaces WhatsApp)
+app.use('/api/telegram', telegramRoutes);
 
 
 // Serve uploaded files

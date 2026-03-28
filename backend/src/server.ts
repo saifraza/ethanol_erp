@@ -4,6 +4,8 @@ import prisma from './config/prisma';
 import bcrypt from 'bcryptjs';
 import { initWhatsApp } from './services/whatsappBaileys';
 import { initAutoCollect } from './services/whatsappAutoCollect';
+import { initTelegram } from './services/telegramBot';
+import { initTelegramAutoCollect } from './services/telegramAutoCollect';
 
 // Prevent crashes from killing the server
 process.on('uncaughtException', (err) => {
@@ -37,16 +39,17 @@ const server = app.listen(PORT, HOST, async () => {
   console.log(`Server running on http://${HOST}:${PORT}`);
   await autoSeed();
 
-  // If WA_WORKER_URL is set, WhatsApp runs as a separate service — skip local init
-  if (process.env.WA_WORKER_URL) {
-    console.log(`[WA] Using external WhatsApp worker at ${process.env.WA_WORKER_URL}`);
-  } else {
-    // Fallback: run WhatsApp in-process (legacy mode)
+  // Initialize Telegram Bot (replaces WhatsApp)
+  initTelegram().catch((err) => console.error('[Telegram] Init error:', err));
+  initTelegramAutoCollect().catch((err) => console.error('[TG-AutoCollect] Init error:', err));
+
+  // Legacy WhatsApp: only init if WA_WORKER_URL is NOT set AND no Telegram token
+  if (!process.env.TELEGRAM_BOT_TOKEN && !process.env.WA_WORKER_URL) {
     initWhatsApp().catch((err) => console.error('[WA] Init error:', err));
     initAutoCollect().catch((err) => console.error('[AutoCollect] Init error:', err));
   }
 
-  // OPC health watchdog — monitors bridge connectivity, sends WhatsApp alerts
+  // OPC health watchdog — monitors bridge connectivity, sends Telegram alerts
   if (process.env.DATABASE_URL_OPC) {
     import('./services/opcHealthWatchdog').then(m => m.startOpcWatchdog()).catch(() => {});
   }

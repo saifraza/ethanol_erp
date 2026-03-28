@@ -396,6 +396,55 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        {/* Telegram Bot */}
+        <div className="mt-6 pt-6 border-t">
+          <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
+            <Send size={20} className="text-blue-500" />
+            Telegram Bot
+          </h2>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-semibold text-gray-500 uppercase">Bot Token (from @BotFather)</label>
+              <input type="password" value={settings.telegramBotToken ?? ''} onChange={e => setSettings((s: any) => ({ ...s, telegramBotToken: e.target.value }))} className="input-field w-full" placeholder="8716447884:AAG..." disabled={!isAdmin} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase">Group 1 Chat ID</label>
+                <input type="text" value={settings.telegramGroupChatId ?? ''} onChange={e => setSettings((s: any) => ({ ...s, telegramGroupChatId: e.target.value }))} className="input-field w-full" placeholder="-100123456789" disabled={!isAdmin} />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase">Group 1 Name</label>
+                <input type="text" value={settings.telegramGroupName ?? ''} onChange={e => setSettings((s: any) => ({ ...s, telegramGroupName: e.target.value }))} className="input-field w-full" placeholder="MSPIL Plant" disabled={!isAdmin} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase">Group 2 Chat ID (optional)</label>
+                <input type="text" value={settings.telegramGroup2ChatId ?? ''} onChange={e => setSettings((s: any) => ({ ...s, telegramGroup2ChatId: e.target.value }))} className="input-field w-full" placeholder="-100987654321" disabled={!isAdmin} />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase">Group 2 Name</label>
+                <input type="text" value={settings.telegramGroup2Name ?? ''} onChange={e => setSettings((s: any) => ({ ...s, telegramGroup2Name: e.target.value }))} className="input-field w-full" placeholder="MSPIL Ops" disabled={!isAdmin} />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 uppercase">Private Chat IDs (comma-separated)</label>
+              <input type="text" value={settings.telegramPrivateChatIds ?? ''} onChange={e => setSettings((s: any) => ({ ...s, telegramPrivateChatIds: e.target.value }))} className="input-field w-full" placeholder="123456789, 987654321" disabled={!isAdmin} />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={async () => { try { const r = await api.post('/telegram/test-group'); setMsg(r.data.success ? 'Test message sent to Telegram group!' : r.data.error); } catch (e: any) { setMsg(e.response?.data?.error || 'Failed'); } }} className="btn-secondary text-sm" disabled={!isAdmin}>
+                Test Group Message
+              </button>
+              <button onClick={async () => { try { const r = await api.post('/telegram/reconnect'); setMsg(r.data.success ? 'Telegram bot reconnected!' : 'Failed to connect'); } catch { setMsg('Failed'); } }} className="btn-secondary text-sm" disabled={!isAdmin}>
+                Reconnect Bot
+              </button>
+            </div>
+            <p className="text-xs text-gray-400">
+              Create a bot via @BotFather on Telegram. Add the bot to your groups. Get chat IDs from the bot API getUpdates endpoint.
+            </p>
+          </div>
+        </div>
+
         {isAdmin && (
           <div className="flex items-center gap-3 mt-6">
             <button onClick={save} className="btn-primary flex items-center gap-2"><Save size={16} />Save Settings</button>

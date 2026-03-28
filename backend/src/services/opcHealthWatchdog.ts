@@ -4,7 +4,7 @@
  * goes offline or comes back online, and sends appropriate alerts.
  */
 
-import { waSendGroup } from './whatsappClient';
+import { tgSendGroup } from './telegramClient';
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const OFFLINE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes without data = offline
@@ -51,12 +51,12 @@ async function checkHealth(): Promise<void> {
     if (wasOnline && !isOnline) {
       offlineSince = new Date();
       const settings = await prisma.settings.findFirst();
-      const groupJid = (settings as any)?.whatsappGroupJid;
-      if (groupJid) {
+      const groupChatId = (settings as any)?.telegramGroupChatId;
+      if (groupChatId) {
         const lastSyncStr = lastSyncTime ? fmtIST(lastSyncTime) : 'unknown';
         const message = `⚠️ *OPC BRIDGE OFFLINE*\n\nFactory bridge has not pushed data for 10+ minutes.\n\nPossible causes:\n- Factory internet down\n- Bridge service crashed\n- OPC server unreachable\n\nLast sync: ${lastSyncStr}\nDetected at: ${fmtIST(nowIST())}`;
-        await waSendGroup(groupJid, message, 'opc-health').catch(() => {});
-        console.log('[OPC Watchdog] Bridge went OFFLINE — WhatsApp alert sent');
+        await tgSendGroup(groupChatId, message, 'opc-health').catch(() => {});
+        console.log('[OPC Watchdog] Bridge went OFFLINE — Telegram alert sent');
       }
     }
 
@@ -64,10 +64,10 @@ async function checkHealth(): Promise<void> {
     if (!wasOnline && isOnline && offlineSince) {
       const downtimeMin = Math.round((now - offlineSince.getTime()) / 60000);
       const settings = await prisma.settings.findFirst();
-      const groupJid = (settings as any)?.whatsappGroupJid;
-      if (groupJid) {
+      const groupChatId = (settings as any)?.telegramGroupChatId;
+      if (groupChatId) {
         const message = `✅ *OPC BRIDGE RECOVERED*\n\nFactory bridge is pushing data again.\nDowntime: ~${downtimeMin} minutes\nRecovered at: ${fmtIST(nowIST())}`;
-        await waSendGroup(groupJid, message, 'opc-health').catch(() => {});
+        await tgSendGroup(groupChatId, message, 'opc-health').catch(() => {});
         console.log(`[OPC Watchdog] Bridge RECOVERED after ${downtimeMin}min`);
       }
       offlineSince = null;

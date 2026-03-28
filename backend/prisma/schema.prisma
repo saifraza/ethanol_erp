@@ -94,7 +94,16 @@ model Settings {
   whatsappGroup2Name    String?  // Group 2 name (display only)
   whatsappPrivateModules String? // DEPRECATED — use whatsappModuleRouting instead
   whatsappModuleRouting String?  // JSON: { "module": "group1"|"group2"|"private" }
-  autoCollectConfig     String?  // JSON config for WhatsApp auto-collection schedules
+  autoCollectConfig     String?  // JSON config for auto-collection schedules
+  // Telegram Bot API (replaces WhatsApp)
+  telegramBotToken      String?  // Bot token from @BotFather
+  telegramEnabled       Boolean  @default(false)
+  telegramGroupChatId   String?  // Primary group chat ID
+  telegramGroupName     String?  // Group name (display only)
+  telegramGroup2ChatId  String?  // Secondary group chat ID
+  telegramGroup2Name    String?  // Group 2 name (display only)
+  telegramPrivateChatIds String? // Comma-separated private chat IDs
+  telegramModuleRouting String?  // JSON: { "module": "group1"|"group2"|"private" }
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 }
@@ -2085,6 +2094,20 @@ model WhatsAppMessage {
   @@index([direction])
   @@index([timestamp])
   @@index([phone])
+}
+
+model TelegramMessage {
+  id        String   @id @default(cuid())
+  direction String   // "incoming" or "outgoing"
+  chatId    String   // Telegram chat ID
+  name      String?  // sender name if available
+  message   String   @db.Text
+  module    String?  // which ERP module sent it
+  timestamp DateTime @default(now())
+
+  @@index([chatId, timestamp])
+  @@index([module, timestamp])
+  @@index([timestamp])
 }
 
 // ═══════════════════════════════════════════════════
