@@ -4,7 +4,7 @@ let browser: Browser | null = null;
 
 async function getBrowser(): Promise<Browser> {
   if (browser && browser.connected) return browser;
-  browser = await puppeteer.launch({
+  const launchOptions: Parameters<typeof puppeteer.launch>[0] = {
     headless: true,
     args: [
       '--no-sandbox',
@@ -12,8 +12,14 @@ async function getBrowser(): Promise<Browser> {
       '--disable-dev-shm-usage',
       '--disable-gpu',
       '--font-render-hinting=none',
+      '--single-process',
     ],
-  });
+  };
+  // Use system Chromium on Railway (set via PUPPETEER_EXECUTABLE_PATH env var)
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+  }
+  browser = await puppeteer.launch(launchOptions);
   browser.on('disconnected', () => { browser = null; });
   return browser;
 }
