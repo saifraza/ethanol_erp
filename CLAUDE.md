@@ -10,6 +10,11 @@
 ## Deployment — Railway
 - **Auto-deploys** from GitHub `main` branch of `ethanol_erp` repo
 - **DB**: Set via `DATABASE_URL` env var on Railway (never hardcode)
+- **OPC DB**: Separate PostgreSQL for OPC data, set via `DATABASE_URL_OPC` env var
+  - Prisma schema: `backend/prisma/opc/schema.prisma`
+  - Tables: OpcMonitoredTag, OpcReading, OpcHourlyReading, OpcSyncLog
+  - Procfile runs `prisma db push --schema=prisma/opc/schema.prisma` on deploy
+  - If `DATABASE_URL_OPC` is not set, OPC endpoints use fallback raw SQL
 - Root build: `cd backend && npm ci && prisma generate && tsc --outDir dist && cp -r src/data dist/ && cd ../frontend && npm ci && vite build`
 - Procfile: `web: cd backend && npx prisma db push --skip-generate && node dist/server.js`
 - Frontend vite outputs to `../backend/public` (not `frontend/dist/`)
