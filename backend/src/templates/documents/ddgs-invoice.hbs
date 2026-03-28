@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>DDGS Tax Invoice</title>{{> base-styles}}</head>
+<body>
+<div class="page">
+  {{> letterhead}}
+  <div class="doc-title">TAX INVOICE</div>
+  <div class="doc-subtitle">DDGS Dispatch</div>
+
+  <div class="details-grid">
+    <div class="detail-row"><span class="detail-label">Invoice No</span><span class="detail-value bold">{{invoiceNo}}</span></div>
+    <div class="detail-row"><span class="detail-label">Date</span><span class="detail-value">{{formatDate date}}</span></div>
+    <div class="detail-row"><span class="detail-label">Vehicle No</span><span class="detail-value bold">{{vehicleNo}}</span></div>
+    {{#if transporterName}}<div class="detail-row"><span class="detail-label">Transporter</span><span class="detail-value">{{transporterName}}</span></div>{{/if}}
+  </div>
+
+  <div class="boxes">
+    <div class="box">
+      <div class="box-header">Bill To / Ship To</div>
+      <div class="box-body">
+        <div class="name">{{partyName}}</div>
+        {{#if partyAddress}}<div class="line">{{partyAddress}}</div>{{/if}}
+        {{#if destination}}<div class="line">{{destination}}</div>{{/if}}
+        {{#if partyGstin}}<div class="gstin">GSTIN: {{partyGstin}}</div>{{/if}}
+      </div>
+    </div>
+    <div class="box">
+      <div class="box-header">From</div>
+      <div class="box-body">
+        <div class="name">MSPIL Distillery</div>
+        <div class="line">Village Bachai, Dist. Narsinghpur (M.P.) - 487001</div>
+        <div class="gstin">GSTIN: 23AAECM3666P1Z1</div>
+      </div>
+    </div>
+  </div>
+
+  <table class="items-table">
+    <thead>
+      <tr>
+        <th style="width:25px">#</th>
+        <th class="left">Description</th>
+        <th style="width:50px">HSN</th>
+        <th style="width:60px">Qty (MT)</th>
+        <th style="width:40px">Bags</th>
+        <th class="right" style="width:70px">Rate/MT</th>
+        <th class="right" style="width:85px">Taxable (Rs.)</th>
+        {{#if isInterstate}}
+        <th class="right" style="width:70px">IGST</th>
+        {{else}}
+        <th class="right" style="width:55px">CGST</th>
+        <th class="right" style="width:55px">SGST</th>
+        {{/if}}
+        <th class="right" style="width:80px">Total (Rs.)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="center">1</td>
+        <td>DDGS (Dried Distillers Grains with Solubles)</td>
+        <td class="center">{{default hsnCode "2303"}}</td>
+        <td class="center">{{formatNum netMT}}</td>
+        <td class="center">{{bags}}</td>
+        <td class="right">{{formatNum rate}}</td>
+        <td class="right">{{formatNum taxableValue}}</td>
+        {{#if isInterstate}}
+        <td class="right">{{formatNum igst}}</td>
+        {{else}}
+        <td class="right">{{formatNum cgst}}</td>
+        <td class="right">{{formatNum sgst}}</td>
+        {{/if}}
+        <td class="right">{{formatNum grandTotal}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="totals-section">
+    <div class="totals-box">
+      <div class="total-row"><span class="label">Taxable Amount</span><span class="value">{{formatINR taxableValue}}</span></div>
+      {{#if isInterstate}}
+      <div class="total-row"><span class="label">IGST (5%)</span><span class="value">{{formatINR igst}}</span></div>
+      {{else}}
+      <div class="total-row"><span class="label">CGST (2.5%)</span><span class="value">{{formatINR cgst}}</span></div>
+      <div class="total-row"><span class="label">SGST (2.5%)</span><span class="value">{{formatINR sgst}}</span></div>
+      {{/if}}
+      <div class="total-row grand"><span class="label">GRAND TOTAL</span><span class="value">{{formatINR grandTotal}}</span></div>
+    </div>
+  </div>
+
+  <div class="amount-words">
+    <div class="label">Amount in Words:</div>
+    <div class="text">{{numberToWords grandTotal}}</div>
+  </div>
+
+  <div class="remarks-section"><div class="label">Remarks:</div><div class="text">Based on Weigh Bridge Net: {{formatNum netMT}} MT</div></div>
+
+  {{> terms-footer}}
+  {{> signatures sigCount=2 sigLabels=(list "For MSPIL" "Authorized Signatory") sigNames=(list preparedBy authorizedSignatory)}}
+
+  <div class="footer-area">
+    {{#if qrDataUrl}}<div class="qr-block"><img src="{{qrDataUrl}}" alt="QR"><div class="qr-text">Scan to verify this document</div></div>{{/if}}
+    <div class="footer-text">{{footer}}</div>
+  </div>
+</div>
+</body>
+</html>

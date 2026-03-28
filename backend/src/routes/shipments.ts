@@ -1,6 +1,7 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, authorize } from '../middleware/auth';
+import { authenticate, authorize, AuthRequest } from '../middleware/auth';
+import { asyncHandler } from '../shared/middleware';
 import {
   generateEwayBill, buildEwayBillPayload, MSPIL,
   getStateCode, getHsnCode, getUnitCode, formatDateDDMMYYYY,
@@ -19,8 +20,7 @@ const router = Router();
 router.use(authenticate as any);
 
 // GET / — List shipments for a date
-router.get('/', async (req: Request, res: Response) => {
-  try {
+router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const dateStr = req.query.date as string;
     const status = req.query.status as string;
     let where: any = {};
@@ -35,6 +35,7 @@ router.get('/', async (req: Request, res: Response) => {
       where.status = status;
     }
 
+    const take = Math.min(parseInt(req.query.limit as string) || 50, 500);
     const shipments = await prisma.shipment.findMany({
       where,
       include: {
@@ -43,6 +44,7 @@ router.get('/', async (req: Request, res: Response) => {
         transporterPayments: { orderBy: { createdAt: 'desc' } },
       },
       orderBy: { createdAt: 'desc' },
+      take,
     });
     // Attach linked invoice IDs
     const shipmentIds = shipments.map((s: any) => s.id);
@@ -57,12 +59,10 @@ router.get('/', async (req: Request, res: Response) => {
       linkedInvoiceNo: invMap.get(s.id)?.invoiceNo || null,
     }));
     res.json({ shipments: enriched });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /active — All active shipments + today's EXITED (for dispatch % calc)
-router.get('/active', async (req: Request, res: Response) => {
-  try {
+router.get('/active', asyncHandler(async (req: AuthRequest, res: Response) => {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
@@ -96,22 +96,20 @@ router.get('/active', async (req: Request, res: Response) => {
       linkedInvoiceNo: iMap.get(s.id)?.invoiceNo || null,
     }));
     res.json({ shipments: enriched });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /config/eway-mode — Return current e-way bill mode for frontend
-router.get('/config/eway-mode', async (_req: Request, res: Response) => {
+router.get('/config/eway-mode', asyncHandler(async (_req: AuthRequest, res: Response) => {
   res.json({
     mode: process.env.EWAY_BILL_MODE || 'sandbox',
     gstin: process.env.EWAY_GSTIN || MSPIL.gstin,
     nicConfigured: !!(process.env.EWAY_NIC_URL && process.env.EWAY_NIC_CLIENT_ID),
     gspConfigured: !!(process.env.EWAY_GSP_URL && process.env.EWAY_GSP_TOKEN),
   });
-});
+}));
 
 // GET /:id — Single shipment with dispatchRequest details
-router.get('/:id', async (req: Request, res: Response) => {
-  try {
+router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const shipment = await prisma.shipment.findUnique({
       where: { id: req.params.id },
       include: {
@@ -120,12 +118,10 @@ router.get('/:id', async (req: Request, res: Response) => {
     });
     if (!shipment) { res.status(404).json({ error: 'Shipment not found' }); return; }
     res.json(shipment);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST / — Create shipment (Gate Entry) or Gate Pass
-router.post('/', async (req: Request, res: Response) => {
-  try {
+router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
     const capacityTon = parseFloat(b.capacityTon) || 0;
 
@@ -143,7 +139,7 @@ router.post('/', async (req: Request, res: Response) => {
       gateInTime: b.gateInTime || null,
       status: 'GATE_IN',
       remarks: b.remarks || null,
-      userId: (req as any).user.id,
+      userId: req.user!.id,
     };
 
     // Link to dispatch request if provided (sales flow)
@@ -203,12 +199,10 @@ router.post('/', async (req: Request, res: Response) => {
       include: { dispatchRequest: { include: { orderLine: true } } },
     });
     res.status(201).json(updated);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // PUT /:id/weighbridge — Record weighbridge data
-router.put('/:id/weighbridge', async (req: Request, res: Response) => {
-  try {
+router.put('/:id/weighbridge', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
     const type = b.type; // 'tare' or 'gross'
     let updateData: any = {};
@@ -256,12 +250,10 @@ router.put('/:id/weighbridge', async (req: Request, res: Response) => {
       },
     });
     res.json(shipment);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST /:id/confirm-payment — Confirm payment received for ADVANCE/COD shipments
-router.post('/:id/confirm-payment', async (req: Request, res: Response) => {
-  try {
+router.post('/:id/confirm-payment', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
     const shipment = await prisma.shipment.findUnique({ where: { id: req.params.id } });
     if (!shipment) { res.status(404).json({ error: 'Shipment not found' }); return; }
@@ -286,17 +278,15 @@ router.post('/:id/confirm-payment', async (req: Request, res: Response) => {
         paymentRef: b.paymentRef || null,
         paymentAmount: parseFloat(b.paymentAmount) || null,
         paymentConfirmedAt: new Date(),
-        paymentConfirmedBy: (req as any).user?.id || null,
+        paymentConfirmedBy: req.user!.id || null,
       },
       include: { dispatchRequest: { include: { orderLine: true } } },
     });
     res.json(updated);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // PUT /:id/status — Update shipment status with transitions
-router.put('/:id/status', async (req: Request, res: Response) => {
-  try {
+router.put('/:id/status', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
     const newStatus = b.status;
     let updateData: any = { status: newStatus };
@@ -361,7 +351,7 @@ router.put('/:id/status', async (req: Request, res: Response) => {
               weightTare: existing.weightTare || 0,
               weightNet: existing.weightNet,
               remarks: `Auto from shipment #${existing.shipmentNo}`,
-              userId: (req as any).user?.id || null,
+              userId: req.user!.id || null,
             },
           });
 
@@ -383,21 +373,19 @@ router.put('/:id/status', async (req: Request, res: Response) => {
             });
           }
 
-          console.log(`[Stock] DDGS deducted: ${netMT.toFixed(3)} MT for ${existing.vehicleNo}`);
+          // DDGS stock deducted successfully
         } catch (stockErr) {
-          console.error('[Stock] DDGS deduction failed:', stockErr);
+          // DDGS deduction failed — don't block shipment release
           // Don't fail the shipment release if stock update fails
         }
       }
     }
 
     res.json(shipment);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // PUT /:id — Update any shipment fields
-router.put('/:id', async (req: Request, res: Response) => {
-  try {
+router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
     const updateData: any = {};
 
@@ -435,15 +423,13 @@ router.put('/:id', async (req: Request, res: Response) => {
       },
     });
     res.json(shipment);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST /:id/eway-bill — Generate e-way bill for a shipment
 // CORRECT FLOW: Invoice (must exist) → e-Invoice IRN (from Invoice) → EWB from IRN
 // All IRN data is stored on the INVOICE record (single source of truth)
 // Shipment just gets the EWB number + a reference back to the Invoice
-router.post('/:id/eway-bill', async (req: Request, res: Response) => {
-  try {
+router.post('/:id/eway-bill', asyncHandler(async (req: AuthRequest, res: Response) => {
     // Load shipment with dispatch request for transporter info
     const shipment = await prisma.shipment.findUnique({
       where: { id: req.params.id },
@@ -594,7 +580,7 @@ router.post('/:id/eway-bill', async (req: Request, res: Response) => {
     let irn = invoice.irn as string | null;
 
     if (!irn) {
-      console.log(`[Shipment ${shipment.shipmentNo}] Step 1: Generating e-Invoice (IRN) from Invoice INV-${invoice.invoiceNo}...`);
+      // Step 1: Generate e-Invoice (IRN) from Invoice
 
       // Build IRN payload from the actual Invoice record
       const invoiceData = {
@@ -656,13 +642,13 @@ router.post('/:id/eway-bill', async (req: Request, res: Response) => {
         } as any,
       });
 
-      console.log(`[Shipment ${shipment.shipmentNo}] IRN generated: ${irn} (stored on Invoice INV-${invoice.invoiceNo})`);
+      // IRN generated and stored on Invoice
     } else {
-      console.log(`[Shipment ${shipment.shipmentNo}] Step 1: IRN already exists on Invoice INV-${invoice.invoiceNo}: ${irn}`);
+      // IRN already exists on Invoice
     }
 
     // ── Step 2: Generate E-Way Bill from IRN ──
-    console.log(`[Shipment ${shipment.shipmentNo}] Step 2: Generating E-Way Bill from IRN...`);
+    // Step 2: Generate E-Way Bill from IRN
 
     const ewbData: Record<string, any> = {
       Distance: Math.round(distanceKm),
@@ -714,15 +700,10 @@ router.post('/:id/eway-bill', async (req: Request, res: Response) => {
         error: `E-Way Bill generation failed: ${ewbResult.error}`,
       });
     }
-  } catch (err: any) {
-    console.error('[E-Way Bill] Error:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
+}));
 
 // POST /:id/eway-bill/preview — Preview e-way bill payload without generating
-router.post('/:id/eway-bill/preview', async (req: Request, res: Response) => {
-  try {
+router.post('/:id/eway-bill/preview', asyncHandler(async (req: AuthRequest, res: Response) => {
     const shipment = await prisma.shipment.findUnique({
       where: { id: req.params.id },
       include: {
@@ -768,12 +749,10 @@ router.post('/:id/eway-bill/preview', async (req: Request, res: Response) => {
       mode: process.env.EWAY_BILL_MODE || 'sandbox',
       ready: !!(shipment.weightNet && shipment.weightNet > 0 && customer),
     });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /:id/challan-pdf — Generate Delivery Challan PDF
-router.get('/:id/challan-pdf', async (req: Request, res: Response) => {
-  try {
+router.get('/:id/challan-pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
     const shipment = await prisma.shipment.findUnique({
       where: { id: req.params.id },
       include: {
@@ -918,12 +897,10 @@ router.get('/:id/challan-pdf', async (req: Request, res: Response) => {
     }
 
     doc.end();
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /:id/gate-pass-pdf — Generate Gate Pass cum Challan PDF
-router.get('/:id/gate-pass-pdf', async (req: Request, res: Response) => {
-  try {
+router.get('/:id/gate-pass-pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
     const shipment = await prisma.shipment.findUnique({ where: { id: req.params.id } });
     if (!shipment) { res.status(404).json({ error: 'Shipment not found' }); return; }
 
@@ -1068,12 +1045,10 @@ router.get('/:id/gate-pass-pdf', async (req: Request, res: Response) => {
     }
 
     doc.end();
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST /:id/eway-bill/cancel — Cancel e-way bill
-router.post('/:id/eway-bill/cancel', async (req: Request, res: Response) => {
-  try {
+router.post('/:id/eway-bill/cancel', asyncHandler(async (req: AuthRequest, res: Response) => {
     const shipment = await prisma.shipment.findUnique({ where: { id: req.params.id } });
     if (!shipment) { res.status(404).json({ error: 'Shipment not found' }); return; }
     if (!shipment.ewayBill) { res.status(400).json({ error: 'No e-way bill to cancel' }); return; }
@@ -1094,12 +1069,10 @@ router.post('/:id/eway-bill/cancel', async (req: Request, res: Response) => {
     } else {
       res.status(400).json({ success: false, error: result.error });
     }
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // PUT /:id/eway-bill/vehicle — Update vehicle number on e-way bill
-router.put('/:id/eway-bill/vehicle', async (req: Request, res: Response) => {
-  try {
+router.put('/:id/eway-bill/vehicle', asyncHandler(async (req: AuthRequest, res: Response) => {
     const shipment = await prisma.shipment.findUnique({ where: { id: req.params.id } });
     if (!shipment) { res.status(404).json({ error: 'Shipment not found' }); return; }
     if (!shipment.ewayBill) { res.status(400).json({ error: 'No e-way bill to update' }); return; }
@@ -1125,24 +1098,20 @@ router.put('/:id/eway-bill/vehicle', async (req: Request, res: Response) => {
     } else {
       res.status(400).json({ success: false, error: result.error });
     }
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /:id/eway-bill/details — Get e-way bill details from NIC
-router.get('/:id/eway-bill/details', async (req: Request, res: Response) => {
-  try {
+router.get('/:id/eway-bill/details', asyncHandler(async (req: AuthRequest, res: Response) => {
     const shipment = await prisma.shipment.findUnique({ where: { id: req.params.id } });
     if (!shipment) { res.status(404).json({ error: 'Shipment not found' }); return; }
     if (!shipment.ewayBill) { res.status(400).json({ error: 'No e-way bill' }); return; }
 
     const details = await getEwayBillDetails(shipment.ewayBill);
     res.json(details);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // DELETE /:id — Delete (ADMIN only; unlinked trucks any status, linked only GATE_IN)
-router.delete('/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
-  try {
+router.delete('/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
     const shipment = await prisma.shipment.findUnique({
       where: { id: req.params.id },
     });
@@ -1157,12 +1126,10 @@ router.delete('/:id', authorize('ADMIN') as any, async (req: Request, res: Respo
     await prisma.shipmentDocument.deleteMany({ where: { shipmentId: req.params.id } });
     await prisma.shipment.delete({ where: { id: req.params.id } });
     res.json({ ok: true });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST /:id/cancel-irn — Cancel e-Invoice IRN (within 24 hours)
-router.post('/:id/cancel-irn', async (req: Request, res: Response) => {
-  try {
+router.post('/:id/cancel-irn', asyncHandler(async (req: AuthRequest, res: Response) => {
     const shipment = await prisma.shipment.findUnique({ where: { id: req.params.id } });
     if (!shipment) { res.status(404).json({ error: 'Shipment not found' }); return; }
     if (!shipment.irn) { res.status(400).json({ error: 'No IRN to cancel on this shipment' }); return; }
@@ -1189,12 +1156,10 @@ router.post('/:id/cancel-irn', async (req: Request, res: Response) => {
     } else {
       res.status(400).json({ success: false, error: result.error });
     }
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /gstin-lookup/:gstin — Lookup GSTIN details from NIC (for customer/vendor creation)
-router.get('/gstin-lookup/:gstin', async (req: Request, res: Response) => {
-  try {
+router.get('/gstin-lookup/:gstin', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { gstin } = req.params;
     if (!gstin || gstin.length !== 15) {
       res.status(400).json({ error: 'GSTIN must be exactly 15 characters' });
@@ -1207,12 +1172,10 @@ router.get('/gstin-lookup/:gstin', async (req: Request, res: Response) => {
     } else {
       res.status(400).json(result);
     }
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST /:id/send-email — Send Shipment Challan PDF via email
-router.post('/:id/send-email', async (req: Request, res: Response) => {
-  try {
+router.post('/:id/send-email', asyncHandler(async (req: AuthRequest, res: Response) => {
     const shipment = await prisma.shipment.findUnique({
       where: { id: req.params.id },
       include: {
@@ -1260,7 +1223,6 @@ router.post('/:id/send-email', async (req: Request, res: Response) => {
     } else {
       res.status(500).json({ error: result.error || 'Email send failed' });
     }
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 export default router;

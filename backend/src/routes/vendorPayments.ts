@@ -1,6 +1,7 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, authorize } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize } from '../middleware/auth';
+import { asyncHandler } from '../shared/middleware';
 import { onVendorPaymentMade } from '../services/autoJournal';
 import PDFDocument from 'pdfkit';
 import { sendEmail } from '../services/messaging';
@@ -9,8 +10,7 @@ const router = Router();
 router.use(authenticate as any);
 
 // GET / — list payments with filters (vendorId, from, to)
-router.get('/', async (req: Request, res: Response) => {
-  try {
+router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const vendorId = req.query.vendorId as string | undefined;
     const from = req.query.from as string | undefined;
     const to = req.query.to as string | undefined;
@@ -30,15 +30,14 @@ router.get('/', async (req: Request, res: Response) => {
         invoice: true,
       },
       orderBy: { paymentDate: 'desc' },
+      take: 200,
     });
 
     res.json({ payments });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /ledger/:vendorId — vendor ledger (timeline with running balance)
-router.get('/ledger/:vendorId', async (req: Request, res: Response) => {
-  try {
+router.get('/ledger/:vendorId', asyncHandler(async (req: AuthRequest, res: Response) => {
     const vendorId = req.params.vendorId;
 
     const vendor = await prisma.vendor.findUnique({
@@ -97,12 +96,10 @@ router.get('/ledger/:vendorId', async (req: Request, res: Response) => {
       ledger: withBalance,
       currentBalance: balance,
     });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /outstanding — outstanding payables grouped by vendor
-router.get('/outstanding', async (req: Request, res: Response) => {
-  try {
+router.get('/outstanding', asyncHandler(async (req: AuthRequest, res: Response) => {
     const invoices = await prisma.vendorInvoice.findMany({
       where: {
         balanceAmount: {
@@ -112,6 +109,7 @@ router.get('/outstanding', async (req: Request, res: Response) => {
       include: {
         vendor: true,
       },
+      take: 500,
     });
 
     // Group by vendor
@@ -130,12 +128,10 @@ router.get('/outstanding', async (req: Request, res: Response) => {
     }
 
     res.json({ outstanding: Object.values(grouped) });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST / — create payment
-router.post('/', async (req: Request, res: Response) => {
-  try {
+router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
     const amount = parseFloat(b.amount) || 0;
     const tdsDeducted = parseFloat(b.tdsDeducted) || 0;
@@ -154,7 +150,7 @@ router.post('/', async (req: Request, res: Response) => {
           isAdvance: b.isAdvance || false,
           remarks: b.remarks || null,
           paymentDate: b.paymentDate ? new Date(b.paymentDate) : new Date(),
-          userId: (req as any).user.id,
+          userId: req.user!.id,
         },
       });
 
@@ -196,17 +192,15 @@ router.post('/', async (req: Request, res: Response) => {
       reference: b.reference,
       tdsDeducted: tdsDeducted,
       vendorId: b.vendorId,
-      userId: (req as any).user.id,
+      userId: req.user!.id,
       paymentDate: b.paymentDate ? new Date(b.paymentDate) : new Date(),
     }).catch(() => {});
 
     res.status(201).json(payment);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /tds-report — TDS report
-router.get('/tds-report', async (req: Request, res: Response) => {
-  try {
+router.get('/tds-report', asyncHandler(async (req: AuthRequest, res: Response) => {
     const payments = await prisma.vendorPayment.findMany({
       where: {
         tdsDeducted: {
@@ -235,12 +229,10 @@ router.get('/tds-report', async (req: Request, res: Response) => {
     }
 
     res.json({ report: Object.values(grouped) });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST /:id/send-email — Send payment receipt/advice to vendor
-router.post('/:id/send-email', async (req: Request, res: Response) => {
-  try {
+router.post('/:id/send-email', asyncHandler(async (req: AuthRequest, res: Response) => {
     const pmt = await prisma.vendorPayment.findUnique({
       where: { id: req.params.id },
       include: { vendor: true },
@@ -296,7 +288,6 @@ router.post('/:id/send-email', async (req: Request, res: Response) => {
     } else {
       res.status(500).json({ error: result.error || 'Email send failed' });
     }
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 export default router;

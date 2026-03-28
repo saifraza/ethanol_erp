@@ -1,6 +1,7 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, authorize } from '../middleware/auth';
+import { authenticate, authorize, AuthRequest } from '../middleware/auth';
+import { asyncHandler } from '../shared/middleware';
 import { getGSTINDetails } from '../services/eInvoice';
 
 const router = Router();
@@ -8,8 +9,7 @@ const router = Router();
 router.use(authenticate as any);
 
 // GET /gstin-lookup/:gstin — Lookup GSTIN via Saral GSP and return transporter-ready details
-router.get('/gstin-lookup/:gstin', async (req: Request, res: Response) => {
-  try {
+router.get('/gstin-lookup/:gstin', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { gstin } = req.params;
     if (!gstin || gstin.length !== 15) {
       res.status(400).json({ error: 'GSTIN must be exactly 15 characters' });
@@ -48,25 +48,20 @@ router.get('/gstin-lookup/:gstin', async (req: Request, res: Response) => {
     } else {
       res.status(400).json({ success: false, error: result.error || 'GSTIN lookup failed' });
     }
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+}));
 
 // GET / — list active transporters
-router.get('/', async (req: Request, res: Response) => {
-  try {
+router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const transporters = await prisma.transporter.findMany({
       where: { isActive: true },
       orderBy: { name: 'asc' },
+      take: 500,
     });
     res.json({ transporters });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST / — create transporter
-router.post('/', async (req: Request, res: Response) => {
-  try {
+router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
     const vehicleCount = parseInt(b.vehicleCount) || 0;
 
@@ -84,12 +79,10 @@ router.post('/', async (req: Request, res: Response) => {
       }
     });
     res.status(201).json(transporter);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // PUT /:id — update transporter
-router.put('/:id', async (req: Request, res: Response) => {
-  try {
+router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
     const vehicleCount = parseInt(b.vehicleCount) || 0;
 
@@ -107,18 +100,15 @@ router.put('/:id', async (req: Request, res: Response) => {
       }
     });
     res.json(transporter);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // DELETE /:id — soft delete (set isActive: false)
-router.delete('/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
-  try {
+router.delete('/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
     await prisma.transporter.update({
       where: { id: req.params.id },
       data: { isActive: false }
     });
     res.json({ ok: true });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 export default router;

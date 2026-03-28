@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, authorize } from '../middleware/auth';
+import { renderPreviewHtml, renderPreviewPdf } from '../services/documentRenderer';
 
 const router = Router();
 router.use(authenticate as any);
@@ -149,6 +150,51 @@ router.put('/:docType', authorize('ADMIN') as any, async (req: Request, res: Res
       companyInfo: template.companyInfo ? JSON.parse(template.companyInfo) : null,
     });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// ── Preview Endpoints ──
+
+// GET /:docType/preview — Preview with saved template data
+router.get('/:docType/preview', async (req: Request, res: Response) => {
+  try {
+    const docType = req.params.docType.toUpperCase();
+    const html = await renderPreviewHtml(docType);
+    res.setHeader('Content-Type', 'text/html');
+    res.send(html);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /:docType/preview — Preview with unsaved/custom template data
+router.post('/:docType/preview', async (req: Request, res: Response) => {
+  try {
+    const docType = req.params.docType.toUpperCase();
+    const { terms, footer, bankDetails } = req.body;
+    const overrides = {
+      terms: Array.isArray(terms) ? terms : undefined,
+      footer: footer || undefined,
+      bankDetails: bankDetails || undefined,
+    };
+    const html = await renderPreviewHtml(docType, overrides);
+    res.setHeader('Content-Type', 'text/html');
+    res.send(html);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /:docType/preview-pdf — Download sample PDF
+router.get('/:docType/preview-pdf', async (req: Request, res: Response) => {
+  try {
+    const docType = req.params.docType.toUpperCase();
+    const pdfBuffer = await renderPreviewPdf(docType);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${docType.toLowerCase()}-preview.pdf"`);
+    res.send(pdfBuffer);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 export default router;

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>DDGS Gate Pass</title>{{> base-styles}}</head>
+<body>
+<div class="page">
+  {{> letterhead}}
+  <div class="doc-title">GATE PASS CUM CHALLAN<div style="margin-top:4px"><span class="badge-nonreturnable">NON-RETURNABLE</span></div></div>
+  <div class="doc-subtitle">DDGS Dispatch</div>
+
+  <div class="details-grid">
+    <div class="detail-row"><span class="detail-label">Gate Pass No</span><span class="detail-value bold">{{gatePassNo}}</span></div>
+    <div class="detail-row"><span class="detail-label">Date</span><span class="detail-value">{{formatDate date}}</span></div>
+    <div class="detail-row"><span class="detail-label">Vehicle No</span><span class="detail-value bold">{{vehicleNo}}</span></div>
+    {{#if invoiceNo}}<div class="detail-row"><span class="detail-label">Invoice No</span><span class="detail-value">{{invoiceNo}}</span></div>{{/if}}
+    <div class="detail-row"><span class="detail-label">Driver</span><span class="detail-value">{{driverName}} {{#if driverMobile}}({{driverMobile}}){{/if}}</span></div>
+    {{#if transporterName}}<div class="detail-row"><span class="detail-label">Transporter</span><span class="detail-value">{{transporterName}}</span></div>{{/if}}
+    {{#if ewayBillNo}}<div class="detail-row"><span class="detail-label">E-Way Bill</span><span class="detail-value">{{ewayBillNo}}</span></div>{{/if}}
+  </div>
+
+  <div class="boxes">
+    <div class="box">
+      <div class="box-header">Party Details</div>
+      <div class="box-body">
+        <div class="name">{{partyName}}</div>
+        {{#if partyAddress}}<div class="line">{{partyAddress}}</div>{{/if}}
+        {{#if destination}}<div class="line">{{destination}}</div>{{/if}}
+        {{#if partyGstin}}<div class="gstin">GSTIN: {{partyGstin}}</div>{{/if}}
+      </div>
+    </div>
+    <div class="box">
+      <div class="box-header">From</div>
+      <div class="box-body">
+        <div class="name">MSPIL Distillery</div>
+        <div class="line">Village Bachai, Dist. Narsinghpur (M.P.) - 487001</div>
+        <div class="gstin">GSTIN: 23AAECM3666P1Z1</div>
+      </div>
+    </div>
+  </div>
+
+  <table class="items-table">
+    <thead>
+      <tr>
+        <th style="width:25px">#</th>
+        <th class="left">Description</th>
+        <th style="width:50px">HSN</th>
+        <th style="width:60px">Qty (MT)</th>
+        <th style="width:45px">Bags</th>
+        <th class="right" style="width:70px">Rate/MT</th>
+        <th class="right" style="width:90px">Value (Rs.)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="center">1</td>
+        <td>DDGS (Dried Distillers Grains with Solubles)</td>
+        <td class="center">{{default hsnCode "2303"}}</td>
+        <td class="center">{{formatNum netMT}}</td>
+        <td class="center">{{bags}}</td>
+        <td class="right">{{formatNum rate}}</td>
+        <td class="right">{{formatNum invoiceAmount}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="weight-box">
+    <div class="wb-header">Weight Summary</div>
+    <div class="wb-grid">
+      <div class="wb-item"><div class="wb-label">Gross Weight</div><div class="wb-val">{{formatNum weightGross}} MT</div></div>
+      <div class="wb-item"><div class="wb-label">Tare Weight</div><div class="wb-val">{{formatNum weightTare}} MT</div></div>
+      <div class="wb-item"><div class="wb-label">Net Weight</div><div class="wb-val">{{formatNum weightNet}} MT</div></div>
+    </div>
+    {{#if (or bags weightPerBag)}}
+    <div class="wb-grid" style="border-top: 1px solid #eee;">
+      {{#if bags}}<div class="wb-item"><div class="wb-label">Total Bags</div><div class="wb-val">{{bags}}</div></div>{{/if}}
+      {{#if weightPerBag}}<div class="wb-item"><div class="wb-label">Weight / Bag</div><div class="wb-val">{{formatNum weightPerBag}} kg</div></div>{{/if}}
+      <div class="wb-item"><div class="wb-label">Bag Total</div><div class="wb-val">{{formatNum bagTotal}} kg</div></div>
+    </div>
+    {{/if}}
+  </div>
+
+  {{> signatures sigCount=4 sigLabels=(list "Gate Keeper" "Weigh Bridge Operator" "Store In-Charge" "Authorized by MSPIL") sigNames=(list "" "" "" authorizedSignatory)}}
+
+  <div class="footer-area">
+    {{#if qrDataUrl}}<div class="qr-block"><img src="{{qrDataUrl}}" alt="QR"><div class="qr-text">Scan to verify this document</div></div>{{/if}}
+    <div class="footer-text">{{footer}}</div>
+  </div>
+</div>
+</body>
+</html>

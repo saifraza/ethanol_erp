@@ -913,6 +913,8 @@ model InventoryTransaction {
   userId      String
   createdAt   DateTime @default(now())
   @@index([itemId])
+  @@index([type])
+  @@index([createdAt])
 }
 
 // ── Warehouse / Storage Location ──
@@ -1134,6 +1136,10 @@ model PurchaseRequisition {
   userId          String
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  @@index([status])
+  @@index([urgency])
+  @@index([userId])
 }
 
 // ═══════════════════════════════════════════════
@@ -1725,6 +1731,7 @@ model POLine {
 
   grnLines        GRNLine[]
   @@index([inventoryItemId])
+  @@index([poId])
 }
 
 // ── Goods Receipt Note (factory receives goods against PO) ──
@@ -1786,6 +1793,7 @@ model GRNLine {
   remarks         String?
   createdAt       DateTime     @default(now())
   @@index([inventoryItemId])
+  @@index([grnId])
 }
 
 // ── Vendor Invoice (3-way match: PO + GRN + Invoice) ──
@@ -1853,6 +1861,11 @@ model VendorInvoice {
   updatedAt       DateTime @updatedAt
 
   payments        VendorPayment[]
+
+  @@index([vendorId])
+  @@index([poId])
+  @@index([status])
+  @@index([invoiceDate])
 }
 
 // ── Vendor Payment ──
@@ -1878,6 +1891,10 @@ model VendorPayment {
   userId          String
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  @@index([vendorId])
+  @@index([invoiceId])
+  @@index([paymentDate])
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1918,6 +1935,9 @@ model DirectPurchase {
   userId          String
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  @@index([date])
+  @@index([isPaid])
 }
 
 model DirectSale {
@@ -1949,6 +1969,9 @@ model DirectSale {
   userId          String
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  @@index([date])
+  @@index([isPaid])
 }
 
 // ── ETHANOL SUPPLY / CONTRACTS ──
@@ -2171,4 +2194,92 @@ model GateEntry {
   @@index([date])
   @@index([status])
   @@index([vehicleNo])
+}
+
+// ══════════════════════════════════════════════════════════════
+// CASH VOUCHER — Petty cash, advances, informal payments
+// "Pay 4000 to Khan uncle, paperwork later"
+// ══════════════════════════════════════════════════════════════
+
+model CashVoucher {
+  id                String    @id @default(uuid())
+  voucherNo         Int       @default(autoincrement())
+  date              DateTime  @default(now())
+  type              String    @default("PAYMENT") // PAYMENT, RECEIPT, ADVANCE, REFUND
+  payeeName         String
+  payeePhone        String?
+  purpose           String
+  category          String    @default("MISC") // LABOUR, TRANSPORT, REPAIR, MATERIAL, OFFICE, MISC
+  amount            Float
+  paymentMode       String    @default("CASH") // CASH, UPI, BANK_TRANSFER
+  paymentRef        String?
+  authorizedBy      String                     // "Dad", "Manager", free text
+  status            String    @default("ACTIVE") // ACTIVE, SETTLED, CANCELLED
+  settlementDate    DateTime?
+  settlementNote    String?
+  linkedInvoiceId   String?                    // when paperwork arrives, link to vendor invoice
+  journalEntryId    String?                    // FK to auto-generated journal entry
+  userId            String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([date])
+  @@index([status])
+  @@index([type])
+  @@index([userId])
+}
+
+// ══════════════════════════════════════════════════════════════
+// BANK LOANS — Term loans, working capital, CC limits
+// ══════════════════════════════════════════════════════════════
+
+model BankLoan {
+  id                String    @id @default(uuid())
+  loanNo            String    @unique
+  bankName          String
+  bankAccountCode   String?                    // Account code from Chart of Accounts (e.g., 2400)
+  loanType          String    @default("TERM_LOAN") // TERM_LOAN, WORKING_CAPITAL, CC_LIMIT, EQUIPMENT
+  sanctionAmount    Float
+  disbursedAmount   Float     @default(0)
+  outstandingAmount Float     @default(0)
+  interestRate      Float                      // Annual rate (e.g., 9.5)
+  tenure            Int                        // Months
+  emiAmount         Float     @default(0)
+  sanctionDate      DateTime
+  disbursementDate  DateTime?
+  maturityDate      DateTime?
+  status            String    @default("ACTIVE") // ACTIVE, CLOSED, RESTRUCTURED
+  securityDetails   String?
+  remarks           String?
+  repayments        LoanRepayment[]
+  userId            String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([status])
+  @@index([bankName])
+}
+
+model LoanRepayment {
+  id                String    @id @default(uuid())
+  loanId            String
+  loan              BankLoan  @relation(fields: [loanId], references: [id])
+  installmentNo     Int
+  dueDate           DateTime
+  principalAmount   Float
+  interestAmount    Float
+  totalAmount       Float
+  outstandingAfter  Float
+  status            String    @default("SCHEDULED") // SCHEDULED, PAID, OVERDUE, SKIPPED
+  paidDate          DateTime?
+  paymentMode       String?
+  paymentRef        String?
+  journalEntryId    String?
+  remarks           String?
+  userId            String?
+  createdAt         DateTime  @default(now())
+
+  @@index([loanId])
+  @@index([dueDate])
+  @@index([status])
 }
