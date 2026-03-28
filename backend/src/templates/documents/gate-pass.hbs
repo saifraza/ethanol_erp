@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Gate Pass</title>{{> base-styles}}</head>
+<body>
+<div class="page">
+  {{> letterhead}}
+  <div class="doc-title">
+    GATE PASS CUM CHALLAN
+    {{#if isReturnable}}<div style="margin-top:4px"><span class="badge-returnable">RETURNABLE</span></div>
+    {{else}}<div style="margin-top:4px"><span class="badge-nonreturnable">NON-RETURNABLE</span></div>{{/if}}
+  </div>
+
+  <div class="details-grid">
+    <div class="detail-row"><span class="detail-label">Gate Pass No</span><span class="detail-value bold">{{gatePassNo}}</span></div>
+    <div class="detail-row"><span class="detail-label">Date</span><span class="detail-value">{{formatDate date}}</span></div>
+    {{#if shipmentNo}}<div class="detail-row"><span class="detail-label">Shipment No</span><span class="detail-value">{{shipmentNo}}</span></div>{{/if}}
+    <div class="detail-row"><span class="detail-label">Vehicle No</span><span class="detail-value bold">{{vehicleNo}}</span></div>
+    {{#if driverName}}<div class="detail-row"><span class="detail-label">Driver</span><span class="detail-value">{{driverName}} {{#if driverMobile}}({{driverMobile}}){{/if}}</span></div>{{/if}}
+    {{#if transporterName}}<div class="detail-row"><span class="detail-label">Transporter</span><span class="detail-value">{{transporterName}}</span></div>{{/if}}
+    {{#if ewayBill}}<div class="detail-row"><span class="detail-label">E-Way Bill</span><span class="detail-value">{{ewayBill}}</span></div>{{/if}}
+    {{#if purpose}}<div class="detail-row"><span class="detail-label">Purpose</span><span class="detail-value">{{purpose}}</span></div>{{/if}}
+  </div>
+
+  <div class="boxes">
+    <div class="box">
+      <div class="box-header">Party Details</div>
+      <div class="box-body">
+        <div class="name">{{default partyName customerName}}</div>
+        {{#if partyAddress}}<div class="line">{{partyAddress}}</div>{{/if}}
+        {{#if destination}}<div class="line">{{destination}}</div>{{/if}}
+        {{#if partyGstin}}<div class="gstin">GSTIN: {{partyGstin}}</div>{{/if}}
+      </div>
+    </div>
+    <div class="box">
+      <div class="box-header">From</div>
+      <div class="box-body">
+        <div class="name">MSPIL Distillery</div>
+        <div class="line">Village Bachai, Dist. Narsinghpur (M.P.) - 487001</div>
+        <div class="gstin">GSTIN: 23AAECM3666P1Z1</div>
+      </div>
+    </div>
+  </div>
+
+  <table class="items-table">
+    <thead>
+      <tr>
+        <th style="width:25px">#</th>
+        <th class="left">Description</th>
+        <th style="width:50px">HSN</th>
+        <th style="width:50px">Qty</th>
+        <th style="width:35px">Unit</th>
+        <th class="right" style="width:90px">Value (Rs.)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each items}}
+      <tr>
+        <td class="center">{{inc @index}}</td>
+        <td>{{default description desc}}</td>
+        <td class="center">{{hsnCode}}</td>
+        <td class="center">{{qty}}</td>
+        <td class="center">{{unit}}</td>
+        <td class="right">{{formatNum value}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+
+  {{#if (or weightGross weightTare weightNet)}}
+  <div class="weight-box">
+    <div class="wb-header">Weight Summary</div>
+    <div class="wb-grid">
+      <div class="wb-item"><div class="wb-label">Gross Weight</div><div class="wb-val">{{formatNum weightGross}} MT</div></div>
+      <div class="wb-item"><div class="wb-label">Tare Weight</div><div class="wb-val">{{formatNum weightTare}} MT</div></div>
+      <div class="wb-item"><div class="wb-label">Net Weight</div><div class="wb-val">{{formatNum weightNet}} MT</div></div>
+    </div>
+  </div>
+  {{/if}}
+
+  {{#if totalValue}}
+  <div class="totals-section">
+    <div class="totals-box">
+      <div class="total-row grand"><span class="label">TOTAL VALUE</span><span class="value">{{formatINR totalValue}}</span></div>
+    </div>
+  </div>
+  {{/if}}
+
+  {{#if coveringNote}}<div class="remarks-section"><div class="label">Authority Note:</div><div class="text">{{coveringNote}}</div></div>{{/if}}
+
+  {{> signatures sigCount=4 sigLabels=(list "Store Clerk" "Store Incharge" "Received By" "Authorized Signatory") sigNames=(list "" "" "" authorizedSignatory)}}
+
+  <div class="footer-area">
+    {{#if qrDataUrl}}<div class="qr-block"><img src="{{qrDataUrl}}" alt="QR"><div class="qr-text">Scan to verify this document</div></div>{{/if}}
+    <div class="footer-text">{{footer}}</div>
+  </div>
+</div>
+</body>
+</html>

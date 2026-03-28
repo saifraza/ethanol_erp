@@ -1,0 +1,9 @@
+<div class="signatures" style="grid-template-columns: repeat({{sigCount}}, 1fr);">
+  {{#each sigLabels}}
+  <div class="sig-block">
+    <div class="sig-name">{{#if ../sigNames}}{{lookup ../sigNames @index}}{{/if}}</div>
+    <div class="sig-line"></div>
+    <div class="sig-label">{{this}}</div>
+  </div>
+  {{/each}}
+</div>
