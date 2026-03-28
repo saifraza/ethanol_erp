@@ -4,6 +4,7 @@ import { authenticate, authorize } from '../middleware/auth';
 import PDFDocument from 'pdfkit';
 import { sendEmail } from '../services/messaging';
 import { drawLetterhead } from '../utils/letterhead';
+import { renderDocumentPdf } from '../services/documentRenderer';
 
 const router = Router();
 router.use(authenticate as any);
@@ -331,53 +332,29 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
     });
     if (!inv) { res.status(404).json({ error: 'Vendor invoice not found' }); return; }
 
-    const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    const viData = {
+      invoiceNo: inv.invoiceNo,
+      vendorInvNo: inv.vendorInvNo,
+      invoiceDate: inv.invoiceDate,
+      status: inv.status,
+      vendor: {
+        name: (inv as any).vendor?.name,
+        gstin: (inv as any).vendor?.gstin,
+      },
+      productName: inv.productName,
+      quantity: inv.quantity,
+      unit: inv.unit,
+      rate: inv.rate,
+      gstPercent: inv.gstPercent,
+      subtotal: inv.subtotal,
+      totalGst: inv.totalGst,
+      netPayable: inv.netPayable,
+    };
+
+    const pdfBuffer = await renderDocumentPdf({ docType: 'VENDOR_INVOICE', data: viData, verifyId: inv.id });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="VI-${inv.invoiceNo || inv.id.slice(0, 8)}.pdf"`);
-    doc.pipe(res);
-
-    drawLetterhead(doc, 40, 515);
-    doc.moveDown(0.5);
-    doc.fontSize(14).font('Helvetica-Bold').text('VENDOR INVOICE', { align: 'center' });
-    doc.moveDown(0.5);
-
-    doc.fontSize(9).font('Helvetica');
-    doc.text(`Invoice No: VI-${String(inv.invoiceNo).padStart(4, '0')}`, 40);
-    doc.text(`Vendor Inv No: ${inv.vendorInvNo || '-'}`);
-    doc.text(`Invoice Date: ${inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString('en-IN') : '-'}`);
-    doc.text(`Vendor: ${(inv as any).vendor?.name || '-'}`);
-    doc.text(`GSTIN: ${(inv as any).vendor?.gstin || '-'}`);
-    doc.text(`Status: ${inv.status}`);
-    doc.moveDown();
-
-    // Single line item (flat model)
-    const tableTop = doc.y;
-    doc.font('Helvetica-Bold').fontSize(8);
-    doc.text('Product', 40, tableTop, { width: 180 });
-    doc.text('Qty', 220, tableTop, { width: 50, align: 'right' });
-    doc.text('Unit', 270, tableTop, { width: 40 });
-    doc.text('Rate', 310, tableTop, { width: 60, align: 'right' });
-    doc.text('GST%', 370, tableTop, { width: 40, align: 'right' });
-    doc.text('Amount', 410, tableTop, { width: 80, align: 'right' });
-    doc.moveTo(40, tableTop + 12).lineTo(555, tableTop + 12).stroke();
-
-    const y = tableTop + 16;
-    doc.font('Helvetica').fontSize(8);
-    doc.text(inv.productName || '-', 40, y, { width: 180 });
-    doc.text(String(inv.quantity || 0), 220, y, { width: 50, align: 'right' });
-    doc.text(inv.unit || '', 270, y, { width: 40 });
-    doc.text(String(inv.rate || 0), 310, y, { width: 60, align: 'right' });
-    doc.text(String(inv.gstPercent || 0), 370, y, { width: 40, align: 'right' });
-    doc.text(inv.subtotal.toLocaleString('en-IN'), 410, y, { width: 80, align: 'right' });
-
-    doc.moveDown(3);
-    doc.font('Helvetica').fontSize(9);
-    doc.text(`Subtotal: Rs. ${inv.subtotal.toLocaleString('en-IN')}`, { align: 'right' });
-    doc.text(`GST: Rs. ${inv.totalGst.toLocaleString('en-IN')}`, { align: 'right' });
-    doc.font('Helvetica-Bold').fontSize(10);
-    doc.text(`Net Payable: Rs. ${inv.netPayable.toLocaleString('en-IN')}`, { align: 'right' });
-
-    doc.end();
+    res.send(pdfBuffer);
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
@@ -394,25 +371,25 @@ router.post('/:id/send-email', async (req: Request, res: Response) => {
     if (!toEmail) { res.status(400).json({ error: 'No email address. Add vendor email or provide "to" in request.' }); return; }
 
     // Generate PDF buffer
-    const pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
-      const chunks: Buffer[] = [];
-      const doc = new PDFDocument({ size: 'A4', margin: 40 });
-      doc.on('data', (chunk: Buffer) => chunks.push(chunk));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-      doc.on('error', reject);
-      doc.fontSize(14).font('Helvetica-Bold').text('VENDOR INVOICE', { align: 'center' });
-      doc.moveDown();
-      doc.fontSize(9).font('Helvetica');
-      doc.text(`Invoice No: VI-${String(inv.invoiceNo).padStart(4, '0')}`);
-      doc.text(`Vendor Inv No: ${inv.vendorInvNo || '-'}`);
-      doc.text(`Date: ${inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString('en-IN') : '-'}`);
-      doc.text(`Vendor: ${(inv as any).vendor?.name || '-'}`);
-      doc.text(`Product: ${inv.productName || '-'}`);
-      doc.text(`Qty: ${inv.quantity} ${inv.unit} @ Rs.${inv.rate}`);
-      doc.text(`Net Payable: Rs. ${inv.netPayable.toLocaleString('en-IN')}`);
-      doc.text(`Status: ${inv.status}`);
-      doc.end();
-    });
+    const viData = {
+      invoiceNo: inv.invoiceNo,
+      vendorInvNo: inv.vendorInvNo,
+      invoiceDate: inv.invoiceDate,
+      status: inv.status,
+      vendor: {
+        name: (inv as any).vendor?.name,
+        gstin: (inv as any).vendor?.gstin,
+      },
+      productName: inv.productName,
+      quantity: inv.quantity,
+      unit: inv.unit,
+      rate: inv.rate,
+      gstPercent: inv.gstPercent,
+      subtotal: inv.subtotal,
+      totalGst: inv.totalGst,
+      netPayable: inv.netPayable,
+    };
+    const pdfBuffer = await renderDocumentPdf({ docType: 'VENDOR_INVOICE', data: viData, verifyId: inv.id });
 
     const label = `VI-${String(inv.invoiceNo).padStart(4, '0')}`;
     const subject = req.body.subject || `${label} — Vendor Invoice from MSPIL`;

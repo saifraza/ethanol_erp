@@ -13,6 +13,7 @@ import path from 'path';
 import fs from 'fs';
 import { drawLetterhead } from '../utils/letterhead';
 import { sendEmail } from '../services/messaging';
+import { renderDocumentPdf } from '../services/documentRenderer';
 
 const router = Router();
 
@@ -786,138 +787,47 @@ router.get('/:id/challan-pdf', async (req: Request, res: Response) => {
     });
     if (!shipment) { res.status(404).json({ error: 'Shipment not found' }); return; }
 
-    // Load template from DB
-    const { getTemplate, generateBarcode } = await import('../utils/templateHelper');
-    const tmpl = await getTemplate('CHALLAN');
-
     const dr = shipment.dispatchRequest;
     const order = dr?.order;
     const customer = order?.customer;
 
-    const doc = new PDFDocument({ size: 'A4', margins: { top: 40, bottom: 0, left: 40, right: 40 } });
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename=Challan-${shipment.shipmentNo}.pdf`);
-    doc.pipe(res);
-
-    const pageW = doc.page.width;
-    const mL = 40;
-    const mR = pageW - 40;
-    const cW = mR - mL;
-
-    // Letterhead (HD vector)
-    const afterLH = drawLetterhead(doc, mL, cW);
-    doc.y = afterLH + 4;
-
-    // Title + Barcode row
-    const challanRef = shipment.challanNo || `DC-${shipment.shipmentNo}`;
-    doc.fontSize(13).font('Helvetica-Bold').fillColor('#1a3a1a').text(tmpl.title || 'DELIVERY CHALLAN', mL, doc.y, { width: cW * 0.6 });
-
-    // Generate and embed barcode
-    try {
-      const barcodeImg = await generateBarcode(challanRef);
-      doc.image(barcodeImg, mR - 140, doc.y - 5, { width: 130, height: 30 });
-    } catch { /* barcode failed, skip */ }
-    doc.y += 20;
-
-    // Thin divider
-    doc.moveTo(mL, doc.y).lineTo(mR, doc.y).lineWidth(0.5).strokeColor('#ddd').stroke();
-    doc.y += 8;
-
-    // Info grid (2 columns)
-    const lf = 'Helvetica-Bold';
-    const vf = 'Helvetica';
-    const col2 = pageW / 2 + 20;
-    const y0 = doc.y;
-
-    const info = (label: string, val: string, x: number, y: number) => {
-      doc.fontSize(8).font(lf).fillColor('#888').text(label, x, y);
-      doc.fontSize(9).font(vf).fillColor('#222').text(val, x + 90, y);
+    const challanData = {
+      challanNo: shipment.challanNo || `DC-${shipment.shipmentNo}`,
+      shipmentNo: shipment.shipmentNo,
+      date: shipment.date,
+      vehicleNo: shipment.vehicleNo,
+      driverName: shipment.driverName,
+      driverMobile: shipment.driverMobile,
+      transporterName: shipment.transporterName,
+      ewayBill: shipment.ewayBill,
+      grBiltyNo: shipment.grBiltyNo,
+      destination: shipment.destination,
+      weightGross: shipment.weightGross,
+      weightTare: shipment.weightTare,
+      weightNet: shipment.weightNet,
+      customer: customer ? {
+        name: customer.name,
+        address: customer.address,
+        city: customer.city,
+        state: customer.state,
+        pincode: customer.pincode,
+        gstNo: customer.gstNo,
+        phone: customer.phone,
+      } : { name: shipment.customerName },
+      lines: order?.lines?.map((line: any) => ({
+        productName: line.productName || shipment.productName,
+        hsnCode: line.hsnCode,
+        quantity: line.quantity,
+        unit: line.unit,
+        rate: line.rate,
+        value: line.quantity * line.rate,
+      })) || [{ productName: shipment.productName, quantity: 0, unit: 'TON', rate: 0, value: 0 }],
     };
 
-    info('Challan No:', challanRef, mL, y0);
-    info('Date:', new Date(shipment.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }), col2, y0);
-    info('Vehicle No:', shipment.vehicleNo, mL, y0 + 16);
-    info('Driver:', shipment.driverName || '—', col2, y0 + 16);
-    info('Driver Mobile:', shipment.driverMobile || '—', mL, y0 + 32);
-    info('Transporter:', shipment.transporterName || '—', col2, y0 + 32);
-    if (shipment.ewayBill) info('E-Way Bill:', shipment.ewayBill, mL, y0 + 48);
-    if (shipment.grBiltyNo) info('GR/Bilty No:', shipment.grBiltyNo, col2, y0 + 48);
-    doc.y = y0 + (shipment.ewayBill ? 68 : 52);
-
-    // Consignee box (rounded corners effect via rect)
-    const cy = doc.y;
-    doc.rect(mL, cy, cW, 55).lineWidth(0.5).strokeColor('#4a7c3f').fillOpacity(0.03).fillAndStroke('#4a7c3f', '#4a7c3f');
-    doc.fillOpacity(1);
-    doc.fontSize(8).font(lf).fillColor('#4a7c3f').text('CONSIGNEE', mL + 10, cy + 6);
-    doc.fontSize(10).font(lf).fillColor('#222').text(customer?.name || shipment.customerName, mL + 10, cy + 20);
-    const addr = customer ? [customer.address, customer.city, customer.state, customer.pincode].filter(Boolean).join(', ') : (shipment.destination || '');
-    doc.font(vf).fontSize(8).fillColor('#555').text(addr, mL + 10, cy + 33, { width: cW / 2 - 20 });
-    if (customer?.gstNo) doc.fontSize(8).font(vf).fillColor('#555').text(`GSTIN: ${customer.gstNo}`, col2, cy + 20);
-    if (customer?.phone) doc.text(`Phone: ${customer.phone}`, col2, cy + 33);
-    doc.y = cy + 65;
-
-    // Items table
-    const tY = doc.y;
-    const cols = [30, 180, 80, 60, 80, 85];
-    const hdrs = ['#', 'Product', 'Quantity', 'Unit', 'Net Wt (MT)', 'Bags'];
-    doc.rect(mL, tY, cW, 20).fill('#4a7c3f');
-    let cx = mL + 4;
-    hdrs.forEach((h, i) => {
-      doc.fontSize(8).font(lf).fillColor('#fff').text(h, cx, tY + 5, { width: cols[i], align: i > 1 ? 'right' : 'left' });
-      cx += cols[i];
-    });
-
-    let rY = tY + 22;
-    const netMT = shipment.weightNet ? (shipment.weightNet / 1000).toFixed(3) : '—';
-    const rowData = ['1', shipment.productName, order?.lines?.[0]?.quantity?.toFixed(2) || '—', order?.lines?.[0]?.unit || 'TON', netMT, shipment.bags?.toString() || '—'];
-    doc.rect(mL, rY - 2, cW, 18).fill('#f8faf8');
-    cx = mL + 4;
-    rowData.forEach((v, i) => {
-      doc.fontSize(8).font(vf).fillColor('#333').text(v, cx, rY, { width: cols[i], align: i > 1 ? 'right' : 'left' });
-      cx += cols[i];
-    });
-    rY += 20;
-    doc.moveTo(mL, rY).lineTo(mR, rY).lineWidth(0.5).strokeColor('#ddd').stroke();
-    rY += 12;
-
-    // Weights summary box
-    doc.rect(mL, rY, cW, 45).lineWidth(0.5).strokeColor('#e5e7eb').stroke();
-    doc.fontSize(9).font(lf).fillColor('#4a7c3f').text('WEIGHT SUMMARY', mL + 10, rY + 6);
-    rY += 20;
-    doc.fontSize(9).font(vf).fillColor('#333');
-    doc.text(`Tare: ${shipment.weightTare ? shipment.weightTare.toLocaleString('en-IN') + ' kg' : '—'}`, mL + 10, rY);
-    doc.text(`Gross: ${shipment.weightGross ? shipment.weightGross.toLocaleString('en-IN') + ' kg' : '—'}`, mL + 170, rY);
-    doc.font(lf).fillColor('#1a3a1a').text(`Net: ${shipment.weightNet ? shipment.weightNet.toLocaleString('en-IN') + ' kg (' + netMT + ' MT)' : '—'}`, mL + 340, rY);
-    rY += 35;
-
-    // Terms & Conditions (from template)
-    if (tmpl.terms.length > 0) {
-      doc.fontSize(8).font(lf).fillColor('#666').text('Terms & Conditions:', mL, rY);
-      rY += 12;
-      tmpl.terms.forEach((t, i) => {
-        doc.fontSize(7).font(vf).fillColor('#777').text(`${i + 1}. ${t}`, mL + 5, rY);
-        rY += 10;
-      });
-      rY += 5;
-    }
-
-    // Signatures
-    doc.fontSize(8).font(vf).fillColor('#555');
-    doc.text('________________________', mL, rY, { width: 150, align: 'center' });
-    doc.text('Authorized by MSPIL', mL, rY + 12, { width: 150, align: 'center' });
-    doc.text('________________________', pageW / 2 - 75, rY, { width: 150, align: 'center' });
-    doc.text('Transporter / Driver', pageW / 2 - 75, rY + 12, { width: 150, align: 'center' });
-    doc.text('________________________', mR - 150, rY, { width: 150, align: 'center' });
-    doc.text('Received by (Consignee)', mR - 150, rY + 12, { width: 150, align: 'center' });
-
-    // Footer — placed after signatures, not at absolute bottom (prevents page 2)
-    const fY = Math.max(rY + 30, doc.page.height - 50);
-    if (fY < doc.page.height - 10) {
-      doc.rect(mL, fY - 5, cW, 1).fill('#4a7c3f');
-      doc.fontSize(7).fillColor('#999').text(tmpl.footer, mL, fY + 2, { align: 'center', width: cW });
-    }
-
-    doc.end();
+    const pdfBuffer = await renderDocumentPdf({ docType: 'CHALLAN', data: challanData, verifyId: shipment.id });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename=Challan-${shipment.shipmentNo}.pdf`);
+    res.send(pdfBuffer);
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
@@ -930,144 +840,34 @@ router.get('/:id/gate-pass-pdf', async (req: Request, res: Response) => {
     const items = shipment.gatePassItems ? JSON.parse(shipment.gatePassItems) : [];
     const isReturnable = shipment.gatePassType === 'RETURNABLE' || shipment.gatePassType === 'JOB_WORK';
 
-    const doc = new PDFDocument({ size: 'A4', margins: { top: 40, bottom: 0, left: 40, right: 40 } });
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename=GatePass-${shipment.shipmentNo}.pdf`);
-    doc.pipe(res);
-
-    const pageW = doc.page.width;
-    const mL = 40;
-    const mR = pageW - 40;
-    const cW = mR - mL;
-    const lf = 'Helvetica-Bold';
-    const vf = 'Helvetica';
-
-    // Letterhead (HD vector)
-    const afterLH2 = drawLetterhead(doc, mL, cW);
-    doc.y = afterLH2 + 4;
-
-    // Title
-    const gpNo = shipment.gatePassNo || `GP-${shipment.shipmentNo}`;
-    doc.fontSize(13).font(lf).fillColor('#1a3a1a').text('GATE PASS CUM CHALLAN', mL, doc.y, { width: cW * 0.5 });
-    if (isReturnable) {
-      doc.fontSize(10).font(lf).fillColor('#b91c1c').text('RETURNABLE', mL + cW * 0.5, doc.y, { width: cW * 0.5, align: 'right' });
-    } else {
-      doc.fontSize(10).font(lf).fillColor('#4a7c3f').text('NON-RETURNABLE', mL + cW * 0.5, doc.y, { width: cW * 0.5, align: 'right' });
-    }
-    doc.y += 22;
-
-    // Thin divider
-    doc.moveTo(mL, doc.y).lineTo(mR, doc.y).lineWidth(0.5).strokeColor('#ddd').stroke();
-    doc.y += 8;
-
-    // Info grid
-    const col2 = pageW / 2 + 20;
-    const y0 = doc.y;
-    const info = (label: string, val: string, x: number, y: number) => {
-      doc.fontSize(8).font(lf).fillColor('#888').text(label, x, y);
-      doc.fontSize(9).font(vf).fillColor('#222').text(val || '—', x + 85, y);
+    const gatePassData = {
+      gatePassNo: shipment.gatePassNo || `GP-${shipment.shipmentNo}`,
+      shipmentNo: shipment.shipmentNo,
+      date: shipment.date,
+      vehicleNo: shipment.vehicleNo,
+      driverName: shipment.driverName,
+      driverMobile: shipment.driverMobile,
+      transporterName: shipment.transporterName,
+      ewayBill: shipment.ewayBill,
+      isReturnable,
+      partyName: shipment.partyName,
+      partyAddress: shipment.partyAddress,
+      partyGstin: shipment.partyGstin,
+      customerName: shipment.customerName,
+      destination: shipment.destination,
+      weightGross: shipment.weightGross,
+      weightTare: shipment.weightTare,
+      weightNet: shipment.weightNet,
+      totalValue: shipment.totalValue,
+      items,
+      coveringNote: shipment.coveringNote,
+      purpose: shipment.purpose,
     };
 
-    info('Gate Pass No:', gpNo, mL, y0);
-    info('Date:', new Date(shipment.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }), col2, y0);
-    info('Vehicle No:', shipment.vehicleNo || '—', mL, y0 + 16);
-    info('Driver:', shipment.driverName || '—', col2, y0 + 16);
-    info('Purpose:', shipment.purpose || '—', mL, y0 + 32);
-    info('Transporter:', shipment.transporterName || '—', col2, y0 + 32);
-    if (shipment.ewayBill) info('E-Way Bill:', shipment.ewayBill, mL, y0 + 48);
-    doc.y = y0 + (shipment.ewayBill ? 68 : 52);
-
-    // Party box
-    const cy = doc.y;
-    doc.rect(mL, cy, cW, 50).lineWidth(0.5).strokeColor('#4a7c3f').fillOpacity(0.03).fillAndStroke('#4a7c3f', '#4a7c3f');
-    doc.fillOpacity(1);
-    doc.fontSize(8).font(lf).fillColor('#4a7c3f').text('PARTY / CONSIGNEE', mL + 10, cy + 6);
-    doc.fontSize(10).font(lf).fillColor('#222').text(shipment.partyName || shipment.customerName || '—', mL + 10, cy + 20);
-    doc.font(vf).fontSize(8).fillColor('#555').text(shipment.partyAddress || shipment.destination || '—', mL + 10, cy + 33, { width: cW / 2 - 20 });
-    if (shipment.partyGstin) doc.fontSize(8).font(vf).fillColor('#555').text(`GSTIN: ${shipment.partyGstin}`, col2, cy + 20);
-    doc.y = cy + 60;
-
-    // Items table
-    const tY = doc.y;
-    const cols = [30, 220, 60, 50, 80, 75];
-    const hdrs = ['#', 'Description', 'HSN', 'Qty', 'Unit', 'Value (₹)'];
-    doc.rect(mL, tY, cW, 20).fill('#4a7c3f');
-    let cx = mL + 4;
-    hdrs.forEach((h, i) => {
-      doc.fontSize(8).font(lf).fillColor('#fff').text(h, cx, tY + 5, { width: cols[i], align: i > 2 ? 'right' : 'left' });
-      cx += cols[i];
-    });
-
-    let rY = tY + 22;
-    let totalVal = 0;
-    items.forEach((item: any, idx: number) => {
-      const bg = idx % 2 === 0 ? '#f8faf8' : '#fff';
-      doc.rect(mL, rY - 2, cW, 18).fill(bg);
-      cx = mL + 4;
-      const rowData = [
-        (idx + 1).toString(),
-        item.desc || item.description || '—',
-        item.hsnCode || '—',
-        item.qty?.toString() || '—',
-        item.unit || 'NOS',
-        item.value ? parseFloat(item.value).toLocaleString('en-IN') : '—',
-      ];
-      rowData.forEach((v, i) => {
-        doc.fontSize(8).font(vf).fillColor('#333').text(v, cx, rY, { width: cols[i], align: i > 2 ? 'right' : 'left' });
-        cx += cols[i];
-      });
-      totalVal += parseFloat(item.value) || 0;
-      rY += 18;
-    });
-
-    // Total row
-    doc.moveTo(mL, rY).lineTo(mR, rY).lineWidth(0.5).strokeColor('#ddd').stroke();
-    rY += 4;
-    doc.fontSize(9).font(lf).fillColor('#1a3a1a').text('Total Value:', mL + 4, rY, { width: 360, align: 'right' });
-    doc.text(`₹${(shipment.totalValue || totalVal).toLocaleString('en-IN')}`, mL + 370, rY, { width: 145, align: 'right' });
-    rY += 20;
-
-    // Covering note (auto-generated authority)
-    if (isReturnable) {
-      doc.rect(mL, rY, cW, 48).lineWidth(0.5).strokeColor('#e5e7eb').stroke();
-      doc.fontSize(8).font(lf).fillColor('#4a7c3f').text('AUTHORITY NOTE', mL + 10, rY + 5);
-      const noteText = shipment.coveringNote || `This material is the sole property of M/s Mahakaushal Sugar & Power Industries Ltd., Bachai, Dist. Narsinghpur (M.P.) - 487001, GST No. 23AAECM3666P1Z1. Sent for ${shipment.purpose || 'job work'}. Material will be returned back. Hence not for sale.`;
-      doc.fontSize(7.5).font(vf).fillColor('#555').text(noteText, mL + 10, rY + 18, { width: cW - 20 });
-      rY += 56;
-    }
-
-    // Weight summary (if available)
-    if (shipment.weightTare || shipment.weightGross) {
-      doc.rect(mL, rY, cW, 35).lineWidth(0.5).strokeColor('#e5e7eb').stroke();
-      doc.fontSize(9).font(lf).fillColor('#4a7c3f').text('WEIGHT', mL + 10, rY + 6);
-      rY += 18;
-      doc.fontSize(9).font(vf).fillColor('#333');
-      doc.text(`Tare: ${shipment.weightTare ? (shipment.weightTare / 1000).toFixed(2) + ' MT' : '—'}`, mL + 10, rY);
-      doc.text(`Gross: ${shipment.weightGross ? (shipment.weightGross / 1000).toFixed(2) + ' MT' : '—'}`, mL + 170, rY);
-      doc.font(lf).text(`Net: ${shipment.weightNet ? (shipment.weightNet / 1000).toFixed(2) + ' MT' : '—'}`, mL + 340, rY);
-      rY += 25;
-    }
-
-    // Signatures
-    rY = Math.max(rY + 10, doc.page.height - 120);
-    doc.fontSize(8).font(vf).fillColor('#555');
-    doc.text('________________________', mL, rY, { width: 120, align: 'center' });
-    doc.text('Store Clerk', mL, rY + 12, { width: 120, align: 'center' });
-    doc.text('________________________', mL + 140, rY, { width: 120, align: 'center' });
-    doc.text('Store Incharge', mL + 140, rY + 12, { width: 120, align: 'center' });
-    doc.text('________________________', mL + 280, rY, { width: 120, align: 'center' });
-    doc.text('Received By', mL + 280, rY + 12, { width: 120, align: 'center' });
-    doc.text('________________________', mR - 120, rY, { width: 120, align: 'center' });
-    doc.text('Authorized Signatory', mR - 120, rY + 12, { width: 120, align: 'center' });
-
-    // Footer — after signatures, prevents page 2
-    const fY2 = Math.max(rY + 30, doc.page.height - 50);
-    if (fY2 < doc.page.height - 10) {
-      doc.rect(mL, fY2 - 5, cW, 1).fill('#4a7c3f');
-      doc.fontSize(7).fillColor('#999').text('Mahakaushal Sugar and Power Industries Ltd. | Village Bachai, Narsinghpur, M.P. - 487001', mL, fY2 + 2, { align: 'center', width: cW });
-    }
-
-    doc.end();
+    const pdfBuffer = await renderDocumentPdf({ docType: 'GATE_PASS', data: gatePassData, verifyId: shipment.id });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename=GatePass-${shipment.shipmentNo}.pdf`);
+    res.send(pdfBuffer);
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
