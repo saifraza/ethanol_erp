@@ -26,7 +26,7 @@ export async function renderPdf(html: string, options?: {
   const b = await getBrowser();
   const page = await b.newPage();
   try {
-    await page.setContent(html, { waitUntil: 'networkidle0', timeout: 15000 });
+    await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 30000 });
     const pdfBuffer = await page.pdf({
       format: options?.format || 'A4',
       landscape: options?.landscape || false,
