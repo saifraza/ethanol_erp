@@ -1,9 +1,32 @@
 import puppeteer, { Browser } from 'puppeteer';
+import * as fs from 'fs';
 
 let browser: Browser | null = null;
 
+function findChromium(): string | undefined {
+  // Try common Chromium paths
+  const paths = [
+    process.env.PUPPETEER_EXECUTABLE_PATH,
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/nix/var/nix/profiles/default/bin/chromium',
+  ].filter(Boolean) as string[];
+
+  for (const p of paths) {
+    if (fs.existsSync(p)) return p;
+  }
+  // Let Puppeteer use its bundled Chromium (if downloaded during npm install)
+  return undefined;
+}
+
 async function getBrowser(): Promise<Browser> {
   if (browser && browser.connected) return browser;
+
+  const executablePath = findChromium();
+  console.log(`[PDF] Launching browser${executablePath ? ` at ${executablePath}` : ' (bundled Chromium)'}`);
+
   const launchOptions: Parameters<typeof puppeteer.launch>[0] = {
     headless: true,
     args: [
@@ -15,10 +38,11 @@ async function getBrowser(): Promise<Browser> {
       '--single-process',
     ],
   };
-  // Use system Chromium on Railway (set via PUPPETEER_EXECUTABLE_PATH env var)
-  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-    launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+
+  if (executablePath) {
+    launchOptions.executablePath = executablePath;
   }
+
   browser = await puppeteer.launch(launchOptions);
   browser.on('disconnected', () => { browser = null; });
   return browser;
@@ -53,6 +77,5 @@ export async function closeBrowser(): Promise<void> {
   }
 }
 
-// Graceful shutdown
 process.on('SIGINT', closeBrowser);
 process.on('SIGTERM', closeBrowser);
