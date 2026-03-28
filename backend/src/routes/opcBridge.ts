@@ -33,6 +33,11 @@ function checkPushKey(req: AuthRequest, res: Response): boolean {
 }
 
 // ==========================================================================
+// ALARM TOGGLE — in-memory flag to enable/disable WhatsApp alarm notifications
+// ==========================================================================
+let alarmsEnabled = true;
+
+// ==========================================================================
 // ALARM CHECKING — compare readings against HH/LL limits, WhatsApp alert
 // ==========================================================================
 
@@ -150,8 +155,10 @@ router.post('/push', validate(pushReadingsSchema), asyncHandler(async (req: Auth
     data: { syncType: 'readings', tagCount: tags?.length || 0, readingCount: readings.length },
   });
 
-  // Check alarms — compare readings against HH/LL limits
-  checkAlarms(opc, readings).catch(err => console.error('[OPC] Alarm check failed:', err));
+  // Check alarms — compare readings against HH/LL limits (skip if disabled)
+  if (alarmsEnabled) {
+    checkAlarms(opc, readings).catch(err => console.error('[OPC] Alarm check failed:', err));
+  }
 
   res.json({ ok: true, received: readings.length });
 }));
@@ -545,6 +552,20 @@ router.get('/stats', asyncHandler(async (_req: AuthRequest, res: Response) => {
     opc.opcSyncLog.count(),
   ]);
   res.json({ monitoredTags: tags, rawReadings: readings, hourlyReadings: hourly, totalSyncs: syncs });
+}));
+
+// ==========================================================================
+// ALARM TOGGLE ENDPOINTS
+// ==========================================================================
+
+router.get('/alarms/status', asyncHandler(async (_req: AuthRequest, res: Response) => {
+  res.json({ enabled: alarmsEnabled });
+}));
+
+router.post('/alarms/toggle', asyncHandler(async (_req: AuthRequest, res: Response) => {
+  alarmsEnabled = !alarmsEnabled;
+  console.log(`[OPC] Alarms ${alarmsEnabled ? 'ENABLED' : 'DISABLED'} via UI`);
+  res.json({ enabled: alarmsEnabled });
 }));
 
 export default router;
