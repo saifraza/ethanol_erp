@@ -2283,3 +2283,21 @@ model LoanRepayment {
   @@index([dueDate])
   @@index([status])
 }
+
+// ══════════════════════════════════════════════════════════════
+// AUTO-COLLECT SCHEDULE — WhatsApp bot schedules per module
+// ══════════════════════════════════════════════════════════════
+
+model AutoCollectSchedule {
+  id              String   @id @default(uuid())
+  module          String   @unique  // 'ddgs', 'decanter', etc.
+  phone           String   @default("")
+  intervalMinutes Int      @default(60)
+  enabled         Boolean  @default(false)
+  autoShare       Boolean  @default(true)
+  language        String   @default("hi")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([module])
+}

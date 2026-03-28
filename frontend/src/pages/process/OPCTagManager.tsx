@@ -149,6 +149,7 @@ export default function OPCTagManager() {
   const [stats, setStats] = useState<Record<string, number> | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [bridgeHealth, setBridgeHealth] = useState<{ reachable: boolean; pendingSyncs?: number; uptimeSeconds?: number; monitoredTags?: number; lastScan?: string } | null>(null);
 
   // Browse state
   const [browseArea, setBrowseArea] = useState('');
@@ -179,6 +180,8 @@ export default function OPCTagManager() {
       const e = err as { response?: { data?: { error?: string } } };
       setError(e?.response?.data?.error || 'OPC service unavailable');
     }
+    // Also check bridge health (non-blocking)
+    api.get('/opc/bridge-health').then(r => setBridgeHealth(r.data)).catch(() => setBridgeHealth(null));
   }, []);
 
   useEffect(() => { checkHealth(); }, [checkHealth]);
@@ -409,6 +412,22 @@ export default function OPCTagManager() {
           </div>
         )}
 
+        {/* Bridge Status */}
+        {bridgeHealth && (
+          <div className={`px-4 py-1.5 -mx-3 md:-mx-6 border-x border-b border-slate-300 flex items-center gap-4 text-[10px] ${bridgeHealth.reachable ? 'bg-emerald-50' : 'bg-red-50'}`}>
+            <span className={`font-bold uppercase tracking-widest ${bridgeHealth.reachable ? 'text-emerald-700' : 'text-red-700'}`}>
+              Bridge: {bridgeHealth.reachable ? 'REACHABLE' : 'UNREACHABLE'}
+            </span>
+            {bridgeHealth.reachable && (
+              <>
+                <span className="text-slate-500">Pending Syncs: <span className={`font-mono font-bold ${(bridgeHealth.pendingSyncs || 0) > 10 ? 'text-red-600' : 'text-slate-700'}`}>{bridgeHealth.pendingSyncs || 0}</span></span>
+                <span className="text-slate-500">Uptime: <span className="font-mono text-slate-700">{bridgeHealth.uptimeSeconds ? `${Math.floor(bridgeHealth.uptimeSeconds / 3600)}h ${Math.floor((bridgeHealth.uptimeSeconds % 3600) / 60)}m` : '--'}</span></span>
+                <span className="text-slate-500">OPC Tags: <span className="font-mono text-slate-700">{bridgeHealth.monitoredTags || '--'}</span></span>
+              </>
+            )}
+          </div>
+        )}
+
         {/* Tabs — no more "Monitored Tags" */}
         <div className="flex gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6 bg-white">
           {(['live', 'browse', 'stats'] as Tab[]).map(t => (
@@ -585,12 +604,13 @@ export default function OPCTagManager() {
                                           <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                                           <XAxis dataKey="time" tick={{ fontSize: 9 }} tickLine={false} />
                                           <YAxis tick={{ fontSize: 9 }} tickLine={false} domain={(() => {
-                                            if (yZoom === 0 || !historyData.length) return ['auto', 'auto'] as const;
-                                            const allMin = Math.min(...historyData.map(d => d.min));
+                                            if (!historyData.length) return [0, 'auto'] as const;
                                             const allMax = Math.max(...historyData.map(d => d.max));
+                                            if (yZoom === 0) return [0, Math.ceil(allMax * 1.1)] as const; // start from 0, 10% headroom
+                                            const allMin = Math.min(...historyData.map(d => d.min));
                                             const mid = (allMin + allMax) / 2;
                                             const range = allMax - allMin || 1;
-                                            const factor = Math.pow(0.6, yZoom); // each level zooms 40% tighter
+                                            const factor = Math.pow(0.6, yZoom);
                                             return [mid - range * factor, mid + range * factor];
                                           })()} />
                                           <Tooltip
