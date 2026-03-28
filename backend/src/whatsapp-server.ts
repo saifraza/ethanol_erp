@@ -28,7 +28,7 @@ import {
   getQRCode,
   initWhatsApp,
 } from './services/whatsappBaileys';
-import { initAutoCollect } from './services/whatsappAutoCollect';
+import { initAutoCollect, startCollection, getActiveSessions, clearSession, clearAllSessions, getSchedules, loadSchedules } from './services/whatsappAutoCollect';
 
 // Prevent crashes
 process.on('uncaughtException', (err) => {
@@ -146,6 +146,40 @@ app.post('/wa/send-report', authMiddleware, async (req, res) => {
   }
 
   res.json({ ok: true, results });
+});
+
+// ── Auto-collect: trigger, sessions, schedules (must run on worker where replies arrive) ──
+app.post('/wa/auto-collect/trigger', authMiddleware, async (req, res) => {
+  const { phone, module, autoShare } = req.body;
+  if (!phone || !module) {
+    res.status(400).json({ error: 'phone and module required' });
+    return;
+  }
+  const result = await startCollection(phone, module, autoShare !== false);
+  res.json(result);
+});
+
+app.get('/wa/auto-collect/sessions', authMiddleware, (_req, res) => {
+  res.json(getActiveSessions());
+});
+
+app.delete('/wa/auto-collect/sessions/:phone', authMiddleware, (req, res) => {
+  const cleared = clearSession(req.params.phone);
+  res.json({ success: cleared });
+});
+
+app.post('/wa/auto-collect/sessions/clear-all', authMiddleware, (_req, res) => {
+  clearAllSessions();
+  res.json({ success: true });
+});
+
+app.get('/wa/auto-collect/schedules', authMiddleware, (_req, res) => {
+  res.json(getSchedules());
+});
+
+app.post('/wa/auto-collect/reload-schedules', authMiddleware, async (_req, res) => {
+  await loadSchedules();
+  res.json({ success: true, schedules: getSchedules() });
 });
 
 // ── Start ──
