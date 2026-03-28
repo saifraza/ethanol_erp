@@ -234,67 +234,82 @@ async function handleIncoming(rawPhone: string, text: string, _name: string | nu
 
 // ── Scheduler ──
 
-interface AutoCollectSchedule {
+interface AutoCollectScheduleData {
   module: string;
   phone: string;
   intervalMinutes: number;
   enabled: boolean;
   autoShare?: boolean;
+  language?: string;
 }
 
-let schedules: AutoCollectSchedule[] = [];
+let schedules: AutoCollectScheduleData[] = [];
 
 export async function loadSchedules(): Promise<void> {
   try {
-    const settings = await prisma.settings.findFirst();
-    const raw = (settings as any)?.autoCollectConfig;
-    if (raw) {
-      schedules = JSON.parse(raw);
-      console.log('[AutoCollect] Loaded', schedules.length, 'schedule(s):', JSON.stringify(schedules));
-      // Sync per-module config
-      const ddgs = schedules.find(s => s.module === 'ddgs');
-      if (ddgs) setDdgsLanguage((ddgs as any).language || 'hi');
-    } else {
-      console.log('[AutoCollect] No autoCollectConfig in DB, starting with empty schedules');
-    }
+    // Load from dedicated AutoCollectSchedule table
+    const rows = await prisma.autoCollectSchedule.findMany({ take: 50 });
+    schedules = rows.map(r => ({
+      module: r.module,
+      phone: r.phone,
+      intervalMinutes: r.intervalMinutes,
+      enabled: r.enabled,
+      autoShare: r.autoShare,
+      language: r.language,
+    }));
+    console.log('[AutoCollect] Loaded', schedules.length, 'schedule(s) from DB:', JSON.stringify(schedules));
+    const ddgs = schedules.find(s => s.module === 'ddgs');
+    if (ddgs) setDdgsLanguage(ddgs.language || 'hi');
   } catch (err) {
-    console.error('[AutoCollect] Failed to load schedules:', err);
+    // Fallback: try legacy Settings.autoCollectConfig for migration
+    console.warn('[AutoCollect] AutoCollectSchedule table not ready, trying legacy Settings:', (err as Error).message);
+    try {
+      const settings = await prisma.settings.findFirst();
+      const raw = (settings as any)?.autoCollectConfig;
+      if (raw) {
+        schedules = JSON.parse(raw);
+        console.log('[AutoCollect] Loaded', schedules.length, 'schedule(s) from legacy Settings');
+        const ddgs = schedules.find(s => s.module === 'ddgs');
+        if (ddgs) setDdgsLanguage((ddgs as any).language || 'hi');
+      }
+    } catch { /* ignore */ }
   }
 }
 
-export async function saveSchedules(newSchedules: AutoCollectSchedule[]): Promise<void> {
-  // Sync per-module config
+export async function saveSchedules(newSchedules: AutoCollectScheduleData[]): Promise<void> {
   const ddgs = newSchedules.find(s => s.module === 'ddgs');
-  if (ddgs) setDdgsLanguage((ddgs as any).language || 'hi');
+  if (ddgs) setDdgsLanguage(ddgs.language || 'hi');
 
-  const configJson = JSON.stringify(newSchedules);
-  console.log('[AutoCollect] Saving schedules to DB:', configJson);
+  console.log('[AutoCollect] Saving schedules:', JSON.stringify(newSchedules));
 
-  // Persist to DB FIRST — only update in-memory if DB write succeeds
-  const settings = await prisma.settings.findFirst();
-  if (!settings) {
-    throw new Error('No settings row found — cannot persist schedules');
+  // Write each schedule to its own row via upsert
+  for (const s of newSchedules) {
+    await prisma.autoCollectSchedule.upsert({
+      where: { module: s.module },
+      create: {
+        module: s.module,
+        phone: s.phone || '',
+        intervalMinutes: s.intervalMinutes || 60,
+        enabled: s.enabled ?? false,
+        autoShare: s.autoShare !== false,
+        language: s.language || 'hi',
+      },
+      update: {
+        phone: s.phone || '',
+        intervalMinutes: s.intervalMinutes || 60,
+        enabled: s.enabled ?? false,
+        autoShare: s.autoShare !== false,
+        language: s.language || 'hi',
+      },
+    });
   }
 
-  await prisma.$executeRawUnsafe(
-    `UPDATE "Settings" SET "autoCollectConfig" = $1, "updatedAt" = NOW() WHERE "id" = $2`,
-    configJson,
-    settings.id
-  );
-
-  // Verify the write
-  const verify = await prisma.settings.findFirst({ select: { autoCollectConfig: true } });
-  const saved = (verify as any)?.autoCollectConfig;
-  if (!saved) {
-    throw new Error('autoCollectConfig is empty after save — DB write may have failed');
-  }
-
-  // Only update in-memory after confirmed DB write
+  // Update in-memory
   schedules = newSchedules;
-  console.log('[AutoCollect] Schedules persisted to DB and verified');
+  console.log('[AutoCollect] Schedules saved to AutoCollectSchedule table');
 }
 
-export function getSchedules(): AutoCollectSchedule[] {
+export function getSchedules(): AutoCollectScheduleData[] {
   return schedules;
 }
 

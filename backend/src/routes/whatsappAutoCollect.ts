@@ -5,6 +5,7 @@ import {
   startCollection,
   getSchedules,
   saveSchedules,
+  loadSchedules,
   getActiveSessions,
   getAvailableModules,
   clearSession,
@@ -47,7 +48,7 @@ router.post(
   })
 );
 
-// PUT /api/auto-collect/schedules/:module — save a single module's schedule (safe, no race condition)
+// PUT /api/auto-collect/schedules/:module — save a single module's schedule directly to DB
 router.put(
   '/schedules/:module',
   authenticate,
@@ -60,18 +61,28 @@ router.put(
       return;
     }
 
-    // Read current schedules from DB (not memory — avoids race conditions)
-    const settings = await prisma.settings.findFirst({ select: { id: true, autoCollectConfig: true } });
-    const current = settings?.autoCollectConfig
-      ? JSON.parse(settings.autoCollectConfig as string) as Array<{ module: string; phone: string; intervalMinutes: number; enabled: boolean; autoShare?: boolean; [key: string]: unknown }>
-      : [];
+    // Upsert directly to the AutoCollectSchedule table
+    await prisma.autoCollectSchedule.upsert({
+      where: { module: moduleName },
+      create: {
+        module: moduleName,
+        phone: phone || '',
+        intervalMinutes: intervalMinutes || 60,
+        enabled: enabled ?? false,
+        autoShare: autoShare !== false,
+        language: language || 'hi',
+      },
+      update: {
+        phone: phone || '',
+        intervalMinutes: intervalMinutes || 60,
+        enabled: enabled ?? false,
+        autoShare: autoShare !== false,
+        language: language || 'hi',
+      },
+    });
 
-    // Replace this module's entry, keep all others
-    const others = current.filter(s => s.module !== moduleName);
-    const newEntry = { module: moduleName, phone: phone || '', intervalMinutes: intervalMinutes || 60, enabled: enabled ?? false, autoShare: autoShare !== false, ...(language ? { language } : {}) };
-    const updated = [...others, newEntry];
-
-    await saveSchedules(updated);
+    // Reload all schedules from DB into memory
+    await loadSchedules();
     res.json({ success: true, schedules: getSchedules() });
   })
 );
