@@ -89,14 +89,9 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'cash-vouchers', label: 'Cash Vouchers', to: '/accounts/cash-vouchers', icon: Receipt, group: 'accounts' },
   { key: 'bank-loans', label: 'Bank Loans', to: '/accounts/bank-loans', icon: Landmark, group: 'accounts' },
 
-  // ── INVENTORY (SAP-style Store Management) ──
+  // ── INVENTORY ──
   { key: 'inventory-store', label: 'Inventory & Store', to: '/inventory', icon: Warehouse, group: 'inventory' },
   { key: 'warehouses', label: 'Warehouses', to: '/inventory/warehouses', icon: Warehouse, group: 'inventory' },
-  { key: 'stock-movements', label: 'Goods Movement', to: '/inventory/movements', icon: ArrowRightLeft, group: 'inventory' },
-  { key: 'stock-ledger', label: 'Stock Ledger', to: '/inventory/ledger', icon: BookOpen, group: 'inventory' },
-  { key: 'stock-counts', label: 'Stock Count', to: '/inventory/counts', icon: ClipboardCheck, group: 'inventory' },
-  { key: 'stock-valuation', label: 'Valuation', to: '/inventory/valuation', icon: IndianRupee, group: 'inventory' },
-  { key: 'abc-analysis', label: 'ABC Analysis', to: '/inventory/abc', icon: BarChart2, group: 'inventory' },
 
   // ── ADMIN ──
   { key: 'plant-issues', label: 'Maintenance', to: '/plant-issues', icon: AlertCircle, group: 'admin' },
