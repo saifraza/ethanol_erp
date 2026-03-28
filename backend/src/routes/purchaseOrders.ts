@@ -409,11 +409,17 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
       approvedBy: (po as any).approvedByName || '',
     };
 
-    const pdfBuffer = await renderDocumentPdf({
-      docType: 'PURCHASE_ORDER',
-      data: poData,
-      verifyId: po.id,
-    });
+    let pdfBuffer: Buffer;
+    try {
+      pdfBuffer = await renderDocumentPdf({
+        docType: 'PURCHASE_ORDER',
+        data: poData,
+        verifyId: po.id,
+      });
+    } catch (renderErr) {
+      console.error('[PO PDF] Puppeteer render failed, falling back to PDFKit:', (renderErr as Error).message);
+      pdfBuffer = await generatePOPdf(poData);
+    }
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="PO-${po.poNo}.pdf"`);
