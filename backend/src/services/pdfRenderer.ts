@@ -4,20 +4,17 @@ import * as fs from 'fs';
 let browser: Browser | null = null;
 
 function findChromium(): string | undefined {
-  // Try common Chromium paths
-  const paths = [
-    process.env.PUPPETEER_EXECUTABLE_PATH,
-    '/usr/bin/chromium',
-    '/usr/bin/chromium-browser',
-    '/usr/bin/google-chrome',
-    '/usr/bin/google-chrome-stable',
-    '/nix/var/nix/profiles/default/bin/chromium',
-  ].filter(Boolean) as string[];
-
-  for (const p of paths) {
-    if (fs.existsSync(p)) return p;
+  // If explicitly set and actually works, use it
+  const envPath = process.env.PUPPETEER_EXECUTABLE_PATH;
+  if (envPath && fs.existsSync(envPath)) {
+    // Skip snap stubs that just print "install chromium snap"
+    try {
+      const stat = fs.statSync(envPath);
+      if (stat.size > 1000) return envPath; // real binary, not a stub
+    } catch { /* skip */ }
   }
-  // Let Puppeteer use its bundled Chromium (if downloaded during npm install)
+
+  // Otherwise let Puppeteer use its bundled Chromium
   return undefined;
 }
 
