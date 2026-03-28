@@ -88,6 +88,7 @@ router.put(
 );
 
 // POST /api/auto-collect/trigger — manually trigger a collection now
+// If WA_WORKER_URL is set, proxy to the worker so the session lives where replies arrive
 router.post(
   '/trigger',
   authenticate,
@@ -97,8 +98,26 @@ router.post(
       res.status(400).json({ error: 'phone and module are required' });
       return;
     }
-    const result = await startCollection(phone, module, autoShare !== false);
-    res.json(result);
+
+    const workerUrl = process.env.WA_WORKER_URL;
+    if (workerUrl) {
+      // Proxy to worker — session must live on the worker where replies arrive
+      try {
+        const axios = (await import('axios')).default;
+        const apiKey = process.env.WA_WORKER_API_KEY || 'mspil-wa-internal';
+        const resp = await axios.post(`${workerUrl}/wa/auto-collect/trigger`, { phone, module, autoShare }, {
+          headers: { 'x-api-key': apiKey },
+          timeout: 15000,
+        });
+        res.json(resp.data);
+      } catch (err: unknown) {
+        const axErr = err as { response?: { data?: { error?: string } }; message?: string };
+        res.status(502).json({ success: false, error: axErr.response?.data?.error || axErr.message || 'Worker unreachable' });
+      }
+    } else {
+      const result = await startCollection(phone, module, autoShare !== false);
+      res.json(result);
+    }
   })
 );
 
@@ -119,12 +138,24 @@ router.get(
   })
 );
 
-// GET /api/auto-collect/sessions — active collection sessions
+// GET /api/auto-collect/sessions — active collection sessions (proxy to worker if external)
 router.get(
   '/sessions',
   authenticate,
   asyncHandler(async (_req: AuthRequest, res: Response) => {
-    res.json(getActiveSessions());
+    const workerUrl = process.env.WA_WORKER_URL;
+    if (workerUrl) {
+      try {
+        const axios = (await import('axios')).default;
+        const apiKey = process.env.WA_WORKER_API_KEY || 'mspil-wa-internal';
+        const resp = await axios.get(`${workerUrl}/wa/auto-collect/sessions`, { headers: { 'x-api-key': apiKey }, timeout: 10000 });
+        res.json(resp.data);
+      } catch {
+        res.json(getActiveSessions()); // fallback to local
+      }
+    } else {
+      res.json(getActiveSessions());
+    }
   })
 );
 
