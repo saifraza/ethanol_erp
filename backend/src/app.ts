@@ -189,9 +189,6 @@ app.use('/api/accounts-reports', accountsReportsRoutes);
 // Cash Vouchers & Bank Loans
 app.use('/api/cash-vouchers', cashVoucherRoutes);
 app.use('/api/bank-loans', bankLoanRoutes);
-// Orphaned routes (previously unregistered)
-app.use('/api/daily-entries', dailyEntryRoutes);
-app.use('/api/tank-dips', tankDipRoutes);
 // Logistics (Gate Entry)
 app.use('/api/gate-entry', gateEntryRoutes);
 // OPC Bridge (factory automation — proxies to on-premise Windows service)
