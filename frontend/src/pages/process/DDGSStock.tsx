@@ -168,8 +168,13 @@ export default function DDGSStock() {
   }
 
   async function loadStockHistory() {
-    const res = await api.get('/ddgs-stock');
-    setStockEntries(res.data.entries || []);
+    try {
+      const res = await api.get('/ddgs-stock');
+      setStockEntries(res.data.entries || []);
+    } catch (err) {
+      console.error('Failed to load stock history:', err);
+      setStockEntries([]);
+    }
   }
 
   // Save daily stock summary
@@ -546,15 +551,18 @@ export default function DDGSStock() {
           <div className="card !p-0 overflow-hidden">
             <div className="md:hidden divide-y">
               {stockEntries.map((e: any) => (
-                <div key={e.id} className="px-3 py-2">
+                <div key={e.id} className={`px-3 py-2 ${e.synthetic ? 'bg-amber-50/50' : ''}`}>
                   <div className="flex items-center justify-between mb-1">
-                    <span className="font-medium text-xs">{new Date(e.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</span>
-                    <span className="font-bold text-sm">{e.closingStock?.toFixed(1)} T</span>
+                    <span className="font-medium text-xs">
+                      {new Date(e.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                      {e.synthetic && <span className="ml-1 text-[9px] text-amber-500 font-normal">(production only)</span>}
+                    </span>
+                    <span className="font-bold text-sm">{e.synthetic ? `${e.bags} bags` : `${e.closingStock?.toFixed(1)} T`}</span>
                   </div>
                   <div className="flex items-center gap-3 text-[10px] text-gray-500">
-                    <span>Open: {e.openingStock?.toFixed(1)}</span>
-                    <span className="text-green-700">+{e.productionToday?.toFixed(2)}</span>
-                    <span className="text-red-600">-{e.dispatchToday?.toFixed(2)}</span>
+                    {!e.synthetic && <span>Open: {e.openingStock?.toFixed(1)}</span>}
+                    <span className="text-green-700">+{e.productionToday?.toFixed(2)} T</span>
+                    {!e.synthetic && <span className="text-red-600">-{e.dispatchToday?.toFixed(2)}</span>}
                     <span>{e.bags} bags</span>
                   </div>
                 </div>
@@ -574,12 +582,15 @@ export default function DDGSStock() {
               </thead>
               <tbody>
                 {stockEntries.map((e: any) => (
-                  <tr key={e.id} className="border-t hover:bg-gray-50">
-                    <td className="px-4 py-2 font-medium">{new Date(e.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</td>
-                    <td className="text-center px-2 py-2">{e.openingStock?.toFixed(1)}</td>
+                  <tr key={e.id} className={`border-t hover:bg-gray-50 ${e.synthetic ? 'bg-amber-50/30' : ''}`}>
+                    <td className="px-4 py-2 font-medium">
+                      {new Date(e.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                      {e.synthetic && <span className="ml-1 text-[9px] text-amber-500">(auto)</span>}
+                    </td>
+                    <td className="text-center px-2 py-2">{e.synthetic ? '--' : e.openingStock?.toFixed(1)}</td>
                     <td className="text-center px-2 py-2 text-green-700">{e.productionToday?.toFixed(2)}</td>
-                    <td className="text-center px-2 py-2 text-red-600">{e.dispatchToday?.toFixed(2)}</td>
-                    <td className="text-center px-2 py-2 font-bold">{e.closingStock?.toFixed(1)}</td>
+                    <td className="text-center px-2 py-2 text-red-600">{e.synthetic ? '--' : e.dispatchToday?.toFixed(2)}</td>
+                    <td className="text-center px-2 py-2 font-bold">{e.synthetic ? '--' : e.closingStock?.toFixed(1)}</td>
                     <td className="text-center px-2 py-2">{e.bags}</td>
                   </tr>
                 ))}

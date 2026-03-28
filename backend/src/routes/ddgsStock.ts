@@ -49,13 +49,54 @@ router.get('/latest', async (req: Request, res: Response) => {
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-// GET / — history
+// GET / — history (stock entries + auto-generated from production data)
 router.get('/', async (_req: Request, res: Response) => {
   try {
+    // Saved stock entries
     const entries = await prisma.dDGSStockEntry.findMany({
-      orderBy: { date: 'desc' }, take: 100
+      orderBy: { date: 'desc' }, take: 100,
     });
-    res.json({ entries });
+    const entryDates = new Set(entries.map(e => e.date.toISOString().slice(0, 10)));
+
+    // Also get production data grouped by shiftDate for days without a stock entry
+    const prodEntries = await prisma.dDGSProductionEntry.findMany({
+      orderBy: { shiftDate: 'desc' },
+      take: 500,
+      select: { shiftDate: true, bags: true, totalProduction: true },
+    });
+
+    // Group production by shiftDate
+    const prodByDate = new Map<string, { bags: number; production: number }>();
+    for (const p of prodEntries) {
+      const dateKey = p.shiftDate.slice(0, 10);
+      if (entryDates.has(dateKey)) continue; // skip if we already have a stock entry
+      const existing = prodByDate.get(dateKey) || { bags: 0, production: 0 };
+      existing.bags += p.bags || 0;
+      existing.production += p.totalProduction || 0;
+      prodByDate.set(dateKey, existing);
+    }
+
+    // Create synthetic stock entries for production-only days
+    const synthetic = Array.from(prodByDate.entries()).map(([dateStr, data]) => ({
+      id: `prod-${dateStr}`,
+      date: new Date(dateStr),
+      yearStart: new Date(dateStr).getFullYear(),
+      openingStock: 0,
+      productionToday: Math.round(data.production * 1000) / 1000,
+      dispatchToday: 0,
+      closingStock: 0,
+      bags: data.bags,
+      weightPerBag: 50,
+      remarks: 'Auto-generated from production entries',
+      synthetic: true,
+    }));
+
+    // Merge and sort
+    const all = [...entries.map(e => ({ ...e, synthetic: false })), ...synthetic]
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, 100);
+
+    res.json({ entries: all });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
