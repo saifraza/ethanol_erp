@@ -4,7 +4,7 @@
     {
       "name": "dev",
       "runtimeExecutable": "bash",
-      "runtimeArgs": ["-c", "cd backend && npx tsc --outDir dist && cp -r src/templates dist/ && cp -r src/data dist/ && PORT=5001 node dist/server.js"],
+      "runtimeArgs": ["-c", "cd backend && npx tsx src/server.ts"],
       "port": 5001
     }
   ]

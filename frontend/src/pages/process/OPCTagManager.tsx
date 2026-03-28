@@ -152,6 +152,8 @@ export default function OPCTagManager() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [bridgeHealth, setBridgeHealth] = useState<{ reachable: boolean; pendingSyncs?: number; uptimeSeconds?: number; monitoredTags?: number; lastScan?: string } | null>(null);
+  const [alarmsEnabled, setAlarmsEnabled] = useState<boolean | null>(null);
+  const [alarmToggling, setAlarmToggling] = useState(false);
 
   // Browse state
   const [browseArea, setBrowseArea] = useState('');
@@ -183,6 +185,22 @@ export default function OPCTagManager() {
       setError(e?.response?.data?.error || 'OPC service unavailable');
     }
     // Bridge health check disabled — Railway can't reach factory Tailscale IP
+    // Fetch alarm status (non-blocking)
+    api.get('/opc/alarms/status').then(r => setAlarmsEnabled(r.data.enabled)).catch(() => {});
+  }, []);
+
+  const toggleAlarms = useCallback(async () => {
+    setAlarmToggling(true);
+    try {
+      const res = await api.post('/opc/alarms/toggle');
+      setAlarmsEnabled(res.data.enabled);
+      setSuccess(`Alarms ${res.data.enabled ? 'enabled' : 'disabled'}`);
+      setTimeout(() => setSuccess(''), 3000);
+    } catch {
+      setError('Failed to toggle alarms');
+    } finally {
+      setAlarmToggling(false);
+    }
   }, []);
 
   useEffect(() => { checkHealth(); }, [checkHealth]);
@@ -374,6 +392,12 @@ export default function OPCTagManager() {
             <span className="text-[10px] text-slate-300">
               {health === null ? 'LOADING...' : online ? `ONLINE (${fmtAgo(health.lastScan)})` : `OFFLINE (last: ${fmtAgo(health.lastScan)})`}
             </span>
+            {alarmsEnabled !== null && (
+              <button onClick={toggleAlarms} disabled={alarmToggling}
+                className={`px-2 py-0.5 text-[10px] font-bold ${alarmsEnabled ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-red-600 text-white hover:bg-red-700'}`}>
+                {alarmToggling ? '...' : alarmsEnabled ? 'ALARMS ON' : 'ALARMS OFF'}
+              </button>
+            )}
             <button onClick={() => { checkHealth(); if (tab === 'live') fetchLive(); }} className="px-2 py-0.5 bg-slate-700 text-[10px] text-slate-300 hover:bg-slate-600">REFRESH</button>
           </div>
         </div>
