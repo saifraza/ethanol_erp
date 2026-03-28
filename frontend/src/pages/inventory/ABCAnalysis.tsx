@@ -92,10 +92,10 @@ export default function ABCAnalysis() {
   const totalValue = summaryA.value + summaryB.value + summaryC.value;
 
   const formatCurrency = (n: number) =>
-    n.toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
+    (n || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
 
   const formatNum = (n: number) =>
-    n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+    (n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
   if (loading) {
     return (
