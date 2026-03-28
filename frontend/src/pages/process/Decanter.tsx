@@ -418,6 +418,16 @@ export default function Decanter() {
                 <label className="text-[10px] text-gray-500 uppercase mb-1 block">Operator Numbers</label>
                 <input type="text" value={acPhones} onChange={e => { setAcPhones(e.target.value); setAcDirty(true); }}
                   placeholder="e.g. 9876543210, 9123456789" className="border rounded px-2 py-1.5 w-full text-sm" />
+                {acPhones ? (
+                  <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                    <span className="text-[9px] text-gray-400">Saved:</span>
+                    {acPhones.split(',').map(p => p.trim()).filter(Boolean).map((p, i) => (
+                      <span key={i} className="text-[10px] bg-green-100 text-green-800 px-2 py-0.5 rounded-full font-medium">{p}</span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[9px] text-orange-500 mt-1">No numbers saved. Add operator phone numbers above.</p>
+                )}
                 <p className="text-[9px] text-gray-400 mt-1">Comma-separated. Bot sends to all numbers at each interval.</p>
               </div>
 
