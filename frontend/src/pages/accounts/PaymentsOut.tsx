@@ -253,8 +253,8 @@ export default function PaymentsOut() {
   const openInvoiceModal = (item: PendingPayable) => {
     setInvoiceForm({
       vendorInvNo: '', vendorInvDate: todayStr(),
-      quantity: '1', rate: String(item.poAmount || ''),
-      gstPercent: '18', supplyType: 'INTRA_STATE',
+      quantity: '', rate: '',
+      gstPercent: '', supplyType: 'INTRA_STATE',
     });
     setInvoiceFilePath('');
     setExtracted(null);
