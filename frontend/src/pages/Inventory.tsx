@@ -23,7 +23,8 @@ const CAT_COLORS: Record<string, string> = {
 interface Item {
   id: string; name: string; code: string; category: string; unit: string;
   currentStock: number; minStock: number; maxStock: number | null;
-  costPerUnit: number; location: string | null; supplier: string | null;
+  costPerUnit: number; gstPercent: number; hsnCode: string | null;
+  location: string | null; supplier: string | null;
   leadTimeDays: number | null; isActive: boolean; remarks: string | null;
   transactions?: any[];
 }
@@ -113,7 +114,7 @@ export default function Inventory() {
   const [warehouses, setWarehouses] = useState<{ id: string; code: string; name: string }[]>([]);
   const [poStatusMap, setPOStatusMap] = useState<Record<string, { status: string; poNo: number }>>({});
   const [editItem, setEditItem] = useState<Item | null>(null);
-  const [editForm, setEditForm] = useState({ name: '', category: '', unit: '', costPerUnit: '', minStock: '', maxStock: '', location: '', supplier: '', remarks: '' });
+  const [editForm, setEditForm] = useState({ name: '', category: '', unit: '', costPerUnit: '', gstPercent: '18', hsnCode: '', minStock: '', maxStock: '', location: '', supplier: '', remarks: '' });
 
   // Vendors
   const [vendors, setVendors] = useState<VendorOption[]>([]);
@@ -244,7 +245,9 @@ export default function Inventory() {
     setEditItem(item);
     setEditForm({
       name: item.name, category: item.category, unit: item.unit,
-      costPerUnit: String(item.costPerUnit || ''), minStock: String(item.minStock || ''),
+      costPerUnit: String(item.costPerUnit || ''),
+      gstPercent: String(item.gstPercent ?? 18), hsnCode: item.hsnCode || '',
+      minStock: String(item.minStock || ''),
       maxStock: String(item.maxStock || ''), location: item.location || '',
       supplier: item.supplier || '', remarks: item.remarks || '',
     });
@@ -260,6 +263,8 @@ export default function Inventory() {
         category: editForm.category,
         unit: editForm.unit,
         costPerUnit: parseFloat(editForm.costPerUnit) || 0,
+        gstPercent: parseFloat(editForm.gstPercent) || 18,
+        hsnCode: editForm.hsnCode || null,
         minStock: parseFloat(editForm.minStock) || 0,
         maxStock: editForm.maxStock ? parseFloat(editForm.maxStock) : null,
         location: editForm.location || null,
@@ -750,6 +755,20 @@ export default function Inventory() {
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Cost/Unit (INR)</label>
                   <input type="number" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" value={editForm.costPerUnit} onChange={e => setEditForm({ ...editForm, costPerUnit: e.target.value })} />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">GST %</label>
+                  <select className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" value={editForm.gstPercent} onChange={e => setEditForm({ ...editForm, gstPercent: e.target.value })}>
+                    <option value="0">0%</option>
+                    <option value="5">5%</option>
+                    <option value="12">12%</option>
+                    <option value="18">18%</option>
+                    <option value="28">28%</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">HSN Code</label>
+                  <input className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" value={editForm.hsnCode} onChange={e => setEditForm({ ...editForm, hsnCode: e.target.value })} placeholder="e.g. 35079099" />
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Min Stock</label>
