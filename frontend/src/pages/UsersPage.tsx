@@ -28,6 +28,10 @@ export default function UsersPage() {
   const [newPwd, setNewPwd] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
+  const changePaymentRole = async (id: string, paymentRole: string) => {
+    await api.put(`/users/${id}`, { paymentRole: paymentRole || null }); load();
+  };
+
   const load = () => api.get('/users').then(r => setUsers(r.data));
   useEffect(() => { load(); }, []);
 
@@ -197,6 +201,12 @@ export default function UsersPage() {
                   <option value="OPERATOR">Operator</option>
                   <option value="SUPERVISOR">Supervisor</option>
                   <option value="ADMIN">Admin</option>
+                </select>
+                <select value={u.paymentRole || ''} onChange={e => changePaymentRole(u.id, e.target.value)} className="text-xs border rounded px-2 py-1" title="Bank Payment Role">
+                  <option value="">No Bank Role</option>
+                  <option value="MAKER">Maker</option>
+                  <option value="CHECKER">Checker</option>
+                  <option value="RELEASER">Releaser</option>
                 </select>
                 <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${u.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
                   {u.isActive ? 'Active' : 'Inactive'}

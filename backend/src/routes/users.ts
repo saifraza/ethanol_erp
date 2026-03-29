@@ -13,6 +13,7 @@ router.get('/', authenticate, authorize('ADMIN'), async (req: AuthRequest, res: 
         email: true,
         name: true,
         role: true,
+        paymentRole: true,
         allowedModules: true,
         isActive: true,
         createdAt: true,
@@ -55,6 +56,7 @@ router.post('/', authenticate, authorize('ADMIN'), async (req: AuthRequest, res:
         name: name.trim(),
         role: role || 'OPERATOR',
         allowedModules: allowedModules || null,
+        paymentRole: req.body.paymentRole || null,
       },
     });
 
@@ -63,6 +65,7 @@ router.post('/', authenticate, authorize('ADMIN'), async (req: AuthRequest, res:
       email: user.email,
       name: user.name,
       role: user.role,
+      paymentRole: user.paymentRole,
       allowedModules: user.allowedModules,
       isActive: user.isActive,
     });
@@ -79,6 +82,7 @@ router.put('/:id', authenticate, authorize('ADMIN'), async (req: AuthRequest, re
     if (req.body.allowedModules !== undefined) data.allowedModules = req.body.allowedModules || null;
     if (req.body.isActive !== undefined) data.isActive = req.body.isActive;
     if (req.body.name !== undefined) data.name = req.body.name;
+    if (req.body.paymentRole !== undefined) data.paymentRole = req.body.paymentRole || null;
 
     const user = await prisma.user.update({
       where: { id: req.params.id },
@@ -89,6 +93,7 @@ router.put('/:id', authenticate, authorize('ADMIN'), async (req: AuthRequest, re
       email: user.email,
       name: user.name,
       role: user.role,
+      paymentRole: user.paymentRole,
       allowedModules: user.allowedModules,
       isActive: user.isActive,
     });

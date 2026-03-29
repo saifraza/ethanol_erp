@@ -78,6 +78,7 @@ const BalanceSheetPage = React.lazy(() => import('./pages/accounts/BalanceSheet'
 const BankReconciliation = React.lazy(() => import('./pages/accounts/BankReconciliation'));
 const GSTSummary = React.lazy(() => import('./pages/accounts/GSTSummary'));
 const CashVouchers = React.lazy(() => import('./pages/accounts/CashVouchers'));
+const BankPayments = React.lazy(() => import('./pages/accounts/BankPayments'));
 const BankLoans = React.lazy(() => import('./pages/accounts/BankLoans'));
 const PaymentsOut = React.lazy(() => import('./pages/accounts/PaymentsOut'));
 const PaymentsIn = React.lazy(() => import('./pages/accounts/PaymentsIn'));
@@ -182,6 +183,7 @@ export default function App() {
         <Route path="accounts/bank-reconciliation" element={<BankReconciliation />} />
         <Route path="accounts/gst-summary" element={<GSTSummary />} />
         <Route path="accounts/cash-vouchers" element={<CashVouchers />} />
+        <Route path="accounts/bank-payments" element={<BankPayments />} />
         <Route path="accounts/bank-loans" element={<BankLoans />} />
         <Route path="accounts/payments-out" element={<PaymentsOut />} />
         <Route path="accounts/payments-in" element={<PaymentsIn />} />

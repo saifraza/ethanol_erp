@@ -73,6 +73,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'payments-out', label: 'Payments Out', to: '/accounts/payments-out', icon: CreditCard, group: 'accounts' },
   { key: 'payments-in', label: 'Payments In', to: '/accounts/payments-in', icon: IndianRupee, group: 'accounts' },
   { key: 'cash-vouchers', label: 'Cash Vouchers', to: '/accounts/cash-vouchers', icon: Receipt, group: 'accounts' },
+  { key: 'bank-payments', label: 'Bank Payments', to: '/accounts/bank-payments', icon: Landmark, group: 'accounts' },
 
   // ── BOOKS (bookkeeping & reports) ──
   { key: 'chart-of-accounts', label: 'Chart of Accounts', to: '/accounts/chart', icon: BookOpen, group: 'books' },

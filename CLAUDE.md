@@ -424,6 +424,7 @@ For detailed guidance on specific modules, see `.claude/skills/`:
 - `dashboard-analytics.md` — Dashboard performance, KPI calculations
 - `admin-settings.md` — Auth, users, settings, audit trail
 - `charts-graphs.md` — Standard chart design system (OPC Live pattern) — colors, axes, tooltips, containers, Brush, reference lines. ALL charts must follow this.
+- `ubi-h2h-banking.md` — **CRITICAL** — UBI H2H-STP direct bank payment integration. Full spec: SFTP, AES-256-GCM encryption, Maker-Checker-Releaser security, data models, routes, file format. Bank side LIVE, ERP side pending SFTP credentials.
 
 ---
 

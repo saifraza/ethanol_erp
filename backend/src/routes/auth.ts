@@ -78,7 +78,7 @@ router.post('/login', async (req: AuthRequest, res: Response) => {
     }
 
     const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role, name: user.name, allowedModules: user.allowedModules },
+      { id: user.id, email: user.email, role: user.role, name: user.name, allowedModules: user.allowedModules, paymentRole: user.paymentRole },
       config.jwtSecret,
       { expiresIn: '7d' }
     );
@@ -91,6 +91,7 @@ router.post('/login', async (req: AuthRequest, res: Response) => {
         name: user.name,
         role: user.role,
         allowedModules: user.allowedModules,
+        paymentRole: user.paymentRole,
       },
     });
   } catch (err: any) {
@@ -106,7 +107,7 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
     }
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
-      select: { id: true, email: true, name: true, role: true, allowedModules: true, isActive: true, createdAt: true },
+      select: { id: true, email: true, name: true, role: true, allowedModules: true, paymentRole: true, isActive: true, createdAt: true },
     });
     res.json(user);
   } catch (err: any) {

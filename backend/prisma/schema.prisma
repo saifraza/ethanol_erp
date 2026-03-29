@@ -13,6 +13,7 @@ model User {
   password  String
   name      String
   role           String   @default("OPERATOR")
+  paymentRole    String?  // MAKER, CHECKER, RELEASER — null = no bank payment access
   allowedModules String?  // comma-separated module keys, null = all access
   isActive       Boolean  @default(true)
   createdAt DateTime @default(now())
@@ -1903,6 +1904,9 @@ model VendorPayment {
   // Advance payment (no invoice)
   isAdvance       Boolean  @default(false)
   advanceAdjusted Float    @default(0)      // how much of advance is adjusted
+  // Bank file tracking (UBI APPA integration)
+  bankFileBatch   String?                   // batch ID when included in bank file
+  bankFileSentAt  DateTime?                 // when bank file was generated
   //
   remarks         String?
   userId          String
@@ -1912,6 +1916,7 @@ model VendorPayment {
   @@index([vendorId])
   @@index([invoiceId])
   @@index([paymentDate])
+  @@index([bankFileBatch])
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -2332,4 +2337,114 @@ model AutoCollectSchedule {
   updatedAt       DateTime @updatedAt
 
   @@index([module])
+}
+
+// ══════════════════════════════════════════════════════════════
+// BANK PAYMENTS — UBI H2H-STP Direct Payment Integration
+// Security: Maker-Checker-Releaser workflow, PIN auth, full audit trail
+// ══════════════════════════════════════════════════════════════
+
+model BankPaymentBatch {
+  id              String   @id @default(uuid())
+  batchNo         Int      @default(autoincrement())
+  status          String   @default("DRAFT")
+  // DRAFT → APPROVED → RELEASED → SENT_TO_BANK → COMPLETED → FAILED / PARTIAL
+  paymentType     String   @default("NEFT")    // NEFT, RTGS
+  debitAccount    String   @default("")         // MSPIL account number
+  payerIfsc       String   @default("")         // MSPIL IFSC
+  totalAmount     Float    @default(0)
+  recordCount     Int      @default(0)
+  // Maker (creator)
+  createdBy       String                        // userId of maker
+  // Checker (approver)
+  checkedBy       String?                       // userId of checker
+  checkedAt       DateTime?
+  checkerRemarks  String?
+  // Releaser (final auth)
+  releasedBy      String?                       // userId of releaser
+  releasedAt      DateTime?
+  // Bank file
+  fileName        String?                       // file name sent to SFTP
+  sentAt          DateTime?                     // when uploaded to SFTP
+  // ACK/NACK response from bank
+  ackFileName     String?
+  ackReceivedAt   DateTime?
+  ackStatus       String?                       // ACK, NACK, PARTIAL
+  ackRemarks      String?
+  // Timestamps
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  // Relations
+  items           BankPaymentItem[]
+  audit           BankPaymentAudit[]
+
+  @@index([status])
+  @@index([createdBy])
+  @@index([createdAt])
+  @@index([batchNo])
+}
+
+model BankPaymentItem {
+  id                 String   @id @default(uuid())
+  batchId            String
+  batch              BankPaymentBatch @relation(fields: [batchId], references: [id])
+  // Vendor / Payee
+  vendorId           String?
+  vendorInvoiceId    String?
+  beneficiaryName    String
+  beneficiaryAccount String
+  beneficiaryIfsc    String
+  beneficiaryBank    String?
+  beneficiaryEmail   String?
+  beneficiaryPhone   String?
+  // Amount
+  amount             Float
+  remarks            String?
+  // Status per item
+  status             String   @default("PENDING")
+  // PENDING → APPROVED → REJECTED → SENT → SUCCESS → FAILED
+  rejectionReason    String?                    // if checker rejects this item
+  utrNumber          String?                    // UTR from ACK response
+  failureReason      String?                    // reason from NACK response
+  // Link to VendorPayment (created after ACK confirms success)
+  vendorPaymentId    String?
+  //
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([batchId])
+  @@index([vendorId])
+  @@index([status])
+  @@index([vendorInvoiceId])
+}
+
+model BankPaymentAudit {
+  id          String   @id @default(uuid())
+  batchId     String?
+  batch       BankPaymentBatch? @relation(fields: [batchId], references: [id])
+  itemId      String?
+  action      String              // BATCH_CREATED, ITEM_ADDED, ITEM_REMOVED, APPROVED, REJECTED, RELEASED, SENT, ACK_RECEIVED, NACK_RECEIVED, PIN_FAILED
+  userId      String
+  userName    String   @default("")
+  ipAddress   String?
+  userAgent   String?
+  details     String?             // JSON with additional context
+  createdAt   DateTime @default(now())
+
+  @@index([batchId])
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model PaymentPin {
+  id             String    @id @default(uuid())
+  userId         String    @unique
+  pinHash        String                        // bcrypt hashed 6-digit PIN
+  failedAttempts Int       @default(0)
+  lockedUntil    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([userId])
 }

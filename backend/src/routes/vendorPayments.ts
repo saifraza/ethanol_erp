@@ -231,6 +231,109 @@ router.get('/tds-report', asyncHandler(async (req: AuthRequest, res: Response) =
     res.json({ report: Object.values(grouped) });
 }));
 
+// POST /generate-bank-file — Generate UBI APPA format CSV for selected vendor invoices
+router.post('/generate-bank-file', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { invoiceIds, paymentType = 'NEFT', debitAccount, payerIfsc, corporateId } = req.body;
+
+    if (!invoiceIds || !Array.isArray(invoiceIds) || invoiceIds.length === 0) {
+      res.status(400).json({ error: 'invoiceIds array is required' });
+      return;
+    }
+    if (!debitAccount || !payerIfsc) {
+      res.status(400).json({ error: 'debitAccount and payerIfsc are required' });
+      return;
+    }
+    const type = paymentType === 'RTGS' ? 'RTGS' : 'NEFT';
+    const corpId = corporateId || 'MKSPIL';
+
+    // Fetch invoices with vendor bank details
+    const invoices = await prisma.vendorInvoice.findMany({
+      where: {
+        id: { in: invoiceIds },
+        balanceAmount: { gt: 0 },
+      },
+      include: {
+        vendor: true,
+      },
+    });
+
+    if (invoices.length === 0) {
+      res.status(400).json({ error: 'No outstanding invoices found for the given IDs' });
+      return;
+    }
+
+    // Validate all vendors have bank details
+    const missing = invoices.filter(inv => !inv.vendor.bankAccount || !inv.vendor.bankIfsc);
+    if (missing.length > 0) {
+      const names = missing.map(inv => inv.vendor.name).join(', ');
+      res.status(400).json({ error: `Missing bank details for: ${names}. Update vendor bank IFSC and account number first.` });
+      return;
+    }
+
+    // Generate batch ID
+    const now = new Date();
+    const batchId = `UBI-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+    const seqNo = String(now.getTime()).slice(-6);
+
+    // Build CSV rows
+    const rows: string[] = [];
+
+    // Row 1: File header
+    rows.push(`FILEHDR,${corpId},${seqNo},N,${type} Payment Batch ${batchId}`);
+
+    // Row 2+: Payment records
+    let totalAmount = 0;
+    const paymentRecords: Array<{ invoiceId: string; vendorId: string; vendorName: string; amount: number }> = [];
+
+    for (const inv of invoices) {
+      const amount = inv.balanceAmount || 0;
+      if (amount <= 0) continue;
+
+      const benefName = (inv.vendor.name || '').substring(0, 40).replace(/,/g, ' ');
+      const email = (inv.vendor.email || 'accounts@mspil.in').substring(0, 80);
+      const mobile = (inv.vendor.phone || '').replace(/[^0-9]/g, '').substring(0, 20) || '0000000000';
+      const remark = `INV-${inv.vendorInvNo || inv.id.substring(0, 8)} ${benefName}`.substring(0, 140).replace(/,/g, ' ');
+
+      rows.push([
+        type,
+        payerIfsc,
+        debitAccount,
+        inv.vendor.bankIfsc,
+        inv.vendor.bankAccount,
+        'INR',
+        amount.toFixed(2),
+        remark,
+        benefName,
+        email,
+        mobile,
+      ].join(','));
+
+      totalAmount += amount;
+      paymentRecords.push({
+        invoiceId: inv.id,
+        vendorId: inv.vendor.id,
+        vendorName: inv.vendor.name,
+        amount,
+      });
+    }
+
+    // Mark invoices as included in bank file batch (don't create payments yet — that happens after bank confirms)
+    // We track this via a separate update to avoid double-payment risk
+    const csv = rows.join('\r\n') + '\r\n';
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${batchId}.csv"`);
+    res.json({
+      batchId,
+      csv,
+      fileName: `${batchId}.csv`,
+      paymentType: type,
+      totalAmount,
+      recordCount: paymentRecords.length,
+      records: paymentRecords,
+    });
+}));
+
 // POST /:id/send-email — Send payment receipt/advice to vendor
 router.post('/:id/send-email', asyncHandler(async (req: AuthRequest, res: Response) => {
     const pmt = await prisma.vendorPayment.findUnique({
