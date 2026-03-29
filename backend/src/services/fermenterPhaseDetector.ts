@@ -151,12 +151,28 @@ async function detectSingleFermenter(opc: any, config: typeof FERMENTER_TAGS[0])
   const currentTemp = latestTemp?.value ?? 0;
   const dataAge = latestLevel ? (now - new Date(latestLevel.scannedAt).getTime()) / 1000 : Infinity;
 
-  // Calculate slope: compare current to 30 min ago
+  // Calculate slope: try 30 min ago first, then fall back to oldest recent reading
   let slope = 0;
-  const prev = await getReadingAt(opc, config.levelTag, prop, 30);
+  let prev = await getReadingAt(opc, config.levelTag, prop, 30);
+
+  // Fallback: if no reading at 30 min mark, get the oldest of last 20 readings
+  if (!prev) {
+    try {
+      const recentReadings = await opc.opcReading.findMany({
+        where: { tag: config.levelTag, property: prop },
+        orderBy: { scannedAt: 'desc' },
+        take: 20,
+        select: { value: true, scannedAt: true },
+      });
+      if (recentReadings.length >= 2) {
+        prev = recentReadings[recentReadings.length - 1]; // oldest of recent
+      }
+    } catch { /* ignore */ }
+  }
+
   if (prev && latestLevel) {
     const timeDiffHours = (new Date(latestLevel.scannedAt).getTime() - new Date(prev.scannedAt).getTime()) / 3600000;
-    if (timeDiffHours > 0.1) { // at least 6 min apart
+    if (timeDiffHours > 0.05) { // at least 3 min apart
       slope = (currentLevel - prev.value) / timeDiffHours;
     }
   }
