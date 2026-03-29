@@ -628,10 +628,7 @@ export default function Vendors() {
                         <option value="NET60">Net 60 Days</option>
                       </select>
                     </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Credit Limit</label>
-                      <input type="number" value={creditLimit} onChange={e => setCreditLimit(e.target.value)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="500000" />
-                    </div>
+                    {/* Credit Limit removed — not applicable for vendors (they supply to us) */}
                   </div>
                   <div className="mt-3">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Credit Days</label>
@@ -897,7 +894,7 @@ export default function Vendors() {
                                 <p className="text-slate-700 font-mono">{vendor.bankAccount} - {vendor.bankIfsc}</p>
                               </div>
                             )}
-                            {vendor.creditLimit !== undefined && vendor.creditLimit !== null && (
+                            {false && vendor.creditLimit !== undefined && vendor.creditLimit !== null && (
                               <div>
                                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Credit Limit</span>
                                 <p className="text-slate-700 font-mono tabular-nums">{vendor.creditLimit.toLocaleString()}</p>
