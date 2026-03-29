@@ -1117,7 +1117,7 @@ const PurchaseOrders: React.FC = () => {
                                   {(poDetail.vendorInvoices || []).length === 0 ? <div className="text-[10px] text-slate-400">No invoices yet</div> : (poDetail.vendorInvoices || []).map((inv: any) => (
                                     <div key={inv.id} className="flex justify-between text-[10px]">
                                       <span className="text-slate-700 font-medium">INV-{inv.invoiceNo}</span>
-                                      <span className="font-mono tabular-nums text-slate-600">₹{(inv.grandTotal || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+                                      <span className="font-mono tabular-nums text-slate-600">₹{(inv.totalAmount || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
                                     </div>
                                   ))}
                                 </div>

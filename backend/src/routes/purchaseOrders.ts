@@ -26,7 +26,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         vendor: { select: { id: true, name: true, email: true } },
         lines: true,
         grns: { select: { id: true, status: true } },
-        vendorInvoices: { select: { id: true, status: true, grandTotal: true, payments: { select: { amount: true, tdsDeducted: true } } } },
+        vendorInvoices: { select: { id: true, status: true, totalAmount: true, payments: { select: { amount: true, tdsDeducted: true } } } },
       },
       orderBy: [{ poNo: 'desc' }],
       skip: (page - 1) * limit,
@@ -35,15 +35,15 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
 
     const total = await prisma.purchaseOrder.count({ where });
 
-    const posWithCounts = pos.map(po => {
-      const invoices = (po as any).vendorInvoices || [];
-      const totalInvoiced = invoices.reduce((s: number, inv: any) => s + (inv.grandTotal || 0), 0);
+    const posWithCounts = pos.map((po: any) => {
+      const invoices = po.vendorInvoices || [];
+      const totalInvoiced = invoices.reduce((s: number, inv: any) => s + (inv.totalAmount || 0), 0);
       const totalPaid = invoices.reduce((s: number, inv: any) =>
         s + (inv.payments || []).reduce((ps: number, p: any) => ps + (p.amount || 0) + (p.tdsDeducted || 0), 0), 0);
       const paymentStatus = totalInvoiced === 0 ? 'NO_INVOICE' : totalPaid >= totalInvoiced ? 'PAID' : totalPaid > 0 ? 'PARTIAL' : 'UNPAID';
       return {
         ...po,
-        linesCount: po.lines.length,
+        linesCount: po.lines?.length || 0,
         grnCount: po.grns?.length || 0,
         invoiceCount: invoices.length,
         totalInvoiced,
@@ -84,7 +84,7 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const totalOrdered = po.lines.reduce((s, l) => s + l.quantity, 0);
     const totalReceived = po.lines.reduce((s, l) => s + (l.receivedQty || 0), 0);
     const totalPending = po.lines.reduce((s, l) => s + (l.pendingQty || l.quantity - (l.receivedQty || 0)), 0);
-    const totalInvoiced = (po.vendorInvoices || []).reduce((s: number, inv: any) => s + (inv.grandTotal || 0), 0);
+    const totalInvoiced = (po.vendorInvoices || []).reduce((s: number, inv: any) => s + (inv.totalAmount || 0), 0);
     const totalPaid = (po.vendorInvoices || []).reduce((s: number, inv: any) =>
       s + (inv.payments || []).reduce((ps: number, p: any) => ps + (p.amount || 0), 0), 0);
     const totalTDS = (po.vendorInvoices || []).reduce((s: number, inv: any) =>
