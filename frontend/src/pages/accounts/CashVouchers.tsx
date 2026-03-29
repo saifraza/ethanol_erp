@@ -28,18 +28,21 @@ interface Summary {
   settledCount: number;
 }
 
-const CATEGORIES = [
-  'Travel',
-  'Office Supplies',
-  'Maintenance',
-  'Fuel',
-  'Labour',
-  'Transport',
-  'Utilities',
-  'Miscellaneous',
+const CATEGORIES: { value: string; label: string }[] = [
+  { value: 'LABOUR', label: 'Labour' },
+  { value: 'TRANSPORT', label: 'Transport / Freight' },
+  { value: 'REPAIR', label: 'Repair / Maintenance' },
+  { value: 'MATERIAL', label: 'Material / Supplies' },
+  { value: 'OFFICE', label: 'Office / Admin' },
+  { value: 'MISC', label: 'Miscellaneous' },
 ];
+const categoryLabel = (val: string): string => CATEGORIES.find(c => c.value === val)?.label || val;
 
-const PAYMENT_MODES = ['Cash', 'UPI', 'Bank Transfer', 'Cheque'];
+const PAYMENT_MODES: { value: string; label: string }[] = [
+  { value: 'CASH', label: 'Cash' },
+  { value: 'UPI', label: 'UPI' },
+  { value: 'BANK_TRANSFER', label: 'Bank Transfer' },
+];
 
 const TYPES = [
   { value: 'PAYMENT', label: 'Payment' },
@@ -58,8 +61,8 @@ const emptyForm = {
   payeeName: '',
   amount: '',
   purpose: '',
-  category: 'Miscellaneous',
-  paymentMode: 'Cash',
+  category: 'MISC',
+  paymentMode: 'CASH',
   authorizedBy: '',
   type: 'PAYMENT',
   payeePhone: '',
@@ -344,7 +347,7 @@ export default function CashVouchers() {
                     </td>
                     <td className="px-3 py-1.5 text-slate-700 border-r border-slate-100">{v.purpose}</td>
                     <td className="px-3 py-1.5 border-r border-slate-100">
-                      <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-slate-300 bg-slate-50 text-slate-600">{v.category}</span>
+                      <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-slate-300 bg-slate-50 text-slate-600">{categoryLabel(v.category)}</span>
                     </td>
                     <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-800 border-r border-slate-100">{fmtCurrency(v.amount)}</td>
                     <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">{v.paymentMode}</td>
@@ -469,7 +472,7 @@ export default function CashVouchers() {
                     className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
                   >
                     {PAYMENT_MODES.map((m) => (
-                      <option key={m} value={m}>{m}</option>
+                      <option key={m.value} value={m.value}>{m.label}</option>
                     ))}
                   </select>
                 </div>
@@ -497,7 +500,7 @@ export default function CashVouchers() {
                     className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
                   >
                     {CATEGORIES.map((c) => (
-                      <option key={c} value={c}>{c}</option>
+                      <option key={c.value} value={c.value}>{c.label}</option>
                     ))}
                   </select>
                 </div>

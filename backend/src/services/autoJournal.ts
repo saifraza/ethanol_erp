@@ -492,4 +492,48 @@ export async function onStockMovement(
   }
 }
 
+// ═══════════════════════════════════════════════════════
+// TRANSPORTER PAYMENT → Journal Entry
+// Dr Transport Expense (freight amount)
+//   Cr Bank/Cash (amount paid)
+// ═══════════════════════════════════════════════════════
+export async function onTransporterPaymentMade(
+  prisma: PrismaClient,
+  payment: {
+    id: string;
+    amount: number;
+    mode: string;
+    reference?: string | null;
+    transporterName: string;
+    shipmentId?: string | null;
+    userId: string;
+    paymentDate: Date;
+  }
+): Promise<string | null> {
+  try {
+    if (payment.amount <= 0) return null;
+
+    const bankCode = PAYMENT_ACCOUNT[payment.mode] || ACCT.SBI_BANK;
+    const accts = await resolveAccounts(prisma, [bankCode, ACCT.TRANSPORT_EXPENSE]);
+    if (!accts[bankCode] || !accts[ACCT.TRANSPORT_EXPENSE]) return null;
+
+    return await prisma.$transaction(async (tx: any) => {
+      return createJournalEntry(tx, {
+        date: payment.paymentDate,
+        narration: `Freight payment to ${payment.transporterName} — ${payment.mode} ${payment.reference || ''}`.trim(),
+        refType: 'PAYMENT',
+        refId: payment.id,
+        userId: payment.userId,
+        lines: [
+          { accountId: accts[ACCT.TRANSPORT_EXPENSE], debit: payment.amount, credit: 0, narration: `Freight — ${payment.transporterName}` },
+          { accountId: accts[bankCode], debit: 0, credit: payment.amount, narration: `${payment.mode} ${payment.reference || ''}`.trim() },
+        ],
+      });
+    });
+  } catch (err) {
+    console.error('[AutoJournal] Failed to create transporter payment journal:', err);
+    return null;
+  }
+}
+
 export { ACCT, PAYMENT_ACCOUNT };

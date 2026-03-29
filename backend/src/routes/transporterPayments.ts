@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
+import { onTransporterPaymentMade } from '../services/autoJournal';
 
 const router = Router();
 router.use(authenticate as any);
@@ -62,23 +63,41 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const shipment = await prisma.shipment.findUnique({ where: { id: b.shipmentId } });
     if (!shipment) { res.status(404).json({ error: 'Shipment not found' }); return; }
 
+    const amount = parseFloat(b.amount) || 0;
+    const mode = b.mode || 'BANK_TRANSFER';
+    const status = b.status || 'PENDING';
+    const transporterName = b.transporterName || shipment.transporterName || '';
+
     const payment = await prisma.transporterPayment.create({
       data: {
         shipmentId: b.shipmentId,
         transporterId: b.transporterId || null,
-        transporterName: b.transporterName || shipment.transporterName || '',
-        paymentType: b.paymentType || 'ADVANCE', // ADVANCE, BALANCE, FULL
-        amount: parseFloat(b.amount) || 0,
-        mode: b.mode || 'BANK_TRANSFER',
+        transporterName,
+        paymentType: b.paymentType || 'ADVANCE',
+        amount,
+        mode,
         reference: b.reference || null,
         freightRate: b.freightRate ? parseFloat(b.freightRate) : null,
         freightTotal: b.freightTotal ? parseFloat(b.freightTotal) : null,
-        status: b.status || 'PENDING',
+        status,
         remarks: b.remarks || null,
         userId: req.user!.id,
       },
       include: { shipment: { select: { vehicleNo: true, customerName: true } } },
     });
+
+    // Auto-journal for PAID payments (or all if status is paid on creation)
+    if (status === 'PAID' && amount > 0) {
+      onTransporterPaymentMade(prisma as Parameters<typeof onTransporterPaymentMade>[0], {
+        id: payment.id, amount, mode,
+        reference: b.reference || null,
+        transporterName,
+        shipmentId: b.shipmentId,
+        userId: req.user!.id,
+        paymentDate: new Date(),
+      }).catch(() => {});
+    }
+
     res.status(201).json(payment);
 }));
 
@@ -99,6 +118,21 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
       where: { id: req.params.id },
       data,
     });
+
+    // Auto-journal when marking as PAID
+    if (b.status === 'PAID' && payment.amount > 0) {
+      onTransporterPaymentMade(prisma as Parameters<typeof onTransporterPaymentMade>[0], {
+        id: payment.id,
+        amount: payment.amount,
+        mode: payment.mode,
+        reference: payment.reference,
+        transporterName: payment.transporterName,
+        shipmentId: payment.shipmentId,
+        userId: req.user!.id,
+        paymentDate: payment.paidAt || new Date(),
+      }).catch(() => {});
+    }
+
     res.json(payment);
 }));
 
