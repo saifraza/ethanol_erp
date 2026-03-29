@@ -783,7 +783,7 @@ export default function Fermentation() {
         if (fermCount === 0) return null;
         return (
           <div className="px-3 pt-3">
-            <div className="grid grid-cols-4 gap-1.5">
+            <div className="grid grid-cols-3 gap-1.5">
               <div className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-xl p-3 col-span-1">
                 <div className="text-[8px] font-bold uppercase tracking-widest opacity-70">In System</div>
                 <div className="text-xl font-black mt-0.5">{Math.round(totalSystemKL)}<span className="text-[10px] font-medium ml-0.5 opacity-70">KL</span></div>
@@ -839,18 +839,16 @@ export default function Fermentation() {
                 </div>
               </div>
               <div className="bg-white border border-gray-200 rounded-xl p-3 col-span-1">
-                <div className="text-[8px] font-bold uppercase tracking-widest text-gray-400">Pre-Ferm</div>
-                <div className="text-xl font-black text-sky-700 mt-0.5">{Math.round(pfWashKL)}<span className="text-[10px] font-medium ml-0.5 text-gray-400">KL</span></div>
-                <div className="text-[8px] text-gray-400 mt-1">PF-1 + PF-2</div>
-              </div>
-              <div className="bg-white border border-gray-200 rounded-xl p-3 col-span-1">
-                <div className="text-[8px] font-bold uppercase tracking-widest text-gray-400">Beer Well</div>
-                <div className="text-xl font-black text-amber-700 mt-0.5">{Math.round(bwWashKL)}<span className="text-[10px] font-medium ml-0.5 text-gray-400">KL</span></div>
-                <div className="text-[8px] text-gray-400">{bwOpc?.level?.toFixed(1) || 0}% level</div>
+                <div className="text-[8px] font-bold uppercase tracking-widest text-gray-400">PF + Beer Well</div>
+                <div className="flex items-baseline gap-2 mt-0.5">
+                  <span className="text-sm font-black text-sky-700">PF {Math.round(pfWashKL)}</span>
+                  <span className="text-[8px] text-gray-300">|</span>
+                  <span className="text-sm font-black text-amber-700">BW {Math.round(bwWashKL)}</span>
+                  <span className="text-[9px] text-gray-400">KL</span>
+                </div>
+                <div className="text-[8px] text-gray-400 mt-0.5">BW {bwOpc?.level?.toFixed(1) || 0}%</div>
                 {washSummary?.today?.feed && washSummary.today.feed.totalFeedKL > 0 && (
-                  <div className="mt-0.5">
-                    <div className="text-[8px] text-emerald-600 font-bold">Feed: {washSummary.today.feed.totalFeedKL} KL <span className="font-normal text-gray-400">({washSummary.today.feed.avgFlowRate} M³/hr)</span></div>
-                  </div>
+                  <div className="text-[8px] text-emerald-600 font-bold mt-0.5">Feed: {washSummary.today.feed.totalFeedKL} KL ({washSummary.today.feed.avgFlowRate} M³/hr)</div>
                 )}
               </div>
             </div>
