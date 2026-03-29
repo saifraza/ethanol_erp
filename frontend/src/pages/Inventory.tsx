@@ -96,8 +96,10 @@ export default function Inventory() {
   const [filterCat, setFilterCat] = useState('');
   const [search, setSearch] = useState('');
   const [showTxn, setShowTxn] = useState<string | null>(null);
-  const [txnForm, setTxnForm] = useState({ type: 'IN', quantity: '', reference: '', remarks: '', department: '' });
+  const [txnForm, setTxnForm] = useState({ type: 'IN', quantity: '', reference: '', remarks: '', department: '', warehouse: '' });
   const DEPARTMENTS = ['Production', 'Maintenance', 'Lab', 'Boiler', 'ETP', 'Admin', 'Civil', 'Electrical', 'Other'];
+  const [warehouses, setWarehouses] = useState<{ id: string; code: string; name: string }[]>([]);
+  const [poStatusMap, setPOStatusMap] = useState<Record<string, { status: string; poNo: number }>>({});
   const [editItem, setEditItem] = useState<Item | null>(null);
   const [editForm, setEditForm] = useState({ name: '', category: '', unit: '', costPerUnit: '', minStock: '', maxStock: '', location: '', supplier: '', remarks: '' });
 
@@ -190,6 +192,10 @@ export default function Inventory() {
       setItems(itemsRes.data.items);
       setAlerts(alertsRes.data.alerts);
       setSummary(summaryRes.data);
+      // Fetch PO status for badges
+      api.get('/inventory/items/po-status').then(r => setPOStatusMap(r.data || {})).catch(() => {});
+      // Fetch warehouses
+      api.get('/inventory/warehouses').then(r => setWarehouses((r.data?.items || r.data || []).map((w: any) => ({ id: w.id, code: w.code, name: w.name })))).catch(() => {});
     } catch (e) { console.error(e); }
     setLoading(false);
   };
@@ -210,9 +216,13 @@ export default function Inventory() {
 
   const handleTxn = async (itemId: string) => {
     try {
-      await api.post('/inventory/transaction', { itemId, ...txnForm });
+      const res = await api.post('/inventory/transaction', { itemId, ...txnForm });
       setShowTxn(null);
-      setTxnForm({ type: 'IN', quantity: '', reference: '', remarks: '', department: '' });
+      setTxnForm({ type: 'IN', quantity: '', reference: '', remarks: '', department: '', warehouse: '' });
+      if (res.data?.autoPO) {
+        const po = res.data.autoPO;
+        alert(`Low stock detected! Auto-drafted PO-${po.poNo} for ${po.qty} units from ${po.vendor} at ₹${po.rate}/unit. Check Purchase Orders to approve.`);
+      }
       load();
     } catch (e: any) { alert(e.response?.data?.error || 'Error'); }
   };
@@ -414,7 +424,23 @@ export default function Inventory() {
                           <td className="px-3 py-1.5 border-r border-slate-100">
                             <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-blue-200 bg-blue-50 text-blue-700">{CAT_LABELS[item.category]}</span>
                           </td>
-                          <td className="px-3 py-1.5 text-right font-bold text-slate-800 font-mono tabular-nums border-r border-slate-100">{item.currentStock} <span className="text-slate-400 font-normal text-xs">{item.unit}</span></td>
+                          <td className="px-3 py-1.5 text-right border-r border-slate-100">
+                            <span className="font-bold text-slate-800 font-mono tabular-nums">{item.currentStock}</span>
+                            <span className="text-slate-400 font-normal text-xs ml-1">{item.unit}</span>
+                            {poStatusMap[item.id] && (
+                              <span className={`ml-1 text-[8px] font-bold uppercase px-1 py-0.5 border ${
+                                poStatusMap[item.id].status === 'DRAFT' ? 'border-amber-300 bg-amber-50 text-amber-700' :
+                                poStatusMap[item.id].status === 'APPROVED' ? 'border-blue-300 bg-blue-50 text-blue-700' :
+                                poStatusMap[item.id].status === 'SENT' ? 'border-indigo-300 bg-indigo-50 text-indigo-700' :
+                                'border-green-300 bg-green-50 text-green-700'
+                              }`}>
+                                PO {poStatusMap[item.id].status === 'DRAFT' ? 'Drafted' : poStatusMap[item.id].status === 'SENT' ? 'Sent' : poStatusMap[item.id].status}
+                              </span>
+                            )}
+                            {item.currentStock <= item.minStock && item.minStock > 0 && !poStatusMap[item.id] && (
+                              <span className="ml-1 text-[8px] font-bold uppercase px-1 py-0.5 border border-red-300 bg-red-50 text-red-700">LOW</span>
+                            )}
+                          </td>
                           <td className="px-3 py-1.5 text-right text-slate-500 font-mono tabular-nums border-r border-slate-100">{item.minStock}</td>
                           <td className="px-3 py-1.5 text-right text-slate-700 font-mono tabular-nums border-r border-slate-100">{'\u20B9'}{item.costPerUnit}</td>
                           <td className="px-3 py-1.5 text-slate-500 border-r border-slate-100">{item.location || '\u2014'}</td>
@@ -453,6 +479,15 @@ export default function Inventory() {
                                   <input className="border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 w-40" placeholder="PO, Issue#" value={txnForm.reference}
                                     onChange={e => setTxnForm({ ...txnForm, reference: e.target.value })} />
                                 </div>
+                                {txnForm.type === 'IN' && warehouses.length > 0 && (
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Warehouse</label>
+                                    <select className="border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400" value={txnForm.warehouse} onChange={e => setTxnForm({ ...txnForm, warehouse: e.target.value })}>
+                                      <option value="">Select</option>
+                                      {warehouses.map(w => <option key={w.id} value={w.code}>{w.name}</option>)}
+                                    </select>
+                                  </div>
+                                )}
                                 {txnForm.type === 'OUT' && (
                                   <div>
                                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Department</label>

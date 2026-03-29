@@ -919,6 +919,8 @@ model InventoryTransaction {
   quantity    Float
   reference   String?  // PO number, issue ID, batch number, etc.
   remarks     String?
+  warehouse   String?  // which warehouse (for Stock IN)
+  department  String?  // which department (for Stock OUT)
   userId      String
   createdAt   DateTime @default(now())
   @@index([itemId])
