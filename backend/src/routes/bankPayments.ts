@@ -833,6 +833,179 @@ router.post('/check-status', asyncHandler(async (req: AuthRequest, res: Response
 }));
 
 // ══════════════════════════════════════════════════════════════
+// AI VERIFICATION CHECK (Gemini)
+// ══════════════════════════════════════════════════════════════
+
+/** POST /batches/:id/ai-check — AI-powered verification of payment batch before approval */
+router.post('/batches/:id/ai-check', asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!canCheck(req.user) && !canMake(req.user)) {
+    res.status(403).json({ error: 'Unauthorized' }); return;
+  }
+
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (!geminiKey) {
+    res.status(503).json({ error: 'AI not configured. Set GEMINI_API_KEY env var.' }); return;
+  }
+
+  const batch = await prisma.bankPaymentBatch.findUnique({
+    where: { id: req.params.id },
+    include: { items: true },
+  });
+  if (!batch) { res.status(404).json({ error: 'Batch not found' }); return; }
+
+  // Gather all context: invoices, POs, GRNs, vendor details, payment history
+  const invoiceIds = batch.items.map(i => i.vendorInvoiceId).filter(Boolean) as string[];
+  const vendorIds = batch.items.map(i => i.vendorId).filter(Boolean) as string[];
+
+  const [invoices, vendors, recentPayments] = await Promise.all([
+    invoiceIds.length > 0 ? prisma.vendorInvoice.findMany({
+      where: { id: { in: invoiceIds } },
+      select: {
+        id: true, vendorInvNo: true, invoiceDate: true, vendorInvDate: true,
+        totalAmount: true, netPayable: true, balanceAmount: true, paidAmount: true,
+        productName: true, quantity: true, unit: true, rate: true,
+        poId: true, grnId: true, status: true, matchStatus: true, matchRemarks: true,
+      },
+    }) : [],
+    vendorIds.length > 0 ? prisma.vendor.findMany({
+      where: { id: { in: vendorIds } },
+      select: {
+        id: true, name: true, gstin: true, bankAccount: true, bankIfsc: true, bankName: true,
+      },
+    }) : [],
+    // Recent payments to same vendors (last 90 days) for anomaly detection
+    vendorIds.length > 0 ? prisma.vendorPayment.findMany({
+      where: {
+        vendorId: { in: vendorIds },
+        paymentDate: { gte: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) },
+      },
+      select: { vendorId: true, amount: true, paymentDate: true, mode: true, reference: true },
+      orderBy: { paymentDate: 'desc' },
+      take: 50,
+    }) : [],
+  ]);
+
+  const vendorMap = new Map(vendors.map(v => [v.id, v]));
+  const invoiceMap = new Map(invoices.map(inv => [inv.id, inv]));
+
+  // Build structured data for AI
+  const batchData = {
+    batchNo: batch.batchNo,
+    paymentType: batch.paymentType,
+    totalAmount: batch.totalAmount,
+    recordCount: batch.recordCount,
+    createdAt: batch.createdAt,
+    items: batch.items.map(item => {
+      const inv = item.vendorInvoiceId ? invoiceMap.get(item.vendorInvoiceId) : null;
+      const vendor = item.vendorId ? vendorMap.get(item.vendorId) : null;
+      return {
+        beneficiary: item.beneficiaryName,
+        bankAccount: item.beneficiaryAccount,
+        ifsc: item.beneficiaryIfsc,
+        payAmount: item.amount,
+        invoiceNo: inv?.vendorInvNo || 'N/A',
+        invoiceDate: inv?.invoiceDate || inv?.vendorInvDate || null,
+        invoiceTotal: inv?.totalAmount || 0,
+        invoiceNet: inv?.netPayable || 0,
+        invoiceBalance: inv?.balanceAmount || 0,
+        alreadyPaid: inv?.paidAmount || 0,
+        product: inv?.productName || 'N/A',
+        quantity: inv?.quantity || 0,
+        unit: inv?.unit || '',
+        rate: inv?.rate || 0,
+        invoiceStatus: inv?.status || 'N/A',
+        matchStatus: inv?.matchStatus || null,
+        vendorGstin: vendor?.gstin || 'N/A',
+        vendorBankOnFile: vendor?.bankAccount || 'N/A',
+        vendorIfscOnFile: vendor?.bankIfsc || 'N/A',
+      };
+    }),
+    recentPayments: recentPayments.map(p => ({
+      vendorId: p.vendorId,
+      amount: p.amount,
+      date: p.paymentDate,
+      mode: p.mode,
+      ref: p.reference,
+    })),
+  };
+
+  const prompt = `You are a financial auditor AI for MSPIL Distillery ERP (ethanol plant). Analyze this bank payment batch and provide a verification report.
+
+BATCH DATA:
+${JSON.stringify(batchData, null, 2)}
+
+CHECK FOR THESE ISSUES:
+1. AMOUNT MISMATCH: Does payAmount match invoiceBalance? Is someone overpaying?
+2. DUPLICATE PAYMENT: Any sign of paying the same invoice twice? Check recentPayments.
+3. BANK DETAIL CHANGE: Does bankAccount/ifsc in payment match vendorBankOnFile/vendorIfscOnFile? Mismatch = potential fraud.
+4. UNUSUAL AMOUNT: Any payment significantly larger than usual for this vendor? Compare with recentPayments.
+5. INVOICE STATUS: Is the invoice APPROVED? Paying DRAFT or REJECTED invoices is a red flag.
+6. ROUND NUMBERS: Large round-number payments (100000, 500000) without matching invoice details can be suspicious.
+
+Respond in this exact JSON format:
+{
+  "verdict": "PASS" or "WARNING" or "FAIL",
+  "score": 0-100 (100 = perfectly clean),
+  "summary": "One line overall assessment",
+  "checks": [
+    {"check": "check name", "status": "OK" or "WARNING" or "FAIL", "detail": "explanation"}
+  ],
+  "recommendations": ["action item 1", "action item 2"]
+}
+
+Be concise. Use Indian Rupee formatting. This is a real financial system — be thorough but don't invent issues that don't exist in the data.`;
+
+  try {
+    const aiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens: 1024, temperature: 0.1 },
+        }),
+        signal: AbortSignal.timeout(30000),
+      }
+    );
+
+    if (!aiRes.ok) {
+      console.error('[BankPayments] Gemini API error:', aiRes.status);
+      res.status(502).json({ error: 'AI service error. Try again.' }); return;
+    }
+
+    const aiData = await aiRes.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+    const text = aiData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+    // Extract JSON from response (may be wrapped in ```json blocks)
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      res.json({ verdict: 'WARNING', score: 50, summary: 'AI returned non-structured response', raw: text });
+      return;
+    }
+
+    const result = JSON.parse(jsonMatch[0]);
+
+    await logAudit({
+      batchId: batch.id, action: 'AI_CHECK',
+      userId: req.user!.id, userName: req.user!.name,
+      ipAddress: req.ip,
+      details: JSON.stringify({ verdict: result.verdict, score: result.score }),
+    });
+
+    res.json(result);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    if (msg.includes('timeout') || msg.includes('abort')) {
+      res.status(504).json({ error: 'AI check timed out. Try again.' });
+    } else {
+      console.error('[BankPayments] AI check error:', msg);
+      res.status(502).json({ error: 'AI verification failed. Try again.' });
+    }
+  }
+}));
+
+// ══════════════════════════════════════════════════════════════
 // STATUS & CONFIG
 // ══════════════════════════════════════════════════════════════
 

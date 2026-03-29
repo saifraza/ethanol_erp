@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Landmark, X, Shield, CheckCircle, XCircle, Send, AlertTriangle, Clock, Eye } from 'lucide-react';
+import { Landmark, X, Shield, CheckCircle, XCircle, Send, AlertTriangle, Clock, Eye, Sparkles } from 'lucide-react';
 import api from '../../services/api';
 
 // ═══════════════════════════════════════════════
@@ -461,6 +461,22 @@ function ApproveTab({ onAction }: { onAction: () => void }) {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [aiResult, setAiResult] = useState<{ verdict: string; score: number; summary: string; checks: Array<{ check: string; status: string; detail: string }>; recommendations: string[] } | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+
+  const runAiCheck = async (batchId: string) => {
+    try {
+      setAiLoading(true);
+      setAiResult(null);
+      const res = await api.post<{ verdict: string; score: number; summary: string; checks: Array<{ check: string; status: string; detail: string }>; recommendations: string[] }>(`/bank-payments/batches/${batchId}/ai-check`);
+      setAiResult(res.data);
+    } catch (err: unknown) {
+      const axErr = err as { response?: { data?: { error?: string } } };
+      setError(axErr.response?.data?.error || 'AI check failed');
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   const fetchBatches = useCallback(async () => {
     try {
@@ -639,6 +655,71 @@ function ApproveTab({ onAction }: { onAction: () => void }) {
                                 ))}
                               </tbody>
                             </table>
+                          </div>
+                          {/* AI Verification Check */}
+                          <div className="px-4 py-3 border-t border-slate-200">
+                            {!aiResult && !aiLoading && (
+                              <button
+                                onClick={() => runAiCheck(b.id)}
+                                className="px-3 py-1.5 bg-violet-600 text-white text-[11px] font-medium hover:bg-violet-700 flex items-center gap-1.5"
+                              >
+                                <Sparkles className="w-3.5 h-3.5" />
+                                AI Verification Check
+                              </button>
+                            )}
+                            {aiLoading && (
+                              <div className="flex items-center gap-2 text-xs text-violet-600">
+                                <Sparkles className="w-4 h-4 animate-pulse" />
+                                <span>Running AI audit — checking amounts, bank details, duplicates, anomalies...</span>
+                              </div>
+                            )}
+                            {aiResult && (
+                              <div className={`border ${aiResult.verdict === 'PASS' ? 'border-green-300 bg-green-50' : aiResult.verdict === 'WARNING' ? 'border-amber-300 bg-amber-50' : 'border-red-300 bg-red-50'}`}>
+                                <div className={`px-3 py-2 flex items-center justify-between ${aiResult.verdict === 'PASS' ? 'bg-green-100' : aiResult.verdict === 'WARNING' ? 'bg-amber-100' : 'bg-red-100'}`}>
+                                  <div className="flex items-center gap-2">
+                                    <Sparkles className="w-4 h-4" />
+                                    <span className="text-[10px] font-bold uppercase tracking-widest">AI Verification</span>
+                                    <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${aiResult.verdict === 'PASS' ? 'border-green-400 bg-green-200 text-green-800' : aiResult.verdict === 'WARNING' ? 'border-amber-400 bg-amber-200 text-amber-800' : 'border-red-400 bg-red-200 text-red-800'}`}>
+                                      {aiResult.verdict} — {aiResult.score}/100
+                                    </span>
+                                  </div>
+                                  <button onClick={() => setAiResult(null)} className="text-slate-400 hover:text-slate-600"><X className="w-3.5 h-3.5" /></button>
+                                </div>
+                                <div className="px-3 py-2">
+                                  <div className="text-xs text-slate-800 font-medium mb-2">{aiResult.summary}</div>
+                                  <table className="w-full text-xs border border-slate-200 mb-2">
+                                    <thead>
+                                      <tr className="bg-slate-100">
+                                        <th className="text-left px-2 py-1 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-200">Check</th>
+                                        <th className="text-center px-2 py-1 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-200 w-16">Status</th>
+                                        <th className="text-left px-2 py-1 font-semibold text-[10px] uppercase tracking-widest">Detail</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {aiResult.checks?.map((c, ci) => (
+                                        <tr key={ci} className="border-b border-slate-100">
+                                          <td className="px-2 py-1 border-r border-slate-100 font-medium text-slate-700">{c.check}</td>
+                                          <td className="px-2 py-1 border-r border-slate-100 text-center">
+                                            <span className={`text-[9px] font-bold uppercase px-1 py-0.5 border ${c.status === 'OK' ? 'border-green-300 bg-green-50 text-green-700' : c.status === 'WARNING' ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-red-300 bg-red-50 text-red-700'}`}>
+                                              {c.status}
+                                            </span>
+                                          </td>
+                                          <td className="px-2 py-1 text-slate-600">{c.detail}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                  {aiResult.recommendations?.length > 0 && (
+                                    <div>
+                                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Recommendations</div>
+                                      <ul className="list-disc list-inside text-xs text-slate-600 space-y-0.5">
+                                        {aiResult.recommendations.map((r, ri) => <li key={ri}>{r}</li>)}
+                                      </ul>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
                           </div>
                           {/* Approve / Reject */}
                           <div className="px-4 py-3 border-t border-slate-200 flex items-end gap-3">
