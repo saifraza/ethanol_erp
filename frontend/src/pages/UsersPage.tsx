@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import api from '../services/api';
 import { UserPlus, Shield, Trash2, Pencil, Key, Save, X, Check } from 'lucide-react';
 
-import { ALL_MODULES } from '../config/modules';
+import { ALL_MODULES, GROUPED_MODULES } from '../config/modules';
 
 function parseModules(str: string | null | undefined): string[] {
   if (!str) return [];
@@ -128,18 +128,40 @@ export default function UsersPage() {
                 <span className="text-sm font-medium text-gray-600 flex items-center gap-1"><Shield size={14} /> Module Access</span>
                 <div className="flex gap-2">
                   <button onClick={() => setForm(f => ({ ...f, modules: ALL_MODULES.map(m => m.key) }))} className="text-xs text-blue-600 hover:underline">Select All</button>
-                  <button onClick={() => setForm(f => ({ ...f, modules: [] }))} className="text-xs text-red-500 hover:underline">Clear</button>
+                  <button onClick={() => setForm(f => ({ ...f, modules: [] }))} className="text-xs text-red-500 hover:underline">Clear All</button>
                 </div>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                {ALL_MODULES.map(m => (
-                  <label key={m.key} className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-sm cursor-pointer transition ${form.modules.includes(m.key) ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-                    <input type="checkbox" checked={form.modules.includes(m.key)} onChange={() => toggleFormModule(m.key)} className="rounded" />
-                    {m.label}
-                  </label>
-                ))}
+              <div className="space-y-2">
+                {GROUPED_MODULES.map(g => {
+                  const allSelected = g.modules.every(m => form.modules.includes(m.key));
+                  const someSelected = g.modules.some(m => form.modules.includes(m.key));
+                  return (
+                    <div key={g.group} className="border border-slate-200 bg-white">
+                      <div className="flex items-center justify-between px-3 py-1.5 bg-slate-100 border-b border-slate-200">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="checkbox" checked={allSelected} ref={el => { if (el) el.indeterminate = someSelected && !allSelected; }}
+                            onChange={() => {
+                              if (allSelected) setForm(f => ({ ...f, modules: f.modules.filter(m => !g.modules.some(gm => gm.key === m)) }));
+                              else setForm(f => ({ ...f, modules: [...new Set([...f.modules, ...g.modules.map(m => m.key)])] }));
+                            }} className="rounded" />
+                          <span className="text-[11px] font-bold text-slate-700 uppercase tracking-widest">{g.label}</span>
+                        </label>
+                        <span className="text-[10px] text-slate-400">{g.modules.filter(m => form.modules.includes(m.key)).length}/{g.modules.length}</span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-1 p-2">
+                        {g.modules.map(m => (
+                          <label key={m.key} className={`flex items-center gap-1.5 px-2 py-1 text-xs cursor-pointer ${form.modules.includes(m.key) ? 'text-blue-700 font-medium' : 'text-slate-500'}`}>
+                            <input type="checkbox" checked={form.modules.includes(m.key)} onChange={() => toggleFormModule(m.key)} className="rounded" />
+                            {m.label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-              {form.modules.length === 0 && <p className="text-xs text-amber-600 mt-1">No modules selected — user won't see any pages</p>}
+              {form.modules.length === 0 && <p className="text-xs text-amber-600 mt-2">No modules selected — user won't see any pages</p>}
+              {form.modules.length > 0 && <p className="text-xs text-slate-500 mt-2">{form.modules.length} pages selected</p>}
             </div>
           )}
           {form.role === 'ADMIN' && <p className="text-xs text-gray-500 mb-3">Admins have access to all modules</p>}
@@ -217,13 +239,34 @@ export default function UsersPage() {
                         <button onClick={() => setEditModules([])} className="text-xs text-red-500 hover:underline">None</button>
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 mb-3">
-                      {ALL_MODULES.map(m => (
-                        <label key={m.key} className={`flex items-center gap-2 px-2 py-1 rounded border text-xs cursor-pointer ${editModules.includes(m.key) ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-gray-200 text-gray-500'}`}>
-                          <input type="checkbox" checked={editModules.includes(m.key)} onChange={() => toggleEditModule(m.key)} className="rounded" />
-                          {m.label}
-                        </label>
-                      ))}
+                    <div className="space-y-1.5 mb-3">
+                      {GROUPED_MODULES.map(g => {
+                        const allSel = g.modules.every(m => editModules.includes(m.key));
+                        const someSel = g.modules.some(m => editModules.includes(m.key));
+                        return (
+                          <div key={g.group} className="border border-slate-200">
+                            <div className="flex items-center justify-between px-2 py-1 bg-slate-50 border-b border-slate-200">
+                              <label className="flex items-center gap-1.5 cursor-pointer">
+                                <input type="checkbox" checked={allSel} ref={el => { if (el) el.indeterminate = someSel && !allSel; }}
+                                  onChange={() => {
+                                    if (allSel) setEditModules(m => m.filter(x => !g.modules.some(gm => gm.key === x)));
+                                    else setEditModules(m => [...new Set([...m, ...g.modules.map(gm => gm.key)])]);
+                                  }} className="rounded" />
+                                <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">{g.label}</span>
+                              </label>
+                              <span className="text-[9px] text-slate-400">{g.modules.filter(m => editModules.includes(m.key)).length}/{g.modules.length}</span>
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-0.5 p-1.5">
+                              {g.modules.map(m => (
+                                <label key={m.key} className={`flex items-center gap-1 px-1.5 py-0.5 text-[11px] cursor-pointer ${editModules.includes(m.key) ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
+                                  <input type="checkbox" checked={editModules.includes(m.key)} onChange={() => toggleEditModule(m.key)} className="rounded" />
+                                  {m.label}
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                     <div className="flex gap-2">
                       <button onClick={() => saveModules(u.id)} className="flex items-center gap-1 bg-blue-600 text-white px-3 py-1.5 rounded text-xs font-medium hover:bg-blue-700">
