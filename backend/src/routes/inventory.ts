@@ -43,6 +43,31 @@ router.get('/items', asyncHandler(async (req: AuthRequest, res: Response) => {
   res.json({ items });
 }));
 
+// GET /items/po-status — PO status for all items (must be BEFORE /:id)
+router.get('/items/po-status', asyncHandler(async (_req: AuthRequest, res: Response) => {
+  const poLines = await prisma.pOLine.findMany({
+    where: {
+      inventoryItemId: { not: null },
+      po: { status: { in: ['DRAFT', 'APPROVED', 'SENT', 'PARTIAL_RECEIVED'] } },
+    },
+    take: 500,
+    select: {
+      inventoryItemId: true,
+      po: { select: { status: true, poNo: true } },
+    },
+  });
+  const statusMap: Record<string, { status: string; poNo: number }> = {};
+  for (const line of poLines) {
+    if (!line.inventoryItemId) continue;
+    const existing = statusMap[line.inventoryItemId];
+    const poStatus = line.po.status;
+    if (!existing || poStatus === 'SENT' || (poStatus === 'APPROVED' && existing.status === 'DRAFT')) {
+      statusMap[line.inventoryItemId] = { status: poStatus, poNo: line.po.poNo };
+    }
+  }
+  res.json(statusMap);
+}));
+
 // GET /items/:id — single item with full history
 router.get('/items/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
   const item = await prisma.inventoryItem.findUnique({
@@ -293,38 +318,6 @@ router.get('/alerts', asyncHandler(async (_req: AuthRequest, res: Response) => {
   });
   const lowStock = items.filter(i => i.currentStock <= i.minStock && i.minStock > 0);
   res.json({ alerts: lowStock });
-}));
-
-// GET /items/po-status — PO status for all items (for badges)
-router.get('/items/po-status', asyncHandler(async (_req: AuthRequest, res: Response) => {
-  // Find all active PO lines linked to inventory items
-  const poLines = await prisma.pOLine.findMany({
-    where: {
-      inventoryItemId: { not: null },
-      po: { status: { in: ['DRAFT', 'APPROVED', 'SENT', 'PARTIAL_RECEIVED'] } },
-    },
-    take: 500,
-    select: {
-      inventoryItemId: true,
-      quantity: true,
-      receivedQty: true,
-      po: { select: { status: true, poNo: true } },
-    },
-  });
-
-  // Build status map: itemId -> best status
-  const statusMap: Record<string, { status: string; poNo: number }> = {};
-  for (const line of poLines) {
-    if (!line.inventoryItemId) continue;
-    const existing = statusMap[line.inventoryItemId];
-    const poStatus = line.po.status;
-    // Priority: SENT > APPROVED > DRAFT > PARTIAL_RECEIVED
-    if (!existing || poStatus === 'SENT' || (poStatus === 'APPROVED' && existing.status === 'DRAFT')) {
-      statusMap[line.inventoryItemId] = { status: poStatus, poNo: line.po.poNo };
-    }
-  }
-
-  res.json(statusMap);
 }));
 
 // ─── ITEM-VENDOR LINKS (Multi-supplier) ─────────
