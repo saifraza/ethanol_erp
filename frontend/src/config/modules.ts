@@ -18,7 +18,7 @@ export interface ModuleDef {
   label: string;
   to: string;
   icon: any;
-  group: 'process' | 'admin' | 'sales' | 'procurement' | 'trade' | 'accounts' | 'inventory' | 'logistics';
+  group: 'process' | 'admin' | 'sales' | 'procurement' | 'trade' | 'accounts' | 'books' | 'inventory' | 'logistics';
   adminOnly?: boolean;
 }
 
@@ -67,22 +67,24 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'direct-purchase', label: 'Spot Purchase', to: '/trade/purchases', icon: Tractor, group: 'trade' },
   { key: 'direct-sale', label: 'Spot Sale', to: '/trade/sales', icon: Store, group: 'trade' },
 
-  // ── ACCOUNTS ──
+  // ── ACCOUNTS (day-to-day transactions) ──
   { key: 'cash-book', label: 'Cash Book', to: '/accounts/cash-book', icon: IndianRupee, group: 'accounts' },
   { key: 'bank-book', label: 'Bank Book', to: '/accounts/bank-book', icon: Banknote, group: 'accounts' },
   { key: 'payments-out', label: 'Payments Out', to: '/accounts/payments-out', icon: CreditCard, group: 'accounts' },
   { key: 'payments-in', label: 'Payments In', to: '/accounts/payments-in', icon: IndianRupee, group: 'accounts' },
-  { key: 'chart-of-accounts', label: 'Chart of Accounts', to: '/accounts/chart', icon: BookOpen, group: 'accounts' },
-  { key: 'journal-entries', label: 'Journal Entry', to: '/accounts/journal', icon: Calculator, group: 'accounts' },
-  { key: 'ledger', label: 'Ledger', to: '/accounts/ledger', icon: BookOpen, group: 'accounts' },
-  { key: 'trial-balance', label: 'Trial Balance', to: '/accounts/trial-balance', icon: TrendingUp, group: 'accounts' },
-  { key: 'daybook', label: 'Day Book', to: '/accounts/daybook', icon: FileText, group: 'accounts' },
-  { key: 'pnl', label: 'Profit & Loss', to: '/accounts/profit-loss', icon: TrendingUp, group: 'accounts' },
-  { key: 'balance-sheet', label: 'Balance Sheet', to: '/accounts/balance-sheet', icon: Landmark, group: 'accounts' },
-  { key: 'bank-recon', label: 'Bank Recon', to: '/accounts/bank-reconciliation', icon: Banknote, group: 'accounts' },
-  { key: 'gst-summary', label: 'GST Summary', to: '/accounts/gst-summary', icon: PieChart, group: 'accounts' },
   { key: 'cash-vouchers', label: 'Cash Vouchers', to: '/accounts/cash-vouchers', icon: Receipt, group: 'accounts' },
-  { key: 'bank-loans', label: 'Bank Loans', to: '/accounts/bank-loans', icon: Landmark, group: 'accounts' },
+
+  // ── BOOKS (bookkeeping & reports) ──
+  { key: 'chart-of-accounts', label: 'Chart of Accounts', to: '/accounts/chart', icon: BookOpen, group: 'books' },
+  { key: 'journal-entries', label: 'Journal Entry', to: '/accounts/journal', icon: Calculator, group: 'books' },
+  { key: 'ledger', label: 'Ledger', to: '/accounts/ledger', icon: BookOpen, group: 'books' },
+  { key: 'daybook', label: 'Day Book', to: '/accounts/daybook', icon: FileText, group: 'books' },
+  { key: 'trial-balance', label: 'Trial Balance', to: '/accounts/trial-balance', icon: TrendingUp, group: 'books' },
+  { key: 'pnl', label: 'Profit & Loss', to: '/accounts/profit-loss', icon: TrendingUp, group: 'books' },
+  { key: 'balance-sheet', label: 'Balance Sheet', to: '/accounts/balance-sheet', icon: Landmark, group: 'books' },
+  { key: 'bank-recon', label: 'Bank Recon', to: '/accounts/bank-reconciliation', icon: Banknote, group: 'books' },
+  { key: 'gst-summary', label: 'GST Summary', to: '/accounts/gst-summary', icon: PieChart, group: 'books' },
+  { key: 'bank-loans', label: 'Bank Loans', to: '/accounts/bank-loans', icon: Landmark, group: 'books' },
 
   // ── INVENTORY ──
   { key: 'inventory-store', label: 'Inventory & Store', to: '/inventory', icon: Warehouse, group: 'inventory' },
@@ -105,8 +107,8 @@ export const ALL_MODULES = MODULE_DEFS
 // Grouped modules for user management UI
 const GROUP_LABELS: Record<string, string> = {
   process: 'Plant / Process', sales: 'Sales', procurement: 'Purchase',
-  trade: 'Spot Trade', accounts: 'Accounts', inventory: 'Inventory',
-  logistics: 'Logistics', admin: 'Admin',
+  trade: 'Spot Trade', accounts: 'Accounts', books: 'Books',
+  inventory: 'Inventory', logistics: 'Logistics', admin: 'Admin',
 };
 
 export const GROUPED_MODULES = Object.entries(GROUP_LABELS).map(([group, label]) => ({
@@ -132,6 +134,10 @@ export const tradeNav = MODULE_DEFS.filter(m => m.group === 'trade').map(m => ({
 }));
 
 export const accountsNav = MODULE_DEFS.filter(m => m.group === 'accounts').map(m => ({
+  to: m.to, label: m.label, icon: m.icon, moduleKey: m.key,
+}));
+
+export const booksNav = MODULE_DEFS.filter(m => m.group === 'books').map(m => ({
   to: m.to, label: m.label, icon: m.icon, moduleKey: m.key,
 }));
 

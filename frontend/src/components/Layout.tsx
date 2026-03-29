@@ -7,7 +7,7 @@ import {
   LayoutDashboard, LogOut, ChevronDown, ChevronRight,
   WifiOff, Menu, X
 } from 'lucide-react';
-import { processNav, salesNav, procurementNav, tradeNav, accountsNav, inventoryNav, logisticsNav, adminNav } from '../config/modules';
+import { processNav, salesNav, procurementNav, tradeNav, accountsNav, booksNav, inventoryNav, logisticsNav, adminNav } from '../config/modules';
 
 function hasModuleAccess(user: any, moduleKey: string): boolean {
   if (!user) return false;
@@ -33,6 +33,7 @@ export default function Layout() {
   const [logisticsOpen, setLogisticsOpen] = useState(false);
   const [tradeOpen, setTradeOpen] = useState(false);
   const [accountsOpen, setAccountsOpen] = useState(false);
+  const [booksOpen, setBooksOpen] = useState(false);
   const [inventoryOpen, setInventoryOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
   const [serverUp, setServerUp] = useState(true);
@@ -170,6 +171,20 @@ export default function Layout() {
           {accountsOpen && (
             <div className="space-y-0.5 ml-1 border-l border-gray-700 pl-2">
               {accountsNav.filter(n => hasModuleAccess(user, n.moduleKey)).map(n => (
+                <NavLink key={n.to} {...n} active={location.pathname === n.to} onClick={closeSidebar} />
+              ))}
+            </div>
+          )}
+          </>)}
+
+          {booksNav.some(n => hasModuleAccess(user, n.moduleKey)) && (<>
+          <button onClick={() => setBooksOpen(!booksOpen)} className="flex items-center justify-between w-full px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mt-3 hover:text-gray-200">
+            <span>Books</span>
+            {booksOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </button>
+          {booksOpen && (
+            <div className="space-y-0.5 ml-1 border-l border-gray-700 pl-2">
+              {booksNav.filter(n => hasModuleAccess(user, n.moduleKey)).map(n => (
                 <NavLink key={n.to} {...n} active={location.pathname === n.to} onClick={closeSidebar} />
               ))}
             </div>
