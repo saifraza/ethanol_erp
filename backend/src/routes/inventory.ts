@@ -164,15 +164,15 @@ router.delete('/items/:id', authorize('ADMIN') as any, asyncHandler(async (req: 
 
 // ─── TRANSACTIONS (Stock In / Out / Adjust) ─────
 
-// POST /transaction — record stock movement
+// POST /transaction — record stock movement + auto-draft PO if low stock
 router.post('/transaction', asyncHandler(async (req: AuthRequest, res: Response) => {
   const b = req.body;
   const qty = parseFloat(b.quantity) || 0;
   const type = b.type; // IN, OUT, ADJUST
 
   // Wrap in transaction to ensure atomicity
-  const txn = await prisma.$transaction(async (tx: any) => {
-    // Create transaction
+  const result = await prisma.$transaction(async (tx: any) => {
+    // Create transaction with warehouse/department
     const transaction = await tx.inventoryTransaction.create({
       data: {
         itemId: b.itemId,
@@ -180,6 +180,8 @@ router.post('/transaction', asyncHandler(async (req: AuthRequest, res: Response)
         quantity: qty,
         reference: b.reference || null,
         remarks: b.remarks || null,
+        warehouse: b.warehouse || null,
+        department: b.department || null,
         userId: req.user!.id,
       },
     });
@@ -195,12 +197,92 @@ router.post('/transaction', asyncHandler(async (req: AuthRequest, res: Response)
         where: { id: b.itemId },
         data: { currentStock: Math.max(0, newStock) },
       });
+
+      return { transaction, item, newStock: Math.max(0, newStock) };
     }
 
-    return transaction;
+    return { transaction, item: null, newStock: 0 };
   });
 
-  res.status(201).json(txn);
+  // Auto-draft PO if stock fell below minimum
+  let autoPO = null;
+  if (result.item && result.newStock <= result.item.minStock && result.item.minStock > 0 && type === 'OUT') {
+    try {
+      // Find last PO for this item to get supplier and rate
+      const lastPOLine = await prisma.pOLine.findFirst({
+        where: { inventoryItemId: b.itemId },
+        orderBy: { po: { poDate: 'desc' } },
+        select: {
+          rate: true, quantity: true, unit: true, hsnCode: true, gstPercent: true,
+          po: { select: { vendorId: true, vendor: { select: { name: true } } } },
+        },
+      });
+
+      if (lastPOLine?.po?.vendorId) {
+        // Calculate reorder qty: max stock - current stock, or last PO qty
+        const reorderQty = result.item.maxStock
+          ? result.item.maxStock - result.newStock
+          : lastPOLine.quantity;
+        const rate = lastPOLine.rate;
+        const amount = reorderQty * rate;
+        const gstPct = lastPOLine.gstPercent || result.item.gstPercent || 18;
+        const isIntraState = true; // default
+        const taxableAmount = amount;
+        const cgst = isIntraState ? taxableAmount * gstPct / 200 : 0;
+        const sgst = cgst;
+        const igst = isIntraState ? 0 : taxableAmount * gstPct / 100;
+        const totalGst = cgst + sgst + igst;
+
+        const po = await prisma.purchaseOrder.create({
+          data: {
+            vendorId: lastPOLine.po.vendorId,
+            poDate: new Date(),
+            deliveryDate: new Date(Date.now() + (result.item.leadTimeDays || 7) * 86400000),
+            status: 'DRAFT',
+            supplyType: 'INTRA_STATE',
+            subtotal: amount,
+            totalCgst: cgst,
+            totalSgst: sgst,
+            totalIgst: igst,
+            totalGst: totalGst,
+            grandTotal: amount + totalGst,
+            remarks: `Auto-drafted: ${result.item.name} below min stock (${result.newStock}/${result.item.minStock} ${result.item.unit})`,
+            userId: req.user!.id,
+            lines: {
+              create: {
+                lineNo: 1,
+                inventoryItemId: b.itemId,
+                description: result.item.name,
+                hsnCode: lastPOLine.hsnCode || result.item.hsnCode || '',
+                quantity: reorderQty,
+                unit: result.item.unit,
+                rate: rate,
+                amount: amount,
+                gstPercent: gstPct,
+                taxableAmount: taxableAmount,
+                cgstPercent: isIntraState ? gstPct / 2 : 0,
+                cgstAmount: cgst,
+                sgstPercent: isIntraState ? gstPct / 2 : 0,
+                sgstAmount: sgst,
+                igstPercent: isIntraState ? 0 : gstPct,
+                igstAmount: igst,
+                totalGst: totalGst,
+                lineTotal: amount + totalGst,
+                receivedQty: 0,
+                pendingQty: reorderQty,
+              },
+            },
+          },
+        });
+        autoPO = { poId: po.id, poNo: po.poNo, vendor: lastPOLine.po.vendor.name, qty: reorderQty, rate };
+        console.log(`[Inventory] Auto-drafted PO-${po.poNo} for ${result.item.name} (${result.newStock} < ${result.item.minStock})`);
+      }
+    } catch (err) {
+      console.error('[Inventory] Auto-draft PO failed:', (err as Error).message);
+    }
+  }
+
+  res.status(201).json({ ...result.transaction, autoPO });
 }));
 
 // GET /alerts — items below min stock
@@ -211,6 +293,38 @@ router.get('/alerts', asyncHandler(async (_req: AuthRequest, res: Response) => {
   });
   const lowStock = items.filter(i => i.currentStock <= i.minStock && i.minStock > 0);
   res.json({ alerts: lowStock });
+}));
+
+// GET /items/po-status — PO status for all items (for badges)
+router.get('/items/po-status', asyncHandler(async (_req: AuthRequest, res: Response) => {
+  // Find all active PO lines linked to inventory items
+  const poLines = await prisma.pOLine.findMany({
+    where: {
+      inventoryItemId: { not: null },
+      po: { status: { in: ['DRAFT', 'APPROVED', 'SENT', 'PARTIAL_RECEIVED'] } },
+    },
+    take: 500,
+    select: {
+      inventoryItemId: true,
+      quantity: true,
+      receivedQty: true,
+      po: { select: { status: true, poNo: true } },
+    },
+  });
+
+  // Build status map: itemId -> best status
+  const statusMap: Record<string, { status: string; poNo: number }> = {};
+  for (const line of poLines) {
+    if (!line.inventoryItemId) continue;
+    const existing = statusMap[line.inventoryItemId];
+    const poStatus = line.po.status;
+    // Priority: SENT > APPROVED > DRAFT > PARTIAL_RECEIVED
+    if (!existing || poStatus === 'SENT' || (poStatus === 'APPROVED' && existing.status === 'DRAFT')) {
+      statusMap[line.inventoryItemId] = { status: poStatus, poNo: line.po.poNo };
+    }
+  }
+
+  res.json(statusMap);
 }));
 
 // ─── ITEM-VENDOR LINKS (Multi-supplier) ─────────
