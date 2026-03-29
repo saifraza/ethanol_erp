@@ -21,6 +21,12 @@ interface UnifiedPayment {
   source: string; // model name
   sourceRef: string | null; // invoice/shipment ref
   createdAt: Date;
+  // Document links (vendor payments only)
+  poId?: string | null;
+  grnId?: string | null;
+  invoiceFilePath?: string | null;
+  invoiceAmount?: number | null;
+  tdsDeducted?: number;
 }
 
 // ═══════════════════════════════════════════════
