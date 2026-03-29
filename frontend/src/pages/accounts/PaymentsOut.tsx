@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, CreditCard, FileText, Upload } from 'lucide-react';
+import { X, CreditCard, FileText, Upload, Download } from 'lucide-react';
 import api from '../../services/api';
 
 // ═══════════════════════════════════════════════
@@ -127,6 +127,13 @@ export default function PaymentsOut() {
 
   // --- Outstanding tab ---
   const [outstanding, setOutstanding] = useState<Outstanding[]>([]);
+
+  // --- Bank File ---
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<string>>(new Set());
+  const [bankFileModal, setBankFileModal] = useState(false);
+  const [bankFileForm, setBankFileForm] = useState({ paymentType: 'NEFT', debitAccount: '', payerIfsc: '', corporateId: 'MKSPIL' });
+  const [bankFileLoading, setBankFileLoading] = useState(false);
+  const [bankFileResult, setBankFileResult] = useState<{ batchId: string; csv: string; fileName: string; totalAmount: number; recordCount: number } | null>(null);
 
   // --- Modals ---
   const [invoiceModal, setInvoiceModal] = useState<PendingPayable | null>(null);
@@ -293,6 +300,32 @@ export default function PaymentsOut() {
     setError('');
   };
 
+  const handleBankFile = async (item: PendingPayable) => {
+    const invoiceIds = item.invoices.filter(inv => inv.balanceAmount > 0).map(inv => inv.id);
+    if (invoiceIds.length === 0) return;
+    try {
+      const res = await api.post('/vendor-payments/generate-bank-file', {
+        invoiceIds,
+        paymentType: 'NEFT',
+        debitAccount: '00640110015747',
+        payerIfsc: 'UBIN0800643',
+        corporateId: 'MKSPIL',
+      });
+      const { csv, fileName } = res.data;
+      // Download CSV
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Failed to generate bank file';
+      alert(msg);
+    }
+  };
+
   const submitInvoice = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!invoiceModal) return;
@@ -347,6 +380,72 @@ export default function PaymentsOut() {
       setError(msg);
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // ═══════════════════════════════════════════════
+  // Bank file generation
+  // ═══════════════════════════════════════════════
+
+  const toggleInvoice = (invId: string) => {
+    setSelectedInvoiceIds(prev => {
+      const next = new Set(prev);
+      if (next.has(invId)) next.delete(invId);
+      else next.add(invId);
+      return next;
+    });
+  };
+
+  const toggleAllInvoices = () => {
+    if (selectedInvoiceIds.size === outstanding.flatMap(o => o.invoices).length) {
+      setSelectedInvoiceIds(new Set());
+    } else {
+      setSelectedInvoiceIds(new Set(outstanding.flatMap(o => o.invoices.map(inv => inv.id))));
+    }
+  };
+
+  const selectedTotal = outstanding.flatMap(o => o.invoices).filter(inv => selectedInvoiceIds.has(inv.id)).reduce((s, inv) => s + (inv.balanceAmount || 0), 0);
+
+  const openBankFileModal = () => {
+    if (selectedInvoiceIds.size === 0) return;
+    setBankFileResult(null);
+    setError('');
+    setBankFileModal(true);
+  };
+
+  const generateBankFile = async () => {
+    if (!bankFileForm.debitAccount || !bankFileForm.payerIfsc) {
+      setError('Debit account and payer IFSC are required');
+      return;
+    }
+    try {
+      setBankFileLoading(true);
+      setError('');
+      const res = await api.post('/vendor-payments/generate-bank-file', {
+        invoiceIds: Array.from(selectedInvoiceIds),
+        paymentType: bankFileForm.paymentType,
+        debitAccount: bankFileForm.debitAccount,
+        payerIfsc: bankFileForm.payerIfsc,
+        corporateId: bankFileForm.corporateId,
+      });
+      const data = res.data;
+      setBankFileResult(data);
+
+      // Auto-download CSV
+      const blob = new Blob([data.csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = data.fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Failed to generate bank file';
+      setError(msg);
+    } finally {
+      setBankFileLoading(false);
     }
   };
 
@@ -518,9 +617,14 @@ export default function PaymentsOut() {
                                     </button>
                                   )}
                                   {item.invoices.length > 0 && item.balance > 0 && (
-                                    <button onClick={() => openPayModal(item)} className="px-2 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase hover:bg-green-700 flex items-center gap-1" title="Record Payment">
-                                      <CreditCard size={10} /> PAY
-                                    </button>
+                                    <>
+                                      <button onClick={() => handleBankFile(item)} className="px-2 py-0.5 bg-indigo-600 text-white text-[9px] font-bold uppercase hover:bg-indigo-700 flex items-center gap-1" title="Generate Bank File">
+                                        <FileText size={10} /> CSV
+                                      </button>
+                                      <button onClick={() => openPayModal(item)} className="px-2 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase hover:bg-green-700 flex items-center gap-1" title="Confirm Payment">
+                                        <CreditCard size={10} /> PAID
+                                      </button>
+                                    </>
                                   )}
                                   {!item.grnId && (
                                     <span className="text-[9px] text-slate-400 uppercase">No GRN</span>
@@ -743,39 +847,74 @@ export default function PaymentsOut() {
         {/* OUTSTANDING TAB */}
         {/* ═══════════════════════════════════════ */}
         {activeTab === 'outstanding' && (
-          <div className="overflow-x-auto -mx-3 md:-mx-6 border-x border-b border-slate-300">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="bg-slate-800 text-white">
-                  <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Vendor Name</th>
-                  <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Invoice Count</th>
-                  <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Total Outstanding</th>
-                </tr>
-              </thead>
-              <tbody>
-                {outstanding.map((item, idx) => (
-                  <tr key={idx} className="border-b border-slate-100 even:bg-slate-50/70 hover:bg-blue-50/60">
-                    <td className="px-3 py-1.5 border-r border-slate-100 font-medium">{item.vendor.name}</td>
-                    <td className="px-3 py-1.5 border-r border-slate-100 text-center">{item.invoices.length}</td>
-                    <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold text-red-600">{fmtDec(item.totalOutstanding)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              {outstanding.length > 0 && (
-                <tfoot>
-                  <tr className="bg-slate-800 text-white font-semibold">
-                    <td className="px-3 py-2 text-[10px] uppercase tracking-widest">Total</td>
-                    <td className="px-3 py-2 text-center">{outstanding.reduce((s, i) => s + i.invoices.length, 0)}</td>
-                    <td className="px-3 py-2 text-right font-mono tabular-nums">{fmtDec(outstanding.reduce((s, i) => s + i.totalOutstanding, 0))}</td>
-                  </tr>
-                </tfoot>
-              )}
-            </table>
-            {outstanding.length === 0 && (
-              <div className="text-center py-16 border-b border-slate-300 bg-white">
-                <p className="text-xs text-slate-400 uppercase tracking-widest">No outstanding payments</p>
+          <div>
+            {/* Bank File Action Bar */}
+            {outstanding.length > 0 && (
+              <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                    {selectedInvoiceIds.size > 0 ? `${selectedInvoiceIds.size} invoices selected` : 'Select invoices for bank file'}
+                  </span>
+                  {selectedInvoiceIds.size > 0 && (
+                    <span className="text-xs font-mono font-bold text-slate-700">{fmt(selectedTotal)}</span>
+                  )}
+                </div>
+                <button onClick={openBankFileModal} disabled={selectedInvoiceIds.size === 0}
+                  className={`px-3 py-1 text-[11px] font-medium flex items-center gap-1.5 ${selectedInvoiceIds.size > 0 ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-300 text-slate-500 cursor-not-allowed'}`}>
+                  <Download size={12} /> GENERATE BANK FILE
+                </button>
               </div>
             )}
+
+            <div className="overflow-x-auto -mx-3 md:-mx-6 border-x border-b border-slate-300">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-slate-800 text-white">
+                    <th className="w-8 px-2 py-2 border-r border-slate-700">
+                      <input type="checkbox" onChange={toggleAllInvoices}
+                        checked={outstanding.length > 0 && selectedInvoiceIds.size === outstanding.flatMap(o => o.invoices).length}
+                        className="w-3 h-3 accent-blue-500" />
+                    </th>
+                    <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Vendor</th>
+                    <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Invoice No</th>
+                    <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Net Payable</th>
+                    <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Balance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {outstanding.flatMap(item =>
+                    item.invoices.map((inv, j) => (
+                      <tr key={inv.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${selectedInvoiceIds.has(inv.id) ? 'bg-blue-50' : j % 2 ? 'bg-slate-50/70' : ''}`}>
+                        <td className="px-2 py-1.5 border-r border-slate-100 text-center">
+                          <input type="checkbox" checked={selectedInvoiceIds.has(inv.id)}
+                            onChange={() => toggleInvoice(inv.id)} className="w-3 h-3 accent-blue-500" />
+                        </td>
+                        <td className="px-3 py-1.5 border-r border-slate-100 font-medium text-slate-800">{item.vendor.name}</td>
+                        <td className="px-3 py-1.5 border-r border-slate-100 font-mono text-slate-600">{inv.vendorInvNo || `INV-${inv.id.slice(0, 6)}`}</td>
+                        <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">{fmtDec(inv.netPayable)}</td>
+                        <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold text-red-600">{fmtDec(inv.balanceAmount)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+                {outstanding.length > 0 && (
+                  <tfoot>
+                    <tr className="bg-slate-800 text-white font-semibold">
+                      <td className="px-2 py-2"></td>
+                      <td className="px-3 py-2 text-[10px] uppercase tracking-widest">Total ({outstanding.reduce((s, i) => s + i.invoices.length, 0)} invoices)</td>
+                      <td className="px-3 py-2"></td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums">{fmtDec(outstanding.reduce((s, i) => s + i.invoices.reduce((ss, inv) => ss + (inv.netPayable || 0), 0), 0))}</td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums">{fmtDec(outstanding.reduce((s, i) => s + i.totalOutstanding, 0))}</td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+              {outstanding.length === 0 && (
+                <div className="text-center py-16 border-b border-slate-300 bg-white">
+                  <p className="text-xs text-slate-400 uppercase tracking-widest">No outstanding payments</p>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -922,7 +1061,7 @@ export default function PaymentsOut() {
               <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <CreditCard size={14} />
-                  <span className="text-xs font-bold uppercase tracking-widest">Record Payment</span>
+                  <span className="text-xs font-bold uppercase tracking-widest">Confirm Payment</span>
                 </div>
                 <button onClick={() => setPayModal(null)} className="text-slate-400 hover:text-white"><X size={16} /></button>
               </div>
@@ -987,12 +1126,101 @@ export default function PaymentsOut() {
                 <div className="flex gap-2 pt-3 border-t border-slate-200">
                   <button type="submit" disabled={submitting}
                     className="px-4 py-1.5 bg-green-600 text-white text-[11px] font-medium hover:bg-green-700 disabled:opacity-50">
-                    {submitting ? 'PROCESSING...' : 'RECORD PAYMENT'}
+                    {submitting ? 'CONFIRMING...' : 'CONFIRM PAYMENT'}
                   </button>
                   <button type="button" onClick={() => setPayModal(null)}
                     className="px-4 py-1.5 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">CANCEL</button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+        {/* ═══════════════════════════════════════ */}
+        {/* BANK FILE GENERATION MODAL */}
+        {/* ═══════════════════════════════════════ */}
+        {bankFileModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 overflow-y-auto py-4">
+            <div className="bg-white shadow-2xl w-full max-w-xl mx-4">
+              <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Download size={14} />
+                  <span className="text-xs font-bold uppercase tracking-widest">Generate UBI Bank File</span>
+                </div>
+                <button onClick={() => setBankFileModal(false)} className="text-slate-400 hover:text-white"><X size={16} /></button>
+              </div>
+
+              {/* Summary strip */}
+              <div className="bg-slate-100 px-4 py-2 text-xs border-b border-slate-300 flex gap-6">
+                <span><strong>Invoices:</strong> {selectedInvoiceIds.size}</span>
+                <span><strong>Total Amount:</strong> <span className="font-mono font-bold text-red-600">{fmtDec(selectedTotal)}</span></span>
+              </div>
+
+              <div className="p-4 space-y-3">
+                {error && <div className="text-xs text-red-600 bg-red-50 border border-red-200 px-3 py-1.5">{error}</div>}
+
+                {bankFileResult ? (
+                  <div className="space-y-3">
+                    <div className="bg-green-50 border border-green-300 px-4 py-3">
+                      <div className="text-[10px] font-bold text-green-800 uppercase tracking-widest">Bank File Generated</div>
+                      <div className="text-xs text-green-700 mt-1">Batch: <span className="font-mono font-bold">{bankFileResult.batchId}</span></div>
+                      <div className="text-xs text-green-700">Records: {bankFileResult.recordCount} | Total: {fmtDec(bankFileResult.totalAmount)}</div>
+                      <div className="text-xs text-green-700 mt-1">File has been downloaded as <span className="font-mono">{bankFileResult.fileName}</span></div>
+                    </div>
+                    <div className="bg-amber-50 border border-amber-300 px-4 py-3">
+                      <div className="text-[10px] font-bold text-amber-800 uppercase tracking-widest">Next Steps</div>
+                      <ol className="text-xs text-amber-700 mt-1 list-decimal pl-4 space-y-0.5">
+                        <li>Login to UBI APPA Portal (myportal.unionbankofindia.co.in)</li>
+                        <li>Upload the CSV file in Transaction Portal</li>
+                        <li>Complete Maker → Checker → Releaser approval</li>
+                        <li>Download response file for payment confirmation</li>
+                      </ol>
+                    </div>
+                    <button onClick={() => { setBankFileModal(false); setSelectedInvoiceIds(new Set()); setBankFileResult(null); }}
+                      className="px-4 py-1.5 bg-slate-800 text-white text-[11px] font-medium hover:bg-slate-700">DONE</button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Payment Type *</label>
+                        <select value={bankFileForm.paymentType} onChange={e => setBankFileForm(f => ({ ...f, paymentType: e.target.value }))}
+                          className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                          <option value="NEFT">NEFT</option>
+                          <option value="RTGS">RTGS</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Corporate ID</label>
+                        <input type="text" value={bankFileForm.corporateId} onChange={e => setBankFileForm(f => ({ ...f, corporateId: e.target.value }))}
+                          className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">MSPIL Debit Account No *</label>
+                      <input type="text" value={bankFileForm.debitAccount} onChange={e => setBankFileForm(f => ({ ...f, debitAccount: e.target.value }))}
+                        placeholder="Enter MSPIL bank account number"
+                        className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">MSPIL Bank IFSC *</label>
+                      <input type="text" value={bankFileForm.payerIfsc} onChange={e => setBankFileForm(f => ({ ...f, payerIfsc: e.target.value.toUpperCase() }))}
+                        placeholder="e.g., UBIN0532568"
+                        className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                    </div>
+                    <div className="bg-slate-50 border border-slate-200 px-3 py-2 text-[10px] text-slate-500">
+                      This will generate a CSV file in Union Bank APPA format. Upload it to the APPA portal to process payments. No payments are recorded in the ERP until you confirm them after bank processing.
+                    </div>
+                    <div className="flex gap-2 pt-3 border-t border-slate-200">
+                      <button onClick={generateBankFile} disabled={bankFileLoading}
+                        className="px-4 py-1.5 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1.5">
+                        <Download size={12} /> {bankFileLoading ? 'GENERATING...' : 'GENERATE & DOWNLOAD'}
+                      </button>
+                      <button onClick={() => setBankFileModal(false)}
+                        className="px-4 py-1.5 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">CANCEL</button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
