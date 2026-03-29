@@ -417,6 +417,18 @@ export default function Fermentation() {
   interface OpcVesselData { level?: number; temp?: number; updatedAt?: string; }
   const [opcData, setOpcData] = useState<Record<string, OpcVesselData>>({});
 
+  // Fermenter phase detection from OPC
+  interface FermPhase { fermenterNo: number; label: string; detectedPhase: string; confidence: string; slope: number; alarmEnabled: boolean; }
+  const [fermPhases, setFermPhases] = useState<Record<string, FermPhase>>({});
+  const PHASE_STYLE: Record<string, { bg: string; text: string; icon: string }> = {
+    EMPTY: { bg: 'bg-gray-100 border-gray-300', text: 'text-gray-500', icon: '' },
+    STEAMING: { bg: 'bg-red-50 border-red-300', text: 'text-red-600', icon: '♨' },
+    FILLING: { bg: 'bg-sky-50 border-sky-300', text: 'text-sky-700', icon: '↑' },
+    REACTION: { bg: 'bg-amber-50 border-amber-300', text: 'text-amber-700', icon: '⚗' },
+    DRAINING: { bg: 'bg-emerald-50 border-emerald-300', text: 'text-emerald-700', icon: '↓' },
+    UNKNOWN: { bg: 'bg-gray-50 border-gray-200', text: 'text-gray-400', icon: '?' },
+  };
+
   // Fetch OPC data for all vessels on page load
   const fetchAllOpcData = useCallback(async () => {
     try {
@@ -449,9 +461,21 @@ export default function Fermentation() {
     } catch { /* OPC unavailable, no-op */ }
   }, []);
 
+  const fetchFermPhases = useCallback(async () => {
+    try {
+      const res = await api.get('/opc/fermenter-phases');
+      const map: Record<string, FermPhase> = {};
+      for (const p of (res.data?.phases || [])) {
+        map[p.label] = p;
+      }
+      setFermPhases(map);
+    } catch { /* unavailable */ }
+  }, []);
+
   useEffect(() => {
     fetchAllOpcData();
-    const iv = setInterval(fetchAllOpcData, 60000); // Refresh every 60s
+    fetchFermPhases();
+    const iv = setInterval(() => { fetchAllOpcData(); fetchFermPhases(); }, 60000); // Refresh every 60s
     return () => clearInterval(iv);
   }, [fetchAllOpcData]);
 
@@ -799,6 +823,20 @@ export default function Fermentation() {
                     )}
                   </div>
                 )}
+                {/* Detected Phase Badge */}
+                {v.type === 'FERM' && fermPhases[v.label] && fermPhases[v.label].detectedPhase !== 'UNKNOWN' && (() => {
+                  const fp = fermPhases[v.label];
+                  const style = PHASE_STYLE[fp.detectedPhase] || PHASE_STYLE.UNKNOWN;
+                  return (
+                    <div className="mt-1 flex items-center gap-1">
+                      <span className={`text-[8px] font-bold uppercase px-1.5 py-0.5 border ${style.bg} ${style.text}`}>
+                        {style.icon} {fp.detectedPhase} {fp.slope !== 0 ? `(${fp.slope > 0 ? '+' : ''}${fp.slope}%/hr)` : ''}
+                      </span>
+                      {!fp.alarmEnabled && <span className="text-[7px] text-gray-400">ALARM OFF</span>}
+                      {fp.confidence !== 'HIGH' && <span className="text-[7px] text-gray-400">{fp.confidence}</span>}
+                    </div>
+                  );
+                })()}
                 {isIdle && v.type !== 'BW' && !opcData[v.label] && <div className="text-[10px] text-gray-300 mt-1.5 italic">idle</div>}
                 {v.type === 'BW' && !metric1 && !getBW(v.no).length && !opcData[v.label] && <div className="text-[10px] text-gray-300 mt-1.5 italic">no data</div>}
                 {v.type === 'BW' && !metric1 && getBW(v.no).length > 0 && <div className="text-[10px] text-gray-400 mt-1.5">has readings</div>}
