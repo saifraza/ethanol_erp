@@ -56,7 +56,7 @@ router.get('/outgoing', asyncHandler(async (req: AuthRequest, res: Response) => 
         id: true, paymentDate: true, amount: true, mode: true, reference: true,
         remarks: true, tdsDeducted: true, isAdvance: true, createdAt: true,
         vendor: { select: { name: true } },
-        invoice: { select: { invoiceNo: true } },
+        invoice: { select: { invoiceNo: true, vendorInvNo: true, poId: true, grnId: true, filePath: true, totalAmount: true } },
       },
     });
 
@@ -69,10 +69,16 @@ router.get('/outgoing', asyncHandler(async (req: AuthRequest, res: Response) => 
         amount: p.amount,
         mode: p.mode,
         reference: p.reference,
-        remarks: [p.remarks, p.tdsDeducted > 0 ? `TDS: ₹${p.tdsDeducted}` : null, p.isAdvance ? 'ADVANCE' : null].filter(Boolean).join(' | ') || null,
+        remarks: [p.remarks, p.tdsDeducted > 0 ? `TDS: \u20B9${p.tdsDeducted}` : null, p.isAdvance ? 'ADVANCE' : null].filter(Boolean).join(' | ') || null,
         source: 'VendorPayment',
         sourceRef: p.invoice?.invoiceNo ? `INV-${p.invoice.invoiceNo}` : null,
         createdAt: p.createdAt,
+        // Document links for vendor payments
+        poId: p.invoice?.poId || null,
+        grnId: p.invoice?.grnId || null,
+        invoiceFilePath: p.invoice?.filePath || null,
+        invoiceAmount: p.invoice?.totalAmount || null,
+        tdsDeducted: p.tdsDeducted || 0,
       });
     }
   }

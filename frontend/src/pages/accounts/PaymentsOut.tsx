@@ -54,6 +54,11 @@ interface OutPayment {
   remarks: string | null;
   source: string;
   sourceRef: string | null;
+  poId?: string | null;
+  grnId?: string | null;
+  invoiceFilePath?: string | null;
+  invoiceAmount?: number | null;
+  tdsDeducted?: number;
 }
 
 interface CompletedSummary {
@@ -900,8 +905,9 @@ export default function PaymentsOut() {
                                   <div className="space-y-0.5 text-slate-600">
                                     <div>Date: <span className="text-slate-800 font-medium">{fmtDate(p.date)}</span></div>
                                     <div>Mode: <span className="text-slate-800 font-medium">{p.mode}</span></div>
-                                    <div>Reference: <span className="text-slate-800 font-mono">{p.reference || '--'}</span></div>
+                                    <div>UTR/Ref: <span className="text-slate-800 font-mono">{p.reference || '--'}</span></div>
                                     <div>Amount: <span className="text-slate-800 font-bold font-mono">{fmt(p.amount)}</span></div>
+                                    {(p.tdsDeducted || 0) > 0 && <div>TDS: <span className="text-slate-800 font-mono">{fmt(p.tdsDeducted || 0)}</span></div>}
                                   </div>
                                 </div>
                                 <div>
@@ -909,6 +915,7 @@ export default function PaymentsOut() {
                                   <div className="space-y-0.5 text-slate-600">
                                     <div>Name: <span className="text-slate-800 font-medium">{p.payee}</span></div>
                                     <div>Type: <span className="text-slate-800">{p.payeeType}</span></div>
+                                    {p.invoiceAmount && <div>Invoice Amt: <span className="text-slate-800 font-mono">{fmt(p.invoiceAmount)}</span></div>}
                                   </div>
                                 </div>
                                 <div>
@@ -923,6 +930,30 @@ export default function PaymentsOut() {
                                   <div className="text-slate-700">{p.remarks || 'No remarks'}</div>
                                 </div>
                               </div>
+                              {/* Document Links */}
+                              {(p.poId || p.grnId || p.invoiceFilePath) && (
+                                <div className="flex items-center gap-2 mt-3 pt-2 border-t border-slate-200">
+                                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Documents:</span>
+                                  {p.poId && (
+                                    <a href={`/api/purchase-orders/${p.poId}/pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noopener noreferrer"
+                                      className="px-2 py-0.5 bg-slate-700 text-white text-[9px] font-bold uppercase hover:bg-slate-800 inline-flex items-center gap-1">
+                                      <FileText size={9} /> PO
+                                    </a>
+                                  )}
+                                  {p.grnId && (
+                                    <a href={`/api/goods-receipts/${p.grnId}/pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noopener noreferrer"
+                                      className="px-2 py-0.5 bg-slate-700 text-white text-[9px] font-bold uppercase hover:bg-slate-800 inline-flex items-center gap-1">
+                                      <FileText size={9} /> GRN
+                                    </a>
+                                  )}
+                                  {p.invoiceFilePath && (
+                                    <a href={`/uploads/${p.invoiceFilePath}`} target="_blank" rel="noopener noreferrer"
+                                      className="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-bold uppercase hover:bg-blue-700 inline-flex items-center gap-1">
+                                      <FileText size={9} /> Invoice
+                                    </a>
+                                  )}
+                                </div>
+                              )}
                             </td>
                           </tr>
                         )}
