@@ -28,6 +28,12 @@ const TAG_CATALOG: Record<string, Record<string, { folder: string; type: string;
       LCV_140401: 'LCV 140401', LCV_140402: 'LCV 140402', LCV_140601: 'LCV 140601',
       PCV_140201: 'PCV 140201', PCV_140601: 'PCV 140601', TCV_140301: 'TCV 140301',
     }},
+    '24HR_TOT': { folder: '24HR_TOT', type: 'totalizer', tags: {
+      MG_140101: 'Wash Feed Total (M³)', FE_140201: 'RS Flow Total', FE_140301: 'ENA Flow Total',
+      FE_140302: 'Flow 140302', FE_140303: 'Flow 140303', FE_140401: 'Flow 140401',
+      FE_140601: 'Flow 140601', FE_140801: 'Spent Wash Total',
+      FI_140301: 'FI 140301', FI_140302: 'FI 140302',
+    }},
     ANALOG: { folder: 'ANALOG', type: 'analog', tags: {
       PT_140101: 'Pressure 140101', PT_140102: 'Pressure 140102', PT_140301: 'Pressure 140301',
       PT_140501: 'Pressure 140501', PT_140801: 'Pressure 140801',

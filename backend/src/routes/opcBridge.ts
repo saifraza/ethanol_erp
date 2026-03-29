@@ -629,18 +629,30 @@ router.get('/wash-summary', asyncHandler(async (_req: AuthRequest, res: Response
     return { totalWashKL: Math.round(totalWashKL), perFermenter };
   }
 
-  // Calculate wash fed to distillation from BW Flow (FE130701)
-  // Flow is in M³/hr — each hourly reading avg × 1 hour = M³ fed that hour
-  const BW_FLOW_TAG = 'FCV_140101'; // Distillation feed wash flow
+  // Calculate wash fed to distillation from MG_140101 (DCS flow totalizer)
+  // PRV_HR property = previous hour total in M³ (DCS-computed, high accuracy)
+  // Falls back to FCV_140101 PV hourly averages if totalizer not available
+  const WASH_FEED_TAG = 'MG_140101';
   async function calcFeedWash(startUTC: Date, endUTC: Date): Promise<{ totalFeedKL: number; avgFlowRate: number; hours: number }> {
-    // FCV tags are PID type — use PV property
-    const readings = await opc.opcHourlyReading.findMany({
-      where: { tag: BW_FLOW_TAG, property: 'PV', hour: { gte: startUTC, lt: endUTC } },
+    // Try MG_140101 PRV_HR first (DCS totalizer — most accurate)
+    let readings = await opc.opcHourlyReading.findMany({
+      where: { tag: WASH_FEED_TAG, property: 'PRV_HR', hour: { gte: startUTC, lt: endUTC } },
       orderBy: { hour: 'asc' },
       select: { avg: true },
     });
+
+    if (readings.length === 0) {
+      // Fallback: try FCV_140101 PV (control valve flow rate × 1 hr)
+      readings = await opc.opcHourlyReading.findMany({
+        where: { tag: 'FCV_140101', property: 'PV', hour: { gte: startUTC, lt: endUTC } },
+        orderBy: { hour: 'asc' },
+        select: { avg: true },
+      });
+    }
+
     if (readings.length === 0) return { totalFeedKL: 0, avgFlowRate: 0, hours: 0 };
-    // Each hourly avg = flow rate in M³/hr for that hour → volume = avg × 1 hr
+    // For PRV_HR: each reading IS the hourly total (not a rate)
+    // For FCV PV fallback: each reading is avg rate × 1 hr
     const totalM3 = readings.reduce((sum: number, r: { avg: number }) => sum + r.avg, 0);
     const avgFlow = totalM3 / readings.length;
     return { totalFeedKL: Math.round(totalM3), avgFlowRate: Math.round(avgFlow * 10) / 10, hours: readings.length };
