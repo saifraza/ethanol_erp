@@ -580,21 +580,10 @@ router.get('/wash-summary', asyncHandler(async (_req: AuthRequest, res: Response
   const FERM_LEVEL_TAGS = ['LT130201', 'LT130202', 'LT130301', 'LT130302'];
   const PROPERTY = 'IO_VALUE';
 
-  // Calculate 9 AM IST boundaries
+  // Rolling 24-hour periods
   const now = new Date();
-  const ist = new Date(now.getTime() + 5.5 * 3600 * 1000);
-  const istHour = ist.getUTCHours();
-
-  // Current period: most recent 9 AM IST
-  const todayStart = new Date(ist);
-  if (istHour < 9) {
-    todayStart.setUTCDate(todayStart.getUTCDate() - 1);
-  }
-  todayStart.setUTCHours(9, 0, 0, 0);
-  const todayStartUTC = new Date(todayStart.getTime() - 5.5 * 3600 * 1000);
-
-  // Yesterday period: 9 AM the day before
-  const yesterdayStartUTC = new Date(todayStartUTC.getTime() - 24 * 3600 * 1000);
+  const todayStartUTC = new Date(now.getTime() - 24 * 3600 * 1000); // last 24 hrs
+  const yesterdayStartUTC = new Date(now.getTime() - 48 * 3600 * 1000); // 24-48 hrs ago
 
   async function calcWashForPeriod(startUTC: Date, endUTC: Date): Promise<{ totalWashKL: number; perFermenter: Record<string, number> }> {
     const perFermenter: Record<string, number> = {};
@@ -648,11 +637,9 @@ router.get('/wash-summary', asyncHandler(async (_req: AuthRequest, res: Response
     calcFeedWash(yesterdayStartUTC, todayStartUTC),
   ]);
 
-  const hoursIntoShift = Math.round((now.getTime() - todayStartUTC.getTime()) / 3600000 * 10) / 10;
-
   res.json({
-    today: { ...today, feed: todayFeed, shiftStart: todayStartUTC, hoursIntoShift },
-    yesterday: { ...yesterday, feed: yesterdayFeed, shiftStart: yesterdayStartUTC },
+    today: { ...today, feed: todayFeed, period: 'Last 24h' },
+    yesterday: { ...yesterday, feed: yesterdayFeed, period: 'Prev 24h' },
   });
 }));
 

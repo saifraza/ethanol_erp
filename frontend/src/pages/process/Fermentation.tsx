@@ -419,7 +419,7 @@ export default function Fermentation() {
 
   // Wash summary (9 AM to 9 AM)
   const [washSummary, setWashSummary] = useState<{
-    today: { totalWashKL: number; hoursIntoShift: number; feed?: { totalFeedKL: number; avgFlowRate: number } };
+    today: { totalWashKL: number; feed?: { totalFeedKL: number; avgFlowRate: number } };
     yesterday: { totalWashKL: number; feed?: { totalFeedKL: number; avgFlowRate: number } };
   } | null>(null);
   const fetchWashSummary = useCallback(async () => {
@@ -797,7 +797,7 @@ export default function Fermentation() {
                       <span className="opacity-70">Distilled</span>
                       <span className="font-black">{washSummary.today.feed?.totalFeedKL || 0} KL</span>
                     </div>
-                    <div className="text-[7px] opacity-50 mt-0.5">{washSummary.today.hoursIntoShift}h into shift | Yest: {washSummary.yesterday.totalWashKL}/{washSummary.yesterday.feed?.totalFeedKL || 0}</div>
+                    <div className="text-[7px] opacity-50 mt-0.5">Last 24h | Prev: {washSummary.yesterday.totalWashKL}/{washSummary.yesterday.feed?.totalFeedKL || 0}</div>
                   </div>
                 )}
               </div>
