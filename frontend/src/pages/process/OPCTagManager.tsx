@@ -240,7 +240,7 @@ export default function OPCTagManager() {
     setHistoryLoading(true);
     try {
       const t = liveTags.find(lt => lt.tag === tag);
-      const prop = t?.type === 'pid' ? 'PV' : 'IO_VALUE';
+      const prop = t?.type === 'pid' ? 'PV' : t?.type === 'totalizer' ? 'PRV_HR' : 'IO_VALUE';
       const res = await api.get(`/opc/history/${tag}?hours=${hours}&property=${prop}`);
       const data: HourlyReading[] = res.data.readings || [];
       setHistoryData(data);
@@ -479,7 +479,7 @@ export default function OPCTagManager() {
                 </thead>
                 <tbody>
                   {liveTags.map((t, i) => {
-                    const val = t.values.PV ?? t.values.IO_VALUE;
+                    const val = t.values.PV ?? t.values.IO_VALUE ?? t.values.PRV_HR ?? t.values.INPUT;
                     const alarm = getAlarmStatus(val, t.hhAlarm, t.llAlarm);
                     const stale = isStale(t.updatedAt);
 

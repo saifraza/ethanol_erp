@@ -142,10 +142,14 @@ router.post('/push', validate(pushReadingsSchema), asyncHandler(async (req: Auth
   if (tags && tags.length > 0) {
     try {
       for (const t of tags) {
+        // Don't reactivate tags that were manually removed (active=false)
+        const existing = await opc.opcMonitoredTag.findUnique({ where: { tag: t.tag }, select: { active: true } });
+        if (existing && !existing.active) continue; // Skip — user removed this tag
+
         await opc.opcMonitoredTag.upsert({
           where: { tag: t.tag },
           create: { tag: t.tag, area: t.area, folder: t.folder, tagType: t.tagType, label: t.label || t.tag },
-          update: { area: t.area, folder: t.folder, tagType: t.tagType, label: t.label || t.tag, active: true },
+          update: { area: t.area, folder: t.folder, tagType: t.tagType, label: t.label || t.tag },
         });
       }
     } catch (tagErr) {
