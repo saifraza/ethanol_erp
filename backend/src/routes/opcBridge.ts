@@ -3,6 +3,7 @@ import { AuthRequest } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { z } from 'zod';
 import { tgSendGroup } from '../services/telegramClient';
+import { shouldAlarmForTag, TEMP_TAG_TO_FERMENTER } from '../services/fermenterPhaseDetector';
 
 const router = Router();
 
@@ -74,11 +75,23 @@ async function checkAlarms(opc: any, readings: { tag: string; property: string; 
     const hh = tagAlarm.hhAlarm as number | null;
     const ll = tagAlarm.llAlarm as number | null;
 
-    if (hh != null && r.value >= hh) {
-      alerts.push(`*HH ALARM* ${name}: ${r.value} (limit: ${hh})`);
+    const exceeded = (hh != null && r.value >= hh) ? 'HH' : (ll != null && r.value <= ll) ? 'LL' : null;
+    if (!exceeded) continue;
+
+    // Phase-aware suppression for fermenter temp tags
+    if (TEMP_TAG_TO_FERMENTER[r.tag]) {
+      const phaseCheck = await shouldAlarmForTag(r.tag);
+      if (!phaseCheck.alarm) {
+        console.log(`[OPC] Alarm suppressed: ${name} ${r.value} but phase=${phaseCheck.phase} (${phaseCheck.confidence}, level=${phaseCheck.level}%)`);
+        continue;
+      }
+      // Include phase info in alarm message
+      const limit = exceeded === 'HH' ? hh : ll;
+      alerts.push(`*${exceeded} ALARM* ${name}: ${r.value} (limit: ${limit})\nPhase: ${phaseCheck.phase} (${phaseCheck.confidence}) | Level: ${phaseCheck.level}%`);
       _lastAlarmSent[r.tag] = now;
-    } else if (ll != null && r.value <= ll) {
-      alerts.push(`*LL ALARM* ${name}: ${r.value} (limit: ${ll})`);
+    } else {
+      const limit = exceeded === 'HH' ? hh : ll;
+      alerts.push(`*${exceeded} ALARM* ${name}: ${r.value} (limit: ${limit})`);
       _lastAlarmSent[r.tag] = now;
     }
   }
@@ -89,7 +102,9 @@ async function checkAlarms(opc: any, readings: { tag: string; property: string; 
     const groupChatId = (settings as any)?.telegramGroupChatId;
     if (groupChatId) {
       const ist = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
-      const time = ist.toISOString().slice(11, 19);
+      const hh = ist.getUTCHours();
+      const mm = String(ist.getUTCMinutes()).padStart(2, '0');
+      const time = `${hh % 12 || 12}:${mm} ${hh >= 12 ? 'PM' : 'AM'}`;
       const msg = `⚠️ *OPC ALARM* (${time} IST)\n\n${alerts.join('\n')}`;
       await tgSendGroup(groupChatId, msg, 'opc-alarm');
       console.log(`[OPC] Sent ${alerts.length} alarm(s) to Telegram group`);
@@ -254,25 +269,12 @@ router.post('/alarm-notify', validate(alarmNotifySchema), asyncHandler(async (re
     );
   }
 
-  // Send Telegram alert
-  const prismaMain = (await import('../config/prisma')).default;
-  const settings = await prismaMain.settings.findFirst();
-  const groupChatId2 = (settings as any)?.telegramGroupChatId;
-
-  if (groupChatId2) {
-    const ist = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
-    const timeStr = `${String(ist.getUTCHours()).padStart(2, '0')}:${String(ist.getUTCMinutes()).padStart(2, '0')}:${String(ist.getUTCSeconds()).padStart(2, '0')}`;
-    const emoji = alarmType === 'HH' ? '🔴' : '🔵';
-    const message = `${emoji} *OPC ${alarmType} ALARM* (${timeStr} IST)\n\n*${label || tag}*: ${value.toFixed(2)} (limit: ${limit})\n\n_Local alarm from factory bridge_`;
-
-    const { tgSendGroup: tgSendGroup2 } = await import('../services/telegramClient');
-    await tgSendGroup2(groupChatId2, message, 'opc-alarm').catch((err: Error) =>
-      console.error('[OPC] Telegram alarm send failed:', err.message)
-    );
-  }
+  // NOTE: Factory bridge only logs alarms here. All Telegram alerts are sent
+  // from checkAlarms() in the /push handler with phase-aware suppression.
+  // No duplicate alert sent from this endpoint.
 
   console.log(`[OPC] Alarm: ${alarmType} on ${tag} (${label}): ${value} vs limit ${limit}`);
-  res.json({ ok: true, logged: true, telegramSent: !!groupChatId2 });
+  res.json({ ok: true, logged: true });
 }));
 
 // ==========================================================================
@@ -561,6 +563,13 @@ router.get('/history/:tag', asyncHandler(async (req: AuthRequest, res: Response)
     });
     res.json({ tag, property, hours, readings, count: readings.length, resolution: 'hourly' });
   }
+}));
+
+// GET /api/opc/fermenter-phases — auto-detected fermenter phases from OPC data
+router.get('/fermenter-phases', asyncHandler(async (_req: AuthRequest, res: Response) => {
+  const { getAllFermenterPhases } = await import('../services/fermenterPhaseDetector');
+  const phases = await getAllFermenterPhases();
+  res.json({ phases });
 }));
 
 // GET /api/opc/stats
