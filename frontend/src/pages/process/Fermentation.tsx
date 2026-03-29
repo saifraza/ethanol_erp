@@ -788,7 +788,8 @@ export default function Fermentation() {
                 <div className="text-[8px] font-bold uppercase tracking-widest opacity-70">In System</div>
                 <div className="text-xl font-black mt-0.5">{Math.round(totalSystemKL)}<span className="text-[10px] font-medium ml-0.5 opacity-70">KL</span></div>
                 {washSummary && (
-                  <div className="mt-1 space-y-0.5">
+                  <div className="mt-1.5 space-y-1">
+                    <div className="text-[7px] font-bold uppercase tracking-widest opacity-50">Today (9 AM - Now, {washSummary.today.hoursIntoShift}h)</div>
                     <div className="text-[8px] flex justify-between">
                       <span className="opacity-70">Wash Made</span>
                       <span className="font-black">{washSummary.today.totalWashKL} KL</span>
@@ -797,7 +798,17 @@ export default function Fermentation() {
                       <span className="opacity-70">Distilled</span>
                       <span className="font-black">{washSummary.today.feed?.totalFeedKL || 0} KL</span>
                     </div>
-                    <div className="text-[7px] opacity-50 mt-0.5">Since 9 AM ({washSummary.today.hoursIntoShift}h) | Yest 9-9: {washSummary.yesterday.totalWashKL}/{washSummary.yesterday.feed?.totalFeedKL || 0}</div>
+                    <div className="border-t border-white/20 pt-1 mt-1">
+                      <div className="text-[7px] font-bold uppercase tracking-widest opacity-50">Yesterday (9 AM - 9 AM)</div>
+                      <div className="text-[8px] flex justify-between mt-0.5">
+                        <span className="opacity-70">Made</span>
+                        <span className="font-bold">{washSummary.yesterday.totalWashKL} KL</span>
+                      </div>
+                      <div className="text-[8px] flex justify-between">
+                        <span className="opacity-70">Distilled</span>
+                        <span className="font-bold">{washSummary.yesterday.feed?.totalFeedKL || 0} KL</span>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
