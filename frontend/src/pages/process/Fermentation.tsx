@@ -734,6 +734,68 @@ export default function Fermentation() {
         </div>
       )}
 
+      {/* ═══ WASH SUMMARY ═══ */}
+      {(() => {
+        // Calculate current wash from OPC live levels
+        const fermLabels = ['F-1', 'F-2', 'F-3', 'F-4'];
+        let totalWashKL = 0;
+        let fermCount = 0;
+        const vesselWash: { label: string; level: number; washKL: number }[] = [];
+        for (const label of fermLabels) {
+          const opc = opcData[label];
+          if (opc?.level != null) {
+            const washKL = (opc.level / 100) * FERM_CAPACITY_KL;
+            totalWashKL += washKL;
+            fermCount++;
+            vesselWash.push({ label, level: opc.level, washKL });
+          }
+        }
+        // PF vessels
+        let pfWashKL = 0;
+        for (const label of ['PF-1', 'PF-2']) {
+          const opc = opcData[label];
+          if (opc?.level != null) pfWashKL += (opc.level / 100) * 430;
+        }
+        // Beer well
+        const bwOpc = opcData['BW-1'];
+        const bwWashKL = bwOpc?.level != null ? (bwOpc.level / 100) * 430 : 0;
+
+        const totalSystemKL = totalWashKL + pfWashKL + bwWashKL;
+        const maxCapKL = 4 * FERM_CAPACITY_KL + 2 * 430 + 430; // 4 fermenters + 2 PF + BW
+
+        if (fermCount === 0) return null;
+        return (
+          <div className="px-3 pt-3">
+            <div className="grid grid-cols-4 gap-1.5">
+              <div className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-xl p-3 col-span-1">
+                <div className="text-[8px] font-bold uppercase tracking-widest opacity-70">Total Wash</div>
+                <div className="text-xl font-black mt-0.5">{(totalSystemKL / 1000).toFixed(1)}<span className="text-xs font-medium ml-0.5 opacity-70">K KL</span></div>
+                <div className="text-[8px] opacity-60 mt-0.5">{Math.round(totalSystemKL / maxCapKL * 100)}% of {(maxCapKL / 1000).toFixed(1)}K capacity</div>
+              </div>
+              <div className="bg-white border border-gray-200 rounded-xl p-3 col-span-1">
+                <div className="text-[8px] font-bold uppercase tracking-widest text-gray-400">Fermenters</div>
+                <div className="text-xl font-black text-indigo-700 mt-0.5">{Math.round(totalWashKL)}<span className="text-[10px] font-medium ml-0.5 text-gray-400">KL</span></div>
+                <div className="flex gap-1 mt-1">
+                  {vesselWash.map(vw => (
+                    <span key={vw.label} className="text-[7px] font-bold text-indigo-500 bg-indigo-50 px-1 py-0.5 rounded">{vw.label.replace('F-', '')}: {Math.round(vw.washKL)}</span>
+                  ))}
+                </div>
+              </div>
+              <div className="bg-white border border-gray-200 rounded-xl p-3 col-span-1">
+                <div className="text-[8px] font-bold uppercase tracking-widest text-gray-400">Pre-Ferm</div>
+                <div className="text-xl font-black text-sky-700 mt-0.5">{Math.round(pfWashKL)}<span className="text-[10px] font-medium ml-0.5 text-gray-400">KL</span></div>
+                <div className="text-[8px] text-gray-400 mt-1">PF-1 + PF-2</div>
+              </div>
+              <div className="bg-white border border-gray-200 rounded-xl p-3 col-span-1">
+                <div className="text-[8px] font-bold uppercase tracking-widest text-gray-400">Beer Well</div>
+                <div className="text-xl font-black text-amber-700 mt-0.5">{Math.round(bwWashKL)}<span className="text-[10px] font-medium ml-0.5 text-gray-400">KL</span></div>
+                <div className="text-[8px] text-gray-400 mt-1">{bwOpc?.level?.toFixed(1) || 0}% level</div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ═══ VESSEL GRID ═══ */}
       <div className="px-3 pt-3">
         <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
