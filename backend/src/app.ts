@@ -55,6 +55,7 @@ import goodsReceiptRoutes from './routes/goodsReceipts';
 import vendorInvoiceRoutes from './routes/vendorInvoices';
 import vendorPaymentRoutes from './routes/vendorPayments';
 import bankPaymentRoutes from './routes/bankPayments';
+import pdcRoutes from './routes/postDatedCheques';
 // Direct Trade (cash purchases/sales without paperwork)
 import directPurchaseRoutes from './routes/directPurchases';
 import directSaleRoutes from './routes/directSales';
@@ -179,6 +180,7 @@ app.use('/api/goods-receipts', goodsReceiptRoutes);
 app.use('/api/vendor-invoices', vendorInvoiceRoutes);
 app.use('/api/vendor-payments', vendorPaymentRoutes);
 app.use('/api/bank-payments', bankPaymentRoutes);
+app.use('/api/post-dated-cheques', pdcRoutes);
 // Direct Trade
 app.use('/api/direct-purchases', directPurchaseRoutes);
 app.use('/api/direct-sales', directSaleRoutes);

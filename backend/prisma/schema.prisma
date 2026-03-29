@@ -2340,6 +2340,48 @@ model AutoCollectSchedule {
 }
 
 // ══════════════════════════════════════════════════════════════
+// POST-DATED CHEQUES (PDC) — Track outgoing/incoming post-dated cheques
+// ══════════════════════════════════════════════════════════════
+
+model PostDatedCheque {
+  id              String    @id @default(uuid())
+  chequeNo        Int       @default(autoincrement())
+  direction       String    @default("OUTGOING")    // OUTGOING (we give) | INCOMING (we receive)
+  chequeNumber    String                             // printed cheque number
+  chequeDate      DateTime                           // date written on cheque
+  maturityDate    DateTime                           // when to present/deposit
+  amount          Float
+  bankName        String                             // issuing bank
+  branchName      String?
+  accountNo       String?                            // bank account number
+  // Party
+  partyType       String    @default("VENDOR")       // VENDOR | CUSTOMER
+  partyId         String                             // vendor or customer ID
+  partyName       String                             // denormalized for display
+  // Purpose & linking
+  purpose         String?                            // e.g. "Against INV-123"
+  linkedInvoiceId String?                            // vendor or customer invoice ID
+  linkedPoId      String?                            // for vendor PDCs
+  // Status lifecycle: ISSUED → DEPOSITED → CLEARED | DISHONOURED | CANCELLED
+  status          String    @default("ISSUED")
+  depositDate     DateTime?                          // when deposited in bank
+  clearDate       DateTime?                          // when cleared
+  dishonourDate   DateTime?
+  dishonourReason String?
+  // Journal
+  journalEntryId  String?                            // auto-journal on issue
+  remarks         String?
+  userId          String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([maturityDate])
+  @@index([status])
+  @@index([partyId])
+  @@index([direction])
+}
+
+// ══════════════════════════════════════════════════════════════
 // BANK PAYMENTS — UBI H2H-STP Direct Payment Integration
 // Security: Maker-Checker-Releaser workflow, PIN auth, full audit trail
 // ══════════════════════════════════════════════════════════════

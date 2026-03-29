@@ -774,12 +774,6 @@ export default function PaymentsOut() {
                                           className="px-2 py-0.5 bg-slate-700 text-white text-[9px] font-bold uppercase hover:bg-slate-800 inline-flex items-center gap-1">
                                           <FileText size={9} /> PO
                                         </a>
-                                        {(poDetail.grns || []).length > 0 && (
-                                          <a href={`/api/goods-receipts/${poDetail.grns[0].id}/pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noopener noreferrer"
-                                            className="px-2 py-0.5 bg-slate-700 text-white text-[9px] font-bold uppercase hover:bg-slate-800 inline-flex items-center gap-1">
-                                            <FileText size={9} /> GRN
-                                          </a>
-                                        )}
                                         {(poDetail.vendorInvoices || []).filter((inv: any) => inv.filePath).map((inv: any) => (
                                           <a key={inv.id} href={`/uploads/${inv.filePath}`} target="_blank" rel="noopener noreferrer"
                                             className="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-bold uppercase hover:bg-blue-700 inline-flex items-center gap-1">
@@ -957,12 +951,6 @@ export default function PaymentsOut() {
                                     <a href={`/api/purchase-orders/${p.poId}/pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noopener noreferrer"
                                       className="px-2 py-0.5 bg-slate-700 text-white text-[9px] font-bold uppercase hover:bg-slate-800 inline-flex items-center gap-1">
                                       <FileText size={9} /> PO
-                                    </a>
-                                  )}
-                                  {p.grnId && (
-                                    <a href={`/api/goods-receipts/${p.grnId}/pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noopener noreferrer"
-                                      className="px-2 py-0.5 bg-slate-700 text-white text-[9px] font-bold uppercase hover:bg-slate-800 inline-flex items-center gap-1">
-                                      <FileText size={9} /> GRN
                                     </a>
                                   )}
                                   {p.invoiceFilePath && (
