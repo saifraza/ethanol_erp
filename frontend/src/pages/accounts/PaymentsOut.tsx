@@ -124,6 +124,7 @@ export default function PaymentsOut() {
   const [completedLoading, setCompletedLoading] = useState(false);
   const [compFilterType, setCompFilterType] = useState('');
   const [compFilterMode, setCompFilterMode] = useState('');
+  const [expandedPaymentId, setExpandedPaymentId] = useState<string | null>(null);
   const [compDateFrom, setCompDateFrom] = useState('');
   const [compDateTo, setCompDateTo] = useState('');
 
@@ -837,7 +838,9 @@ export default function PaymentsOut() {
                     </thead>
                     <tbody>
                       {completedData.map((p, i) => (
-                        <tr key={p.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                        <React.Fragment key={p.id}>
+                        <tr onClick={() => setExpandedPaymentId(expandedPaymentId === p.id ? null : p.id)}
+                          className={`border-b border-slate-100 hover:bg-blue-50/60 cursor-pointer ${i % 2 ? 'bg-slate-50/70' : ''} ${expandedPaymentId === p.id ? 'bg-blue-50' : ''}`}>
                           <td className="px-3 py-1.5 text-slate-700 border-r border-slate-100 whitespace-nowrap">{fmtDate(p.date)}</td>
                           <td className="px-3 py-1.5 text-slate-800 font-medium border-r border-slate-100">{p.payee}</td>
                           <td className="px-3 py-1.5 border-r border-slate-100">
@@ -851,6 +854,42 @@ export default function PaymentsOut() {
                           <td className="px-3 py-1.5 text-slate-500 text-[11px] border-r border-slate-100">{p.sourceRef || '--'}</td>
                           <td className="px-3 py-1.5 text-slate-400 text-[11px] max-w-[200px] truncate">{p.remarks || '--'}</td>
                         </tr>
+                        {expandedPaymentId === p.id && (
+                          <tr>
+                            <td colSpan={8} className="bg-slate-50 border-b border-slate-300 px-4 py-3">
+                              <div className="grid grid-cols-4 gap-4 text-[10px]">
+                                <div>
+                                  <div className="font-bold text-slate-400 uppercase tracking-widest mb-1">Payment Details</div>
+                                  <div className="space-y-0.5 text-slate-600">
+                                    <div>Date: <span className="text-slate-800 font-medium">{fmtDate(p.date)}</span></div>
+                                    <div>Mode: <span className="text-slate-800 font-medium">{p.mode}</span></div>
+                                    <div>Reference: <span className="text-slate-800 font-mono">{p.reference || '--'}</span></div>
+                                    <div>Amount: <span className="text-slate-800 font-bold font-mono">{fmt(p.amount)}</span></div>
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="font-bold text-slate-400 uppercase tracking-widest mb-1">Payee</div>
+                                  <div className="space-y-0.5 text-slate-600">
+                                    <div>Name: <span className="text-slate-800 font-medium">{p.payee}</span></div>
+                                    <div>Type: <span className="text-slate-800">{p.payeeType}</span></div>
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="font-bold text-slate-400 uppercase tracking-widest mb-1">Source</div>
+                                  <div className="space-y-0.5 text-slate-600">
+                                    <div>From: <span className="text-slate-800">{p.source}</span></div>
+                                    <div>Ref Doc: <span className="text-slate-800 font-mono">{p.sourceRef || '--'}</span></div>
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="font-bold text-slate-400 uppercase tracking-widest mb-1">Remarks</div>
+                                  <div className="text-slate-700">{p.remarks || 'No remarks'}</div>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        </React.Fragment>
                       ))}
                     </tbody>
                     {completedData.length > 0 && (
