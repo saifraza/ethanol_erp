@@ -623,17 +623,36 @@ router.get('/wash-summary', asyncHandler(async (_req: AuthRequest, res: Response
     return { totalWashKL: Math.round(totalWashKL), perFermenter };
   }
 
-  const endNowUTC = now; // current moment
-  const [today, yesterday] = await Promise.all([
+  // Calculate wash fed to distillation from BW Flow (FE130701)
+  // Flow is in M³/hr — each hourly reading avg × 1 hour = M³ fed that hour
+  const BW_FLOW_TAG = 'FCV_140101'; // Distillation feed wash flow
+  async function calcFeedWash(startUTC: Date, endUTC: Date): Promise<{ totalFeedKL: number; avgFlowRate: number; hours: number }> {
+    // FCV tags are PID type — use PV property
+    const readings = await opc.opcHourlyReading.findMany({
+      where: { tag: BW_FLOW_TAG, property: 'PV', hour: { gte: startUTC, lt: endUTC } },
+      orderBy: { hour: 'asc' },
+      select: { avg: true },
+    });
+    if (readings.length === 0) return { totalFeedKL: 0, avgFlowRate: 0, hours: 0 };
+    // Each hourly avg = flow rate in M³/hr for that hour → volume = avg × 1 hr
+    const totalM3 = readings.reduce((sum: number, r: { avg: number }) => sum + r.avg, 0);
+    const avgFlow = totalM3 / readings.length;
+    return { totalFeedKL: Math.round(totalM3), avgFlowRate: Math.round(avgFlow * 10) / 10, hours: readings.length };
+  }
+
+  const endNowUTC = now;
+  const [today, yesterday, todayFeed, yesterdayFeed] = await Promise.all([
     calcWashForPeriod(todayStartUTC, endNowUTC),
     calcWashForPeriod(yesterdayStartUTC, todayStartUTC),
+    calcFeedWash(todayStartUTC, endNowUTC),
+    calcFeedWash(yesterdayStartUTC, todayStartUTC),
   ]);
 
   const hoursIntoShift = Math.round((now.getTime() - todayStartUTC.getTime()) / 3600000 * 10) / 10;
 
   res.json({
-    today: { ...today, shiftStart: todayStartUTC, hoursIntoShift },
-    yesterday: { ...yesterday, shiftStart: yesterdayStartUTC },
+    today: { ...today, feed: todayFeed, shiftStart: todayStartUTC, hoursIntoShift },
+    yesterday: { ...yesterday, feed: yesterdayFeed, shiftStart: yesterdayStartUTC },
   });
 }));
 

@@ -418,7 +418,10 @@ export default function Fermentation() {
   const [opcData, setOpcData] = useState<Record<string, OpcVesselData>>({});
 
   // Wash summary (9 AM to 9 AM)
-  const [washSummary, setWashSummary] = useState<{ today: { totalWashKL: number; hoursIntoShift: number }; yesterday: { totalWashKL: number } } | null>(null);
+  const [washSummary, setWashSummary] = useState<{
+    today: { totalWashKL: number; hoursIntoShift: number; feed?: { totalFeedKL: number; avgFlowRate: number } };
+    yesterday: { totalWashKL: number; feed?: { totalFeedKL: number; avgFlowRate: number } };
+  } | null>(null);
   const fetchWashSummary = useCallback(async () => {
     try {
       const res = await api.get('/opc/wash-summary');
@@ -786,8 +789,15 @@ export default function Fermentation() {
                 <div className="text-xl font-black mt-0.5">{Math.round(totalSystemKL)}<span className="text-[10px] font-medium ml-0.5 opacity-70">KL</span></div>
                 {washSummary && (
                   <div className="mt-1 space-y-0.5">
-                    <div className="text-[8px] opacity-80">Today: <span className="font-black">{washSummary.today.totalWashKL} KL</span> <span className="opacity-60">({washSummary.today.hoursIntoShift}h)</span></div>
-                    <div className="text-[8px] opacity-60">Yesterday: <span className="font-bold">{washSummary.yesterday.totalWashKL} KL</span></div>
+                    <div className="text-[8px] flex justify-between">
+                      <span className="opacity-70">Wash Made</span>
+                      <span className="font-black">{washSummary.today.totalWashKL} KL</span>
+                    </div>
+                    <div className="text-[8px] flex justify-between">
+                      <span className="opacity-70">Distilled</span>
+                      <span className="font-black">{washSummary.today.feed?.totalFeedKL || 0} KL</span>
+                    </div>
+                    <div className="text-[7px] opacity-50 mt-0.5">{washSummary.today.hoursIntoShift}h into shift | Yest: {washSummary.yesterday.totalWashKL}/{washSummary.yesterday.feed?.totalFeedKL || 0}</div>
                   </div>
                 )}
               </div>
@@ -825,7 +835,12 @@ export default function Fermentation() {
               <div className="bg-white border border-gray-200 rounded-xl p-3 col-span-1">
                 <div className="text-[8px] font-bold uppercase tracking-widest text-gray-400">Beer Well</div>
                 <div className="text-xl font-black text-amber-700 mt-0.5">{Math.round(bwWashKL)}<span className="text-[10px] font-medium ml-0.5 text-gray-400">KL</span></div>
-                <div className="text-[8px] text-gray-400 mt-1">{bwOpc?.level?.toFixed(1) || 0}% level</div>
+                <div className="text-[8px] text-gray-400">{bwOpc?.level?.toFixed(1) || 0}% level</div>
+                {washSummary?.today?.feed && washSummary.today.feed.totalFeedKL > 0 && (
+                  <div className="mt-0.5">
+                    <div className="text-[8px] text-emerald-600 font-bold">Feed: {washSummary.today.feed.totalFeedKL} KL <span className="font-normal text-gray-400">({washSummary.today.feed.avgFlowRate} M³/hr)</span></div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
