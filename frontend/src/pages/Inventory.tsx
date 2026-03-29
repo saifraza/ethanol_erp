@@ -28,7 +28,7 @@ interface Item {
   transactions?: any[];
 }
 
-interface VendorOption { id: string; name: string; gstin?: string | null; }
+interface VendorOption { id: string; name: string; gstin?: string | null; contactPerson?: string; category?: string; }
 interface LinkedVendor { id: string; rate: number; isPreferred: boolean; vendor: VendorOption; }
 
 /** Searchable vendor dropdown with "Add New" option */
@@ -50,9 +50,12 @@ function VendorSelect({ value, onChange, vendors, onAddNew }: {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  const q = query.toLowerCase();
   const filtered = vendors.filter(v =>
-    v.name.toLowerCase().includes(query.toLowerCase()) ||
-    (v.gstin && v.gstin.includes(query))
+    v.name.toLowerCase().includes(q) ||
+    (v.gstin && v.gstin.toLowerCase().includes(q)) ||
+    (v.contactPerson && v.contactPerson.toLowerCase().includes(q)) ||
+    (v.category && v.category.toLowerCase().includes(q))
   ).slice(0, 10);
 
   return (
@@ -68,10 +71,19 @@ function VendorSelect({ value, onChange, vendors, onAddNew }: {
         <div className="absolute z-50 w-full bg-white border border-slate-300 shadow-lg max-h-48 overflow-y-auto mt-0.5">
           {filtered.map(v => (
             <button key={v.id} type="button"
-              className="w-full text-left px-3 py-1.5 text-xs hover:bg-blue-50 border-b border-slate-100 flex justify-between"
+              className="w-full text-left px-3 py-1.5 text-xs hover:bg-blue-50 border-b border-slate-100"
               onClick={() => { onChange(v.name, v.id); setQuery(v.name); setOpen(false); }}>
-              <span className="font-medium text-slate-800">{v.name}</span>
-              {v.gstin && <span className="text-[9px] text-slate-400 font-mono">{v.gstin}</span>}
+              <div className="flex justify-between">
+                <span className="font-medium text-slate-800">{v.name}</span>
+                {v.gstin && <span className="text-[9px] text-slate-400 font-mono">{v.gstin}</span>}
+              </div>
+              {(v.contactPerson || v.category) && (
+                <div className="text-[9px] text-slate-400 mt-0.5">
+                  {v.contactPerson && <span>{v.contactPerson}</span>}
+                  {v.contactPerson && v.category && <span> · </span>}
+                  {v.category && <span>{v.category}</span>}
+                </div>
+              )}
             </button>
           ))}
           {filtered.length === 0 && (
@@ -112,7 +124,8 @@ export default function Inventory() {
   const loadVendors = useCallback(async () => {
     try {
       const res = await api.get('/vendors');
-      setVendors(res.data.map((v: any) => ({ id: v.id, name: v.name, gstin: v.gstin })));
+      const list = res.data?.vendors || (Array.isArray(res.data) ? res.data : []);
+      setVendors(list.map((v: any) => ({ id: v.id, name: v.tradeName ? `${v.name} (${v.tradeName})` : v.name, gstin: v.gstin || '', contactPerson: v.contactPerson || '', category: v.category || '' })));
     } catch { /* vendors not available */ }
   }, []);
 
