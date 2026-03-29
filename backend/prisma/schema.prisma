@@ -1871,6 +1871,7 @@ model VendorInvoice {
   matchStatus     String   @default("UNMATCHED") // UNMATCHED, MATCHED, MISMATCH
   matchRemarks    String?
   // Document refs
+  filePath        String?                   // uploaded invoice file (relative to uploads/)
   remarks         String?
   userId          String
   createdAt       DateTime @default(now())

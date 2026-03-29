@@ -1,13 +1,92 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, authorize } from '../middleware/auth';
+import { asyncHandler } from '../shared/middleware';
 import PDFDocument from 'pdfkit';
 import { sendEmail } from '../services/messaging';
 import { drawLetterhead } from '../utils/letterhead';
 import { renderDocumentPdf } from '../services/documentRenderer';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import axios from 'axios';
 
 const router = Router();
 router.use(authenticate as any);
+
+// ── Multer for vendor invoice uploads ──
+const uploadDir = path.join(__dirname, '../../uploads/vendor-invoices');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadDir),
+  filename: (_req, file, cb) => cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${path.extname(file.originalname)}`),
+});
+const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
+
+// ═══════════════════════════════════════════════
+// POST /upload-extract — Upload invoice file + AI extraction
+// ═══════════════════════════════════════════════
+router.post('/upload-extract', upload.single('file'), asyncHandler(async (req: Request, res: Response) => {
+  if (!req.file) { res.status(400).json({ error: 'No file uploaded' }); return; }
+
+  const filePath = `vendor-invoices/${req.file.filename}`;
+  const fileBuffer = fs.readFileSync(req.file.path);
+  const mimeType = req.file.mimetype;
+
+  // For PDFs, we send as application/pdf to Gemini (it supports PDF natively)
+  // For images, send as image/*
+  const GEMINI_KEY = process.env.GEMINI_API_KEY;
+  if (!GEMINI_KEY) {
+    res.json({ filePath, extracted: null, error: 'AI extraction not configured (no GEMINI_API_KEY)' });
+    return;
+  }
+
+  try {
+    const base64 = fileBuffer.toString('base64');
+    const prompt = `Extract these fields from this vendor/supplier invoice document. Return ONLY valid JSON with these keys:
+{
+  "invoice_number": "string - the vendor's invoice/bill number",
+  "invoice_date": "string - date in YYYY-MM-DD format",
+  "vendor_name": "string - supplier/vendor name",
+  "gstin": "string - vendor GSTIN if visible",
+  "items": [{"description": "string", "hsn": "string", "qty": number, "unit": "string", "rate": number, "amount": number}],
+  "taxable_amount": number,
+  "cgst": number,
+  "sgst": number,
+  "igst": number,
+  "total_gst": number,
+  "freight": number,
+  "total_amount": number,
+  "supply_type": "INTRA_STATE or INTER_STATE based on CGST/SGST vs IGST"
+}
+If a field is not found, use null for strings and 0 for numbers. Return ONLY the JSON, no markdown.`;
+
+    const geminiRes = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`,
+      {
+        contents: [{
+          parts: [
+            { text: prompt },
+            { inline_data: { mime_type: mimeType.startsWith('image/') ? mimeType : 'application/pdf', data: base64 } },
+          ],
+        }],
+      },
+      { timeout: 45000 }
+    );
+
+    const rawText = geminiRes.data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    // Parse JSON from response (strip markdown fences if present)
+    const jsonStr = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    let extracted = null;
+    try { extracted = JSON.parse(jsonStr); } catch { extracted = { raw: rawText }; }
+
+    res.json({ filePath, extracted });
+  } catch (err: unknown) {
+    const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message || 'AI extraction failed';
+    res.json({ filePath, extracted: null, error: msg });
+  }
+}));
 
 // GET / — list with filters (vendorId, status)
 router.get('/', async (req: Request, res: Response) => {
@@ -207,7 +286,8 @@ router.post('/', async (req: Request, res: Response) => {
         paidAmount: 0,
         balanceAmount,
         matchStatus,
-        status: 'PENDING',
+        status: b.status || 'PENDING',
+        filePath: b.filePath || null,
         remarks: b.remarks || null,
         userId: (req as any).user.id,
       },

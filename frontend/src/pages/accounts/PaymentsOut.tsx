@@ -132,6 +132,9 @@ export default function PaymentsOut() {
   const [invoiceModal, setInvoiceModal] = useState<PendingPayable | null>(null);
   const [payModal, setPayModal] = useState<{ item: PendingPayable; invoice: PendingPayable['invoices'][0] } | null>(null);
   const [invoiceForm, setInvoiceForm] = useState({ vendorInvNo: '', vendorInvDate: todayStr(), quantity: '', rate: '', gstPercent: '18', supplyType: 'INTRA_STATE' });
+  const [invoiceFilePath, setInvoiceFilePath] = useState('');
+  const [extracting, setExtracting] = useState(false);
+  const [extracted, setExtracted] = useState<Record<string, unknown> | null>(null);
   const [payForm, setPayForm] = useState({ amount: '', mode: 'NEFT', reference: '', paymentDate: todayStr(), tdsDeducted: '', tdsSection: '', remarks: '' });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -232,8 +235,49 @@ export default function PaymentsOut() {
       quantity: '1', rate: String(item.poAmount || ''),
       gstPercent: '18', supplyType: 'INTRA_STATE',
     });
+    setInvoiceFilePath('');
+    setExtracted(null);
+    setExtracting(false);
     setInvoiceModal(item);
     setError('');
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setExtracting(true);
+      setError('');
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await api.post('/vendor-invoices/upload-extract', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 60000,
+      });
+      const { filePath, extracted: ext, error: extractErr } = res.data;
+      setInvoiceFilePath(filePath || '');
+      if (ext && !ext.raw) {
+        setExtracted(ext);
+        // Pre-fill form from extracted data
+        setInvoiceForm(f => ({
+          ...f,
+          vendorInvNo: ext.invoice_number || f.vendorInvNo,
+          vendorInvDate: ext.invoice_date || f.vendorInvDate,
+          quantity: ext.items?.[0]?.qty ? String(ext.items[0].qty) : f.quantity,
+          rate: ext.items?.[0]?.rate ? String(ext.items[0].rate) : (ext.taxable_amount ? String(ext.taxable_amount) : f.rate),
+          gstPercent: ext.total_gst && ext.taxable_amount ? String(Math.round((ext.total_gst / ext.taxable_amount) * 100)) : f.gstPercent,
+          supplyType: ext.supply_type === 'INTER_STATE' ? 'INTER_STATE' : 'INTRA_STATE',
+        }));
+      } else {
+        setExtracted(null);
+        if (extractErr) setError(`AI could not read invoice: ${extractErr}`);
+      }
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Upload failed';
+      setError(msg);
+    } finally {
+      setExtracting(false);
+    }
   };
 
   const openPayModal = (item: PendingPayable) => {
@@ -266,6 +310,7 @@ export default function PaymentsOut() {
         rate: parseFloat(invoiceForm.rate) || 0,
         gstPercent: parseFloat(invoiceForm.gstPercent) || 0,
         supplyType: invoiceForm.supplyType,
+        filePath: invoiceFilePath || null,
         status: 'APPROVED',
       });
       setInvoiceModal(null);
@@ -739,7 +784,7 @@ export default function PaymentsOut() {
         {/* ═══════════════════════════════════════ */}
         {invoiceModal && (
           <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 overflow-y-auto py-4">
-            <div className="bg-white shadow-2xl w-full max-w-2xl mx-4">
+            <div className="bg-white shadow-2xl w-full max-w-3xl mx-4">
               <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <FileText size={14} />
@@ -756,55 +801,114 @@ export default function PaymentsOut() {
                 <span><strong>PO Amount:</strong> {fmt(invoiceModal.poAmount)}</span>
               </div>
 
-              <form onSubmit={submitInvoice} className="p-4 space-y-3">
+              <div className="p-4 space-y-3">
                 {error && <div className="text-xs text-red-600 bg-red-50 border border-red-200 px-3 py-1.5">{error}</div>}
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Vendor Invoice No *</label>
-                    <input type="text" value={invoiceForm.vendorInvNo} onChange={e => setInvoiceForm(f => ({ ...f, vendorInvNo: e.target.value }))}
-                      required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Invoice Date *</label>
-                    <input type="date" value={invoiceForm.vendorInvDate} onChange={e => setInvoiceForm(f => ({ ...f, vendorInvDate: e.target.value }))}
-                      required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
-                  </div>
+                {/* Step 1: File Upload */}
+                <div className="border-2 border-dashed border-slate-300 bg-slate-50 p-4 text-center">
+                  {extracting ? (
+                    <div className="py-4">
+                      <div className="inline-block w-5 h-5 border-2 border-blue-600 border-t-transparent animate-spin mb-2"></div>
+                      <div className="text-xs text-slate-500 uppercase tracking-widest">Reading invoice with AI...</div>
+                    </div>
+                  ) : invoiceFilePath ? (
+                    <div className="flex items-center justify-center gap-3 py-2">
+                      <FileText size={16} className="text-green-600" />
+                      <span className="text-xs text-green-700 font-medium">File uploaded</span>
+                      <button onClick={() => { setInvoiceFilePath(''); setExtracted(null); }}
+                        className="text-[10px] text-red-500 hover:text-red-700 underline">Remove</button>
+                    </div>
+                  ) : (
+                    <label className="cursor-pointer block py-2">
+                      <Upload size={20} className="mx-auto text-slate-400 mb-1" />
+                      <div className="text-[11px] text-slate-500 font-medium">Drop vendor invoice PDF or image here</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">PDF, JPG, PNG up to 10MB</div>
+                      <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" onChange={handleFileUpload} className="hidden" />
+                    </label>
+                  )}
                 </div>
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Quantity</label>
-                    <input type="number" step="0.01" value={invoiceForm.quantity} onChange={e => setInvoiceForm(f => ({ ...f, quantity: e.target.value }))}
-                      className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+
+                {/* Comparison: PO vs Extracted */}
+                {extracted && (
+                  <div className="border border-slate-300 bg-slate-50">
+                    <div className="bg-slate-200 px-3 py-1.5 text-[10px] font-bold text-slate-600 uppercase tracking-widest">AI Extracted vs PO</div>
+                    <div className="grid grid-cols-3 text-xs">
+                      <div className="px-3 py-1 font-bold text-[10px] uppercase tracking-widest text-slate-400 border-b border-slate-200">Field</div>
+                      <div className="px-3 py-1 font-bold text-[10px] uppercase tracking-widest text-slate-400 border-b border-l border-slate-200">PO Data</div>
+                      <div className="px-3 py-1 font-bold text-[10px] uppercase tracking-widest text-slate-400 border-b border-l border-slate-200">Invoice Data</div>
+
+                      <div className="px-3 py-1.5 border-b border-slate-200 text-slate-600">Vendor</div>
+                      <div className="px-3 py-1.5 border-b border-l border-slate-200">{invoiceModal.vendorName}</div>
+                      <div className={`px-3 py-1.5 border-b border-l border-slate-200 ${(extracted.vendor_name as string) && !(extracted.vendor_name as string).toLowerCase().includes(invoiceModal.vendorName.toLowerCase().split(' ')[0]) ? 'bg-amber-50 text-amber-700' : ''}`}>
+                        {(extracted.vendor_name as string) || '--'}
+                      </div>
+
+                      <div className="px-3 py-1.5 border-b border-slate-200 text-slate-600">Amount</div>
+                      <div className="px-3 py-1.5 border-b border-l border-slate-200 font-mono">{fmt(invoiceModal.poAmount)}</div>
+                      <div className={`px-3 py-1.5 border-b border-l border-slate-200 font-mono ${(extracted.total_amount as number) && Math.abs((extracted.total_amount as number) - invoiceModal.poAmount) > 1 ? 'bg-red-50 text-red-700 font-bold' : ''}`}>
+                        {(extracted.total_amount as number) ? fmt(extracted.total_amount as number) : '--'}
+                      </div>
+
+                      <div className="px-3 py-1.5 border-b border-slate-200 text-slate-600">Taxable</div>
+                      <div className="px-3 py-1.5 border-b border-l border-slate-200 font-mono">--</div>
+                      <div className="px-3 py-1.5 border-b border-l border-slate-200 font-mono">{(extracted.taxable_amount as number) ? fmt(extracted.taxable_amount as number) : '--'}</div>
+
+                      <div className="px-3 py-1.5 text-slate-600">GST</div>
+                      <div className="px-3 py-1.5 border-l border-slate-200 font-mono">--</div>
+                      <div className="px-3 py-1.5 border-l border-slate-200 font-mono">{(extracted.total_gst as number) ? fmt(extracted.total_gst as number) : '--'}</div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Editable form (pre-filled from AI or manual) */}
+                <form onSubmit={submitInvoice} className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Vendor Invoice No *</label>
+                      <input type="text" value={invoiceForm.vendorInvNo} onChange={e => setInvoiceForm(f => ({ ...f, vendorInvNo: e.target.value }))}
+                        required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Invoice Date *</label>
+                      <input type="date" value={invoiceForm.vendorInvDate} onChange={e => setInvoiceForm(f => ({ ...f, vendorInvDate: e.target.value }))}
+                        required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Quantity</label>
+                      <input type="number" step="0.01" value={invoiceForm.quantity} onChange={e => setInvoiceForm(f => ({ ...f, quantity: e.target.value }))}
+                        className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Rate / Taxable Amt *</label>
+                      <input type="number" step="0.01" value={invoiceForm.rate} onChange={e => setInvoiceForm(f => ({ ...f, rate: e.target.value }))}
+                        required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">GST %</label>
+                      <input type="number" step="0.01" value={invoiceForm.gstPercent} onChange={e => setInvoiceForm(f => ({ ...f, gstPercent: e.target.value }))}
+                        className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                    </div>
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Rate *</label>
-                    <input type="number" step="0.01" value={invoiceForm.rate} onChange={e => setInvoiceForm(f => ({ ...f, rate: e.target.value }))}
-                      required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Supply Type</label>
+                    <select value={invoiceForm.supplyType} onChange={e => setInvoiceForm(f => ({ ...f, supplyType: e.target.value }))}
+                      className="border border-slate-300 px-2.5 py-1.5 text-xs w-full md:w-64 focus:outline-none focus:ring-1 focus:ring-slate-400">
+                      <option value="INTRA_STATE">Intra State (CGST + SGST)</option>
+                      <option value="INTER_STATE">Inter State (IGST)</option>
+                    </select>
                   </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">GST %</label>
-                    <input type="number" step="0.01" value={invoiceForm.gstPercent} onChange={e => setInvoiceForm(f => ({ ...f, gstPercent: e.target.value }))}
-                      className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                  <div className="flex gap-2 pt-3 border-t border-slate-200">
+                    <button type="submit" disabled={submitting}
+                      className="px-4 py-1.5 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">
+                      {submitting ? 'SAVING...' : 'SAVE INVOICE'}
+                    </button>
+                    <button type="button" onClick={() => setInvoiceModal(null)}
+                      className="px-4 py-1.5 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">CANCEL</button>
                   </div>
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Supply Type</label>
-                  <select value={invoiceForm.supplyType} onChange={e => setInvoiceForm(f => ({ ...f, supplyType: e.target.value }))}
-                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-full md:w-64 focus:outline-none focus:ring-1 focus:ring-slate-400">
-                    <option value="INTRA_STATE">Intra State (CGST + SGST)</option>
-                    <option value="INTER_STATE">Inter State (IGST)</option>
-                  </select>
-                </div>
-                <div className="flex gap-2 pt-3 border-t border-slate-200">
-                  <button type="submit" disabled={submitting}
-                    className="px-4 py-1.5 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">
-                    {submitting ? 'SAVING...' : 'SAVE INVOICE'}
-                  </button>
-                  <button type="button" onClick={() => setInvoiceModal(null)}
-                    className="px-4 py-1.5 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">CANCEL</button>
-                </div>
-              </form>
+                </form>
+              </div>
             </div>
           </div>
         )}
