@@ -351,6 +351,22 @@ export default function PaymentsOut() {
   const submitInvoice = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!invoiceModal) return;
+
+    // Mismatch warning: compare invoice taxable amount to PO subtotal
+    const invQty = parseFloat(invoiceForm.quantity) || 1;
+    const invRate = parseFloat(invoiceForm.rate) || 0;
+    const invGst = parseFloat(invoiceForm.gstPercent) || 0;
+    const invTaxable = invQty * invRate;
+    const invTotal = invTaxable + (invTaxable * invGst / 100);
+    const poAmount = invoiceModal.poAmount;
+    const diffPct = poAmount > 0 ? Math.abs(invTotal - poAmount) / poAmount * 100 : 0;
+
+    if (diffPct > 10 && !confirm(
+      `Invoice total (${'\u20B9'}${invTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}) differs from PO amount (${'\u20B9'}${poAmount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}) by ${diffPct.toFixed(0)}%.\n\nAre you sure you want to save this invoice?`
+    )) {
+      return;
+    }
+
     try {
       setSubmitting(true);
       setError('');
@@ -670,17 +686,19 @@ export default function PaymentsOut() {
                                       {/* Pipeline Steps */}
                                       <div className="flex items-center justify-center gap-0">
                                         {([
-                                          { label: 'Ordered', done: true, value: `${poDetail.pipeline.ordered.qty} qty`, sub: fmt(poDetail.pipeline.ordered.amount) },
-                                          { label: 'Received', done: poDetail.pipeline.received.grnCount > 0, value: `${poDetail.pipeline.received.qty} qty`, sub: `${poDetail.pipeline.received.grnCount} GRN${poDetail.pipeline.received.grnCount !== 1 ? 's' : ''}${poDetail.pipeline.received.pending > 0 ? ` (${poDetail.pipeline.received.pending} pending)` : ''}` },
-                                          { label: 'Invoiced', done: poDetail.pipeline.invoiced.count > 0, value: fmt(poDetail.pipeline.invoiced.amount), sub: `${poDetail.pipeline.invoiced.count} invoice${poDetail.pipeline.invoiced.count !== 1 ? 's' : ''}` },
-                                          { label: 'Paid', done: poDetail.pipeline.paid.amount > 0, value: fmt(poDetail.pipeline.paid.amount), sub: poDetail.pipeline.paid.balance > 0 ? `Bal: ${fmt(poDetail.pipeline.paid.balance)}` : 'Settled' },
+                                          { label: 'Ordered', done: true, value: `${poDetail.pipeline.ordered.qty} qty`, sub: fmt(poDetail.pipeline.ordered.amount), mismatch: false },
+                                          { label: 'Received', done: poDetail.pipeline.received.grnCount > 0, value: `${poDetail.pipeline.received.qty} qty`, sub: `${poDetail.pipeline.received.grnCount} GRN${poDetail.pipeline.received.grnCount !== 1 ? 's' : ''}${poDetail.pipeline.received.pending > 0 ? ` (${poDetail.pipeline.received.pending} pending)` : ''}`, mismatch: false },
+                                          { label: 'Invoiced', done: poDetail.pipeline.invoiced.count > 0, value: fmt(poDetail.pipeline.invoiced.amount), sub: `${poDetail.pipeline.invoiced.count} invoice${poDetail.pipeline.invoiced.count !== 1 ? 's' : ''}`, mismatch: poDetail.pipeline.invoiced.amount > 0 && poDetail.pipeline.ordered.amount > 0 && Math.abs(poDetail.pipeline.invoiced.amount - poDetail.pipeline.ordered.amount) / poDetail.pipeline.ordered.amount > 0.1 },
+                                          { label: 'Paid', done: poDetail.pipeline.paid.amount > 0, value: fmt(poDetail.pipeline.paid.amount), sub: poDetail.pipeline.paid.balance > 0 ? `Bal: ${fmt(poDetail.pipeline.paid.balance)}` : 'Settled', mismatch: false },
                                         ]).map((step, si) => (
                                           <React.Fragment key={step.label}>
-                                            {si > 0 && <div className={`h-0.5 w-8 ${step.done ? 'bg-green-400' : 'bg-slate-300'}`} />}
-                                            <div className={`border px-4 py-2 text-center min-w-[120px] ${step.done ? 'border-green-300 bg-green-50' : 'border-slate-200 bg-white'}`}>
-                                              <div className={`text-[9px] font-bold uppercase tracking-widest ${step.done ? 'text-green-700' : 'text-slate-400'}`}>{step.label}</div>
-                                              <div className={`text-sm font-bold font-mono tabular-nums mt-0.5 ${step.done ? 'text-green-800' : 'text-slate-300'}`}>{step.value}</div>
-                                              <div className={`text-[9px] ${step.done ? 'text-green-600' : 'text-slate-300'}`}>{step.sub}</div>
+                                            {si > 0 && <div className={`h-0.5 w-8 ${step.mismatch ? 'bg-red-400' : step.done ? 'bg-green-400' : 'bg-slate-300'}`} />}
+                                            <div className={`border px-4 py-2 text-center min-w-[120px] ${step.mismatch ? 'border-red-300 bg-red-50' : step.done ? 'border-green-300 bg-green-50' : 'border-slate-200 bg-white'}`}>
+                                              <div className={`text-[9px] font-bold uppercase tracking-widest ${step.mismatch ? 'text-red-700' : step.done ? 'text-green-700' : 'text-slate-400'}`}>
+                                                {step.label}{step.mismatch ? ' MISMATCH' : ''}
+                                              </div>
+                                              <div className={`text-sm font-bold font-mono tabular-nums mt-0.5 ${step.mismatch ? 'text-red-800' : step.done ? 'text-green-800' : 'text-slate-300'}`}>{step.value}</div>
+                                              <div className={`text-[9px] ${step.mismatch ? 'text-red-600' : step.done ? 'text-green-600' : 'text-slate-300'}`}>{step.sub}</div>
                                             </div>
                                           </React.Fragment>
                                         ))}
