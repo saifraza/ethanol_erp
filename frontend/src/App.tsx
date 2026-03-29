@@ -168,7 +168,7 @@ export default function App() {
         <Route path="logistics/gate-register" element={<GateRegister />} />
         {/* Procurement (P2P) */}
         <Route path="procurement/vendors" element={<Vendors />} />
-        <Route path="procurement/materials" element={<Materials />} />
+        <Route path="procurement/materials" element={<Navigate to="/inventory" replace />} />
         <Route path="procurement/purchase-orders" element={<PurchaseOrders />} />
         <Route path="procurement/goods-receipts" element={<GoodsReceipts />} />
         <Route path="procurement/vendor-invoices" element={<VendorInvoices />} />

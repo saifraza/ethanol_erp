@@ -59,7 +59,7 @@ export const MODULE_DEFS: ModuleDef[] = [
 
   // ── PROCUREMENT (Grain + Chemicals inward) ──
   { key: 'vendors', label: 'Suppliers', to: '/procurement/vendors', icon: Building2, group: 'procurement' },
-  { key: 'materials', label: 'Items', to: '/procurement/materials', icon: Box, group: 'procurement' },
+  { key: 'materials', label: 'Items', to: '/inventory', icon: Box, group: 'procurement' },
   { key: 'purchase-orders', label: 'Purchase Orders', to: '/procurement/purchase-orders', icon: ShoppingBag, group: 'procurement' },
   { key: 'goods-receipts', label: 'GRN', to: '/procurement/goods-receipts', icon: PackageCheck, group: 'procurement' },
 
