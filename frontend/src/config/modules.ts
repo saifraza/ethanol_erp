@@ -74,6 +74,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'payments-in', label: 'Payments In', to: '/accounts/payments-in', icon: IndianRupee, group: 'accounts' },
   { key: 'cash-vouchers', label: 'Cash Vouchers', to: '/accounts/cash-vouchers', icon: Receipt, group: 'accounts' },
   { key: 'bank-payments', label: 'Bank Payments', to: '/accounts/bank-payments', icon: Landmark, group: 'accounts' },
+  { key: 'transporter-payments', label: 'Transporter Payments', to: '/accounts/transporter-payments', icon: Truck, group: 'accounts' },
   { key: 'post-dated-cheques', label: 'PDC Register', to: '/accounts/pdc', icon: FileText, group: 'accounts' },
 
   // ── BOOKS (bookkeeping & reports) ──

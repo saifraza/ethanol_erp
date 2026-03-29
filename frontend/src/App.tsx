@@ -79,6 +79,7 @@ const BankReconciliation = React.lazy(() => import('./pages/accounts/BankReconci
 const GSTSummary = React.lazy(() => import('./pages/accounts/GSTSummary'));
 const CashVouchers = React.lazy(() => import('./pages/accounts/CashVouchers'));
 const BankPayments = React.lazy(() => import('./pages/accounts/BankPayments'));
+const TransporterPayments = React.lazy(() => import('./pages/accounts/TransporterPayments'));
 const BankLoans = React.lazy(() => import('./pages/accounts/BankLoans'));
 const PostDatedCheques = React.lazy(() => import('./pages/accounts/PostDatedCheques'));
 const PaymentsOut = React.lazy(() => import('./pages/accounts/PaymentsOut'));
@@ -185,6 +186,7 @@ export default function App() {
         <Route path="accounts/gst-summary" element={<GSTSummary />} />
         <Route path="accounts/cash-vouchers" element={<CashVouchers />} />
         <Route path="accounts/bank-payments" element={<BankPayments />} />
+        <Route path="accounts/transporter-payments" element={<TransporterPayments />} />
         <Route path="accounts/bank-loans" element={<BankLoans />} />
         <Route path="accounts/pdc" element={<PostDatedCheques />} />
         <Route path="accounts/payments-out" element={<PaymentsOut />} />
