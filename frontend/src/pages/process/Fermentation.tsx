@@ -417,6 +417,15 @@ export default function Fermentation() {
   interface OpcVesselData { level?: number; temp?: number; updatedAt?: string; }
   const [opcData, setOpcData] = useState<Record<string, OpcVesselData>>({});
 
+  // Wash summary (9 AM to 9 AM)
+  const [washSummary, setWashSummary] = useState<{ today: { totalWashKL: number; hoursIntoShift: number }; yesterday: { totalWashKL: number } } | null>(null);
+  const fetchWashSummary = useCallback(async () => {
+    try {
+      const res = await api.get('/opc/wash-summary');
+      setWashSummary(res.data);
+    } catch { /* unavailable */ }
+  }, []);
+
   // Fermenter phase detection from OPC
   interface FermPhase { fermenterNo: number; label: string; detectedPhase: string; confidence: string; slope: number; alarmEnabled: boolean; }
   const [fermPhases, setFermPhases] = useState<Record<string, FermPhase>>({});
@@ -475,7 +484,8 @@ export default function Fermentation() {
   useEffect(() => {
     fetchAllOpcData();
     fetchFermPhases();
-    const iv = setInterval(() => { fetchAllOpcData(); fetchFermPhases(); }, 60000); // Refresh every 60s
+    fetchWashSummary();
+    const iv = setInterval(() => { fetchAllOpcData(); fetchFermPhases(); fetchWashSummary(); }, 60000); // Refresh every 60s
     return () => clearInterval(iv);
   }, [fetchAllOpcData]);
 
@@ -772,9 +782,14 @@ export default function Fermentation() {
           <div className="px-3 pt-3">
             <div className="grid grid-cols-4 gap-1.5">
               <div className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-xl p-3 col-span-1">
-                <div className="text-[8px] font-bold uppercase tracking-widest opacity-70">Total Wash</div>
-                <div className="text-xl font-black mt-0.5">{(totalSystemKL / 1000).toFixed(1)}<span className="text-xs font-medium ml-0.5 opacity-70">K KL</span></div>
-                <div className="text-[8px] opacity-60 mt-0.5">{Math.round(totalSystemKL / maxCapKL * 100)}% of {(maxCapKL / 1000).toFixed(1)}K capacity</div>
+                <div className="text-[8px] font-bold uppercase tracking-widest opacity-70">In System</div>
+                <div className="text-xl font-black mt-0.5">{Math.round(totalSystemKL)}<span className="text-[10px] font-medium ml-0.5 opacity-70">KL</span></div>
+                {washSummary && (
+                  <div className="mt-1 space-y-0.5">
+                    <div className="text-[8px] opacity-80">Today: <span className="font-black">{washSummary.today.totalWashKL} KL</span> <span className="opacity-60">({washSummary.today.hoursIntoShift}h)</span></div>
+                    <div className="text-[8px] opacity-60">Yesterday: <span className="font-bold">{washSummary.yesterday.totalWashKL} KL</span></div>
+                  </div>
+                )}
               </div>
               <div className="bg-white border border-gray-200 rounded-xl p-3 col-span-1">
                 <div className="text-[8px] font-bold uppercase tracking-widest text-gray-400">Fermenters</div>

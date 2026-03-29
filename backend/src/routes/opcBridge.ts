@@ -572,6 +572,71 @@ router.get('/fermenter-phases', asyncHandler(async (_req: AuthRequest, res: Resp
   res.json({ phases });
 }));
 
+// GET /api/opc/wash-summary — wash volume prepared per 9AM-9AM shift day
+// Calculates from OPC hourly level readings: sum of all level increases × capacity
+router.get('/wash-summary', asyncHandler(async (_req: AuthRequest, res: Response) => {
+  const opc = getOpcPrisma();
+  const FERM_CAPACITY_KL = 2300;
+  const FERM_LEVEL_TAGS = ['LT130201', 'LT130202', 'LT130301', 'LT130302'];
+  const PROPERTY = 'IO_VALUE';
+
+  // Calculate 9 AM IST boundaries
+  const now = new Date();
+  const ist = new Date(now.getTime() + 5.5 * 3600 * 1000);
+  const istHour = ist.getUTCHours();
+
+  // Current period: most recent 9 AM IST
+  const todayStart = new Date(ist);
+  if (istHour < 9) {
+    todayStart.setUTCDate(todayStart.getUTCDate() - 1);
+  }
+  todayStart.setUTCHours(9, 0, 0, 0);
+  const todayStartUTC = new Date(todayStart.getTime() - 5.5 * 3600 * 1000);
+
+  // Yesterday period: 9 AM the day before
+  const yesterdayStartUTC = new Date(todayStartUTC.getTime() - 24 * 3600 * 1000);
+
+  async function calcWashForPeriod(startUTC: Date, endUTC: Date): Promise<{ totalWashKL: number; perFermenter: Record<string, number> }> {
+    const perFermenter: Record<string, number> = {};
+    let totalWashKL = 0;
+
+    for (const tag of FERM_LEVEL_TAGS) {
+      const readings = await opc.opcHourlyReading.findMany({
+        where: { tag, property: PROPERTY, hour: { gte: startUTC, lt: endUTC } },
+        orderBy: { hour: 'asc' },
+        select: { hour: true, avg: true },
+      });
+
+      let washPct = 0;
+      for (let i = 1; i < readings.length; i++) {
+        const diff = readings[i].avg - readings[i - 1].avg;
+        if (diff > 0.5) { // Only count increases >0.5% (filling, not noise)
+          washPct += diff;
+        }
+      }
+
+      const washKL = (washPct / 100) * FERM_CAPACITY_KL;
+      perFermenter[tag] = Math.round(washKL);
+      totalWashKL += washKL;
+    }
+
+    return { totalWashKL: Math.round(totalWashKL), perFermenter };
+  }
+
+  const endNowUTC = now; // current moment
+  const [today, yesterday] = await Promise.all([
+    calcWashForPeriod(todayStartUTC, endNowUTC),
+    calcWashForPeriod(yesterdayStartUTC, todayStartUTC),
+  ]);
+
+  const hoursIntoShift = Math.round((now.getTime() - todayStartUTC.getTime()) / 3600000 * 10) / 10;
+
+  res.json({
+    today: { ...today, shiftStart: todayStartUTC, hoursIntoShift },
+    yesterday: { ...yesterday, shiftStart: yesterdayStartUTC },
+  });
+}));
+
 // GET /api/opc/stats
 router.get('/stats', asyncHandler(async (_req: AuthRequest, res: Response) => {
   const opc = getOpcPrisma();
