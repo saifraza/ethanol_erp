@@ -34,9 +34,39 @@ function checkPushKey(req: AuthRequest, res: Response): boolean {
 }
 
 // ==========================================================================
-// ALARM TOGGLE — in-memory flag to enable/disable WhatsApp alarm notifications
+// ALARM TOGGLE — persisted to Settings table (survives deploys)
 // ==========================================================================
 let alarmsEnabled = true;
+let _alarmsLoaded = false;
+
+async function loadAlarmState(): Promise<void> {
+  if (_alarmsLoaded) return;
+  try {
+    const prismaMain = (await import('../config/prisma')).default;
+    const settings = await prismaMain.settings.findFirst();
+    // Use telegramEnabled field as alarm toggle (true = alarms on)
+    if (settings && (settings as any).opcAlarmsEnabled !== undefined) {
+      alarmsEnabled = (settings as any).opcAlarmsEnabled;
+    }
+    _alarmsLoaded = true;
+  } catch { /* first run, use default */ }
+}
+
+async function saveAlarmState(): Promise<void> {
+  try {
+    const prismaMain = (await import('../config/prisma')).default;
+    const settings = await prismaMain.settings.findFirst();
+    if (settings) {
+      await prismaMain.settings.update({
+        where: { id: settings.id },
+        data: { opcAlarmsEnabled: alarmsEnabled } as any,
+      });
+    }
+  } catch { /* ignore */ }
+}
+
+// Load on first use
+loadAlarmState().catch(() => {});
 
 // ==========================================================================
 // ALARM CHECKING — compare readings against HH/LL limits, WhatsApp alert
@@ -175,6 +205,7 @@ router.post('/push', validate(pushReadingsSchema), asyncHandler(async (req: Auth
   });
 
   // Check alarms — compare readings against HH/LL limits (skip if disabled)
+  await loadAlarmState();
   if (alarmsEnabled) {
     checkAlarms(opc, readings).catch(err => console.error('[OPC] Alarm check failed:', err));
   }
@@ -701,12 +732,14 @@ router.get('/stats', asyncHandler(async (_req: AuthRequest, res: Response) => {
 // ==========================================================================
 
 router.get('/alarms/status', asyncHandler(async (_req: AuthRequest, res: Response) => {
+  await loadAlarmState();
   res.json({ enabled: alarmsEnabled });
 }));
 
 router.post('/alarms/toggle', asyncHandler(async (_req: AuthRequest, res: Response) => {
   alarmsEnabled = !alarmsEnabled;
-  console.log(`[OPC] Alarms ${alarmsEnabled ? 'ENABLED' : 'DISABLED'} via UI`);
+  await saveAlarmState();
+  console.log(`[OPC] Alarms ${alarmsEnabled ? 'ENABLED' : 'DISABLED'} via UI (persisted)`);
   res.json({ enabled: alarmsEnabled });
 }));
 

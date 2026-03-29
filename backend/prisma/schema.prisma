@@ -104,6 +104,7 @@ model Settings {
   telegramGroup2Name    String?  // Group 2 name (display only)
   telegramPrivateChatIds String? // Comma-separated private chat IDs
   telegramModuleRouting String?  // JSON: { "module": "group1"|"group2"|"private" }
+  opcAlarmsEnabled      Boolean  @default(true)    // OPC alarm toggle (persists across deploys)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 }
