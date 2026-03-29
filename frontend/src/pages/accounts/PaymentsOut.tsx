@@ -682,15 +682,19 @@ export default function PaymentsOut() {
                                       </div>
 
                                       {/* Documents Grid */}
+                                      {/* Documents & Records */}
                                       <div className="grid grid-cols-3 gap-3 text-[10px]">
                                         {/* GRNs */}
                                         <div>
-                                          <div className="font-bold text-slate-500 uppercase tracking-widest mb-1">GRNs</div>
-                                          <div className="max-h-32 overflow-y-auto space-y-1">
+                                          <div className="font-bold text-slate-500 uppercase tracking-widest mb-1">GRNs ({(poDetail.grns || []).length})</div>
+                                          <div className="max-h-40 overflow-y-auto space-y-1">
                                             {(poDetail.grns || []).map((g: any) => (
-                                              <div key={g.id} className="flex items-center justify-between bg-white border border-slate-200 px-2 py-1">
-                                                <span className="font-mono">GRN-{g.grnNo}</span>
-                                                <span className={`text-[8px] font-bold uppercase px-1 py-0.5 border ${g.status === 'CONFIRMED' ? 'border-green-300 text-green-700' : 'border-slate-300 text-slate-500'}`}>{g.status}</span>
+                                              <div key={g.id} className="bg-white border border-slate-200 px-2 py-1.5">
+                                                <div className="flex items-center justify-between">
+                                                  <span className="font-mono font-medium">GRN-{g.grnNo}</span>
+                                                  <span className={`text-[8px] font-bold uppercase px-1 py-0.5 border ${g.status === 'CONFIRMED' ? 'border-green-300 text-green-700' : 'border-slate-300 text-slate-500'}`}>{g.status}</span>
+                                                </div>
+                                                <div className="text-[9px] text-slate-400 mt-0.5">{fmtDate(g.grnDate)}</div>
                                               </div>
                                             ))}
                                             {(!poDetail.grns || poDetail.grns.length === 0) && <div className="text-slate-400">No GRNs</div>}
@@ -698,15 +702,23 @@ export default function PaymentsOut() {
                                         </div>
                                         {/* Invoices */}
                                         <div>
-                                          <div className="font-bold text-slate-500 uppercase tracking-widest mb-1">Invoices</div>
-                                          <div className="max-h-32 overflow-y-auto space-y-1">
+                                          <div className="font-bold text-slate-500 uppercase tracking-widest mb-1">Invoices ({(poDetail.vendorInvoices || []).length})</div>
+                                          <div className="max-h-40 overflow-y-auto space-y-1">
                                             {(poDetail.vendorInvoices || []).map((inv: any) => (
-                                              <div key={inv.id} className="flex items-center justify-between bg-white border border-slate-200 px-2 py-1">
-                                                <span className="font-mono">{inv.vendorInvNo || `INV-${inv.invoiceNo}`}</span>
-                                                <div className="flex items-center gap-1">
-                                                  <span className="font-mono tabular-nums">{fmt(inv.totalAmount)}</span>
-                                                  <span className={`text-[8px] font-bold uppercase px-1 py-0.5 border ${inv.status === 'PAID' ? 'border-green-300 text-green-700' : inv.status === 'PARTIAL_PAID' ? 'border-amber-300 text-amber-700' : 'border-blue-300 text-blue-700'}`}>{inv.status}</span>
+                                              <div key={inv.id} className="bg-white border border-slate-200 px-2 py-1.5">
+                                                <div className="flex items-center justify-between">
+                                                  <span className="font-mono font-medium">{inv.vendorInvNo || `INV-${inv.invoiceNo}`}</span>
+                                                  <div className="flex items-center gap-1">
+                                                    <span className="font-mono tabular-nums">{fmt(inv.totalAmount)}</span>
+                                                    <span className={`text-[8px] font-bold uppercase px-1 py-0.5 border ${inv.status === 'PAID' ? 'border-green-300 text-green-700' : inv.status === 'PARTIAL_PAID' ? 'border-amber-300 text-amber-700' : 'border-blue-300 text-blue-700'}`}>{inv.status}</span>
+                                                  </div>
                                                 </div>
+                                                {inv.filePath && (
+                                                  <a href={`/uploads/${inv.filePath}`} target="_blank" rel="noopener noreferrer"
+                                                    className="inline-flex items-center gap-1 mt-1 text-[9px] text-blue-600 hover:text-blue-800 hover:underline">
+                                                    <FileText size={10} /> View Invoice PDF
+                                                  </a>
+                                                )}
                                               </div>
                                             ))}
                                             {(!poDetail.vendorInvoices || poDetail.vendorInvoices.length === 0) && <div className="text-slate-400">No invoices</div>}
@@ -714,17 +726,42 @@ export default function PaymentsOut() {
                                         </div>
                                         {/* Payments */}
                                         <div>
-                                          <div className="font-bold text-slate-500 uppercase tracking-widest mb-1">Payments</div>
-                                          <div className="max-h-32 overflow-y-auto space-y-1">
+                                          <div className="font-bold text-slate-500 uppercase tracking-widest mb-1">Payments ({(poDetail.vendorInvoices || []).flatMap((inv: any) => inv.payments || []).length})</div>
+                                          <div className="max-h-40 overflow-y-auto space-y-1">
                                             {(poDetail.vendorInvoices || []).flatMap((inv: any) => inv.payments || []).map((p: any) => (
-                                              <div key={p.id} className="flex items-center justify-between bg-white border border-slate-200 px-2 py-1">
-                                                <span>{fmtDate(p.paymentDate)} <span className="text-[8px] uppercase text-slate-400">{p.mode}</span></span>
-                                                <span className="font-mono tabular-nums text-green-700">{fmt(p.amount)}</span>
+                                              <div key={p.id} className="bg-white border border-slate-200 px-2 py-1.5">
+                                                <div className="flex items-center justify-between">
+                                                  <span>{fmtDate(p.paymentDate)} <span className="text-[8px] uppercase text-slate-400">{p.mode}</span></span>
+                                                  <span className="font-mono tabular-nums text-green-700 font-medium">{fmt(p.amount)}</span>
+                                                </div>
+                                                {p.reference && <div className="text-[9px] text-slate-400 mt-0.5 font-mono">UTR: {p.reference}</div>}
+                                                {p.tdsDeducted > 0 && <div className="text-[9px] text-slate-400 mt-0.5">TDS: {fmt(p.tdsDeducted)}</div>}
                                               </div>
                                             ))}
                                             {(poDetail.vendorInvoices || []).flatMap((inv: any) => inv.payments || []).length === 0 && <div className="text-slate-400">No payments</div>}
                                           </div>
                                         </div>
+                                      </div>
+
+                                      {/* Document Downloads */}
+                                      <div className="flex items-center gap-2 pt-2 border-t border-slate-200">
+                                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Documents:</span>
+                                        <a href={`/api/purchase-orders/${item.poId}/pdf`} target="_blank" rel="noopener noreferrer"
+                                          className="px-2 py-0.5 bg-slate-700 text-white text-[9px] font-bold uppercase hover:bg-slate-800 inline-flex items-center gap-1">
+                                          <FileText size={9} /> PO
+                                        </a>
+                                        {(poDetail.grns || []).length > 0 && (
+                                          <a href={`/api/goods-receipts/${poDetail.grns[0].id}/pdf`} target="_blank" rel="noopener noreferrer"
+                                            className="px-2 py-0.5 bg-slate-700 text-white text-[9px] font-bold uppercase hover:bg-slate-800 inline-flex items-center gap-1">
+                                            <FileText size={9} /> GRN
+                                          </a>
+                                        )}
+                                        {(poDetail.vendorInvoices || []).filter((inv: any) => inv.filePath).map((inv: any) => (
+                                          <a key={inv.id} href={`/uploads/${inv.filePath}`} target="_blank" rel="noopener noreferrer"
+                                            className="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-bold uppercase hover:bg-blue-700 inline-flex items-center gap-1">
+                                            <FileText size={9} /> Invoice
+                                          </a>
+                                        ))}
                                       </div>
                                     </div>
                                   ) : (
