@@ -580,10 +580,27 @@ router.get('/wash-summary', asyncHandler(async (_req: AuthRequest, res: Response
   const FERM_LEVEL_TAGS = ['LT130201', 'LT130202', 'LT130301', 'LT130302'];
   const PROPERTY = 'IO_VALUE';
 
-  // Rolling 24-hour periods
+  // 9 AM IST shift boundaries
   const now = new Date();
-  const todayStartUTC = new Date(now.getTime() - 24 * 3600 * 1000); // last 24 hrs
-  const yesterdayStartUTC = new Date(now.getTime() - 48 * 3600 * 1000); // 24-48 hrs ago
+  const ist = new Date(now.getTime() + 5.5 * 3600 * 1000);
+  const istHour = ist.getUTCHours();
+
+  // Most recent 9 AM IST boundary
+  const currentShiftStart = new Date(ist);
+  if (istHour < 9) {
+    currentShiftStart.setUTCDate(currentShiftStart.getUTCDate() - 1);
+  }
+  currentShiftStart.setUTCHours(9, 0, 0, 0);
+  const currentShiftStartUTC = new Date(currentShiftStart.getTime() - 5.5 * 3600 * 1000);
+
+  // Previous completed shift: 9 AM day before → 9 AM today
+  const prevShiftStartUTC = new Date(currentShiftStartUTC.getTime() - 24 * 3600 * 1000);
+
+  // "today" = current running shift (9 AM → now)
+  // "yesterday" = last completed shift (prev 9 AM → current 9 AM)
+  const todayStartUTC = currentShiftStartUTC;
+  const yesterdayStartUTC = prevShiftStartUTC;
+  const yesterdayEndUTC = currentShiftStartUTC;
 
   async function calcWashForPeriod(startUTC: Date, endUTC: Date): Promise<{ totalWashKL: number; perFermenter: Record<string, number> }> {
     const perFermenter: Record<string, number> = {};
@@ -632,14 +649,22 @@ router.get('/wash-summary', asyncHandler(async (_req: AuthRequest, res: Response
   const endNowUTC = now;
   const [today, yesterday, todayFeed, yesterdayFeed] = await Promise.all([
     calcWashForPeriod(todayStartUTC, endNowUTC),
-    calcWashForPeriod(yesterdayStartUTC, todayStartUTC),
+    calcWashForPeriod(yesterdayStartUTC, yesterdayEndUTC),
     calcFeedWash(todayStartUTC, endNowUTC),
-    calcFeedWash(yesterdayStartUTC, todayStartUTC),
+    calcFeedWash(yesterdayStartUTC, yesterdayEndUTC),
   ]);
 
+  const hoursIntoShift = Math.round((now.getTime() - todayStartUTC.getTime()) / 3600000 * 10) / 10;
+
+  // Format 9 AM boundaries in IST for display
+  const fmtIST = (d: Date) => {
+    const i = new Date(d.getTime() + 5.5 * 3600 * 1000);
+    return `${i.getUTCDate()}/${i.getUTCMonth() + 1} ${i.getUTCHours() % 12 || 12}:${String(i.getUTCMinutes()).padStart(2, '0')} ${i.getUTCHours() >= 12 ? 'PM' : 'AM'}`;
+  };
+
   res.json({
-    today: { ...today, feed: todayFeed, period: 'Last 24h' },
-    yesterday: { ...yesterday, feed: yesterdayFeed, period: 'Prev 24h' },
+    today: { ...today, feed: todayFeed, shiftStart: fmtIST(todayStartUTC), hoursIntoShift },
+    yesterday: { ...yesterday, feed: yesterdayFeed, shiftStart: fmtIST(yesterdayStartUTC), shiftEnd: fmtIST(yesterdayEndUTC) },
   });
 }));
 
