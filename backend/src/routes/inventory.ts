@@ -36,7 +36,7 @@ router.get('/items', asyncHandler(async (req: AuthRequest, res: Response) => {
   if (category) where.category = category;
   const items = await prisma.inventoryItem.findMany({
     where,
-    take: 50,
+    take: 500,
     orderBy: { name: 'asc' },
     include: { transactions: { orderBy: { createdAt: 'desc' }, take: 5 } },
   });

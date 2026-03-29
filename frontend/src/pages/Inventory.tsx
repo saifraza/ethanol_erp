@@ -467,6 +467,13 @@ export default function Inventory() {
                                 className="px-2 py-1 bg-white border border-blue-300 text-blue-600 text-[11px] font-medium hover:bg-blue-50">
                                 Edit
                               </button>
+                              <button onClick={async () => {
+                                if (!confirm(`Delete ${item.name || item.code}? This cannot be undone.`)) return;
+                                try { await api.delete(`/inventory/items/${item.id}`); load(); } catch (e: any) { alert(e.response?.data?.error || 'Cannot delete — item may have transactions'); }
+                              }}
+                                className="px-2 py-1 bg-white border border-red-300 text-red-600 text-[11px] font-medium hover:bg-red-50">
+                                Del
+                              </button>
                             </div>
                           </td>
                         </tr>
