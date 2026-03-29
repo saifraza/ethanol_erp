@@ -161,9 +161,10 @@ const PurchaseOrders: React.FC = () => {
     }
     setVendorContextLoading(true);
     try {
-      const [itemsRes, posRes] = await Promise.all([
+      const [itemsRes, posRes, vendorRes] = await Promise.all([
         api.get(`/vendors/${vendorId}/items`),
         api.get(`/purchase-orders?vendorId=${vendorId}&limit=5`),
+        api.get(`/vendors/${vendorId}`),
       ]);
       const items = (Array.isArray(itemsRes.data) ? itemsRes.data : []).map((vi: any) => ({
         inventoryItemId: vi.inventoryItemId,
@@ -177,6 +178,22 @@ const PurchaseOrders: React.FC = () => {
       setVendorItemsList(items);
       const posList = posRes.data.pos || posRes.data || [];
       setVendorRecentPOs(Array.isArray(posList) ? posList.slice(0, 5) : []);
+
+      // Auto-fill payment terms and place of supply from vendor
+      const v = vendorRes.data;
+      if (v) {
+        const updates: Record<string, string> = {};
+        if (v.paymentTerms && !formData.paymentTerms) updates.paymentTerms = v.paymentTerms;
+        if (v.creditDays && !formData.creditDays) updates.creditDays = String(v.creditDays);
+        if (v.gstState && !formData.placeOfSupply) updates.placeOfSupply = v.gstState;
+        if (v.state) {
+          // Auto-set supply type based on vendor state vs our state (MP = 23)
+          updates.supplyType = v.gstState === '23' ? 'INTRA_STATE' : 'INTER_STATE';
+        }
+        if (Object.keys(updates).length > 0) {
+          setFormData((f: any) => ({ ...f, ...updates }));
+        }
+      }
     } catch {
       setVendorItemsList([]);
       setVendorRecentPOs([]);
@@ -388,6 +405,13 @@ const PurchaseOrders: React.FC = () => {
       const response = await api.post('/purchase-orders', formData);
       setPos([response.data, ...pos]);
       setSuccess('Purchase Order created successfully');
+
+      // Auto-update item master rates from PO line rates
+      for (const line of formData.lines) {
+        if (line.inventoryItemId && line.rate > 0) {
+          api.put(`/inventory/items/${line.inventoryItemId}`, { costPerUnit: line.rate }).catch(() => {});
+        }
+      }
       setFormData({
         vendorId: '',
         poDate: new Date().toISOString().split('T')[0],
@@ -700,7 +724,7 @@ const PurchaseOrders: React.FC = () => {
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Delivery Address</label>
                     <div className="flex gap-1 mb-1">
                       {SAVED_ADDRESSES.map((addr) => (
-                        <button key={addr.label} type="button" onClick={() => setFormData({ ...formData, deliveryAddress: addr.address })}
+                        <button key={addr.label} type="button" onClick={() => setFormData({ ...formData, deliveryAddress: addr.address, placeOfSupply: formData.placeOfSupply || '23' })}
                           className={`px-2 py-0.5 text-[10px] font-medium border ${formData.deliveryAddress === addr.address ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
                           {addr.label}
                         </button>
