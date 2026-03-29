@@ -110,6 +110,11 @@ export default function PaymentsOut() {
   const [pendingSummary, setPendingSummary] = useState<PendingSummary | null>(null);
   const [pendingLoading, setPendingLoading] = useState(true);
 
+  // --- PO Pipeline ---
+  const [selectedPOId, setSelectedPOId] = useState<string | null>(null);
+  const [poDetail, setPODetail] = useState<any>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
   // --- Completed tab ---
   const [completedData, setCompletedData] = useState<OutPayment[]>([]);
   const [completedTotal, setCompletedTotal] = useState(0);
@@ -221,6 +226,15 @@ export default function PaymentsOut() {
   // ═══════════════════════════════════════════════
 
   useEffect(() => { fetchPending(); }, [fetchPending]);
+
+  useEffect(() => {
+    if (!selectedPOId) { setPODetail(null); return; }
+    setDetailLoading(true);
+    api.get(`/purchase-orders/${selectedPOId}`)
+      .then(r => setPODetail(r.data))
+      .catch(() => setPODetail(null))
+      .finally(() => setDetailLoading(false));
+  }, [selectedPOId]);
 
   useEffect(() => {
     if (activeTab === 'completed') fetchCompleted();
@@ -589,8 +603,13 @@ export default function PaymentsOut() {
                         </thead>
                         <tbody>
                           {pendingItems.map((item, i) => (
-                            <tr key={item.poId} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
-                              <td className="px-3 py-1.5 border-r border-slate-100 font-mono font-medium text-blue-700">PO-{item.poNo}</td>
+                          <React.Fragment key={item.poId}>
+                            <tr className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''} ${selectedPOId === item.poId ? 'bg-blue-50' : ''}`}>
+                              <td className="px-3 py-1.5 border-r border-slate-100 font-mono font-medium">
+                                <button onClick={() => setSelectedPOId(selectedPOId === item.poId ? null : item.poId)} className="text-blue-700 hover:text-blue-900 hover:underline">
+                                  PO-{item.poNo}
+                                </button>
+                              </td>
                               <td className="px-3 py-1.5 border-r border-slate-100 font-medium text-slate-800 max-w-[180px] truncate">{item.vendorName}</td>
                               <td className="px-3 py-1.5 border-r border-slate-100">
                                 <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-slate-300 bg-slate-50 text-slate-600">{item.paymentTerms || `NET${item.creditDays}`}</span>
@@ -632,7 +651,84 @@ export default function PaymentsOut() {
                                 </div>
                               </td>
                             </tr>
-                          ))}
+                            {/* Pipeline expansion row */}
+                            {selectedPOId === item.poId && (
+                              <tr>
+                                <td colSpan={10} className="p-0 border-b border-slate-300 bg-slate-50">
+                                  {detailLoading ? (
+                                    <div className="p-4 text-center text-xs text-slate-400 uppercase tracking-widest">Loading pipeline...</div>
+                                  ) : poDetail?.pipeline ? (
+                                    <div className="p-4 space-y-3">
+                                      {/* Pipeline Steps */}
+                                      <div className="flex items-center justify-center gap-0">
+                                        {([
+                                          { label: 'Ordered', done: true, value: fmt(poDetail.pipeline.ordered.amount), sub: `${poDetail.pipeline.ordered.qty} items` },
+                                          { label: 'Received', done: poDetail.pipeline.received.grnCount > 0, value: `${poDetail.pipeline.received.qty} qty`, sub: `${poDetail.pipeline.received.grnCount} GRN${poDetail.pipeline.received.grnCount !== 1 ? 's' : ''}` },
+                                          { label: 'Invoiced', done: poDetail.pipeline.invoiced.count > 0, value: fmt(poDetail.pipeline.invoiced.amount), sub: `${poDetail.pipeline.invoiced.count} inv` },
+                                          { label: 'Paid', done: poDetail.pipeline.paid.amount > 0, value: fmt(poDetail.pipeline.paid.amount), sub: poDetail.pipeline.paid.balance > 0 ? `Bal: ${fmt(poDetail.pipeline.paid.balance)}` : 'Settled' },
+                                        ]).map((step, si) => (
+                                          <React.Fragment key={step.label}>
+                                            {si > 0 && <div className={`h-0.5 w-8 ${step.done ? 'bg-green-400' : 'bg-slate-300'}`} />}
+                                            <div className={`border px-4 py-2 text-center min-w-[120px] ${step.done ? 'border-green-300 bg-green-50' : 'border-slate-200 bg-white'}`}>
+                                              <div className={`text-[9px] font-bold uppercase tracking-widest ${step.done ? 'text-green-700' : 'text-slate-400'}`}>{step.label}</div>
+                                              <div className={`text-sm font-bold font-mono tabular-nums mt-0.5 ${step.done ? 'text-green-800' : 'text-slate-300'}`}>{step.value}</div>
+                                              <div className={`text-[9px] ${step.done ? 'text-green-600' : 'text-slate-300'}`}>{step.sub}</div>
+                                            </div>
+                                          </React.Fragment>
+                                        ))}
+                                      </div>
+
+                                      {/* Documents Grid */}
+                                      <div className="grid grid-cols-3 gap-3 text-[10px]">
+                                        {/* GRNs */}
+                                        <div>
+                                          <div className="font-bold text-slate-500 uppercase tracking-widest mb-1">GRNs</div>
+                                          <div className="max-h-32 overflow-y-auto space-y-1">
+                                            {(poDetail.grns || []).map((g: any) => (
+                                              <div key={g.id} className="flex items-center justify-between bg-white border border-slate-200 px-2 py-1">
+                                                <span className="font-mono">GRN-{g.grnNo}</span>
+                                                <span className={`text-[8px] font-bold uppercase px-1 py-0.5 border ${g.status === 'CONFIRMED' ? 'border-green-300 text-green-700' : 'border-slate-300 text-slate-500'}`}>{g.status}</span>
+                                              </div>
+                                            ))}
+                                            {(!poDetail.grns || poDetail.grns.length === 0) && <div className="text-slate-400">No GRNs</div>}
+                                          </div>
+                                        </div>
+                                        {/* Invoices */}
+                                        <div>
+                                          <div className="font-bold text-slate-500 uppercase tracking-widest mb-1">Invoices</div>
+                                          <div className="max-h-32 overflow-y-auto space-y-1">
+                                            {(poDetail.vendorInvoices || []).map((inv: any) => (
+                                              <div key={inv.id} className="flex items-center justify-between bg-white border border-slate-200 px-2 py-1">
+                                                <span className="font-mono">{inv.vendorInvNo || `INV-${inv.invoiceNo}`}</span>
+                                                <span className="font-mono tabular-nums">{fmt(inv.totalAmount)}</span>
+                                              </div>
+                                            ))}
+                                            {(!poDetail.vendorInvoices || poDetail.vendorInvoices.length === 0) && <div className="text-slate-400">No invoices</div>}
+                                          </div>
+                                        </div>
+                                        {/* Payments */}
+                                        <div>
+                                          <div className="font-bold text-slate-500 uppercase tracking-widest mb-1">Payments</div>
+                                          <div className="max-h-32 overflow-y-auto space-y-1">
+                                            {(poDetail.vendorInvoices || []).flatMap((inv: any) => inv.payments || []).map((p: any) => (
+                                              <div key={p.id} className="flex items-center justify-between bg-white border border-slate-200 px-2 py-1">
+                                                <span>{fmtDate(p.paymentDate)} <span className="text-[8px] uppercase text-slate-400">{p.mode}</span></span>
+                                                <span className="font-mono tabular-nums text-green-700">{fmt(p.amount)}</span>
+                                              </div>
+                                            ))}
+                                            {(poDetail.vendorInvoices || []).flatMap((inv: any) => inv.payments || []).length === 0 && <div className="text-slate-400">No payments</div>}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="p-4 text-center text-xs text-slate-400">No pipeline data</div>
+                                  )}
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        ))}
                         </tbody>
                         <tfoot>
                           <tr className="bg-slate-800 text-white font-semibold">
