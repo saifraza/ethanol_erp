@@ -799,7 +799,7 @@ export default function PaymentsOut() {
                 <div className="flex gap-2 pt-3 border-t border-slate-200">
                   <button type="submit" disabled={submitting}
                     className="px-4 py-1.5 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">
-                    {submitting ? 'CREATING...' : 'CREATE INVOICE'}
+                    {submitting ? 'SAVING...' : 'SAVE INVOICE'}
                   </button>
                   <button type="button" onClick={() => setInvoiceModal(null)}
                     className="px-4 py-1.5 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">CANCEL</button>
