@@ -39,8 +39,8 @@ interface PendingSummary {
   overdueAmount: number;
   dueThisWeek: number;
   paidThisMonth: number;
-  aging: { current: number; d1_15: number; d16_30: number; d31_60: number; d60plus: number };
-  agingCount: { current: number; d1_15: number; d16_30: number; d31_60: number; d60plus: number };
+  aging: { overdue: number; thisWeek: number; d7_15: number; d15_30: number; d30plus: number };
+  agingCount: { overdue: number; thisWeek: number; d7_15: number; d15_30: number; d30plus: number };
 }
 
 interface OutPayment {
@@ -590,11 +590,11 @@ export default function PaymentsOut() {
                 {pendingSummary && (
                   <div className="grid grid-cols-5 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
                     {([
-                      { label: 'Current', val: pendingSummary.aging.current, cnt: pendingSummary.agingCount.current, color: 'text-green-600' },
-                      { label: '1-15 Days', val: pendingSummary.aging.d1_15, cnt: pendingSummary.agingCount.d1_15, color: 'text-amber-600' },
-                      { label: '16-30 Days', val: pendingSummary.aging.d16_30, cnt: pendingSummary.agingCount.d16_30, color: 'text-orange-600' },
-                      { label: '31-60 Days', val: pendingSummary.aging.d31_60, cnt: pendingSummary.agingCount.d31_60, color: 'text-red-600' },
-                      { label: '60+ Days', val: pendingSummary.aging.d60plus, cnt: pendingSummary.agingCount.d60plus, color: 'text-red-800' },
+                      { label: 'Overdue', val: pendingSummary.aging.overdue, cnt: pendingSummary.agingCount.overdue, color: 'text-red-700' },
+                      { label: 'This Week', val: pendingSummary.aging.thisWeek, cnt: pendingSummary.agingCount.thisWeek, color: 'text-amber-600' },
+                      { label: 'In 7-15 Days', val: pendingSummary.aging.d7_15, cnt: pendingSummary.agingCount.d7_15, color: 'text-orange-500' },
+                      { label: 'In 15-30 Days', val: pendingSummary.aging.d15_30, cnt: pendingSummary.agingCount.d15_30, color: 'text-blue-600' },
+                      { label: '30+ Days', val: pendingSummary.aging.d30plus, cnt: pendingSummary.agingCount.d30plus, color: 'text-green-600' },
                     ]).map((b, i) => (
                       <div key={b.label} className={`bg-white px-3 py-2 ${i < 4 ? 'border-r border-slate-300' : ''}`}>
                         <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{b.label}</div>

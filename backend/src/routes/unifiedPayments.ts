@@ -597,8 +597,8 @@ router.get('/outgoing/pending-summary', asyncHandler(async (_req: AuthRequest, r
   let totalPayable = 0;
   let overdueAmount = 0;
   let dueThisWeek = 0;
-  const aging = { current: 0, d1_15: 0, d16_30: 0, d31_60: 0, d60plus: 0 };
-  const agingCount = { current: 0, d1_15: 0, d16_30: 0, d31_60: 0, d60plus: 0 };
+  const aging = { overdue: 0, thisWeek: 0, d7_15: 0, d15_30: 0, d30plus: 0 };
+  const agingCount = { overdue: 0, thisWeek: 0, d7_15: 0, d15_30: 0, d30plus: 0 };
 
   for (const po of pos) {
     const invoices = po.vendorInvoices || [];
@@ -619,19 +619,19 @@ router.get('/outgoing/pending-summary', asyncHandler(async (_req: AuthRequest, r
       const diffMs = today.getTime() - dueDate.getTime();
       const daysOver = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-      if (daysOver > 60) { aging.d60plus += balance; agingCount.d60plus++; }
-      else if (daysOver > 30) { aging.d31_60 += balance; agingCount.d31_60++; }
-      else if (daysOver > 15) { aging.d16_30 += balance; agingCount.d16_30++; }
-      else if (daysOver > 0) { aging.d1_15 += balance; agingCount.d1_15++; }
-      else { aging.current += balance; agingCount.current++; }
+      // daysOver > 0 means overdue, daysOver < 0 means days remaining
+      const daysLeft = -daysOver; // positive = days until due
 
-      if (daysOver > 0) overdueAmount += balance;
+      if (daysOver > 0) { aging.overdue += balance; agingCount.overdue++; overdueAmount += balance; }
+      else if (daysLeft <= 7) { aging.thisWeek += balance; agingCount.thisWeek++; }
+      else if (daysLeft <= 15) { aging.d7_15 += balance; agingCount.d7_15++; }
+      else if (daysLeft <= 30) { aging.d15_30 += balance; agingCount.d15_30++; }
+      else { aging.d30plus += balance; agingCount.d30plus++; }
 
-      // Due this week: due date is between today and 7 days from now
-      if (dueDate >= today && dueDate <= weekFromNow) dueThisWeek += balance;
+      dueThisWeek = aging.thisWeek; // sync from bucket
     } else {
-      aging.current += balance;
-      agingCount.current++;
+      aging.d30plus += balance;
+      agingCount.d30plus++;
     }
   }
 
