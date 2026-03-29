@@ -279,4 +279,230 @@ router.get('/incoming/summary', asyncHandler(async (_req: AuthRequest, res: Resp
   });
 }));
 
+// ═══════════════════════════════════════════════
+// GET /outgoing/pending — POs awaiting invoice/payment
+// ═══════════════════════════════════════════════
+router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Response) => {
+  const pos = await prisma.purchaseOrder.findMany({
+    where: {
+      status: { in: ['PARTIAL_RECEIVED', 'RECEIVED', 'CLOSED'] },
+    },
+    select: {
+      id: true, poNo: true, poDate: true, grandTotal: true, status: true, paymentTerms: true, creditDays: true,
+      vendor: { select: { id: true, name: true, creditDays: true, paymentTerms: true, tdsApplicable: true, tdsPercent: true, tdsSection: true } },
+      grns: {
+        where: { status: 'CONFIRMED' },
+        orderBy: { grnDate: 'desc' },
+        take: 1,
+        select: { id: true, grnNo: true, grnDate: true, totalAmount: true },
+      },
+      vendorInvoices: {
+        where: { status: { not: 'CANCELLED' } },
+        select: { id: true, vendorInvNo: true, invoiceDate: true, netPayable: true, paidAmount: true, balanceAmount: true, status: true },
+      },
+    },
+    orderBy: { poDate: 'desc' },
+    take: 500,
+  });
+
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  interface PendingPayable {
+    poId: string;
+    poNo: number;
+    poDate: string;
+    poAmount: number;
+    poStatus: string;
+    vendorId: string;
+    vendorName: string;
+    grnId: string | null;
+    grnNo: number | null;
+    grnDate: string | null;
+    creditDays: number;
+    dueDate: string | null;
+    daysOverdue: number | null;
+    urgency: 'green' | 'amber' | 'red' | 'none';
+    invoiceStatus: 'NO_INVOICE' | 'PENDING' | 'PARTIAL_PAID' | 'PAID';
+    invoices: Array<{ id: string; vendorInvNo: string | null; netPayable: number; paidAmount: number; balanceAmount: number; status: string }>;
+    totalInvoiced: number;
+    totalPaid: number;
+    balance: number;
+    tdsApplicable: boolean;
+    tdsPercent: number;
+    tdsSection: string | null;
+  }
+
+  const pending: PendingPayable[] = [];
+
+  for (const po of pos) {
+    const invoices = po.vendorInvoices || [];
+    const totalInvoiced = invoices.reduce((s, inv) => s + (inv.netPayable || 0), 0);
+    const totalPaid = invoices.reduce((s, inv) => s + (inv.paidAmount || 0), 0);
+    const balance = invoices.reduce((s, inv) => s + (inv.balanceAmount || 0), 0);
+
+    // Skip if all invoices fully paid and at least one invoice exists
+    if (invoices.length > 0 && balance <= 0) continue;
+
+    // If no invoices at all, the full PO amount is pending
+    const grn = po.grns[0] || null;
+    const creditDays = po.creditDays || po.vendor.creditDays || 30;
+
+    let dueDate: Date | null = null;
+    let daysOverdue: number | null = null;
+    let urgency: 'green' | 'amber' | 'red' | 'none' = 'none';
+
+    if (grn) {
+      dueDate = new Date(grn.grnDate);
+      dueDate.setDate(dueDate.getDate() + creditDays);
+      const diffMs = today.getTime() - dueDate.getTime();
+      daysOverdue = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+      if (daysOverdue > 0) urgency = 'red';
+      else if (daysOverdue >= -7) urgency = 'amber';
+      else urgency = 'green';
+    }
+
+    let invoiceStatus: PendingPayable['invoiceStatus'] = 'NO_INVOICE';
+    if (invoices.length > 0) {
+      const allPaid = invoices.every(inv => inv.status === 'PAID');
+      const anyPartial = invoices.some(inv => inv.status === 'PARTIAL_PAID');
+      if (allPaid) invoiceStatus = 'PAID';
+      else if (anyPartial || totalPaid > 0) invoiceStatus = 'PARTIAL_PAID';
+      else invoiceStatus = 'PENDING';
+    }
+
+    pending.push({
+      poId: po.id,
+      poNo: po.poNo,
+      poDate: po.poDate.toISOString(),
+      poAmount: po.grandTotal,
+      poStatus: po.status,
+      vendorId: po.vendor.id,
+      vendorName: po.vendor.name,
+      grnId: grn?.id || null,
+      grnNo: grn?.grnNo || null,
+      grnDate: grn?.grnDate?.toISOString() || null,
+      creditDays,
+      dueDate: dueDate?.toISOString() || null,
+      daysOverdue,
+      urgency,
+      invoiceStatus,
+      invoices: invoices.map(inv => ({
+        id: inv.id,
+        vendorInvNo: inv.vendorInvNo,
+        netPayable: inv.netPayable,
+        paidAmount: inv.paidAmount,
+        balanceAmount: inv.balanceAmount,
+        status: inv.status,
+      })),
+      totalInvoiced,
+      totalPaid,
+      balance: invoices.length > 0 ? balance : po.grandTotal,
+      tdsApplicable: po.vendor.tdsApplicable,
+      tdsPercent: po.vendor.tdsPercent,
+      tdsSection: po.vendor.tdsSection || null,
+    });
+  }
+
+  // Sort by dueDate ascending (most urgent first), nulls last
+  pending.sort((a, b) => {
+    if (!a.dueDate && !b.dueDate) return 0;
+    if (!a.dueDate) return 1;
+    if (!b.dueDate) return -1;
+    return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+  });
+
+  res.json({ items: pending });
+}));
+
+// ═══════════════════════════════════════════════
+// GET /outgoing/pending-summary — KPIs + aging for pending payables
+// ═══════════════════════════════════════════════
+router.get('/outgoing/pending-summary', asyncHandler(async (_req: AuthRequest, res: Response) => {
+  // Get pending POs (same logic as above, lighter query)
+  const pos = await prisma.purchaseOrder.findMany({
+    where: {
+      status: { in: ['PARTIAL_RECEIVED', 'RECEIVED', 'CLOSED'] },
+    },
+    select: {
+      grandTotal: true, creditDays: true,
+      vendor: { select: { creditDays: true } },
+      grns: {
+        where: { status: 'CONFIRMED' },
+        orderBy: { grnDate: 'desc' },
+        take: 1,
+        select: { grnDate: true },
+      },
+      vendorInvoices: {
+        where: { status: { not: 'CANCELLED' } },
+        select: { netPayable: true, paidAmount: true, balanceAmount: true, status: true },
+      },
+    },
+    take: 500,
+  });
+
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const weekFromNow = new Date(today);
+  weekFromNow.setDate(weekFromNow.getDate() + 7);
+
+  let totalPayable = 0;
+  let overdueAmount = 0;
+  let dueThisWeek = 0;
+  const aging = { current: 0, d1_15: 0, d16_30: 0, d31_60: 0, d60plus: 0 };
+  const agingCount = { current: 0, d1_15: 0, d16_30: 0, d31_60: 0, d60plus: 0 };
+
+  for (const po of pos) {
+    const invoices = po.vendorInvoices || [];
+    const balance = invoices.length > 0
+      ? invoices.reduce((s, inv) => s + (inv.balanceAmount || 0), 0)
+      : po.grandTotal;
+
+    if (invoices.length > 0 && balance <= 0) continue;
+
+    totalPayable += balance;
+
+    const grn = po.grns[0] || null;
+    const creditDays = po.creditDays || po.vendor.creditDays || 30;
+
+    if (grn) {
+      const dueDate = new Date(grn.grnDate);
+      dueDate.setDate(dueDate.getDate() + creditDays);
+      const diffMs = today.getTime() - dueDate.getTime();
+      const daysOver = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+      if (daysOver > 60) { aging.d60plus += balance; agingCount.d60plus++; }
+      else if (daysOver > 30) { aging.d31_60 += balance; agingCount.d31_60++; }
+      else if (daysOver > 15) { aging.d16_30 += balance; agingCount.d16_30++; }
+      else if (daysOver > 0) { aging.d1_15 += balance; agingCount.d1_15++; }
+      else { aging.current += balance; agingCount.current++; }
+
+      if (daysOver > 0) overdueAmount += balance;
+
+      // Due this week: due date is between today and 7 days from now
+      if (dueDate >= today && dueDate <= weekFromNow) dueThisWeek += balance;
+    } else {
+      aging.current += balance;
+      agingCount.current++;
+    }
+  }
+
+  // Paid this month
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const paidAgg = await prisma.vendorPayment.aggregate({
+    where: { paymentDate: { gte: monthStart } },
+    _sum: { amount: true },
+  });
+
+  res.json({
+    totalPayable,
+    overdueAmount,
+    dueThisWeek,
+    paidThisMonth: paidAgg._sum.amount || 0,
+    aging,
+    agingCount,
+  });
+}));
+
 export default router;

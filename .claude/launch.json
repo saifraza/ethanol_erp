@@ -6,6 +6,12 @@
       "runtimeExecutable": "bash",
       "runtimeArgs": ["-c", "cd backend && npx tsx src/server.ts"],
       "port": 5001
+    },
+    {
+      "name": "frontend",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd frontend && npx vite --port 3000"],
+      "port": 3000
     }
   ]
 }

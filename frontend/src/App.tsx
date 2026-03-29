@@ -63,13 +63,11 @@ const Vendors = React.lazy(() => import('./pages/procurement/Vendors'));
 const Materials = React.lazy(() => import('./pages/procurement/Materials'));
 const PurchaseOrders = React.lazy(() => import('./pages/procurement/PurchaseOrders'));
 const GoodsReceipts = React.lazy(() => import('./pages/procurement/GoodsReceipts'));
-const VendorInvoices = React.lazy(() => import('./pages/procurement/VendorInvoices'));
 const VendorPayments = React.lazy(() => import('./pages/procurement/VendorPayments'));
 // Direct Trade
 const DirectPurchases = React.lazy(() => import('./pages/trade/DirectPurchases'));
 const DirectSales = React.lazy(() => import('./pages/trade/DirectSales'));
 // Accounts
-const PaymentDashboard = React.lazy(() => import('./pages/accounts/PaymentDashboard'));
 const ChartOfAccounts = React.lazy(() => import('./pages/accounts/ChartOfAccounts'));
 const JournalEntryPage = React.lazy(() => import('./pages/accounts/JournalEntry'));
 const Ledger = React.lazy(() => import('./pages/accounts/Ledger'));
@@ -78,8 +76,6 @@ const DayBook = React.lazy(() => import('./pages/accounts/DayBook'));
 const ProfitLoss = React.lazy(() => import('./pages/accounts/ProfitLoss'));
 const BalanceSheetPage = React.lazy(() => import('./pages/accounts/BalanceSheet'));
 const BankReconciliation = React.lazy(() => import('./pages/accounts/BankReconciliation'));
-const ReceivablesAging = React.lazy(() => import('./pages/accounts/ReceivablesAging'));
-const PayablesAging = React.lazy(() => import('./pages/accounts/PayablesAging'));
 const GSTSummary = React.lazy(() => import('./pages/accounts/GSTSummary'));
 const CashVouchers = React.lazy(() => import('./pages/accounts/CashVouchers'));
 const BankLoans = React.lazy(() => import('./pages/accounts/BankLoans'));
@@ -171,13 +167,11 @@ export default function App() {
         <Route path="procurement/materials" element={<Navigate to="/inventory" replace />} />
         <Route path="procurement/purchase-orders" element={<PurchaseOrders />} />
         <Route path="procurement/goods-receipts" element={<GoodsReceipts />} />
-        <Route path="procurement/vendor-invoices" element={<VendorInvoices />} />
         <Route path="procurement/vendor-payments" element={<VendorPayments />} />
         {/* Direct Trade */}
         <Route path="trade/purchases" element={<DirectPurchases />} />
         <Route path="trade/sales" element={<DirectSales />} />
         {/* Accounts */}
-        <Route path="accounts/payments" element={<PaymentDashboard />} />
         <Route path="accounts/chart" element={<ChartOfAccounts />} />
         <Route path="accounts/journal" element={<JournalEntryPage />} />
         <Route path="accounts/ledger" element={<Ledger />} />
@@ -186,8 +180,6 @@ export default function App() {
         <Route path="accounts/profit-loss" element={<ProfitLoss />} />
         <Route path="accounts/balance-sheet" element={<BalanceSheetPage />} />
         <Route path="accounts/bank-reconciliation" element={<BankReconciliation />} />
-        <Route path="accounts/receivables-aging" element={<ReceivablesAging />} />
-        <Route path="accounts/payables-aging" element={<PayablesAging />} />
         <Route path="accounts/gst-summary" element={<GSTSummary />} />
         <Route path="accounts/cash-vouchers" element={<CashVouchers />} />
         <Route path="accounts/bank-loans" element={<BankLoans />} />
