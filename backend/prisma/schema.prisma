@@ -1757,8 +1757,10 @@ model GoodsReceipt {
   grnDate         DateTime @default(now())
   // Vehicle / delivery info
   vehicleNo       String?
-  challanNo       String?                   // vendor delivery challan
+  challanNo       String?                   // kept for backward compat
   challanDate     DateTime?
+  invoiceNo       String?                   // vendor invoice number
+  invoiceDate     DateTime?                 // vendor invoice date
   ewayBill        String?
   // Quality
   qualityStatus   String   @default("PENDING") // PENDING, ACCEPTED, REJECTED, PARTIAL_ACCEPTED
@@ -1766,6 +1768,7 @@ model GoodsReceipt {
   inspectedBy     String?
   // Status
   status          String   @default("DRAFT") // DRAFT, CONFIRMED, CANCELLED
+  archived        Boolean  @default(false)   // hide from active list
   // Totals (from lines)
   totalQty        Float    @default(0)
   totalAmount     Float    @default(0)
@@ -1799,7 +1802,8 @@ model GRNLine {
   unit            String       @default("KG")
   rate            Float        @default(0)  // from PO
   amount          Float        @default(0)  // acceptedQty × rate
-  storageLocation String?
+  storageLocation String?                   // legacy
+  warehouseCode   String?                   // warehouse code (e.g. CHEM, MAIN, SPARE)
   batchNo         String?
   expiryDate      DateTime?
   remarks         String?

@@ -111,7 +111,8 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const vendorId = req.query.vendorId as string | undefined;
     const status = req.query.status as string | undefined;
 
-    const where: any = {};
+    const archived = req.query.archived === 'true';
+    const where: any = { archived };
     if (poId) where.poId = poId;
     if (vendorId) where.vendorId = vendorId;
     if (status) where.status = status;
@@ -182,24 +183,26 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
 
     // Process lines
     const processedLines = (b.lines || []).map((line: any) => {
+      const receivedQty = parseFloat(line.receivedQty) || 0;
       const acceptedQty = parseFloat(line.acceptedQty) || 0;
+      const rejectedQty = receivedQty - acceptedQty; // auto-calculate
       const rate = parseFloat(line.rate) || 0;
       const amount = acceptedQty * rate;
 
-      // Use inventoryItemId only — materialId is deprecated
       const itemId = line.inventoryItemId || line.materialId || null;
       return {
         poLineId: line.poLineId || null,
         inventoryItemId: itemId,
-        materialId: null, // deprecated, don't set FK to avoid constraint errors
+        materialId: null,
         description: line.description || '',
-        receivedQty: parseFloat(line.receivedQty) || 0,
+        receivedQty,
         acceptedQty,
-        rejectedQty: parseFloat(line.rejectedQty) || 0,
+        rejectedQty: Math.max(0, rejectedQty),
         unit: line.unit || 'kg',
         rate,
         amount,
         storageLocation: line.storageLocation || '',
+        warehouseCode: line.warehouseCode || '',
         batchNo: line.batchNo || '',
         remarks: line.remarks || '',
       };
@@ -218,8 +221,10 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
           vendorId: po.vendorId,
           grnDate: b.grnDate ? new Date(b.grnDate) : new Date(),
           vehicleNo: b.vehicleNo || '',
-          challanNo: b.challanNo || '',
-          challanDate: b.challanDate ? new Date(b.challanDate) : null,
+          challanNo: b.challanNo || b.invoiceNo || '',
+          challanDate: b.challanDate ? new Date(b.challanDate) : (b.invoiceDate ? new Date(b.invoiceDate) : null),
+          invoiceNo: b.invoiceNo || b.challanNo || '',
+          invoiceDate: b.invoiceDate ? new Date(b.invoiceDate) : (b.challanDate ? new Date(b.challanDate) : null),
           ewayBill: b.ewayBill || '',
           remarks: b.remarks || '',
           totalAmount,
@@ -383,6 +388,13 @@ router.delete('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 
     await prisma.goodsReceipt.delete({ where: { id: req.params.id } });
     res.json({ ok: true });
+}));
+
+// PUT /:id/archive — archive a GRN
+router.put('/:id/archive', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const archived = req.body.archived !== false;
+    await prisma.goodsReceipt.update({ where: { id: req.params.id }, data: { archived } });
+    res.json({ ok: true, archived });
 }));
 
 export default router;

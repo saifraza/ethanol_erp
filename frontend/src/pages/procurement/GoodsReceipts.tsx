@@ -12,6 +12,7 @@ interface GRNLine {
   unit: string;
   rate: number;
   storageLocation: string;
+  warehouseCode: string;
   batchNo: string;
   remarks: string;
 }
@@ -20,8 +21,8 @@ interface CreateGRNForm {
   poId: string;
   grnDate: string;
   vehicleNo: string;
-  challanNo: string;
-  challanDate: string;
+  invoiceNo: string;
+  invoiceDate: string;
   ewayBill: string;
   remarks: string;
   lines: GRNLine[];
@@ -33,6 +34,8 @@ interface GRN {
   grnDate: string;
   vehicleNo: string;
   challanNo: string;
+  invoiceNo?: string;
+  archived?: boolean;
   status: 'DRAFT' | 'CONFIRMED' | 'CANCELLED';
   totalAmount: number;
   totalAccepted: number;
@@ -84,7 +87,7 @@ export default function GoodsReceipts() {
   const [submitting, setSubmitting] = useState(false);
 
   const [formData, setFormData] = useState<CreateGRNForm>({
-    poId: '', grnDate: new Date().toISOString().split('T')[0], vehicleNo: '', challanNo: '', challanDate: '', ewayBill: '', remarks: '', lines: [],
+    poId: '', grnDate: new Date().toISOString().split('T')[0], vehicleNo: '', invoiceNo: '', invoiceDate: '', ewayBill: '', remarks: '', lines: [],
   });
 
   const [selectedPO, setSelectedPO] = useState<PO | null>(null);
@@ -178,19 +181,19 @@ export default function GoodsReceipts() {
     if (!formData.poId) { setError('Please select a PO'); return; }
     if (formData.lines.length === 0) { setError('Please add line items'); return; }
     if (!formData.vehicleNo.trim()) { setError('Vehicle number is required'); return; }
-    if (!formData.challanNo.trim()) { setError('Challan number is required'); return; }
+    if (!formData.invoiceNo.trim()) { setError('Invoice number is required'); return; }
 
     try {
       setSubmitting(true);
       await api.post('/goods-receipts', {
         poId: formData.poId, vendorId: selectedPO?.id || '', grnDate: formData.grnDate,
-        vehicleNo: formData.vehicleNo, challanNo: formData.challanNo, challanDate: formData.challanDate,
+        vehicleNo: formData.vehicleNo, invoiceNo: formData.invoiceNo, invoiceDate: formData.invoiceDate,
         ewayBill: formData.ewayBill, remarks: formData.remarks, lines: formData.lines,
         warehouseId: selectedWarehouseId || undefined,
       });
       setSuccessMessage('GRN created successfully');
       setShowCreateForm(false);
-      setFormData({ poId: '', grnDate: new Date().toISOString().split('T')[0], vehicleNo: '', challanNo: '', challanDate: '', ewayBill: '', remarks: '', lines: [] });
+      setFormData({ poId: '', grnDate: new Date().toISOString().split('T')[0], vehicleNo: '', invoiceNo: '', invoiceDate: '', ewayBill: '', remarks: '', lines: [] });
       setSelectedPO(null);
       await fetchGRNs();
       setTimeout(() => setSuccessMessage(null), 4000);
@@ -355,12 +358,12 @@ export default function GoodsReceipts() {
                     <input type="text" placeholder="MH01AB1234" value={formData.vehicleNo} onChange={(e) => setFormData((prev) => ({ ...prev, vehicleNo: e.target.value }))} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Challan No *</label>
-                    <input type="text" placeholder="CHL-001" value={formData.challanNo} onChange={(e) => setFormData((prev) => ({ ...prev, challanNo: e.target.value }))} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Invoice No *</label>
+                    <input type="text" placeholder="INV-001" value={formData.invoiceNo} onChange={(e) => setFormData((prev) => ({ ...prev, invoiceNo: e.target.value }))} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Challan Date</label>
-                    <input type="date" value={formData.challanDate} onChange={(e) => setFormData((prev) => ({ ...prev, challanDate: e.target.value }))} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Invoice Date</label>
+                    <input type="date" value={formData.invoiceDate} onChange={(e) => setFormData((prev) => ({ ...prev, invoiceDate: e.target.value }))} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">E-Way Bill</label>
@@ -489,7 +492,7 @@ export default function GoodsReceipts() {
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100">{grn.vendor.name}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100">{new Date(grn.grnDate).toLocaleDateString()}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100">{grn.vehicleNo}</td>
-                    <td className="px-3 py-1.5 text-xs border-r border-slate-100">{grn.challanNo}</td>
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100">{grn.invoiceNo || grn.challanNo || '--'}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums text-green-700 font-semibold">{grn.lines?.reduce((s: number, l: any) => s + (l.acceptedQty || 0), 0) || '-'}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums text-red-600 font-semibold">{grn.lines?.reduce((s: number, l: any) => s + (l.rejectedQty || 0), 0) || '-'}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums font-bold">{grn.totalAmount.toFixed(2)}</td>
