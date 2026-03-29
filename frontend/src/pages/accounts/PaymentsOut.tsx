@@ -11,6 +11,8 @@ interface PendingPayable {
   poNo: number;
   poDate: string;
   poAmount: number;
+  poSubtotal: number;
+  poGst: number;
   poStatus: string;
   vendorId: string;
   vendorName: string;
@@ -662,9 +664,9 @@ export default function PaymentsOut() {
                                       {/* Pipeline Steps */}
                                       <div className="flex items-center justify-center gap-0">
                                         {([
-                                          { label: 'Ordered', done: true, value: fmt(poDetail.pipeline.ordered.amount), sub: `${poDetail.pipeline.ordered.qty} items` },
-                                          { label: 'Received', done: poDetail.pipeline.received.grnCount > 0, value: `${poDetail.pipeline.received.qty} qty`, sub: `${poDetail.pipeline.received.grnCount} GRN${poDetail.pipeline.received.grnCount !== 1 ? 's' : ''}` },
-                                          { label: 'Invoiced', done: poDetail.pipeline.invoiced.count > 0, value: fmt(poDetail.pipeline.invoiced.amount), sub: `${poDetail.pipeline.invoiced.count} inv` },
+                                          { label: 'Ordered', done: true, value: `${poDetail.pipeline.ordered.qty} qty`, sub: fmt(poDetail.pipeline.ordered.amount) },
+                                          { label: 'Received', done: poDetail.pipeline.received.grnCount > 0, value: `${poDetail.pipeline.received.qty} qty`, sub: `${poDetail.pipeline.received.grnCount} GRN${poDetail.pipeline.received.grnCount !== 1 ? 's' : ''}${poDetail.pipeline.received.pending > 0 ? ` (${poDetail.pipeline.received.pending} pending)` : ''}` },
+                                          { label: 'Invoiced', done: poDetail.pipeline.invoiced.count > 0, value: fmt(poDetail.pipeline.invoiced.amount), sub: `${poDetail.pipeline.invoiced.count} invoice${poDetail.pipeline.invoiced.count !== 1 ? 's' : ''}` },
                                           { label: 'Paid', done: poDetail.pipeline.paid.amount > 0, value: fmt(poDetail.pipeline.paid.amount), sub: poDetail.pipeline.paid.balance > 0 ? `Bal: ${fmt(poDetail.pipeline.paid.balance)}` : 'Settled' },
                                         ]).map((step, si) => (
                                           <React.Fragment key={step.label}>
@@ -700,7 +702,10 @@ export default function PaymentsOut() {
                                             {(poDetail.vendorInvoices || []).map((inv: any) => (
                                               <div key={inv.id} className="flex items-center justify-between bg-white border border-slate-200 px-2 py-1">
                                                 <span className="font-mono">{inv.vendorInvNo || `INV-${inv.invoiceNo}`}</span>
-                                                <span className="font-mono tabular-nums">{fmt(inv.totalAmount)}</span>
+                                                <div className="flex items-center gap-1">
+                                                  <span className="font-mono tabular-nums">{fmt(inv.totalAmount)}</span>
+                                                  <span className={`text-[8px] font-bold uppercase px-1 py-0.5 border ${inv.status === 'PAID' ? 'border-green-300 text-green-700' : inv.status === 'PARTIAL_PAID' ? 'border-amber-300 text-amber-700' : 'border-blue-300 text-blue-700'}`}>{inv.status}</span>
+                                                </div>
                                               </div>
                                             ))}
                                             {(!poDetail.vendorInvoices || poDetail.vendorInvoices.length === 0) && <div className="text-slate-400">No invoices</div>}
@@ -1085,11 +1090,11 @@ export default function PaymentsOut() {
                       </div>
 
                       <div className="px-3 py-1.5 border-b border-slate-200 text-slate-600">Taxable</div>
-                      <div className="px-3 py-1.5 border-b border-l border-slate-200 font-mono">--</div>
-                      <div className="px-3 py-1.5 border-b border-l border-slate-200 font-mono">{(extracted.taxable_amount as number) ? fmt(extracted.taxable_amount as number) : '--'}</div>
+                      <div className="px-3 py-1.5 border-b border-l border-slate-200 font-mono">{invoiceModal.poSubtotal ? fmt(invoiceModal.poSubtotal) : '--'}</div>
+                      <div className={`px-3 py-1.5 border-b border-l border-slate-200 font-mono ${(extracted.taxable_amount as number) && invoiceModal.poSubtotal && Math.abs((extracted.taxable_amount as number) - invoiceModal.poSubtotal) > 1 ? 'bg-red-50 text-red-700 font-bold' : ''}`}>{(extracted.taxable_amount as number) ? fmt(extracted.taxable_amount as number) : '--'}</div>
 
                       <div className="px-3 py-1.5 text-slate-600">GST</div>
-                      <div className="px-3 py-1.5 border-l border-slate-200 font-mono">--</div>
+                      <div className="px-3 py-1.5 border-l border-slate-200 font-mono">{invoiceModal.poGst ? fmt(invoiceModal.poGst) : '--'}</div>
                       <div className="px-3 py-1.5 border-l border-slate-200 font-mono">{(extracted.total_gst as number) ? fmt(extracted.total_gst as number) : '--'}</div>
                     </div>
                   </div>

@@ -415,7 +415,7 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
       status: { in: ['PARTIAL_RECEIVED', 'RECEIVED', 'CLOSED'] },
     },
     select: {
-      id: true, poNo: true, poDate: true, grandTotal: true, status: true, paymentTerms: true, creditDays: true,
+      id: true, poNo: true, poDate: true, grandTotal: true, subtotal: true, totalGst: true, status: true, paymentTerms: true, creditDays: true,
       vendor: { select: { id: true, name: true, creditDays: true, paymentTerms: true, tdsApplicable: true, tdsPercent: true, tdsSection: true } },
       grns: {
         where: { status: 'CONFIRMED' },
@@ -507,6 +507,8 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
       poNo: po.poNo,
       poDate: po.poDate.toISOString(),
       poAmount: po.grandTotal,
+      poSubtotal: po.subtotal || 0,
+      poGst: po.totalGst || 0,
       poStatus: po.status,
       vendorId: po.vendor.id,
       vendorName: po.vendor.name,
