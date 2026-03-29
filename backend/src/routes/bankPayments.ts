@@ -256,6 +256,56 @@ router.get('/batches/:id', asyncHandler(async (req: AuthRequest, res: Response) 
   });
   if (!batch) { res.status(404).json({ error: 'Batch not found' }); return; }
 
+  // Enrich items with invoice + PO details for checker verification
+  const invoiceIds = batch.items.map(i => i.vendorInvoiceId).filter(Boolean) as string[];
+  const invoices = invoiceIds.length > 0
+    ? await prisma.vendorInvoice.findMany({
+        where: { id: { in: invoiceIds } },
+        select: {
+          id: true, vendorInvNo: true, invoiceDate: true, totalAmount: true,
+          netPayable: true, balanceAmount: true, productName: true, quantity: true, unit: true, rate: true,
+          poId: true, grnId: true,
+        },
+      })
+    : [];
+  const invoiceMap = new Map(invoices.map(inv => [inv.id, inv]));
+
+  // Get PO numbers for linked invoices
+  const poIds = invoices.map(inv => inv.poId).filter(Boolean) as string[];
+  const pos = poIds.length > 0
+    ? await prisma.purchaseOrder.findMany({
+        where: { id: { in: poIds } },
+        select: { id: true, poNo: true },
+      })
+    : [];
+  const poMap = new Map(pos.map(po => [po.id, `PO-${po.poNo}`]));
+
+  // Get GRN numbers
+  const grnIds = invoices.map(inv => inv.grnId).filter(Boolean) as string[];
+  const grns = grnIds.length > 0
+    ? await prisma.goodsReceipt.findMany({
+        where: { id: { in: grnIds } },
+        select: { id: true, grnNo: true },
+      })
+    : [];
+  const grnMap = new Map(grns.map(g => [g.id, `GRN-${g.grnNo}`]));
+
+  const enrichedItems = batch.items.map(item => {
+    const inv = item.vendorInvoiceId ? invoiceMap.get(item.vendorInvoiceId) : null;
+    return {
+      ...item,
+      invoiceNo: inv?.vendorInvNo || null,
+      invoiceDate: inv?.invoiceDate || null,
+      invoiceTotal: inv?.totalAmount || null,
+      productName: inv?.productName || null,
+      quantity: inv?.quantity || null,
+      unit: inv?.unit || null,
+      rate: inv?.rate || null,
+      poNumber: inv?.poId ? poMap.get(inv.poId) || null : null,
+      grnNumber: inv?.grnId ? grnMap.get(inv.grnId) || null : null,
+    };
+  });
+
   // Get user names
   const userIds = new Set<string>([batch.createdBy]);
   if (batch.checkedBy) userIds.add(batch.checkedBy);
@@ -269,6 +319,7 @@ router.get('/batches/:id', asyncHandler(async (req: AuthRequest, res: Response) 
 
   res.json({
     ...batch,
+    items: enrichedItems,
     createdByName: userMap.get(batch.createdBy) || 'Unknown',
     checkedByName: batch.checkedBy ? userMap.get(batch.checkedBy) || 'Unknown' : null,
     releasedByName: batch.releasedBy ? userMap.get(batch.releasedBy) || 'Unknown' : null,

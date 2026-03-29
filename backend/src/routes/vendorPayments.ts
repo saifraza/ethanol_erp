@@ -100,11 +100,22 @@ router.get('/ledger/:vendorId', asyncHandler(async (req: AuthRequest, res: Respo
 
 // GET /outstanding — outstanding payables grouped by vendor
 router.get('/outstanding', asyncHandler(async (req: AuthRequest, res: Response) => {
+    // Find invoice IDs already in active bank payment batches (DRAFT/APPROVED/SENT_TO_BANK)
+    const activeItems = await prisma.bankPaymentItem.findMany({
+      where: {
+        vendorInvoiceId: { not: null },
+        batch: { status: { in: ['DRAFT', 'APPROVED', 'RELEASED', 'SENT_TO_BANK'] } },
+      },
+      select: { vendorInvoiceId: true },
+    });
+    const excludeIds = activeItems.map(i => i.vendorInvoiceId).filter(Boolean) as string[];
+
     const invoices = await prisma.vendorInvoice.findMany({
       where: {
         balanceAmount: {
           gt: 0,
         },
+        ...(excludeIds.length > 0 ? { id: { notIn: excludeIds } } : {}),
       },
       include: {
         vendor: true,

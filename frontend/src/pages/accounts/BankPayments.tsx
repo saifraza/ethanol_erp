@@ -18,6 +18,16 @@ interface BatchItem {
   utrNumber: string | null;
   failureReason: string | null;
   vendorId: string | null;
+  // Enriched fields for checker verification
+  invoiceNo: string | null;
+  invoiceDate: string | null;
+  invoiceTotal: number | null;
+  productName: string | null;
+  quantity: number | null;
+  unit: string | null;
+  rate: number | null;
+  poNumber: string | null;
+  grnNumber: string | null;
 }
 
 interface Batch {
@@ -588,27 +598,43 @@ function ApproveTab({ onAction }: { onAction: () => void }) {
                     <tr>
                       <td colSpan={6} className="p-0">
                         <div className="bg-slate-50 border-b border-slate-200">
-                          {/* Items sub-table */}
+                          {/* Items sub-table with PO/Invoice details for checker */}
                           <div className="px-4 py-3">
-                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Payment Items</div>
+                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Payment Items — Verify Details</div>
                             <table className="w-full text-xs border border-slate-200">
                               <thead>
                                 <tr className="bg-slate-200">
                                   <th className="text-left px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-300">Beneficiary</th>
+                                  <th className="text-left px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-300">Invoice</th>
+                                  <th className="text-left px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-300">PO / GRN</th>
+                                  <th className="text-left px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-300">Product</th>
                                   <th className="text-left px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-300">Account</th>
                                   <th className="text-left px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-300">IFSC</th>
-                                  <th className="text-right px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-300">Amount</th>
-                                  <th className="text-left px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest">Remarks</th>
+                                  <th className="text-right px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-300">Pay Amount</th>
+                                  <th className="text-right px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest">Inv Total</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {expandedBatch.items.map((item, j) => (
                                   <tr key={item.id} className={`border-b border-slate-100 ${j % 2 ? 'bg-white' : 'bg-slate-50/50'}`}>
                                     <td className="px-2 py-1 border-r border-slate-100 font-medium text-slate-800">{item.beneficiaryName}</td>
+                                    <td className="px-2 py-1 border-r border-slate-100 text-slate-700">
+                                      <div>{item.invoiceNo || item.remarks || '--'}</div>
+                                      {item.invoiceDate && <div className="text-[10px] text-slate-400">{fmtDate(item.invoiceDate)}</div>}
+                                    </td>
+                                    <td className="px-2 py-1 border-r border-slate-100 text-slate-600">
+                                      {item.poNumber && <div className="text-[10px]">PO: {item.poNumber}</div>}
+                                      {item.grnNumber && <div className="text-[10px]">GRN: {item.grnNumber}</div>}
+                                      {!item.poNumber && !item.grnNumber && <span className="text-slate-300">--</span>}
+                                    </td>
+                                    <td className="px-2 py-1 border-r border-slate-100 text-slate-600">
+                                      {item.productName || '--'}
+                                      {item.quantity && item.unit && <div className="text-[10px] text-slate-400">{item.quantity} {item.unit}{item.rate ? ` @ ${fmtCurrency(item.rate)}` : ''}</div>}
+                                    </td>
                                     <td className="px-2 py-1 border-r border-slate-100 font-mono text-[10px] text-slate-600">{item.beneficiaryAccount}</td>
                                     <td className="px-2 py-1 border-r border-slate-100 font-mono text-[10px] text-slate-600">{item.beneficiaryIfsc}</td>
                                     <td className="px-2 py-1 text-right border-r border-slate-100 font-mono tabular-nums font-medium">{fmtCurrency(item.amount)}</td>
-                                    <td className="px-2 py-1 text-slate-500">{item.remarks || '--'}</td>
+                                    <td className="px-2 py-1 text-right font-mono tabular-nums text-slate-500">{item.invoiceTotal ? fmtCurrency(item.invoiceTotal) : '--'}</td>
                                   </tr>
                                 ))}
                               </tbody>

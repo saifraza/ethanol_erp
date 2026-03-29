@@ -38,8 +38,13 @@ api.interceptors.response.use(
     }
 
     if (err.response?.status === 401) {
-      localStorage.removeItem('token');
-      window.location.href = '/login';
+      // Don't auto-logout for PIN verification failures (bank payments returns 401 for wrong PIN)
+      const url = config?.url || '';
+      const isPinEndpoint = url.includes('/bank-payments/') && (url.includes('/release') || url.includes('/pin/'));
+      if (!isPinEndpoint) {
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(err);
   }
