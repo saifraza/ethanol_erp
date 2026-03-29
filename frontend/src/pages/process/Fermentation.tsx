@@ -778,7 +778,21 @@ export default function Fermentation() {
 
             return (
               <button key={`${v.type}-${v.no}`}
-                onClick={() => { setSelected(isSelected ? null : v); setTab('reading'); setReadingForm({}); setShowNewBatch(false); setDosingExpanded(false); }}
+                onClick={() => {
+                  if (isSelected) { setSelected(null); return; }
+                  setSelected(v); setTab('reading'); setShowNewBatch(false); setDosingExpanded(false);
+                  // Auto-fill level + temp from OPC if data is live (< 5 min old)
+                  const opc = opcData[v.label];
+                  const autoFill: Record<string, string> = {};
+                  if (opc?.updatedAt) {
+                    const ageMs = Date.now() - new Date(opc.updatedAt).getTime();
+                    if (ageMs < 15 * 60 * 1000) {
+                      if (opc.level != null) autoFill.level = String(opc.level);
+                      if (opc.temp != null) autoFill.temp = String(opc.temp);
+                    }
+                  }
+                  setReadingForm(autoFill);
+                }}
                 className={`relative rounded-xl p-2.5 text-left transition-all duration-200 border-2 ${
                   isSelected ? `${cfg.bg} ring-2 ${cfg.ring} border-transparent shadow-lg scale-[1.03]`
                   : isIdle ? 'bg-white border-gray-100 hover:border-gray-300 hover:shadow-md'
