@@ -17,6 +17,7 @@ interface PendingPayable {
   grnId: string | null;
   grnNo: number | null;
   grnDate: string | null;
+  paymentTerms: string | null;
   creditDays: number;
   dueDate: string | null;
   daysOverdue: number | null;
@@ -432,6 +433,7 @@ export default function PaymentsOut() {
                           <tr className="bg-slate-800 text-white">
                             <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">PO#</th>
                             <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Vendor</th>
+                            <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Terms</th>
                             <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">PO Amt</th>
                             <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">GRN Date</th>
                             <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Invoice</th>
@@ -446,6 +448,9 @@ export default function PaymentsOut() {
                             <tr key={item.poId} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
                               <td className="px-3 py-1.5 border-r border-slate-100 font-mono font-medium text-blue-700">PO-{item.poNo}</td>
                               <td className="px-3 py-1.5 border-r border-slate-100 font-medium text-slate-800 max-w-[180px] truncate">{item.vendorName}</td>
+                              <td className="px-3 py-1.5 border-r border-slate-100">
+                                <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-slate-300 bg-slate-50 text-slate-600">{item.paymentTerms || `NET${item.creditDays}`}</span>
+                              </td>
                               <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">{fmt(item.poAmount)}</td>
                               <td className="px-3 py-1.5 border-r border-slate-100 whitespace-nowrap">{fmtDate(item.grnDate)}</td>
                               <td className="px-3 py-1.5 border-r border-slate-100">
@@ -482,7 +487,7 @@ export default function PaymentsOut() {
                         </tbody>
                         <tfoot>
                           <tr className="bg-slate-800 text-white font-semibold">
-                            <td className="px-3 py-2 text-[10px] uppercase tracking-widest" colSpan={2}>Total ({pendingItems.length} POs)</td>
+                            <td className="px-3 py-2 text-[10px] uppercase tracking-widest" colSpan={3}>Total ({pendingItems.length} POs)</td>
                             <td className="px-3 py-2 text-right font-mono tabular-nums">{fmt(pendingItems.reduce((s, i) => s + i.poAmount, 0))}</td>
                             <td colSpan={4}></td>
                             <td className="px-3 py-2 text-right font-mono tabular-nums">{fmt(pendingItems.reduce((s, i) => s + i.balance, 0))}</td>

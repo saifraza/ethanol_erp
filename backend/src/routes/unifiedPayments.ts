@@ -279,6 +279,21 @@ router.get('/incoming/summary', asyncHandler(async (_req: AuthRequest, res: Resp
   });
 }));
 
+// Parse payment terms string to extract days
+function parsePaymentTermsDays(terms: string | null | undefined): number | null {
+  if (!terms) return null;
+  const upper = terms.toUpperCase().replace(/\s+/g, '');
+  // Match patterns: NET30, NET-30, Net 30, NET_30, Net30Days
+  const match = upper.match(/NET[_-]?(\d+)/);
+  if (match) return parseInt(match[1], 10);
+  // ADVANCE or COD = 0 days
+  if (upper === 'ADVANCE' || upper === 'COD') return 0;
+  // "30 DAYS", "45 Days"
+  const daysMatch = upper.match(/(\d+)\s*DAYS?/);
+  if (daysMatch) return parseInt(daysMatch[1], 10);
+  return null;
+}
+
 // ═══════════════════════════════════════════════
 // GET /outgoing/pending — POs awaiting invoice/payment
 // ═══════════════════════════════════════════════
@@ -319,6 +334,7 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
     grnId: string | null;
     grnNo: number | null;
     grnDate: string | null;
+    paymentTerms: string | null;
     creditDays: number;
     dueDate: string | null;
     daysOverdue: number | null;
@@ -346,7 +362,9 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
 
     // If no invoices at all, the full PO amount is pending
     const grn = po.grns[0] || null;
-    const creditDays = po.creditDays || po.vendor.creditDays || 30;
+    // Parse payment terms: PO terms take priority, then vendor terms, fallback 30
+    const creditDays = parsePaymentTermsDays(po.paymentTerms) ?? parsePaymentTermsDays(po.vendor.paymentTerms) ?? 30;
+    const paymentTerms = po.paymentTerms || po.vendor.paymentTerms || null;
 
     let dueDate: Date | null = null;
     let daysOverdue: number | null = null;
@@ -383,6 +401,7 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
       grnId: grn?.id || null,
       grnNo: grn?.grnNo || null,
       grnDate: grn?.grnDate?.toISOString() || null,
+      paymentTerms,
       creditDays,
       dueDate: dueDate?.toISOString() || null,
       daysOverdue,
@@ -426,8 +445,8 @@ router.get('/outgoing/pending-summary', asyncHandler(async (_req: AuthRequest, r
       status: { in: ['PARTIAL_RECEIVED', 'RECEIVED', 'CLOSED'] },
     },
     select: {
-      grandTotal: true, creditDays: true,
-      vendor: { select: { creditDays: true } },
+      grandTotal: true, paymentTerms: true,
+      vendor: { select: { paymentTerms: true } },
       grns: {
         where: { status: 'CONFIRMED' },
         orderBy: { grnDate: 'desc' },
@@ -464,7 +483,7 @@ router.get('/outgoing/pending-summary', asyncHandler(async (_req: AuthRequest, r
     totalPayable += balance;
 
     const grn = po.grns[0] || null;
-    const creditDays = po.creditDays || po.vendor.creditDays || 30;
+    const creditDays = parsePaymentTermsDays(po.paymentTerms) ?? parsePaymentTermsDays(po.vendor.paymentTerms) ?? 30;
 
     if (grn) {
       const dueDate = new Date(grn.grnDate);
