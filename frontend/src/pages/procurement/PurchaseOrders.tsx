@@ -123,6 +123,9 @@ const PurchaseOrders: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [sortField, setSortField] = useState<string>('poNo');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [selectedPOId, setSelectedPOId] = useState<string | null>(null);
+  const [poDetail, setPODetail] = useState<any>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const toggleSort = (field: string) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortField(field); setSortDir('desc'); }
@@ -234,9 +237,14 @@ const PurchaseOrders: React.FC = () => {
     isRCM: false,
   });
 
+  useEffect(() => { fetchData(); }, []);
+
+  // Fetch PO detail when selected
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (!selectedPOId) { setPODetail(null); return; }
+    setDetailLoading(true);
+    api.get(`/purchase-orders/${selectedPOId}`).then(r => setPODetail(r.data)).catch(() => setPODetail(null)).finally(() => setDetailLoading(false));
+  }, [selectedPOId]);
 
   const fetchData = async () => {
     try {
@@ -922,6 +930,7 @@ const PurchaseOrders: React.FC = () => {
                     { key: 'deliveryDate', label: 'Delivery', align: 'text-left' },
                     { key: '', label: 'Items', align: 'text-center' },
                     { key: 'grandTotal', label: 'Grand Total', align: 'text-right' },
+                    { key: '', label: 'Payment', align: 'text-center' },
                   ].map((col) => (
                     <th
                       key={col.label}
@@ -939,8 +948,11 @@ const PurchaseOrders: React.FC = () => {
               </thead>
               <tbody>
                 {filteredPOs.map((po) => (
-                  <tr key={po.id} className="border-b border-slate-100 even:bg-slate-50/70 hover:bg-blue-50/60">
-                    <td className="px-3 py-1.5 text-xs border-r border-slate-100 font-bold text-slate-900">PO-{po.poNo}</td>
+                  <React.Fragment key={po.id}>
+                  <tr className="border-b border-slate-100 even:bg-slate-50/70 hover:bg-blue-50/60">
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100">
+                      <button onClick={() => setSelectedPOId(selectedPOId === po.id ? null : po.id)} className="font-bold text-blue-700 hover:underline">PO-{po.poNo}</button>
+                    </td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100">{po.vendor?.name || 'Unknown'}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100">
                       <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${getStatusBadge(po.status)}`}>{po.status}</span>
@@ -949,6 +961,12 @@ const PurchaseOrders: React.FC = () => {
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100">{new Date(po.deliveryDate).toLocaleDateString('en-IN')}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-center">{po.linesCount}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums font-bold">{po.grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-center">
+                      {(po as any).paymentStatus === 'PAID' && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-300 bg-green-50 text-green-700">PAID</span>}
+                      {(po as any).paymentStatus === 'PARTIAL' && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-amber-300 bg-amber-50 text-amber-700">PARTIAL</span>}
+                      {(po as any).paymentStatus === 'UNPAID' && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-red-300 bg-red-50 text-red-700">UNPAID</span>}
+                      {(po as any).paymentStatus === 'NO_INVOICE' && <span className="text-[9px] text-slate-400">--</span>}
+                    </td>
                     <td className="px-3 py-1.5 text-xs">
                       <div className="flex items-center justify-end gap-1">
                         {/* PDF — always */}
@@ -1051,6 +1069,83 @@ const PurchaseOrders: React.FC = () => {
                       </div>
                     </td>
                   </tr>
+                  {/* Pipeline Detail Panel */}
+                  {selectedPOId === po.id && (
+                    <tr>
+                      <td colSpan={9} className="bg-white border-b-2 border-blue-300 p-0">
+                        {detailLoading ? (
+                          <div className="p-6 text-center text-xs text-slate-400">Loading pipeline...</div>
+                        ) : poDetail?.pipeline ? (
+                          <div className="p-4">
+                            {/* Pipeline Steps */}
+                            <div className="flex items-center gap-0 mb-4">
+                              {[
+                                { label: 'Ordered', done: true, value: `₹${(poDetail.pipeline.ordered.amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, sub: `${poDetail.pipeline.ordered.qty} items` },
+                                { label: 'Received', done: poDetail.pipeline.received.grnCount > 0, value: `${poDetail.pipeline.received.qty} qty`, sub: `${poDetail.pipeline.received.grnCount} GRN${poDetail.pipeline.received.grnCount !== 1 ? 's' : ''} · ${poDetail.pipeline.received.pending} pending` },
+                                { label: 'Invoiced', done: poDetail.pipeline.invoiced.count > 0, value: poDetail.pipeline.invoiced.count > 0 ? `₹${poDetail.pipeline.invoiced.amount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '--', sub: `${poDetail.pipeline.invoiced.count} invoice${poDetail.pipeline.invoiced.count !== 1 ? 's' : ''}` },
+                                { label: 'Paid', done: poDetail.pipeline.paid.amount > 0, value: poDetail.pipeline.paid.amount > 0 ? `₹${poDetail.pipeline.paid.amount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '--', sub: poDetail.pipeline.paid.balance > 0 ? `₹${poDetail.pipeline.paid.balance.toLocaleString('en-IN', { maximumFractionDigits: 0 })} due` : 'Cleared' },
+                              ].map((step, i) => (
+                                <React.Fragment key={step.label}>
+                                  {i > 0 && <div className={`h-0.5 w-8 ${step.done ? 'bg-green-400' : 'bg-slate-200'}`} />}
+                                  <div className={`flex-1 border ${step.done ? 'border-green-300 bg-green-50' : 'border-slate-200 bg-slate-50'} px-3 py-2 text-center`}>
+                                    <div className={`text-[9px] font-bold uppercase tracking-widest ${step.done ? 'text-green-700' : 'text-slate-400'}`}>{step.label}</div>
+                                    <div className="text-sm font-bold text-slate-800 font-mono tabular-nums mt-0.5">{step.value}</div>
+                                    <div className="text-[9px] text-slate-400 mt-0.5">{step.sub}</div>
+                                  </div>
+                                </React.Fragment>
+                              ))}
+                            </div>
+
+                            {/* Documents */}
+                            <div className="grid grid-cols-3 gap-3">
+                              {/* GRNs */}
+                              <div className="border border-slate-200">
+                                <div className="bg-slate-100 px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-200">GRNs ({poDetail.grns?.length || 0})</div>
+                                <div className="p-2 space-y-1 max-h-32 overflow-y-auto">
+                                  {(poDetail.grns || []).length === 0 ? <div className="text-[10px] text-slate-400">No GRNs yet</div> : (poDetail.grns || []).map((g: any) => (
+                                    <div key={g.id} className="flex justify-between text-[10px]">
+                                      <span className="text-slate-700 font-medium">GRN-{g.grnNo}</span>
+                                      <span className={`font-bold uppercase px-1 py-0 border ${g.status === 'CONFIRMED' ? 'border-green-300 text-green-700' : 'border-slate-300 text-slate-500'}`}>{g.status}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                              {/* Invoices */}
+                              <div className="border border-slate-200">
+                                <div className="bg-slate-100 px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-200">Invoices ({poDetail.vendorInvoices?.length || 0})</div>
+                                <div className="p-2 space-y-1 max-h-32 overflow-y-auto">
+                                  {(poDetail.vendorInvoices || []).length === 0 ? <div className="text-[10px] text-slate-400">No invoices yet</div> : (poDetail.vendorInvoices || []).map((inv: any) => (
+                                    <div key={inv.id} className="flex justify-between text-[10px]">
+                                      <span className="text-slate-700 font-medium">INV-{inv.invoiceNo}</span>
+                                      <span className="font-mono tabular-nums text-slate-600">₹{(inv.grandTotal || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                              {/* Payments */}
+                              <div className="border border-slate-200">
+                                <div className="bg-slate-100 px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-200">Payments</div>
+                                <div className="p-2 space-y-1 max-h-32 overflow-y-auto">
+                                  {(poDetail.vendorInvoices || []).flatMap((inv: any) => (inv.payments || []).map((p: any) => ({ ...p, invoiceNo: inv.invoiceNo }))).length === 0 ?
+                                    <div className="text-[10px] text-slate-400">No payments yet</div> :
+                                    (poDetail.vendorInvoices || []).flatMap((inv: any) => (inv.payments || []).map((p: any) => ({ ...p, invoiceNo: inv.invoiceNo }))).map((p: any) => (
+                                      <div key={p.id} className="flex justify-between text-[10px]">
+                                        <span className="text-slate-700">{new Date(p.paymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} · {p.mode}</span>
+                                        <span className="font-mono tabular-nums text-green-700 font-bold">₹{(p.amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+                                      </div>
+                                    ))
+                                  }
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="p-6 text-center text-xs text-red-400">Failed to load PO details</div>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 ))}
               </tbody>
               <tfoot>

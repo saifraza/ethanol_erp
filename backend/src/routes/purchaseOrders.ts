@@ -25,7 +25,8 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       include: {
         vendor: { select: { id: true, name: true, email: true } },
         lines: true,
-        grns: { select: { id: true } },
+        grns: { select: { id: true, status: true } },
+        vendorInvoices: { select: { id: true, status: true, grandTotal: true, payments: { select: { amount: true, tdsDeducted: true } } } },
       },
       orderBy: [{ poNo: 'desc' }],
       skip: (page - 1) * limit,
@@ -34,27 +35,69 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
 
     const total = await prisma.purchaseOrder.count({ where });
 
-    const posWithCounts = pos.map(po => ({
-      ...po,
-      linesCount: po.lines.length,
-      grnCount: po.grns?.length || 0,
-    }));
+    const posWithCounts = pos.map(po => {
+      const invoices = (po as any).vendorInvoices || [];
+      const totalInvoiced = invoices.reduce((s: number, inv: any) => s + (inv.grandTotal || 0), 0);
+      const totalPaid = invoices.reduce((s: number, inv: any) =>
+        s + (inv.payments || []).reduce((ps: number, p: any) => ps + (p.amount || 0) + (p.tdsDeducted || 0), 0), 0);
+      const paymentStatus = totalInvoiced === 0 ? 'NO_INVOICE' : totalPaid >= totalInvoiced ? 'PAID' : totalPaid > 0 ? 'PARTIAL' : 'UNPAID';
+      return {
+        ...po,
+        linesCount: po.lines.length,
+        grnCount: po.grns?.length || 0,
+        invoiceCount: invoices.length,
+        totalInvoiced,
+        totalPaid,
+        paymentStatus,
+      };
+    });
 
     res.json({ pos: posWithCounts, total, page, limit });
 }));
 
-// GET /:id — single PO with all lines, vendor, GRNs
+// GET /:id — single PO with full pipeline (lines, GRNs, invoices, payments)
 router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const po = await prisma.purchaseOrder.findUnique({
       where: { id: req.params.id },
       include: {
         vendor: true,
-        lines: true,
-        grns: true,
+        lines: {
+          include: {
+            inventoryItem: { select: { id: true, name: true, code: true, unit: true, category: true } },
+          },
+        },
+        grns: {
+          include: { lines: true },
+          orderBy: { grnDate: 'desc' },
+        },
+        vendorInvoices: {
+          include: {
+            payments: { orderBy: { paymentDate: 'desc' } },
+          },
+          orderBy: { invoiceDate: 'desc' },
+        },
       },
     });
     if (!po) return res.status(404).json({ error: 'PO not found' });
-    res.json(po);
+
+    // Calculate pipeline summary
+    const totalOrdered = po.lines.reduce((s, l) => s + l.quantity, 0);
+    const totalReceived = po.lines.reduce((s, l) => s + (l.receivedQty || 0), 0);
+    const totalPending = po.lines.reduce((s, l) => s + (l.pendingQty || l.quantity - (l.receivedQty || 0)), 0);
+    const totalInvoiced = (po.vendorInvoices || []).reduce((s: number, inv: any) => s + (inv.grandTotal || 0), 0);
+    const totalPaid = (po.vendorInvoices || []).reduce((s: number, inv: any) =>
+      s + (inv.payments || []).reduce((ps: number, p: any) => ps + (p.amount || 0), 0), 0);
+    const totalTDS = (po.vendorInvoices || []).reduce((s: number, inv: any) =>
+      s + (inv.payments || []).reduce((ps: number, p: any) => ps + (p.tdsDeducted || 0), 0), 0);
+
+    const pipeline = {
+      ordered: { qty: totalOrdered, amount: po.grandTotal },
+      received: { qty: totalReceived, pending: totalPending, grnCount: po.grns.length },
+      invoiced: { amount: totalInvoiced, count: (po.vendorInvoices || []).length },
+      paid: { amount: totalPaid, tds: totalTDS, balance: totalInvoiced - totalPaid - totalTDS },
+    };
+
+    res.json({ ...po, pipeline });
 }));
 
 // POST / — create PO with lines in a transaction
@@ -405,8 +448,9 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
       otherCharges: po.otherCharges,
       roundOff: po.roundOff,
       grandTotal: po.grandTotal,
-      preparedBy: (po as any).createdByName || '',
-      approvedBy: (po as any).approvedByName || '',
+      preparedBy: 'Purchase Department',
+      approvedBy: 'Sibtay Hasnain Zaidi',
+      authorizedSignatory: 'OP Pandey — Unit Head',
     };
 
     let pdfBuffer: Buffer;
