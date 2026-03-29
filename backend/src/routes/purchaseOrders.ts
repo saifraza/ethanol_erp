@@ -195,7 +195,7 @@ router.put('/:id/status', asyncHandler(async (req: AuthRequest, res: Response) =
       'DRAFT': ['APPROVED', 'CANCELLED'],
       'APPROVED': ['SENT', 'CANCELLED'],
       'SENT': ['PARTIAL_RECEIVED', 'RECEIVED', 'CLOSED', 'CANCELLED'],
-      'PARTIAL_RECEIVED': ['RECEIVED', 'CLOSED'],
+      'PARTIAL_RECEIVED': ['RECEIVED', 'CLOSED', 'CANCELLED'],
       'RECEIVED': ['CLOSED'],
       'CLOSED': ['ARCHIVED'],
       'CANCELLED': ['ARCHIVED'],

@@ -704,7 +704,19 @@ export default function Vendors() {
                               </div>
                             ))}
                           {allItems.filter(it => !vendorItems.some(vi => vi.inventoryItemId === it.id)).filter(it => it.name.toLowerCase().includes(itemSearch.toLowerCase()) || it.code.toLowerCase().includes(itemSearch.toLowerCase())).length === 0 && (
-                            <div className="px-2.5 py-1.5 text-xs text-slate-400">No items found</div>
+                            <div className="px-2.5 py-2 text-xs text-slate-400">
+                              No items match "{itemSearch}"
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShowItemDropdown(false);
+                                  window.open('/inventory', '_blank');
+                                }}
+                                className="block mt-1 text-blue-600 font-medium hover:underline"
+                              >
+                                + Add to Item Master
+                              </button>
+                            </div>
                           )}
                         </div>
                       )}
