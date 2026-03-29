@@ -770,12 +770,12 @@ export default function PaymentsOut() {
                                       {/* Document Downloads */}
                                       <div className="flex items-center gap-2 pt-2 border-t border-slate-200">
                                         <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Documents:</span>
-                                        <a href={`/api/purchase-orders/${item.poId}/pdf`} target="_blank" rel="noopener noreferrer"
+                                        <a href={`/api/purchase-orders/${item.poId}/pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noopener noreferrer"
                                           className="px-2 py-0.5 bg-slate-700 text-white text-[9px] font-bold uppercase hover:bg-slate-800 inline-flex items-center gap-1">
                                           <FileText size={9} /> PO
                                         </a>
                                         {(poDetail.grns || []).length > 0 && (
-                                          <a href={`/api/goods-receipts/${poDetail.grns[0].id}/pdf`} target="_blank" rel="noopener noreferrer"
+                                          <a href={`/api/goods-receipts/${poDetail.grns[0].id}/pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noopener noreferrer"
                                             className="px-2 py-0.5 bg-slate-700 text-white text-[9px] font-bold uppercase hover:bg-slate-800 inline-flex items-center gap-1">
                                             <FileText size={9} /> GRN
                                           </a>

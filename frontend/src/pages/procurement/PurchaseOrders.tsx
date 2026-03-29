@@ -131,6 +131,7 @@ const PurchaseOrders: React.FC = () => {
     else { setSortField(field); setSortDir('desc'); }
   };
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [editingPoId, setEditingPoId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const [formData, setFormData] = useState({
@@ -248,8 +249,41 @@ const PurchaseOrders: React.FC = () => {
   useEffect(() => {
     if (!selectedPOId) { setPODetail(null); return; }
     setDetailLoading(true);
-    api.get(`/purchase-orders/${selectedPOId}`).then(r => setPODetail(r.data)).catch(() => setPODetail(null)).finally(() => setDetailLoading(false));
-  }, [selectedPOId]);
+    api.get(`/purchase-orders/${selectedPOId}`).then(r => {
+      setPODetail(r.data);
+      // If editing, populate the form
+      if (editingPoId === selectedPOId && r.data) {
+        const po = r.data;
+        setFormData({
+          vendorId: po.vendorId || '',
+          poDate: po.poDate ? new Date(po.poDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+          deliveryDate: po.deliveryDate ? new Date(po.deliveryDate).toISOString().split('T')[0] : '',
+          supplyType: po.supplyType || 'INTRA_STATE',
+          placeOfSupply: po.placeOfSupply || '',
+          paymentTerms: po.paymentTerms || '',
+          creditDays: po.creditDays || 0,
+          deliveryAddress: po.deliveryAddress || '',
+          transportMode: po.transportMode || '',
+          transportBy: po.transportBy || '',
+          remarks: po.remarks || '',
+          freightCharge: po.freightCharge || 0,
+          otherCharges: po.otherCharges || 0,
+          roundOff: po.roundOff || 0,
+          lines: (po.lines || []).map((l: any) => ({
+            inventoryItemId: l.inventoryItemId || l.materialId || '',
+            description: l.description || '',
+            hsnCode: l.hsnCode || '',
+            quantity: l.quantity || 0,
+            unit: l.unit || 'KG',
+            rate: l.rate || 0,
+            discountPercent: l.discountPercent || 0,
+            gstPercent: l.gstPercent || 18,
+            isRCM: l.isRCM || false,
+          })),
+        });
+      }
+    }).catch(() => setPODetail(null)).finally(() => setDetailLoading(false));
+  }, [selectedPOId, editingPoId]);
 
   const fetchData = async () => {
     try {
@@ -415,9 +449,17 @@ const PurchaseOrders: React.FC = () => {
 
     try {
       setSubmitting(true);
-      const response = await api.post('/purchase-orders', formData);
-      setPos([response.data, ...pos]);
-      setSuccess('Purchase Order created successfully');
+      let response;
+      if (editingPoId) {
+        response = await api.put(`/purchase-orders/${editingPoId}`, formData);
+        setPos(prev => prev.map(p => p.id === editingPoId ? response.data : p));
+        setSuccess('Purchase Order updated successfully');
+        setEditingPoId(null);
+      } else {
+        response = await api.post('/purchase-orders', formData);
+        setPos([response.data, ...pos]);
+        setSuccess('Purchase Order created successfully');
+      }
 
       // Auto-update item master rates from PO line rates
       for (const line of formData.lines) {
@@ -577,7 +619,7 @@ const PurchaseOrders: React.FC = () => {
             <span className="text-[10px] text-slate-400">Manage procurement orders</span>
           </div>
           <button
-            onClick={() => setShowCreateForm(!showCreateForm)}
+            onClick={() => { setEditingPoId(null); setShowCreateForm(!showCreateForm); }}
             className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 flex items-center gap-1"
           >
             <Plus size={12} /> NEW PO
@@ -624,8 +666,8 @@ const PurchaseOrders: React.FC = () => {
           <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 overflow-y-auto py-4">
             <div className="bg-white shadow-2xl w-full max-w-5xl mx-4">
               <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
-                <span className="text-sm font-bold tracking-wide uppercase">Create New Purchase Order</span>
-                <button onClick={() => setShowCreateForm(false)} className="text-slate-400 hover:text-white"><X size={16} /></button>
+                <span className="text-sm font-bold tracking-wide uppercase">{editingPoId ? 'Edit Purchase Order' : 'Create New Purchase Order'}</span>
+                <button onClick={() => { setShowCreateForm(false); setEditingPoId(null); }} className="text-slate-400 hover:text-white"><X size={16} /></button>
               </div>
 
               <form onSubmit={handleSubmitPO} className="p-4 space-y-4 max-h-[80vh] overflow-y-auto">
@@ -888,9 +930,9 @@ const PurchaseOrders: React.FC = () => {
                 </div>
 
                 <div className="flex gap-2 justify-end pt-4 border-t border-slate-200">
-                  <button type="button" onClick={() => setShowCreateForm(false)} className="px-4 py-1.5 bg-slate-200 text-slate-700 text-[11px] font-medium hover:bg-slate-300">CANCEL</button>
+                  <button type="button" onClick={() => { setShowCreateForm(false); setEditingPoId(null); }} className="px-4 py-1.5 bg-slate-200 text-slate-700 text-[11px] font-medium hover:bg-slate-300">CANCEL</button>
                   <button type="submit" disabled={submitting} className="px-4 py-1.5 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1">
-                    {submitting && <Loader className="w-3 h-3 animate-spin" />} CREATE PO
+                    {submitting && <Loader className="w-3 h-3 animate-spin" />} {editingPoId ? 'SAVE PO' : 'CREATE PO'}
                   </button>
                 </div>
               </form>
@@ -1010,7 +1052,7 @@ const PurchaseOrders: React.FC = () => {
                         {/* NEXT STEP — one clear action per status */}
                         {po.status === 'DRAFT' && (
                           <>
-                            <button onClick={() => { setSelectedPOId(po.id); setShowCreateForm(true); /* TODO: load PO into edit form */ }}
+                            <button onClick={() => { setEditingPoId(po.id); setSelectedPOId(po.id); setShowCreateForm(true); }}
                               className="px-2.5 py-0.5 bg-slate-600 text-white text-[9px] font-bold uppercase hover:bg-slate-700">
                               Edit
                             </button>
