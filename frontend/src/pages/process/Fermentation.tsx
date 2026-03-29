@@ -749,6 +749,10 @@ export default function Fermentation() {
 
       {/* ═══ WASH SUMMARY ═══ */}
       {(() => {
+        // Check if OPC data is fresh (< 10 min)
+        const anyOpc = opcData['F-1'] || opcData['F-2'] || opcData['F-3'] || opcData['F-4'];
+        const opcStale = anyOpc?.updatedAt ? (Date.now() - new Date(anyOpc.updatedAt).getTime()) > 10 * 60 * 1000 : true;
+
         // Calculate current wash from OPC live levels
         const fermLabels = ['F-1', 'F-2', 'F-3', 'F-4'];
         let totalWashKL = 0;
@@ -816,7 +820,7 @@ export default function Fermentation() {
                 <div className="text-[8px] font-bold uppercase tracking-widest text-gray-400">Fermenters</div>
                 <div className="text-xl font-black text-indigo-700 mt-0.5">
                   {Math.round(totalWashKL)}<span className="text-[10px] font-medium ml-0.5 text-gray-400">KL</span>
-                  {(() => {
+                  {!opcStale && (() => {
                     const totalRate = fermLabels.reduce((sum, label) => {
                       const fp = fermPhases[label];
                       return sum + (fp ? Math.round(fp.slope / 100 * FERM_CAPACITY_KL) : 0);
@@ -824,6 +828,7 @@ export default function Fermentation() {
                     if (totalRate === 0) return null;
                     return <span className={`text-[9px] font-bold ml-1 ${totalRate > 0 ? 'text-green-600' : 'text-red-500'}`}>{totalRate > 0 ? '+' : ''}{totalRate} KL/hr</span>;
                   })()}
+                  {opcStale && <span className="text-[9px] font-bold ml-1 text-red-400">OFFLINE</span>}
                 </div>
                 <div className="flex gap-1 mt-1 flex-wrap">
                   {vesselWash.map(vw => {
@@ -832,7 +837,7 @@ export default function Fermentation() {
                     return (
                       <span key={vw.label} className="text-[7px] font-bold text-indigo-500 bg-indigo-50 px-1 py-0.5 rounded">
                         {vw.label.replace('F-', '')}: {Math.round(vw.washKL)}
-                        {rateKL !== 0 && <span className={rateKL > 0 ? 'text-green-600' : 'text-red-500'}> {rateKL > 0 ? '+' : ''}{rateKL}/hr</span>}
+                        {!opcStale && rateKL !== 0 && <span className={rateKL > 0 ? 'text-green-600' : 'text-red-500'}> {rateKL > 0 ? '+' : ''}{rateKL}/hr</span>}
                       </span>
                     );
                   })}
@@ -848,7 +853,7 @@ export default function Fermentation() {
                 </div>
                 <div className="text-[8px] text-gray-400 mt-0.5">BW {bwOpc?.level?.toFixed(1) || 0}%</div>
                 {washSummary?.today?.feed && washSummary.today.feed.totalFeedKL > 0 && (
-                  <div className="text-[8px] text-emerald-600 font-bold mt-0.5">Feed: {washSummary.today.feed.totalFeedKL} KL ({washSummary.today.feed.avgFlowRate} M³/hr)</div>
+                  <div className="text-[8px] text-emerald-600 font-bold mt-0.5">Feed: {washSummary.today.feed.totalFeedKL} KL</div>
                 )}
               </div>
             </div>
