@@ -43,7 +43,7 @@ async function getAIConfig(): Promise<AIConfig | null> {
       provider: 'gemini',
       baseUrl: 'https://generativelanguage.googleapis.com',
       apiKey: geminiKey,
-      model: 'gemini-2.0-flash',
+      model: 'gemini-2.5-flash',
     };
   }
 

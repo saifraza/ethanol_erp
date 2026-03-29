@@ -63,7 +63,7 @@ router.post('/upload-extract', upload.single('file'), asyncHandler(async (req: R
 If a field is not found, use null for strings and 0 for numbers. Return ONLY the JSON, no markdown.`;
 
     const geminiRes = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
       {
         contents: [{
           parts: [

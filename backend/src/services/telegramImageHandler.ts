@@ -18,7 +18,7 @@ async function analyzeImage(imageBuffer: Buffer, prompt: string): Promise<string
   try {
     const base64 = imageBuffer.toString('base64');
     const res = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
       {
         contents: [{
           parts: [
