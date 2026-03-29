@@ -186,7 +186,12 @@ const PurchaseOrders: React.FC = () => {
       const v = vendorRes.data;
       if (v) {
         const updates: Record<string, string> = {};
-        if (v.paymentTerms && !formData.paymentTerms) updates.paymentTerms = v.paymentTerms;
+        if (v.paymentTerms && !formData.paymentTerms) {
+          updates.paymentTerms = v.paymentTerms;
+          // Auto-fill credit days from payment terms
+          const termDays: Record<string, string> = { ADVANCE: '0', COD: '0', NET7: '7', NET15: '15', NET30: '30', NET45: '45', NET60: '60' };
+          if (!formData.creditDays && termDays[v.paymentTerms]) updates.creditDays = termDays[v.paymentTerms];
+        }
         if (v.creditDays && !formData.creditDays) updates.creditDays = String(v.creditDays);
         if (v.gstState && !formData.placeOfSupply) updates.placeOfSupply = v.gstState;
         if (v.state) {
@@ -694,6 +699,7 @@ const PurchaseOrders: React.FC = () => {
                                   <span className={`px-1 py-0.5 border text-[9px] font-bold uppercase ${po.status === 'APPROVED' ? 'border-green-400 bg-green-50 text-green-700' : po.status === 'DRAFT' ? 'border-yellow-400 bg-yellow-50 text-yellow-700' : 'border-slate-300 bg-slate-50 text-slate-600'}`}>{po.status}</span>
                                   <span className="font-mono tabular-nums text-slate-700">{po.grandTotal?.toLocaleString('en-IN', { minimumFractionDigits: 0 }) || '0'}</span>
                                   <span className="text-slate-400">{po.linesCount || po.lines?.length || 0} items</span>
+                                  <a href={`/api/purchase-orders/${po.id}/pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline font-medium">PDF</a>
                                 </div>
                               ))}
                             </div>
@@ -721,10 +727,7 @@ const PurchaseOrders: React.FC = () => {
                       {PAYMENT_TERMS_OPTIONS.map((t) => (<option key={t} value={t}>{t}</option>))}
                     </select>
                   </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Credit Days</label>
-                    <input type="number" value={formData.creditDays || ''} onChange={(e) => setFormData({ ...formData, creditDays: e.target.value === '' ? 0 : parseInt(e.target.value) })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
-                  </div>
+                  {/* Credit Days removed — payment terms already define the timeline */}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
@@ -1007,6 +1010,10 @@ const PurchaseOrders: React.FC = () => {
                         {/* NEXT STEP — one clear action per status */}
                         {po.status === 'DRAFT' && (
                           <>
+                            <button onClick={() => { setSelectedPOId(po.id); setShowCreateForm(true); /* TODO: load PO into edit form */ }}
+                              className="px-2.5 py-0.5 bg-slate-600 text-white text-[9px] font-bold uppercase hover:bg-slate-700">
+                              Edit
+                            </button>
                             <button onClick={() => handleStatusChange(po.id, 'APPROVED')} className="px-2.5 py-0.5 bg-blue-600 text-white text-[9px] font-bold uppercase hover:bg-blue-700">
                               Approve
                             </button>
@@ -1057,7 +1064,10 @@ const PurchaseOrders: React.FC = () => {
                           </button>
                         )}
                         {po.status === 'ARCHIVED' && (
+                          <>
                           <span className="text-[9px] text-slate-400 font-bold uppercase">Archived</span>
+                          <button onClick={async () => { if (!confirm(`Delete PO-${po.poNo} permanently?`)) return; try { await api.delete(`/purchase-orders/${po.id}`); fetchData(); } catch { alert('Cannot delete'); } }} className="p-0.5 text-red-400 hover:text-red-600" title="Delete permanently"><Trash2 size={12} /></button>
+                          </>
                         )}
 
                         {/* Cancel — only if active (not closed/cancelled) */}
