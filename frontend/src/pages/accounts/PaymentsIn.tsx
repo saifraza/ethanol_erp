@@ -60,8 +60,6 @@ interface LedgerEntry {
 interface CustomerLedger {
   customer: { id: string; name: string };
   entries: LedgerEntry[];
-  totalDebit: number;
-  totalCredit: number;
   closingBalance: number;
 }
 
@@ -185,7 +183,7 @@ export default function PaymentsIn() {
 
   const fetchOutstanding = useCallback(async () => {
     try {
-      const res = await api.get('/accounts-reports/outstanding-receivables');
+      const res = await api.get('/accounts-reports/receivables-aging');
       const items = (res.data.customers || []).sort((a: OutstandingCustomer, b: OutstandingCustomer) => b.total - a.total);
       setOutstanding(items);
       setOutstandingTotal(res.data.grandTotal || 0);
@@ -201,7 +199,7 @@ export default function PaymentsIn() {
   useEffect(() => { fetchPending(); }, [fetchPending]);
 
   useEffect(() => {
-    if (activeTab === 'received') fetchReceived();
+    if (activeTab === 'received') { fetchReceived(); if (customers.length === 0) fetchCustomers(); }
     if (activeTab === 'ledger' && customers.length === 0) fetchCustomers();
     if (activeTab === 'outstanding') fetchOutstanding();
   }, [activeTab, fetchReceived, fetchCustomers, fetchOutstanding, customers.length]);
@@ -529,11 +527,11 @@ export default function PaymentsIn() {
                 <div className="grid grid-cols-3 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
                   <div className="border-l-4 border-l-red-500 border-r border-slate-300 bg-white px-4 py-3">
                     <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total Invoiced</div>
-                    <div className="text-xl font-bold text-slate-900 mt-1 font-mono tabular-nums">{fmtDec(customerLedger.totalDebit)}</div>
+                    <div className="text-xl font-bold text-slate-900 mt-1 font-mono tabular-nums">{fmtDec(customerLedger.entries.reduce((s, e) => s + e.debit, 0))}</div>
                   </div>
                   <div className="border-l-4 border-l-green-500 border-r border-slate-300 bg-white px-4 py-3">
                     <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total Collected</div>
-                    <div className="text-xl font-bold text-slate-900 mt-1 font-mono tabular-nums">{fmtDec(customerLedger.totalCredit)}</div>
+                    <div className="text-xl font-bold text-slate-900 mt-1 font-mono tabular-nums">{fmtDec(customerLedger.entries.reduce((s, e) => s + e.credit, 0))}</div>
                   </div>
                   <div className="border-l-4 border-l-blue-500 bg-white px-4 py-3">
                     <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Outstanding</div>
