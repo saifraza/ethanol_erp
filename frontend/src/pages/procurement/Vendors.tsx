@@ -240,15 +240,22 @@ export default function Vendors() {
       setMsg({ type: 'err', text: 'Item already added' });
       return;
     }
+    const newRate = parseFloat(newItemRate) || selectedItem.defaultRate || 0;
     setVendorItems(prev => [...prev, {
       inventoryItemId: selectedItem.id,
       itemName: selectedItem.name,
       itemCode: selectedItem.code,
       unit: selectedItem.unit || '',
-      rate: parseFloat(newItemRate) || selectedItem.defaultRate || 0,
+      rate: newRate,
       isPreferred: false,
       isNew: true,
     }]);
+
+    // Auto-update item master rate if different
+    if (newRate > 0 && newRate !== selectedItem.costPerUnit) {
+      api.put(`/inventory/items/${selectedItem.id}`, { costPerUnit: newRate }).catch(() => {});
+    }
+
     setSelectedItem(null);
     setItemSearch('');
     setNewItemRate('');
@@ -630,10 +637,7 @@ export default function Vendors() {
                     </div>
                     {/* Credit Limit removed — not applicable for vendors (they supply to us) */}
                   </div>
-                  <div className="mt-3">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Credit Days</label>
-                    <input type="number" value={creditDays} onChange={e => setCreditDays(e.target.value)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="30" />
-                  </div>
+                  {/* Credit Days removed — payment terms already define the timeline */}
                   <div className="mt-3">
                     <label className="flex items-center gap-2 text-xs">
                       <input type="checkbox" checked={tdsApplicable} onChange={e => setTdsApplicable(e.target.checked)} className="w-3.5 h-3.5 border-slate-300" />
@@ -692,7 +696,7 @@ export default function Vendors() {
                                 onClick={() => {
                                   setSelectedItem(it);
                                   setItemSearch('');
-                                  setNewItemRate(it.defaultRate?.toString() || '');
+                                  setNewItemRate(it.defaultRate?.toString() || it.costPerUnit?.toString() || '');
                                   setShowItemDropdown(false);
                                 }}
                               >
@@ -718,8 +722,10 @@ export default function Vendors() {
                         </div>
                       )}
                     </div>
-                    <div className="w-28">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Rate</label>
+                    <div className="w-32">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">
+                        Rate {selectedItem?.costPerUnit ? <span className="text-slate-400 font-normal">(current: {'\u20B9'}{selectedItem.costPerUnit})</span> : ''}
+                      </label>
                       <input
                         type="number"
                         value={newItemRate}
