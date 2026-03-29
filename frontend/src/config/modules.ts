@@ -107,6 +107,18 @@ export const ALL_MODULES = MODULE_DEFS
   .filter(m => !m.adminOnly)
   .map(m => ({ key: m.key, label: m.label }));
 
+// Grouped modules for user management UI
+const GROUP_LABELS: Record<string, string> = {
+  process: 'Plant / Process', sales: 'Sales', procurement: 'Purchase',
+  trade: 'Spot Trade', accounts: 'Accounts', inventory: 'Inventory',
+  logistics: 'Logistics', admin: 'Admin',
+};
+
+export const GROUPED_MODULES = Object.entries(GROUP_LABELS).map(([group, label]) => ({
+  group, label,
+  modules: MODULE_DEFS.filter(m => m.group === group && !m.adminOnly).map(m => ({ key: m.key, label: m.label })),
+})).filter(g => g.modules.length > 0);
+
 // For Layout sidebar
 export const processNav = MODULE_DEFS.filter(m => m.group === 'process').map(m => ({
   to: m.to, label: m.label, icon: m.icon, moduleKey: m.key,
