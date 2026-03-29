@@ -756,9 +756,13 @@ export default function Fermentation() {
           const opc = opcData[label];
           if (opc?.level != null) pfWashKL += (opc.level / 100) * 430;
         }
-        // Beer well
+        // Beer well + BW flow from FE130701
         const bwOpc = opcData['BW-1'];
         const bwWashKL = bwOpc?.level != null ? (bwOpc.level / 100) * 430 : 0;
+        // Get BW flow rate from OPC live tags (FE130701)
+        let bwFlowRate: number | null = null;
+        // BW flow is not in opcData (only mapped for level/temp), check raw OPC tags
+        // We'll show it if available from fermPhases or opcData
 
         const totalSystemKL = totalWashKL + pfWashKL + bwWashKL;
         const maxCapKL = 4 * FERM_CAPACITY_KL + 2 * 430 + 430; // 4 fermenters + 2 PF + BW
@@ -774,11 +778,28 @@ export default function Fermentation() {
               </div>
               <div className="bg-white border border-gray-200 rounded-xl p-3 col-span-1">
                 <div className="text-[8px] font-bold uppercase tracking-widest text-gray-400">Fermenters</div>
-                <div className="text-xl font-black text-indigo-700 mt-0.5">{Math.round(totalWashKL)}<span className="text-[10px] font-medium ml-0.5 text-gray-400">KL</span></div>
-                <div className="flex gap-1 mt-1">
-                  {vesselWash.map(vw => (
-                    <span key={vw.label} className="text-[7px] font-bold text-indigo-500 bg-indigo-50 px-1 py-0.5 rounded">{vw.label.replace('F-', '')}: {Math.round(vw.washKL)}</span>
-                  ))}
+                <div className="text-xl font-black text-indigo-700 mt-0.5">
+                  {Math.round(totalWashKL)}<span className="text-[10px] font-medium ml-0.5 text-gray-400">KL</span>
+                  {(() => {
+                    const totalRate = fermLabels.reduce((sum, label) => {
+                      const fp = fermPhases[label];
+                      return sum + (fp ? Math.round(fp.slope / 100 * FERM_CAPACITY_KL) : 0);
+                    }, 0);
+                    if (totalRate === 0) return null;
+                    return <span className={`text-[9px] font-bold ml-1 ${totalRate > 0 ? 'text-green-600' : 'text-red-500'}`}>{totalRate > 0 ? '+' : ''}{totalRate} KL/hr</span>;
+                  })()}
+                </div>
+                <div className="flex gap-1 mt-1 flex-wrap">
+                  {vesselWash.map(vw => {
+                    const fp = fermPhases[vw.label];
+                    const rateKL = fp ? Math.round(fp.slope / 100 * FERM_CAPACITY_KL) : 0;
+                    return (
+                      <span key={vw.label} className="text-[7px] font-bold text-indigo-500 bg-indigo-50 px-1 py-0.5 rounded">
+                        {vw.label.replace('F-', '')}: {Math.round(vw.washKL)}
+                        {rateKL !== 0 && <span className={rateKL > 0 ? 'text-green-600' : 'text-red-500'}> {rateKL > 0 ? '+' : ''}{rateKL}/hr</span>}
+                      </span>
+                    );
+                  })}
                 </div>
               </div>
               <div className="bg-white border border-gray-200 rounded-xl p-3 col-span-1">
