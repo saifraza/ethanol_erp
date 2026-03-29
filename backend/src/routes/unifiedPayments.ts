@@ -279,6 +279,118 @@ router.get('/incoming/summary', asyncHandler(async (_req: AuthRequest, res: Resp
   });
 }));
 
+// ═══════════════════════════════════════════════
+// GET /incoming/pending — Unpaid invoices (receivables)
+// ═══════════════════════════════════════════════
+router.get('/incoming/pending', asyncHandler(async (_req: AuthRequest, res: Response) => {
+  const invoices = await prisma.invoice.findMany({
+    where: { status: { in: ['UNPAID', 'PARTIAL'] } },
+    take: 500,
+    orderBy: { invoiceDate: 'asc' },
+    select: {
+      id: true, invoiceNo: true, invoiceDate: true, dueDate: true,
+      productName: true, quantity: true, unit: true,
+      totalAmount: true, paidAmount: true, balanceAmount: true, status: true,
+      customer: { select: { id: true, name: true } },
+    },
+  });
+
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  const items = invoices.map(inv => {
+    const invDate = new Date(inv.invoiceDate);
+    const dueDate = inv.dueDate ? new Date(inv.dueDate) : new Date(invDate.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const diffMs = today.getTime() - dueDate.getTime();
+    const daysOverdue = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    let urgency: 'green' | 'amber' | 'red' = 'green';
+    if (daysOverdue > 0) urgency = 'red';
+    else if (daysOverdue >= -7) urgency = 'amber';
+
+    return {
+      invoiceId: inv.id,
+      invoiceNo: inv.invoiceNo,
+      invoiceDate: inv.invoiceDate.toISOString(),
+      dueDate: dueDate.toISOString(),
+      daysOverdue,
+      urgency,
+      customerId: inv.customer.id,
+      customerName: inv.customer.name,
+      productName: inv.productName,
+      quantity: inv.quantity,
+      unit: inv.unit,
+      totalAmount: inv.totalAmount,
+      paidAmount: inv.paidAmount,
+      balanceAmount: inv.balanceAmount,
+      status: inv.status,
+    };
+  });
+
+  // Sort by dueDate ascending (most urgent first)
+  items.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+
+  res.json({ items });
+}));
+
+// ═══════════════════════════════════════════════
+// GET /incoming/pending-summary — Receivables KPIs + aging
+// ═══════════════════════════════════════════════
+router.get('/incoming/pending-summary', asyncHandler(async (_req: AuthRequest, res: Response) => {
+  const invoices = await prisma.invoice.findMany({
+    where: { status: { in: ['UNPAID', 'PARTIAL'] } },
+    take: 500,
+    select: {
+      invoiceDate: true, dueDate: true, balanceAmount: true,
+    },
+  });
+
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const weekFromNow = new Date(today);
+  weekFromNow.setDate(weekFromNow.getDate() + 7);
+
+  let totalReceivable = 0;
+  let overdueAmount = 0;
+  let dueThisWeek = 0;
+  const aging = { current: 0, d1_15: 0, d16_30: 0, d31_60: 0, d60plus: 0 };
+  const agingCount = { current: 0, d1_15: 0, d16_30: 0, d31_60: 0, d60plus: 0 };
+
+  for (const inv of invoices) {
+    const balance = inv.balanceAmount || 0;
+    totalReceivable += balance;
+
+    const invDate = new Date(inv.invoiceDate);
+    const dueDate = inv.dueDate ? new Date(inv.dueDate) : new Date(invDate.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const diffMs = today.getTime() - dueDate.getTime();
+    const daysOver = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (daysOver > 60) { aging.d60plus += balance; agingCount.d60plus++; }
+    else if (daysOver > 30) { aging.d31_60 += balance; agingCount.d31_60++; }
+    else if (daysOver > 15) { aging.d16_30 += balance; agingCount.d16_30++; }
+    else if (daysOver > 0) { aging.d1_15 += balance; agingCount.d1_15++; }
+    else { aging.current += balance; agingCount.current++; }
+
+    if (daysOver > 0) overdueAmount += balance;
+    if (dueDate >= today && dueDate <= weekFromNow) dueThisWeek += balance;
+  }
+
+  // Collected this month
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const collectedAgg = await prisma.payment.aggregate({
+    where: { paymentDate: { gte: monthStart } },
+    _sum: { amount: true },
+  });
+
+  res.json({
+    totalReceivable,
+    overdueAmount,
+    dueThisWeek,
+    collectedThisMonth: collectedAgg._sum.amount || 0,
+    aging,
+    agingCount,
+  });
+}));
+
 // Parse payment terms string to extract days
 function parsePaymentTermsDays(terms: string | null | undefined): number | null {
   if (!terms) return null;
