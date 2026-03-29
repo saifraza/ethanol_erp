@@ -440,6 +440,8 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
     poNo: number;
     poDate: string;
     poAmount: number;
+    poSubtotal: number;
+    poGst: number;
     poStatus: string;
     vendorId: string;
     vendorName: string;
