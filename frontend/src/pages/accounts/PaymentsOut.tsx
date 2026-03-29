@@ -361,8 +361,9 @@ export default function PaymentsOut() {
     const poAmount = invoiceModal.poAmount;
     const diffPct = poAmount > 0 ? Math.abs(invTotal - poAmount) / poAmount * 100 : 0;
 
-    if (diffPct > 10 && !confirm(
-      `Invoice total (${'\u20B9'}${invTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}) differs from PO amount (${'\u20B9'}${poAmount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}) by ${diffPct.toFixed(0)}%.\n\nAre you sure you want to save this invoice?`
+    const diffAbs = Math.abs(invTotal - poAmount);
+    if (diffAbs > 10 && !confirm(
+      `Invoice total (\u20B9${invTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}) differs from PO amount (\u20B9${poAmount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}) by \u20B9${diffAbs.toLocaleString('en-IN', { maximumFractionDigits: 0 })} (${diffPct.toFixed(1)}%).\n\nAre you sure you want to save this invoice?`
     )) {
       return;
     }
@@ -688,7 +689,7 @@ export default function PaymentsOut() {
                                         {([
                                           { label: 'Ordered', done: true, value: `${poDetail.pipeline.ordered.qty} qty`, sub: fmt(poDetail.pipeline.ordered.amount), mismatch: false },
                                           { label: 'Received', done: poDetail.pipeline.received.grnCount > 0, value: `${poDetail.pipeline.received.qty} qty`, sub: `${poDetail.pipeline.received.grnCount} GRN${poDetail.pipeline.received.grnCount !== 1 ? 's' : ''}${poDetail.pipeline.received.pending > 0 ? ` (${poDetail.pipeline.received.pending} pending)` : ''}`, mismatch: false },
-                                          { label: 'Invoiced', done: poDetail.pipeline.invoiced.count > 0, value: fmt(poDetail.pipeline.invoiced.amount), sub: `${poDetail.pipeline.invoiced.count} invoice${poDetail.pipeline.invoiced.count !== 1 ? 's' : ''}`, mismatch: poDetail.pipeline.invoiced.amount > 0 && poDetail.pipeline.ordered.amount > 0 && Math.abs(poDetail.pipeline.invoiced.amount - poDetail.pipeline.ordered.amount) / poDetail.pipeline.ordered.amount > 0.1 },
+                                          { label: 'Invoiced', done: poDetail.pipeline.invoiced.count > 0, value: fmt(poDetail.pipeline.invoiced.amount), sub: `${poDetail.pipeline.invoiced.count} invoice${poDetail.pipeline.invoiced.count !== 1 ? 's' : ''}`, mismatch: poDetail.pipeline.invoiced.amount > 0 && poDetail.pipeline.ordered.amount > 0 && Math.abs(poDetail.pipeline.invoiced.amount - poDetail.pipeline.ordered.amount) > 10 },
                                           { label: 'Paid', done: poDetail.pipeline.paid.amount > 0, value: fmt(poDetail.pipeline.paid.amount), sub: poDetail.pipeline.paid.balance > 0 ? `Bal: ${fmt(poDetail.pipeline.paid.balance)}` : 'Settled', mismatch: false },
                                         ]).map((step, si) => (
                                           <React.Fragment key={step.label}>
