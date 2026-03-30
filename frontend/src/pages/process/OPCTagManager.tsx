@@ -162,6 +162,19 @@ export default function OPCTagManager() {
   const [alarmsEnabled, setAlarmsEnabled] = useState<boolean | null>(null);
   const [alarmToggling, setAlarmToggling] = useState(false);
 
+  // Bridge status & gap detection
+  const [bridgeStatus, setBridgeStatus] = useState<{
+    online: boolean; ageSeconds: number;
+    heartbeat: { uptimeSeconds: number; opcConnected: boolean; queueDepth: number; dbSizeMb: number;
+      health: { scannerAlive: boolean; syncAlive: boolean; apiAlive: boolean; threadRestarts: Record<string, number> };
+      system: { cpuPercent: number; memoryMb: number; diskFreeGb: number; sleepDisabled: boolean };
+      version: string } | null;
+  } | null>(null);
+  const [gapData, setGapData] = useState<{
+    gaps: { from: string; to: string; durationMinutes: number }[];
+    totalGapMinutes: number; currentlyGapped: boolean; lastReading: string | null;
+  } | null>(null);
+
   // Browse state
   const [browseArea, setBrowseArea] = useState('');
   const [browseFolder, setBrowseFolder] = useState('');
@@ -191,7 +204,10 @@ export default function OPCTagManager() {
       const e = err as { response?: { data?: { error?: string } } };
       setError(e?.response?.data?.error || 'OPC service unavailable');
     }
-    // Bridge health check disabled — Railway can't reach factory Tailscale IP
+    // Bridge status via phone-home heartbeat (no Tailscale needed)
+    api.get('/opc/bridge-status').then(r => setBridgeStatus(r.data)).catch(() => {});
+    // Gap detection
+    api.get('/opc/gaps?hours=24').then(r => setGapData(r.data)).catch(() => {});
     // Fetch alarm status (non-blocking)
     api.get('/opc/alarms/status').then(r => setAlarmsEnabled(r.data.enabled)).catch(() => {});
   }, []);
@@ -440,6 +456,66 @@ export default function OPCTagManager() {
             <div className="bg-white px-4 py-3 border-l-4 border-l-purple-500">
               <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Last Sync</div>
               <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmtTime(health.lastSync)}</div>
+            </div>
+          </div>
+        )}
+
+        {/* Gap Warning Banner */}
+        {gapData?.currentlyGapped && (
+          <div className="bg-red-600 text-white px-4 py-2 -mx-3 md:-mx-6 flex items-center gap-2">
+            <span className="text-xs font-bold uppercase tracking-wide">NO DATA</span>
+            <span className="text-xs">No OPC readings received in last 15 minutes. Bridge may be offline.</span>
+          </div>
+        )}
+        {gapData && !gapData.currentlyGapped && gapData.gaps.length > 0 && (
+          <div className="bg-amber-50 border border-amber-200 px-4 py-2 -mx-3 md:-mx-6">
+            <span className="text-xs text-amber-800 font-semibold">DATA GAPS (24h): </span>
+            <span className="text-xs text-amber-700">
+              {gapData.gaps.map((g, i) => {
+                const from = new Date(g.from).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
+                const to = new Date(g.to).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
+                return `${from}–${to}`;
+              }).join(', ')}
+              {' '}({Math.round(gapData.totalGapMinutes / 60 * 10) / 10}h total lost)
+            </span>
+          </div>
+        )}
+
+        {/* Bridge Status Card */}
+        {bridgeStatus?.heartbeat && (
+          <div className="border-x border-b border-slate-300 -mx-3 md:-mx-6 bg-white">
+            <div className="px-4 py-2 flex items-center gap-4 flex-wrap">
+              <div className="flex items-center gap-1.5">
+                <span className={`inline-block w-2 h-2 ${bridgeStatus.online ? 'bg-green-500' : 'bg-red-500'}`} />
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Bridge</span>
+              </div>
+              <div className="text-[10px] text-slate-500">
+                <span className="font-semibold text-slate-700">Uptime:</span> {Math.round(bridgeStatus.heartbeat.uptimeSeconds / 3600)}h
+              </div>
+              <div className="text-[10px] text-slate-500">
+                <span className="font-semibold text-slate-700">CPU:</span> {bridgeStatus.heartbeat.system.cpuPercent.toFixed(1)}%
+              </div>
+              <div className="text-[10px] text-slate-500">
+                <span className="font-semibold text-slate-700">RAM:</span> {bridgeStatus.heartbeat.system.memoryMb}MB
+              </div>
+              <div className="text-[10px] text-slate-500">
+                <span className="font-semibold text-slate-700">Disk:</span> {bridgeStatus.heartbeat.system.diskFreeGb.toFixed(0)}GB free
+              </div>
+              <div className="text-[10px] text-slate-500">
+                <span className="font-semibold text-slate-700">Queue:</span> {bridgeStatus.heartbeat.queueDepth}
+              </div>
+              <div className="text-[10px] text-slate-500">
+                <span className="font-semibold text-slate-700">OPC:</span>{' '}
+                <span className={bridgeStatus.heartbeat.opcConnected ? 'text-green-600' : 'text-red-500'}>
+                  {bridgeStatus.heartbeat.opcConnected ? 'Connected' : 'Disconnected'}
+                </span>
+              </div>
+              {!bridgeStatus.heartbeat.system.sleepDisabled && (
+                <span className="text-[10px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 border border-red-200">SLEEP ENABLED</span>
+              )}
+              <div className="text-[10px] text-slate-400 ml-auto">
+                v{bridgeStatus.heartbeat.version} | {bridgeStatus.ageSeconds}s ago
+              </div>
             </div>
           </div>
         )}

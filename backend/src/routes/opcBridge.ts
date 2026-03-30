@@ -728,6 +728,171 @@ router.get('/stats', asyncHandler(async (_req: AuthRequest, res: Response) => {
 }));
 
 // ==========================================================================
+// GAP DETECTION — find missing data hours in last N hours
+// ==========================================================================
+
+router.get('/gaps', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const opc = getOpcPrisma();
+  const hours = Math.min(parseInt(req.query.hours as string) || 24, 168);
+
+  const now = new Date();
+  const startTime = new Date(now.getTime() - hours * 60 * 60 * 1000);
+
+  // Build set of expected hours (rounded to hour)
+  const expectedHours: Date[] = [];
+  const cursor = new Date(startTime);
+  cursor.setMinutes(0, 0, 0);
+  while (cursor < now) {
+    expectedHours.push(new Date(cursor));
+    cursor.setTime(cursor.getTime() + 60 * 60 * 1000);
+  }
+
+  // Get hours that have data
+  const hourlyReadings = await opc.opcHourlyReading.findMany({
+    where: { hour: { gte: startTime, lte: now } },
+    select: { hour: true },
+    distinct: ['hour'],
+  });
+  const existingHours = new Set(hourlyReadings.map((r: { hour: Date }) => r.hour.toISOString()));
+
+  // Find gaps — hours with no data
+  const gapHours = expectedHours.filter(h => !existingHours.has(h.toISOString()));
+
+  // Group consecutive gaps into ranges
+  interface GapRange { from: Date; to: Date; durationMinutes: number }
+  const gaps: GapRange[] = [];
+  for (const gh of gapHours) {
+    const last = gaps[gaps.length - 1];
+    if (last && gh.getTime() - last.to.getTime() <= 60 * 60 * 1000) {
+      last.to = new Date(gh.getTime() + 60 * 60 * 1000);
+      last.durationMinutes = Math.round((last.to.getTime() - last.from.getTime()) / 60000);
+    } else {
+      gaps.push({ from: gh, to: new Date(gh.getTime() + 60 * 60 * 1000), durationMinutes: 60 });
+    }
+  }
+
+  // Check if currently gapped (no raw reading in last 15 min)
+  const recentCutoff = new Date(now.getTime() - 15 * 60 * 1000);
+  const recentReading = await opc.opcReading.findFirst({
+    where: { scannedAt: { gte: recentCutoff } },
+    select: { scannedAt: true },
+    orderBy: { scannedAt: 'desc' },
+  });
+  const lastReading = await opc.opcReading.findFirst({
+    select: { scannedAt: true },
+    orderBy: { scannedAt: 'desc' },
+  });
+
+  res.json({
+    gaps,
+    totalGapMinutes: gaps.reduce((s, g) => s + g.durationMinutes, 0),
+    currentlyGapped: !recentReading,
+    lastReading: lastReading?.scannedAt || null,
+  });
+}));
+
+// ==========================================================================
+// BRIDGE HEARTBEAT — Factory PC phones home every 60s (no Tailscale needed)
+// ==========================================================================
+
+// In-memory store for latest heartbeat (fast access, no DB needed)
+let _latestHeartbeat: {
+  timestamp: string;
+  receivedAt: Date;
+  uptimeSeconds: number;
+  opcConnected: boolean;
+  queueDepth: number;
+  dbSizeMb: number;
+  health: { scannerAlive: boolean; syncAlive: boolean; apiAlive: boolean; threadRestarts: Record<string, number> };
+  system: { cpuPercent: number; memoryMb: number; diskFreeGb: number; sleepDisabled: boolean };
+  version: string;
+} | null = null;
+
+const heartbeatSchema = z.object({
+  timestamp: z.string(),
+  uptimeSeconds: z.number(),
+  opcConnected: z.boolean(),
+  queueDepth: z.number().default(0),
+  dbSizeMb: z.number().default(0),
+  health: z.object({
+    scannerAlive: z.boolean(),
+    syncAlive: z.boolean(),
+    apiAlive: z.boolean(),
+    threadRestarts: z.record(z.number()).default({}),
+  }),
+  system: z.object({
+    cpuPercent: z.number(),
+    memoryMb: z.number(),
+    diskFreeGb: z.number(),
+    sleepDisabled: z.boolean(),
+  }),
+  version: z.string().default('unknown'),
+});
+
+// Track alert state to avoid spamming
+let _sleepAlertSent = false;
+let _queueAlertSent = false;
+
+router.post('/heartbeat', validate(heartbeatSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!checkPushKey(req, res)) return;
+  const data = req.body;
+
+  _latestHeartbeat = { ...data, receivedAt: new Date() };
+
+  // Alert if sleep got re-enabled
+  if (!data.system.sleepDisabled && !_sleepAlertSent) {
+    _sleepAlertSent = true;
+    try {
+      const prismaMain = (await import('../config/prisma')).default;
+      const settings = await prismaMain.settings.findFirst();
+      const groupChatId = (settings as any)?.telegramGroupChatId;
+      if (groupChatId) {
+        await tgSendGroup(groupChatId, '⚠️ *FACTORY PC SLEEP ENABLED*\n\nSomeone re-enabled sleep on the factory PC. OPC data will be lost at night.\n\nRun: `powercfg /change standby-timeout-ac 0`', 'opc-health').catch(() => {});
+      }
+    } catch { /* ignore */ }
+  } else if (data.system.sleepDisabled) {
+    _sleepAlertSent = false;
+  }
+
+  // Alert if queue building up
+  if (data.queueDepth > 50 && !_queueAlertSent) {
+    _queueAlertSent = true;
+    try {
+      const prismaMain = (await import('../config/prisma')).default;
+      const settings = await prismaMain.settings.findFirst();
+      const groupChatId = (settings as any)?.telegramGroupChatId;
+      if (groupChatId) {
+        await tgSendGroup(groupChatId, `⚠️ *OPC SYNC QUEUE BUILDING UP*\n\n${data.queueDepth} readings queued. Cloud sync may be failing.`, 'opc-health').catch(() => {});
+      }
+    } catch { /* ignore */ }
+  } else if (data.queueDepth <= 10) {
+    _queueAlertSent = false;
+  }
+
+  res.json({ ok: true });
+}));
+
+// GET /api/opc/bridge-status — Frontend reads latest heartbeat
+router.get('/bridge-status', asyncHandler(async (_req: AuthRequest, res: Response) => {
+  if (!_latestHeartbeat) {
+    res.json({ online: false, heartbeat: null, message: 'No heartbeat received yet' });
+    return;
+  }
+
+  const ageMs = Date.now() - _latestHeartbeat.receivedAt.getTime();
+  const online = ageMs < 3 * 60 * 1000; // Online if heartbeat within last 3 min
+
+  res.json({
+    online,
+    ageSeconds: Math.round(ageMs / 1000),
+    heartbeat: _latestHeartbeat,
+  });
+}));
+
+// Export heartbeat for watchdog to use
+export function getLatestHeartbeat() { return _latestHeartbeat; }
+
+// ==========================================================================
 // ALARM TOGGLE ENDPOINTS
 // ==========================================================================
 
