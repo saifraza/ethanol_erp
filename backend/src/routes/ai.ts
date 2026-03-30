@@ -143,6 +143,29 @@ router.post('/chat', asyncHandler(async (req: AuthRequest, res: Response) => {
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`AI API error (${config.provider}):`, response.status, errorText.slice(0, 200));
+
+      // Auto-fallback to Gemini if OpenClaw fails
+      if (config.provider === 'openclaw' && process.env.GEMINI_API_KEY) {
+        console.log('[AI] OpenClaw failed, falling back to Gemini');
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
+        const geminiRes = await fetch(geminiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            contents: [{ role: 'user', parts: [{ text: message }] }],
+            generationConfig: { maxOutputTokens: 1024 },
+          }),
+          signal: AbortSignal.timeout(30000),
+        });
+        if (geminiRes.ok) {
+          const gData = await geminiRes.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+          const gReply = gData.candidates?.[0]?.content?.parts?.[0]?.text ?? 'No response';
+          res.json({ reply: gReply, provider: 'gemini', model: 'gemini-2.5-flash' });
+          return;
+        }
+      }
+
       res.status(502).json({ error: 'AI service returned an error. Please try again.' });
       return;
     }
@@ -174,10 +197,35 @@ router.post('/chat', asyncHandler(async (req: AuthRequest, res: Response) => {
     });
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : 'Unknown error';
+    console.error(`AI proxy error (${config.provider}):`, errMsg);
+
+    // Auto-fallback to Gemini on connection failure
+    if (config.provider === 'openclaw' && process.env.GEMINI_API_KEY) {
+      try {
+        console.log('[AI] OpenClaw unreachable, falling back to Gemini');
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
+        const geminiRes = await fetch(geminiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            contents: [{ role: 'user', parts: [{ text: message }] }],
+            generationConfig: { maxOutputTokens: 1024 },
+          }),
+          signal: AbortSignal.timeout(30000),
+        });
+        if (geminiRes.ok) {
+          const gData = await geminiRes.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+          const gReply = gData.candidates?.[0]?.content?.parts?.[0]?.text ?? 'No response';
+          res.json({ reply: gReply, provider: 'gemini (fallback)', model: 'gemini-2.5-flash' });
+          return;
+        }
+      } catch { /* fallback also failed */ }
+    }
+
     if (errMsg.includes('timeout') || errMsg.includes('abort')) {
       res.status(504).json({ error: 'AI request timed out. Please try again.' });
     } else {
-      console.error('AI proxy error:', errMsg);
       res.status(502).json({ error: 'Failed to reach AI service.' });
     }
   }
