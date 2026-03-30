@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { PackageCheck, Plus, X, AlertCircle, CheckCircle, Clock } from 'lucide-react';
+import { PackageCheck, Plus, X, AlertCircle, CheckCircle, Clock, Upload, Sparkles } from 'lucide-react';
 import api from '../../services/api';
 
 interface GRNLine {
@@ -26,6 +26,19 @@ interface CreateGRNForm {
   ewayBill: string;
   remarks: string;
   lines: GRNLine[];
+  invoiceFilePath?: string;
+  ewayBillFilePath?: string;
+}
+
+interface AIExtracted {
+  invoice_number?: string | null;
+  invoice_date?: string | null;
+  vendor_name?: string | null;
+  vendor_gstin?: string | null;
+  eway_bill_number?: string | null;
+  vehicle_number?: string | null;
+  items?: Array<{ description: string; hsn?: string; qty: number; unit: string; rate: number; amount: number }>;
+  total_amount?: number;
 }
 
 interface GRN {
@@ -93,6 +106,79 @@ export default function GoodsReceipts() {
   const [selectedPO, setSelectedPO] = useState<PO | null>(null);
   const [warehouses, setWarehouses] = useState<WH[]>([]);
   const [selectedWarehouseId, setSelectedWarehouseId] = useState('');
+
+  // AI upload state
+  const [aiExtracting, setAiExtracting] = useState(false);
+  const [aiExtracted, setAiExtracted] = useState<AIExtracted | null>(null);
+  const [aiMatchedVendor, setAiMatchedVendor] = useState<{ id: string; name: string } | null>(null);
+  const [aiMatchedPOs, setAiMatchedPOs] = useState<Array<{ id: string; poNo: number }>>([]);
+
+  const handleAiUpload = async (invoiceFile?: File, ewayBillFile?: File) => {
+    if (!invoiceFile && !ewayBillFile) return;
+    try {
+      setAiExtracting(true);
+      setError(null);
+      const fd = new FormData();
+      if (invoiceFile) fd.append('invoice', invoiceFile);
+      if (ewayBillFile) fd.append('ewayBill', ewayBillFile);
+      const res = await api.post<{
+        invoiceFilePath: string | null; ewayBillFilePath: string | null;
+        extracted: AIExtracted | null;
+        matchedVendor: { id: string; name: string } | null;
+        matchedPOs: Array<{ id: string; poNo: number }>;
+        error?: string;
+      }>('/goods-receipts/upload-extract', fd, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000 });
+
+      const { extracted, matchedVendor, matchedPOs, invoiceFilePath, ewayBillFilePath } = res.data;
+      if (res.data.error) { setError(`AI: ${res.data.error}`); return; }
+
+      setAiExtracted(extracted);
+      setAiMatchedVendor(matchedVendor || null);
+      setAiMatchedPOs(matchedPOs || []);
+
+      // Auto-fill form fields from extraction
+      if (extracted) {
+        setFormData(prev => ({
+          ...prev,
+          invoiceNo: extracted.invoice_number || prev.invoiceNo,
+          invoiceDate: extracted.invoice_date || prev.invoiceDate,
+          vehicleNo: extracted.vehicle_number || prev.vehicleNo,
+          ewayBill: extracted.eway_bill_number || prev.ewayBill,
+          invoiceFilePath: invoiceFilePath || undefined,
+          ewayBillFilePath: ewayBillFilePath || undefined,
+        }));
+      }
+
+      // If vendor matched and has POs, auto-select first PO
+      if (matchedVendor && matchedPOs?.length === 1 && !formData.poId) {
+        // Auto-select the single matching PO
+        const poId = matchedPOs[0].id;
+        const poMatch = pendingPOs.find(p => p.id === poId);
+        if (poMatch) {
+          setSelectedPO(poMatch);
+          setFormData(prev => ({
+            ...prev,
+            poId,
+            lines: poMatch.lines.map(pl => ({
+              poLineId: pl.id, description: pl.description,
+              receivedQty: extracted?.items?.find(ei => pl.description.toLowerCase().includes(ei.description?.toLowerCase()?.slice(0, 15) || ''))?.qty || pl.pendingQty,
+              acceptedQty: extracted?.items?.find(ei => pl.description.toLowerCase().includes(ei.description?.toLowerCase()?.slice(0, 15) || ''))?.qty || pl.pendingQty,
+              rejectedQty: 0, unit: pl.unit, rate: pl.rate,
+              storageLocation: '', warehouseCode: '', batchNo: '', remarks: '',
+              inventoryItemId: pl.inventoryItemId,
+            })),
+          }));
+        }
+      }
+
+      setSuccessMessage('AI extracted document data successfully');
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch {
+      setError('Failed to extract from uploaded documents');
+    } finally {
+      setAiExtracting(false);
+    }
+  };
 
   const fetchWarehouses = async () => {
     try {
@@ -190,6 +276,8 @@ export default function GoodsReceipts() {
         vehicleNo: formData.vehicleNo, invoiceNo: formData.invoiceNo, invoiceDate: formData.invoiceDate,
         ewayBill: formData.ewayBill, remarks: formData.remarks, lines: formData.lines,
         warehouseId: selectedWarehouseId || undefined,
+        invoiceFilePath: formData.invoiceFilePath || null,
+        ewayBillFilePath: formData.ewayBillFilePath || null,
       });
       setSuccessMessage('GRN created successfully');
       setShowCreateForm(false);
@@ -341,6 +429,55 @@ export default function GoodsReceipts() {
               </div>
 
               <form onSubmit={handleSubmitGRN} className="p-4 space-y-4 max-h-[80vh] overflow-y-auto">
+                {/* AI Document Upload */}
+                <div className="border border-violet-200 bg-violet-50/50 p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Sparkles className="w-4 h-4 text-violet-600" />
+                    <span className="text-[10px] font-bold text-violet-700 uppercase tracking-widest">AI Auto-Fill from Invoice / E-Way Bill</span>
+                  </div>
+                  {aiExtracting ? (
+                    <div className="flex items-center gap-2 text-xs text-violet-600 py-2">
+                      <Sparkles className="w-4 h-4 animate-pulse" />
+                      Extracting data from documents...
+                    </div>
+                  ) : (
+                    <div className="flex gap-3">
+                      <label className="flex-1 cursor-pointer">
+                        <div className="border border-dashed border-violet-300 bg-white px-3 py-2 flex items-center gap-2 hover:bg-violet-50 transition-colors">
+                          <Upload className="w-4 h-4 text-violet-500" />
+                          <span className="text-xs text-violet-700">{aiExtracted ? 'Invoice uploaded' : 'Upload Invoice (photo/PDF)'}</span>
+                        </div>
+                        <input type="file" accept="image/*,.pdf" className="hidden" onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) handleAiUpload(f, undefined);
+                        }} />
+                      </label>
+                      <label className="flex-1 cursor-pointer">
+                        <div className="border border-dashed border-violet-300 bg-white px-3 py-2 flex items-center gap-2 hover:bg-violet-50 transition-colors">
+                          <Upload className="w-4 h-4 text-violet-500" />
+                          <span className="text-xs text-violet-700">Upload E-Way Bill (optional)</span>
+                        </div>
+                        <input type="file" accept="image/*,.pdf" className="hidden" onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) handleAiUpload(undefined, f);
+                        }} />
+                      </label>
+                    </div>
+                  )}
+                  {aiExtracted && (
+                    <div className="mt-2 flex items-center gap-2 text-xs text-green-700">
+                      <CheckCircle className="w-3.5 h-3.5" />
+                      <span>AI extracted: {aiExtracted.vendor_name || 'vendor'} | Inv #{aiExtracted.invoice_number || '?'} | Vehicle: {aiExtracted.vehicle_number || '?'}</span>
+                      {aiMatchedVendor && <span className="text-violet-600 font-medium ml-1">| Matched: {aiMatchedVendor.name}</span>}
+                    </div>
+                  )}
+                  {aiMatchedPOs.length > 1 && (
+                    <div className="mt-1 text-xs text-amber-700">
+                      Multiple POs found for this vendor — please select the correct one below.
+                    </div>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Select PO *</label>

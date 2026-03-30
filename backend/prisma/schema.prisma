@@ -1763,6 +1763,9 @@ model GoodsReceipt {
   invoiceNo       String?                   // vendor invoice number
   invoiceDate     DateTime?                 // vendor invoice date
   ewayBill        String?
+  // Uploaded document files (AI-extracted)
+  invoiceFilePath   String?               // path to uploaded invoice photo/PDF
+  ewayBillFilePath  String?               // path to uploaded e-way bill photo/PDF
   // Quality
   qualityStatus   String   @default("PENDING") // PENDING, ACCEPTED, REJECTED, PARTIAL_ACCEPTED
   qualityRemarks  String?

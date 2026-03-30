@@ -1,11 +1,25 @@
-import { Router, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, AuthRequest, authorize } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { onStockMovement } from '../services/autoJournal';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import axios from 'axios';
 
 const router = Router();
 router.use(authenticate as any);
+
+// ── Multer for GRN document uploads ──
+const grnUploadDir = path.join(__dirname, '../../uploads/grn-documents');
+if (!fs.existsSync(grnUploadDir)) fs.mkdirSync(grnUploadDir, { recursive: true });
+
+const grnStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, grnUploadDir),
+  filename: (_req, file, cb) => cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${path.extname(file.originalname)}`),
+});
+const grnUpload = multer({ storage: grnStorage, limits: { fileSize: 15 * 1024 * 1024 } });
 
 // ─── Helper: sync GRN lines to new inventory system ───
 async function syncGrnToInventory(
@@ -170,6 +184,132 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     res.json(grn);
 }));
 
+// ═══════════════════════════════════════════════
+// POST /upload-extract — Upload invoice/e-way bill + AI extraction for GRN
+// ═══════════════════════════════════════════════
+router.post('/upload-extract',
+  grnUpload.fields([
+    { name: 'invoice', maxCount: 1 },
+    { name: 'ewayBill', maxCount: 1 },
+  ]),
+  asyncHandler(async (req: Request, res: Response) => {
+    const files = req.files as Record<string, Express.Multer.File[]> | undefined;
+    const invoiceFile = files?.invoice?.[0];
+    const ewayBillFile = files?.ewayBill?.[0];
+
+    if (!invoiceFile && !ewayBillFile) {
+      res.status(400).json({ error: 'Upload at least one file (invoice or e-way bill)' }); return;
+    }
+
+    const invoiceFilePath = invoiceFile ? `grn-documents/${invoiceFile.filename}` : null;
+    const ewayBillFilePath = ewayBillFile ? `grn-documents/${ewayBillFile.filename}` : null;
+
+    const GEMINI_KEY = process.env.GEMINI_API_KEY;
+    if (!GEMINI_KEY) {
+      res.json({ invoiceFilePath, ewayBillFilePath, extracted: null, error: 'AI not configured (no GEMINI_API_KEY)' });
+      return;
+    }
+
+    try {
+      // Build parts for Gemini — send all uploaded files
+      const parts: Array<{ text: string } | { inline_data: { mime_type: string; data: string } }> = [];
+
+      parts.push({ text: `Extract data from these truck delivery documents (vendor invoice and/or e-way bill) for creating a Goods Receipt Note at an ethanol distillery plant. Return ONLY valid JSON with these keys:
+{
+  "invoice_number": "string - the vendor's invoice/bill number",
+  "invoice_date": "YYYY-MM-DD format",
+  "vendor_name": "string - supplier/vendor company name",
+  "vendor_gstin": "string - vendor GSTIN number (15 chars) if visible",
+  "eway_bill_number": "string - e-way bill number if visible",
+  "vehicle_number": "string - truck/vehicle registration number if visible",
+  "challan_number": "string - delivery challan number if visible",
+  "items": [{"description": "string - material name", "hsn": "string - HSN code", "qty": number, "unit": "string (MT/KG/LTR/NOS/BAG)", "rate": number, "amount": number}],
+  "taxable_amount": number,
+  "cgst": number,
+  "sgst": number,
+  "igst": number,
+  "total_gst": number,
+  "total_amount": number,
+  "supply_type": "INTRA_STATE if CGST+SGST present, INTER_STATE if IGST present"
+}
+If a field is not found in the documents, use null for strings and 0 for numbers. Return ONLY the JSON, no markdown fences.` });
+
+      if (invoiceFile) {
+        const buf = fs.readFileSync(invoiceFile.path);
+        const mime = invoiceFile.mimetype.startsWith('image/') ? invoiceFile.mimetype : 'application/pdf';
+        parts.push({ inline_data: { mime_type: mime, data: buf.toString('base64') } });
+      }
+
+      if (ewayBillFile) {
+        const buf = fs.readFileSync(ewayBillFile.path);
+        const mime = ewayBillFile.mimetype.startsWith('image/') ? ewayBillFile.mimetype : 'application/pdf';
+        parts.push({ inline_data: { mime_type: mime, data: buf.toString('base64') } });
+      }
+
+      const geminiRes = await axios.post(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`,
+        { contents: [{ parts }] },
+        { timeout: 45000 }
+      );
+
+      const rawText = geminiRes.data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const jsonStr = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      let extracted: Record<string, unknown> | null = null;
+      try { extracted = JSON.parse(jsonStr); } catch { extracted = { raw: rawText }; }
+
+      // Vendor matching — try GSTIN first, then name
+      let matchedVendor: { id: string; name: string; gstin: string | null } | null = null;
+      let matchedPOs: Array<{ id: string; poNo: number; grandTotal: number; status: string }> = [];
+
+      if (extracted && typeof extracted === 'object') {
+        const gstin = (extracted as Record<string, unknown>).vendor_gstin as string | null;
+        const vendorName = (extracted as Record<string, unknown>).vendor_name as string | null;
+
+        if (gstin && gstin.length >= 10) {
+          matchedVendor = await prisma.vendor.findFirst({
+            where: { gstin: { contains: gstin, mode: 'insensitive' } },
+            select: { id: true, name: true, gstin: true },
+          });
+        }
+        if (!matchedVendor && vendorName && vendorName.length > 2) {
+          // Fuzzy name match — take first 3 words
+          const words = vendorName.split(/\s+/).slice(0, 3).filter(w => w.length > 2);
+          if (words.length > 0) {
+            matchedVendor = await prisma.vendor.findFirst({
+              where: { name: { contains: words[0], mode: 'insensitive' } },
+              select: { id: true, name: true, gstin: true },
+            });
+          }
+        }
+
+        // If vendor found, get their pending POs
+        if (matchedVendor) {
+          matchedPOs = await prisma.purchaseOrder.findMany({
+            where: {
+              vendorId: matchedVendor.id,
+              status: { in: ['SENT', 'APPROVED', 'PARTIAL_RECEIVED'] },
+            },
+            select: { id: true, poNo: true, grandTotal: true, status: true },
+            orderBy: { poDate: 'desc' },
+            take: 10,
+          });
+        }
+      }
+
+      res.json({
+        invoiceFilePath,
+        ewayBillFilePath,
+        extracted,
+        matchedVendor,
+        matchedPOs,
+      });
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message || 'AI extraction failed';
+      res.json({ invoiceFilePath, ewayBillFilePath, extracted: null, error: msg });
+    }
+  })
+);
+
 // POST / — create GRN against a PO
 router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
@@ -226,6 +366,8 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
           invoiceNo: b.invoiceNo || b.challanNo || '',
           invoiceDate: b.invoiceDate ? new Date(b.invoiceDate) : (b.challanDate ? new Date(b.challanDate) : null),
           ewayBill: b.ewayBill || '',
+          invoiceFilePath: b.invoiceFilePath || null,
+          ewayBillFilePath: b.ewayBillFilePath || null,
           remarks: b.remarks || '',
           totalAmount,
           totalQty,
