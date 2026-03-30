@@ -7,6 +7,7 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+  provider?: string;
 }
 
 interface AIConfigState {
@@ -81,6 +82,7 @@ export default function AIChatWidget({ pageContext }: { pageContext?: string }) 
         role: 'assistant',
         content: res.data.reply,
         timestamp: new Date(),
+        provider: res.data.provider,
       };
       setMessages(prev => [...prev, aiMsg]);
     } catch (err: unknown) {
@@ -161,7 +163,9 @@ export default function AIChatWidget({ pageContext }: { pageContext?: string }) 
               <div>
                 <span className="text-sm font-bold">AI Assistant</span>
                 {config?.configured && (
-                  <span className="text-[10px] text-slate-400 ml-2 uppercase">{config.provider}</span>
+                  <span className="text-[10px] text-slate-400 ml-2 uppercase">
+                    {messages.filter(m => m.provider).slice(-1)[0]?.provider || config.provider}
+                  </span>
                 )}
               </div>
             </div>
@@ -263,6 +267,11 @@ export default function AIChatWidget({ pageContext }: { pageContext?: string }) 
                     : 'bg-slate-100 text-slate-700 border border-slate-200'
                 }`}>
                   {msg.role === 'assistant' ? formatContent(msg.content) : msg.content}
+                {msg.role === 'assistant' && msg.provider && (
+                  <div className="text-[9px] text-slate-400 mt-1 uppercase tracking-wider text-right">
+                    via {msg.provider}
+                  </div>
+                )}
                 </div>
                 {msg.role === 'user' && (
                   <div className="w-6 h-6 bg-blue-600 flex items-center justify-center shrink-0 mt-1">
