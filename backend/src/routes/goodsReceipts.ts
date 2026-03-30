@@ -247,7 +247,7 @@ If a field is not found in the documents, use null for strings and 0 for numbers
       }
 
       const geminiRes = await axios.post(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
         { contents: [{ parts }] },
         { timeout: 45000 }
       );
