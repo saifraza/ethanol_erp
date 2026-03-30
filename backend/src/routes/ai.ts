@@ -1,10 +1,11 @@
 import { Router, Response } from 'express';
-import { AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { z } from 'zod';
 import prisma from '../config/prisma';
 
 const router = Router();
+router.use(authenticate as any);
 
 // ─── Configuration ───────────────────────────────
 // OpenClaw or direct AI provider config stored in Settings
@@ -24,7 +25,7 @@ async function getAIConfig(): Promise<AIConfig | null> {
     } catch { /* fall through */ }
   }
 
-  // 2. OpenClaw env vars — preferred (runs on same Railway project)
+  // 2. OpenClaw — preferred (has memory, sessions, database access)
   const openclawToken = process.env.OPENCLAW_GATEWAY_TOKEN;
   const openclawUrl = process.env.OPENCLAW_URL || (openclawToken ? 'http://openclaw.railway.internal:18789' : '');
   if (openclawUrl && openclawToken) {
@@ -36,7 +37,7 @@ async function getAIConfig(): Promise<AIConfig | null> {
     };
   }
 
-  // 3. Fallback env vars — Gemini, Anthropic
+  // 3. Gemini fallback
   const geminiKey = process.env.GEMINI_API_KEY;
   if (geminiKey) {
     return {
@@ -47,6 +48,7 @@ async function getAIConfig(): Promise<AIConfig | null> {
     };
   }
 
+  // 4. Anthropic fallback
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   if (anthropicKey) {
     return {
