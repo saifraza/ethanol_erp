@@ -41,6 +41,46 @@ interface AIExtracted {
   total_amount?: number;
 }
 
+interface GRNDetail {
+  id: string;
+  grnNo: number;
+  grnDate: string;
+  vehicleNo: string;
+  challanNo: string;
+  invoiceNo?: string;
+  invoiceDate?: string;
+  ewayBill?: string;
+  invoiceFilePath?: string;
+  ewayBillFilePath?: string;
+  qualityStatus?: string;
+  qualityRemarks?: string;
+  inspectedBy?: string;
+  remarks?: string;
+  archived?: boolean;
+  status: 'DRAFT' | 'CONFIRMED' | 'CANCELLED';
+  totalAmount: number;
+  totalQty: number;
+  totalAccepted: number;
+  totalRejected: number;
+  po: { id: string; poNo: string };
+  vendor: { id: string; name: string };
+  lines: Array<{
+    id: string;
+    poLineId: string;
+    inventoryItemId: string;
+    description: string;
+    receivedQty: number;
+    acceptedQty: number;
+    rejectedQty: number;
+    unit: string;
+    rate: number;
+    amount: number;
+    batchNo: string;
+    storageLocation: string;
+    remarks: string;
+  }>;
+}
+
 interface GRN {
   id: string;
   grnNo: number;
@@ -53,7 +93,7 @@ interface GRN {
   totalAmount: number;
   totalAccepted: number;
   totalRejected: number;
-  po: { poNo: string };
+  po: { id: string; poNo: string };
   vendor: { name: string };
   lines: GRNLine[];
 }
@@ -98,6 +138,23 @@ export default function GoodsReceipts() {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Expandable detail
+  const [expandedGrnId, setExpandedGrnId] = useState<string | null>(null);
+  const [grnDetail, setGrnDetail] = useState<GRNDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  const toggleGrnDetail = async (grnId: string) => {
+    if (expandedGrnId === grnId) { setExpandedGrnId(null); setGrnDetail(null); return; }
+    setExpandedGrnId(grnId);
+    setDetailLoading(true);
+    try {
+      const res = await api.get<GRNDetail>(`/goods-receipts/${grnId}`);
+      setGrnDetail(res.data);
+    } catch { setGrnDetail(null); } finally { setDetailLoading(false); }
+  };
+
+  const getToken = () => localStorage.getItem('token') || '';
 
   const [formData, setFormData] = useState<CreateGRNForm>({
     poId: '', grnDate: new Date().toISOString().split('T')[0], vehicleNo: '', invoiceNo: '', invoiceDate: '', ewayBill: '', remarks: '', lines: [],
@@ -622,9 +679,10 @@ export default function GoodsReceipts() {
                 </tr>
               </thead>
               <tbody>
-                {grns.map((grn) => (
-                  <tr key={grn.id} className="border-b border-slate-100 even:bg-slate-50/70 hover:bg-blue-50/60">
-                    <td className="px-3 py-1.5 text-xs border-r border-slate-100 font-bold">GRN-{grn.grnNo}</td>
+                {grns.map((grn, idx) => (
+                  <React.Fragment key={grn.id}>
+                  <tr className={`border-b border-slate-100 hover:bg-blue-50/60 cursor-pointer ${idx % 2 ? 'bg-slate-50/70' : ''} ${expandedGrnId === grn.id ? 'bg-blue-50' : ''}`} onClick={() => toggleGrnDetail(grn.id)}>
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100 font-bold text-blue-700">GRN-{grn.grnNo}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100">{grn.po.poNo}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100">{grn.vendor.name}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100">{new Date(grn.grnDate).toLocaleDateString()}</td>
@@ -636,7 +694,7 @@ export default function GoodsReceipts() {
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100">
                       <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${getStatusBadge(grn.status)}`}>{grn.status}</span>
                     </td>
-                    <td className="px-3 py-1.5 text-xs text-center">
+                    <td className="px-3 py-1.5 text-xs text-center" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-center gap-1">
                         {grn.status === 'DRAFT' && (
                           <>
@@ -658,6 +716,103 @@ export default function GoodsReceipts() {
                       </div>
                     </td>
                   </tr>
+                  {/* Expandable Detail Panel */}
+                  {expandedGrnId === grn.id && (
+                    <tr>
+                      <td colSpan={11} className="bg-white border-b-2 border-blue-300 p-0">
+                        {detailLoading ? (
+                          <div className="p-6 text-center text-xs text-slate-400 uppercase tracking-widest">Loading GRN details...</div>
+                        ) : grnDetail ? (
+                          <div className="p-4 space-y-3">
+                            {/* Header: GRN Info + Action Buttons */}
+                            <div className="flex items-start justify-between">
+                              <div className="grid grid-cols-4 gap-4 text-xs flex-1">
+                                <div><span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">PO Reference</span><div className="mt-0.5 font-bold text-slate-800">{grnDetail.po.poNo}</div></div>
+                                <div><span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Invoice #</span><div className="mt-0.5 text-slate-700">{grnDetail.invoiceNo || '--'}</div></div>
+                                <div><span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">E-Way Bill</span><div className="mt-0.5 text-slate-700">{grnDetail.ewayBill || '--'}</div></div>
+                                <div><span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Vehicle</span><div className="mt-0.5 text-slate-700">{grnDetail.vehicleNo || '--'}</div></div>
+                              </div>
+                              <div className="flex gap-1 ml-4">
+                                <a href={`/api/goods-receipts/${grn.id}/pdf?token=${getToken()}`} target="_blank" rel="noreferrer" className="px-2 py-1 bg-blue-600 text-white text-[10px] font-medium hover:bg-blue-700" onClick={e => e.stopPropagation()}>GRN PDF</a>
+                                <a href={`/api/purchase-orders/${grnDetail.po.id}/pdf?token=${getToken()}`} target="_blank" rel="noreferrer" className="px-2 py-1 bg-slate-600 text-white text-[10px] font-medium hover:bg-slate-700" onClick={e => e.stopPropagation()}>PO PDF</a>
+                              </div>
+                            </div>
+
+                            {/* Documents Row */}
+                            {(grnDetail.invoiceFilePath || grnDetail.ewayBillFilePath) && (
+                              <div className="flex gap-3">
+                                {grnDetail.invoiceFilePath && (
+                                  <a href={`/uploads/${grnDetail.invoiceFilePath}`} target="_blank" rel="noreferrer" className="flex items-center gap-1 px-2 py-1 border border-blue-300 bg-blue-50 text-blue-700 text-[10px] font-bold uppercase hover:bg-blue-100" onClick={e => e.stopPropagation()}>
+                                    Vendor Invoice File
+                                  </a>
+                                )}
+                                {grnDetail.ewayBillFilePath && (
+                                  <a href={`/uploads/${grnDetail.ewayBillFilePath}`} target="_blank" rel="noreferrer" className="flex items-center gap-1 px-2 py-1 border border-amber-300 bg-amber-50 text-amber-700 text-[10px] font-bold uppercase hover:bg-amber-100" onClick={e => e.stopPropagation()}>
+                                    E-Way Bill File
+                                  </a>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Line Items Table */}
+                            <div className="border border-slate-200 overflow-hidden">
+                              <div className="bg-slate-100 px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-200">Line Items ({grnDetail.lines.length})</div>
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="bg-slate-50 border-b border-slate-200">
+                                    <th className="text-left px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase border-r border-slate-200">Description</th>
+                                    <th className="text-right px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase border-r border-slate-200">Received</th>
+                                    <th className="text-right px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase border-r border-slate-200">Accepted</th>
+                                    <th className="text-right px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase border-r border-slate-200">Rejected</th>
+                                    <th className="text-left px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase border-r border-slate-200">Unit</th>
+                                    <th className="text-right px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase border-r border-slate-200">Rate</th>
+                                    <th className="text-right px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase">Amount</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {grnDetail.lines.map((line, li) => (
+                                    <tr key={line.id || li} className="border-b border-slate-100">
+                                      <td className="px-3 py-1 text-slate-800 border-r border-slate-100">{line.description}</td>
+                                      <td className="px-3 py-1 text-right font-mono tabular-nums border-r border-slate-100">{line.receivedQty}</td>
+                                      <td className="px-3 py-1 text-right font-mono tabular-nums text-green-700 font-semibold border-r border-slate-100">{line.acceptedQty}</td>
+                                      <td className="px-3 py-1 text-right font-mono tabular-nums text-red-600 font-semibold border-r border-slate-100">{line.rejectedQty}</td>
+                                      <td className="px-3 py-1 border-r border-slate-100">{line.unit}</td>
+                                      <td className="px-3 py-1 text-right font-mono tabular-nums border-r border-slate-100">{(line.rate || 0).toFixed(2)}</td>
+                                      <td className="px-3 py-1 text-right font-mono tabular-nums font-bold">{((line.acceptedQty || 0) * (line.rate || 0)).toFixed(2)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                                <tfoot>
+                                  <tr className="bg-slate-100 font-bold">
+                                    <td className="px-3 py-1.5 text-right uppercase text-[10px] tracking-widest text-slate-500" colSpan={6}>Total</td>
+                                    <td className="px-3 py-1.5 text-right font-mono tabular-nums">{(grnDetail.totalAmount || 0).toFixed(2)}</td>
+                                  </tr>
+                                </tfoot>
+                              </table>
+                            </div>
+
+                            {/* Quality + Remarks */}
+                            {(grnDetail.qualityStatus || grnDetail.remarks) && (
+                              <div className="grid grid-cols-3 gap-3 text-xs">
+                                {grnDetail.qualityStatus && (
+                                  <div><span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Quality</span><div className="mt-0.5"><span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${grnDetail.qualityStatus === 'ACCEPTED' ? 'border-green-300 text-green-700 bg-green-50' : grnDetail.qualityStatus === 'REJECTED' ? 'border-red-300 text-red-700 bg-red-50' : 'border-slate-300 text-slate-600'}`}>{grnDetail.qualityStatus}</span></div></div>
+                                )}
+                                {grnDetail.inspectedBy && (
+                                  <div><span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Inspector</span><div className="mt-0.5 text-slate-700">{grnDetail.inspectedBy}</div></div>
+                                )}
+                                {grnDetail.remarks && (
+                                  <div><span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Remarks</span><div className="mt-0.5 text-slate-700">{grnDetail.remarks}</div></div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="p-6 text-center text-xs text-red-400">Failed to load GRN details</div>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>

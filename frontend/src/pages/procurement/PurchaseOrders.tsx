@@ -1153,11 +1153,20 @@ const PurchaseOrders: React.FC = () => {
                               {/* GRNs */}
                               <div className="border border-slate-200">
                                 <div className="bg-slate-100 px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-200">GRNs ({poDetail.grns?.length || 0})</div>
-                                <div className="p-2 space-y-1 max-h-32 overflow-y-auto">
+                                <div className="p-2 space-y-2 max-h-48 overflow-y-auto">
                                   {(poDetail.grns || []).length === 0 ? <div className="text-[10px] text-slate-400">No GRNs yet</div> : (poDetail.grns || []).map((g: any) => (
-                                    <div key={g.id} className="flex justify-between text-[10px]">
-                                      <span className="text-slate-700 font-medium">GRN-{g.grnNo}</span>
-                                      <span className={`font-bold uppercase px-1 py-0 border ${g.status === 'CONFIRMED' ? 'border-green-300 text-green-700' : 'border-slate-300 text-slate-500'}`}>{g.status}</span>
+                                    <div key={g.id} className="border border-slate-100 p-1.5">
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-[10px] text-slate-700 font-bold">GRN-{g.grnNo}</span>
+                                        <span className={`text-[8px] font-bold uppercase px-1 py-0 border ${g.status === 'CONFIRMED' ? 'border-green-300 text-green-700' : 'border-slate-300 text-slate-500'}`}>{g.status}</span>
+                                      </div>
+                                      <div className="text-[9px] text-slate-500 mt-0.5">{new Date(g.grnDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })} | {g.vehicleNo || '--'}</div>
+                                      {g.totalAmount > 0 && <div className="text-[10px] font-mono tabular-nums font-bold text-slate-700 mt-0.5">₹{g.totalAmount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>}
+                                      <div className="flex gap-1 mt-1">
+                                        <a href={`/api/goods-receipts/${g.id}/pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noreferrer" className="px-1.5 py-0 bg-blue-600 text-white text-[8px] font-bold hover:bg-blue-700" onClick={e => e.stopPropagation()}>PDF</a>
+                                        {g.invoiceFilePath && <a href={`/uploads/${g.invoiceFilePath}`} target="_blank" rel="noreferrer" className="px-1.5 py-0 border border-blue-300 text-blue-700 text-[8px] font-bold bg-blue-50 hover:bg-blue-100" onClick={e => e.stopPropagation()}>INV FILE</a>}
+                                        {g.ewayBillFilePath && <a href={`/uploads/${g.ewayBillFilePath}`} target="_blank" rel="noreferrer" className="px-1.5 py-0 border border-amber-300 text-amber-700 text-[8px] font-bold bg-amber-50 hover:bg-amber-100" onClick={e => e.stopPropagation()}>E-WAY</a>}
+                                      </div>
                                     </div>
                                   ))}
                                 </div>
@@ -1165,11 +1174,20 @@ const PurchaseOrders: React.FC = () => {
                               {/* Invoices */}
                               <div className="border border-slate-200">
                                 <div className="bg-slate-100 px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-200">Invoices ({poDetail.vendorInvoices?.length || 0})</div>
-                                <div className="p-2 space-y-1 max-h-32 overflow-y-auto">
+                                <div className="p-2 space-y-2 max-h-48 overflow-y-auto">
                                   {(poDetail.vendorInvoices || []).length === 0 ? <div className="text-[10px] text-slate-400">No invoices yet</div> : (poDetail.vendorInvoices || []).map((inv: any) => (
-                                    <div key={inv.id} className="flex justify-between text-[10px]">
-                                      <span className="text-slate-700 font-medium">INV-{inv.invoiceNo}</span>
-                                      <span className="font-mono tabular-nums text-slate-600">₹{(inv.totalAmount || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+                                    <div key={inv.id} className="border border-slate-100 p-1.5">
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-[10px] text-slate-700 font-bold">{inv.vendorInvNo || `INV-${inv.invoiceNo}`}</span>
+                                        <span className={`text-[8px] font-bold uppercase px-1 py-0 border ${inv.status === 'PAID' ? 'border-green-300 text-green-700' : inv.status === 'APPROVED' ? 'border-blue-300 text-blue-700' : 'border-slate-300 text-slate-500'}`}>{inv.status}</span>
+                                      </div>
+                                      <div className="text-[10px] font-mono tabular-nums font-bold text-slate-700 mt-0.5">₹{(inv.totalAmount || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
+                                      {inv.dueDate && <div className="text-[9px] text-slate-500">Due: {new Date(inv.dueDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</div>}
+                                      {inv.filePath && (
+                                        <div className="mt-1">
+                                          <a href={`/uploads/${inv.filePath}`} target="_blank" rel="noreferrer" className="px-1.5 py-0 border border-blue-300 text-blue-700 text-[8px] font-bold bg-blue-50 hover:bg-blue-100" onClick={e => e.stopPropagation()}>VIEW FILE</a>
+                                        </div>
+                                      )}
                                     </div>
                                   ))}
                                 </div>
@@ -1177,18 +1195,28 @@ const PurchaseOrders: React.FC = () => {
                               {/* Payments */}
                               <div className="border border-slate-200">
                                 <div className="bg-slate-100 px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-200">Payments</div>
-                                <div className="p-2 space-y-1 max-h-32 overflow-y-auto">
-                                  {(poDetail.vendorInvoices || []).flatMap((inv: any) => (inv.payments || []).map((p: any) => ({ ...p, invoiceNo: inv.invoiceNo }))).length === 0 ?
+                                <div className="p-2 space-y-2 max-h-48 overflow-y-auto">
+                                  {(poDetail.vendorInvoices || []).flatMap((inv: any) => (inv.payments || []).map((p: any) => ({ ...p, invoiceNo: inv.invoiceNo, vendorInvNo: inv.vendorInvNo }))).length === 0 ?
                                     <div className="text-[10px] text-slate-400">No payments yet</div> :
-                                    (poDetail.vendorInvoices || []).flatMap((inv: any) => (inv.payments || []).map((p: any) => ({ ...p, invoiceNo: inv.invoiceNo }))).map((p: any) => (
-                                      <div key={p.id} className="flex justify-between text-[10px]">
-                                        <span className="text-slate-700">{new Date(p.paymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} · {p.mode}</span>
-                                        <span className="font-mono tabular-nums text-green-700 font-bold">₹{(p.amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+                                    (poDetail.vendorInvoices || []).flatMap((inv: any) => (inv.payments || []).map((p: any) => ({ ...p, invoiceNo: inv.invoiceNo, vendorInvNo: inv.vendorInvNo }))).map((p: any) => (
+                                      <div key={p.id} className="border border-slate-100 p-1.5">
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-[10px] text-slate-700 font-bold">{p.mode || 'BANK'}</span>
+                                          <span className="font-mono tabular-nums text-green-700 text-[10px] font-bold">₹{(p.amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+                                        </div>
+                                        <div className="text-[9px] text-slate-500">{new Date(p.paymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })} {p.utrNumber ? `| UTR: ${p.utrNumber}` : ''}</div>
+                                        {p.tdsDeducted > 0 && <div className="text-[9px] text-amber-600">TDS: ₹{p.tdsDeducted.toLocaleString('en-IN')}</div>}
+                                        <div className="text-[9px] text-slate-400">vs {p.vendorInvNo || `INV-${p.invoiceNo}`}</div>
                                       </div>
                                     ))
                                   }
                                 </div>
                               </div>
+                            </div>
+
+                            {/* Quick Actions */}
+                            <div className="flex gap-2 mt-3 pt-3 border-t border-slate-200">
+                              <a href={`/api/purchase-orders/${po.id}/pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noreferrer" className="px-3 py-1 bg-blue-600 text-white text-[10px] font-bold hover:bg-blue-700" onClick={e => e.stopPropagation()}>Download PO PDF</a>
                             </div>
                           </div>
                         ) : (

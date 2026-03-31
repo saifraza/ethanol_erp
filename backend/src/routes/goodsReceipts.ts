@@ -539,4 +539,96 @@ router.put('/:id/archive', asyncHandler(async (req: AuthRequest, res: Response) 
     res.json({ ok: true, archived });
 }));
 
+// ═══════════════════════════════════════════════
+// GET /:id/pdf — Generate GRN PDF
+// ═══════════════════════════════════════════════
+router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const grn = await prisma.goodsReceipt.findUnique({
+      where: { id: req.params.id },
+      include: { po: true, vendor: true, lines: true },
+    });
+    if (!grn) { res.status(404).json({ error: 'GRN not found' }); return; }
+
+    const { COMPANY } = await import('../shared/config/company');
+
+    // Build simple PDF with PDFKit
+    const PDFDocument = (await import('pdfkit')).default;
+    const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    const chunks: Buffer[] = [];
+    doc.on('data', (c: Buffer) => chunks.push(c));
+
+    const pdfReady = new Promise<Buffer>(resolve => {
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+    });
+
+    // Header
+    doc.fontSize(16).font('Helvetica-Bold').text(COMPANY.name, { align: 'center' });
+    const addr = typeof COMPANY.address === 'string' ? COMPANY.address : `${COMPANY.address.line1}, ${COMPANY.address.line2}, ${COMPANY.address.city} - ${COMPANY.address.pincode}`;
+    doc.fontSize(8).font('Helvetica').text(addr, { align: 'center' });
+    doc.moveDown(0.5);
+    doc.fontSize(12).font('Helvetica-Bold').text('GOODS RECEIPT NOTE', { align: 'center' });
+    doc.moveDown(0.5);
+
+    // Info grid
+    const y = doc.y;
+    doc.fontSize(9).font('Helvetica-Bold');
+    doc.text(`GRN No: GRN-${grn.grnNo}`, 40, y);
+    doc.text(`Date: ${new Date(grn.grnDate).toLocaleDateString('en-IN')}`, 300, y);
+    doc.text(`PO Ref: ${(grn.po as any).poNo || grn.poId}`, 40, y + 14);
+    doc.text(`Status: ${grn.status}`, 300, y + 14);
+    doc.font('Helvetica');
+    doc.text(`Vendor: ${(grn.vendor as any).name || ''}`, 40, y + 28);
+    doc.text(`Vehicle: ${grn.vehicleNo || '--'}`, 300, y + 28);
+    if (grn.invoiceNo) doc.text(`Invoice: ${grn.invoiceNo}`, 40, y + 42);
+    if (grn.ewayBill) doc.text(`E-Way Bill: ${grn.ewayBill}`, 300, y + 42);
+    doc.moveDown(4);
+
+    // Line items table
+    const tableTop = doc.y;
+    const cols = [40, 220, 280, 340, 400, 450, 520];
+    const headers = ['Description', 'Received', 'Accepted', 'Rejected', 'Unit', 'Rate', 'Amount'];
+
+    // Header row
+    doc.rect(40, tableTop, 515, 18).fill('#1e293b');
+    doc.fillColor('#ffffff').fontSize(7).font('Helvetica-Bold');
+    headers.forEach((h, i) => {
+      doc.text(h, cols[i] + 3, tableTop + 5, { width: (cols[i + 1] || 555) - cols[i] - 6 });
+    });
+
+    // Data rows
+    let rowY = tableTop + 18;
+    doc.fillColor('#000000').font('Helvetica').fontSize(8);
+    (grn.lines as any[]).forEach((line, idx) => {
+      if (idx % 2 === 1) doc.rect(40, rowY, 515, 16).fill('#f8fafc').fillColor('#000000');
+      doc.text(line.description || '', cols[0] + 3, rowY + 4, { width: 175 });
+      doc.text(String(line.receivedQty || 0), cols[1] + 3, rowY + 4, { width: 55, align: 'right' });
+      doc.text(String(line.acceptedQty || 0), cols[2] + 3, rowY + 4, { width: 55, align: 'right' });
+      doc.text(String(line.rejectedQty || 0), cols[3] + 3, rowY + 4, { width: 55, align: 'right' });
+      doc.text(line.unit || '', cols[4] + 3, rowY + 4, { width: 45 });
+      doc.text((line.rate || 0).toFixed(2), cols[5] + 3, rowY + 4, { width: 65, align: 'right' });
+      doc.text(((line.acceptedQty || 0) * (line.rate || 0)).toFixed(2), cols[6] + 3, rowY + 4, { width: 35, align: 'right' });
+      rowY += 16;
+    });
+
+    // Total
+    doc.rect(40, rowY, 515, 18).fill('#1e293b');
+    doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(9);
+    doc.text('TOTAL', cols[0] + 3, rowY + 5);
+    doc.text((grn.totalAmount || 0).toFixed(2), cols[6] + 3, rowY + 5, { width: 35, align: 'right' });
+
+    // Signatures
+    doc.fillColor('#000000').font('Helvetica').fontSize(8);
+    const sigY = rowY + 60;
+    doc.text('Received By: _______________', 40, sigY);
+    doc.text('Inspected By: _______________', 220, sigY);
+    doc.text('Authorized: _______________', 400, sigY);
+
+    doc.end();
+    const pdfBuffer = await pdfReady;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="GRN-${grn.grnNo}.pdf"`);
+    res.send(pdfBuffer);
+}));
+
 export default router;

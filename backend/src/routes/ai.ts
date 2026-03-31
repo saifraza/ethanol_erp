@@ -27,7 +27,8 @@ async function getAIConfig(): Promise<AIConfig | null> {
 
   // 2. OpenClaw — preferred (has memory, sessions, database access)
   const openclawToken = process.env.OPENCLAW_GATEWAY_TOKEN;
-  const openclawUrl = process.env.OPENCLAW_URL || (openclawToken ? 'http://openclaw.railway.internal:18789' : '');
+  // Use public URL — internal URL requires gateway bind 0.0.0.0 which isn't supported in local mode
+  const openclawUrl = process.env.OPENCLAW_URL || (openclawToken ? 'https://openclaw-production-4daf9.up.railway.app' : '');
   if (openclawUrl && openclawToken) {
     return {
       provider: 'openclaw',

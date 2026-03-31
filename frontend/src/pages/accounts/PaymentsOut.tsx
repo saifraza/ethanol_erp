@@ -959,6 +959,12 @@ export default function PaymentsOut() {
                                       <FileText size={9} /> Invoice
                                     </a>
                                   )}
+                                  {p.poId && (
+                                    <a href={`/procurement/purchase-orders?highlight=${p.poId}`}
+                                      className="px-2 py-0.5 border border-slate-400 text-slate-600 text-[9px] font-bold uppercase hover:bg-slate-100 inline-flex items-center gap-1">
+                                      View Full PO Pipeline
+                                    </a>
+                                  )}
                                 </div>
                               )}
                             </td>
