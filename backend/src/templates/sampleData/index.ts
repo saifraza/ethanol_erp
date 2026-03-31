@@ -159,6 +159,35 @@ export const SAMPLE_DATA: Record<string, Record<string, unknown>> = {
     subtotal: 114000, totalGst: 20520, netPayable: 134520,
     preparedBy: 'Ramesh Kumar', authorizedSignatory: 'A.K. Singh',
   },
+
+  GOODS_RECEIPT: {
+    grnNo: 15,
+    grnDate: new Date('2026-03-28'),
+    poRef: 'PO-0042',
+    status: 'CONFIRMED',
+    vehicleNo: 'MP-20-AB-1234',
+    invoiceNo: 'VND/2026/0078',
+    invoiceDate: new Date('2026-03-27'),
+    ewayBill: 'EWB781234567890',
+    challanNo: 'CH-0045',
+    qualityStatus: 'ACCEPTED',
+    inspectedBy: 'Rajesh Kumar',
+    qualityRemarks: 'All items meet quality standards.',
+    vendor: {
+      name: 'ABC CHEMICALS PVT. LTD.',
+      address: '45-B, Industrial Area, Phase-II, Pithampur, Indore, MP',
+      gstin: '23AABCA1234B1Z5',
+      phone: '9876543210',
+    },
+    lines: [
+      { description: 'Alpha Amylase Enzyme', unit: 'kg', receivedQty: 95, acceptedQty: 93, rejectedQty: 2, rate: 1200, amount: 111600, batchNo: 'BATCH-A23' },
+      { description: 'Sulphuric Acid (Technical Grade)', unit: 'kg', receivedQty: 500, acceptedQty: 500, rejectedQty: 0, rate: 18.50, amount: 9250, batchNo: '' },
+      { description: 'Urea (Industrial Grade)', unit: 'kg', receivedQty: 200, acceptedQty: 198, rejectedQty: 2, rate: 22, amount: 4356, batchNo: 'U-2026-05' },
+    ],
+    totalQty: 795, totalAccepted: 791, totalRejected: 4, totalAmount: 125206,
+    receivedBy: 'Store Keeper', authorizedSignatory: 'OP Pandey',
+    remarks: 'Minor quality issues in batch BATCH-A23.',
+  },
 };
 
 // Map document template docTypes to template file names
@@ -172,4 +201,5 @@ export const DOC_TYPE_TO_TEMPLATE: Record<string, string> = {
   DDGS_GATE_PASS: 'ddgs-gate-pass',
   RATE_REQUEST: 'freight-inquiry',
   VENDOR_INVOICE: 'vendor-invoice',
+  GOODS_RECEIPT: 'goods-receipt',
 };

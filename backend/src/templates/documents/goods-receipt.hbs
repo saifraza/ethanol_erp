@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Goods Receipt Note</title>{{> base-styles}}</head>
+<body>
+<div class="page">
+  {{> letterhead}}
+  <div class="doc-title">GOODS RECEIPT NOTE</div>
+
+  <div class="details-grid">
+    <div class="detail-row"><span class="detail-label">GRN Number</span><span class="detail-value bold">GRN-{{grnNo}}</span></div>
+    <div class="detail-row"><span class="detail-label">GRN Date</span><span class="detail-value">{{formatDate grnDate}}</span></div>
+    <div class="detail-row"><span class="detail-label">PO Reference</span><span class="detail-value bold">{{poRef}}</span></div>
+    <div class="detail-row"><span class="detail-label">Status</span><span class="detail-value bold">{{status}}</span></div>
+    {{#if vehicleNo}}<div class="detail-row"><span class="detail-label">Vehicle No</span><span class="detail-value">{{vehicleNo}}</span></div>{{/if}}
+    {{#if invoiceNo}}<div class="detail-row"><span class="detail-label">Invoice No</span><span class="detail-value">{{invoiceNo}}</span></div>{{/if}}
+    {{#if invoiceDate}}<div class="detail-row"><span class="detail-label">Invoice Date</span><span class="detail-value">{{formatDate invoiceDate}}</span></div>{{/if}}
+    {{#if ewayBill}}<div class="detail-row"><span class="detail-label">E-Way Bill</span><span class="detail-value">{{ewayBill}}</span></div>{{/if}}
+    {{#if challanNo}}<div class="detail-row"><span class="detail-label">Challan No</span><span class="detail-value">{{challanNo}}</span></div>{{/if}}
+  </div>
+
+  <div class="boxes">
+    <div class="box">
+      <div class="box-header">Vendor / Supplier</div>
+      <div class="box-body">
+        <div class="name">{{vendor.name}}</div>
+        {{#if vendor.address}}<div class="line">{{vendor.address}}</div>{{/if}}
+        {{#if vendor.gstin}}<div class="gstin">GSTIN: {{vendor.gstin}}</div>{{/if}}
+        {{#if vendor.phone}}<div class="line">Phone: {{vendor.phone}}</div>{{/if}}
+      </div>
+    </div>
+    <div class="box">
+      <div class="box-header">Delivery Point</div>
+      <div class="box-body">
+        <div class="line">Village Bachai, Tehsil Gadarwara, District Narsinghpur, Madhya Pradesh - 487551</div>
+        {{#if qualityStatus}}<div class="meta-row mt-4"><span class="meta-label">Quality:</span><span class="meta-val">{{qualityStatus}}</span></div>{{/if}}
+        {{#if inspectedBy}}<div class="meta-row"><span class="meta-label">Inspector:</span><span class="meta-val">{{inspectedBy}}</span></div>{{/if}}
+      </div>
+    </div>
+  </div>
+
+  <table class="items-table">
+    <thead>
+      <tr>
+        <th style="width:25px">#</th>
+        <th class="left">Description</th>
+        <th style="width:40px">Unit</th>
+        <th class="right" style="width:60px">Received</th>
+        <th class="right" style="width:60px">Accepted</th>
+        <th class="right" style="width:60px">Rejected</th>
+        <th class="right" style="width:70px">Rate (Rs.)</th>
+        <th class="right" style="width:80px">Amount (Rs.)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each lines}}
+      <tr>
+        <td class="center">{{inc @index}}</td>
+        <td>{{description}}{{#if batchNo}} <span style="color:#999;font-size:7px">Batch: {{batchNo}}</span>{{/if}}</td>
+        <td class="center">{{unit}}</td>
+        <td class="right">{{formatNum receivedQty}}</td>
+        <td class="right" style="color:#166534;font-weight:bold">{{formatNum acceptedQty}}</td>
+        <td class="right" style="color:#991b1b;font-weight:bold">{{formatNum rejectedQty}}</td>
+        <td class="right">{{formatNum rate}}</td>
+        <td class="right">{{formatNum amount}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+
+  <div class="totals-section">
+    <div class="totals-box">
+      <div class="total-row"><span class="label">Total Received Qty</span><span class="value">{{formatNum totalQty}}</span></div>
+      <div class="total-row"><span class="label">Total Accepted</span><span class="value" style="color:#166534">{{formatNum totalAccepted}}</span></div>
+      {{#if totalRejected}}<div class="total-row"><span class="label">Total Rejected</span><span class="value" style="color:#991b1b">{{formatNum totalRejected}}</span></div>{{/if}}
+      <div class="total-row grand"><span class="label">TOTAL AMOUNT</span><span class="value">{{formatINR totalAmount}}</span></div>
+    </div>
+  </div>
+
+  <div class="amount-words">
+    <div class="label">Amount in Words:</div>
+    <div class="text">{{numberToWords totalAmount}}</div>
+  </div>
+
+  {{#if qualityRemarks}}
+  <div class="remarks-section"><div class="label">Quality Remarks:</div><div class="text">{{qualityRemarks}}</div></div>
+  {{/if}}
+
+  {{#if remarks}}
+  <div class="remarks-section"><div class="label">Remarks:</div><div class="text">{{remarks}}</div></div>
+  {{/if}}
+
+  {{> signatures sigCount=3 sigLabels=(list "Received By" "Inspected By" "Authorized Signatory") sigNames=(list receivedBy inspectedBy authorizedSignatory)}}
+
+  <div class="footer-area">
+    {{#if qrDataUrl}}<div class="qr-block"><img src="{{qrDataUrl}}" alt="QR"><div class="qr-text">Scan to verify this document</div></div>{{/if}}
+    <div class="footer-text">{{footer}}</div>
+  </div>
+</div>
+</body>
+</html>
