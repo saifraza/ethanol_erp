@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 interface Warehouse {
   id: string;
@@ -81,6 +82,8 @@ const EMPTY_FORM: Partial<FuelItem> = {
 };
 
 export default function FuelManagement() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
   const [tab, setTab] = useState<'master' | 'daily' | 'deals'>('deals');
   const [fuels, setFuels] = useState<FuelItem[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -91,6 +94,8 @@ export default function FuelManagement() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showDealModal, setShowDealModal] = useState(false);
+  const [editingDealId, setEditingDealId] = useState<string | null>(null);
+  const [expandedDeals, setExpandedDeals] = useState<Set<string>>(new Set());
   const [dealForm, setDealForm] = useState({ vendorId: '', vendorName: '', vendorPhone: '', fuelItemId: '', rate: 0, remarks: '' });
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [showModal, setShowModal] = useState(false);
@@ -215,8 +220,13 @@ export default function FuelManagement() {
           try { await api.put(`/vendors/${dealForm.vendorId}`, { phone: dealForm.vendorPhone }); } catch (_e) { /* ok */ }
         }
       }
-      await api.post('/fuel/deals', payload);
+      if (editingDealId) {
+        await api.put(`/fuel/deals/${editingDealId}`, { rate: dealForm.rate, remarks: dealForm.remarks });
+      } else {
+        await api.post('/fuel/deals', payload);
+      }
       setShowDealModal(false);
+      setEditingDealId(null);
       setDealForm({ vendorId: '', vendorName: '', vendorPhone: '', fuelItemId: '', rate: 0, remarks: '' });
       fetchDeals();
     } catch (err: unknown) {
@@ -231,8 +241,36 @@ export default function FuelManagement() {
     fetchDeals();
   };
 
+  const deleteDeal = async (id: string) => {
+    if (!confirm('Delete this deal permanently? This cannot be undone.')) return;
+    try {
+      await api.delete(`/fuel/deals/${id}`);
+      fetchDeals();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Failed to delete';
+      alert(msg);
+    }
+  };
+
+  const editDeal = (d: OpenDeal) => {
+    const line = d.lines[0];
+    setEditingDealId(d.id);
+    setDealForm({
+      vendorId: d.vendor.id,
+      vendorName: d.vendor.name,
+      vendorPhone: d.vendor.phone || '',
+      fuelItemId: line?.inventoryItemId || '',
+      rate: line?.rate || 0,
+      remarks: d.remarks || '',
+      quantityType: d.dealType === 'OPEN' ? 'OPEN' : 'FIXED',
+      quantity: line?.quantity === 999999 ? 0 : (line?.quantity || 0),
+      paymentTerms: '',
+    } as typeof dealForm);
+    setShowDealModal(true);
+  };
+
   const updateRate = async (id: string) => {
-    const newRate = prompt('Enter new rate (per unit):');
+    const newRate = prompt('Enter new rate (₹/MT):');
     if (!newRate) return;
     await api.put(`/fuel/deals/${id}`, { rate: parseFloat(newRate) });
     fetchDeals();
@@ -288,7 +326,7 @@ export default function FuelManagement() {
             </button>
           )}
           {tab === 'deals' && (
-            <button onClick={() => setShowDealModal(true)} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">
+            <button onClick={() => { setEditingDealId(null); setDealForm({ vendorId: '', vendorName: '', vendorPhone: '', fuelItemId: '', rate: 0, remarks: '' }); setShowDealModal(true); }} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">
               + New Fuel Deal
             </button>
           )}
@@ -478,8 +516,10 @@ export default function FuelManagement() {
                   return (
                     <React.Fragment key={d.id}>
                     {/* Deal header row */}
-                    <tr className={`border-b border-slate-100 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
-                      <td className="px-3 py-2 font-mono text-slate-500 border-r border-slate-100">PO-{d.poNo}</td>
+                    <tr className={`border-b border-slate-100 cursor-pointer ${i % 2 ? 'bg-slate-50/70' : ''}`} onClick={() => setExpandedDeals(prev => { const s = new Set(prev); s.has(d.id) ? s.delete(d.id) : s.add(d.id); return s; })}>
+                      <td className="px-3 py-2 font-mono text-slate-500 border-r border-slate-100">
+                        <span className="text-[9px] mr-1">{expandedDeals.has(d.id) ? '\u25BC' : '\u25B6'}</span>D-{String(i + 1).padStart(3, '0')}
+                      </td>
                       <td className="px-3 py-2 font-semibold text-slate-800 border-r border-slate-100">
                         <div>{d.vendor.name}</div>
                         {d.vendor.phone && <div className="text-[9px] text-slate-400">{d.vendor.phone}</div>}
@@ -497,13 +537,15 @@ export default function FuelManagement() {
                         {fmtCurrency(d.outstanding)}
                       </td>
                       <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-100">{d.truckCount}</td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-2" onClick={e => e.stopPropagation()}>
                         {d.outstanding > 0 && <button onClick={() => recordPayment(d.id, d.vendor.name, d.outstanding)} className="text-[10px] text-green-600 font-semibold uppercase hover:underline mr-2">Pay</button>}
-                        <button onClick={() => updateRate(d.id)} className="text-[10px] text-blue-600 font-semibold uppercase hover:underline mr-2">Rate</button>
-                        <button onClick={() => closeDeal(d.id)} className="text-[10px] text-red-500 font-semibold uppercase hover:underline">Close</button>
+                        <button onClick={() => editDeal(d)} className="text-[10px] text-blue-600 font-semibold uppercase hover:underline mr-2">Edit</button>
+                        <button onClick={() => closeDeal(d.id)} className="text-[10px] text-orange-500 font-semibold uppercase hover:underline mr-2">Close</button>
+                        {isAdmin && <button onClick={() => deleteDeal(d.id)} className="text-[10px] text-red-600 font-semibold uppercase hover:underline">Del</button>}
                       </td>
                     </tr>
-                    {/* Pipeline row */}
+                    {/* Pipeline row — collapsed by default */}
+                    {expandedDeals.has(d.id) && (
                     <tr className="border-b border-slate-200">
                       <td colSpan={10} className="px-3 py-2 bg-slate-50/30">
                         <div className="flex items-center gap-0">
@@ -520,6 +562,7 @@ export default function FuelManagement() {
                         </div>
                       </td>
                     </tr>
+                    )}
                     </React.Fragment>
                   );
                 })}
@@ -629,7 +672,7 @@ export default function FuelManagement() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white w-[600px] max-w-[95vw] shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="bg-slate-800 text-white px-4 py-2.5">
-              <div className="text-xs font-bold uppercase tracking-widest">New Fuel Deal</div>
+              <div className="text-xs font-bold uppercase tracking-widest">{editingDealId ? 'Edit Fuel Deal' : 'New Fuel Deal'}</div>
             </div>
             <div className="p-4 space-y-3">
               {/* Section: Vendor */}
@@ -694,25 +737,31 @@ export default function FuelManagement() {
                   </select>
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-4 gap-3">
                 <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Rate (per unit)</label>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Rate (₹/MT)</label>
                   <input type="number" value={dealForm.rate || ''} onChange={e => setDealForm({ ...dealForm, rate: parseFloat(e.target.value) || 0 })}
                     className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., 6000" />
                 </div>
-                {(dealForm as Record<string, string>).quantityType === 'FIXED' && (
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Quantity ({fuels.find(f => f.id === dealForm.fuelItemId)?.unit || 'MT'})</label>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Quantity</label>
+                  <div className="flex">
                     <input type="number" value={(dealForm as Record<string, number>).quantity || ''} onChange={e => setDealForm({ ...dealForm, quantity: parseFloat(e.target.value) || 0 } as typeof dealForm)}
-                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., 1000" />
+                      className="w-full border border-slate-300 border-r-0 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., 100" />
+                    <select value={(dealForm as Record<string, string>).quantityUnit || 'MT'} onChange={e => setDealForm({ ...dealForm, quantityUnit: e.target.value } as typeof dealForm)}
+                      className="border border-slate-300 px-1.5 py-1.5 text-[10px] bg-slate-50 text-slate-600 focus:outline-none" style={{ minWidth: '62px' }}>
+                      <option value="MT">MT</option>
+                      <option value="TRUCKS">Trucks</option>
+                    </select>
                   </div>
-                )}
+                </div>
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Payment Terms</label>
                   <select value={(dealForm as Record<string, string>).paymentTerms || 'NET15'} onChange={e => setDealForm({ ...dealForm, paymentTerms: e.target.value } as typeof dealForm)}
                     className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
                     <option value="ADVANCE">Advance</option>
                     <option value="COD">Cash on Delivery</option>
+                    <option value="NET2">Net 2 Days</option>
                     <option value="NET7">Net 7 Days</option>
                     <option value="NET10">Net 10 Days</option>
                     <option value="NET15">Net 15 Days</option>
@@ -775,7 +824,7 @@ export default function FuelManagement() {
             </div>
             <div className="border-t border-slate-200 px-4 py-3 flex justify-end gap-2">
               <button onClick={() => setShowDealModal(false)} className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Cancel</button>
-              <button onClick={createDeal} disabled={saving} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">{saving ? 'Creating...' : 'Create Deal'}</button>
+              <button onClick={createDeal} disabled={saving} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">{saving ? 'Saving...' : (editingDealId ? 'Update Deal' : 'Create Deal')}</button>
             </div>
           </div>
         </div>

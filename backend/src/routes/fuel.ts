@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError } from '../shared/errors';
 import { z } from 'zod';
@@ -27,7 +27,7 @@ const fuelMasterSchema = z.object({
 });
 
 // GET /master — list all fuel items
-router.get('/master', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get('/master', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const items = await prisma.inventoryItem.findMany({
     where: { category: 'FUEL', isActive: true },
     take: 100,
@@ -45,7 +45,7 @@ router.get('/master', asyncHandler(async (req: AuthRequest, res: Response) => {
 }));
 
 // POST /master — create fuel item
-router.post('/master', validate(fuelMasterSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/master', authenticate, validate(fuelMasterSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const b = req.body;
 
   // Auto-generate code if not provided: FUEL-001, FUEL-002, etc.
@@ -76,7 +76,7 @@ router.post('/master', validate(fuelMasterSchema), asyncHandler(async (req: Auth
 }));
 
 // PUT /master/:id — update fuel item
-router.put('/master/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.put('/master/:id', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const item = await prisma.inventoryItem.findUnique({ where: { id: req.params.id } });
   if (!item) throw new NotFoundError('Fuel item', req.params.id);
 
@@ -102,7 +102,7 @@ router.put('/master/:id', asyncHandler(async (req: AuthRequest, res: Response) =
 }));
 
 // GET /warehouses — for location dropdown
-router.get('/warehouses', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get('/warehouses', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const warehouses = await prisma.warehouse.findMany({
     where: { isActive: true },
     take: 50,
@@ -113,7 +113,7 @@ router.get('/warehouses', asyncHandler(async (req: AuthRequest, res: Response) =
 }));
 
 // DELETE /master/:id — soft delete
-router.delete('/master/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete('/master/:id', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   await prisma.inventoryItem.update({
     where: { id: req.params.id },
     data: { isActive: false },
@@ -127,7 +127,7 @@ router.delete('/master/:id', asyncHandler(async (req: AuthRequest, res: Response
 // ==========================================================================
 
 // GET /consumption?date=YYYY-MM-DD
-router.get('/consumption', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get('/consumption', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const dateStr = req.query.date as string;
   const date = dateStr ? new Date(dateStr) : new Date();
   // Normalize to start of day
@@ -209,7 +209,7 @@ router.get('/consumption', asyncHandler(async (req: AuthRequest, res: Response) 
 }));
 
 // POST /consumption — save daily entries (upsert all rows)
-router.post('/consumption', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/consumption', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const { date: dateStr, rows } = req.body;
   if (!dateStr || !Array.isArray(rows)) {
     return res.status(400).json({ error: 'date and rows[] required' });
@@ -269,7 +269,7 @@ router.post('/consumption', asyncHandler(async (req: AuthRequest, res: Response)
 //  SUMMARY — KPIs
 // ==========================================================================
 
-router.get('/summary', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get('/summary', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const dateStr = req.query.date as string;
   const date = dateStr ? new Date(dateStr) : new Date();
   date.setHours(0, 0, 0, 0);
@@ -313,7 +313,8 @@ const openDealSchema = z.object({
   fuelItemId: z.string().min(1),
   rate: z.number().min(0),
   quantityType: z.string().optional().default('OPEN'),  // OPEN or FIXED
-  quantity: z.number().optional(),                       // only for FIXED
+  quantity: z.number().optional(),                       // qty in MT or trucks
+  quantityUnit: z.string().optional().default('MT'),     // MT or TRUCKS
   paymentTerms: z.string().optional(),
   origin: z.string().optional(),
   deliveryPoint: z.string().optional(),
@@ -323,7 +324,7 @@ const openDealSchema = z.object({
 });
 
 // GET /deals — list fuel deals (both open and fixed)
-router.get('/deals', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const deals = await prisma.purchaseOrder.findMany({
     where: {
       dealType: { in: ['OPEN', 'STANDARD'] },
@@ -390,7 +391,7 @@ router.get('/deals', asyncHandler(async (req: AuthRequest, res: Response) => {
 }));
 
 // POST /deals — create a new open deal
-router.post('/deals', validate(openDealSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/deals', authenticate, validate(openDealSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const b = req.body;
 
   // Resolve vendor — use existing ID or auto-create from name
@@ -437,8 +438,9 @@ router.post('/deals', validate(openDealSchema), asyncHandler(async (req: AuthReq
   if (!fuelItem) return res.status(404).json({ error: 'Fuel item not found' });
 
   const isOpen = b.quantityType !== 'FIXED';
+  const isTrucks = b.quantityUnit === 'TRUCKS';
   const qty = isOpen ? 999999 : (b.quantity || 0);
-  const creditDaysMap: Record<string, number> = { ADVANCE: 0, COD: 0, NET7: 7, NET10: 10, NET15: 15, NET30: 30 };
+  const creditDaysMap: Record<string, number> = { ADVANCE: 0, COD: 0, NET2: 2, NET7: 7, NET10: 10, NET15: 15, NET30: 30 };
   const creditDays = creditDaysMap[b.paymentTerms || 'NET15'] ?? 15;
 
   // Build remarks with delivery details
@@ -447,6 +449,7 @@ router.post('/deals', validate(openDealSchema), asyncHandler(async (req: AuthReq
   if (b.deliveryPoint) remarkParts.push(`Delivery: ${b.deliveryPoint}`);
   if (b.transportBy) remarkParts.push(`Transport: ${b.transportBy}`);
   if (b.deliverySchedule) remarkParts.push(`Schedule: ${b.deliverySchedule}`);
+  if (isTrucks && b.quantity) remarkParts.push(`Qty: ${b.quantity} trucks`);
 
   const po = await prisma.purchaseOrder.create({
     data: {
@@ -483,13 +486,13 @@ router.post('/deals', validate(openDealSchema), asyncHandler(async (req: AuthReq
   res.status(201).json(po);
 }));
 
-// PUT /deals/:id — update rate or close deal
-router.put('/deals/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
+// PUT /deals/:id — update rate, remarks, or close deal
+router.put('/deals/:id', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const deal = await prisma.purchaseOrder.findUnique({
     where: { id: req.params.id },
     include: { lines: true },
   });
-  if (!deal || deal.dealType !== 'OPEN') return res.status(404).json({ error: 'Open deal not found' });
+  if (!deal || !['OPEN', 'STANDARD'].includes(deal.dealType)) return res.status(404).json({ error: 'Deal not found' });
 
   const b = req.body;
 
@@ -501,19 +504,36 @@ router.put('/deals/:id', asyncHandler(async (req: AuthRequest, res: Response) =>
     });
   }
 
-  // Update status (e.g., close the deal)
-  if (b.status) {
-    await prisma.purchaseOrder.update({
-      where: { id: req.params.id },
-      data: { status: b.status, remarks: b.remarks || deal.remarks },
-    });
+  // Update PO fields (status, remarks, payment terms)
+  const poUpdate: Record<string, unknown> = {};
+  if (b.status) poUpdate.status = b.status;
+  if (b.remarks !== undefined) poUpdate.remarks = b.remarks;
+  if (b.paymentTerms) poUpdate.paymentTerms = b.paymentTerms;
+  if (Object.keys(poUpdate).length > 0) {
+    await prisma.purchaseOrder.update({ where: { id: req.params.id }, data: poUpdate });
   }
 
   res.json({ ok: true });
 }));
 
+// DELETE /deals/:id — delete a deal (only if no GRNs received)
+router.delete('/deals/:id', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const deal = await prisma.purchaseOrder.findUnique({
+    where: { id: req.params.id },
+    include: { grns: { select: { id: true }, take: 1 }, lines: { select: { id: true } } },
+  });
+  if (!deal) return res.status(404).json({ error: 'Deal not found' });
+  if (deal.grns.length > 0) return res.status(400).json({ error: 'Cannot delete — trucks already received against this deal' });
+
+  await prisma.$transaction([
+    prisma.pOLine.deleteMany({ where: { poId: deal.id } }),
+    prisma.purchaseOrder.delete({ where: { id: deal.id } }),
+  ]);
+  res.json({ ok: true });
+}));
+
 // GET /deals/:id/trucks — all trucks/GRNs for this deal
-router.get('/deals/:id/trucks', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get('/deals/:id/trucks', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const grns = await prisma.goodsReceipt.findMany({
     where: { poId: req.params.id },
     take: 500,
@@ -540,7 +560,7 @@ const fuelPaymentSchema = z.object({
 });
 
 // POST /deals/:id/payment — record payment against a deal
-router.post('/deals/:id/payment', validate(fuelPaymentSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/deals/:id/payment', authenticate, validate(fuelPaymentSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const b = req.body;
   const dealId = req.params.id;
 
@@ -569,7 +589,7 @@ router.post('/deals/:id/payment', validate(fuelPaymentSchema), asyncHandler(asyn
 }));
 
 // GET /deals/:id/payments — list payments for a deal
-router.get('/deals/:id/payments', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get('/deals/:id/payments', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const deal = await prisma.purchaseOrder.findUnique({
     where: { id: req.params.id },
     select: { vendorId: true, poNo: true },
