@@ -380,7 +380,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         include: { lines: true },
       });
 
-      // Step 2: Update PO lines
+      // Step 2: Update PO lines — guard against over-receive
       for (const line of processedLines) {
         if (line.poLineId) {
           const poLine = await tx.pOLine.findUnique({
@@ -390,11 +390,16 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
             const newReceivedQty = poLine.receivedQty + line.acceptedQty;
             const newPendingQty = poLine.quantity - newReceivedQty;
 
+            // Warn but don't block if over-receiving (common for weighbridge variance)
+            if (newPendingQty < 0) {
+              console.warn(`[GRN] Over-receive on PO line ${line.poLineId}: ordered=${poLine.quantity}, now received=${newReceivedQty}`);
+            }
+
             await tx.pOLine.update({
               where: { id: line.poLineId },
               data: {
                 receivedQty: newReceivedQty,
-                pendingQty: newPendingQty,
+                pendingQty: Math.max(0, newPendingQty), // Clamp to 0, never negative
               },
             });
           }
@@ -426,18 +431,8 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       return { grn, poStatus };
     });
 
-    // Sync to inventory outside transaction (has its own error handling)
-    try {
-      await syncGrnToInventory(
-        grn.id,
-        grn.grnNo,
-        processedLines,
-        b.warehouseId || null,
-        req.user!.id
-      );
-    } catch (_syncErr: unknown) {
-      // Swallow — don't fail the GRN creation
-    }
+    // NOTE: Inventory sync only happens on CONFIRM, not on DRAFT creation.
+    // DRAFT GRNs should not affect stock levels — they're unverified.
 
     // Link gate entry to GRN if gateEntryId provided
     if (b.gateEntryId) {
@@ -493,6 +488,29 @@ router.put('/:id/status', asyncHandler(async (req: AuthRequest, res: Response) =
       include: { lines: true },
     });
 
+    // Sync inventory ONLY when transitioning to CONFIRMED (not on DRAFT create)
+    if (newStatus === 'CONFIRMED') {
+      try {
+        await syncGrnToInventory(
+          updated.id,
+          updated.grnNo,
+          updated.lines.map((l: any) => ({
+            inventoryItemId: l.inventoryItemId || l.materialId,
+            acceptedQty: l.acceptedQty,
+            rate: l.rate,
+            unit: l.unit,
+            batchNo: l.batchNo || '',
+            storageLocation: l.storageLocation || '',
+          })),
+          null,
+          req.user!.id,
+        );
+      } catch (syncErr: unknown) {
+        console.error(`[GRN] Inventory sync failed on confirm for GRN-${updated.grnNo}: ${syncErr}`);
+        // Don't fail the status change — inventory can be reconciled
+      }
+    }
+
     res.json(updated);
 }));
 
@@ -507,40 +525,79 @@ router.delete('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'Can only delete GRN in DRAFT status' });
     }
 
-    // Reverse PO line and material stock updates
-    for (const line of grn.lines) {
-      if (line.poLineId) {
-        const poLine = await prisma.pOLine.findUnique({ where: { id: line.poLineId } });
-        if (poLine) {
-          await prisma.pOLine.update({
-            where: { id: line.poLineId },
-            data: {
-              receivedQty: Math.max(0, poLine.receivedQty - line.acceptedQty),
-              pendingQty: poLine.quantity - Math.max(0, poLine.receivedQty - line.acceptedQty),
-            },
-          });
-        }
-      }
-      // Reverse InventoryItem stock if linked
-      const itemId = line.inventoryItemId || line.materialId;
-      if (itemId) {
-        const invItem = await prisma.inventoryItem.findUnique({ where: { id: itemId }, select: { id: true, currentStock: true, avgCost: true } });
-        if (invItem) {
-          const newStock = Math.max(0, invItem.currentStock - line.acceptedQty);
-          await prisma.inventoryItem.update({
-            where: { id: itemId },
-            data: { currentStock: newStock, totalValue: Math.round(newStock * invItem.avgCost * 100) / 100 },
-          });
-          // Reverse StockLevel
-          const sl = await prisma.stockLevel.findFirst({ where: { itemId } });
-          if (sl) await prisma.stockLevel.update({ where: { id: sl.id }, data: { quantity: Math.max(0, sl.quantity - line.acceptedQty) } });
-          // Delete associated stock movements
-          await prisma.stockMovement.deleteMany({ where: { refType: 'GRN', refId: grn.id, itemId } });
-        }
-      }
-    }
+    // Reverse PO line, inventory, and stock updates atomically
+    await prisma.$transaction(async (tx) => {
+      for (const line of grn.lines) {
+        if (line.poLineId) {
+          const poLine = await tx.pOLine.findUnique({ where: { id: line.poLineId } });
+          if (poLine) {
+            const newReceivedQty = Math.max(0, poLine.receivedQty - line.acceptedQty);
+            await tx.pOLine.update({
+              where: { id: line.poLineId },
+              data: {
+                receivedQty: newReceivedQty,
+                pendingQty: poLine.quantity - newReceivedQty,
+              },
+            });
 
-    await prisma.goodsReceipt.delete({ where: { id: req.params.id } });
+            // Reset PO status if we reversed received qty
+            const allLines = await tx.pOLine.findMany({ where: { poId: grn.poId! } });
+            const anyReceived = allLines.some((l: any) => l.receivedQty > 0 || (l.id === line.poLineId && newReceivedQty > 0));
+            if (!anyReceived) {
+              await tx.purchaseOrder.update({
+                where: { id: grn.poId! },
+                data: { status: 'APPROVED' },
+              });
+            } else {
+              await tx.purchaseOrder.update({
+                where: { id: grn.poId! },
+                data: { status: 'PARTIAL_RECEIVED' },
+              });
+            }
+          }
+        }
+
+        // Reverse InventoryItem stock if linked (only if GRN was CONFIRMED — DRAFT never synced)
+        // For DRAFT GRNs, inventory was never touched, so nothing to reverse.
+        // We still delete stock movements just in case (defensive).
+        const itemId = line.inventoryItemId || line.materialId;
+        if (itemId) {
+          // Delete GRN-related stock movements
+          const deletedMovements = await tx.stockMovement.findMany({
+            where: { refType: 'GRN', refId: grn.id, itemId },
+            select: { id: true, quantity: true, direction: true },
+          });
+
+          if (deletedMovements.length > 0) {
+            // Reverse the stock effect of each movement
+            for (const mv of deletedMovements) {
+              const reverseQty = mv.direction === 'IN' ? -mv.quantity : mv.quantity;
+              await tx.inventoryItem.update({
+                where: { id: itemId },
+                data: { currentStock: { increment: reverseQty } },
+              });
+              const sl = await tx.stockLevel.findFirst({ where: { itemId } });
+              if (sl) await tx.stockLevel.update({ where: { id: sl.id }, data: { quantity: { increment: reverseQty } } });
+            }
+
+            // Recalculate totalValue
+            const updatedItem = await tx.inventoryItem.findUnique({ where: { id: itemId }, select: { currentStock: true, avgCost: true } });
+            if (updatedItem) {
+              const safeStock = Math.max(0, updatedItem.currentStock);
+              await tx.inventoryItem.update({
+                where: { id: itemId },
+                data: { currentStock: safeStock, totalValue: Math.round(safeStock * updatedItem.avgCost * 100) / 100 },
+              });
+            }
+
+            await tx.stockMovement.deleteMany({ where: { refType: 'GRN', refId: grn.id, itemId } });
+          }
+        }
+      }
+
+      await tx.goodsReceipt.delete({ where: { id: req.params.id } });
+    });
+
     res.json({ ok: true });
 }));
 

@@ -318,7 +318,7 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
         const lineTotal = taxableAmount + totalGst;
 
         return {
-          inventoryItemId: itemId, materialId: itemId,
+          inventoryItemId: itemId, materialId: null,
           description: line.description || mat?.name || '',
           hsnCode: line.hsnCode || mat?.hsnCode || '', quantity, unit: line.unit || mat?.unit || 'KG',
           rate, discountPercent, discountAmount, gstPercent, amount, taxableAmount,

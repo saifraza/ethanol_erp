@@ -233,6 +233,8 @@ router.post('/consumption', authenticate, asyncHandler(async (req: AuthRequest, 
     });
     const steamGenerated = consumed * (fuel?.steamRate || 0);
 
+    const finalClosingStock = Math.max(0, closingStock);
+
     const entry = await prisma.fuelConsumption.upsert({
       where: {
         date_fuelItemId: { date, fuelItemId: row.fuelItemId },
@@ -241,7 +243,7 @@ router.post('/consumption', authenticate, asyncHandler(async (req: AuthRequest, 
         openingStock,
         received,
         consumed,
-        closingStock: Math.max(0, closingStock),
+        closingStock: finalClosingStock,
         steamGenerated: Math.round(steamGenerated * 100) / 100,
         remarks: row.remarks || '',
         userId: req.user!.id,
@@ -252,12 +254,23 @@ router.post('/consumption', authenticate, asyncHandler(async (req: AuthRequest, 
         openingStock,
         received,
         consumed,
-        closingStock: Math.max(0, closingStock),
+        closingStock: finalClosingStock,
         steamGenerated: Math.round(steamGenerated * 100) / 100,
         remarks: row.remarks || '',
         userId: req.user!.id,
       },
     });
+
+    // Sync closing stock to master InventoryItem so dashboard/reports stay consistent
+    try {
+      await prisma.inventoryItem.update({
+        where: { id: row.fuelItemId },
+        data: { currentStock: finalClosingStock },
+      });
+    } catch (_e) {
+      // Don't fail the daily entry if inventory sync fails
+    }
+
     results.push(entry);
   }
 
@@ -346,8 +359,8 @@ router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Re
       grns: {
         select: { id: true, grnNo: true, totalQty: true, totalAmount: true, grnDate: true },
         orderBy: { grnDate: 'desc' },
-        take: 5,
       },
+      _count: { select: { grns: true } },
     },
   });
 
@@ -358,10 +371,15 @@ router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Re
     const totalValue = totalReceived * (line?.rate || 0);
 
     // Get total payments: direct VendorPayments referencing this deal + invoice payments
+    // Use exact PO number match with word boundary to avoid cross-contamination
+    // (e.g. PO-1 matching PO-10, PO-100)
     const directPayments = await prisma.vendorPayment.findMany({
       where: {
         vendorId: deal.vendor.id,
-        remarks: { contains: `PO-${deal.poNo}` },
+        OR: [
+          { remarks: { contains: `PO-${deal.poNo} ` } },          // "PO-123 " with trailing space
+          { remarks: { endsWith: `PO-${deal.poNo}` } },           // "PO-123" at end of string
+        ],
       },
       select: { amount: true },
     });
@@ -383,7 +401,7 @@ router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Re
       totalValue: Math.round(totalValue * 100) / 100,
       totalPaid: Math.round(totalPaid * 100) / 100,
       outstanding: Math.round((totalValue - totalPaid) * 100) / 100,
-      truckCount: deal.grns.length,
+      truckCount: (deal as any)._count?.grns ?? deal.grns.length,
     };
   }));
 
@@ -439,7 +457,10 @@ router.post('/deals', authenticate, validate(openDealSchema), asyncHandler(async
 
   const isOpen = b.quantityType !== 'FIXED';
   const isTrucks = b.quantityUnit === 'TRUCKS';
-  const qty = isOpen ? 999999 : (b.quantity || 0);
+  // For TRUCKS deals: store the truck count in remarks (PO line qty stays in MT/KG for GRN compatibility)
+  // An open deal uses 999999 as "unlimited"; a fixed TRUCKS deal also uses 999999 qty
+  // because the limit is on truck count, not weight (tracked via grns._count)
+  const qty = isOpen ? 999999 : (isTrucks ? 999999 : (b.quantity || 0));
   const creditDaysMap: Record<string, number> = { ADVANCE: 0, COD: 0, NET2: 2, NET7: 7, NET10: 10, NET15: 15, NET30: 30 };
   const creditDays = creditDaysMap[b.paymentTerms || 'NET15'] ?? 15;
 
@@ -449,7 +470,7 @@ router.post('/deals', authenticate, validate(openDealSchema), asyncHandler(async
   if (b.deliveryPoint) remarkParts.push(`Delivery: ${b.deliveryPoint}`);
   if (b.transportBy) remarkParts.push(`Transport: ${b.transportBy}`);
   if (b.deliverySchedule) remarkParts.push(`Schedule: ${b.deliverySchedule}`);
-  if (isTrucks && b.quantity) remarkParts.push(`Qty: ${b.quantity} trucks`);
+  if (isTrucks && b.quantity) remarkParts.push(`FIXED_TRUCKS:${b.quantity}`);
 
   const po = await prisma.purchaseOrder.create({
     data: {
