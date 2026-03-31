@@ -76,10 +76,11 @@
         .btn-secondary { padding: 8px 16px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; border: 1px solid #cbd5e1; background: #f8fafc; color: #64748b; }
 
         /* Scan box */
-        .scan-box { background: #fffbeb; border: 2px solid #f59e0b; padding: 16px; margin: 12px 16px; text-align: center; }
-        .scan-box .scan-label { font-size: 10px; font-weight: 700; color: #92400e; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
-        .scan-box input { width: 100%; max-width: 300px; padding: 10px; font-size: 20px; text-align: center; font-family: 'Courier New', monospace; border: 2px solid #cbd5e1; }
-        .scan-box input:focus { border-color: #f59e0b; outline: none; }
+        .scan-box { background: #0f172a; border: 2px solid #334155; padding: 16px; margin: 12px 16px; text-align: center; }
+        .scan-box .scan-label { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
+        .scan-box input { width: 100%; max-width: 400px; padding: 12px; font-size: 24px; text-align: center; font-family: 'Courier New', monospace; border: 2px solid #475569; background: #1e293b; color: #22c55e; }
+        .scan-box input:focus { border-color: #22c55e; outline: none; }
+        .scan-box input::placeholder { color: #475569; }
 
         /* Scanned entry card */
         .scanned-card { background: white; border: 1px solid #cbd5e1; margin: 12px 16px; }
@@ -257,11 +258,11 @@
     <div id="scannedEntry"></div>
 
     <!-- Pending lists -->
-    <div class="section-header">Waiting for Gross Weight <span style="opacity:0.5;">(<span id="gateCount">0</span>)</span></div>
+    <div class="section-header">Waiting for 1st Weight <span style="opacity:0.5;">(<span id="gateCount">0</span>)</span></div>
     <div id="gateList"><div class="empty">No gate entries pending</div></div>
 
-    <div class="section-header">Waiting for Tare Weight <span style="opacity:0.5;">(<span id="grossCount">0</span>)</span></div>
-    <div id="grossList"><div class="empty">No trucks waiting for tare</div></div>
+    <div class="section-header">Waiting for 2nd Weight <span style="opacity:0.5;">(<span id="grossCount">0</span>)</span></div>
+    <div id="grossList"><div class="empty">No trucks waiting</div></div>
 </div>
 
 <!-- ============ TAB 3: TODAY ============ -->
@@ -316,6 +317,9 @@
             if (!data.connected) { d.className='weight-panel disconnected'; l.textContent='SCALE DISCONNECTED'; dot.className='status-dot red'; }
             else if (data.stable) { d.className='weight-panel'; l.textContent='STABLE'; dot.className='status-dot green'; }
             else { d.className='weight-panel unstable'; l.textContent='READING...'; dot.className='status-dot yellow'; }
+            // Also update live weight inside scanned card if visible
+            const scanLive = document.getElementById('scanLiveWeight');
+            if (scanLive) { scanLive.textContent = Math.round(data.weight).toLocaleString() + ' KG'; }
         }).catch(() => { document.getElementById('scaleDot').className='status-dot red'; });
     }
 
@@ -370,18 +374,28 @@
 
     function showScannedEntry(w) {
         const isGate = w.status === 'GATE_ENTRY';
-        const isGross = w.status === 'GROSS_DONE';
+        const isFirstDone = w.status === 'FIRST_DONE' || w.status === 'GROSS_DONE';
         const isDone = w.status === 'COMPLETE';
+        const isIn = w.direction === 'IN';
 
-        let statusBadge = isGate ? '<span class="sc-status gate">Awaiting Gross</span>'
-            : isGross ? '<span class="sc-status gross">Awaiting Tare</span>'
+        // Direction-aware labels
+        const firstLabel = isIn ? 'Gross Weight (Loaded)' : 'Tare Weight (Empty)';
+        const secondLabel = isIn ? 'Tare Weight (Empty)' : 'Gross Weight (Loaded)';
+        const firstBtnLabel = isIn ? 'Capture Gross Weight' : 'Capture Tare Weight';
+        const secondBtnLabel = isIn ? 'Capture Tare Weight' : 'Capture Gross Weight';
+        const awaitFirst = isIn ? 'Awaiting Gross' : 'Awaiting Tare';
+        const awaitSecond = isIn ? 'Awaiting Tare' : 'Awaiting Gross';
+
+        let statusBadge = isGate ? `<span class="sc-status gate">${awaitFirst}</span>`
+            : isFirstDone ? `<span class="sc-status gross">${awaitSecond}</span>`
             : '<span class="badge badge-done">Complete</span>';
 
         let weightSection = '';
-        if (isGross) {
+        if (isFirstDone) {
+            const firstWt = isIn ? w.weight_gross : w.weight_tare;
             weightSection = `<div class="sc-weight">
-                <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;">Gross Weight</div>
-                <div class="big">${fmtNum(w.weight_gross)} KG</div>
+                <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;">${firstLabel}</div>
+                <div class="big">${fmtNum(firstWt)} KG</div>
             </div>`;
         }
         if (isDone) {
@@ -393,11 +407,22 @@
         }
 
         let actions = '';
+        let liveWeightBox = '';
         if (isGate) {
-            actions = `<button class="btn-primary green" style="flex:1;" onclick="captureGross('${w.id}')">Capture Gross Weight</button>
+            liveWeightBox = `<div style="background:#0f172a; text-align:center; padding:12px; margin:0 -1px;">
+                <div style="font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.1em;">Live Scale Reading</div>
+                <div id="scanLiveWeight" style="font-size:36px; font-weight:700; font-family:'Courier New',monospace; color:#22c55e;">${Math.round(currentWeight).toLocaleString()} KG</div>
+                <div style="font-size:9px; color:#475569;">This weight will be saved as ${firstLabel.toUpperCase()} when you press the button</div>
+            </div>`;
+            actions = `<button class="btn-primary green" style="flex:1;" onclick="captureGross('${w.id}')">${firstBtnLabel}</button>
                        <button class="btn-secondary" onclick="showManual('gross','${w.id}')">Manual</button>`;
-        } else if (isGross) {
-            actions = `<button class="btn-primary amber" style="flex:1;" onclick="captureTare('${w.id}')">Capture Tare Weight</button>
+        } else if (isFirstDone) {
+            liveWeightBox = `<div style="background:#0f172a; text-align:center; padding:12px; margin:0 -1px;">
+                <div style="font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.1em;">Live Scale Reading</div>
+                <div id="scanLiveWeight" style="font-size:36px; font-weight:700; font-family:'Courier New',monospace; color:#eab308;">${Math.round(currentWeight).toLocaleString()} KG</div>
+                <div style="font-size:9px; color:#475569;">This weight will be saved as ${secondLabel.toUpperCase()} when you press the button</div>
+            </div>`;
+            actions = `<button class="btn-primary amber" style="flex:1;" onclick="captureTare('${w.id}')">${secondBtnLabel}</button>
                        <button class="btn-secondary" onclick="showManual('tare','${w.id}')">Manual</button>`;
         } else {
             actions = `<a class="action-link" href="/slip/${w.id}" target="_blank">Print Final Slip</a>`;
@@ -418,6 +443,7 @@
                     ${w.transporter ? `<div class="sc-row"><span class="lbl">Transporter</span><span class="val">${w.transporter}</span></div>` : ''}
                 </div>
                 ${weightSection}
+                ${liveWeightBox}
                 <div class="sc-actions">${actions}</div>
             </div>`;
     }
@@ -491,20 +517,20 @@
             updatePendingBadge();
         });
 
-        // Gross done (waiting for tare)
+        // First done (waiting for second weight)
         fetch('/api/weighments/gross-done').then(r => r.json()).then(items => {
             document.getElementById('grossCount').textContent = items.length;
             const c = document.getElementById('grossList');
-            if (!items.length) { c.innerHTML = '<div class="empty">No trucks waiting for tare</div>'; }
+            if (!items.length) { c.innerHTML = '<div class="empty">No trucks waiting</div>'; }
             else {
-                c.innerHTML = '<table class="data-table"><thead><tr><th>#</th><th>Vehicle</th><th>Dir</th><th>Supplier</th><th class="right">Gross (KG)</th><th></th></tr></thead><tbody>' +
+                c.innerHTML = '<table class="data-table"><thead><tr><th>#</th><th>Vehicle</th><th>Dir</th><th>Supplier</th><th class="right">1st Wt (KG)</th><th></th></tr></thead><tbody>' +
                     items.map(w => `<tr>
                         <td class="mono">${w.ticket_no}</td>
                         <td class="bold">${w.vehicle_no}</td>
                         <td><span class="badge badge-${w.direction.toLowerCase()}">${w.direction}</span></td>
                         <td>${w.supplier_name || '-'}</td>
-                        <td class="right mono bold">${fmtNum(w.weight_gross)}</td>
-                        <td><a class="action-link" onclick="captureTare('${w.id}')">Tare</a></td>
+                        <td class="right mono bold">${fmtNum(w.weight_first)}</td>
+                        <td><a class="action-link" onclick="captureTare('${w.id}')">${w.direction === 'IN' ? 'Tare' : 'Gross'}</a></td>
                     </tr>`).join('') + '</tbody></table>';
             }
             updatePendingBadge();
@@ -576,7 +602,7 @@
     }
 
     // Init
-    setInterval(pollWeight, 500);
+    setInterval(pollWeight, 200);
     setInterval(refreshLists, 5000);
     pollWeight(); refreshLists(); loadDropdowns();
     document.getElementById('manualWeight').addEventListener('keypress', e => { if (e.key === 'Enter') submitManualWeight(); });

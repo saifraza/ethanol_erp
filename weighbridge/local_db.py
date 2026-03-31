@@ -61,6 +61,21 @@ def init_db():
             shift TEXT,
             operator_name TEXT,
 
+            -- ERP integration
+            purchase_type TEXT DEFAULT 'PO',  -- PO, SPOT, OUTBOUND
+            po_id TEXT,
+            po_line_id TEXT,
+
+            -- Spot purchase fields
+            seller_phone TEXT,
+            seller_village TEXT,
+            seller_aadhaar TEXT,
+            rate REAL,
+            deductions REAL DEFAULT 0,
+            deduction_reason TEXT,
+            payment_mode TEXT DEFAULT 'CASH',
+            payment_ref TEXT,
+
             -- Weights (always in KG)
             weight_first REAL,
             weight_second REAL,
@@ -69,7 +84,7 @@ def init_db():
             weight_net REAL,
             weight_source TEXT DEFAULT 'SERIAL',
 
-            -- Status: GATE_ENTRY → GROSS_DONE → COMPLETE
+            -- Status: GATE_ENTRY → FIRST_DONE → COMPLETE
             status TEXT DEFAULT 'GATE_ENTRY',
 
             moisture REAL,
@@ -85,6 +100,31 @@ def init_db():
             synced INTEGER DEFAULT 0,
             synced_at TEXT,
             cloud_id TEXT
+        );
+
+        -- PO cache (pulled from cloud ERP)
+        CREATE TABLE IF NOT EXISTS po_cache (
+            id TEXT PRIMARY KEY,
+            po_no INTEGER,
+            vendor_id TEXT,
+            vendor_name TEXT,
+            status TEXT,
+            lines_json TEXT,  -- JSON array of PO lines
+            synced_at TEXT
+        );
+
+        -- Customer cache (for outbound)
+        CREATE TABLE IF NOT EXISTS customers (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            short_name TEXT,
+            synced_at TEXT
+        );
+
+        -- Vehicle history (for auto-complete)
+        CREATE TABLE IF NOT EXISTS vehicle_history (
+            vehicle_no TEXT PRIMARY KEY,
+            last_seen TEXT
         );
 
         CREATE TABLE IF NOT EXISTS sync_queue (
@@ -132,14 +172,20 @@ def create_gate_entry(vehicle_no: str, direction: str, supplier_name: str = "",
                       material: str = "", po_number: str = "",
                       transporter: str = "", driver_mobile: str = "",
                       vehicle_type: str = "", bags: int = 0,
-                      remarks: str = "", operator_name: str = "") -> dict:
+                      remarks: str = "", operator_name: str = "",
+                      purchase_type: str = "PO", po_id: str = "",
+                      po_line_id: str = "",
+                      seller_phone: str = "", seller_village: str = "",
+                      seller_aadhaar: str = "", rate: float = 0.0,
+                      deductions: float = 0.0, deduction_reason: str = "",
+                      payment_mode: str = "CASH", payment_ref: str = "") -> dict:
     """Step 1: Create gate entry (no weight yet). Returns weighment with QR-scannable ID."""
     conn = _get_conn()
     wid = str(uuid.uuid4())
     ticket_no = _next_ticket_no()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # Determine shift (First: 6AM-2PM, Second: 2PM-10PM, Third: 10PM-6AM)
+    # Determine shift
     hour = datetime.now().hour
     if 6 <= hour < 14:
         shift = "First Shift"
@@ -148,65 +194,104 @@ def create_gate_entry(vehicle_no: str, direction: str, supplier_name: str = "",
     else:
         shift = "Third Shift"
 
+    # Track vehicle for auto-complete
+    conn.execute("""
+        INSERT OR REPLACE INTO vehicle_history (vehicle_no, last_seen) VALUES (?, ?)
+    """, (vehicle_no.upper().strip(), now))
+
     conn.execute("""
         INSERT INTO weighments
             (id, ticket_no, direction, vehicle_no, supplier_name, material,
              po_number, transporter, driver_mobile, vehicle_type, shift,
-             operator_name, status, bags, remarks, gate_entry_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'GATE_ENTRY', ?, ?, ?)
+             operator_name, purchase_type, po_id, po_line_id,
+             seller_phone, seller_village, seller_aadhaar,
+             rate, deductions, deduction_reason, payment_mode, payment_ref,
+             status, bags, remarks, gate_entry_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'GATE_ENTRY', ?, ?, ?)
     """, (wid, ticket_no, direction.upper(), vehicle_no.upper().strip(),
           supplier_name, material, po_number, transporter, driver_mobile,
-          vehicle_type, shift, operator_name, bags, remarks, now))
+          vehicle_type, shift, operator_name, purchase_type, po_id, po_line_id,
+          seller_phone, seller_village, seller_aadhaar,
+          rate, deductions, deduction_reason, payment_mode, payment_ref,
+          bags, remarks, now))
     conn.commit()
 
-    log.info("Gate entry created: ticket=%d vehicle=%s", ticket_no, vehicle_no)
+    log.info("Gate entry created: ticket=%d vehicle=%s type=%s", ticket_no, vehicle_no, purchase_type)
     return get_weighment(wid)
 
 
-def capture_gross(weighment_id: str, weight: float,
-                  weight_source: str = "SERIAL") -> dict:
-    """Step 2: Capture gross weight (truck + load)."""
+def capture_first_weight(weighment_id: str, weight: float,
+                         weight_source: str = "SERIAL") -> dict:
+    """Step 2: Capture first weight.
+    INBOUND: first weight = gross (heavy truck with load)
+    OUTBOUND: first weight = tare (empty truck before loading)
+    """
     conn = _get_conn()
     row = conn.execute("SELECT * FROM weighments WHERE id = ?", (weighment_id,)).fetchone()
     if not row:
         raise ValueError(f"Weighment {weighment_id} not found")
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    direction = row["direction"]
 
-    conn.execute("""
-        UPDATE weighments SET
-            weight_first = ?, weight_gross = ?, weight_source = ?,
-            status = 'GROSS_DONE', first_weight_at = ?
-        WHERE id = ?
-    """, (weight, weight, weight_source, now, weighment_id))
+    if direction == "IN":
+        # Inbound: first weight is gross (loaded truck)
+        conn.execute("""
+            UPDATE weighments SET
+                weight_first = ?, weight_gross = ?, weight_source = ?,
+                status = 'FIRST_DONE', first_weight_at = ?
+            WHERE id = ?
+        """, (weight, weight, weight_source, now, weighment_id))
+        log.info("First weight (GROSS) captured: ticket=%d weight=%.0f kg", row["ticket_no"], weight)
+    else:
+        # Outbound: first weight is tare (empty truck)
+        conn.execute("""
+            UPDATE weighments SET
+                weight_first = ?, weight_tare = ?, weight_source = ?,
+                status = 'FIRST_DONE', first_weight_at = ?
+            WHERE id = ?
+        """, (weight, weight, weight_source, now, weighment_id))
+        log.info("First weight (TARE) captured: ticket=%d weight=%.0f kg", row["ticket_no"], weight)
+
     conn.commit()
-
-    log.info("Gross captured: ticket=%d gross=%.0f kg", row["ticket_no"], weight)
     return get_weighment(weighment_id)
 
 
-def capture_tare(weighment_id: str, weight: float,
-                 weight_source: str = "SERIAL") -> dict:
-    """Step 3: Capture tare weight (empty truck). Calculate net. Enqueue for sync."""
+def capture_second_weight(weighment_id: str, weight: float,
+                          weight_source: str = "SERIAL") -> dict:
+    """Step 3: Capture second weight. Calculate net. Enqueue for sync.
+    INBOUND: second weight = tare (empty truck after unloading)
+    OUTBOUND: second weight = gross (loaded truck after loading)
+    """
     conn = _get_conn()
     row = conn.execute("SELECT * FROM weighments WHERE id = ?", (weighment_id,)).fetchone()
     if not row:
         raise ValueError(f"Weighment {weighment_id} not found")
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    gross = row["weight_gross"]
-    tare = weight
+    direction = row["direction"]
+    first = row["weight_first"]
+
+    if direction == "IN":
+        # Inbound: second weight is tare, first was gross
+        gross = first
+        tare = weight
+    else:
+        # Outbound: second weight is gross, first was tare
+        gross = weight
+        tare = first
+
     net = gross - tare
 
     if net < 0:
-        raise ValueError(f"Tare ({tare:.0f}) cannot be greater than gross ({gross:.0f})")
+        raise ValueError(f"Net weight cannot be negative (Gross: {gross:.0f}, Tare: {tare:.0f})")
 
     conn.execute("""
         UPDATE weighments SET
-            weight_second = ?, weight_tare = ?, weight_net = ?,
+            weight_second = ?, weight_gross = ?, weight_tare = ?, weight_net = ?,
             status = 'COMPLETE', second_weight_at = ?
         WHERE id = ?
-    """, (weight, tare, net, now, weighment_id))
+    """, (weight, gross, tare, net, now, weighment_id))
 
     # Enqueue for cloud sync
     w = get_weighment(weighment_id)
@@ -220,19 +305,23 @@ def capture_tare(weighment_id: str, weight: float,
     return get_weighment(weighment_id)
 
 
-# Backward compat aliases
+# Aliases for backward compat and clearer naming
+capture_gross = capture_first_weight
+capture_tare = capture_second_weight
+
+
 def create_weighment(vehicle_no, direction, supplier_name="", material="",
                      weight=0.0, weight_source="SERIAL", bags=0, remarks=""):
-    """Legacy: create gate entry + capture gross in one step."""
+    """Legacy: create gate entry + capture first weight in one step."""
     w = create_gate_entry(vehicle_no, direction, supplier_name, material, bags=bags, remarks=remarks)
     if weight > 0:
-        w = capture_gross(w["id"], weight, weight_source)
+        w = capture_first_weight(w["id"], weight, weight_source)
     return w
 
 
 def complete_weighment(weighment_id, weight, weight_source="SERIAL"):
-    """Legacy: capture tare weight."""
-    return capture_tare(weighment_id, weight, weight_source)
+    """Legacy: capture second weight."""
+    return capture_second_weight(weighment_id, weight, weight_source)
 
 
 def get_weighment(weighment_id: str) -> dict | None:
@@ -250,17 +339,17 @@ def get_weighment_by_ticket(ticket_no: int) -> dict | None:
 
 
 def get_pending_weighments() -> list[dict]:
-    """Get weighments waiting for gross or tare weight."""
+    """Get weighments waiting for first or second weight."""
     conn = _get_conn()
     rows = conn.execute("""
-        SELECT * FROM weighments WHERE status IN ('GATE_ENTRY', 'GROSS_DONE')
+        SELECT * FROM weighments WHERE status IN ('GATE_ENTRY', 'FIRST_DONE')
         ORDER BY created_at DESC
     """).fetchall()
     return [dict(r) for r in rows]
 
 
 def get_gate_entries() -> list[dict]:
-    """Get gate entries waiting for gross weight."""
+    """Get gate entries waiting for first weight."""
     conn = _get_conn()
     rows = conn.execute("""
         SELECT * FROM weighments WHERE status = 'GATE_ENTRY'
@@ -269,14 +358,18 @@ def get_gate_entries() -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def get_gross_done() -> list[dict]:
-    """Get weighments with gross done, waiting for tare."""
+def get_first_done() -> list[dict]:
+    """Get weighments with first weight done, waiting for second."""
     conn = _get_conn()
     rows = conn.execute("""
-        SELECT * FROM weighments WHERE status = 'GROSS_DONE'
+        SELECT * FROM weighments WHERE status = 'FIRST_DONE'
         ORDER BY created_at DESC
     """).fetchall()
     return [dict(r) for r in rows]
+
+
+# Alias
+get_gross_done = get_first_done
 
 
 def get_todays_weighments() -> list[dict]:
@@ -433,6 +526,121 @@ def get_materials() -> list[dict]:
     conn = _get_conn()
     rows = conn.execute("SELECT * FROM materials ORDER BY name").fetchall()
     return [dict(r) for r in rows]
+
+
+# =========================================================================
+#  PO CACHE (synced from cloud)
+# =========================================================================
+
+def upsert_pos(pos: list[dict]):
+    """Bulk upsert POs from cloud."""
+    conn = _get_conn()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    for po in pos:
+        conn.execute("""
+            INSERT INTO po_cache (id, po_no, vendor_id, vendor_name, status, lines_json, synced_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                vendor_name = excluded.vendor_name, status = excluded.status,
+                lines_json = excluded.lines_json, synced_at = excluded.synced_at
+        """, (po["id"], po.get("po_no", 0), po.get("vendor_id", ""),
+              po.get("vendor_name", ""), po.get("status", ""),
+              json.dumps(po.get("lines", [])), now))
+    conn.commit()
+    log.info("Upserted %d POs from cloud", len(pos))
+
+
+def get_pos(vendor_name: str = "") -> list[dict]:
+    """Get cached POs, optionally filtered by vendor."""
+    conn = _get_conn()
+    if vendor_name:
+        rows = conn.execute("""
+            SELECT * FROM po_cache
+            WHERE vendor_name LIKE ? AND status IN ('APPROVED', 'SENT', 'PARTIAL_RECEIVED')
+            ORDER BY po_no DESC
+        """, (f"%{vendor_name}%",)).fetchall()
+    else:
+        rows = conn.execute("""
+            SELECT * FROM po_cache
+            WHERE status IN ('APPROVED', 'SENT', 'PARTIAL_RECEIVED')
+            ORDER BY po_no DESC
+        """).fetchall()
+    result = []
+    for r in rows:
+        d = dict(r)
+        d["lines"] = json.loads(d.get("lines_json", "[]"))
+        del d["lines_json"]
+        result.append(d)
+    return result
+
+
+def get_po_by_id(po_id: str) -> dict | None:
+    """Get a single cached PO by ID."""
+    conn = _get_conn()
+    row = conn.execute("SELECT * FROM po_cache WHERE id = ?", (po_id,)).fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    d["lines"] = json.loads(d.get("lines_json", "[]"))
+    del d["lines_json"]
+    return d
+
+
+# =========================================================================
+#  CUSTOMERS (synced from cloud, for outbound)
+# =========================================================================
+
+def upsert_customers(customers: list[dict]):
+    """Bulk upsert customers from cloud."""
+    conn = _get_conn()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    for c in customers:
+        conn.execute("""
+            INSERT INTO customers (id, name, short_name, synced_at) VALUES (?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET name = excluded.name, short_name = excluded.short_name,
+                                          synced_at = excluded.synced_at
+        """, (c["id"], c["name"], c.get("short_name", ""), now))
+    conn.commit()
+    log.info("Upserted %d customers from cloud", len(customers))
+
+
+def get_customers() -> list[dict]:
+    """Get all customers (for outbound dropdown)."""
+    conn = _get_conn()
+    rows = conn.execute("SELECT * FROM customers ORDER BY name").fetchall()
+    return [dict(r) for r in rows]
+
+
+# =========================================================================
+#  VEHICLE HISTORY (for auto-complete)
+# =========================================================================
+
+def upsert_vehicles(vehicles: list[str]):
+    """Add vehicle numbers from cloud history."""
+    conn = _get_conn()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    for v in vehicles:
+        conn.execute("""
+            INSERT OR IGNORE INTO vehicle_history (vehicle_no, last_seen) VALUES (?, ?)
+        """, (v, now))
+    conn.commit()
+
+
+def get_vehicle_suggestions(prefix: str = "") -> list[str]:
+    """Get vehicle numbers for auto-complete."""
+    conn = _get_conn()
+    if prefix:
+        rows = conn.execute("""
+            SELECT vehicle_no FROM vehicle_history
+            WHERE vehicle_no LIKE ?
+            ORDER BY last_seen DESC LIMIT 20
+        """, (f"%{prefix.upper()}%",)).fetchall()
+    else:
+        rows = conn.execute("""
+            SELECT vehicle_no FROM vehicle_history
+            ORDER BY last_seen DESC LIMIT 50
+        """).fetchall()
+    return [r["vehicle_no"] for r in rows]
 
 
 # =========================================================================

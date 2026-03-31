@@ -94,6 +94,35 @@ def api_materials():
     return jsonify(db.get_materials())
 
 
+@app.route('/api/pos')
+def api_pos():
+    """Get active POs, optionally filtered by vendor."""
+    vendor = request.args.get('vendor', '')
+    return jsonify(db.get_pos(vendor))
+
+
+@app.route('/api/pos/<po_id>')
+def api_po_detail(po_id):
+    """Get a single PO with lines."""
+    po = db.get_po_by_id(po_id)
+    if not po:
+        return jsonify({"error": "PO not found"}), 404
+    return jsonify(po)
+
+
+@app.route('/api/customers')
+def api_customers():
+    """Get customer list for outbound dropdown."""
+    return jsonify(db.get_customers())
+
+
+@app.route('/api/vehicles')
+def api_vehicles():
+    """Get vehicle suggestions for auto-complete."""
+    prefix = request.args.get('q', '')
+    return jsonify(db.get_vehicle_suggestions(prefix))
+
+
 # =========================================================================
 #  ACTION ENDPOINTS (POST)
 # =========================================================================
@@ -120,6 +149,17 @@ def api_gate_entry():
             bags=int(data.get('bags', 0)),
             remarks=data.get('remarks', ''),
             operator_name=data.get('operator_name', ''),
+            purchase_type=data.get('purchase_type', 'PO'),
+            po_id=data.get('po_id', ''),
+            po_line_id=data.get('po_line_id', ''),
+            seller_phone=data.get('seller_phone', ''),
+            seller_village=data.get('seller_village', ''),
+            seller_aadhaar=data.get('seller_aadhaar', ''),
+            rate=float(data.get('rate', 0)),
+            deductions=float(data.get('deductions', 0)),
+            deduction_reason=data.get('deduction_reason', ''),
+            payment_mode=data.get('payment_mode', 'CASH'),
+            payment_ref=data.get('payment_ref', ''),
         )
         return jsonify(result), 201
     except Exception as e:
@@ -138,11 +178,11 @@ def api_capture_gross(weighment_id):
 
     if weight is None and _weight_reader:
         w, stable, connected = _weight_reader.get_weight()
-        if connected and w > 0:
+        if connected:
             weight = w
             weight_source = 'SERIAL'
 
-    if weight is None or weight <= 0:
+    if weight is None:
         return jsonify({"error": "No weight available. Enter manually or check scale connection."}), 400
 
     try:
@@ -166,11 +206,11 @@ def api_capture_tare(weighment_id):
 
     if weight is None and _weight_reader:
         w, stable, connected = _weight_reader.get_weight()
-        if connected and w > 0:
+        if connected:
             weight = w
             weight_source = 'SERIAL'
 
-    if weight is None or weight <= 0:
+    if weight is None:
         return jsonify({"error": "No weight available. Enter manually or check scale connection."}), 400
 
     try:

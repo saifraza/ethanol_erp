@@ -145,16 +145,23 @@ class SerialReader(WeightReader):
                     self._connect()
 
             except Exception as e:
-                log.error("Serial read error: %s", e)
+                log.error("Serial read error: %s — closing and reconnecting", e)
                 with self._lock:
                     self._connected = False
-                # Wait before retry
-                shutdown_event.wait(5)
+                # Close the broken port completely
+                try:
+                    if self._serial:
+                        self._serial.close()
+                        self._serial = None
+                except Exception:
+                    pass
+                # Wait before reconnect
+                shutdown_event.wait(3)
                 if not shutdown_event.is_set():
                     try:
                         self._connect()
                     except Exception:
-                        pass
+                        shutdown_event.wait(5)  # Backoff on reconnect failure
 
             shutdown_event.wait(WEIGHT_POLL_INTERVAL)
 

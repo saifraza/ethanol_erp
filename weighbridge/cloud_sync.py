@@ -116,21 +116,30 @@ class CloudSync:
     # =====================================================================
 
     def pull_master_data(self):
-        """Pull suppliers and materials from cloud ERP."""
+        """Pull suppliers, materials, POs, customers, vehicles from cloud ERP."""
         data = self._get("/master-data")
         if not data:
             return
 
         suppliers = data.get("suppliers", [])
         materials = data.get("materials", [])
+        pos = data.get("pos", [])
+        customers = data.get("customers", [])
+        vehicles = data.get("vehicles", [])
 
         if suppliers:
             db.upsert_suppliers(suppliers)
         if materials:
             db.upsert_materials(materials)
+        if pos:
+            db.upsert_pos(pos)
+        if customers:
+            db.upsert_customers(customers)
+        if vehicles:
+            db.upsert_vehicles(vehicles)
 
-        log.info("Pulled master data: %d suppliers, %d materials",
-                 len(suppliers), len(materials))
+        log.info("Pulled master data: %d suppliers, %d materials, %d POs, %d customers, %d vehicles",
+                 len(suppliers), len(materials), len(pos), len(customers), len(vehicles))
 
     # =====================================================================
     #  HEARTBEAT — tell cloud we're alive

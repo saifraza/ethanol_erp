@@ -16,14 +16,13 @@ SERIAL_BYTESIZE = 7         # 7 data bits (confirmed live from indicator)
 SERIAL_PARITY = "N"         # No parity
 SERIAL_STOPBITS = 1         # 1 stop bit
 SERIAL_TIMEOUT = 1          # Seconds
-SERIAL_PROTOCOL = "file"    # Read from WtService output (D:\WT\new weight.txt)
-                             # NEVER use "serial" — WtService owns COM1, do not touch it
+SERIAL_PROTOCOL = "serial"  # Direct serial read from COM1 (WtService disabled)
 
 # File-based weight reading (WtService writes weight to this file)
 WEIGHT_FILE_PATH = os.environ.get("WB_WEIGHT_FILE", r"D:\WT\new weight.txt")
 
 # Weight reading settings
-WEIGHT_POLL_INTERVAL = 0.5    # Read serial every 500ms
+WEIGHT_POLL_INTERVAL = 0.1    # Read serial every 100ms (fast response)
 WEIGHT_STABLE_COUNT = 3       # Readings must match N times to be "stable"
 WEIGHT_STABLE_TOLERANCE = 20  # KG — readings within this range = stable
 
