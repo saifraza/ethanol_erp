@@ -307,7 +307,9 @@ router.get('/summary', asyncHandler(async (req: AuthRequest, res: Response) => {
 // ==========================================================================
 
 const openDealSchema = z.object({
-  vendorId: z.string().min(1),
+  vendorId: z.string().optional(),       // existing vendor ID
+  vendorName: z.string().optional(),     // or just a name (auto-creates vendor)
+  vendorPhone: z.string().optional(),
   fuelItemId: z.string().min(1),
   rate: z.number().min(0),
   remarks: z.string().optional(),
@@ -345,15 +347,24 @@ router.get('/deals', asyncHandler(async (req: AuthRequest, res: Response) => {
     const totalReceived = line?.receivedQty || 0;
     const totalValue = totalReceived * (line?.rate || 0);
 
-    // Get total payments made to this vendor against this deal's GRNs
+    // Get total payments: direct VendorPayments referencing this deal + invoice payments
+    const directPayments = await prisma.vendorPayment.findMany({
+      where: {
+        vendorId: deal.vendor.id,
+        remarks: { contains: `PO-${deal.poNo}` },
+      },
+      select: { amount: true },
+    });
+    let totalPaid = directPayments.reduce((s, p) => s + p.amount, 0);
+
+    // Also check invoice-based payments on this deal's GRNs
     const grnIds = deal.grns.map(g => g.id);
-    let totalPaid = 0;
     if (grnIds.length > 0) {
       const invoices = await prisma.vendorInvoice.findMany({
         where: { grnId: { in: grnIds } },
         select: { paidAmount: true },
       });
-      totalPaid = invoices.reduce((s, inv) => s + (inv.paidAmount || 0), 0);
+      totalPaid += invoices.reduce((s, inv) => s + (inv.paidAmount || 0), 0);
     }
 
     return {
@@ -373,6 +384,33 @@ router.get('/deals', asyncHandler(async (req: AuthRequest, res: Response) => {
 router.post('/deals', validate(openDealSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const b = req.body;
 
+  // Resolve vendor — use existing or auto-create from name
+  let vendorId = b.vendorId;
+  if (!vendorId && b.vendorName) {
+    // Check if vendor exists by name
+    const existing = await prisma.vendor.findFirst({
+      where: { name: { equals: b.vendorName, mode: 'insensitive' } },
+      select: { id: true },
+    });
+    if (existing) {
+      vendorId = existing.id;
+    } else {
+      // Auto-create vendor (fuel trader)
+      const count = await prisma.vendor.count();
+      const newVendor = await prisma.vendor.create({
+        data: {
+          name: b.vendorName,
+          vendorCode: `VND-${String(count + 1).padStart(4, '0')}`,
+          category: 'FUEL',
+          phone: b.vendorPhone || '',
+          isActive: true,
+        },
+      });
+      vendorId = newVendor.id;
+    }
+  }
+  if (!vendorId) return res.status(400).json({ error: 'Vendor ID or name is required' });
+
   // Get fuel item details
   const fuelItem = await prisma.inventoryItem.findUnique({
     where: { id: b.fuelItemId },
@@ -383,7 +421,7 @@ router.post('/deals', validate(openDealSchema), asyncHandler(async (req: AuthReq
   // Create PO with dealType = OPEN, quantity = 999999 (unlimited)
   const po = await prisma.purchaseOrder.create({
     data: {
-      vendorId: b.vendorId,
+      vendorId,
       dealType: 'OPEN',
       status: 'APPROVED', // Open deals are auto-approved
       poDate: new Date(),
@@ -456,6 +494,72 @@ router.get('/deals/:id/trucks', asyncHandler(async (req: AuthRequest, res: Respo
     },
   });
   res.json(grns);
+}));
+
+// ==========================================================================
+//  FUEL PAYMENTS (records VendorPayment — shows in main payment system too)
+// ==========================================================================
+
+const fuelPaymentSchema = z.object({
+  dealId: z.string().min(1),
+  amount: z.number().positive(),
+  mode: z.string().default('CASH'), // CASH, UPI, BANK_TRANSFER, NEFT, RTGS
+  reference: z.string().optional(), // UTR / UPI ref / cheque no
+  remarks: z.string().optional(),
+});
+
+// POST /deals/:id/payment — record payment against a deal
+router.post('/deals/:id/payment', validate(fuelPaymentSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+  const b = req.body;
+  const dealId = req.params.id;
+
+  // Get the deal to find vendor
+  const deal = await prisma.purchaseOrder.findUnique({
+    where: { id: dealId },
+    select: { vendorId: true, poNo: true, dealType: true },
+  });
+  if (!deal || deal.dealType !== 'OPEN') return res.status(404).json({ error: 'Open deal not found' });
+
+  // Create VendorPayment (no invoice — direct against deal)
+  const payment = await prisma.vendorPayment.create({
+    data: {
+      vendorId: deal.vendorId,
+      paymentDate: new Date(),
+      amount: b.amount,
+      mode: b.mode || 'CASH',
+      reference: b.reference || '',
+      isAdvance: false,
+      remarks: `Fuel deal PO-${deal.poNo} | ${b.remarks || ''}`.trim(),
+      userId: req.user!.id,
+    },
+  });
+
+  res.status(201).json(payment);
+}));
+
+// GET /deals/:id/payments — list payments for a deal
+router.get('/deals/:id/payments', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const deal = await prisma.purchaseOrder.findUnique({
+    where: { id: req.params.id },
+    select: { vendorId: true, poNo: true },
+  });
+  if (!deal) return res.status(404).json({ error: 'Deal not found' });
+
+  // Get all payments for this vendor that reference this deal
+  const payments = await prisma.vendorPayment.findMany({
+    where: {
+      vendorId: deal.vendorId,
+      remarks: { contains: `PO-${deal.poNo}` },
+    },
+    take: 200,
+    orderBy: { paymentDate: 'desc' },
+    select: {
+      id: true, paymentNo: true, paymentDate: true, amount: true,
+      mode: true, reference: true, remarks: true,
+    },
+  });
+
+  res.json(payments);
 }));
 
 export default router;

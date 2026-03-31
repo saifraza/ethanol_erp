@@ -88,7 +88,7 @@ export default function FuelManagement() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showDealModal, setShowDealModal] = useState(false);
-  const [dealForm, setDealForm] = useState({ vendorId: '', fuelItemId: '', rate: 0, remarks: '' });
+  const [dealForm, setDealForm] = useState({ vendorId: '', vendorName: '', vendorPhone: '', fuelItemId: '', rate: 0, remarks: '' });
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -188,14 +188,14 @@ export default function FuelManagement() {
 
   // Deal CRUD
   const createDeal = async () => {
-    if (!dealForm.vendorId || !dealForm.fuelItemId || !dealForm.rate) {
-      alert('Select vendor, fuel type, and enter rate'); return;
+    if ((!dealForm.vendorId && !dealForm.vendorName) || !dealForm.fuelItemId || !dealForm.rate) {
+      alert('Enter vendor name, select fuel type, and enter rate'); return;
     }
     setSaving(true);
     try {
       await api.post('/fuel/deals', dealForm);
       setShowDealModal(false);
-      setDealForm({ vendorId: '', fuelItemId: '', rate: 0, remarks: '' });
+      setDealForm({ vendorId: '', vendorName: '', vendorPhone: '', fuelItemId: '', rate: 0, remarks: '' });
       fetchDeals();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Failed';
@@ -217,6 +217,24 @@ export default function FuelManagement() {
   };
 
   const fmtCurrency = (n: number) => n === 0 ? '--' : '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+
+  const recordPayment = async (dealId: string, vendorName: string, outstanding: number) => {
+    const amount = prompt(`Pay ${vendorName}\nOutstanding: ₹${outstanding.toLocaleString()}\n\nEnter payment amount:`);
+    if (!amount) return;
+    const mode = prompt('Payment mode:\n1. CASH\n2. UPI\n3. BANK_TRANSFER\n4. NEFT\n\nEnter mode (or press Enter for CASH):');
+    const modeMap: Record<string, string> = { '1': 'CASH', '2': 'UPI', '3': 'BANK_TRANSFER', '4': 'NEFT' };
+    const ref = (mode === '2' || mode === 'UPI' || mode === '3' || mode === 'BANK_TRANSFER' || mode === '4' || mode === 'NEFT')
+      ? prompt('Enter reference (UTR / UPI ref):') : '';
+    try {
+      await api.post(`/fuel/deals/${dealId}/payment`, {
+        dealId,
+        amount: parseFloat(amount),
+        mode: modeMap[mode || '1'] || mode || 'CASH',
+        reference: ref || '',
+      });
+      fetchDeals();
+    } catch (err) { alert('Payment failed'); }
+  };
 
   if (loading) return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -450,6 +468,7 @@ export default function FuelManagement() {
                       </td>
                       <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{d.truckCount}</td>
                       <td className="px-3 py-1.5">
+                        {d.outstanding > 0 && <button onClick={() => recordPayment(d.id, d.vendor.name, d.outstanding)} className="text-[10px] text-green-600 font-semibold uppercase hover:underline mr-2">Pay</button>}
                         <button onClick={() => updateRate(d.id)} className="text-[10px] text-blue-600 font-semibold uppercase hover:underline mr-2">Rate</button>
                         <button onClick={() => closeDeal(d.id)} className="text-[10px] text-red-500 font-semibold uppercase hover:underline">Close</button>
                       </td>
@@ -567,11 +586,18 @@ export default function FuelManagement() {
             <div className="p-4 space-y-3">
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Vendor / Trader</label>
-                <select value={dealForm.vendorId} onChange={e => setDealForm({ ...dealForm, vendorId: e.target.value })}
-                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
-                  <option value="">-- Select Vendor --</option>
-                  {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                </select>
+                <input value={(dealForm as Record<string, string>).vendorName || ''} onChange={e => setDealForm({ ...dealForm, vendorName: e.target.value } as typeof dealForm)}
+                  list="vendorDealList" placeholder="Type vendor/trader name"
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                <datalist id="vendorDealList">
+                  {vendors.map(v => <option key={v.id} value={v.name} />)}
+                </datalist>
+                <div className="text-[9px] text-slate-400 mt-0.5">Select existing or type new name (auto-creates vendor)</div>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Phone</label>
+                <input value={(dealForm as Record<string, string>).vendorPhone || ''} onChange={e => setDealForm({ ...dealForm, vendorPhone: e.target.value } as typeof dealForm)}
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="Mobile number" />
               </div>
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Fuel Type</label>
