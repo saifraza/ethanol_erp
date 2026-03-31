@@ -101,7 +101,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'doc-templates', label: 'Doc Templates', to: '/document-templates', icon: FileText, group: 'admin', adminOnly: true },
   { key: 'settings', label: 'Settings', to: '/settings', icon: Settings, group: 'admin', adminOnly: true },
   { key: 'users', label: 'Users', to: '/users', icon: Users, group: 'admin', adminOnly: true },
-  { key: 'weighment-system', label: 'Weighment System', to: '/weighment-system', icon: Radio, group: 'admin', adminOnly: true },
+  { key: 'weighment-system', label: 'Weighment System', to: '/weighment-system', icon: Radio, group: 'admin' },
 ];
 
 // For UsersPage — unique module keys for permission assignment (excludes adminOnly)
