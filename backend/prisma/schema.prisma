@@ -923,11 +923,22 @@ model InventoryTransaction {
   remarks     String?
   warehouse   String?  // which warehouse (for Stock IN)
   department  String?  // which department (for Stock OUT)
+  issuedTo    String?  // person name who received the item
   userId      String
   createdAt   DateTime @default(now())
   @@index([itemId])
   @@index([type])
   @@index([createdAt])
+}
+
+// ── Department Master ──
+model Department {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  code      String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // ── Warehouse / Storage Location ──

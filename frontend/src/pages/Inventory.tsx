@@ -109,14 +109,9 @@ export default function Inventory() {
   const [filterCat, setFilterCat] = useState('');
   const [search, setSearch] = useState('');
   const [showTxn, setShowTxn] = useState<string | null>(null);
-  const [txnForm, setTxnForm] = useState({ type: 'IN', quantity: '', reference: '', remarks: '', department: '', warehouse: '' });
-  const DEPARTMENTS = [
-    'Production', 'Fermentation', 'Distillation', 'Milling',
-    'Cooling Tower', 'Boiler House', 'ETP', 'RO Plant',
-    'Lab', 'Quality Control',
-    'Maintenance', 'Electrical', 'Civil',
-    'Store', 'Admin', 'Other',
-  ];
+  const [txnForm, setTxnForm] = useState({ type: 'IN', quantity: '', reference: '', remarks: '', department: '', warehouse: '', issuedTo: '' });
+  const FALLBACK_DEPTS = ['Production', 'Fermentation', 'Distillation', 'Milling', 'Cooling Tower', 'Boiler House', 'ETP', 'RO Plant', 'Lab', 'Quality Control', 'Maintenance', 'Electrical', 'Civil', 'Store', 'Admin', 'Other'];
+  const [departments, setDepartments] = useState<string[]>(FALLBACK_DEPTS);
   const [warehouses, setWarehouses] = useState<{ id: string; code: string; name: string }[]>([]);
   const [poStatusMap, setPOStatusMap] = useState<Record<string, { status: string; poNo: number }>>({});
   const [editItem, setEditItem] = useState<Item | null>(null);
@@ -216,6 +211,11 @@ export default function Inventory() {
       api.get('/inventory/items/po-status').then(r => setPOStatusMap(r.data || {})).catch(() => {});
       // Fetch warehouses
       api.get('/inventory/warehouses').then(r => setWarehouses((r.data?.items || r.data || []).map((w: any) => ({ id: w.id, code: w.code, name: w.name })))).catch(() => {});
+      // Fetch departments from master
+      api.get('/departments').then(r => {
+        const depts = (r.data || []).filter((d: { isActive: boolean }) => d.isActive).map((d: { name: string }) => d.name);
+        if (depts.length > 0) setDepartments(depts);
+      }).catch(() => {});
     } catch (e) { console.error(e); }
     setLoading(false);
   };
@@ -242,7 +242,7 @@ export default function Inventory() {
     try {
       const res = await api.post('/inventory/transaction', { itemId, ...txnForm });
       setShowTxn(null);
-      setTxnForm({ type: 'IN', quantity: '', reference: '', remarks: '', department: '', warehouse: '' });
+      setTxnForm({ type: 'IN', quantity: '', reference: '', remarks: '', department: '', warehouse: '', issuedTo: '' });
       if (res.data?.autoPO) {
         const po = res.data.autoPO;
         alert(`Low stock detected! Auto-drafted PO-${po.poNo} for ${po.qty} units from ${po.vendor} at ₹${po.rate}/unit. Check Purchase Orders to approve.`);
@@ -543,13 +543,20 @@ export default function Inventory() {
                                   </div>
                                 )}
                                 {txnForm.type === 'OUT' && (
+                                  <>
                                   <div>
-                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Issued To *</label>
+                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Department *</label>
                                     <select className={`border px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 ${!txnForm.department ? 'border-red-400' : 'border-slate-300'}`} value={txnForm.department} onChange={e => setTxnForm({ ...txnForm, department: e.target.value })} required>
                                       <option value="">Select department *</option>
-                                      {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                                      {departments.map(d => <option key={d} value={d}>{d}</option>)}
                                     </select>
                                   </div>
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Person</label>
+                                    <input className="border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 w-32" placeholder="Name" value={txnForm.issuedTo}
+                                      onChange={e => setTxnForm({ ...txnForm, issuedTo: e.target.value })} />
+                                  </div>
+                                  </>
                                 )}
                                 <div>
                                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Remarks</label>
@@ -566,7 +573,7 @@ export default function Inventory() {
                                       <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
                                         t.type === 'IN' ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : t.type === 'OUT' ? 'border-red-300 bg-red-50 text-red-700' : 'border-amber-300 bg-amber-50 text-amber-700'
                                       }`}>{t.type === 'IN' ? 'IN' : t.type === 'OUT' ? 'OUT' : 'ADJ'}</span>
-                                      {' '}{t.quantity} {item.unit} {t.department ? `\u2192 ${t.department}` : t.warehouse ? `\u2190 ${t.warehouse}` : ''} {t.reference ? `\u2014 ${t.reference}` : ''} ({new Date(t.createdAt).toLocaleDateString('en-IN')})
+                                      {' '}{t.quantity} {item.unit} {t.department ? `\u2192 ${t.department}${t.issuedTo ? ` (${t.issuedTo})` : ''}` : t.warehouse ? `\u2190 ${t.warehouse}` : ''} {t.reference ? `\u2014 ${t.reference}` : ''} ({new Date(t.createdAt).toLocaleDateString('en-IN')})
                                     </span>
                                   ))}
                                 </div>
@@ -715,7 +722,10 @@ export default function Inventory() {
                                                 </td>
                                                 <td className="px-3 py-1.5 text-slate-700 border-r border-slate-100">
                                                   {t.type === 'OUT' && t.department ? (
-                                                    <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-slate-300 bg-slate-50">{t.department}</span>
+                                                    <div>
+                                                      <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-slate-300 bg-slate-50">{t.department}</span>
+                                                      {t.issuedTo && <span className="text-[9px] text-slate-500 ml-1">({t.issuedTo})</span>}
+                                                    </div>
                                                   ) : t.type === 'IN' && t.warehouse ? (
                                                     <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-blue-300 bg-blue-50 text-blue-700">{t.warehouse}</span>
                                                   ) : (

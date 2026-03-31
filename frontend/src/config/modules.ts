@@ -90,7 +90,7 @@ export const MODULE_DEFS: ModuleDef[] = [
 
   // ── INVENTORY ──
   { key: 'inventory-store', label: 'Inventory & Store', to: '/inventory', icon: Warehouse, group: 'inventory' },
-  { key: 'warehouses', label: 'Warehouses', to: '/inventory/warehouses', icon: Warehouse, group: 'inventory' },
+  { key: 'masters', label: 'Dept & Warehouses', to: '/inventory/masters', icon: Building2, group: 'inventory' },
 
   // ── ADMIN ──
   { key: 'plant-issues', label: 'Maintenance', to: '/plant-issues', icon: AlertCircle, group: 'admin' },

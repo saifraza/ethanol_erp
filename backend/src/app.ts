@@ -69,6 +69,8 @@ import journalEntryRoutes from './routes/journalEntries';
 import bankReconciliationRoutes from './routes/bankReconciliation';
 // OPC Bridge (factory automation)
 import opcBridgeRoutes from './routes/opcBridge';
+// Weighbridge (local service at factory gate)
+import weighbridgeRoutes from './routes/weighbridge';
 import accountsReportsRoutes from './routes/accountsReports';
 // AI Assistant
 import aiRoutes from './routes/ai';
@@ -78,6 +80,7 @@ import inventoryMovementRoutes from './routes/inventoryMovements';
 import inventoryStockRoutes from './routes/inventoryStock';
 import inventoryCountRoutes from './routes/inventoryCounts';
 import inventoryReorderRoutes from './routes/inventoryReorder';
+import departmentRoutes from './routes/departments';
 // Logistics (Gate Entry)
 import gateEntryRoutes from './routes/gateEntry';
 // Cash Vouchers & Bank Loans
@@ -156,6 +159,7 @@ app.use('/api/inventory/movements', inventoryMovementRoutes);
 app.use('/api/inventory/stock', inventoryStockRoutes);
 app.use('/api/inventory/counts', inventoryCountRoutes);
 app.use('/api/inventory/reorder', inventoryReorderRoutes);
+app.use('/api/departments', departmentRoutes);
 app.use('/api/issues', issueRoutes);
 app.use('/api/purchase-requisition', purchaseRequisitionRoutes);
 // Sales & Distribution
@@ -202,6 +206,8 @@ app.use('/api/bank-loans', bankLoanRoutes);
 app.use('/api/gate-entry', gateEntryRoutes);
 // OPC Bridge (factory automation — proxies to on-premise Windows service)
 app.use('/api/opc', opcBridgeRoutes);
+// Weighbridge (local service at factory gate — push weighments, pull master data)
+app.use('/api/weighbridge', weighbridgeRoutes);
 // AI Assistant
 app.use('/api/ai', aiRoutes);
 // Process reports

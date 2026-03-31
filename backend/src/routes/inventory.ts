@@ -104,7 +104,7 @@ router.get('/items/:id/details', asyncHandler(async (req: AuthRequest, res: Resp
     where: { itemId: req.params.id },
     take: 30,
     orderBy: { createdAt: 'desc' },
-    select: { id: true, type: true, quantity: true, reference: true, remarks: true, department: true, warehouse: true, createdAt: true },
+    select: { id: true, type: true, quantity: true, reference: true, remarks: true, department: true, warehouse: true, issuedTo: true, createdAt: true },
   });
 
   // Rate history (unique rates from PO lines, most recent first)
@@ -208,6 +208,7 @@ router.post('/transaction', asyncHandler(async (req: AuthRequest, res: Response)
         remarks: b.remarks || null,
         warehouse: b.warehouse || null,
         department: b.department || null,
+        issuedTo: b.issuedTo || null,
         userId: req.user!.id,
       },
     });
