@@ -430,7 +430,12 @@
     function populateProducts() {
         const dir = document.getElementById('direction').value;
         const inProducts = allMaterials.filter(m => ['RAW_MATERIAL', 'FUEL', ''].includes(m.category || ''));
-        const outProducts = [{id:'ddgs', name:'DDGS'}, {id:'ethanol', name:'Ethanol'}];
+        const outProducts = [
+            {id:'ddgs', name:'DDGS'}, {id:'ethanol', name:'Ethanol'},
+            {id:'scrap', name:'Scrap'}, {id:'press-mud', name:'Press Mud'},
+            {id:'lfo', name:'LFO (Light Fuel Oil)'}, {id:'hfo', name:'HFO (Heavy Fuel Oil)'},
+            {id:'ash', name:'Ash'}, {id:'other', name:'Other'},
+        ];
         const products = dir === 'IN' ? inProducts : outProducts;
 
         // Populate all product selects

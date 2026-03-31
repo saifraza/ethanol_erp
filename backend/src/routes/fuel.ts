@@ -13,7 +13,7 @@ const router = Router();
 
 const fuelMasterSchema = z.object({
   name: z.string().min(1),
-  code: z.string().min(1),
+  code: z.string().optional(), // auto-generated if not provided
   unit: z.string().default('MT'),
   steamRate: z.number().positive().optional(),
   calorificValue: z.number().positive().optional(),
@@ -22,7 +22,7 @@ const fuelMasterSchema = z.object({
   defaultRate: z.number().min(0).default(0),
   hsnCode: z.string().optional(),
   gstPercent: z.number().min(0).default(5),
-  location: z.string().optional(),
+  location: z.string().optional(), // warehouse ID
   remarks: z.string().optional(),
 });
 
@@ -47,10 +47,18 @@ router.get('/master', asyncHandler(async (req: AuthRequest, res: Response) => {
 // POST /master — create fuel item
 router.post('/master', validate(fuelMasterSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const b = req.body;
+
+  // Auto-generate code if not provided: FUEL-001, FUEL-002, etc.
+  let code = b.code;
+  if (!code) {
+    const count = await prisma.inventoryItem.count({ where: { category: 'FUEL' } });
+    code = `FUEL-${String(count + 1).padStart(3, '0')}`;
+  }
+
   const item = await prisma.inventoryItem.create({
     data: {
       name: b.name,
-      code: b.code,
+      code,
       category: 'FUEL',
       unit: b.unit || 'MT',
       steamRate: b.steamRate || null,
@@ -91,6 +99,17 @@ router.put('/master/:id', asyncHandler(async (req: AuthRequest, res: Response) =
     },
   });
   res.json(updated);
+}));
+
+// GET /warehouses — for location dropdown
+router.get('/warehouses', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const warehouses = await prisma.warehouse.findMany({
+    where: { isActive: true },
+    take: 50,
+    select: { id: true, code: true, name: true },
+    orderBy: { name: 'asc' },
+  });
+  res.json(warehouses);
 }));
 
 // DELETE /master/:id — soft delete

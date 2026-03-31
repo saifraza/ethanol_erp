@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../services/api';
 
+interface Warehouse {
+  id: string;
+  code: string;
+  name: string;
+}
+
 interface FuelItem {
   id: string;
   name: string;
@@ -53,6 +59,7 @@ const EMPTY_FORM: Partial<FuelItem> = {
 export default function FuelManagement() {
   const [tab, setTab] = useState<'master' | 'daily'>('master');
   const [fuels, setFuels] = useState<FuelItem[]>([]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [rows, setRows] = useState<ConsumptionRow[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -64,8 +71,12 @@ export default function FuelManagement() {
 
   const fetchMaster = useCallback(async () => {
     try {
-      const res = await api.get<FuelItem[]>('/fuel/master');
-      setFuels(res.data);
+      const [fuelRes, whRes] = await Promise.all([
+        api.get<FuelItem[]>('/fuel/master'),
+        api.get<Warehouse[]>('/fuel/warehouses'),
+      ]);
+      setFuels(fuelRes.data);
+      setWarehouses(whRes.data);
     } catch (err) { console.error(err); }
   }, []);
 
@@ -336,9 +347,12 @@ export default function FuelManagement() {
                     className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., Rice Husk" />
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Code</label>
-                  <input value={form.code || ''} onChange={e => setForm({ ...form, code: e.target.value })}
-                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., FUEL-RH" />
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Storage Location</label>
+                  <select value={form.location || ''} onChange={e => setForm({ ...form, location: e.target.value })}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+                    <option value="">-- Select Warehouse --</option>
+                    {warehouses.map(w => <option key={w.id} value={w.code}>{w.name} ({w.code})</option>)}
+                  </select>
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-3">
@@ -387,15 +401,10 @@ export default function FuelManagement() {
                     className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., 2701" />
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Storage Location</label>
-                  <input value={form.location || ''} onChange={e => setForm({ ...form, location: e.target.value })}
-                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., Boiler Yard" />
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label>
+                  <input value={form.remarks || ''} onChange={e => setForm({ ...form, remarks: e.target.value })}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
                 </div>
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label>
-                <input value={form.remarks || ''} onChange={e => setForm({ ...form, remarks: e.target.value })}
-                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
               </div>
             </div>
             <div className="border-t border-slate-200 px-4 py-3 flex justify-end gap-2">
