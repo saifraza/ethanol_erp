@@ -95,15 +95,40 @@ router.get('/analytics', authenticate, async (req: AuthRequest, res: Response) =
       totalAtPlant: e.totalGrainAtPlant || 0,
     }));
 
-    // Ethanol daily
-    const ethanolDaily = ethanol.map(e => ({
-      date: fmtDate(e.date),
-      productionBL: e.productionBL || 0,
-      productionAL: e.productionAL || 0,
-      totalStock: e.totalStock || 0,
-      dispatch: e.totalDispatch || 0,
-      klpd: e.klpd || 0,
-      avgStrength: e.avgStrength || 0,
+    // Ethanol daily — aggregate multiple entries per day (take last entry's stock, sum production/dispatch)
+    const ethanolByDate = new Map<string, { productionBL: number; productionAL: number; totalStock: number; dispatch: number; klpd: number; avgStrength: number; count: number }>();
+    for (const e of ethanol) {
+      const key = fmtDate(e.date);
+      const existing = ethanolByDate.get(key);
+      if (!existing) {
+        ethanolByDate.set(key, {
+          productionBL: Math.max(0, e.productionBL || 0),
+          productionAL: Math.max(0, e.productionAL || 0),
+          totalStock: e.totalStock || 0,
+          dispatch: e.totalDispatch || 0,
+          klpd: e.klpd || 0,
+          avgStrength: e.avgStrength || 0,
+          count: 1,
+        });
+      } else {
+        // Sum production (only positive), use latest stock, sum dispatch
+        existing.productionBL += Math.max(0, e.productionBL || 0);
+        existing.productionAL += Math.max(0, e.productionAL || 0);
+        existing.totalStock = e.totalStock || 0; // last entry wins (ordered asc)
+        existing.dispatch += (e.totalDispatch || 0);
+        existing.klpd = e.klpd || existing.klpd; // last non-zero
+        existing.avgStrength = e.avgStrength || existing.avgStrength;
+        existing.count++;
+      }
+    }
+    const ethanolDaily = Array.from(ethanolByDate.entries()).map(([date, v]) => ({
+      date,
+      productionBL: v.productionBL,
+      productionAL: v.productionAL,
+      totalStock: v.totalStock,
+      dispatch: v.dispatch,
+      klpd: v.count > 1 ? (v.productionBL / 1000) : v.klpd, // recalculate KLPD if multiple entries
+      avgStrength: v.avgStrength,
     }));
 
     // Distillation daily
