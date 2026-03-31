@@ -12,11 +12,16 @@ ABB 800xA (172.16.4.11:44683, OPC UA, SignAndEncrypt)
       -> ERP Frontend (/process/opc)
 ```
 
-## Windows Service (Factory PC)
-- **Location**: `C:\Users\abc\Desktop\OPC\`
-- **Source mirror**: `/Users/saifraza/Desktop/opc/WindowsOPC/`
+## Windows Service (Lab PC — ethanollab)
+- **Location on PC**: `C:\Users\abc\Desktop\OPC\`
+- **Source mirror (Mac)**: `/Users/saifraza/Desktop/opc/WindowsOPC/`
+- **Tailscale IP**: 100.74.209.72
+- **User**: abc / **Password**: 123
 - **SSH**: `sshpass -p '123' ssh abc@100.74.209.72`
 - **Deploy**: `sshpass -p '123' scp file abc@100.74.209.72:"C:\\Users\\abc\\Desktop\\OPC\\"`
+- **Task Scheduler**: "MSPIL OPC Bridge"
+- **Full linkage guide**: `.claude/skills/factory-linkage.md`
+- **Desktop readme**: `LAB_PC_README.txt` (for operator/AI troubleshooting)
 
 ### Key Files
 | File | Purpose |

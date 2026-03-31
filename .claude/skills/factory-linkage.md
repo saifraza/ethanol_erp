@@ -3,6 +3,11 @@
 ## Overview
 All factory PCs are managed remotely from Mac via Tailscale. This document is the single reference for connecting to, deploying to, and troubleshooting each factory computer.
 
+**Related skill files (read these together for full context):**
+- `.claude/skills/weighbridge-system.md` — Weighbridge system full spec (serial protocol, 3-step workflow, safety rules)
+- `.claude/skills/opc-bridge.md` — OPC bridge full spec (ABB 800xA connection, tag monitoring, alarms, cloud sync, Prisma schema)
+- Both PCs have desktop READMEs (`FACTORY_PC_README.txt` / `LAB_PC_README.txt`) for operator and AI troubleshooting
+
 ## Factory Network Map
 
 ```
@@ -22,8 +27,11 @@ Internet (Tailscale VPN)
 │
 ├── Lab Computer (ethanollab) — OPC Bridge
 │   Tailscale IP: 100.74.209.72
-│   OS: Windows
-│   Service: D:\opc\WindowsOPC\ (Python on :8099)
+│   OS: Windows 10
+│   User: abc / Password: 123
+│   SSH: port 22 (OpenSSH)
+│   Service: C:\Users\abc\Desktop\OPC\ (Python on :8099)
+│   Source: /Users/saifraza/Desktop/opc/WindowsOPC/
 │   Hardware: OPC UA connection to ABB 800xA DCS (172.16.4.11)
 │
 └── Factory Server (LAN only)
@@ -56,10 +64,17 @@ scp abc@100.91.152.57:C:/Users/abc/file.txt ./
 ### Lab Computer (OPC)
 ```bash
 # Direct SSH
-ssh user@100.74.209.72
+ssh abc@100.74.209.72
+# Password: 123
 
-# Copy files
-scp file.py user@100.74.209.72:D:/opc/WindowsOPC/
+# Or with sshpass (automated)
+sshpass -p '123' ssh -o StrictHostKeyChecking=no abc@100.74.209.72 "command"
+
+# Copy files TO the PC
+scp file.py abc@100.74.209.72:"C:\\Users\\abc\\Desktop\\OPC\\"
+
+# Copy files FROM the PC
+scp abc@100.74.209.72:"C:\\Users\\abc\\Desktop\\OPC\\file.txt" ./
 ```
 
 ### Factory Server (via jump host)
@@ -120,22 +135,43 @@ sshpass -p 'acer@123' ssh abc@100.91.152.57 "powershell -Command \"Remove-Item '
 - Sleep/hibernate is disabled on this PC (powercfg)
 
 ### OPC Bridge Service (ethanollab)
-**Location:** `D:\opc\WindowsOPC\`
-**Start:** Task Scheduler or `python run.py`
-**Config:** `D:\opc\WindowsOPC\config.py`
-**Logs:** `D:\opc\WindowsOPC\logs\opc_bridge.log`
-**DB:** `D:\opc\WindowsOPC\data\opc.db` (SQLite)
+**Location:** `C:\Users\abc\Desktop\OPC\`
+**Source mirror:** `/Users/saifraza/Desktop/opc/WindowsOPC/`
+**Start:** `schtasks /run /tn "MSPIL OPC Bridge"` or `python run.py`
+**Stop:** `schtasks /end /tn "MSPIL OPC Bridge"`
+**Config:** `C:\Users\abc\Desktop\OPC\config.py`
+**Logs:** `C:\Users\abc\Desktop\OPC\logs\opc_bridge.log`
+**DB:** `C:\Users\abc\Desktop\OPC\data\opc.db` (SQLite)
 **Port:** 8099 (local API)
-**OPC:** Connects to ABB 800xA at 172.16.4.11:44683
+**OPC:** ABB 800xA at 172.16.4.11:44683 (SignAndEncrypt, Basic256Sha256)
+**Cloud:** `https://app.mspil.in/api/opc` (X-OPC-Key: mspil-opc-2026)
 
 **Common commands:**
 ```bash
-# Check status
-curl -s http://100.74.209.72:8099/status
+# Check health
+curl -s http://100.74.209.72:8099/health
 
 # View logs
-ssh user@100.74.209.72 "type D:\opc\WindowsOPC\logs\opc_bridge.log | Select-Object -Last 20"
+sshpass -p '123' ssh abc@100.74.209.72 "powershell -Command \"Get-Content 'C:\Users\abc\Desktop\OPC\logs\opc_bridge.log' -Tail 30\""
+
+# Restart service
+sshpass -p '123' ssh abc@100.74.209.72 "schtasks /end /tn \"MSPIL OPC Bridge\""
+sleep 3
+sshpass -p '123' ssh abc@100.74.209.72 "schtasks /run /tn \"MSPIL OPC Bridge\""
+
+# Deploy updated code
+cd ~/Desktop/opc/WindowsOPC
+sshpass -p '123' scp *.py abc@100.74.209.72:"C:\\Users\\abc\\Desktop\\OPC\\"
+
+# Verify after deploy
+sleep 8 && curl -s http://100.74.209.72:8099/health
 ```
+
+**CRITICAL SAFETY:**
+- NEVER delete the `certs/` folder — required for OPC-UA SignAndEncrypt auth
+- NEVER enable Windows sleep — kills OPC connection, loses night data
+- Disable sleep: `powercfg /change standby-timeout-ac 0`
+- Full reference: `.claude/skills/opc-bridge.md`
 
 ### Cameras (Dahua)
 **Camera 233:** 192.168.0.233 (Ethanol Kata Back)
@@ -187,11 +223,20 @@ sleep 8 && curl -s http://100.91.152.57:8098/api/weight
 sshpass -p 'acer@123' ssh abc@100.91.152.57 "powershell -Command \"Remove-Item 'C:\mspil\weighbridge\data\weighbridge.db*' -Force\""
 ```
 
-### OPC — deploy from Mac
+### OPC Bridge — deploy from Mac
 ```bash
 cd ~/Desktop/opc/WindowsOPC
-scp *.py user@100.74.209.72:D:/opc/WindowsOPC/
-# Restart via Task Scheduler on the PC
+
+# 1. Copy Python files
+sshpass -p '123' scp *.py abc@100.74.209.72:"C:\\Users\\abc\\Desktop\\OPC\\"
+
+# 2. Restart service
+sshpass -p '123' ssh abc@100.74.209.72 "schtasks /end /tn \"MSPIL OPC Bridge\""
+sleep 3
+sshpass -p '123' ssh abc@100.74.209.72 "schtasks /run /tn \"MSPIL OPC Bridge\""
+
+# 3. Verify
+sleep 8 && curl -s http://100.74.209.72:8099/health
 ```
 
 ## Troubleshooting
