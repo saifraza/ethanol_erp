@@ -4,6 +4,7 @@ import { asyncHandler } from '../shared/middleware';
 import prisma from '../config/prisma';
 import { onStockMovement } from '../services/autoJournal';
 import { z } from 'zod';
+import { getLatestHeartbeat as getOPCHeartbeat } from './opcBridge';
 
 const router = Router();
 
@@ -612,6 +613,29 @@ router.get('/system-status', asyncHandler(async (req: AuthRequest, res: Response
       date: { gte: new Date(new Date().setHours(0, 0, 0, 0)) },
     },
   });
+
+  // Include OPC bridge PC
+  const opcHB = getOPCHeartbeat();
+  if (opcHB) {
+    const opcReceivedAt = new Date(opcHB.receivedAt).getTime();
+    const opcAlive = now - opcReceivedAt < staleMs;
+    pcs.push({
+      pcId: 'opc-bridge',
+      pcName: 'Lab Computer (OPC)',
+      timestamp: opcHB.timestamp,
+      receivedAt: opcHB.receivedAt.toISOString(),
+      isAlive: opcAlive,
+      lastSeenSec: Math.round((now - opcReceivedAt) / 1000),
+      uptimeSeconds: opcHB.uptimeSeconds,
+      queueDepth: opcHB.queueDepth,
+      dbSizeMb: opcHB.dbSizeMb,
+      serialConnected: opcHB.opcConnected,
+      serialProtocol: 'OPC-UA',
+      webPort: 8099,
+      tailscaleIp: '100.74.209.72',
+      version: opcHB.version,
+    } as unknown as typeof pcs[0]);
+  }
 
   res.json({
     pcs,
