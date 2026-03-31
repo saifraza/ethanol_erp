@@ -13,17 +13,17 @@ const router = Router();
 
 const fuelMasterSchema = z.object({
   name: z.string().min(1),
-  code: z.string().optional(), // auto-generated if not provided
-  unit: z.string().default('MT'),
-  steamRate: z.number().positive().optional(),
-  calorificValue: z.number().positive().optional(),
-  minStock: z.number().min(0).default(0),
-  maxStock: z.number().positive().optional(),
-  defaultRate: z.number().min(0).default(0),
-  hsnCode: z.string().optional(),
-  gstPercent: z.number().min(0).default(5),
-  location: z.string().optional(), // warehouse ID
-  remarks: z.string().optional(),
+  code: z.string().optional(),
+  unit: z.string().optional().default('MT'),
+  steamRate: z.number().nullable().optional(),
+  calorificValue: z.number().nullable().optional(),
+  minStock: z.number().nullable().optional().default(0),
+  maxStock: z.number().nullable().optional(),
+  defaultRate: z.number().nullable().optional().default(0),
+  hsnCode: z.string().nullable().optional(),
+  gstPercent: z.number().nullable().optional().default(5),
+  location: z.string().nullable().optional(),
+  remarks: z.string().nullable().optional(),
 });
 
 // GET /master — list all fuel items
