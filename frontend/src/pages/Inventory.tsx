@@ -235,6 +235,10 @@ export default function Inventory() {
   };
 
   const handleTxn = async (itemId: string) => {
+    if (txnForm.type === 'OUT' && !txnForm.department) {
+      alert('Please select where this is being issued to (department)');
+      return;
+    }
     try {
       const res = await api.post('/inventory/transaction', { itemId, ...txnForm });
       setShowTxn(null);
@@ -540,9 +544,9 @@ export default function Inventory() {
                                 )}
                                 {txnForm.type === 'OUT' && (
                                   <div>
-                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Department</label>
-                                    <select className="border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400" value={txnForm.department} onChange={e => setTxnForm({ ...txnForm, department: e.target.value })}>
-                                      <option value="">Select</option>
+                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Issued To *</label>
+                                    <select className={`border px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 ${!txnForm.department ? 'border-red-400' : 'border-slate-300'}`} value={txnForm.department} onChange={e => setTxnForm({ ...txnForm, department: e.target.value })} required>
+                                      <option value="">Select department *</option>
                                       {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
                                     </select>
                                   </div>
