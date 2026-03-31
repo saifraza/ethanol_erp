@@ -13,12 +13,15 @@ router.use(authenticate as any);
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const status = req.query.status as string | undefined;
     const vendorId = req.query.vendorId as string | undefined;
+    const category = req.query.category as string | undefined; // FUEL, RAW_MATERIAL, etc.
     const page = parseInt(req.query.page as string) || 1;
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 500);
 
     const where: any = {};
     if (status) where.status = status;
     if (vendorId) where.vendorId = vendorId;
+    // Filter by vendor category (FUEL, RAW_MATERIAL, GENERAL, etc.)
+    if (category) where.vendor = { category };
 
     const pos = await prisma.purchaseOrder.findMany({
       where,

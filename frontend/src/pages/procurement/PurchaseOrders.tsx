@@ -120,6 +120,7 @@ const PurchaseOrders: React.FC = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [sortField, setSortField] = useState<string>('poNo');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -243,7 +244,7 @@ const PurchaseOrders: React.FC = () => {
     isRCM: false,
   });
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(); }, [categoryFilter]);
 
   // Fetch PO detail when selected
   useEffect(() => {
@@ -289,7 +290,7 @@ const PurchaseOrders: React.FC = () => {
     try {
       setLoading(true);
       const [posResponse, vendorsResponse, materialsResponse] = await Promise.all([
-        api.get('/purchase-orders'),
+        api.get(`/purchase-orders${categoryFilter !== 'ALL' ? `?category=${categoryFilter}` : ''}`),
         api.get('/vendors'),
         api.get('/materials'),
       ]);
@@ -963,7 +964,16 @@ const PurchaseOrders: React.FC = () => {
               <input type="text" placeholder="Search by PO # or Vendor..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="border border-slate-300 px-2.5 py-1.5 pl-8 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
             </div>
           </div>
-          <div className="mt-2 flex gap-0 overflow-x-auto">
+          {/* Category tabs */}
+          <div className="mt-2 flex gap-0 overflow-x-auto border-b border-slate-200 pb-1 mb-1">
+            {[{ key: 'ALL', label: 'All POs' }, { key: 'FUEL', label: 'Fuel' }, { key: 'RAW_MATERIAL', label: 'Raw Material' }, { key: 'GENERAL', label: 'General' }].map((cat) => (
+              <button key={cat.key} onClick={() => { setCategoryFilter(cat.key); setSelectedPOId(null); }} className={`px-3 py-1 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap border transition mr-1 ${categoryFilter === cat.key ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-50'}`}>
+                {cat.label}
+              </button>
+            ))}
+          </div>
+          {/* Status tabs */}
+          <div className="flex gap-0 overflow-x-auto">
             {statusTabs.map((tab) => (
               <button key={tab} onClick={() => setStatusFilter(tab)} className={`px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest whitespace-nowrap border-b-2 transition ${statusFilter === tab ? 'border-b-2 border-blue-600 text-blue-700 bg-white' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
                 {tab.replace('_', ' ')}
