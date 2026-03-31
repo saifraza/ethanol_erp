@@ -71,6 +71,7 @@ import bankReconciliationRoutes from './routes/bankReconciliation';
 import opcBridgeRoutes from './routes/opcBridge';
 // Weighbridge (local service at factory gate)
 import weighbridgeRoutes from './routes/weighbridge';
+import fuelRoutes from './routes/fuel';
 import accountsReportsRoutes from './routes/accountsReports';
 // AI Assistant
 import aiRoutes from './routes/ai';
@@ -208,6 +209,8 @@ app.use('/api/gate-entry', gateEntryRoutes);
 app.use('/api/opc', opcBridgeRoutes);
 // Weighbridge (local service at factory gate — push weighments, pull master data)
 app.use('/api/weighbridge', weighbridgeRoutes);
+// Fuel Management (master + daily consumption)
+app.use('/api/fuel', fuelRoutes);
 // AI Assistant
 app.use('/api/ai', aiRoutes);
 // Process reports

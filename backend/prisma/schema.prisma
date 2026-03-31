@@ -900,6 +900,9 @@ model InventoryItem {
   // Procurement fields (merged from Material)
   subCategory     String?                     // e.g., ENZYME, YEAST, ACID
   defaultRate     Float    @default(0)        // last/standard purchase rate
+  // Fuel-specific fields (only used when category = 'FUEL')
+  steamRate       Float?                      // tons of steam per ton of fuel (e.g., 3.0 for rice husk)
+  calorificValue  Float?                      // kcal/kg (optional reference)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   transactions    InventoryTransaction[]
@@ -910,6 +913,7 @@ model InventoryItem {
   poLines         POLine[]
   grnLines        GRNLine[]
   vendorItems     VendorItem[]
+  fuelConsumptions FuelConsumption[]
   @@index([category])
 }
 
@@ -929,6 +933,26 @@ model InventoryTransaction {
   @@index([itemId])
   @@index([type])
   @@index([createdAt])
+}
+
+// ── Fuel Consumption (daily entry per fuel type) ──
+model FuelConsumption {
+  id             String        @id @default(uuid())
+  date           DateTime
+  fuelItemId     String
+  fuelItem       InventoryItem @relation(fields: [fuelItemId], references: [id])
+  openingStock   Float         @default(0)  // MT at start of day
+  received       Float         @default(0)  // received from weighbridge/GRN
+  consumed       Float         @default(0)  // used in boiler
+  closingStock   Float         @default(0)  // opening + received - consumed
+  steamGenerated Float         @default(0)  // consumed × steamRate
+  remarks        String?
+  userId         String
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  @@unique([date, fuelItemId])
+  @@index([date])
+  @@index([fuelItemId])
 }
 
 // ── Department Master ──
