@@ -642,6 +642,13 @@ router.get('/system-status', asyncHandler(async (req: AuthRequest, res: Response
       webPort: 8099,
       tailscaleIp: '100.74.209.72',
       version: opcHB.version,
+      system: opcHB.system ? {
+        cpuPercent: opcHB.system.cpuPercent,
+        memoryMb: opcHB.system.memoryMb,
+        diskFreeGb: opcHB.system.diskFreeGb,
+        hostname: undefined,
+        os: undefined,
+      } : undefined,
     } as unknown as typeof pcs[0]);
   }
 

@@ -208,6 +208,13 @@ export default function FuelManagement() {
       vendorId: dealForm.vendorId === '__new' ? undefined : dealForm.vendorId,
     };
     try {
+      // Update vendor phone if changed
+      const origVendor = vendors.find(v => v.id === dealForm.vendorId);
+      if (origVendor && dealForm.vendorPhone && dealForm.vendorPhone !== origVendor.phone) {
+        if (confirm(`Phone number changed from ${origVendor.phone || 'empty'} to ${dealForm.vendorPhone}. Update vendor master?`)) {
+          try { await api.put(`/vendors/${dealForm.vendorId}`, { phone: dealForm.vendorPhone }); } catch (_e) { /* ok */ }
+        }
+      }
       await api.post('/fuel/deals', payload);
       setShowDealModal(false);
       setDealForm({ vendorId: '', vendorName: '', vendorPhone: '', fuelItemId: '', rate: 0, remarks: '' });
@@ -641,7 +648,14 @@ export default function FuelManagement() {
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Phone</label>
-                  <input value={dealForm.vendorPhone} onChange={e => setDealForm({ ...dealForm, vendorPhone: e.target.value })}
+                  <input value={dealForm.vendorPhone} onChange={e => {
+                    setDealForm({ ...dealForm, vendorPhone: e.target.value });
+                    // If phone changed from original vendor phone, mark for update
+                    const origVendor = vendors.find(v => v.id === dealForm.vendorId);
+                    if (origVendor && origVendor.phone && e.target.value !== origVendor.phone) {
+                      setDealForm(prev => ({ ...prev, vendorPhone: e.target.value, _phoneChanged: true } as typeof prev));
+                    }
+                  }}
                     className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="Auto-filled from vendor" />
                 </div>
               </div>
@@ -688,9 +702,9 @@ export default function FuelManagement() {
                 </div>
                 {(dealForm as Record<string, string>).quantityType === 'FIXED' && (
                   <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Quantity</label>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Quantity ({fuels.find(f => f.id === dealForm.fuelItemId)?.unit || 'MT'})</label>
                     <input type="number" value={(dealForm as Record<string, number>).quantity || ''} onChange={e => setDealForm({ ...dealForm, quantity: parseFloat(e.target.value) || 0 } as typeof dealForm)}
-                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., 1000 MT" />
+                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., 1000" />
                   </div>
                 )}
                 <div>
@@ -717,8 +731,13 @@ export default function FuelManagement() {
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Delivery Point</label>
-                  <input value={(dealForm as Record<string, string>).deliveryPoint || ''} onChange={e => setDealForm({ ...dealForm, deliveryPoint: e.target.value } as typeof dealForm)}
-                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., Factory Gate 1" />
+                  <select value={(dealForm as Record<string, string>).deliveryPoint || 'Boiler Warehouse'} onChange={e => setDealForm({ ...dealForm, deliveryPoint: e.target.value } as typeof dealForm)}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+                    <option value="Boiler Warehouse">Boiler Warehouse</option>
+                    <option value="Factory Gate 1">Factory Gate 1</option>
+                    <option value="Fuel Yard">Fuel Yard</option>
+                    <option value="Coal Yard">Coal Yard</option>
+                  </select>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -732,9 +751,9 @@ export default function FuelManagement() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Expected Delivery</label>
-                  <input type="text" value={(dealForm as Record<string, string>).deliverySchedule || ''} onChange={e => setDealForm({ ...dealForm, deliverySchedule: e.target.value } as typeof dealForm)}
-                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., 2-3 trucks/day" />
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Expected Delivery (Days)</label>
+                  <input type="number" min="1" value={(dealForm as Record<string, string>).deliverySchedule || ''} onChange={e => setDealForm({ ...dealForm, deliverySchedule: e.target.value } as typeof dealForm)}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., 7" />
                 </div>
               </div>
 
