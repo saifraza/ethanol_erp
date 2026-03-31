@@ -338,9 +338,26 @@ export default function Inventory() {
               </div>
               <div className="p-5 space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
+                  <div className="relative">
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Item Name *</label>
                     <input className="w-full border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+                    {form.name.length >= 2 && (() => {
+                      const q = form.name.toLowerCase();
+                      const matches = items.filter(it => it.name.toLowerCase().includes(q) || (it.code && it.code.toLowerCase().includes(q)));
+                      if (matches.length === 0) return null;
+                      return (
+                        <div className="mt-1 border border-amber-300 bg-amber-50 p-2">
+                          <div className="text-[10px] font-bold text-amber-700 uppercase tracking-widest mb-1">Similar items already exist ({matches.length})</div>
+                          {matches.slice(0, 5).map(m => (
+                            <div key={m.id} className="flex justify-between text-[10px] py-0.5 border-b border-amber-200 last:border-0">
+                              <span className="text-slate-700 font-medium">{m.name}</span>
+                              <span className="text-slate-500">{m.code} | {m.unit} | Stock: {m.currentStock}</span>
+                            </div>
+                          ))}
+                          {matches.length > 5 && <div className="text-[9px] text-amber-600 mt-1">+{matches.length - 5} more</div>}
+                        </div>
+                      );
+                    })()}
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Item Code</label>
