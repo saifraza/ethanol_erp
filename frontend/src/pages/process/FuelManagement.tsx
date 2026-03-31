@@ -69,6 +69,9 @@ interface OpenDeal {
 interface VendorOption {
   id: string;
   name: string;
+  phone?: string;
+  address?: string;
+  category?: string;
 }
 
 const EMPTY_FORM: Partial<FuelItem> = {
@@ -617,18 +620,19 @@ export default function FuelManagement() {
       {/* ═══ NEW DEAL MODAL ═══ */}
       {showDealModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white w-[520px] max-w-[95vw] shadow-2xl">
+          <div className="bg-white w-[600px] max-w-[95vw] shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="bg-slate-800 text-white px-4 py-2.5">
               <div className="text-xs font-bold uppercase tracking-widest">New Fuel Deal</div>
             </div>
             <div className="p-4 space-y-3">
-              {/* Vendor dropdown with search */}
+              {/* Section: Vendor */}
+              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-1">Vendor Details</div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Vendor / Trader</label>
                   <select value={dealForm.vendorId} onChange={e => {
                     const v = vendors.find(v => v.id === e.target.value);
-                    setDealForm({ ...dealForm, vendorId: e.target.value, vendorName: v?.name || '' });
+                    setDealForm({ ...dealForm, vendorId: e.target.value, vendorName: v?.name || '', vendorPhone: v?.phone || dealForm.vendorPhone });
                   }} className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
                     <option value="">-- Select Vendor --</option>
                     {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
@@ -638,19 +642,27 @@ export default function FuelManagement() {
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Phone</label>
                   <input value={dealForm.vendorPhone} onChange={e => setDealForm({ ...dealForm, vendorPhone: e.target.value })}
-                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="Mobile number" />
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="Auto-filled from vendor" />
                 </div>
               </div>
-              {/* New trader name (only if "+ Add New" selected) */}
               {dealForm.vendorId === '__new' && (
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">New Trader Name</label>
-                  <input value={dealForm.vendorName} onChange={e => setDealForm({ ...dealForm, vendorName: e.target.value })}
-                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., Ram Singh" />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">New Trader Name</label>
+                    <input value={dealForm.vendorName} onChange={e => setDealForm({ ...dealForm, vendorName: e.target.value })}
+                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., Ram Singh" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Address / Village</label>
+                    <input value={(dealForm as Record<string, string>).vendorAddress || ''} onChange={e => setDealForm({ ...dealForm, vendorAddress: e.target.value } as typeof dealForm)}
+                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., Narsinghpur" />
+                  </div>
                 </div>
               )}
-              {/* Fuel + Rate */}
-              <div className="grid grid-cols-2 gap-3">
+
+              {/* Section: Fuel & Pricing */}
+              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-1 mt-2">Fuel & Pricing</div>
+              <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Fuel Type</label>
                   <select value={dealForm.fuelItemId} onChange={e => setDealForm({ ...dealForm, fuelItemId: e.target.value })}
@@ -664,22 +676,65 @@ export default function FuelManagement() {
                   <input type="number" value={dealForm.rate || ''} onChange={e => setDealForm({ ...dealForm, rate: parseFloat(e.target.value) || 0 })}
                     className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., 6000" />
                 </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Payment Terms</label>
+                  <select value={(dealForm as Record<string, string>).paymentTerms || 'NET15'} onChange={e => setDealForm({ ...dealForm, paymentTerms: e.target.value } as typeof dealForm)}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+                    <option value="ADVANCE">Advance</option>
+                    <option value="COD">Cash on Delivery</option>
+                    <option value="NET7">Net 7 Days</option>
+                    <option value="NET10">Net 10 Days</option>
+                    <option value="NET15">Net 15 Days</option>
+                    <option value="NET30">Net 30 Days</option>
+                  </select>
+                </div>
               </div>
-              {/* PI / Document Upload */}
+
+              {/* Section: Delivery */}
+              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-1 mt-2">Delivery Details</div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Origin / Source</label>
+                  <input value={(dealForm as Record<string, string>).origin || ''} onChange={e => setDealForm({ ...dealForm, origin: e.target.value } as typeof dealForm)}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., Katni, Jabalpur" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Delivery Point</label>
+                  <input value={(dealForm as Record<string, string>).deliveryPoint || ''} onChange={e => setDealForm({ ...dealForm, deliveryPoint: e.target.value } as typeof dealForm)}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., Factory Gate 1" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Transport By</label>
+                  <select value={(dealForm as Record<string, string>).transportBy || 'SUPPLIER'} onChange={e => setDealForm({ ...dealForm, transportBy: e.target.value } as typeof dealForm)}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+                    <option value="SUPPLIER">Supplier</option>
+                    <option value="SELF">Our Transport</option>
+                    <option value="THIRD_PARTY">Third Party</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Expected Delivery</label>
+                  <input type="text" value={(dealForm as Record<string, string>).deliverySchedule || ''} onChange={e => setDealForm({ ...dealForm, deliverySchedule: e.target.value } as typeof dealForm)}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., 2-3 trucks/day" />
+                </div>
+              </div>
+
+              {/* Section: Documents */}
+              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-1 mt-2">Documents</div>
               <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">PI / Invoice / Document</label>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">PI / Invoice / WhatsApp Screenshot</label>
                 <input type="file" accept="image/*,.pdf" onChange={e => {
                   const file = e.target.files?.[0];
                   if (file) setDealForm({ ...dealForm, remarks: `PI: ${file.name} | ${dealForm.remarks || ''}` });
                 }}
                   className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none" />
-                <div className="text-[9px] text-slate-400 mt-0.5">Upload PI, WhatsApp screenshot, or any document</div>
               </div>
-              {/* Remarks */}
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label>
                 <input value={dealForm.remarks} onChange={e => setDealForm({ ...dealForm, remarks: e.target.value })}
-                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., Season deal, delivery at gate 1" />
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="Any additional notes" />
               </div>
             </div>
             <div className="border-t border-slate-200 px-4 py-3 flex justify-end gap-2">
