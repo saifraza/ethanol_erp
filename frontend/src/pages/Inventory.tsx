@@ -110,7 +110,13 @@ export default function Inventory() {
   const [search, setSearch] = useState('');
   const [showTxn, setShowTxn] = useState<string | null>(null);
   const [txnForm, setTxnForm] = useState({ type: 'IN', quantity: '', reference: '', remarks: '', department: '', warehouse: '' });
-  const DEPARTMENTS = ['Production', 'Maintenance', 'Lab', 'Boiler', 'ETP', 'Admin', 'Civil', 'Electrical', 'Other'];
+  const DEPARTMENTS = [
+    'Production', 'Fermentation', 'Distillation', 'Milling',
+    'Cooling Tower', 'Boiler House', 'ETP', 'RO Plant',
+    'Lab', 'Quality Control',
+    'Maintenance', 'Electrical', 'Civil',
+    'Store', 'Admin', 'Other',
+  ];
   const [warehouses, setWarehouses] = useState<{ id: string; code: string; name: string }[]>([]);
   const [poStatusMap, setPOStatusMap] = useState<Record<string, { status: string; poNo: number }>>({});
   const [editItem, setEditItem] = useState<Item | null>(null);
@@ -556,7 +562,7 @@ export default function Inventory() {
                                       <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
                                         t.type === 'IN' ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : t.type === 'OUT' ? 'border-red-300 bg-red-50 text-red-700' : 'border-amber-300 bg-amber-50 text-amber-700'
                                       }`}>{t.type === 'IN' ? 'IN' : t.type === 'OUT' ? 'OUT' : 'ADJ'}</span>
-                                      {' '}{t.quantity} {item.unit} {t.reference ? `\u2014 ${t.reference}` : ''} ({new Date(t.createdAt).toLocaleDateString('en-IN')})
+                                      {' '}{t.quantity} {item.unit} {t.department ? `\u2192 ${t.department}` : t.warehouse ? `\u2190 ${t.warehouse}` : ''} {t.reference ? `\u2014 ${t.reference}` : ''} ({new Date(t.createdAt).toLocaleDateString('en-IN')})
                                     </span>
                                   ))}
                                 </div>
@@ -667,38 +673,58 @@ export default function Inventory() {
                                     </div>
                                   )}
 
-                                  {/* Transactions Tab */}
+                                  {/* Transactions / Ledger Tab */}
                                   {detailTab === 'txn' && (
                                     <div className="overflow-x-auto">
                                       {detailData.transactions.length === 0 ? (
                                         <div className="p-6 text-center text-xs text-slate-400">No transactions</div>
                                       ) : (
+                                        <>
+                                        {/* Running balance summary */}
+                                        <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex gap-6 text-[10px]">
+                                          <span className="text-slate-500">Total IN: <span className="font-bold text-emerald-700 font-mono">{detailData.transactions.filter((t: any) => t.type === 'IN').reduce((s: number, t: any) => s + (t.quantity || 0), 0).toFixed(1)}</span></span>
+                                          <span className="text-slate-500">Total OUT: <span className="font-bold text-red-700 font-mono">{detailData.transactions.filter((t: any) => t.type === 'OUT').reduce((s: number, t: any) => s + (t.quantity || 0), 0).toFixed(1)}</span></span>
+                                          <span className="text-slate-500">Adjustments: <span className="font-bold text-amber-700 font-mono">{detailData.transactions.filter((t: any) => t.type === 'ADJUST').length}</span></span>
+                                        </div>
                                         <table className="w-full text-xs">
                                           <thead>
                                             <tr className="bg-slate-100 border-b border-slate-200">
-                                              <th className="text-left px-3 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest">Date</th>
-                                              <th className="text-left px-3 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest">Type</th>
-                                              <th className="text-right px-3 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest">Qty</th>
-                                              <th className="text-left px-3 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest">Reference</th>
+                                              <th className="text-left px-3 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest border-r border-slate-200">Date</th>
+                                              <th className="text-left px-3 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest border-r border-slate-200">Type</th>
+                                              <th className="text-right px-3 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest border-r border-slate-200">Qty</th>
+                                              <th className="text-left px-3 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest border-r border-slate-200">Issued To / From</th>
+                                              <th className="text-left px-3 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest border-r border-slate-200">Reference</th>
                                               <th className="text-left px-3 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest">Remarks</th>
                                             </tr>
                                           </thead>
                                           <tbody>
                                             {detailData.transactions.map((t: any) => (
-                                              <tr key={t.id} className="border-b border-slate-100">
-                                                <td className="px-3 py-1.5 text-slate-600">{new Date(t.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}</td>
-                                                <td className="px-3 py-1.5">
+                                              <tr key={t.id} className="border-b border-slate-100 hover:bg-blue-50/40">
+                                                <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">{new Date(t.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}</td>
+                                                <td className="px-3 py-1.5 border-r border-slate-100">
                                                   <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
                                                     t.type === 'IN' ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : t.type === 'OUT' ? 'border-red-300 bg-red-50 text-red-700' : 'border-amber-300 bg-amber-50 text-amber-700'
                                                   }`}>{t.type}</span>
                                                 </td>
-                                                <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold">{t.quantity}</td>
-                                                <td className="px-3 py-1.5 text-slate-500">{t.reference || '--'}</td>
+                                                <td className={`px-3 py-1.5 text-right font-mono tabular-nums font-bold border-r border-slate-100 ${t.type === 'IN' ? 'text-emerald-700' : t.type === 'OUT' ? 'text-red-700' : 'text-amber-700'}`}>
+                                                  {t.type === 'IN' ? '+' : t.type === 'OUT' ? '-' : ''}{t.quantity}
+                                                </td>
+                                                <td className="px-3 py-1.5 text-slate-700 border-r border-slate-100">
+                                                  {t.type === 'OUT' && t.department ? (
+                                                    <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-slate-300 bg-slate-50">{t.department}</span>
+                                                  ) : t.type === 'IN' && t.warehouse ? (
+                                                    <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-blue-300 bg-blue-50 text-blue-700">{t.warehouse}</span>
+                                                  ) : (
+                                                    <span className="text-slate-400">--</span>
+                                                  )}
+                                                </td>
+                                                <td className="px-3 py-1.5 text-slate-500 border-r border-slate-100">{t.reference || '--'}</td>
                                                 <td className="px-3 py-1.5 text-slate-400">{t.remarks || '--'}</td>
                                               </tr>
                                             ))}
                                           </tbody>
                                         </table>
+                                        </>
                                       )}
                                     </div>
                                   )}
