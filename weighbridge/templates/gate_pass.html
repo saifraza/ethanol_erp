@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Gate Pass #{{ w.ticket_no }}</title>
+    <style>
+        @page { size: 80mm auto; margin: 2mm; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Courier New', monospace; font-size: 12px; width: 76mm; margin: 0 auto; padding: 4px; }
+
+        .divider { border-top: 1px dashed #000; margin: 6px 0; }
+        .divider-double { border-top: 2px solid #000; margin: 6px 0; }
+        .center { text-align: center; }
+        .bold { font-weight: 700; }
+
+        .company { font-size: 11px; font-weight: 700; text-align: center; line-height: 1.4; }
+        .address { font-size: 9px; text-align: center; color: #555; }
+
+        .row { display: flex; justify-content: space-between; padding: 2px 0; }
+        .row .label { color: #555; font-size: 11px; }
+        .row .value { font-weight: 600; text-align: right; font-size: 11px; }
+
+        .qr-section { text-align: center; margin: 8px 0; }
+        .qr-section canvas { margin: 0 auto; }
+        .qr-label { font-size: 9px; color: #888; margin-top: 4px; }
+
+        .ticket-big { font-size: 18px; font-weight: 700; text-align: center; margin: 4px 0; }
+
+        .footer { font-size: 8px; text-align: center; color: #888; margin-top: 8px; }
+
+        .no-print { margin-top: 20px; text-align: center; }
+        @media print { .no-print { display: none; } body { width: 76mm; } }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+</head>
+<body>
+
+    <div class="company">MAHAKAUSHAL SUGAR &<br>POWER INDUSTRIES LTD</div>
+    <div class="address">Village Bachai, Dist. Narsinghpur, MP</div>
+
+    <div class="divider-double"></div>
+
+    <div class="center bold" style="font-size:14px;">GATE ENTRY</div>
+    <div class="ticket-big">#{{ w.ticket_no }}</div>
+
+    <div class="divider"></div>
+
+    <div class="row">
+        <span class="label">Entry No.</span>
+        <span class="value">{{ w.ticket_no }}</span>
+    </div>
+    <div class="row">
+        <span class="label">Shift</span>
+        <span class="value">{{ w.shift or '-' }}</span>
+    </div>
+    <div class="row">
+        <span class="label">Entry Type</span>
+        <span class="value">{{ 'Inward' if w.direction == 'IN' else 'Outward' }}</span>
+    </div>
+    {% if w.po_number %}
+    <div class="row">
+        <span class="label">P.O. No.</span>
+        <span class="value">{{ w.po_number }}</span>
+    </div>
+    {% endif %}
+
+    <div class="divider"></div>
+
+    <div class="row">
+        <span class="label">Item</span>
+        <span class="value">{{ w.material or '-' }}</span>
+    </div>
+    <div class="row">
+        <span class="label">Supplier</span>
+        <span class="value">{{ w.supplier_name or '-' }}</span>
+    </div>
+    {% if w.transporter %}
+    <div class="row">
+        <span class="label">Transporter</span>
+        <span class="value">{{ w.transporter }}</span>
+    </div>
+    {% endif %}
+    {% if w.driver_mobile %}
+    <div class="row">
+        <span class="label">Mobile No.</span>
+        <span class="value">{{ w.driver_mobile }}</span>
+    </div>
+    {% endif %}
+    {% if w.vehicle_type %}
+    <div class="row">
+        <span class="label">Vehicle Type</span>
+        <span class="value">{{ w.vehicle_type }}</span>
+    </div>
+    {% endif %}
+    <div class="row">
+        <span class="label">Vehicle No.</span>
+        <span class="value bold">{{ w.vehicle_no }}</span>
+    </div>
+    {% if w.bags %}
+    <div class="row">
+        <span class="label">Bags</span>
+        <span class="value">{{ w.bags }}</span>
+    </div>
+    {% endif %}
+
+    <div class="divider"></div>
+
+    <div class="row">
+        <span class="label">Operator</span>
+        <span class="value">{{ w.operator_name or 'Gate Entry' }}</span>
+    </div>
+    <div class="row">
+        <span class="label">Date Time</span>
+        <span class="value">{{ w.gate_entry_at or w.created_at }}</span>
+    </div>
+
+    <div class="divider-double"></div>
+
+    <!-- QR Code — encodes ticket number for scanning at weighbridge -->
+    <div class="qr-section">
+        <div id="qr"></div>
+        <div class="qr-label">Scan at weighbridge for weighing</div>
+    </div>
+
+    <div class="footer">
+        MSPIL Weighbridge System
+    </div>
+
+    <div class="no-print">
+        <button onclick="window.print()" style="padding:10px 30px; font-size:14px; cursor:pointer; background:#1e293b; color:white; border:none;">
+            PRINT
+        </button>
+        <button onclick="window.close()" style="padding:10px 30px; font-size:14px; cursor:pointer; background:#eee; border:1px solid #ccc; margin-left:8px;">
+            CLOSE
+        </button>
+    </div>
+
+    <script>
+        // Generate QR code with ticket number
+        var qr = qrcode(0, 'M');
+        qr.addData('{{ w.ticket_no }}');
+        qr.make();
+        document.getElementById('qr').innerHTML = qr.createSvgTag(4, 0);
+    </script>
+
+</body>
+</html>

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weighbridge History</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; color: #1e293b; font-size: 13px; }
+
+        .toolbar { background: #1e293b; color: white; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; }
+        .toolbar h1 { font-size: 14px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
+        .toolbar-sub { font-size: 10px; color: #94a3b8; margin-left: 12px; }
+        .toolbar-sep { font-size: 10px; color: #475569; margin: 0 8px; }
+        .toolbar a { color: #60a5fa; text-decoration: none; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+
+        .filter-bar { background: #f1f5f9; border-bottom: 1px solid #cbd5e1; padding: 10px 16px; display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+        .filter-group { display: flex; flex-direction: column; gap: 3px; }
+        .filter-label { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.1em; }
+        .filter-input { border: 1px solid #cbd5e1; padding: 6px 10px; font-size: 12px; outline: none; background: white; }
+        .filter-input:focus { border-color: #94a3b8; }
+        .filter-btn { padding: 7px 20px; background: #1e293b; color: white; border: none; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; cursor: pointer; }
+        .filter-btn:hover { background: #334155; }
+
+        .result-bar { padding: 6px 16px; font-size: 10px; color: #64748b; background: white; border-bottom: 1px solid #e2e8f0; text-transform: uppercase; letter-spacing: 0.08em; }
+
+        table { width: 100%; border-collapse: collapse; background: white; }
+        thead tr { background: #1e293b; color: white; }
+        th { padding: 8px 12px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; text-align: left; border-right: 1px solid #334155; }
+        th:last-child { border-right: none; }
+        th.right { text-align: right; }
+        td { padding: 6px 12px; font-size: 12px; border-bottom: 1px solid #e2e8f0; border-right: 1px solid #f1f5f9; }
+        td:last-child { border-right: none; }
+        tr:nth-child(even) { background: rgba(248,250,252,0.7); }
+        tr:hover { background: rgba(239,246,255,0.6); }
+
+        .mono { font-family: 'Courier New', monospace; font-variant-numeric: tabular-nums; }
+        .right { text-align: right; }
+        .bold { font-weight: 700; }
+
+        .badge { font-size: 9px; font-weight: 700; text-transform: uppercase; padding: 1px 6px; border: 1px solid; display: inline-block; }
+        .badge-in { color: #16a34a; border-color: #bbf7d0; background: #f0fdf4; }
+        .badge-out { color: #2563eb; border-color: #bfdbfe; background: #eff6ff; }
+        .badge-done { color: #16a34a; border-color: #bbf7d0; background: #f0fdf4; }
+        .badge-pending { color: #d97706; border-color: #fde68a; background: #fffbeb; }
+        .badge-synced { color: #16a34a; border-color: #bbf7d0; }
+        .badge-unsynced { color: #d97706; border-color: #fde68a; }
+
+        .action-link { font-size: 10px; color: #2563eb; text-decoration: none; font-weight: 600; text-transform: uppercase; }
+        .empty { padding: 40px; text-align: center; color: #94a3b8; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; }
+    </style>
+</head>
+<body>
+
+<div class="toolbar">
+    <div style="display:flex; align-items:center;">
+        <h1>Weighbridge History</h1>
+        <span class="toolbar-sep">|</span>
+        <span class="toolbar-sub">Search & Reprint</span>
+    </div>
+    <a href="/">Back to Weighbridge</a>
+</div>
+
+<div class="filter-bar">
+    <div class="filter-group">
+        <span class="filter-label">Vehicle No</span>
+        <input class="filter-input" type="text" id="filterVehicle" placeholder="MP-22-..." style="text-transform:uppercase;">
+    </div>
+    <div class="filter-group">
+        <span class="filter-label">From Date</span>
+        <input class="filter-input" type="date" id="filterFrom">
+    </div>
+    <div class="filter-group">
+        <span class="filter-label">To Date</span>
+        <input class="filter-input" type="date" id="filterTo">
+    </div>
+    <button class="filter-btn" onclick="search()">Search</button>
+</div>
+
+<div class="result-bar" id="resultCount">Showing today's weighments</div>
+
+<table>
+    <thead>
+        <tr>
+            <th>Ticket</th>
+            <th>Date/Time</th>
+            <th>Vehicle</th>
+            <th>Dir</th>
+            <th>Supplier</th>
+            <th>Material</th>
+            <th class="right">Gross (KG)</th>
+            <th class="right">Tare (KG)</th>
+            <th class="right">Product Wt</th>
+            <th>Status</th>
+            <th>Sync</th>
+            <th>Slip</th>
+        </tr>
+    </thead>
+    <tbody id="tableBody">
+        <tr><td colspan="12" class="empty">Loading...</td></tr>
+    </tbody>
+</table>
+
+<script>
+    function fmtNum(n) { return n ? Math.round(n).toLocaleString() : '-'; }
+
+    function search() {
+        const vehicle = document.getElementById('filterVehicle').value;
+        const from = document.getElementById('filterFrom').value;
+        const to = document.getElementById('filterTo').value;
+
+        const params = new URLSearchParams();
+        if (vehicle) params.set('vehicle', vehicle);
+        if (from) params.set('from', from);
+        if (to) params.set('to', to);
+        params.set('limit', '500');
+
+        fetch('/api/weighments/search?' + params.toString())
+            .then(r => r.json())
+            .then(render)
+            .catch(() => {
+                document.getElementById('tableBody').innerHTML =
+                    '<tr><td colspan="12" class="empty">Error loading data</td></tr>';
+            });
+    }
+
+    function render(items) {
+        document.getElementById('resultCount').textContent = items.length + ' weighment(s) found';
+        const tbody = document.getElementById('tableBody');
+
+        if (items.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="12" class="empty">No weighments found</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = items.map(w => `
+            <tr>
+                <td class="mono">${w.ticket_no}</td>
+                <td style="font-size:11px;">${w.created_at || '-'}</td>
+                <td style="font-weight:600;">${w.vehicle_no}</td>
+                <td><span class="badge badge-${w.direction.toLowerCase()}">${w.direction}</span></td>
+                <td>${w.supplier_name || '-'}</td>
+                <td>${w.material || '-'}</td>
+                <td class="right mono">${fmtNum(w.weight_gross)}</td>
+                <td class="right mono">${fmtNum(w.weight_tare)}</td>
+                <td class="right mono bold" style="color:#16a34a;">${fmtNum(w.weight_net)}</td>
+                <td>${w.status === 'COMPLETE'
+                    ? '<span class="badge badge-done">Done</span>'
+                    : '<span class="badge badge-pending">Pending</span>'}</td>
+                <td>${w.synced
+                    ? '<span class="badge badge-synced">Yes</span>'
+                    : '<span class="badge badge-unsynced">No</span>'}</td>
+                <td>${w.status === 'COMPLETE'
+                    ? '<a class="action-link" href="/slip/' + w.id + '" target="_blank">Print</a>'
+                    : '-'}</td>
+            </tr>
+        `).join('');
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('filterFrom').value = today;
+    document.getElementById('filterTo').value = today;
+    search();
+</script>
+
+</body>
+</html>

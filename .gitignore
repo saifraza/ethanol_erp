@@ -15,6 +15,10 @@ backend/keepalive.sh
 backend/loadHistoricalData.ts
 .claude/worktrees/
 
+# Weighbridge runtime (local data and logs — not committed)
+weighbridge/data/
+weighbridge/logs/
+
 # Test artifacts
 test-*.pdf
 test-*.js

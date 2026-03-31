@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MSPIL Weighbridge</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; color: #1e293b; font-size: 13px; }
+
+        /* Toolbar */
+        .toolbar { background: #1e293b; color: white; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; }
+        .toolbar h1 { font-size: 14px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
+        .toolbar-sep { font-size: 10px; color: #475569; margin: 0 8px; }
+        .toolbar-sub { font-size: 10px; color: #94a3b8; }
+        .toolbar-right { display: flex; align-items: center; gap: 16px; }
+        .toolbar-right a { color: #60a5fa; text-decoration: none; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+        .status-dot { width: 7px; height: 7px; display: inline-block; border-radius: 50%; margin-right: 4px; }
+        .status-dot.green { background: #22c55e; box-shadow: 0 0 4px #22c55e; }
+        .status-dot.red { background: #ef4444; box-shadow: 0 0 4px #ef4444; }
+        .status-dot.yellow { background: #eab308; box-shadow: 0 0 4px #eab308; }
+        .status-label { font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }
+
+        /* Live Weight */
+        .weight-panel { background: #0f172a; border-bottom: 1px solid #334155; padding: 16px; text-align: center; }
+        .weight-value { font-size: 56px; font-weight: 700; font-family: 'Courier New', monospace; font-variant-numeric: tabular-nums; color: #22c55e; letter-spacing: 3px; line-height: 1; }
+        .weight-unit { font-size: 16px; color: #475569; margin-left: 6px; font-family: 'Courier New', monospace; }
+        .weight-status { font-size: 10px; color: #475569; text-transform: uppercase; letter-spacing: 0.15em; margin-top: 4px; }
+        .weight-panel.unstable .weight-value { color: #eab308; }
+        .weight-panel.disconnected .weight-value { color: #ef4444; }
+
+        /* Tabs */
+        .tab-bar { background: white; border-bottom: 1px solid #cbd5e1; display: flex; padding: 0 16px; }
+        .tab { padding: 10px 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; cursor: pointer; color: #64748b; border-bottom: 2px solid transparent; }
+        .tab.active { color: #1e293b; border-bottom-color: #2563eb; }
+        .tab:hover { color: #1e293b; }
+        .tab-badge { background: #ef4444; color: white; font-size: 9px; padding: 1px 5px; margin-left: 6px; font-weight: 700; }
+
+        /* Tab content */
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* KPI Strip */
+        .kpi-strip { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid #cbd5e1; }
+        .kpi-card { background: white; padding: 10px 16px; border-right: 1px solid #cbd5e1; border-left: 4px solid transparent; }
+        .kpi-card:nth-child(1) { border-left-color: #3b82f6; }
+        .kpi-card:nth-child(2) { border-left-color: #f59e0b; }
+        .kpi-card:nth-child(3) { border-left-color: #22c55e; }
+        .kpi-card:nth-child(4) { border-left-color: #8b5cf6; }
+        .kpi-card:last-child { border-right: none; }
+        .kpi-label { font-size: 10px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.1em; }
+        .kpi-value { font-size: 20px; font-weight: 700; color: #1e293b; font-family: 'Courier New', monospace; font-variant-numeric: tabular-nums; margin-top: 2px; }
+
+        /* Section header */
+        .section-header { background: #1e293b; color: white; padding: 8px 16px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
+
+        /* Form */
+        .form-row { padding: 6px 16px; border-bottom: 1px solid #e2e8f0; display: flex; flex-direction: column; gap: 2px; }
+        .form-label { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.1em; }
+        .form-input { border: 1px solid #cbd5e1; padding: 7px 10px; font-size: 13px; outline: none; width: 100%; background: white; }
+        .form-input:focus { border-color: #94a3b8; box-shadow: inset 0 0 0 1px #94a3b8; }
+        .form-2col { display: grid; grid-template-columns: 1fr 1fr; }
+
+        /* Direction toggle */
+        .dir-toggle { display: flex; }
+        .dir-btn { flex: 1; padding: 8px; text-align: center; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; border: 1px solid #cbd5e1; background: #f8fafc; color: #64748b; }
+        .dir-btn.active { background: #1e293b; color: white; border-color: #1e293b; }
+
+        /* Buttons */
+        .btn-primary { padding: 12px 20px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; border: none; background: #2563eb; color: white; }
+        .btn-primary:hover { background: #1d4ed8; }
+        .btn-primary.green { background: #16a34a; }
+        .btn-primary.green:hover { background: #15803d; }
+        .btn-primary.amber { background: #d97706; }
+        .btn-primary.amber:hover { background: #b45309; }
+        .btn-secondary { padding: 8px 16px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; border: 1px solid #cbd5e1; background: #f8fafc; color: #64748b; }
+
+        /* Scan box */
+        .scan-box { background: #fffbeb; border: 2px solid #f59e0b; padding: 16px; margin: 12px 16px; text-align: center; }
+        .scan-box .scan-label { font-size: 10px; font-weight: 700; color: #92400e; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
+        .scan-box input { width: 100%; max-width: 300px; padding: 10px; font-size: 20px; text-align: center; font-family: 'Courier New', monospace; border: 2px solid #cbd5e1; }
+        .scan-box input:focus { border-color: #f59e0b; outline: none; }
+
+        /* Scanned entry card */
+        .scanned-card { background: white; border: 1px solid #cbd5e1; margin: 12px 16px; }
+        .scanned-card .sc-header { background: #f1f5f9; padding: 8px 16px; display: flex; justify-content: space-between; align-items: center; }
+        .scanned-card .sc-ticket { font-size: 16px; font-weight: 700; font-family: 'Courier New', monospace; }
+        .scanned-card .sc-status { font-size: 9px; font-weight: 700; text-transform: uppercase; padding: 2px 8px; border: 1px solid; }
+        .sc-status.gate { color: #d97706; border-color: #fde68a; background: #fffbeb; }
+        .sc-status.gross { color: #2563eb; border-color: #bfdbfe; background: #eff6ff; }
+        .scanned-card .sc-body { padding: 8px 16px; }
+        .scanned-card .sc-row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 12px; }
+        .scanned-card .sc-row .lbl { color: #64748b; }
+        .scanned-card .sc-row .val { font-weight: 600; }
+        .scanned-card .sc-weight { text-align: center; padding: 12px; font-family: 'Courier New', monospace; }
+        .scanned-card .sc-weight .big { font-size: 32px; font-weight: 700; }
+        .scanned-card .sc-actions { padding: 12px 16px; display: flex; gap: 8px; border-top: 1px solid #e2e8f0; }
+
+        /* Table */
+        .data-table { width: 100%; border-collapse: collapse; }
+        .data-table th { background: #1e293b; color: white; padding: 6px 12px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; text-align: left; border-right: 1px solid #334155; }
+        .data-table th:last-child { border-right: none; }
+        .data-table th.right { text-align: right; }
+        .data-table td { padding: 6px 12px; border-bottom: 1px solid #e2e8f0; border-right: 1px solid #f1f5f9; font-size: 12px; }
+        .data-table td:last-child { border-right: none; }
+        .data-table tr:nth-child(even) { background: rgba(248,250,252,0.7); }
+        .data-table tr:hover { background: rgba(239,246,255,0.6); }
+        .mono { font-family: 'Courier New', monospace; font-variant-numeric: tabular-nums; }
+        .right { text-align: right; }
+        .bold { font-weight: 700; }
+
+        /* Badge */
+        .badge { font-size: 9px; font-weight: 700; text-transform: uppercase; padding: 1px 6px; border: 1px solid; display: inline-block; }
+        .badge-in { color: #16a34a; border-color: #bbf7d0; background: #f0fdf4; }
+        .badge-out { color: #2563eb; border-color: #bfdbfe; background: #eff6ff; }
+        .badge-gate { color: #d97706; border-color: #fde68a; background: #fffbeb; }
+        .badge-gross { color: #2563eb; border-color: #bfdbfe; background: #eff6ff; }
+        .badge-done { color: #16a34a; border-color: #bbf7d0; background: #f0fdf4; }
+
+        .action-link { font-size: 10px; color: #2563eb; text-decoration: none; font-weight: 600; text-transform: uppercase; cursor: pointer; }
+        .action-link.danger { color: #dc2626; }
+
+        .empty { padding: 24px; text-align: center; color: #94a3b8; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; }
+
+        .sync-bar { background: #f1f5f9; border-top: 1px solid #e2e8f0; padding: 4px 16px; font-size: 10px; color: #64748b; text-align: right; }
+
+        /* Modal */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); z-index: 100; }
+        .modal-overlay.active { display: flex; justify-content: center; align-items: center; }
+        .modal { background: white; width: 400px; max-width: 90vw; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); }
+        .modal-head { background: #1e293b; color: white; padding: 10px 16px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
+        .modal-body { padding: 20px 16px; }
+        .modal-body input { width: 100%; padding: 12px; font-size: 22px; text-align: center; font-family: 'Courier New', monospace; border: 1px solid #cbd5e1; }
+        .modal-foot { padding: 10px 16px; display: flex; gap: 8px; justify-content: flex-end; border-top: 1px solid #e2e8f0; }
+        .btn-modal { padding: 6px 16px; font-size: 11px; font-weight: 600; cursor: pointer; border: 1px solid #cbd5e1; background: white; color: #475569; }
+        .btn-modal.primary { background: #2563eb; color: white; border-color: #2563eb; }
+    </style>
+</head>
+<body>
+
+<!-- Toolbar -->
+<div class="toolbar">
+    <div style="display:flex; align-items:center;">
+        <h1>Weighbridge</h1>
+        <span class="toolbar-sep">|</span>
+        <span class="toolbar-sub">MSPIL Distillery ERP</span>
+    </div>
+    <div class="toolbar-right">
+        <span><span class="status-dot" id="scaleDot"></span><span class="status-label">Scale</span></span>
+        <span><span class="status-dot" id="syncDot"></span><span class="status-label">Cloud</span></span>
+        <a href="/history">History</a>
+    </div>
+</div>
+
+<!-- Live Weight -->
+<div class="weight-panel" id="weightDisplay">
+    <span class="weight-value" id="liveWeight">0</span><span class="weight-unit">KG</span>
+    <div class="weight-status" id="weightLabel">Connecting...</div>
+</div>
+
+<!-- Tabs -->
+<div class="tab-bar">
+    <div class="tab active" onclick="switchTab('gate')">Gate Entry</div>
+    <div class="tab" onclick="switchTab('weigh')">Weighbridge<span class="tab-badge" id="pendingBadge" style="display:none;">0</span></div>
+    <div class="tab" onclick="switchTab('today')">Today<span class="tab-badge" id="completedBadge" style="display:none;background:#16a34a;">0</span></div>
+</div>
+
+<!-- KPI Strip -->
+<div class="kpi-strip">
+    <div class="kpi-card"><div class="kpi-label">Inbound (KG)</div><div class="kpi-value" id="kpiInbound">0</div></div>
+    <div class="kpi-card"><div class="kpi-label">Outbound (KG)</div><div class="kpi-value" id="kpiOutbound">0</div></div>
+    <div class="kpi-card"><div class="kpi-label">Product Wt (KG)</div><div class="kpi-value" id="kpiTotal">0</div></div>
+    <div class="kpi-card"><div class="kpi-label">Trucks</div><div class="kpi-value" id="kpiTrucks">0</div></div>
+</div>
+
+<!-- ============ TAB 1: GATE ENTRY ============ -->
+<div class="tab-content active" id="tab-gate">
+    <div class="section-header">New Gate Entry</div>
+    <form id="gateForm">
+        <div class="form-row">
+            <div class="form-label">Direction</div>
+            <div class="dir-toggle">
+                <div class="dir-btn active" data-dir="IN" onclick="setDirection('IN')">Inbound (Grain)</div>
+                <div class="dir-btn" data-dir="OUT" onclick="setDirection('OUT')">Outbound (DDGS)</div>
+            </div>
+        </div>
+        <div class="form-row">
+            <label class="form-label">Vehicle Number</label>
+            <input class="form-input" type="text" id="vehicleNo" placeholder="MP-22-AB-1234" required autocomplete="off" style="text-transform:uppercase;">
+        </div>
+        <div class="form-2col">
+            <div class="form-row">
+                <label class="form-label">Supplier / Party</label>
+                <input class="form-input" type="text" id="supplierName" placeholder="Supplier name" list="supplierList">
+                <datalist id="supplierList"></datalist>
+            </div>
+            <div class="form-row">
+                <label class="form-label">Material / Item</label>
+                <input class="form-input" type="text" id="material" placeholder="Broken Rice / DDGS" list="materialList">
+                <datalist id="materialList"></datalist>
+            </div>
+        </div>
+        <div class="form-2col">
+            <div class="form-row">
+                <label class="form-label">P.O. Number</label>
+                <input class="form-input" type="text" id="poNumber" placeholder="PO number">
+            </div>
+            <div class="form-row">
+                <label class="form-label">Transporter</label>
+                <input class="form-input" type="text" id="transporter" placeholder="Transporter name">
+            </div>
+        </div>
+        <div class="form-2col">
+            <div class="form-row">
+                <label class="form-label">Vehicle Type</label>
+                <input class="form-input" type="text" id="vehicleType" placeholder="Truck 14 Wheel" list="vtypeList">
+                <datalist id="vtypeList">
+                    <option value="TRUCK 14 WHEEL">
+                    <option value="TRUCK 10 WHEEL">
+                    <option value="TRUCK 6 WHEEL">
+                    <option value="TRACTOR TROLLEY">
+                    <option value="PICKUP">
+                </datalist>
+            </div>
+            <div class="form-row">
+                <label class="form-label">Driver Mobile</label>
+                <input class="form-input" type="tel" id="driverMobile" placeholder="Mobile number">
+            </div>
+        </div>
+        <div class="form-2col">
+            <div class="form-row">
+                <label class="form-label">Bags</label>
+                <input class="form-input" type="number" id="bags" placeholder="0" min="0">
+            </div>
+            <div class="form-row">
+                <label class="form-label">Remarks</label>
+                <input class="form-input" type="text" id="remarks" placeholder="Optional">
+            </div>
+        </div>
+        <div style="padding: 10px 16px;">
+            <button type="button" class="btn-primary" style="width:100%;" onclick="createGateEntry()">
+                Create Gate Entry & Print Pass
+            </button>
+        </div>
+    </form>
+</div>
+
+<!-- ============ TAB 2: WEIGHBRIDGE (Scan + Weigh) ============ -->
+<div class="tab-content" id="tab-weigh">
+    <!-- Scan Input -->
+    <div class="scan-box">
+        <div class="scan-label">Scan QR Code or Enter Ticket Number</div>
+        <input type="text" id="scanInput" placeholder="Scan / Type ticket #" autofocus>
+    </div>
+
+    <!-- Scanned entry appears here -->
+    <div id="scannedEntry"></div>
+
+    <!-- Pending lists -->
+    <div class="section-header">Waiting for Gross Weight <span style="opacity:0.5;">(<span id="gateCount">0</span>)</span></div>
+    <div id="gateList"><div class="empty">No gate entries pending</div></div>
+
+    <div class="section-header">Waiting for Tare Weight <span style="opacity:0.5;">(<span id="grossCount">0</span>)</span></div>
+    <div id="grossList"><div class="empty">No trucks waiting for tare</div></div>
+</div>
+
+<!-- ============ TAB 3: TODAY ============ -->
+<div class="tab-content" id="tab-today">
+    <div class="section-header">Today's Completed Weighments <span style="opacity:0.5;">(<span id="completedCount">0</span>)</span></div>
+    <div id="completedList" style="max-height: 500px; overflow-y: auto;">
+        <div class="empty">No completed weighments today</div>
+    </div>
+</div>
+
+<!-- Sync Bar -->
+<div class="sync-bar"><span id="syncStatus">Checking sync...</span></div>
+
+<!-- Manual Weight Modal -->
+<div class="modal-overlay" id="manualModal">
+    <div class="modal">
+        <div class="modal-head">Enter Weight Manually</div>
+        <div class="modal-body">
+            <div class="form-label" style="margin-bottom:8px;">Weight in KG (from indicator display)</div>
+            <input type="number" id="manualWeight" placeholder="0" min="0" step="10">
+        </div>
+        <div class="modal-foot">
+            <button class="btn-modal" onclick="closeManualModal()">Cancel</button>
+            <button class="btn-modal primary" onclick="submitManualWeight()">Confirm</button>
+        </div>
+    </div>
+</div>
+
+<input type="hidden" id="direction" value="IN">
+<input type="hidden" id="manualAction" value="">
+<input type="hidden" id="manualWeighmentId" value="">
+
+<script>
+    let currentWeight = 0, isStable = false, isConnected = false;
+
+    // === TABS ===
+    function switchTab(name) {
+        document.querySelectorAll('.tab').forEach((t, i) => {
+            t.classList.toggle('active', ['gate','weigh','today'][i] === name);
+        });
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        document.getElementById('tab-' + name).classList.add('active');
+        if (name === 'weigh') document.getElementById('scanInput').focus();
+    }
+
+    // === WEIGHT POLLING ===
+    function pollWeight() {
+        fetch('/api/weight').then(r => r.json()).then(data => {
+            currentWeight = data.weight; isStable = data.stable; isConnected = data.connected;
+            document.getElementById('liveWeight').textContent = Math.round(data.weight).toLocaleString();
+            const d = document.getElementById('weightDisplay'), l = document.getElementById('weightLabel'), dot = document.getElementById('scaleDot');
+            if (!data.connected) { d.className='weight-panel disconnected'; l.textContent='SCALE DISCONNECTED'; dot.className='status-dot red'; }
+            else if (data.stable) { d.className='weight-panel'; l.textContent='STABLE'; dot.className='status-dot green'; }
+            else { d.className='weight-panel unstable'; l.textContent='READING...'; dot.className='status-dot yellow'; }
+        }).catch(() => { document.getElementById('scaleDot').className='status-dot red'; });
+    }
+
+    // === DIRECTION ===
+    function setDirection(dir) {
+        document.getElementById('direction').value = dir;
+        document.querySelectorAll('.dir-btn').forEach(b => b.classList.toggle('active', b.dataset.dir === dir));
+    }
+
+    // === GATE ENTRY ===
+    function createGateEntry() {
+        const v = document.getElementById('vehicleNo').value.trim();
+        if (!v) { alert('Enter vehicle number'); return; }
+        const payload = {
+            vehicle_no: v, direction: document.getElementById('direction').value,
+            supplier_name: document.getElementById('supplierName').value,
+            material: document.getElementById('material').value,
+            po_number: document.getElementById('poNumber').value,
+            transporter: document.getElementById('transporter').value,
+            driver_mobile: document.getElementById('driverMobile').value,
+            vehicle_type: document.getElementById('vehicleType').value,
+            bags: parseInt(document.getElementById('bags').value) || 0,
+            remarks: document.getElementById('remarks').value,
+        };
+        fetch('/api/gate-entry', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) })
+        .then(r => r.json()).then(data => {
+            if (data.error) { alert(data.error); return; }
+            // Clear form
+            ['vehicleNo','supplierName','material','poNumber','transporter','driverMobile','vehicleType','bags','remarks'].forEach(id => document.getElementById(id).value = '');
+            // Open gate pass for printing
+            window.open('/gate-pass/' + data.id, '_blank', 'width=400,height=700');
+            refreshLists();
+        }).catch(e => alert('Error: ' + e));
+    }
+
+    // === QR SCAN ===
+    document.getElementById('scanInput').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            const val = this.value.trim();
+            if (val) lookupAndShow(val);
+            this.value = '';
+        }
+    });
+
+    function lookupAndShow(identifier) {
+        fetch('/api/weighments/lookup/' + encodeURIComponent(identifier))
+        .then(r => r.json()).then(w => {
+            if (w.error) { alert('Ticket not found: ' + identifier); return; }
+            showScannedEntry(w);
+        }).catch(e => alert('Lookup failed: ' + e));
+    }
+
+    function showScannedEntry(w) {
+        const isGate = w.status === 'GATE_ENTRY';
+        const isGross = w.status === 'GROSS_DONE';
+        const isDone = w.status === 'COMPLETE';
+
+        let statusBadge = isGate ? '<span class="sc-status gate">Awaiting Gross</span>'
+            : isGross ? '<span class="sc-status gross">Awaiting Tare</span>'
+            : '<span class="badge badge-done">Complete</span>';
+
+        let weightSection = '';
+        if (isGross) {
+            weightSection = `<div class="sc-weight">
+                <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;">Gross Weight</div>
+                <div class="big">${fmtNum(w.weight_gross)} KG</div>
+            </div>`;
+        }
+        if (isDone) {
+            weightSection = `<div class="sc-weight">
+                <div style="font-size:10px;color:#64748b;">Gross: ${fmtNum(w.weight_gross)} KG | Tare: ${fmtNum(w.weight_tare)} KG</div>
+                <div class="big" style="color:#16a34a;">${fmtNum(w.weight_net)} KG</div>
+                <div style="font-size:10px;color:#64748b;text-transform:uppercase;">Product Weight</div>
+            </div>`;
+        }
+
+        let actions = '';
+        if (isGate) {
+            actions = `<button class="btn-primary green" style="flex:1;" onclick="captureGross('${w.id}')">Capture Gross Weight</button>
+                       <button class="btn-secondary" onclick="showManual('gross','${w.id}')">Manual</button>`;
+        } else if (isGross) {
+            actions = `<button class="btn-primary amber" style="flex:1;" onclick="captureTare('${w.id}')">Capture Tare Weight</button>
+                       <button class="btn-secondary" onclick="showManual('tare','${w.id}')">Manual</button>`;
+        } else {
+            actions = `<a class="action-link" href="/slip/${w.id}" target="_blank">Print Final Slip</a>`;
+        }
+
+        document.getElementById('scannedEntry').innerHTML = `
+            <div class="scanned-card">
+                <div class="sc-header">
+                    <span class="sc-ticket">#${w.ticket_no}</span>
+                    ${statusBadge}
+                </div>
+                <div class="sc-body">
+                    <div class="sc-row"><span class="lbl">Vehicle</span><span class="val bold">${w.vehicle_no}</span></div>
+                    <div class="sc-row"><span class="lbl">Direction</span><span class="val">${w.direction === 'IN' ? 'Inward' : 'Outward'}</span></div>
+                    <div class="sc-row"><span class="lbl">Material</span><span class="val">${w.material || '-'}</span></div>
+                    <div class="sc-row"><span class="lbl">Supplier</span><span class="val">${w.supplier_name || '-'}</span></div>
+                    ${w.po_number ? `<div class="sc-row"><span class="lbl">P.O.</span><span class="val">${w.po_number}</span></div>` : ''}
+                    ${w.transporter ? `<div class="sc-row"><span class="lbl">Transporter</span><span class="val">${w.transporter}</span></div>` : ''}
+                </div>
+                ${weightSection}
+                <div class="sc-actions">${actions}</div>
+            </div>`;
+    }
+
+    // === CAPTURE GROSS ===
+    function captureGross(id, manualWt) {
+        const payload = manualWt !== undefined ? { weight: manualWt } : {};
+        fetch(`/api/weighments/${id}/gross`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) })
+        .then(r => r.json()).then(data => {
+            if (data.error) { alert(data.error); return; }
+            window.open('/gross-slip/' + data.id, '_blank', 'width=400,height=600');
+            document.getElementById('scannedEntry').innerHTML = '';
+            refreshLists();
+        }).catch(e => alert('Error: ' + e));
+    }
+
+    // === CAPTURE TARE ===
+    function captureTare(id, manualWt) {
+        const payload = manualWt !== undefined ? { weight: manualWt } : {};
+        fetch(`/api/weighments/${id}/tare`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) })
+        .then(r => r.json()).then(data => {
+            if (data.error) { alert(data.error); return; }
+            window.open('/slip/' + data.id, '_blank', 'width=400,height=600');
+            document.getElementById('scannedEntry').innerHTML = '';
+            refreshLists();
+        }).catch(e => alert('Error: ' + e));
+    }
+
+    // === MANUAL MODAL ===
+    function showManual(action, id) {
+        document.getElementById('manualAction').value = action;
+        document.getElementById('manualWeighmentId').value = id;
+        document.getElementById('manualWeight').value = '';
+        document.getElementById('manualModal').classList.add('active');
+        document.getElementById('manualWeight').focus();
+    }
+    function closeManualModal() { document.getElementById('manualModal').classList.remove('active'); }
+    function submitManualWeight() {
+        const w = parseFloat(document.getElementById('manualWeight').value);
+        if (!w || w <= 0) { alert('Enter valid weight'); return; }
+        const action = document.getElementById('manualAction').value;
+        const id = document.getElementById('manualWeighmentId').value;
+        if (action === 'gross') captureGross(id, w);
+        else if (action === 'tare') captureTare(id, w);
+        closeManualModal();
+    }
+
+    // === REFRESH LISTS ===
+    function fmtNum(n) { return n ? Math.round(n).toLocaleString() : '-'; }
+
+    function refreshLists() {
+        // Gate entries (waiting for gross)
+        fetch('/api/weighments/gate-entries').then(r => r.json()).then(items => {
+            document.getElementById('gateCount').textContent = items.length;
+            const c = document.getElementById('gateList');
+            if (!items.length) { c.innerHTML = '<div class="empty">No gate entries pending</div>'; }
+            else {
+                c.innerHTML = '<table class="data-table"><thead><tr><th>#</th><th>Vehicle</th><th>Dir</th><th>Supplier</th><th>Material</th><th>Time</th><th></th></tr></thead><tbody>' +
+                    items.map(w => `<tr>
+                        <td class="mono">${w.ticket_no}</td>
+                        <td class="bold">${w.vehicle_no}</td>
+                        <td><span class="badge badge-${w.direction.toLowerCase()}">${w.direction}</span></td>
+                        <td>${w.supplier_name || '-'}</td>
+                        <td>${w.material || '-'}</td>
+                        <td style="font-size:11px;">${w.gate_entry_at || w.created_at}</td>
+                        <td><a class="action-link" onclick="lookupAndShow(JSON.parse(decodeURIComponent('${encodeURIComponent(JSON.stringify(w))}')))" style="display:none;"></a>
+                            <a class="action-link" onclick="captureGross('${w.id}')">Gross</a>
+                        </td>
+                    </tr>`).join('') + '</tbody></table>';
+            }
+            updatePendingBadge();
+        });
+
+        // Gross done (waiting for tare)
+        fetch('/api/weighments/gross-done').then(r => r.json()).then(items => {
+            document.getElementById('grossCount').textContent = items.length;
+            const c = document.getElementById('grossList');
+            if (!items.length) { c.innerHTML = '<div class="empty">No trucks waiting for tare</div>'; }
+            else {
+                c.innerHTML = '<table class="data-table"><thead><tr><th>#</th><th>Vehicle</th><th>Dir</th><th>Supplier</th><th class="right">Gross (KG)</th><th></th></tr></thead><tbody>' +
+                    items.map(w => `<tr>
+                        <td class="mono">${w.ticket_no}</td>
+                        <td class="bold">${w.vehicle_no}</td>
+                        <td><span class="badge badge-${w.direction.toLowerCase()}">${w.direction}</span></td>
+                        <td>${w.supplier_name || '-'}</td>
+                        <td class="right mono bold">${fmtNum(w.weight_gross)}</td>
+                        <td><a class="action-link" onclick="captureTare('${w.id}')">Tare</a></td>
+                    </tr>`).join('') + '</tbody></table>';
+            }
+            updatePendingBadge();
+        });
+
+        // Completed
+        fetch('/api/weighments/today').then(r => r.json()).then(items => {
+            const completed = items.filter(w => w.status === 'COMPLETE');
+            document.getElementById('completedCount').textContent = completed.length;
+            const cb = document.getElementById('completedBadge');
+            if (completed.length) { cb.style.display = 'inline'; cb.textContent = completed.length; } else { cb.style.display = 'none'; }
+            const c = document.getElementById('completedList');
+            if (!completed.length) { c.innerHTML = '<div class="empty">No completed weighments today</div>'; }
+            else {
+                c.innerHTML = '<table class="data-table"><thead><tr><th>#</th><th>Vehicle</th><th>Dir</th><th>Supplier</th><th class="right">Gross</th><th class="right">Tare</th><th class="right">Product Wt</th><th>Print Slips</th></tr></thead><tbody>' +
+                    completed.map(w => `<tr>
+                        <td class="mono">${w.ticket_no}</td>
+                        <td class="bold">${w.vehicle_no}</td>
+                        <td><span class="badge badge-${w.direction.toLowerCase()}">${w.direction}</span></td>
+                        <td>${w.supplier_name || '-'}</td>
+                        <td class="right mono">${fmtNum(w.weight_gross)}</td>
+                        <td class="right mono">${fmtNum(w.weight_tare)}</td>
+                        <td class="right mono bold" style="color:#16a34a;">${fmtNum(w.weight_net)}</td>
+                        <td style="white-space:nowrap;">
+                            <a class="action-link" href="/gate-pass/${w.id}" target="_blank">Gate</a>
+                            <a class="action-link" href="/gross-slip/${w.id}" target="_blank" style="margin-left:6px;">Gross</a>
+                            <a class="action-link" href="/slip/${w.id}" target="_blank" style="margin-left:6px;">Final</a>
+                        </td>
+                    </tr>`).join('') + '</tbody></table>';
+            }
+        });
+
+        // KPIs
+        fetch('/api/weighments/summary').then(r => r.json()).then(s => {
+            document.getElementById('kpiInbound').textContent = fmtNum(s.inbound_kg);
+            document.getElementById('kpiOutbound').textContent = fmtNum(s.outbound_kg);
+            document.getElementById('kpiTotal').textContent = fmtNum(s.total_net_kg);
+            document.getElementById('kpiTrucks').textContent = s.completed;
+        });
+
+        // Sync
+        fetch('/api/sync-stats').then(r => r.json()).then(s => {
+            const dot = document.getElementById('syncDot'), label = document.getElementById('syncStatus');
+            if (s.pending > 0) { dot.className='status-dot yellow'; label.textContent=s.pending+' pending sync'; }
+            else { dot.className='status-dot green'; label.textContent='All synced'; }
+        }).catch(() => { document.getElementById('syncDot').className='status-dot red'; });
+    }
+
+    function updatePendingBadge() {
+        const g = parseInt(document.getElementById('gateCount').textContent) || 0;
+        const gr = parseInt(document.getElementById('grossCount').textContent) || 0;
+        const total = g + gr;
+        const badge = document.getElementById('pendingBadge');
+        if (total > 0) { badge.style.display = 'inline'; badge.textContent = total; } else { badge.style.display = 'none'; }
+    }
+
+    function deleteWeighment(id) {
+        if (!confirm('Delete this weighment?')) return;
+        fetch(`/api/weighments/${id}`, { method: 'DELETE' }).then(() => refreshLists());
+    }
+
+    function loadDropdowns() {
+        fetch('/api/suppliers').then(r => r.json()).then(items => {
+            document.getElementById('supplierList').innerHTML = items.map(s => `<option value="${s.name}">`).join('');
+        }).catch(() => {});
+        fetch('/api/materials').then(r => r.json()).then(items => {
+            document.getElementById('materialList').innerHTML = items.map(m => `<option value="${m.name}">`).join('');
+        }).catch(() => {});
+    }
+
+    // Init
+    setInterval(pollWeight, 500);
+    setInterval(refreshLists, 5000);
+    pollWeight(); refreshLists(); loadDropdowns();
+    document.getElementById('manualWeight').addEventListener('keypress', e => { if (e.key === 'Enter') submitManualWeight(); });
+</script>
+
+</body>
+</html>

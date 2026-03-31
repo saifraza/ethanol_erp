@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Weighment Slip #{{ w.ticket_no }}</title>
+    <style>
+        @page { size: A4; margin: 10mm; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Courier New', monospace; font-size: 13px; max-width: 210mm; margin: 0 auto; padding: 10px; }
+
+        .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 8px; }
+        .company { font-size: 16px; font-weight: 700; }
+        .address { font-size: 11px; color: #555; margin-top: 2px; }
+        .title { font-size: 18px; font-weight: 700; text-align: center; margin: 10px 0; text-transform: uppercase; letter-spacing: 2px; }
+
+        .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid #000; margin-bottom: 10px; }
+        .info-cell { padding: 6px 10px; border-bottom: 1px solid #ccc; display: flex; justify-content: space-between; }
+        .info-cell:nth-child(odd) { border-right: 1px solid #ccc; }
+        .info-cell .lbl { color: #555; font-size: 11px; }
+        .info-cell .val { font-weight: 700; text-align: right; }
+
+        .weight-table { width: 100%; border-collapse: collapse; border: 2px solid #000; margin-bottom: 10px; }
+        .weight-table th { background: #f0f0f0; padding: 8px 12px; text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; border: 1px solid #000; }
+        .weight-table td { padding: 8px 12px; border: 1px solid #000; font-size: 14px; }
+        .weight-table .right { text-align: right; }
+        .weight-table .big { font-size: 20px; font-weight: 700; }
+
+        .product-row { background: #f0f0f0; }
+        .product-row td { font-size: 18px; font-weight: 700; }
+
+        .timestamps { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0; border: 1px solid #ccc; margin-bottom: 10px; }
+        .ts-cell { padding: 6px 10px; border-right: 1px solid #ccc; text-align: center; }
+        .ts-cell:last-child { border-right: none; }
+        .ts-cell .ts-lbl { font-size: 10px; color: #555; text-transform: uppercase; }
+        .ts-cell .ts-val { font-size: 11px; font-weight: 600; margin-top: 2px; }
+
+        .signatures { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-top: 30px; padding-top: 10px; }
+        .sig-box { text-align: center; border-top: 1px solid #000; padding-top: 4px; font-size: 10px; color: #555; text-transform: uppercase; }
+
+        .footer { text-align: center; font-size: 9px; color: #888; margin-top: 15px; border-top: 1px solid #ccc; padding-top: 5px; }
+
+        .no-print { margin-top: 20px; text-align: center; }
+        @media print { .no-print { display: none; } }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div class="company">MAHAKAUSHAL SUGAR & POWER INDUSTRIES LTD</div>
+        <div class="address">Village Bachai, Dist. Narsinghpur, MP</div>
+    </div>
+
+    <div class="title">Weighbridge Slip</div>
+
+    <div class="info-grid">
+        <div class="info-cell">
+            <span class="lbl">Ticket No.</span>
+            <span class="val">{{ w.ticket_no }}</span>
+        </div>
+        <div class="info-cell">
+            <span class="lbl">Date</span>
+            <span class="val">{{ w.created_at }}</span>
+        </div>
+        <div class="info-cell">
+            <span class="lbl">Vehicle No.</span>
+            <span class="val">{{ w.vehicle_no }}</span>
+        </div>
+        <div class="info-cell">
+            <span class="lbl">Direction</span>
+            <span class="val">{{ 'INWARD' if w.direction == 'IN' else 'OUTWARD' }}</span>
+        </div>
+        <div class="info-cell">
+            <span class="lbl">Material</span>
+            <span class="val">{{ w.material or '-' }}</span>
+        </div>
+        <div class="info-cell">
+            <span class="lbl">Supplier/Party</span>
+            <span class="val">{{ w.supplier_name or '-' }}</span>
+        </div>
+        {% if w.po_number %}
+        <div class="info-cell">
+            <span class="lbl">P.O. No.</span>
+            <span class="val">{{ w.po_number }}</span>
+        </div>
+        {% endif %}
+        {% if w.transporter %}
+        <div class="info-cell">
+            <span class="lbl">Transporter</span>
+            <span class="val">{{ w.transporter }}</span>
+        </div>
+        {% endif %}
+        {% if w.vehicle_type %}
+        <div class="info-cell">
+            <span class="lbl">Vehicle Type</span>
+            <span class="val">{{ w.vehicle_type }}</span>
+        </div>
+        {% endif %}
+        {% if w.driver_mobile %}
+        <div class="info-cell">
+            <span class="lbl">Driver Mobile</span>
+            <span class="val">{{ w.driver_mobile }}</span>
+        </div>
+        {% endif %}
+        {% if w.bags %}
+        <div class="info-cell">
+            <span class="lbl">Bags</span>
+            <span class="val">{{ w.bags }}</span>
+        </div>
+        {% endif %}
+        <div class="info-cell">
+            <span class="lbl">Shift</span>
+            <span class="val">{{ w.shift or '-' }}</span>
+        </div>
+    </div>
+
+    <table class="weight-table">
+        <thead>
+            <tr>
+                <th>Description</th>
+                <th class="right">Weight (KG)</th>
+                <th>Date / Time</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Gross Weight</td>
+                <td class="right big">{{ "{:,.0f}".format(w.weight_gross or 0) }}</td>
+                <td>{{ w.first_weight_at or '-' }}</td>
+            </tr>
+            <tr>
+                <td>Tare Weight</td>
+                <td class="right big">{{ "{:,.0f}".format(w.weight_tare or 0) }}</td>
+                <td>{{ w.second_weight_at or '-' }}</td>
+            </tr>
+            <tr class="product-row">
+                <td>PRODUCT WEIGHT</td>
+                <td class="right">{{ "{:,.0f}".format(w.weight_net or 0) }}</td>
+                <td></td>
+            </tr>
+        </tbody>
+    </table>
+
+    {% if w.remarks %}
+    <div style="padding: 4px 0; font-size: 12px;">
+        <span style="color:#555;">Remarks:</span> {{ w.remarks }}
+    </div>
+    {% endif %}
+
+    <div class="signatures">
+        <div class="sig-box">Weighbridge Operator</div>
+        <div class="sig-box">Driver</div>
+        <div class="sig-box">Authorized Signatory</div>
+    </div>
+
+    <div class="footer">
+        MSPIL Weighbridge System | Computer Generated Slip | Ticket #{{ w.ticket_no }}
+    </div>
+
+    <div class="no-print">
+        <button onclick="window.print()" style="padding:10px 30px; font-size:14px; cursor:pointer; background:#1e293b; color:white; border:none;">
+            PRINT (Dot Matrix)
+        </button>
+        <button onclick="window.close()" style="padding:10px 30px; font-size:14px; cursor:pointer; background:#eee; border:1px solid #ccc; margin-left:8px;">
+            CLOSE
+        </button>
+    </div>
+
+</body>
+</html>
