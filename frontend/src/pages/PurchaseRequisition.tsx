@@ -43,7 +43,7 @@ export default function PurchaseRequisition() {
   const [form, setForm] = useState({
     title: '', itemName: '', quantity: '1', unit: 'nos', estimatedCost: '',
     urgency: 'ROUTINE', category: 'GENERAL', justification: '', supplier: '', remarks: '',
-    department: '', inventoryItemId: '',
+    department: '', inventoryItemId: '', requestedByPerson: '',
   });
   const [saving, setSaving] = useState(false);
 
@@ -84,7 +84,7 @@ export default function PurchaseRequisition() {
     setSaving(true);
     try {
       await api.post('/purchase-requisition', { ...form, status: 'SUBMITTED' });
-      setForm({ title: '', itemName: '', quantity: '1', unit: 'nos', estimatedCost: '', urgency: 'ROUTINE', category: 'GENERAL', justification: '', supplier: '', remarks: '', department: '', inventoryItemId: '' });
+      setForm({ title: '', itemName: '', quantity: '1', unit: 'nos', estimatedCost: '', urgency: 'ROUTINE', category: 'GENERAL', justification: '', supplier: '', remarks: '', department: '', inventoryItemId: '', requestedByPerson: '' });
       setItemQuery('');
       setTab('list');
       load();
@@ -215,7 +215,7 @@ export default function PurchaseRequisition() {
                                 estimatedCost: it.costPerUnit ? String(it.costPerUnit) : f.estimatedCost,
                                 category: it.category || f.category,
                                 supplier: it.supplier || f.supplier,
-                                title: f.title || `Need ${it.name}`,
+                                title: `Need ${it.name}`,
                               }));
                               setShowItemDropdown(false);
                             }}>
@@ -230,7 +230,21 @@ export default function PurchaseRequisition() {
                     )}
                   </div>
                 </div>
-                {form.inventoryItemId && <div className="text-[9px] text-green-600 mt-0.5">Linked to inventory item</div>}
+                {form.inventoryItemId && (() => {
+                  const item = invItems.find(i => i.id === form.inventoryItemId);
+                  if (!item) return <div className="text-[9px] text-green-600 mt-0.5">Linked to inventory</div>;
+                  const qty = parseFloat(form.quantity) || 0;
+                  const inStock = item.currentStock >= qty;
+                  const partial = item.currentStock > 0 && item.currentStock < qty;
+                  return (
+                    <div className={`text-[9px] mt-0.5 font-bold ${inStock ? 'text-green-600' : partial ? 'text-amber-600' : 'text-red-600'}`}>
+                      In Stock: {item.currentStock} {item.unit}
+                      {inStock && ' — available from warehouse'}
+                      {partial && ` — ${item.currentStock} from warehouse, ${qty - item.currentStock} needs purchase`}
+                      {!inStock && item.currentStock === 0 && ' — not in stock, full purchase needed'}
+                    </div>
+                  );
+                })()}
               </div>
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Qty / Unit</label>
@@ -293,6 +307,15 @@ export default function PurchaseRequisition() {
                   <option value="">Select department</option>
                   {departments.map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Requested By (Person)</label>
+                <input
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  placeholder="Person name"
+                  value={form.requestedByPerson || ''}
+                  onChange={e => setForm({ ...form, requestedByPerson: e.target.value })}
+                />
               </div>
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Preferred Supplier</label>
