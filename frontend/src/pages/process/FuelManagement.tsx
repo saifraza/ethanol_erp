@@ -78,7 +78,7 @@ const EMPTY_FORM: Partial<FuelItem> = {
 };
 
 export default function FuelManagement() {
-  const [tab, setTab] = useState<'master' | 'daily' | 'deals'>('master');
+  const [tab, setTab] = useState<'master' | 'daily' | 'deals'>('deals');
   const [fuels, setFuels] = useState<FuelItem[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [rows, setRows] = useState<ConsumptionRow[]>([]);
@@ -284,16 +284,16 @@ export default function FuelManagement() {
           )}
         </div>
 
-        {/* Tabs */}
+        {/* Tabs — Deals first */}
         <div className="bg-white border-x border-b border-slate-300 -mx-3 md:-mx-6 flex">
-          <button onClick={() => setTab('master')} className={`px-5 py-2.5 text-[11px] font-bold uppercase tracking-widest border-b-2 ${tab === 'master' ? 'border-blue-600 text-slate-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
-            Fuel Master
+          <button onClick={() => setTab('deals')} className={`px-5 py-2.5 text-[11px] font-bold uppercase tracking-widest border-b-2 ${tab === 'deals' ? 'border-blue-600 text-slate-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+            Fuel Deals {deals.length > 0 && <span className="ml-1 bg-orange-500 text-white text-[9px] px-1.5 py-0.5">{deals.length}</span>}
           </button>
           <button onClick={() => setTab('daily')} className={`px-5 py-2.5 text-[11px] font-bold uppercase tracking-widest border-b-2 ${tab === 'daily' ? 'border-blue-600 text-slate-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
             Daily Consumption
           </button>
-          <button onClick={() => setTab('deals')} className={`px-5 py-2.5 text-[11px] font-bold uppercase tracking-widest border-b-2 ${tab === 'deals' ? 'border-blue-600 text-slate-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
-            Open Deals {deals.length > 0 && <span className="ml-1 bg-orange-500 text-white text-[9px] px-1.5 py-0.5">{deals.length}</span>}
+          <button onClick={() => setTab('master')} className={`px-5 py-2.5 text-[11px] font-bold uppercase tracking-widest border-b-2 ${tab === 'master' ? 'border-blue-600 text-slate-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+            Fuel Master
           </button>
         </div>
 
@@ -459,32 +459,58 @@ export default function FuelManagement() {
                   <tr><td colSpan={10} className="px-3 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">No open deals. Click + New Deal to create one.</td></tr>
                 ) : deals.map((d, i) => {
                   const line = d.lines[0];
+                  const pipelineSteps = [
+                    { label: 'Deal', done: true, value: `${fmtCurrency(line?.rate || 0)}/${line?.unit || 'MT'}`, sub: line?.description || '' },
+                    { label: 'Receiving', done: d.truckCount > 0, value: `${fmtNum(d.totalReceived)} ${line?.unit || 'MT'}`, sub: `${d.truckCount} truck${d.truckCount !== 1 ? 's' : ''}` },
+                    { label: 'Value', done: d.totalValue > 0, value: fmtCurrency(d.totalValue), sub: d.truckCount > 0 ? 'Total receivable' : 'No receipts yet' },
+                    { label: 'Paid', done: d.totalPaid > 0, value: fmtCurrency(d.totalPaid), sub: d.outstanding > 0 ? `${fmtCurrency(d.outstanding)} due` : 'Cleared' },
+                  ];
                   return (
-                    <tr key={d.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
-                      <td className="px-3 py-1.5 font-mono text-slate-500 border-r border-slate-100">PO-{d.poNo}</td>
-                      <td className="px-3 py-1.5 font-semibold text-slate-800 border-r border-slate-100">
+                    <React.Fragment key={d.id}>
+                    {/* Deal header row */}
+                    <tr className={`border-b border-slate-100 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                      <td className="px-3 py-2 font-mono text-slate-500 border-r border-slate-100">PO-{d.poNo}</td>
+                      <td className="px-3 py-2 font-semibold text-slate-800 border-r border-slate-100">
                         <div>{d.vendor.name}</div>
                         {d.vendor.phone && <div className="text-[9px] text-slate-400">{d.vendor.phone}</div>}
                       </td>
-                      <td className="px-3 py-1.5 border-r border-slate-100">{line?.description || '--'}</td>
-                      <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">
+                      <td className="px-3 py-2 border-r border-slate-100">{line?.description || '--'}</td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-100">
                         {fmtCurrency(line?.rate || 0)}/{line?.unit || 'MT'}
                       </td>
-                      <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold border-r border-slate-100">
+                      <td className="px-3 py-2 text-right font-mono tabular-nums font-bold border-r border-slate-100">
                         {fmtNum(d.totalReceived)} {line?.unit || 'MT'}
                       </td>
-                      <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{fmtCurrency(d.totalValue)}</td>
-                      <td className="px-3 py-1.5 text-right font-mono tabular-nums text-green-700 border-r border-slate-100">{fmtCurrency(d.totalPaid)}</td>
-                      <td className={`px-3 py-1.5 text-right font-mono tabular-nums font-bold border-r border-slate-100 ${d.outstanding > 0 ? 'text-red-600' : 'text-slate-500'}`}>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-100">{fmtCurrency(d.totalValue)}</td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums text-green-700 border-r border-slate-100">{fmtCurrency(d.totalPaid)}</td>
+                      <td className={`px-3 py-2 text-right font-mono tabular-nums font-bold border-r border-slate-100 ${d.outstanding > 0 ? 'text-red-600' : 'text-slate-500'}`}>
                         {fmtCurrency(d.outstanding)}
                       </td>
-                      <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{d.truckCount}</td>
-                      <td className="px-3 py-1.5">
+                      <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-100">{d.truckCount}</td>
+                      <td className="px-3 py-2">
                         {d.outstanding > 0 && <button onClick={() => recordPayment(d.id, d.vendor.name, d.outstanding)} className="text-[10px] text-green-600 font-semibold uppercase hover:underline mr-2">Pay</button>}
                         <button onClick={() => updateRate(d.id)} className="text-[10px] text-blue-600 font-semibold uppercase hover:underline mr-2">Rate</button>
                         <button onClick={() => closeDeal(d.id)} className="text-[10px] text-red-500 font-semibold uppercase hover:underline">Close</button>
                       </td>
                     </tr>
+                    {/* Pipeline row */}
+                    <tr className="border-b border-slate-200">
+                      <td colSpan={10} className="px-3 py-2 bg-slate-50/30">
+                        <div className="flex items-center gap-0">
+                          {pipelineSteps.map((step, si) => (
+                            <React.Fragment key={step.label}>
+                              {si > 0 && <div className={`h-0.5 w-6 ${step.done ? 'bg-green-400' : 'bg-slate-200'}`} />}
+                              <div className={`flex-1 border ${step.done ? 'border-green-300 bg-green-50' : 'border-slate-200 bg-white'} px-3 py-1.5 text-center`}>
+                                <div className={`text-[9px] font-bold uppercase tracking-widest ${step.done ? 'text-green-700' : 'text-slate-400'}`}>{step.label}</div>
+                                <div className="text-xs font-bold text-slate-800 font-mono tabular-nums mt-0.5">{step.value}</div>
+                                <div className={`text-[9px] mt-0.5 ${step.label === 'Paid' && d.outstanding > 0 ? 'text-red-500 font-bold' : 'text-slate-400'}`}>{step.sub}</div>
+                              </div>
+                            </React.Fragment>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                    </React.Fragment>
                   );
                 })}
               </tbody>
