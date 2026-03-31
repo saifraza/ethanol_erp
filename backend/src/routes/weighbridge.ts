@@ -36,6 +36,13 @@ interface PCHeartbeat {
   weightsToday?: number;
   lastTicket?: number;
   version?: string;
+  system?: {
+    cpuPercent?: number;
+    memoryMb?: number;
+    diskFreeGb?: number;
+    hostname?: string;
+    os?: string;
+  };
 }
 
 const pcHeartbeats = new Map<string, PCHeartbeat>();
@@ -574,6 +581,7 @@ router.post('/heartbeat', asyncHandler(async (req: Request, res: Response) => {
     weightsToday: req.body.weightsToday,
     lastTicket: req.body.lastTicket,
     version: req.body.version,
+    system: req.body.system,
   };
   pcHeartbeats.set(pcId, hb);
   res.json({ ok: true });

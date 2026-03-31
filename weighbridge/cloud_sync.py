@@ -33,6 +33,7 @@ class CloudSync:
         self._backoff = BACKOFF_INITIAL_SECONDS
         self._last_master_pull = 0
         self._cloud_reachable = False
+        self._start_time = time.time()
 
     @property
     def is_cloud_reachable(self) -> bool:
@@ -149,7 +150,7 @@ class CloudSync:
 
     def send_heartbeat(self, extra: dict = None):
         """Send heartbeat to cloud with status info."""
-        import os
+        import os, platform, socket
 
         sync_stats = db.get_sync_stats()
         db_size = 0
@@ -161,18 +162,48 @@ class CloudSync:
         # Count today's weighments
         summary = db.get_daily_summary()
 
+        # System metrics
+        cpu, mem_mb, disk_gb = 0.0, 0, 0.0
+        try:
+            import psutil
+            cpu = psutil.cpu_percent(interval=0)
+            mem_mb = round(psutil.virtual_memory().used / 1024 / 1024)
+            disk_gb = round(psutil.disk_usage("C:\\").free / 1024 / 1024 / 1024, 1)
+        except Exception:
+            pass
+
+        # Get Tailscale IP
+        tailscale_ip = ''
+        try:
+            for addr in socket.getaddrinfo(socket.gethostname(), None):
+                ip = addr[4][0]
+                if ip.startswith('100.'):
+                    tailscale_ip = ip
+                    break
+        except Exception:
+            pass
+
         payload = {
             "pcId": PC_ID,
             "pcName": PC_NAME,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "uptimeSeconds": int(time.time() - self._start_time) if hasattr(self, '_start_time') else 0,
             "queueDepth": sync_stats["pending"],
             "dbSizeMb": db_size,
             "serialProtocol": SERIAL_PROTOCOL,
             "webPort": WEB_PORT,
+            "tailscaleIp": tailscale_ip,
             "weightsToday": summary.get("completed", 0),
             "lastTicket": summary.get("total_trucks", 0),
             "version": SERVICE_VERSION,
             "localUrl": f"http://localhost:{WEB_PORT}",
+            "system": {
+                "cpuPercent": cpu,
+                "memoryMb": mem_mb,
+                "diskFreeGb": disk_gb,
+                "hostname": platform.node(),
+                "os": platform.platform(),
+            },
         }
         if extra:
             payload.update(extra)

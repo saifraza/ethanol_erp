@@ -15,6 +15,13 @@ interface PCStatus {
   serialProtocol?: string;
   webPort?: number;
   tailscaleIp?: string;
+  system?: {
+    cpuPercent?: number;
+    memoryMb?: number;
+    diskFreeGb?: number;
+    hostname?: string;
+    os?: string;
+  };
   localUrl?: string;
   weightsToday?: number;
   lastTicket?: number;
@@ -123,7 +130,8 @@ export default function WeighmentSystem() {
               {(!status?.pcs || status.pcs.length === 0) ? (
                 <tr><td colSpan={10} className="px-3 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">No PCs have sent a heartbeat yet. Waiting for factory PCs to connect...</td></tr>
               ) : status.pcs.map((pc, i) => (
-                <tr key={pc.pcId} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                <React.Fragment key={pc.pcId}>
+                <tr className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
                   <td className="px-3 py-2 border-r border-slate-100">
                     {pc.isAlive ? (
                       <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-300 bg-green-50 text-green-700">Online</span>
@@ -174,6 +182,21 @@ export default function WeighmentSystem() {
                     ) : '--'}
                   </td>
                 </tr>
+                {/* System info row */}
+                {pc.system && (
+                  <tr className="border-b border-slate-200 bg-slate-50/30">
+                    <td colSpan={10} className="px-3 py-1.5 text-[10px] text-slate-500">
+                      <span className="font-semibold text-slate-400 uppercase tracking-widest mr-4">System</span>
+                      {pc.system.hostname && <span className="mr-4">Host: <span className="font-mono text-slate-700">{pc.system.hostname}</span></span>}
+                      {pc.system.os && <span className="mr-4">OS: <span className="font-mono">{pc.system.os}</span></span>}
+                      {pc.system.cpuPercent !== undefined && <span className="mr-4">CPU: <span className={`font-mono font-bold ${(pc.system.cpuPercent || 0) > 80 ? 'text-red-600' : 'text-slate-700'}`}>{pc.system.cpuPercent}%</span></span>}
+                      {pc.system.memoryMb !== undefined && <span className="mr-4">RAM: <span className="font-mono text-slate-700">{Math.round((pc.system.memoryMb || 0) / 1024 * 10) / 10} GB</span></span>}
+                      {pc.system.diskFreeGb !== undefined && <span className="mr-4">Disk Free: <span className={`font-mono font-bold ${(pc.system.diskFreeGb || 0) < 5 ? 'text-red-600' : 'text-slate-700'}`}>{pc.system.diskFreeGb} GB</span></span>}
+                      {pc.tailscaleIp && <span>Tailscale: <span className="font-mono text-slate-700">{pc.tailscaleIp}</span></span>}
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
               ))}
 
               {/* Static entries for known PCs that haven't sent heartbeat */}
