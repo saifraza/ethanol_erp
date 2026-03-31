@@ -123,10 +123,12 @@ export default function FuelManagement() {
     try {
       const [dealsRes, vendorsRes] = await Promise.all([
         api.get<OpenDeal[]>('/fuel/deals'),
-        api.get<VendorOption[]>('/vendors', { params: { active: true } }),
+        api.get<{ vendors: VendorOption[] } | VendorOption[]>('/vendors', { params: { active: true } }),
       ]);
       setDeals(dealsRes.data);
-      if (Array.isArray(vendorsRes.data)) setVendors(vendorsRes.data);
+      const vData = vendorsRes.data;
+      const vList = Array.isArray(vData) ? vData : (vData as { vendors: VendorOption[] }).vendors || [];
+      setVendors(vList);
     } catch (err) { console.error(err); }
   }, []);
 

@@ -80,9 +80,9 @@ export default function WeighmentSystem() {
         {/* Toolbar */}
         <div className="bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <h1 className="text-sm font-bold tracking-wide uppercase">Weighment System</h1>
+            <h1 className="text-sm font-bold tracking-wide uppercase">Factory Linkage</h1>
             <span className="text-[10px] text-slate-400">|</span>
-            <span className="text-[10px] text-slate-400">Factory PC Health & Sync Status</span>
+            <span className="text-[10px] text-slate-400">Factory PCs, Cameras & Sync Status</span>
           </div>
           <button onClick={fetchStatus} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">
             Refresh
