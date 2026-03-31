@@ -82,9 +82,15 @@ export default function PurchaseRequisition() {
   const [showItemDropdown, setShowItemDropdown] = useState(false);
   const [departments, setDepartments] = useState<string[]>([]);
 
+  const [vendors, setVendors] = useState<Array<{ name: string; phone?: string; contactPerson?: string }>>([]);
+
   useEffect(() => {
     api.get('/inventory/items').then(r => setInvItems(r.data.items || [])).catch(() => {});
     api.get('/departments').then(r => setDepartments((r.data || []).filter((d: { isActive: boolean }) => d.isActive).map((d: { name: string }) => d.name))).catch(() => {});
+    api.get('/vendors?limit=200').then(r => {
+      const v = (r.data.vendors || r.data || []).map((v: { name: string; phone?: string; contactPerson?: string }) => ({ name: v.name, phone: v.phone, contactPerson: v.contactPerson }));
+      setVendors(v);
+    }).catch(() => {});
     // Pre-fill from URL params (linked from Inventory page)
     const itemId = searchParams.get('itemId');
     const itemName = searchParams.get('itemName');
@@ -112,7 +118,8 @@ export default function PurchaseRequisition() {
     e.preventDefault();
     setSaving(true);
     try {
-      await api.post('/purchase-requisition', { ...form, status: 'SUBMITTED' });
+      const submitForm = { ...form, title: form.title || `Need ${form.itemName}`, status: 'SUBMITTED' };
+      await api.post('/purchase-requisition', submitForm);
       setForm({ title: '', itemName: '', quantity: '1', unit: 'nos', estimatedCost: '', urgency: 'ROUTINE', category: 'GENERAL', justification: '', supplier: '', supplierPhone: '', remarks: '', department: '', inventoryItemId: '', requestedByPerson: '' });
       setItemQuery('');
       setTab('list');
@@ -206,62 +213,51 @@ export default function PurchaseRequisition() {
             <h3 className="text-[11px] font-bold uppercase tracking-widest text-slate-700">New Purchase Request</h3>
           </div>
           <form onSubmit={handleCreate} className="p-4 space-y-3">
-            <div>
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Request Title *</label>
-              <input
-                className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                placeholder="e.g., Need new pump seal"
-                required
-                value={form.title}
-                onChange={e => setForm({ ...form, title: e.target.value })}
-              />
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="relative">
+            {/* Row 1: Item search + Qty */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="relative md:col-span-2">
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Item (search inventory) *</label>
-                <div className="flex gap-1">
-                  <div className="relative flex-1">
-                    <input
-                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                      placeholder="Type to search items..."
-                      required
-                      value={itemQuery}
-                      onChange={e => { setItemQuery(e.target.value); setForm({ ...form, itemName: e.target.value }); setShowItemDropdown(true); }}
-                      onFocus={() => setShowItemDropdown(true)}
-                      onBlur={() => setTimeout(() => setShowItemDropdown(false), 200)}
-                    />
-                    {showItemDropdown && itemQuery.length >= 2 && (
-                      <div className="absolute z-10 w-full bg-white border border-slate-300 shadow-lg max-h-40 overflow-y-auto mt-0.5">
-                        {invItems.filter(it => it.name.toLowerCase().includes(itemQuery.toLowerCase()) || it.code.toLowerCase().includes(itemQuery.toLowerCase())).slice(0, 8).map(it => (
-                          <div key={it.id} className="px-2.5 py-1.5 text-xs hover:bg-blue-50 cursor-pointer border-b border-slate-100 flex justify-between"
-                            onMouseDown={() => {
-                              setItemQuery(it.name);
-                              setForm(f => ({
-                                ...f,
-                                itemName: it.name,
-                                inventoryItemId: it.id,
-                                unit: it.unit,
-                                estimatedCost: it.costPerUnit && it.costPerUnit > 0 ? String(it.costPerUnit) : f.estimatedCost,
-                                category: it.category || f.category,
-                                supplier: it.supplier || f.supplier,
-                                title: `Need ${it.name}`,
-                              }));
-                              setShowItemDropdown(false);
-                            }}>
-                            <span className="text-slate-800 font-medium">{it.name}</span>
-                            <span className="text-slate-400 text-[10px]">{it.code} | Stock: {it.currentStock} {it.unit}</span>
-                          </div>
-                        ))}
-                        {invItems.filter(it => it.name.toLowerCase().includes(itemQuery.toLowerCase())).length === 0 && (
-                          <div className="px-2.5 py-1.5 text-[10px] text-slate-400">No matching items — will create as new</div>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                <div className="relative">
+                  <input
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                    placeholder="Type to search items or enter new item name..."
+                    required
+                    value={itemQuery}
+                    onChange={e => { setItemQuery(e.target.value); setForm(f => ({ ...f, itemName: e.target.value, title: `Need ${e.target.value}` })); setShowItemDropdown(true); }}
+                    onFocus={() => setShowItemDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowItemDropdown(false), 200)}
+                  />
+                  {showItemDropdown && itemQuery.length >= 2 && (
+                    <div className="absolute z-10 w-full bg-white border border-slate-300 shadow-lg max-h-40 overflow-y-auto mt-0.5">
+                      {invItems.filter(it => it.name.toLowerCase().includes(itemQuery.toLowerCase()) || it.code.toLowerCase().includes(itemQuery.toLowerCase())).slice(0, 8).map(it => (
+                        <div key={it.id} className="px-2.5 py-1.5 text-xs hover:bg-blue-50 cursor-pointer border-b border-slate-100 flex justify-between"
+                          onMouseDown={() => {
+                            setItemQuery(it.name);
+                            setForm(f => ({
+                              ...f,
+                              itemName: it.name,
+                              inventoryItemId: it.id,
+                              unit: it.unit,
+                              estimatedCost: it.costPerUnit && it.costPerUnit > 0 ? String(it.costPerUnit) : f.estimatedCost,
+                              category: it.category || f.category,
+                              supplier: it.supplier || f.supplier,
+                              title: `Need ${it.name}`,
+                            }));
+                            setShowItemDropdown(false);
+                          }}>
+                          <span className="text-slate-800 font-medium">{it.name}</span>
+                          <span className="text-slate-400 text-[10px]">{it.code} | Stock: {it.currentStock} {it.unit}</span>
+                        </div>
+                      ))}
+                      {invItems.filter(it => it.name.toLowerCase().includes(itemQuery.toLowerCase())).length === 0 && (
+                        <div className="px-2.5 py-1.5 text-[10px] text-slate-400">No matching item — will be created as new request</div>
+                      )}
+                    </div>
+                  )}
                 </div>
                 {form.inventoryItemId && (() => {
                   const item = invItems.find(i => i.id === form.inventoryItemId);
-                  if (!item) return <div className="text-[9px] text-green-600 mt-0.5">Linked to inventory</div>;
+                  if (!item) return null;
                   const qty = parseFloat(form.quantity) || 0;
                   const inStock = item.currentStock >= qty;
                   const partial = item.currentStock > 0 && item.currentStock < qty;
@@ -278,103 +274,88 @@ export default function PurchaseRequisition() {
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Qty / Unit</label>
                 <div className="flex gap-2">
-                  <input
-                    className="flex-1 border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                    type="number"
-                    step="any"
-                    placeholder="Qty"
-                    value={form.quantity}
-                    onChange={e => setForm({ ...form, quantity: e.target.value })}
-                  />
-                  <select
-                    className="w-20 border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                    value={form.unit}
-                    onChange={e => setForm({ ...form, unit: e.target.value })}
-                  >
+                  <input className="flex-1 border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none" type="number" step="any" placeholder="Qty" value={form.quantity}
+                    onChange={e => setForm({ ...form, quantity: e.target.value })} />
+                  <select className="w-20 border border-slate-300 px-2.5 py-1.5 text-xs outline-none" value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })}>
                     {['nos', 'kg', 'ltr', 'mtr', 'set', 'pair', 'roll'].map(u => <option key={u} value={u}>{u}</option>)}
                   </select>
                 </div>
               </div>
+            </div>
+
+            {/* Row 2: Who is requesting */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Estimated Cost (Rs)</label>
-                <input
-                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                  type="number"
-                  step="any"
-                  placeholder="Estimated Cost"
-                  value={form.estimatedCost}
-                  onChange={e => setForm({ ...form, estimatedCost: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Urgency</label>
-                <select
-                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                  value={form.urgency}
-                  onChange={e => setForm({ ...form, urgency: e.target.value })}
-                >
-                  {URGENCIES.map(u => <option key={u} value={u}>{u}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Category</label>
-                <select
-                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                  value={form.category}
-                  onChange={e => setForm({ ...form, category: e.target.value })}
-                >
-                  {CATEGORIES.map(c => <option key={c} value={c}>{c.replace('_', ' ')}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Requested By (Dept)</label>
-                <select
-                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                  value={form.department}
-                  onChange={e => setForm({ ...form, department: e.target.value })}
-                >
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Department *</label>
+                <select className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none" value={form.department} onChange={e => setForm({ ...form, department: e.target.value })}>
                   <option value="">Select department</option>
                   {departments.map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
               <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Requested By (Person)</label>
-                <input
-                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                  placeholder="Person name"
-                  value={form.requestedByPerson || ''}
-                  onChange={e => setForm({ ...form, requestedByPerson: e.target.value })}
-                />
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Person Name</label>
+                <input className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none" placeholder="Who needs this?" value={form.requestedByPerson || ''} onChange={e => setForm({ ...form, requestedByPerson: e.target.value })} />
               </div>
               <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Supplier Name</label>
-                <input
-                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                  placeholder="Supplier name (optional)"
-                  value={form.supplier}
-                  onChange={e => setForm({ ...form, supplier: e.target.value })}
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Urgency</label>
+                <select className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none" value={form.urgency} onChange={e => setForm({ ...form, urgency: e.target.value })}>
+                  {URGENCIES.map(u => <option key={u} value={u}>{u}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {/* Row 3: Supplier (search from vendor master) + Cost */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="relative">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Supplier (search vendors)</label>
+                <input className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none" placeholder="Type to search suppliers..."
+                  value={form.supplier} onChange={e => { setForm({ ...form, supplier: e.target.value }); }}
+                  onFocus={e => (e.target as HTMLInputElement).setAttribute('data-open', '1')}
+                  onBlur={e => setTimeout(() => (e.target as HTMLInputElement).removeAttribute('data-open'), 200)}
                 />
+                {form.supplier && form.supplier.length >= 2 && (() => {
+                  const q = form.supplier.toLowerCase();
+                  const vendorMatches = vendors.filter(v => v.name.toLowerCase().includes(q)).slice(0, 5);
+                  if (vendorMatches.length === 0) return null;
+                  return (
+                    <div className="absolute z-10 w-full bg-white border border-slate-300 shadow-lg max-h-32 overflow-y-auto mt-0.5">
+                      {vendorMatches.map((v, i) => (
+                        <div key={i} className="px-2.5 py-1.5 text-xs hover:bg-blue-50 cursor-pointer border-b border-slate-100"
+                          onMouseDown={() => setForm(f => ({ ...f, supplier: v.name, supplierPhone: v.phone || f.supplierPhone }))}>
+                          <span className="text-slate-800 font-medium">{v.name}</span>
+                          {v.phone && <span className="text-slate-400 ml-2">{v.phone}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Supplier Phone</label>
-                <input
-                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                  placeholder="Phone number (optional)"
-                  value={form.supplierPhone}
-                  onChange={e => setForm({ ...form, supplierPhone: e.target.value })}
-                />
+                <input className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none" placeholder="Phone (optional)" value={form.supplierPhone} onChange={e => setForm({ ...form, supplierPhone: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Estimated Cost/Unit (Rs)</label>
+                <input className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none" type="number" step="any" placeholder="Cost per unit" value={form.estimatedCost} onChange={e => setForm({ ...form, estimatedCost: e.target.value })} />
               </div>
             </div>
-            <div>
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Justification</label>
-              <textarea
-                className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                rows={2}
-                placeholder="Why is this needed?"
-                value={form.justification}
-                onChange={e => setForm({ ...form, justification: e.target.value })}
-              />
+
+            {/* Row 4: Category + Justification */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Category</label>
+                <select className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>
+                  {CATEGORIES.map(c => <option key={c} value={c}>{c.replace('_', ' ')}</option>)}
+                </select>
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Justification / Remarks</label>
+                <input className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none" placeholder="Why is this needed?" value={form.justification} onChange={e => setForm({ ...form, justification: e.target.value })} />
+              </div>
             </div>
+
+            {/* Hidden title — auto-generated */}
+            <input type="hidden" value={form.title || `Need ${form.itemName}`} />
             <div>
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label>
               <textarea
@@ -419,10 +400,13 @@ export default function PurchaseRequisition() {
                       <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${URG_COLORS[pr.urgency]}`}>{pr.urgency}</span>
                       <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${STATUS_COLORS[pr.status]}`}>{pr.status}</span>
                     </div>
-                    <div className="text-[10px] text-slate-500 mt-0.5">
-                      {pr.itemName} -- {pr.quantity} {pr.unit} -- <span className="font-mono tabular-nums">Rs.{totalCost.toLocaleString()}</span>
-                      {pr.supplier && <span> -- {pr.supplier}</span>}
-                      <span> -- {pr.requestedBy} -- {new Date(pr.createdAt).toLocaleDateString()}</span>
+                    <div className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">
+                      <span>{pr.itemName} -- {pr.quantity} {pr.unit}</span>
+                      <span className="font-mono tabular-nums">Rs.{totalCost.toLocaleString()}</span>
+                      {pr.department && <span className="text-[9px] px-1 py-0 border border-slate-300 bg-slate-100 font-bold uppercase">{pr.department}</span>}
+                      {pr.issuedQty > 0 && <span className="text-[9px] text-green-700 font-bold">{pr.issuedQty} issued</span>}
+                      {pr.purchaseQty > 0 && <span className="text-[9px] text-amber-600 font-bold">{pr.purchaseQty} to buy</span>}
+                      <span className="text-slate-400">{pr.requestedBy} | {new Date(pr.createdAt).toLocaleDateString()}</span>
                     </div>
                   </div>
                   {isExpanded ? <ChevronUp size={16} className="text-slate-400 mt-0.5" /> : <ChevronDown size={16} className="text-slate-400 mt-0.5" />}
