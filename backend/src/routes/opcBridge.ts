@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { z } from 'zod';
+import crypto from 'crypto';
 import { tgSendGroup } from '../services/telegramClient';
 import { shouldAlarmForTag, TEMP_TAG_TO_FERMENTER } from '../services/fermenterPhaseDetector';
 
@@ -26,7 +27,14 @@ const OPC_PUSH_KEY = process.env.OPC_PUSH_KEY || 'mspil-opc-2026';
 
 function checkPushKey(req: AuthRequest, res: Response): boolean {
   const key = req.headers['x-opc-key'] as string;
-  if (key !== OPC_PUSH_KEY) {
+  if (!key || key.length !== OPC_PUSH_KEY.length) {
+    res.status(401).json({ error: 'Invalid OPC push key' });
+    return false;
+  }
+  // Timing-safe comparison to prevent key leakage via timing attacks
+  const keyBuf = Buffer.from(key, 'utf8');
+  const expectedBuf = Buffer.from(OPC_PUSH_KEY, 'utf8');
+  if (!crypto.timingSafeEqual(keyBuf, expectedBuf)) {
     res.status(401).json({ error: 'Invalid OPC push key' });
     return false;
   }
@@ -478,6 +486,7 @@ router.delete('/monitor/:tag', asyncHandler(async (req: AuthRequest, res: Respon
 }));
 
 // GET /api/opc/live — Latest readings for all monitored tags
+// Optimized: batch-fetch latest readings instead of N+1 per-tag queries
 router.get('/live', asyncHandler(async (_req: AuthRequest, res: Response) => {
   const opc = getOpcPrisma();
   let tags: any[];
@@ -488,7 +497,6 @@ router.get('/live', asyncHandler(async (_req: AuthRequest, res: Response) => {
       select: { tag: true, area: true, folder: true, tagType: true, label: true, description: true, hhAlarm: true, llAlarm: true },
     });
   } catch {
-    // Fallback if new columns don't exist yet (pre-migration)
     tags = await opc.opcMonitoredTag.findMany({
       where: { active: true },
       take: 500,
@@ -496,27 +504,31 @@ router.get('/live', asyncHandler(async (_req: AuthRequest, res: Response) => {
     });
   }
 
-  const result = [];
-  for (const t of tags) {
-    const readings = await opc.opcReading.findMany({
-      where: { tag: t.tag },
-      orderBy: { scannedAt: 'desc' },
-      take: 10,
-      select: { property: true, value: true, scannedAt: true },
-    });
+  // Batch-fetch latest readings for ALL tags in one query (avoids N+1)
+  const tagNames = tags.map((t: { tag: string }) => t.tag);
+  const recentReadings = tagNames.length > 0 ? await opc.opcReading.findMany({
+    where: { tag: { in: tagNames } },
+    orderBy: { scannedAt: 'desc' },
+    take: tagNames.length * 5, // ~5 properties per tag is plenty
+    select: { tag: true, property: true, value: true, scannedAt: true },
+  }) : [];
 
-    const values: Record<string, number> = {};
-    const seen = new Set<string>();
-    let updatedAt: Date | null = null;
-    for (const r of readings) {
-      if (!seen.has(r.property)) {
-        seen.add(r.property);
-        values[r.property] = r.value;
-        if (!updatedAt) updatedAt = r.scannedAt;
-      }
+  // Group readings by tag, keeping only the latest per property
+  const readingsByTag = new Map<string, { values: Record<string, number>; updatedAt: Date | null }>();
+  for (const r of recentReadings) {
+    if (!readingsByTag.has(r.tag)) {
+      readingsByTag.set(r.tag, { values: {}, updatedAt: null });
     }
+    const entry = readingsByTag.get(r.tag)!;
+    if (!(r.property in entry.values)) {
+      entry.values[r.property] = r.value;
+      if (!entry.updatedAt) entry.updatedAt = r.scannedAt;
+    }
+  }
 
-    result.push({
+  const result = tags.map((t: any) => {
+    const data = readingsByTag.get(t.tag);
+    return {
       tag: t.tag,
       area: t.area,
       type: t.tagType,
@@ -524,10 +536,10 @@ router.get('/live', asyncHandler(async (_req: AuthRequest, res: Response) => {
       description: t.description || '',
       hhAlarm: t.hhAlarm,
       llAlarm: t.llAlarm,
-      updatedAt: updatedAt?.toISOString() || null,
-      values,
-    });
-  }
+      updatedAt: data?.updatedAt?.toISOString() || null,
+      values: data?.values || {},
+    };
+  });
 
   res.json({ tags: result, count: result.length });
 }));
