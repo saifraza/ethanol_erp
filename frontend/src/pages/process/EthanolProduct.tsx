@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Fuel, Save, ChevronDown, ChevronUp, Eye, X, Share2, Loader2, TrendingUp, Droplets, Gauge, Truck, Clock, Activity, Package, Factory, Pause } from 'lucide-react';
+import { Fuel, Save, ChevronDown, ChevronUp, Eye, X, Share2, Loader2, TrendingUp, Droplets, Gauge, Truck, Clock, Activity, Package, Factory, Pause, Trash2 } from 'lucide-react';
 import api from '../../services/api';
 
 const TANKS = [
@@ -648,7 +648,20 @@ export default function EthanolProduct() {
                     Stock: {e.totalStock?.toFixed(1)} BL | Prod: {e.productionBL?.toFixed(1)} BL | {e.klpd?.toFixed(1) ?? '—'} KLPD
                   </div>
                 </div>
-                <button onClick={() => editEntry(e)} className="text-xs text-blue-600 hover:underline">Edit</button>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => editEntry(e)} className="text-xs text-blue-600 hover:underline">Edit</button>
+                  <button onClick={async () => {
+                    if (!confirm(`Delete entry from ${fmtDtTime(e.date)}? This cannot be undone.`)) return;
+                    try {
+                      await api.delete(`/ethanol-product/${e.id}`);
+                      loadEntries();
+                    } catch (err: unknown) {
+                      alert('Delete failed — admin access required');
+                    }
+                  }} className="text-red-400 hover:text-red-600 p-0.5" title="Delete entry">
+                    <Trash2 size={13} />
+                  </button>
+                </div>
               </div>
             ))}
             {entries.length === 0 && <p className="text-sm text-gray-400">No entries yet</p>}
