@@ -81,7 +81,7 @@ export default function StoreIndents() {
         api.get<PR[]>(`/purchase-requisition${params}`),
         api.get<Stats>('/purchase-requisition/stats'),
       ]);
-      setData(listRes.data);
+      setData((listRes.data as unknown as { requisitions: PR[] }).requisitions || listRes.data as PR[]);
       setStats(statsRes.data);
     } catch (err) {
       console.error('Failed to fetch indents:', err);
