@@ -483,6 +483,7 @@ router.get('/master-data', asyncHandler(async (req: Request, res: Response) => {
     select: {
       id: true,
       poNo: true,
+      dealType: true,
       vendorId: true,
       vendor: { select: { name: true } },
       status: true,
@@ -508,6 +509,7 @@ router.get('/master-data', asyncHandler(async (req: Request, res: Response) => {
     po_no: po.poNo,
     vendor_id: po.vendorId,
     vendor_name: po.vendor.name,
+    deal_type: po.dealType || 'STANDARD',
     status: po.status,
     lines: po.lines.map(l => ({
       id: l.id,

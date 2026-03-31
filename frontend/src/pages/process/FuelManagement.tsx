@@ -50,6 +50,27 @@ interface Summary {
   todaySteam: number;
 }
 
+interface OpenDeal {
+  id: string;
+  poNo: number;
+  dealType: string;
+  status: string;
+  poDate: string;
+  remarks: string | null;
+  vendor: { id: string; name: string; phone: string | null };
+  lines: Array<{ id: string; description: string; rate: number; unit: string; inventoryItemId: string | null; receivedQty: number; quantity: number }>;
+  totalReceived: number;
+  totalValue: number;
+  totalPaid: number;
+  outstanding: number;
+  truckCount: number;
+}
+
+interface VendorOption {
+  id: string;
+  name: string;
+}
+
 const EMPTY_FORM: Partial<FuelItem> = {
   name: '', code: '', unit: 'MT', steamRate: null, calorificValue: null,
   minStock: 0, maxStock: null, defaultRate: 0, hsnCode: '', gstPercent: 5,
@@ -57,13 +78,17 @@ const EMPTY_FORM: Partial<FuelItem> = {
 };
 
 export default function FuelManagement() {
-  const [tab, setTab] = useState<'master' | 'daily'>('master');
+  const [tab, setTab] = useState<'master' | 'daily' | 'deals'>('master');
   const [fuels, setFuels] = useState<FuelItem[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [rows, setRows] = useState<ConsumptionRow[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [deals, setDeals] = useState<OpenDeal[]>([]);
+  const [vendors, setVendors] = useState<VendorOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [showDealModal, setShowDealModal] = useState(false);
+  const [dealForm, setDealForm] = useState({ vendorId: '', fuelItemId: '', rate: 0, remarks: '' });
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -94,10 +119,21 @@ export default function FuelManagement() {
     } catch (err) { console.error(err); }
   }, [date]);
 
+  const fetchDeals = useCallback(async () => {
+    try {
+      const [dealsRes, vendorsRes] = await Promise.all([
+        api.get<OpenDeal[]>('/fuel/deals'),
+        api.get<VendorOption[]>('/vendors', { params: { active: true } }),
+      ]);
+      setDeals(dealsRes.data);
+      if (Array.isArray(vendorsRes.data)) setVendors(vendorsRes.data);
+    } catch (err) { console.error(err); }
+  }, []);
+
   useEffect(() => {
     setLoading(true);
-    Promise.all([fetchMaster(), fetchSummary(), fetchConsumption()]).finally(() => setLoading(false));
-  }, [fetchMaster, fetchSummary, fetchConsumption]);
+    Promise.all([fetchMaster(), fetchSummary(), fetchConsumption(), fetchDeals()]).finally(() => setLoading(false));
+  }, [fetchMaster, fetchSummary, fetchConsumption, fetchDeals]);
 
   const fmtNum = (n: number) => n === 0 ? '--' : n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
@@ -150,6 +186,38 @@ export default function FuelManagement() {
     finally { setSaving(false); }
   };
 
+  // Deal CRUD
+  const createDeal = async () => {
+    if (!dealForm.vendorId || !dealForm.fuelItemId || !dealForm.rate) {
+      alert('Select vendor, fuel type, and enter rate'); return;
+    }
+    setSaving(true);
+    try {
+      await api.post('/fuel/deals', dealForm);
+      setShowDealModal(false);
+      setDealForm({ vendorId: '', fuelItemId: '', rate: 0, remarks: '' });
+      fetchDeals();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Failed';
+      alert(msg);
+    } finally { setSaving(false); }
+  };
+
+  const closeDeal = async (id: string) => {
+    if (!confirm('Close this deal? No more trucks will be accepted.')) return;
+    await api.put(`/fuel/deals/${id}`, { status: 'CLOSED' });
+    fetchDeals();
+  };
+
+  const updateRate = async (id: string) => {
+    const newRate = prompt('Enter new rate (per unit):');
+    if (!newRate) return;
+    await api.put(`/fuel/deals/${id}`, { rate: parseFloat(newRate) });
+    fetchDeals();
+  };
+
+  const fmtCurrency = (n: number) => n === 0 ? '--' : '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+
   if (loading) return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center">
       <div className="text-xs text-slate-400 uppercase tracking-widest">Loading...</div>
@@ -179,6 +247,11 @@ export default function FuelManagement() {
               {saving ? 'Saving...' : 'Save Entries'}
             </button>
           )}
+          {tab === 'deals' && (
+            <button onClick={() => setShowDealModal(true)} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">
+              + New Deal
+            </button>
+          )}
         </div>
 
         {/* Tabs */}
@@ -188,6 +261,9 @@ export default function FuelManagement() {
           </button>
           <button onClick={() => setTab('daily')} className={`px-5 py-2.5 text-[11px] font-bold uppercase tracking-widest border-b-2 ${tab === 'daily' ? 'border-blue-600 text-slate-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
             Daily Consumption
+          </button>
+          <button onClick={() => setTab('deals')} className={`px-5 py-2.5 text-[11px] font-bold uppercase tracking-widest border-b-2 ${tab === 'deals' ? 'border-blue-600 text-slate-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+            Open Deals {deals.length > 0 && <span className="ml-1 bg-orange-500 text-white text-[9px] px-1.5 py-0.5">{deals.length}</span>}
           </button>
         </div>
 
@@ -330,6 +406,72 @@ export default function FuelManagement() {
             </div>
           </>
         )}
+        {/* ═══ TAB: OPEN DEALS ═══ */}
+        {tab === 'deals' && (
+          <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-hidden">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-slate-800 text-white">
+                  <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Deal #</th>
+                  <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Vendor</th>
+                  <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Fuel</th>
+                  <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Rate</th>
+                  <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Received</th>
+                  <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Total Value</th>
+                  <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Paid</th>
+                  <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Outstanding</th>
+                  <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Trucks</th>
+                  <th className="px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {deals.length === 0 ? (
+                  <tr><td colSpan={10} className="px-3 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">No open deals. Click + New Deal to create one.</td></tr>
+                ) : deals.map((d, i) => {
+                  const line = d.lines[0];
+                  return (
+                    <tr key={d.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                      <td className="px-3 py-1.5 font-mono text-slate-500 border-r border-slate-100">PO-{d.poNo}</td>
+                      <td className="px-3 py-1.5 font-semibold text-slate-800 border-r border-slate-100">
+                        <div>{d.vendor.name}</div>
+                        {d.vendor.phone && <div className="text-[9px] text-slate-400">{d.vendor.phone}</div>}
+                      </td>
+                      <td className="px-3 py-1.5 border-r border-slate-100">{line?.description || '--'}</td>
+                      <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">
+                        {fmtCurrency(line?.rate || 0)}/{line?.unit || 'MT'}
+                      </td>
+                      <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold border-r border-slate-100">
+                        {fmtNum(d.totalReceived)} {line?.unit || 'MT'}
+                      </td>
+                      <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{fmtCurrency(d.totalValue)}</td>
+                      <td className="px-3 py-1.5 text-right font-mono tabular-nums text-green-700 border-r border-slate-100">{fmtCurrency(d.totalPaid)}</td>
+                      <td className={`px-3 py-1.5 text-right font-mono tabular-nums font-bold border-r border-slate-100 ${d.outstanding > 0 ? 'text-red-600' : 'text-slate-500'}`}>
+                        {fmtCurrency(d.outstanding)}
+                      </td>
+                      <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{d.truckCount}</td>
+                      <td className="px-3 py-1.5">
+                        <button onClick={() => updateRate(d.id)} className="text-[10px] text-blue-600 font-semibold uppercase hover:underline mr-2">Rate</button>
+                        <button onClick={() => closeDeal(d.id)} className="text-[10px] text-red-500 font-semibold uppercase hover:underline">Close</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              {deals.length > 0 && (
+                <tfoot>
+                  <tr className="bg-slate-800 text-white font-semibold">
+                    <td colSpan={5} className="px-3 py-2 text-[10px] uppercase tracking-widest border-r border-slate-700">Total</td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-700">{fmtCurrency(deals.reduce((s, d) => s + d.totalValue, 0))}</td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-700">{fmtCurrency(deals.reduce((s, d) => s + d.totalPaid, 0))}</td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-700 text-red-300">{fmtCurrency(deals.reduce((s, d) => s + d.outstanding, 0))}</td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-700">{deals.reduce((s, d) => s + d.truckCount, 0)}</td>
+                    <td className="px-3 py-2"></td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        )}
       </div>
 
       {/* ═══ ADD/EDIT MODAL ═══ */}
@@ -410,6 +552,49 @@ export default function FuelManagement() {
             <div className="border-t border-slate-200 px-4 py-3 flex justify-end gap-2">
               <button onClick={() => setShowModal(false)} className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Cancel</button>
               <button onClick={saveFuel} disabled={saving} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">{saving ? 'Saving...' : 'Save'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ NEW DEAL MODAL ═══ */}
+      {showDealModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white w-[460px] max-w-[95vw] shadow-2xl">
+            <div className="bg-slate-800 text-white px-4 py-2.5">
+              <div className="text-xs font-bold uppercase tracking-widest">New Open Deal</div>
+            </div>
+            <div className="p-4 space-y-3">
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Vendor / Trader</label>
+                <select value={dealForm.vendorId} onChange={e => setDealForm({ ...dealForm, vendorId: e.target.value })}
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+                  <option value="">-- Select Vendor --</option>
+                  {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Fuel Type</label>
+                <select value={dealForm.fuelItemId} onChange={e => setDealForm({ ...dealForm, fuelItemId: e.target.value })}
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+                  <option value="">-- Select Fuel --</option>
+                  {fuels.map(f => <option key={f.id} value={f.id}>{f.name} ({f.unit})</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Rate (per unit)</label>
+                <input type="number" value={dealForm.rate || ''} onChange={e => setDealForm({ ...dealForm, rate: parseFloat(e.target.value) || 0 })}
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., 6000" />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label>
+                <input value={dealForm.remarks} onChange={e => setDealForm({ ...dealForm, remarks: e.target.value })}
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., Open deal for season 2026" />
+              </div>
+            </div>
+            <div className="border-t border-slate-200 px-4 py-3 flex justify-end gap-2">
+              <button onClick={() => setShowDealModal(false)} className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Cancel</button>
+              <button onClick={createDeal} disabled={saving} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">{saving ? 'Creating...' : 'Create Deal'}</button>
             </div>
           </div>
         </div>

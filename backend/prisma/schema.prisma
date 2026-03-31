@@ -1733,6 +1733,8 @@ model PurchaseOrder {
   deliveryAddress String?                   // factory address
   transportMode   String?                   // ROAD, RAIL
   transportBy     String?                   // BY_US, BY_SUPPLIER
+  // Deal type
+  dealType        String   @default("STANDARD") // STANDARD (fixed qty PO), OPEN (running account, no qty limit)
   // Status
   status          String   @default("DRAFT") // DRAFT, APPROVED, SENT, PARTIAL_RECEIVED, RECEIVED, CLOSED, CANCELLED
   approvedBy      String?

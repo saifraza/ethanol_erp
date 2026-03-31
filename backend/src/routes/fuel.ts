@@ -302,4 +302,160 @@ router.get('/summary', asyncHandler(async (req: AuthRequest, res: Response) => {
   });
 }));
 
+// ==========================================================================
+//  OPEN DEALS (running account for fuel vendors)
+// ==========================================================================
+
+const openDealSchema = z.object({
+  vendorId: z.string().min(1),
+  fuelItemId: z.string().min(1),
+  rate: z.number().min(0),
+  remarks: z.string().optional(),
+});
+
+// GET /deals — list active open deals
+router.get('/deals', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const deals = await prisma.purchaseOrder.findMany({
+    where: {
+      dealType: 'OPEN',
+      status: { in: ['APPROVED', 'SENT', 'PARTIAL_RECEIVED'] },
+    },
+    take: 100,
+    orderBy: { poDate: 'desc' },
+    select: {
+      id: true, poNo: true, dealType: true, status: true, poDate: true, remarks: true,
+      vendor: { select: { id: true, name: true, phone: true } },
+      lines: {
+        select: {
+          id: true, description: true, rate: true, unit: true, inventoryItemId: true,
+          receivedQty: true, quantity: true,
+        },
+      },
+      grns: {
+        select: { id: true, grnNo: true, totalQty: true, totalAmount: true, grnDate: true },
+        orderBy: { grnDate: 'desc' },
+        take: 5,
+      },
+    },
+  });
+
+  // Add running balance for each deal
+  const result = await Promise.all(deals.map(async (deal) => {
+    const line = deal.lines[0];
+    const totalReceived = line?.receivedQty || 0;
+    const totalValue = totalReceived * (line?.rate || 0);
+
+    // Get total payments made to this vendor against this deal's GRNs
+    const grnIds = deal.grns.map(g => g.id);
+    let totalPaid = 0;
+    if (grnIds.length > 0) {
+      const invoices = await prisma.vendorInvoice.findMany({
+        where: { grnId: { in: grnIds } },
+        select: { paidAmount: true },
+      });
+      totalPaid = invoices.reduce((s, inv) => s + (inv.paidAmount || 0), 0);
+    }
+
+    return {
+      ...deal,
+      totalReceived: Math.round(totalReceived * 100) / 100,
+      totalValue: Math.round(totalValue * 100) / 100,
+      totalPaid: Math.round(totalPaid * 100) / 100,
+      outstanding: Math.round((totalValue - totalPaid) * 100) / 100,
+      truckCount: deal.grns.length,
+    };
+  }));
+
+  res.json(result);
+}));
+
+// POST /deals — create a new open deal
+router.post('/deals', validate(openDealSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+  const b = req.body;
+
+  // Get fuel item details
+  const fuelItem = await prisma.inventoryItem.findUnique({
+    where: { id: b.fuelItemId },
+    select: { id: true, name: true, unit: true, hsnCode: true, gstPercent: true },
+  });
+  if (!fuelItem) return res.status(404).json({ error: 'Fuel item not found' });
+
+  // Create PO with dealType = OPEN, quantity = 999999 (unlimited)
+  const po = await prisma.purchaseOrder.create({
+    data: {
+      vendorId: b.vendorId,
+      dealType: 'OPEN',
+      status: 'APPROVED', // Open deals are auto-approved
+      poDate: new Date(),
+      paymentTerms: 'NET15',
+      creditDays: 15,
+      remarks: b.remarks || `Open deal for ${fuelItem.name}`,
+      userId: req.user!.id,
+      lines: {
+        create: [{
+          inventoryItemId: fuelItem.id,
+          description: fuelItem.name,
+          hsnCode: fuelItem.hsnCode || '',
+          quantity: 999999, // Unlimited
+          unit: fuelItem.unit || 'MT',
+          rate: b.rate,
+          amount: 0,
+          pendingQty: 999999,
+          gstPercent: fuelItem.gstPercent || 5,
+        }],
+      },
+    },
+    include: {
+      vendor: { select: { name: true } },
+      lines: { select: { id: true, description: true, rate: true, unit: true } },
+    },
+  });
+
+  res.status(201).json(po);
+}));
+
+// PUT /deals/:id — update rate or close deal
+router.put('/deals/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const deal = await prisma.purchaseOrder.findUnique({
+    where: { id: req.params.id },
+    include: { lines: true },
+  });
+  if (!deal || deal.dealType !== 'OPEN') return res.status(404).json({ error: 'Open deal not found' });
+
+  const b = req.body;
+
+  // Update rate on the PO line
+  if (b.rate !== undefined && deal.lines[0]) {
+    await prisma.pOLine.update({
+      where: { id: deal.lines[0].id },
+      data: { rate: b.rate },
+    });
+  }
+
+  // Update status (e.g., close the deal)
+  if (b.status) {
+    await prisma.purchaseOrder.update({
+      where: { id: req.params.id },
+      data: { status: b.status, remarks: b.remarks || deal.remarks },
+    });
+  }
+
+  res.json({ ok: true });
+}));
+
+// GET /deals/:id/trucks — all trucks/GRNs for this deal
+router.get('/deals/:id/trucks', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const grns = await prisma.goodsReceipt.findMany({
+    where: { poId: req.params.id },
+    take: 500,
+    orderBy: { grnDate: 'desc' },
+    select: {
+      id: true, grnNo: true, grnDate: true, vehicleNo: true,
+      totalQty: true, totalAmount: true, remarks: true,
+      lines: { select: { receivedQty: true, rate: true, unit: true } },
+    },
+  });
+  res.json(grns);
+}));
+
 export default router;
