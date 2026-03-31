@@ -504,15 +504,24 @@ const PurchaseOrders: React.FC = () => {
     }
   };
 
+  // Email compose modal state
   const [emailSending, setEmailSending] = useState<string | null>(null);
-  const handleSendEmail = async (poId: string, vendorEmail?: string) => {
-    let emailTo = vendorEmail;
-    if (!emailTo) {
-      const manual = prompt('Vendor has no email on file. Enter email to send PO:');
-      if (!manual) return;
-      emailTo = manual;
-    }
-    setEmailSending(poId);
+  const [emailModal, setEmailModal] = useState<{ poId: string; poNo: number; vendorName: string; vendorEmail?: string } | null>(null);
+  const [emailForm, setEmailForm] = useState({ to: '', cc: '', subject: '', body: '' });
+
+  const openEmailModal = (poId: string, poNo: number, vendorName: string, vendorEmail?: string) => {
+    const subj = `PO-${String(poNo).padStart(4, '0')} — Purchase Order from MSPIL`;
+    const body = `Dear ${vendorName},\n\nPlease find attached Purchase Order PO-${String(poNo).padStart(4, '0')}.\n\nKindly acknowledge receipt and confirm delivery schedule.\n\nRegards,\nPurchase Department\nMahakaushal Sugar & Power Industries Ltd.`;
+    setEmailForm({ to: vendorEmail || '', cc: '', subject: subj, body });
+    setEmailModal({ poId, poNo, vendorName, vendorEmail });
+  };
+
+  const sendEmailFromModal = async () => {
+    if (!emailModal || !emailForm.to) return;
+    setEmailSending(emailModal.poId);
+    const poId = emailModal.poId;
+    const emailTo = emailForm.to;
+    setEmailModal(null);
     try {
       const res = await api.post(`/purchase-orders/${poId}/send-email`, { to: emailTo });
       // Auto-advance: DRAFT → APPROVED → SENT, or APPROVED → SENT
@@ -535,6 +544,12 @@ const PurchaseOrders: React.FC = () => {
     } finally {
       setEmailSending(null);
     }
+  };
+
+  // Legacy wrapper for action buttons that still use handleSendEmail
+  const handleSendEmail = (poId: string, vendorEmail?: string) => {
+    const po = pos.find(p => p.id === poId);
+    if (po) openEmailModal(poId, po.poNo, po.vendor?.name || 'Vendor', vendorEmail);
   };
 
   const getStatusBadge = (status: string) => {
@@ -1129,6 +1144,21 @@ const PurchaseOrders: React.FC = () => {
                           <div className="p-6 text-center text-xs text-slate-400">Loading pipeline...</div>
                         ) : poDetail?.pipeline ? (
                           <div className="p-4">
+                            {/* Top Action Bar */}
+                            <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-200">
+                              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">PO-{String(po.poNo).padStart(4, '0')} Document Hub</div>
+                              <div className="flex gap-2" onClick={e => e.stopPropagation()}>
+                                <a href={`/api/purchase-orders/${po.id}/pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noreferrer"
+                                  className="px-3 py-1 bg-blue-600 text-white text-[10px] font-bold hover:bg-blue-700 inline-flex items-center gap-1">
+                                  <FileText size={11} /> PO PDF
+                                </a>
+                                <button onClick={() => openEmailModal(po.id, po.poNo, po.vendor?.name || 'Vendor', po.vendor?.email)}
+                                  className="px-3 py-1 bg-green-600 text-white text-[10px] font-bold hover:bg-green-700 inline-flex items-center gap-1">
+                                  <Mail size={11} /> Email PO
+                                </button>
+                              </div>
+                            </div>
+
                             {/* Pipeline Steps */}
                             <div className="flex items-center gap-0 mb-4">
                               {[
@@ -1162,10 +1192,10 @@ const PurchaseOrders: React.FC = () => {
                                       </div>
                                       <div className="text-[9px] text-slate-500 mt-0.5">{new Date(g.grnDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })} | {g.vehicleNo || '--'}</div>
                                       {g.totalAmount > 0 && <div className="text-[10px] font-mono tabular-nums font-bold text-slate-700 mt-0.5">₹{g.totalAmount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>}
-                                      <div className="flex gap-1 mt-1">
-                                        <a href={`/api/goods-receipts/${g.id}/pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noreferrer" className="px-1.5 py-0 bg-blue-600 text-white text-[8px] font-bold hover:bg-blue-700" onClick={e => e.stopPropagation()}>PDF</a>
-                                        {g.invoiceFilePath && <a href={`/uploads/${g.invoiceFilePath}`} target="_blank" rel="noreferrer" className="px-1.5 py-0 border border-blue-300 text-blue-700 text-[8px] font-bold bg-blue-50 hover:bg-blue-100" onClick={e => e.stopPropagation()}>INV FILE</a>}
-                                        {g.ewayBillFilePath && <a href={`/uploads/${g.ewayBillFilePath}`} target="_blank" rel="noreferrer" className="px-1.5 py-0 border border-amber-300 text-amber-700 text-[8px] font-bold bg-amber-50 hover:bg-amber-100" onClick={e => e.stopPropagation()}>E-WAY</a>}
+                                      <div className="flex gap-1 mt-1" onClick={e => e.stopPropagation()}>
+                                        <a href={`/api/goods-receipts/${g.id}/pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noreferrer" className="px-1.5 py-0 bg-blue-600 text-white text-[8px] font-bold hover:bg-blue-700">PDF</a>
+                                        {g.invoiceFilePath && <a href={`/uploads/${g.invoiceFilePath}`} target="_blank" rel="noreferrer" className="px-1.5 py-0 border border-blue-300 text-blue-700 text-[8px] font-bold bg-blue-50 hover:bg-blue-100">INV FILE</a>}
+                                        {g.ewayBillFilePath && <a href={`/uploads/${g.ewayBillFilePath}`} target="_blank" rel="noreferrer" className="px-1.5 py-0 border border-amber-300 text-amber-700 text-[8px] font-bold bg-amber-50 hover:bg-amber-100">E-WAY</a>}
                                       </div>
                                     </div>
                                   ))}
@@ -1183,11 +1213,9 @@ const PurchaseOrders: React.FC = () => {
                                       </div>
                                       <div className="text-[10px] font-mono tabular-nums font-bold text-slate-700 mt-0.5">₹{(inv.totalAmount || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
                                       {inv.dueDate && <div className="text-[9px] text-slate-500">Due: {new Date(inv.dueDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</div>}
-                                      {inv.filePath && (
-                                        <div className="mt-1">
-                                          <a href={`/uploads/${inv.filePath}`} target="_blank" rel="noreferrer" className="px-1.5 py-0 border border-blue-300 text-blue-700 text-[8px] font-bold bg-blue-50 hover:bg-blue-100" onClick={e => e.stopPropagation()}>VIEW FILE</a>
-                                        </div>
-                                      )}
+                                      <div className="flex gap-1 mt-1" onClick={e => e.stopPropagation()}>
+                                        {inv.filePath && <a href={`/uploads/${inv.filePath}`} target="_blank" rel="noreferrer" className="px-1.5 py-0 border border-blue-300 text-blue-700 text-[8px] font-bold bg-blue-50 hover:bg-blue-100">VIEW FILE</a>}
+                                      </div>
                                     </div>
                                   ))}
                                 </div>
@@ -1213,11 +1241,6 @@ const PurchaseOrders: React.FC = () => {
                                 </div>
                               </div>
                             </div>
-
-                            {/* Quick Actions */}
-                            <div className="flex gap-2 mt-3 pt-3 border-t border-slate-200">
-                              <a href={`/api/purchase-orders/${po.id}/pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noreferrer" className="px-3 py-1 bg-blue-600 text-white text-[10px] font-bold hover:bg-blue-700" onClick={e => e.stopPropagation()}>Download PO PDF</a>
-                            </div>
                           </div>
                         ) : (
                           <div className="p-6 text-center text-xs text-red-400">Failed to load PO details</div>
@@ -1239,6 +1262,66 @@ const PurchaseOrders: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Email Compose Modal */}
+      {emailModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setEmailModal(null)}>
+          <div className="bg-white w-full max-w-lg shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
+              <div className="text-xs font-bold uppercase tracking-widest">Send PO-{String(emailModal.poNo).padStart(4, '0')} to Vendor</div>
+              <button onClick={() => setEmailModal(null)} className="text-slate-400 hover:text-white"><X size={14} /></button>
+            </div>
+            <div className="p-4 space-y-3">
+              {/* From */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5 block">From</label>
+                <div className="border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500 bg-slate-50">purchase@mspil.in</div>
+              </div>
+              {/* To */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5 block">To</label>
+                <input type="email" value={emailForm.to} onChange={e => setEmailForm(f => ({ ...f, to: e.target.value }))}
+                  placeholder="vendor@example.com" className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+              </div>
+              {/* CC */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5 block">CC</label>
+                <input type="email" value={emailForm.cc} onChange={e => setEmailForm(f => ({ ...f, cc: e.target.value }))}
+                  placeholder="Optional CC" className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+              </div>
+              {/* Subject */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5 block">Subject</label>
+                <input type="text" value={emailForm.subject} onChange={e => setEmailForm(f => ({ ...f, subject: e.target.value }))}
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+              </div>
+              {/* Body */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5 block">Body</label>
+                <textarea value={emailForm.body} onChange={e => setEmailForm(f => ({ ...f, body: e.target.value }))}
+                  rows={6} className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 resize-none" />
+              </div>
+              {/* Attachments */}
+              <div className="border border-slate-200 bg-slate-50 p-2">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Attachments</div>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 px-2 py-1 bg-blue-100 border border-blue-300 text-blue-700 text-[10px] font-bold">
+                    <FileText size={10} /> PO-{String(emailModal.poNo).padStart(4, '0')}.pdf
+                  </div>
+                </div>
+              </div>
+              {/* Actions */}
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+                <button onClick={() => setEmailModal(null)} className="px-4 py-1.5 border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Cancel</button>
+                <button onClick={sendEmailFromModal} disabled={!emailForm.to || emailSending === emailModal.poId}
+                  className="px-4 py-1.5 bg-green-600 text-white text-[11px] font-medium hover:bg-green-700 disabled:opacity-50 inline-flex items-center gap-1">
+                  <Mail size={12} /> Send Email
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
