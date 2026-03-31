@@ -249,6 +249,8 @@ def main():
         except Exception as e:
             log.error(f"Web UI thread crashed: {e}", exc_info=True)
 
+    _cloud_sync_instance = [None]  # Shared reference for web_ui
+
     def sync_thread():
         try:
             # Wait for web UI to initialize DB
@@ -258,6 +260,10 @@ def main():
                 time.sleep(5)
             from cloud_sync import CloudSync
             sync = CloudSync(shutdown_event=_shutdown_event)
+            _cloud_sync_instance[0] = sync
+            # Inject into web_ui for reachability status
+            from web_ui import set_cloud_sync
+            set_cloud_sync(sync)
             log.info("Cloud sync thread ready")
             sync.run_loop()
         except Exception as e:
@@ -274,63 +280,12 @@ def main():
         t.start()
     log.info("All threads started (weight reader + web UI + cloud sync); heartbeat in watchdog loop")
 
-    # ---- Cloud heartbeat (called from main loop, not sync thread) ----
-    _hb_log = logging.getLogger("heartbeat")
-    _hb_cycle = [0]
-
-    def send_cloud_heartbeat():
-        """Send heartbeat to cloud. Called from main watchdog loop every 60s."""
-        import json
-        import urllib.request
-        _hb_cycle[0] += 1
-        try:
-            from config import CLOUD_API_URL, CLOUD_API_KEY, PC_ID, PC_NAME, SERVICE_VERSION, WEB_PORT, SERIAL_PROTOCOL
-            import local_db as db_mod
-
-            sync_stats = db_mod.get_sync_stats()
-            summary = db_mod.get_daily_summary()
-            db_size = 0
-            try:
-                db_size = round(os.path.getsize(DB_PATH) / 1024 / 1024, 1)
-            except OSError:
-                pass
-
-            payload = {
-                "pcId": PC_ID,
-                "pcName": PC_NAME,
-                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                "uptimeSeconds": int(time.time() - _start_time),
-                "queueDepth": sync_stats.get("pending", 0),
-                "dbSizeMb": db_size,
-                "serialProtocol": SERIAL_PROTOCOL,
-                "webPort": WEB_PORT,
-                "weightsToday": summary.get("completed", 0),
-                "lastTicket": summary.get("total_trucks", 0),
-                "version": SERVICE_VERSION,
-                "health": {
-                    n: t.is_alive() for n, t in threads.items()
-                },
-            }
-
-            url = CLOUD_API_URL.rstrip("/") + "/heartbeat"
-            body = json.dumps(payload).encode("utf-8")
-            req = urllib.request.Request(
-                url, data=body,
-                headers={"Content-Type": "application/json", "X-WB-Key": CLOUD_API_KEY},
-                method="POST",
-            )
-            resp = urllib.request.urlopen(req, timeout=15)
-            resp.close()
-            _hb_log.info(f"Heartbeat #{_hb_cycle[0]} OK (uptime={payload['uptimeSeconds']}s)")
-        except Exception:
-            import traceback
-            _hb_log.warning(f"Heartbeat #{_hb_cycle[0]} failed: {traceback.format_exc()}")
-
-    # ---- Main watchdog loop (same pattern as OPC bridge) ----
+    # ---- Main watchdog loop ----
+    # NOTE: Cloud heartbeat is sent by CloudSync.run_loop() already.
+    # The watchdog only writes local heartbeat file and monitors threads.
     try:
         while not _shutdown_event.is_set():
             write_heartbeat()
-            send_cloud_heartbeat()
 
             _shutdown_event.wait(timeout=WATCHDOG_CHECK_SECONDS)
             if _shutdown_event.is_set():

@@ -88,13 +88,18 @@ class CloudSync:
     # =====================================================================
 
     def push_weighments(self):
-        """Push pending weighments from sync queue to cloud."""
+        """Push pending weighments from sync queue to cloud.
+        Breaks early after consecutive failures to avoid blocking the loop
+        for 12+ minutes when the network is down (50 items x 15s timeout).
+        """
         pending = db.get_pending_sync()
         if not pending:
             return
 
         log.info("Pushing %d weighment(s) to cloud", len(pending))
         success_count = 0
+        consecutive_failures = 0
+        MAX_CONSECUTIVE_FAILURES = 3  # Stop trying after 3 in a row
 
         for entry in pending:
             payload = json.loads(entry["payload"])
@@ -108,8 +113,17 @@ class CloudSync:
                         cloud_id = ids[0]
                 db.mark_synced(entry["id"], cloud_id)
                 success_count += 1
+                consecutive_failures = 0  # Reset on success
             else:
                 db.mark_sync_failed(entry["id"])
+                consecutive_failures += 1
+                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                    remaining = len(pending) - (success_count + consecutive_failures)
+                    log.warning(
+                        "Stopping push after %d consecutive failures (%d remaining, will retry next cycle)",
+                        consecutive_failures, remaining
+                    )
+                    break
 
         if success_count > 0:
             log.info("Pushed %d/%d weighment(s) successfully", success_count, len(pending))

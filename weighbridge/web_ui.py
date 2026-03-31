@@ -19,14 +19,21 @@ app = Flask(__name__,
             template_folder="templates",
             static_folder="static")
 
-# Global reference to weight reader (set by run.py)
+# Global references (set by run.py)
 _weight_reader = None
+_cloud_sync = None
 
 
 def set_weight_reader(reader):
     """Called by run.py to inject the weight reader instance."""
     global _weight_reader
     _weight_reader = reader
+
+
+def set_cloud_sync(sync):
+    """Called by run.py to inject the cloud sync instance."""
+    global _cloud_sync
+    _cloud_sync = sync
 
 
 # =========================================================================
@@ -78,8 +85,11 @@ def api_search():
 
 @app.route('/api/sync-stats')
 def api_sync_stats():
-    """Get sync queue statistics."""
-    return jsonify(db.get_sync_stats())
+    """Get sync queue statistics + cloud reachability."""
+    stats = db.get_sync_stats()
+    # Add cloud reachability from sync instance
+    stats["cloud_reachable"] = _cloud_sync.is_cloud_reachable if _cloud_sync else False
+    return jsonify(stats)
 
 
 @app.route('/api/suppliers')
@@ -175,6 +185,7 @@ def api_capture_gross(weighment_id):
 
     weight = data.get('weight')
     weight_source = 'MANUAL'
+    stable = True  # Manual weights are considered stable
 
     if weight is None and _weight_reader:
         w, stable, connected = _weight_reader.get_weight()
@@ -187,6 +198,10 @@ def api_capture_gross(weighment_id):
 
     try:
         result = db.capture_gross(weighment_id, weight, weight_source)
+        # Include stability warning in response (UI can show caution)
+        result["weight_stable"] = stable
+        if not stable:
+            result["stability_warning"] = "Weight was captured while scale reading was unstable"
         return jsonify(result)
     except ValueError as e:
         return jsonify({"error": str(e)}), 404
@@ -203,6 +218,7 @@ def api_capture_tare(weighment_id):
 
     weight = data.get('weight')
     weight_source = 'MANUAL'
+    stable = True
 
     if weight is None and _weight_reader:
         w, stable, connected = _weight_reader.get_weight()
@@ -215,6 +231,9 @@ def api_capture_tare(weighment_id):
 
     try:
         result = db.capture_tare(weighment_id, weight, weight_source)
+        result["weight_stable"] = stable
+        if not stable:
+            result["stability_warning"] = "Weight was captured while scale reading was unstable"
         return jsonify(result)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400

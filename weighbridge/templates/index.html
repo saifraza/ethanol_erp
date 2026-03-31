@@ -460,25 +460,43 @@
             .then(r => r.json())
             .then(pos => {
                 const sel = document.getElementById('poSelect');
-                sel.innerHTML = '<option value="">-- Select PO (optional) --</option>' +
-                    pos.map(po => {
+                // Show all lines for multi-line POs, not just the first
+                let options = '<option value="">-- Select PO (optional) --</option>';
+                pos.forEach(po => {
+                    if (po.lines && po.lines.length > 1) {
+                        // Multi-line PO: show each line as a separate option
+                        po.lines.forEach((line, idx) => {
+                            if (line.pending_qty > 0) {
+                                options += `<option value="${po.id}" data-line-id="${line.id}" data-line-idx="${idx}">PO #${po.po_no} Line ${idx+1} — ${line.description} (Pending: ${line.pending_qty} ${line.unit})</option>`;
+                            }
+                        });
+                    } else {
                         const line = po.lines && po.lines[0];
                         const pending = line ? `${line.pending_qty} ${line.unit}` : '';
-                        return `<option value="${po.id}">PO #${po.po_no} — ${line ? line.description : ''} (Pending: ${pending})</option>`;
-                    }).join('');
+                        options += `<option value="${po.id}" data-line-id="${line ? line.id : ''}">PO #${po.po_no} — ${line ? line.description : ''} (Pending: ${pending})</option>`;
+                    }
+                });
+                sel.innerHTML = options;
                 document.getElementById('poInfo').textContent = pos.length ? `${pos.length} open PO(s) found` : 'No open POs for this supplier';
             }).catch(() => {});
     }
 
     // === PO SELECTED → auto-fill ===
     function onPOSelect() {
-        const poId = document.getElementById('poSelect').value;
+        const sel = document.getElementById('poSelect');
+        const poId = sel.value;
         if (!poId) { document.getElementById('poInfo').textContent = ''; return; }
+        const selectedOpt = sel.selectedOptions[0];
+        const lineId = selectedOpt ? selectedOpt.getAttribute('data-line-id') : '';
+
         fetch('/api/pos/' + poId)
             .then(r => r.json())
             .then(po => {
                 if (po.error) return;
-                const line = po.lines && po.lines[0];
+                // Use specific line if selected, otherwise first with pending qty
+                const line = lineId
+                    ? po.lines.find(l => l.id === lineId) || po.lines[0]
+                    : po.lines.find(l => l.pending_qty > 0) || po.lines[0];
                 if (line) {
                     document.getElementById('material').value = line.description || '';
                     document.getElementById('poInfo').innerHTML =
@@ -509,11 +527,12 @@
             payload.supplier_name = document.getElementById('supplierName').value;
             payload.material = document.getElementById('material').value;
             payload.po_id = document.getElementById('poSelect').value;
-            // Get PO line ID from selected PO
-            const poId = payload.po_id;
-            if (poId) {
-                const poOpt = document.getElementById('poSelect').selectedOptions[0];
-                payload.po_number = poOpt ? poOpt.textContent.split('—')[0].trim() : '';
+            // Get PO line ID from selected option's data attribute
+            const poSel = document.getElementById('poSelect');
+            const poOpt = poSel.selectedOptions[0];
+            if (poOpt) {
+                payload.po_line_id = poOpt.getAttribute('data-line-id') || '';
+                payload.po_number = poOpt.textContent.split('—')[0].trim();
             }
         } else if (isIn && purchaseType === 'SPOT') {
             payload.supplier_name = document.getElementById('sellerName').value;
@@ -641,10 +660,15 @@
 
     // === CAPTURE GROSS ===
     function captureGross(id, manualWt) {
+        // Warn if scale is unstable and not manual entry
+        if (manualWt === undefined && !isStable && isConnected) {
+            if (!confirm('WARNING: Scale reading is UNSTABLE. The truck may still be moving.\n\nCapture weight anyway?')) return;
+        }
         const payload = manualWt !== undefined ? { weight: manualWt } : {};
         fetch(`/api/weighments/${id}/gross`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) })
         .then(r => r.json()).then(data => {
             if (data.error) { alert(data.error); return; }
+            if (data.stability_warning) { console.warn('Stability:', data.stability_warning); }
             window.open('/gross-slip/' + data.id, '_blank', 'width=400,height=600');
             document.getElementById('scannedEntry').innerHTML = '';
             refreshLists();
@@ -653,10 +677,15 @@
 
     // === CAPTURE TARE ===
     function captureTare(id, manualWt) {
+        // Warn if scale is unstable and not manual entry
+        if (manualWt === undefined && !isStable && isConnected) {
+            if (!confirm('WARNING: Scale reading is UNSTABLE. The truck may still be moving.\n\nCapture weight anyway?')) return;
+        }
         const payload = manualWt !== undefined ? { weight: manualWt } : {};
         fetch(`/api/weighments/${id}/tare`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) })
         .then(r => r.json()).then(data => {
             if (data.error) { alert(data.error); return; }
+            if (data.stability_warning) { console.warn('Stability:', data.stability_warning); }
             window.open('/slip/' + data.id, '_blank', 'width=400,height=600');
             document.getElementById('scannedEntry').innerHTML = '';
             refreshLists();
@@ -762,11 +791,18 @@
             document.getElementById('kpiTrucks').textContent = s.completed;
         });
 
-        // Sync
+        // Sync — use cloud_reachable flag for accurate status
         fetch('/api/sync-stats').then(r => r.json()).then(s => {
             const dot = document.getElementById('syncDot'), label = document.getElementById('syncStatus');
-            if (s.pending > 0) { dot.className='status-dot yellow'; label.textContent=s.pending+' pending sync'; }
-            else { dot.className='status-dot green'; label.textContent='All synced'; }
+            if (!s.cloud_reachable) {
+                dot.className='status-dot red'; label.textContent='Cloud offline' + (s.pending > 0 ? ` (${s.pending} queued)` : '');
+            } else if (s.failed > 0) {
+                dot.className='status-dot red'; label.textContent=s.failed+' stuck (need attention)';
+            } else if (s.pending > 0) {
+                dot.className='status-dot yellow'; label.textContent=s.pending+' pending sync';
+            } else {
+                dot.className='status-dot green'; label.textContent='All synced';
+            }
         }).catch(() => { document.getElementById('syncDot').className='status-dot red'; });
     }
 

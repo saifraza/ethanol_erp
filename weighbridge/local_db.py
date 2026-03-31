@@ -436,8 +436,23 @@ def delete_weighment(weighment_id: str) -> bool:
 # =========================================================================
 
 def get_pending_sync() -> list[dict]:
-    """Get queued weighments to push to cloud."""
+    """Get queued weighments to push to cloud.
+    Also logs a warning for items that have exhausted retries (dead-lettered).
+    """
     conn = _get_conn()
+
+    # Check for dead-lettered items (>= 10 attempts) and alert
+    dead = conn.execute("""
+        SELECT COUNT(*) as cnt FROM sync_queue
+        WHERE status = 'pending' AND attempts >= 10
+    """).fetchone()
+    if dead and dead["cnt"] > 0:
+        log.error(
+            "ALERT: %d weighment(s) stuck in sync queue (>= 10 failed attempts). "
+            "These will NOT sync without manual intervention.",
+            dead["cnt"]
+        )
+
     rows = conn.execute("""
         SELECT * FROM sync_queue
         WHERE status = 'pending' AND attempts < 10
@@ -533,10 +548,12 @@ def get_materials() -> list[dict]:
 # =========================================================================
 
 def upsert_pos(pos: list[dict]):
-    """Bulk upsert POs from cloud."""
+    """Bulk upsert POs from cloud. Prunes closed/removed POs not in the active list."""
     conn = _get_conn()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    active_ids = set()
     for po in pos:
+        active_ids.add(po["id"])
         conn.execute("""
             INSERT INTO po_cache (id, po_no, vendor_id, vendor_name, status, lines_json, synced_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -546,6 +563,16 @@ def upsert_pos(pos: list[dict]):
         """, (po["id"], po.get("po_no", 0), po.get("vendor_id", ""),
               po.get("vendor_name", ""), po.get("status", ""),
               json.dumps(po.get("lines", [])), now))
+
+    # Prune POs no longer in cloud's active list (closed, cancelled, fully received)
+    if active_ids:
+        existing = conn.execute("SELECT id FROM po_cache").fetchall()
+        stale_ids = [r["id"] for r in existing if r["id"] not in active_ids]
+        if stale_ids:
+            placeholders = ",".join("?" * len(stale_ids))
+            conn.execute(f"DELETE FROM po_cache WHERE id IN ({placeholders})", stale_ids)
+            log.info("Pruned %d stale PO(s) from cache", len(stale_ids))
+
     conn.commit()
     log.info("Upserted %d POs from cloud", len(pos))
 
@@ -657,7 +684,7 @@ def get_daily_summary(date_str: str = "") -> dict:
         SELECT
             COUNT(*) as total_trucks,
             COUNT(CASE WHEN status = 'COMPLETE' THEN 1 END) as completed,
-            COUNT(CASE WHEN status = 'FIRST_WEIGHT' THEN 1 END) as pending,
+            COUNT(CASE WHEN status = 'FIRST_DONE' THEN 1 END) as pending,
             COALESCE(SUM(CASE WHEN status = 'COMPLETE' THEN weight_net ELSE 0 END), 0) as total_net_kg,
             COALESCE(SUM(CASE WHEN status = 'COMPLETE' AND direction = 'IN' THEN weight_net ELSE 0 END), 0) as inbound_kg,
             COALESCE(SUM(CASE WHEN status = 'COMPLETE' AND direction = 'OUT' THEN weight_net ELSE 0 END), 0) as outbound_kg,

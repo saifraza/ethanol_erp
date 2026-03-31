@@ -4,6 +4,7 @@ import { asyncHandler } from '../shared/middleware';
 import prisma from '../config/prisma';
 import { onStockMovement } from '../services/autoJournal';
 import { z } from 'zod';
+import crypto from 'crypto';
 import { getLatestHeartbeat as getOPCHeartbeat } from './opcBridge';
 
 const router = Router();
@@ -12,7 +13,14 @@ const WB_PUSH_KEY = process.env.WB_PUSH_KEY || 'mspil-wb-2026';
 
 function checkWBKey(req: Request, res: Response): boolean {
   const key = req.headers['x-wb-key'] as string;
-  if (key !== WB_PUSH_KEY) {
+  if (!key || key.length !== WB_PUSH_KEY.length) {
+    res.status(401).json({ error: 'Invalid weighbridge push key' });
+    return false;
+  }
+  // Timing-safe comparison to prevent key leakage via timing attacks
+  const keyBuf = Buffer.from(key, 'utf8');
+  const expectedBuf = Buffer.from(WB_PUSH_KEY, 'utf8');
+  if (!crypto.timingSafeEqual(keyBuf, expectedBuf)) {
     res.status(401).json({ error: 'Invalid weighbridge push key' });
     return false;
   }
@@ -214,12 +222,24 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
       continue;
     }
 
-    // Check for duplicate
-    const dupCheck = await prisma.grainTruck.findFirst({
+    // Check for duplicate across ALL tables (GrainTruck, DirectPurchase, DDGSDispatch)
+    const dupGrain = await prisma.grainTruck.findFirst({
       where: { remarks: { contains: `WB:${w.id}` } },
       select: { id: true },
     });
-    if (dupCheck) { ids.push(dupCheck.id); continue; }
+    if (dupGrain) { ids.push(dupGrain.id); continue; }
+
+    const dupDP = await prisma.directPurchase.findFirst({
+      where: { remarks: { contains: `WB:${w.id}` } },
+      select: { id: true },
+    });
+    if (dupDP) { ids.push(dupDP.id); continue; }
+
+    const dupDDGS = await prisma.dDGSDispatchTruck.findFirst({
+      where: { remarks: { contains: `WB:${w.id}` } },
+      select: { id: true },
+    });
+    if (dupDDGS) { ids.push(dupDDGS.id); continue; }
 
     const wbRef = `WB:${w.id} | Ticket #${w.ticket_no} | ${w.weight_source}`;
     const purchaseType = w.purchase_type || 'PO';
@@ -228,96 +248,119 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
     if (w.direction === 'IN' && purchaseType === 'PO' && w.po_id) {
       const po = await prisma.purchaseOrder.findUnique({
         where: { id: w.po_id },
-        include: { lines: true, vendor: { select: { id: true, name: true } } },
+        include: {
+          lines: { orderBy: { createdAt: 'asc' } },
+          vendor: { select: { id: true, name: true } },
+        },
       });
 
-      if (po) {
+      // Validate PO is still receivable (not cancelled, closed, or already fully received)
+      const receivableStatuses = ['APPROVED', 'SENT', 'PARTIAL_RECEIVED'];
+      if (po && receivableStatuses.includes(po.status)) {
         const netKg = w.weight_net || 0;
-        // Find matching PO line (by inventoryItemId or first line)
+        // Find matching PO line — prefer explicit po_line_id, fall back to first line with pending qty
         const poLine = w.po_line_id
           ? po.lines.find(l => l.id === w.po_line_id)
-          : po.lines[0];
+          : po.lines.find(l => l.pendingQty > 0) || po.lines[0];
 
         if (poLine) {
-          // Convert KG to PO unit (assume PO is in KG or MT)
+          // Convert KG to PO unit — support KG, MT, QUINTAL; default to KG
           const unit = poLine.unit?.toUpperCase() || 'KG';
-          const receivedQty = unit === 'MT' ? netKg / 1000 : netKg;
+          let receivedQty: number;
+          switch (unit) {
+            case 'MT': receivedQty = netKg / 1000; break;
+            case 'QUINTAL': case 'QTL': receivedQty = netKg / 100; break;
+            default: receivedQty = netKg; break; // KG and any unknown unit treated as KG
+          }
           const rate = poLine.rate;
 
-          // Create GRN + update PO in transaction
-          const grn = await prisma.$transaction(async (tx) => {
-            const grn = await tx.goodsReceipt.create({
-              data: {
-                poId: po.id,
-                vendorId: po.vendorId,
-                grnDate: new Date(),
-                vehicleNo: w.vehicle_no,
-                challanNo: '',
-                invoiceNo: '',
-                remarks: `${wbRef} | Auto-GRN from weighbridge`,
-                totalAmount: Math.round(receivedQty * rate * 100) / 100,
-                totalQty: receivedQty,
-                status: 'DRAFT',
-                userId: 'system-weighbridge',
-                lines: {
-                  create: [{
-                    poLineId: poLine.id,
-                    inventoryItemId: poLine.inventoryItemId || null,
-                    description: poLine.description || w.material || '',
-                    receivedQty,
-                    acceptedQty: receivedQty,
-                    rejectedQty: 0,
-                    unit: poLine.unit || 'KG',
-                    rate,
-                    amount: Math.round(receivedQty * rate * 100) / 100,
-                    storageLocation: '',
-                    batchNo: '',
-                    remarks: `Vehicle: ${w.vehicle_no}`,
-                  }],
+          // Reject if PO line is already exhausted (pendingQty <= 0)
+          if (poLine.pendingQty <= 0) {
+            // Fall through to generic inbound path instead of creating a bad GRN
+          } else {
+            // Use local weighment timestamp, not server time
+            const grnDate = w.created_at ? new Date(w.created_at) : new Date();
+
+            // Create GRN + update PO + sync inventory all in one transaction
+            const grn = await prisma.$transaction(async (tx) => {
+              const grn = await tx.goodsReceipt.create({
+                data: {
+                  poId: po.id,
+                  vendorId: po.vendorId,
+                  grnDate,
+                  vehicleNo: w.vehicle_no,
+                  challanNo: '',
+                  invoiceNo: '',
+                  remarks: `${wbRef} | Auto-GRN from weighbridge`,
+                  totalAmount: Math.round(receivedQty * rate * 100) / 100,
+                  totalQty: receivedQty,
+                  status: 'DRAFT',
+                  userId: 'system-weighbridge',
+                  lines: {
+                    create: [{
+                      poLineId: poLine.id,
+                      inventoryItemId: poLine.inventoryItemId || null,
+                      description: poLine.description || w.material || '',
+                      receivedQty,
+                      acceptedQty: receivedQty,
+                      rejectedQty: 0,
+                      unit: poLine.unit || 'KG',
+                      rate,
+                      amount: Math.round(receivedQty * rate * 100) / 100,
+                      storageLocation: '',
+                      batchNo: '',
+                      remarks: `Vehicle: ${w.vehicle_no}`,
+                    }],
+                  },
                 },
-              },
-              include: { lines: true },
+                include: { lines: true },
+              });
+
+              // Update PO line received qty
+              const newReceivedQty = poLine.receivedQty + receivedQty;
+              const newPendingQty = poLine.quantity - newReceivedQty;
+              await tx.pOLine.update({
+                where: { id: poLine.id },
+                data: { receivedQty: newReceivedQty, pendingQty: Math.max(0, newPendingQty) },
+              });
+
+              // Update PO status
+              const allLines = await tx.pOLine.findMany({ where: { poId: po.id } });
+              const allDone = allLines.every(l => l.pendingQty <= 0);
+              const anyPartial = allLines.some(l => l.receivedQty > 0 && l.pendingQty > 0);
+              if (allDone) {
+                await tx.purchaseOrder.update({ where: { id: po.id }, data: { status: 'RECEIVED' } });
+              } else if (anyPartial) {
+                await tx.purchaseOrder.update({ where: { id: po.id }, data: { status: 'PARTIAL_RECEIVED' } });
+              }
+
+              return grn;
             });
 
-            // Update PO line received qty
-            const newReceivedQty = poLine.receivedQty + receivedQty;
-            const newPendingQty = poLine.quantity - newReceivedQty;
-            await tx.pOLine.update({
-              where: { id: poLine.id },
-              data: { receivedQty: newReceivedQty, pendingQty: Math.max(0, newPendingQty) },
-            });
-
-            // Update PO status
-            const allLines = await tx.pOLine.findMany({ where: { poId: po.id } });
-            const allDone = allLines.every(l => l.pendingQty <= 0);
-            const anyPartial = allLines.some(l => l.receivedQty > 0 && l.pendingQty > 0);
-            if (allDone) {
-              await tx.purchaseOrder.update({ where: { id: po.id }, data: { status: 'RECEIVED' } });
-            } else if (anyPartial) {
-              await tx.purchaseOrder.update({ where: { id: po.id }, data: { status: 'PARTIAL_RECEIVED' } });
+            // Sync inventory outside transaction (DRAFT GRNs don't affect approved stock)
+            // This is intentional — inventory adjusts on receipt, approval can reject later
+            if (poLine.inventoryItemId) {
+              try {
+                await syncToInventory(
+                  'GRN', grn.id, `GRN-${grn.grnNo}`,
+                  poLine.inventoryItemId, receivedQty, rate,
+                  'IN', 'GRN_RECEIPT',
+                  `Auto-GRN from weighbridge: ${w.vehicle_no}`,
+                  'system-weighbridge',
+                );
+              } catch (invErr) {
+                // Log but don't fail — GRN is created, inventory can be reconciled
+                console.error(`Inventory sync failed for GRN-${grn.grnNo}: ${invErr}`);
+              }
             }
 
-            return grn;
-          });
-
-          // Sync inventory outside transaction
-          if (poLine.inventoryItemId) {
-            try {
-              await syncToInventory(
-                'GRN', grn.id, `GRN-${grn.grnNo}`,
-                poLine.inventoryItemId, receivedQty, rate,
-                'IN', 'GRN_RECEIPT',
-                `Auto-GRN from weighbridge: ${w.vehicle_no}`,
-                'system-weighbridge',
-              );
-            } catch (_e) { /* swallow */ }
+            results.push({ id: grn.id, type: 'GRN', refNo: `GRN-${grn.grnNo}` });
+            ids.push(grn.id);
+            continue;
           }
-
-          results.push({ id: grn.id, type: 'GRN', refNo: `GRN-${grn.grnNo}` });
-          ids.push(grn.id);
-          continue;
         }
       }
+      // If PO is cancelled/closed/exhausted, fall through to generic inbound path
     }
 
     // ── INBOUND + SPOT → Auto-create DirectPurchase ──
@@ -613,14 +656,17 @@ router.get('/system-status', asyncHandler(async (req: AuthRequest, res: Response
     return { ...hb, isAlive, lastSeenSec };
   });
 
-  // Sync stats
-  const totalSynced = await prisma.grainTruck.count({ where: { remarks: { contains: 'WB:' } } });
-  const todaySynced = await prisma.grainTruck.count({
-    where: {
-      remarks: { contains: 'WB:' },
-      date: { gte: new Date(new Date().setHours(0, 0, 0, 0)) },
-    },
-  });
+  // Sync stats — use startsWith for index-friendly query instead of contains (full table scan)
+  const todayStart = new Date(new Date().setHours(0, 0, 0, 0));
+  const [totalSynced, todaySynced] = await Promise.all([
+    prisma.grainTruck.count({ where: { remarks: { startsWith: 'WB:' } } }),
+    prisma.grainTruck.count({
+      where: {
+        remarks: { startsWith: 'WB:' },
+        date: { gte: todayStart },
+      },
+    }),
+  ]);
 
   // Include OPC bridge PC
   const opcHB = getOPCHeartbeat();

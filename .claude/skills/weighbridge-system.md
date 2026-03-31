@@ -227,3 +227,34 @@ curl http://100.91.152.57:8098/api/weight
 # sc stop WTReadingNew  ← halts factory
 # sc config WTReadingNew start= disabled  ← halts factory
 ```
+
+## Cloud Sync Robustness (Updated 2026-04-01)
+
+### Sync Queue Behavior
+- Items retried up to 10 times before being dead-lettered
+- Dead-lettered items logged with ALERT severity every sync cycle
+- Consecutive push failures (3+) cause early break to avoid blocking loop
+- Stale PO cache auto-pruned when cloud sends updated active PO list
+
+### Cloud Backend (weighbridge.ts) Safety
+- Duplicate detection covers GrainTruck, DirectPurchase, AND DDGSDispatchTruck
+- PO validation: only `APPROVED`, `SENT`, `PARTIAL_RECEIVED` POs can create GRNs
+- Exhausted PO lines (pendingQty <= 0) fall through to generic inbound path
+- GRN dates use local weighment timestamp, not server receive time
+- Unit conversion handles KG, MT, QUINTAL/QTL
+- PO lines ordered by createdAt; prefers lines with pending qty
+- po_line_id sent from UI for multi-line PO support
+- API key checked with timing-safe comparison
+
+### UI Safety
+- Unstable scale warning: confirm dialog before capturing weight when scale is unstable
+- Cloud status shows actual reachability (not just queue depth)
+- Dead-lettered items shown as "stuck (need attention)" in status bar
+
+## Known Limitations (Accepted Risks)
+
+1. **No auth on local Flask endpoints** — acceptable for LAN-only access
+2. **Inventory syncs on DRAFT GRN** — by design; stock adjusts on receipt, rejection reverses
+3. **In-memory heartbeat map on cloud** — wiped on Railway deploy, recovers in <60s
+4. **SQLite thread-local connections** — safe for single-writer WAL mode; would need rework for PostgreSQL
+5. **Clock drift** — local timestamps may drift; NTP recommended on factory PC
