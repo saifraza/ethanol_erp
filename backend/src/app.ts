@@ -70,7 +70,7 @@ import bankReconciliationRoutes from './routes/bankReconciliation';
 // OPC Bridge (factory automation)
 import opcBridgeRoutes from './routes/opcBridge';
 // Weighbridge (local service at factory gate)
-import weighbridgeRoutes from './routes/weighbridge';
+// import weighbridgeRoutes from './routes/weighbridge'; // TODO: not ready yet
 import accountsReportsRoutes from './routes/accountsReports';
 // AI Assistant
 import aiRoutes from './routes/ai';
@@ -207,7 +207,7 @@ app.use('/api/gate-entry', gateEntryRoutes);
 // OPC Bridge (factory automation — proxies to on-premise Windows service)
 app.use('/api/opc', opcBridgeRoutes);
 // Weighbridge (local service at factory gate — push weighments, pull master data)
-app.use('/api/weighbridge', weighbridgeRoutes);
+// app.use('/api/weighbridge', weighbridgeRoutes); // TODO: not ready yet
 // AI Assistant
 app.use('/api/ai', aiRoutes);
 // Process reports
