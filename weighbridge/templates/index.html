@@ -178,65 +178,142 @@
 <div class="tab-content active" id="tab-gate">
     <div class="section-header">New Gate Entry</div>
     <form id="gateForm">
+        <!-- Direction -->
         <div class="form-row">
             <div class="form-label">Direction</div>
             <div class="dir-toggle">
-                <div class="dir-btn active" data-dir="IN" onclick="setDirection('IN')">Inbound (Grain)</div>
-                <div class="dir-btn" data-dir="OUT" onclick="setDirection('OUT')">Outbound (DDGS)</div>
+                <div class="dir-btn active" data-dir="IN" onclick="setDirection('IN')">Inbound (Buy)</div>
+                <div class="dir-btn" data-dir="OUT" onclick="setDirection('OUT')">Outbound (Sell)</div>
             </div>
         </div>
+
+        <!-- Purchase Type (only for Inbound) -->
+        <div class="form-row" id="purchaseTypeRow">
+            <div class="form-label">Purchase Type</div>
+            <div class="dir-toggle">
+                <div class="dir-btn active" data-pt="PO" onclick="setPurchaseType('PO')">PO Purchase</div>
+                <div class="dir-btn" data-pt="SPOT" onclick="setPurchaseType('SPOT')">Spot Purchase</div>
+            </div>
+        </div>
+
+        <!-- Vehicle -->
         <div class="form-row">
             <label class="form-label">Vehicle Number</label>
-            <input class="form-input" type="text" id="vehicleNo" placeholder="MP-22-AB-1234" required autocomplete="off" style="text-transform:uppercase;">
+            <input class="form-input" type="text" id="vehicleNo" placeholder="MP-22-AB-1234" required autocomplete="off" style="text-transform:uppercase;" list="vehicleList">
+            <datalist id="vehicleList"></datalist>
         </div>
-        <div class="form-2col">
-            <div class="form-row">
-                <label class="form-label">Supplier / Party</label>
-                <input class="form-input" type="text" id="supplierName" placeholder="Supplier name" list="supplierList">
-                <datalist id="supplierList"></datalist>
+
+        <!-- PO Purchase fields -->
+        <div id="poFields">
+            <div class="form-2col">
+                <div class="form-row">
+                    <label class="form-label">Supplier / Party</label>
+                    <input class="form-input" type="text" id="supplierName" placeholder="Select supplier" list="supplierList" oninput="onSupplierChange()">
+                    <datalist id="supplierList"></datalist>
+                </div>
+                <div class="form-row">
+                    <label class="form-label">Product</label>
+                    <select class="form-input" id="material">
+                        <option value="">-- Select Product --</option>
+                    </select>
+                </div>
             </div>
-            <div class="form-row">
-                <label class="form-label">Material / Item</label>
-                <input class="form-input" type="text" id="material" placeholder="Broken Rice / DDGS" list="materialList">
-                <datalist id="materialList"></datalist>
+            <div class="form-row" id="poSelectRow">
+                <label class="form-label">Purchase Order</label>
+                <select class="form-input" id="poSelect" onchange="onPOSelect()">
+                    <option value="">-- Select PO (optional) --</option>
+                </select>
+                <div id="poInfo" style="font-size:10px; color:#64748b; margin-top:4px;"></div>
             </div>
         </div>
-        <div class="form-2col">
-            <div class="form-row">
-                <label class="form-label">P.O. Number</label>
-                <input class="form-input" type="text" id="poNumber" placeholder="PO number">
+
+        <!-- Spot Purchase fields (hidden by default) -->
+        <div id="spotFields" style="display:none;">
+            <div class="form-2col">
+                <div class="form-row">
+                    <label class="form-label">Seller Name</label>
+                    <input class="form-input" type="text" id="sellerName" placeholder="Farmer / trader name">
+                </div>
+                <div class="form-row">
+                    <label class="form-label">Product</label>
+                    <select class="form-input" id="spotMaterial">
+                        <option value="">-- Select Product --</option>
+                    </select>
+                </div>
             </div>
+            <div class="form-2col">
+                <div class="form-row">
+                    <label class="form-label">Seller Phone</label>
+                    <input class="form-input" type="tel" id="sellerPhone" placeholder="Mobile number">
+                </div>
+                <div class="form-row">
+                    <label class="form-label">Seller Village</label>
+                    <input class="form-input" type="text" id="sellerVillage" placeholder="Village name">
+                </div>
+            </div>
+            <div class="form-2col">
+                <div class="form-row">
+                    <label class="form-label">Rate (per KG)</label>
+                    <input class="form-input" type="number" id="spotRate" placeholder="0.00" step="0.01" min="0">
+                </div>
+                <div class="form-row">
+                    <label class="form-label">Payment Mode</label>
+                    <select class="form-input" id="paymentMode">
+                        <option value="CASH">Cash</option>
+                        <option value="UPI">UPI</option>
+                        <option value="BANK_TRANSFER">Bank Transfer</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Outbound fields (hidden by default) -->
+        <div id="outFields" style="display:none;">
+            <div class="form-2col">
+                <div class="form-row">
+                    <label class="form-label">Customer / Party</label>
+                    <input class="form-input" type="text" id="customerName" placeholder="Customer name" list="customerList">
+                    <datalist id="customerList"></datalist>
+                </div>
+                <div class="form-row">
+                    <label class="form-label">Product</label>
+                    <select class="form-input" id="outMaterial">
+                        <option value="">-- Select Product --</option>
+                        <option value="DDGS">DDGS</option>
+                        <option value="Ethanol">Ethanol</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Common fields -->
+        <div class="form-2col">
             <div class="form-row">
                 <label class="form-label">Transporter</label>
                 <input class="form-input" type="text" id="transporter" placeholder="Transporter name">
             </div>
-        </div>
-        <div class="form-2col">
             <div class="form-row">
                 <label class="form-label">Vehicle Type</label>
                 <input class="form-input" type="text" id="vehicleType" placeholder="Truck 14 Wheel" list="vtypeList">
                 <datalist id="vtypeList">
-                    <option value="TRUCK 14 WHEEL">
-                    <option value="TRUCK 10 WHEEL">
-                    <option value="TRUCK 6 WHEEL">
-                    <option value="TRACTOR TROLLEY">
-                    <option value="PICKUP">
+                    <option value="TRUCK 14 WHEEL"><option value="TRUCK 10 WHEEL">
+                    <option value="TRUCK 6 WHEEL"><option value="TRACTOR TROLLEY"><option value="PICKUP">
                 </datalist>
-            </div>
-            <div class="form-row">
-                <label class="form-label">Driver Mobile</label>
-                <input class="form-input" type="tel" id="driverMobile" placeholder="Mobile number">
             </div>
         </div>
         <div class="form-2col">
             <div class="form-row">
+                <label class="form-label">Driver Mobile</label>
+                <input class="form-input" type="tel" id="driverMobile" placeholder="Mobile number">
+            </div>
+            <div class="form-row">
                 <label class="form-label">Bags</label>
                 <input class="form-input" type="number" id="bags" placeholder="0" min="0">
             </div>
-            <div class="form-row">
-                <label class="form-label">Remarks</label>
-                <input class="form-input" type="text" id="remarks" placeholder="Optional">
-            </div>
+        </div>
+        <div class="form-row">
+            <label class="form-label">Remarks</label>
+            <input class="form-input" type="text" id="remarks" placeholder="Optional">
         </div>
         <div style="padding: 10px 16px;">
             <button type="button" class="btn-primary" style="width:100%;" onclick="createGateEntry()">
@@ -326,30 +403,139 @@
     // === DIRECTION ===
     function setDirection(dir) {
         document.getElementById('direction').value = dir;
-        document.querySelectorAll('.dir-btn').forEach(b => b.classList.toggle('active', b.dataset.dir === dir));
+        document.querySelectorAll('[data-dir]').forEach(b => b.classList.toggle('active', b.dataset.dir === dir));
+
+        // Show/hide fields based on direction
+        const isIn = dir === 'IN';
+        document.getElementById('purchaseTypeRow').style.display = isIn ? '' : 'none';
+        document.getElementById('poFields').style.display = isIn && purchaseType === 'PO' ? '' : 'none';
+        document.getElementById('spotFields').style.display = isIn && purchaseType === 'SPOT' ? '' : 'none';
+        document.getElementById('outFields').style.display = isIn ? 'none' : '';
+
+        // Update product dropdowns
+        populateProducts();
+    }
+
+    // === PURCHASE TYPE ===
+    let purchaseType = 'PO';
+    function setPurchaseType(pt) {
+        purchaseType = pt;
+        document.querySelectorAll('[data-pt]').forEach(b => b.classList.toggle('active', b.dataset.pt === pt));
+        document.getElementById('poFields').style.display = pt === 'PO' ? '' : 'none';
+        document.getElementById('spotFields').style.display = pt === 'SPOT' ? '' : 'none';
+    }
+
+    // === PRODUCT DROPDOWNS ===
+    let allMaterials = [];
+    function populateProducts() {
+        const dir = document.getElementById('direction').value;
+        const inProducts = allMaterials.filter(m => ['RAW_MATERIAL', 'FUEL', ''].includes(m.category || ''));
+        const outProducts = [{id:'ddgs', name:'DDGS'}, {id:'ethanol', name:'Ethanol'}];
+        const products = dir === 'IN' ? inProducts : outProducts;
+
+        // Populate all product selects
+        ['material', 'spotMaterial'].forEach(id => {
+            const sel = document.getElementById(id);
+            if (!sel) return;
+            sel.innerHTML = '<option value="">-- Select Product --</option>' +
+                inProducts.map(m => `<option value="${m.name}">${m.name}</option>`).join('');
+        });
+        const outSel = document.getElementById('outMaterial');
+        if (outSel) {
+            outSel.innerHTML = '<option value="">-- Select Product --</option>' +
+                outProducts.map(m => `<option value="${m.name}">${m.name}</option>`).join('');
+        }
+    }
+
+    // === SUPPLIER → PO LOOKUP ===
+    function onSupplierChange() {
+        const supplier = document.getElementById('supplierName').value;
+        if (supplier.length < 2) return;
+        fetch('/api/pos?vendor=' + encodeURIComponent(supplier))
+            .then(r => r.json())
+            .then(pos => {
+                const sel = document.getElementById('poSelect');
+                sel.innerHTML = '<option value="">-- Select PO (optional) --</option>' +
+                    pos.map(po => {
+                        const line = po.lines && po.lines[0];
+                        const pending = line ? `${line.pending_qty} ${line.unit}` : '';
+                        return `<option value="${po.id}">PO #${po.po_no} — ${line ? line.description : ''} (Pending: ${pending})</option>`;
+                    }).join('');
+                document.getElementById('poInfo').textContent = pos.length ? `${pos.length} open PO(s) found` : 'No open POs for this supplier';
+            }).catch(() => {});
+    }
+
+    // === PO SELECTED → auto-fill ===
+    function onPOSelect() {
+        const poId = document.getElementById('poSelect').value;
+        if (!poId) { document.getElementById('poInfo').textContent = ''; return; }
+        fetch('/api/pos/' + poId)
+            .then(r => r.json())
+            .then(po => {
+                if (po.error) return;
+                const line = po.lines && po.lines[0];
+                if (line) {
+                    document.getElementById('material').value = line.description || '';
+                    document.getElementById('poInfo').innerHTML =
+                        `<strong>PO #${po.po_no}</strong> | Ordered: ${line.quantity} ${line.unit} | Received: ${line.received_qty} ${line.unit} | <span style="color:#16a34a;">Pending: ${line.pending_qty} ${line.unit}</span> | Rate: ${line.rate}/${line.unit}`;
+                }
+            }).catch(() => {});
     }
 
     // === GATE ENTRY ===
     function createGateEntry() {
         const v = document.getElementById('vehicleNo').value.trim();
         if (!v) { alert('Enter vehicle number'); return; }
+        const dir = document.getElementById('direction').value;
+        const isIn = dir === 'IN';
+
         const payload = {
-            vehicle_no: v, direction: document.getElementById('direction').value,
-            supplier_name: document.getElementById('supplierName').value,
-            material: document.getElementById('material').value,
-            po_number: document.getElementById('poNumber').value,
+            vehicle_no: v,
+            direction: dir,
+            purchase_type: isIn ? purchaseType : 'OUTBOUND',
             transporter: document.getElementById('transporter').value,
             driver_mobile: document.getElementById('driverMobile').value,
             vehicle_type: document.getElementById('vehicleType').value,
             bags: parseInt(document.getElementById('bags').value) || 0,
             remarks: document.getElementById('remarks').value,
         };
+
+        if (isIn && purchaseType === 'PO') {
+            payload.supplier_name = document.getElementById('supplierName').value;
+            payload.material = document.getElementById('material').value;
+            payload.po_id = document.getElementById('poSelect').value;
+            // Get PO line ID from selected PO
+            const poId = payload.po_id;
+            if (poId) {
+                const poOpt = document.getElementById('poSelect').selectedOptions[0];
+                payload.po_number = poOpt ? poOpt.textContent.split('—')[0].trim() : '';
+            }
+        } else if (isIn && purchaseType === 'SPOT') {
+            payload.supplier_name = document.getElementById('sellerName').value;
+            payload.material = document.getElementById('spotMaterial').value;
+            payload.seller_phone = document.getElementById('sellerPhone').value;
+            payload.seller_village = document.getElementById('sellerVillage').value;
+            payload.rate = parseFloat(document.getElementById('spotRate').value) || 0;
+            payload.payment_mode = document.getElementById('paymentMode').value;
+        } else {
+            // Outbound
+            payload.supplier_name = document.getElementById('customerName').value;
+            payload.material = document.getElementById('outMaterial').value;
+        }
+
+        if (!payload.material) { alert('Select a product'); return; }
+
         fetch('/api/gate-entry', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) })
         .then(r => r.json()).then(data => {
             if (data.error) { alert(data.error); return; }
             // Clear form
-            ['vehicleNo','supplierName','material','poNumber','transporter','driverMobile','vehicleType','bags','remarks'].forEach(id => document.getElementById(id).value = '');
-            // Open gate pass for printing
+            ['vehicleNo','supplierName','material','transporter','driverMobile','vehicleType','bags','remarks',
+             'sellerName','sellerPhone','sellerVillage','spotRate','spotMaterial','customerName'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+            document.getElementById('poSelect').innerHTML = '<option value="">-- Select PO (optional) --</option>';
+            document.getElementById('poInfo').textContent = '';
             window.open('/gate-pass/' + data.id, '_blank', 'width=400,height=700');
             refreshLists();
         }).catch(e => alert('Error: ' + e));
@@ -597,7 +783,14 @@
             document.getElementById('supplierList').innerHTML = items.map(s => `<option value="${s.name}">`).join('');
         }).catch(() => {});
         fetch('/api/materials').then(r => r.json()).then(items => {
-            document.getElementById('materialList').innerHTML = items.map(m => `<option value="${m.name}">`).join('');
+            allMaterials = items;
+            populateProducts();
+        }).catch(() => {});
+        fetch('/api/customers').then(r => r.json()).then(items => {
+            document.getElementById('customerList').innerHTML = items.map(c => `<option value="${c.name}">`).join('');
+        }).catch(() => {});
+        fetch('/api/vehicles').then(r => r.json()).then(items => {
+            document.getElementById('vehicleList').innerHTML = items.map(v => `<option value="${v}">`).join('');
         }).catch(() => {});
     }
 

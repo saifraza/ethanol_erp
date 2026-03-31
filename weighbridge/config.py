@@ -44,7 +44,7 @@ WEB_DEBUG = False            # Never True in production
 # =============================================================================
 CLOUD_API_URL = os.environ.get("WB_CLOUD_URL", "https://app.mspil.in/api/weighbridge")
 CLOUD_API_KEY = os.environ.get("WB_CLOUD_KEY", "mspil-wb-2026")
-SYNC_INTERVAL_SECONDS = 120          # Push every 2 minutes
+SYNC_INTERVAL_SECONDS = 30           # Push every 30 seconds
 SYNC_RETRY_MAX = 5                   # Retry failed syncs
 MASTER_PULL_INTERVAL_SECONDS = 1800  # Pull master data every 30 min
 
