@@ -393,10 +393,19 @@ router.get('/deals', asyncHandler(async (req: AuthRequest, res: Response) => {
 router.post('/deals', validate(openDealSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const b = req.body;
 
-  // Resolve vendor — use existing or auto-create from name
+  // Resolve vendor — use existing ID or auto-create from name
   let vendorId = b.vendorId;
+
+  // If vendorId provided, verify it exists
+  if (vendorId) {
+    const exists = await prisma.vendor.findUnique({ where: { id: vendorId }, select: { id: true } });
+    if (!exists) {
+      return res.status(400).json({ error: `Vendor not found: ${vendorId}` });
+    }
+  }
+
+  // If no vendorId but have vendorName, find or create
   if (!vendorId && b.vendorName) {
-    // Check if vendor exists by name
     const existing = await prisma.vendor.findFirst({
       where: { name: { equals: b.vendorName, mode: 'insensitive' } },
       select: { id: true },
@@ -404,7 +413,6 @@ router.post('/deals', validate(openDealSchema), asyncHandler(async (req: AuthReq
     if (existing) {
       vendorId = existing.id;
     } else {
-      // Auto-create vendor (fuel trader)
       const count = await prisma.vendor.count();
       const newVendor = await prisma.vendor.create({
         data: {
@@ -418,7 +426,8 @@ router.post('/deals', validate(openDealSchema), asyncHandler(async (req: AuthReq
       vendorId = newVendor.id;
     }
   }
-  if (!vendorId) return res.status(400).json({ error: 'Vendor ID or name is required' });
+
+  if (!vendorId) return res.status(400).json({ error: 'Select a vendor or enter a trader name' });
 
   // Get fuel item details
   const fuelItem = await prisma.inventoryItem.findUnique({
