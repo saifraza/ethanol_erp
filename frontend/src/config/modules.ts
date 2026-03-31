@@ -44,6 +44,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'ddgs-dispatch', label: 'DDGS Dispatch', to: '/process/ddgs-dispatch', icon: Truck, group: 'process' },
   { key: 'water-utility', label: 'Utilities', to: '/process/water-utility', icon: Waves, group: 'process' },
   { key: 'opc-live', label: 'OPC Live', to: '/process/opc', icon: Radio, group: 'process' },
+  { key: 'plant-indent', label: 'Indent / Request', to: '/purchase-requisition', icon: ShoppingCart, group: 'process' },
 
   // ── SALES (DDGS + Ethanol outward) ──
   { key: 'customers', label: 'Buyers', to: '/sales/customers', icon: UserCheck, group: 'sales' },
@@ -62,7 +63,6 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'materials', label: 'Items', to: '/inventory', icon: Box, group: 'procurement' },
   { key: 'purchase-orders', label: 'Purchase Orders', to: '/procurement/purchase-orders', icon: ShoppingBag, group: 'procurement' },
   { key: 'goods-receipts', label: 'GRN', to: '/logistics/gate-register?tab=grn', icon: PackageCheck, group: 'procurement' },
-  { key: 'purchase-req', label: 'Indent / Requisition', to: '/purchase-requisition', icon: ShoppingCart, group: 'procurement' },
 
   // ── SPOT TRADE (Cash buy/sell at gate) ──
   { key: 'direct-purchase', label: 'Spot Purchase', to: '/trade/purchases', icon: Tractor, group: 'trade' },
