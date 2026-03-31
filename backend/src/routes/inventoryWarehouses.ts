@@ -11,12 +11,12 @@ const router = Router();
 
 const createWarehouseSchema = z.object({
   name: z.string().min(1).max(100),
-  address: z.string().optional(),
+  address: z.string().nullable().optional(),
 });
 
 const updateWarehouseSchema = z.object({
   name: z.string().min(1).max(100).optional(),
-  address: z.string().optional(),
+  address: z.string().nullable().optional(),
   isActive: z.boolean().optional(),
 });
 

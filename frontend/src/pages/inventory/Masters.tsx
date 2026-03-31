@@ -152,6 +152,8 @@ export default function Masters() {
     setEditWhAddress(wh.address || '');
   };
 
+  const [activeTab, setActiveTab] = useState<'departments' | 'warehouses'>('departments');
+
   if (loadingDepts && loadingWh) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -172,8 +174,19 @@ export default function Masters() {
           </div>
         </div>
 
-        {/* DEPARTMENTS SECTION */}
-        <div className="bg-slate-800 text-white px-4 py-2 -mx-3 md:-mx-6 flex items-center justify-between mt-4">
+        {/* Tab Bar */}
+        <div className="flex border-b border-slate-300 -mx-3 md:-mx-6 px-4 bg-white">
+          <button onClick={() => setActiveTab('departments')} className={`py-2 px-4 text-[11px] font-bold uppercase tracking-widest ${activeTab === 'departments' ? 'border-b-2 border-blue-600 text-blue-700' : 'text-slate-400 hover:text-slate-600'}`}>
+            Departments ({departments.length})
+          </button>
+          <button onClick={() => setActiveTab('warehouses')} className={`py-2 px-4 text-[11px] font-bold uppercase tracking-widest ${activeTab === 'warehouses' ? 'border-b-2 border-blue-600 text-blue-700' : 'text-slate-400 hover:text-slate-600'}`}>
+            Warehouses ({warehouses.length})
+          </button>
+        </div>
+
+        {/* DEPARTMENTS TAB */}
+        {activeTab === 'departments' && <>
+        <div className="bg-slate-800 text-white px-4 py-2 -mx-3 md:-mx-6 flex items-center justify-between">
           <span className="text-[10px] font-bold uppercase tracking-widest">Departments</span>
           <button
             onClick={() => { setShowDeptForm(!showDeptForm); setEditingDeptId(null); }}
@@ -313,8 +326,11 @@ export default function Masters() {
           </table>
         </div>
 
-        {/* WAREHOUSES SECTION */}
-        <div className="bg-slate-800 text-white px-4 py-2 -mx-3 md:-mx-6 flex items-center justify-between mt-6">
+        </>}
+
+        {/* WAREHOUSES TAB */}
+        {activeTab === 'warehouses' && <>
+        <div className="bg-slate-800 text-white px-4 py-2 -mx-3 md:-mx-6 flex items-center justify-between">
           <span className="text-[10px] font-bold uppercase tracking-widest">Warehouses</span>
           <button
             onClick={() => { setShowWhForm(!showWhForm); setEditingWhId(null); }}
@@ -451,6 +467,7 @@ export default function Masters() {
             </tbody>
           </table>
         </div>
+        </>}
       </div>
     </div>
   );
