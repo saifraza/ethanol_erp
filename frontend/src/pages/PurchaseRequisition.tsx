@@ -433,12 +433,20 @@ export default function PurchaseRequisition() {
                         </>
                       )}
                       {pr.status === 'APPROVED' && (
+                        <>
+                        <a
+                          href={`/procurement/purchase-orders?newPO=1&item=${encodeURIComponent(pr.itemName)}&qty=${pr.quantity}&unit=${pr.unit}&cost=${pr.estimatedCost}&supplier=${encodeURIComponent(pr.supplier || '')}&reqId=${pr.id}`}
+                          className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700"
+                        >
+                          Create PO
+                        </a>
                         <button
                           onClick={() => updateStatus(pr.id, 'ORDERED')}
                           className="px-3 py-1 border border-slate-400 bg-white text-slate-700 text-[11px] font-medium hover:bg-slate-100"
                         >
                           Mark Ordered
                         </button>
+                        </>
                       )}
                       {pr.status === 'ORDERED' && (
                         <button
