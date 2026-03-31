@@ -62,6 +62,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'materials', label: 'Items', to: '/inventory', icon: Box, group: 'procurement' },
   { key: 'purchase-orders', label: 'Purchase Orders', to: '/procurement/purchase-orders', icon: ShoppingBag, group: 'procurement' },
   { key: 'goods-receipts', label: 'GRN', to: '/logistics/gate-register?tab=grn', icon: PackageCheck, group: 'procurement' },
+  { key: 'purchase-req', label: 'Indent / Requisition', to: '/purchase-requisition', icon: ShoppingCart, group: 'procurement' },
 
   // ── SPOT TRADE (Cash buy/sell at gate) ──
   { key: 'direct-purchase', label: 'Spot Purchase', to: '/trade/purchases', icon: Tractor, group: 'trade' },
@@ -94,7 +95,6 @@ export const MODULE_DEFS: ModuleDef[] = [
 
   // ── ADMIN ──
   { key: 'plant-issues', label: 'Maintenance', to: '/plant-issues', icon: AlertCircle, group: 'admin' },
-  { key: 'purchase-req', label: 'Indent', to: '/purchase-requisition', icon: ShoppingCart, group: 'admin' },
   { key: 'reports', label: 'Reports', to: '/reports', icon: BarChart3, group: 'admin' },
   { key: 'doc-templates', label: 'Doc Templates', to: '/document-templates', icon: FileText, group: 'admin', adminOnly: true },
   { key: 'settings', label: 'Settings', to: '/settings', icon: Settings, group: 'admin', adminOnly: true },

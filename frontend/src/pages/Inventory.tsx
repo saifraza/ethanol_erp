@@ -775,9 +775,15 @@ export default function Inventory() {
                   <div className="font-medium text-slate-800 text-sm">{item.name} <span className="text-xs text-slate-400 font-mono">({item.code})</span></div>
                   <div className="text-[11px] text-slate-500 mt-0.5">{CAT_LABELS[item.category]} {item.supplier ? `\u00B7 ${item.supplier}` : ''}</div>
                 </div>
-                <div className="text-right">
-                  <div className="text-red-700 font-bold font-mono tabular-nums text-sm">{item.currentStock} {item.unit}</div>
-                  <div className="text-[11px] text-slate-400">Min: {item.minStock}</div>
+                <div className="flex items-center gap-3">
+                  <div className="text-right">
+                    <div className="text-red-700 font-bold font-mono tabular-nums text-sm">{item.currentStock} {item.unit}</div>
+                    <div className="text-[11px] text-slate-400">Min: {item.minStock}</div>
+                  </div>
+                  <a href={`/purchase-requisition?new=1&itemId=${item.id}&itemName=${encodeURIComponent(item.name)}`}
+                    className="px-2 py-1 bg-orange-600 text-white text-[10px] font-bold hover:bg-orange-700">
+                    INDENT
+                  </a>
                 </div>
               </div>
             ))}

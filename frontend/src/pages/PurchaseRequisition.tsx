@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import api from '../services/api';
-import { Plus, Check, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Check, X, ChevronDown, ChevronUp, Search } from 'lucide-react';
 
 const URGENCIES = ['ROUTINE', 'SOON', 'URGENT', 'EMERGENCY'];
-const CATEGORIES = ['SPARE_PART', 'RAW_MATERIAL', 'CONSUMABLE', 'TOOL', 'SAFETY', 'GENERAL'];
+const CATEGORIES = ['SPARE_PART', 'RAW_MATERIAL', 'CONSUMABLE', 'TOOL', 'SAFETY', 'CHEMICAL', 'MECHANICAL', 'ELECTRICAL', 'GENERAL'];
 const STATUSES = ['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'ORDERED', 'RECEIVED'];
+
+interface InvItem { id: string; name: string; code: string; category: string; unit: string; currentStock: number; minStock: number; costPerUnit: number; supplier: string | null; }
 const URG_COLORS: Record<string, string> = {
   ROUTINE: 'border-slate-400 bg-slate-50 text-slate-700',
   SOON: 'border-blue-500 bg-blue-50 text-blue-700',
@@ -30,17 +33,37 @@ interface PR {
 }
 
 export default function PurchaseRequisition() {
+  const [searchParams] = useSearchParams();
   const [reqs, setReqs] = useState<PR[]>([]);
-  const [stats, setStats] = useState<any>({});
+  const [stats, setStats] = useState<Record<string, unknown>>({});
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'list' | 'new'>('list');
+  const [tab, setTab] = useState<'list' | 'new'>(searchParams.get('new') ? 'new' : 'list');
   const [filterStatus, setFilterStatus] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [form, setForm] = useState({
     title: '', itemName: '', quantity: '1', unit: 'nos', estimatedCost: '',
     urgency: 'ROUTINE', category: 'GENERAL', justification: '', supplier: '', remarks: '',
+    department: '', inventoryItemId: '',
   });
   const [saving, setSaving] = useState(false);
+
+  // Inventory item search for linking
+  const [invItems, setInvItems] = useState<InvItem[]>([]);
+  const [itemQuery, setItemQuery] = useState('');
+  const [showItemDropdown, setShowItemDropdown] = useState(false);
+  const [departments, setDepartments] = useState<string[]>([]);
+
+  useEffect(() => {
+    api.get('/inventory/items').then(r => setInvItems(r.data.items || [])).catch(() => {});
+    api.get('/departments').then(r => setDepartments((r.data || []).filter((d: { isActive: boolean }) => d.isActive).map((d: { name: string }) => d.name))).catch(() => {});
+    // Pre-fill from URL params (linked from Inventory page)
+    const itemId = searchParams.get('itemId');
+    const itemName = searchParams.get('itemName');
+    if (itemName) {
+      setForm(f => ({ ...f, itemName: itemName, inventoryItemId: itemId || '' }));
+      setItemQuery(itemName);
+    }
+  }, [searchParams]);
 
   const load = async () => {
     try {
@@ -61,7 +84,8 @@ export default function PurchaseRequisition() {
     setSaving(true);
     try {
       await api.post('/purchase-requisition', { ...form, status: 'SUBMITTED' });
-      setForm({ title: '', itemName: '', quantity: '1', unit: 'nos', estimatedCost: '', urgency: 'ROUTINE', category: 'GENERAL', justification: '', supplier: '', remarks: '' });
+      setForm({ title: '', itemName: '', quantity: '1', unit: 'nos', estimatedCost: '', urgency: 'ROUTINE', category: 'GENERAL', justification: '', supplier: '', remarks: '', department: '', inventoryItemId: '' });
+      setItemQuery('');
       setTab('list');
       load();
     } catch (e: any) { alert(e.response?.data?.error || 'Error'); }
@@ -164,15 +188,49 @@ export default function PurchaseRequisition() {
               />
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Item Name *</label>
-                <input
-                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                  placeholder="Item Name"
-                  required
-                  value={form.itemName}
-                  onChange={e => setForm({ ...form, itemName: e.target.value })}
-                />
+              <div className="relative">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Item (search inventory) *</label>
+                <div className="flex gap-1">
+                  <div className="relative flex-1">
+                    <input
+                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                      placeholder="Type to search items..."
+                      required
+                      value={itemQuery}
+                      onChange={e => { setItemQuery(e.target.value); setForm({ ...form, itemName: e.target.value }); setShowItemDropdown(true); }}
+                      onFocus={() => setShowItemDropdown(true)}
+                      onBlur={() => setTimeout(() => setShowItemDropdown(false), 200)}
+                    />
+                    {showItemDropdown && itemQuery.length >= 2 && (
+                      <div className="absolute z-10 w-full bg-white border border-slate-300 shadow-lg max-h-40 overflow-y-auto mt-0.5">
+                        {invItems.filter(it => it.name.toLowerCase().includes(itemQuery.toLowerCase()) || it.code.toLowerCase().includes(itemQuery.toLowerCase())).slice(0, 8).map(it => (
+                          <div key={it.id} className="px-2.5 py-1.5 text-xs hover:bg-blue-50 cursor-pointer border-b border-slate-100 flex justify-between"
+                            onMouseDown={() => {
+                              setItemQuery(it.name);
+                              setForm(f => ({
+                                ...f,
+                                itemName: it.name,
+                                inventoryItemId: it.id,
+                                unit: it.unit,
+                                estimatedCost: it.costPerUnit ? String(it.costPerUnit) : f.estimatedCost,
+                                category: it.category || f.category,
+                                supplier: it.supplier || f.supplier,
+                                title: f.title || `Need ${it.name}`,
+                              }));
+                              setShowItemDropdown(false);
+                            }}>
+                            <span className="text-slate-800 font-medium">{it.name}</span>
+                            <span className="text-slate-400 text-[10px]">{it.code} | Stock: {it.currentStock} {it.unit}</span>
+                          </div>
+                        ))}
+                        {invItems.filter(it => it.name.toLowerCase().includes(itemQuery.toLowerCase())).length === 0 && (
+                          <div className="px-2.5 py-1.5 text-[10px] text-slate-400">No matching items — will create as new</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {form.inventoryItemId && <div className="text-[9px] text-green-600 mt-0.5">Linked to inventory item</div>}
               </div>
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Qty / Unit</label>
@@ -223,6 +281,17 @@ export default function PurchaseRequisition() {
                   onChange={e => setForm({ ...form, category: e.target.value })}
                 >
                   {CATEGORIES.map(c => <option key={c} value={c}>{c.replace('_', ' ')}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Requested By (Dept)</label>
+                <select
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  value={form.department}
+                  onChange={e => setForm({ ...form, department: e.target.value })}
+                >
+                  <option value="">Select department</option>
+                  {departments.map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
               <div>
