@@ -45,9 +45,9 @@ def check_and_write_pid():
                 os.kill(old_pid, 0)
                 print(f"WARNING: Another instance may be running (PID {old_pid})")
                 print("If not, delete data/weighbridge.pid and retry.")
-            except (OSError, ProcessLookupError):
-                pass
-        except (ValueError, IOError):
+            except Exception:
+                pass  # Old process is dead or check failed, safe to continue
+        except Exception:
             pass
 
     with open(PID_FILE, "w") as f:

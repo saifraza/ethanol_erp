@@ -16,7 +16,7 @@ SERIAL_BYTESIZE = 7         # 7 data bits (confirmed live from indicator)
 SERIAL_PARITY = "N"         # No parity
 SERIAL_STOPBITS = 1         # 1 stop bit
 SERIAL_TIMEOUT = 1          # Seconds
-SERIAL_PROTOCOL = "serial"  # Direct serial read from COM1 (WtService disabled)
+SERIAL_PROTOCOL = os.environ.get("WB_PROTOCOL", "file")  # 'file' (default) or 'serial'
 
 # File-based weight reading (WtService writes weight to this file)
 WEIGHT_FILE_PATH = os.environ.get("WB_WEIGHT_FILE", r"D:\WT\new weight.txt")
