@@ -307,20 +307,29 @@ router.get('/summary', asyncHandler(async (req: AuthRequest, res: Response) => {
 // ==========================================================================
 
 const openDealSchema = z.object({
-  vendorId: z.string().optional(),       // existing vendor ID
-  vendorName: z.string().optional(),     // or just a name (auto-creates vendor)
+  vendorId: z.string().optional(),
+  vendorName: z.string().optional(),
   vendorPhone: z.string().optional(),
   fuelItemId: z.string().min(1),
   rate: z.number().min(0),
+  quantityType: z.string().optional().default('OPEN'),  // OPEN or FIXED
+  quantity: z.number().optional(),                       // only for FIXED
+  paymentTerms: z.string().optional(),
+  origin: z.string().optional(),
+  deliveryPoint: z.string().optional(),
+  transportBy: z.string().optional(),
+  deliverySchedule: z.string().optional(),
   remarks: z.string().optional(),
 });
 
-// GET /deals — list active open deals
+// GET /deals — list fuel deals (both open and fixed)
 router.get('/deals', asyncHandler(async (req: AuthRequest, res: Response) => {
   const deals = await prisma.purchaseOrder.findMany({
     where: {
-      dealType: 'OPEN',
+      dealType: { in: ['OPEN', 'STANDARD'] },
       status: { in: ['APPROVED', 'SENT', 'PARTIAL_RECEIVED'] },
+      // Only fuel deals — check if any line has a fuel inventory item
+      lines: { some: { inventoryItem: { category: 'FUEL' } } },
     },
     take: 100,
     orderBy: { poDate: 'desc' },
@@ -418,27 +427,40 @@ router.post('/deals', validate(openDealSchema), asyncHandler(async (req: AuthReq
   });
   if (!fuelItem) return res.status(404).json({ error: 'Fuel item not found' });
 
-  // Create PO with dealType = OPEN, quantity = 999999 (unlimited)
+  const isOpen = b.quantityType !== 'FIXED';
+  const qty = isOpen ? 999999 : (b.quantity || 0);
+  const creditDaysMap: Record<string, number> = { ADVANCE: 0, COD: 0, NET7: 7, NET10: 10, NET15: 15, NET30: 30 };
+  const creditDays = creditDaysMap[b.paymentTerms || 'NET15'] ?? 15;
+
+  // Build remarks with delivery details
+  const remarkParts = [b.remarks || ''];
+  if (b.origin) remarkParts.push(`Origin: ${b.origin}`);
+  if (b.deliveryPoint) remarkParts.push(`Delivery: ${b.deliveryPoint}`);
+  if (b.transportBy) remarkParts.push(`Transport: ${b.transportBy}`);
+  if (b.deliverySchedule) remarkParts.push(`Schedule: ${b.deliverySchedule}`);
+
   const po = await prisma.purchaseOrder.create({
     data: {
       vendorId,
-      dealType: 'OPEN',
-      status: 'APPROVED', // Open deals are auto-approved
+      dealType: isOpen ? 'OPEN' : 'STANDARD',
+      status: 'APPROVED',
       poDate: new Date(),
-      paymentTerms: 'NET15',
-      creditDays: 15,
-      remarks: b.remarks || `Open deal for ${fuelItem.name}`,
+      paymentTerms: b.paymentTerms || 'NET15',
+      creditDays,
+      deliveryAddress: b.deliveryPoint || 'Factory Gate',
+      transportBy: b.transportBy || 'BY_SUPPLIER',
+      remarks: remarkParts.filter(Boolean).join(' | '),
       userId: req.user!.id,
       lines: {
         create: [{
           inventoryItemId: fuelItem.id,
           description: fuelItem.name,
           hsnCode: fuelItem.hsnCode || '',
-          quantity: 999999, // Unlimited
+          quantity: qty,
           unit: fuelItem.unit || 'MT',
           rate: b.rate,
-          amount: 0,
-          pendingQty: 999999,
+          amount: isOpen ? 0 : Math.round(qty * b.rate * 100) / 100,
+          pendingQty: qty,
           gstPercent: fuelItem.gstPercent || 5,
         }],
       },
