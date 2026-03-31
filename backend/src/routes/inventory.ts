@@ -171,6 +171,7 @@ router.put('/items/:id', authorize('ADMIN') as any, asyncHandler(async (req: Aut
       minStock: b.minStock !== undefined ? parseFloat(b.minStock) : undefined,
       maxStock: b.maxStock !== undefined ? parseFloat(b.maxStock) : undefined,
       costPerUnit: b.costPerUnit !== undefined ? parseFloat(b.costPerUnit) : undefined,
+      currentStock: b.currentStock !== undefined ? parseFloat(b.currentStock) : undefined,
       location: b.location,
       supplier: b.supplier,
       leadTimeDays: b.leadTimeDays !== undefined ? parseInt(b.leadTimeDays) : undefined,

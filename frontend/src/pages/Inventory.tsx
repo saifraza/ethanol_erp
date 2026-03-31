@@ -114,7 +114,7 @@ export default function Inventory() {
   const [warehouses, setWarehouses] = useState<{ id: string; code: string; name: string }[]>([]);
   const [poStatusMap, setPOStatusMap] = useState<Record<string, { status: string; poNo: number }>>({});
   const [editItem, setEditItem] = useState<Item | null>(null);
-  const [editForm, setEditForm] = useState({ name: '', category: '', unit: '', costPerUnit: '', gstPercent: '18', hsnCode: '', minStock: '', maxStock: '', location: '', supplier: '', remarks: '' });
+  const [editForm, setEditForm] = useState({ name: '', category: '', unit: '', costPerUnit: '', gstPercent: '18', hsnCode: '', minStock: '', maxStock: '', location: '', supplier: '', remarks: '', currentStock: '' });
 
   // Vendors
   const [vendors, setVendors] = useState<VendorOption[]>([]);
@@ -247,6 +247,7 @@ export default function Inventory() {
       name: item.name, category: item.category, unit: item.unit,
       costPerUnit: String(item.costPerUnit || ''),
       gstPercent: String(item.gstPercent ?? 18), hsnCode: item.hsnCode || '',
+      currentStock: String(item.currentStock || 0),
       minStock: String(item.minStock || ''),
       maxStock: String(item.maxStock || ''), location: item.location || '',
       supplier: item.supplier || '', remarks: item.remarks || '',
@@ -265,6 +266,7 @@ export default function Inventory() {
         costPerUnit: parseFloat(editForm.costPerUnit) || 0,
         gstPercent: parseFloat(editForm.gstPercent) || 18,
         hsnCode: editForm.hsnCode || null,
+        currentStock: parseFloat(editForm.currentStock) || 0,
         minStock: parseFloat(editForm.minStock) || 0,
         maxStock: editForm.maxStock ? parseFloat(editForm.maxStock) : null,
         location: editForm.location || null,
@@ -788,6 +790,10 @@ export default function Inventory() {
                   <input className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" value={editForm.hsnCode} onChange={e => setEditForm({ ...editForm, hsnCode: e.target.value })} placeholder="e.g. 35079099" />
                 </div>
                 <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Current Stock</label>
+                  <input type="number" step="any" className="border border-blue-400 bg-blue-50 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-blue-500 font-bold" value={editForm.currentStock} onChange={e => setEditForm({ ...editForm, currentStock: e.target.value })} />
+                </div>
+                <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Min Stock</label>
                   <input type="number" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" value={editForm.minStock} onChange={e => setEditForm({ ...editForm, minStock: e.target.value })} />
                 </div>
@@ -796,8 +802,8 @@ export default function Inventory() {
                   <input type="number" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" value={editForm.maxStock} onChange={e => setEditForm({ ...editForm, maxStock: e.target.value })} />
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Location</label>
-                  <input className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" value={editForm.location} onChange={e => setEditForm({ ...editForm, location: e.target.value })} />
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Warehouse / Location</label>
+                  <input className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" value={editForm.location} onChange={e => setEditForm({ ...editForm, location: e.target.value })} placeholder="e.g. Main Store, Rack A3" />
                 </div>
                 <div className="col-span-2">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Supplier</label>
@@ -832,7 +838,7 @@ export default function Inventory() {
               </div>
             </div>
             <div className="border-t border-slate-200 px-4 py-3 flex items-center justify-between">
-              <span className="text-[10px] text-slate-400">Current Stock: {editItem.currentStock} {editItem.unit}</span>
+              <span className="text-[10px] text-slate-400">{editItem.code} | {editItem.unit}</span>
               <div className="flex gap-2">
                 <button onClick={() => setEditItem(null)} className="px-3 py-1 bg-slate-200 text-slate-700 text-[11px] font-medium hover:bg-slate-300">Cancel</button>
                 <button onClick={handleEdit} disabled={saving} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">{saving ? 'Saving...' : 'Save'}</button>
