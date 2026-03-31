@@ -29,7 +29,23 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     take: 200,
   });
 
-  res.json(entries);
+  // Enrich with GRN data for linked entries
+  const grnIds = entries.map((e: any) => e.grnId).filter(Boolean);
+  let grnMap: Record<string, { id: string; grnNo: number; status: string }> = {};
+  if (grnIds.length > 0) {
+    const grns = await prisma.goodsReceipt.findMany({
+      where: { id: { in: grnIds } },
+      select: { id: true, grnNo: true, status: true },
+    });
+    grns.forEach((g: any) => { grnMap[g.id] = g; });
+  }
+
+  const enriched = entries.map((e: any) => ({
+    ...e,
+    grn: e.grnId ? grnMap[e.grnId] || null : null,
+  }));
+
+  res.json(enriched);
 }));
 
 // POST / — create gate entry

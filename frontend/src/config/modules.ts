@@ -52,7 +52,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'ethanol-contracts', label: 'Ethanol Supply', to: '/sales/ethanol-contracts', icon: Handshake, group: 'sales' },
 
   // ── LOGISTICS (Transport, Gate, Shipments) ──
-  { key: 'gate-register', label: 'Gate Register', to: '/logistics/gate-register', icon: Scale, group: 'logistics' },
+  { key: 'gate-register', label: 'Gate & Receipts', to: '/logistics/gate-register', icon: Scale, group: 'logistics' },
   { key: 'shipments', label: 'Shipments', to: '/sales/shipments', icon: Truck, group: 'logistics' },
   { key: 'transporters', label: 'Transporters', to: '/sales/transporters', icon: Truck, group: 'logistics' },
   { key: 'freight-mgmt', label: 'Freight & Rates', to: '/sales/freight', icon: IndianRupee, group: 'logistics' },
@@ -61,7 +61,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'vendors', label: 'Suppliers', to: '/procurement/vendors', icon: Building2, group: 'procurement' },
   { key: 'materials', label: 'Items', to: '/inventory', icon: Box, group: 'procurement' },
   { key: 'purchase-orders', label: 'Purchase Orders', to: '/procurement/purchase-orders', icon: ShoppingBag, group: 'procurement' },
-  { key: 'goods-receipts', label: 'GRN', to: '/procurement/goods-receipts', icon: PackageCheck, group: 'procurement' },
+  { key: 'goods-receipts', label: 'GRN', to: '/logistics/gate-register?tab=grn', icon: PackageCheck, group: 'procurement' },
 
   // ── SPOT TRADE (Cash buy/sell at gate) ──
   { key: 'direct-purchase', label: 'Spot Purchase', to: '/trade/purchases', icon: Tractor, group: 'trade' },

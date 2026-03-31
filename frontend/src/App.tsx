@@ -57,7 +57,7 @@ const Payments = React.lazy(() => import('./pages/sales/Payments'));
 const FreightManagement = React.lazy(() => import('./pages/sales/FreightManagement'));
 const EthanolContracts = React.lazy(() => import('./pages/sales/EthanolContracts'));
 // Logistics
-const GateRegister = React.lazy(() => import('./pages/process/GateRegister'));
+const GateAndReceipts = React.lazy(() => import('./pages/logistics/GateAndReceipts'));
 // Procurement (P2P)
 const Vendors = React.lazy(() => import('./pages/procurement/Vendors'));
 const Materials = React.lazy(() => import('./pages/procurement/Materials'));
@@ -163,12 +163,12 @@ export default function App() {
         <Route path="sales/freight" element={<FreightManagement />} />
         <Route path="sales/ethanol-contracts" element={<EthanolContracts />} />
         {/* Logistics */}
-        <Route path="logistics/gate-register" element={<GateRegister />} />
+        <Route path="logistics/gate-register" element={<GateAndReceipts />} />
         {/* Procurement (P2P) */}
         <Route path="procurement/vendors" element={<Vendors />} />
         <Route path="procurement/materials" element={<Navigate to="/inventory" replace />} />
         <Route path="procurement/purchase-orders" element={<PurchaseOrders />} />
-        <Route path="procurement/goods-receipts" element={<GoodsReceipts />} />
+        <Route path="procurement/goods-receipts" element={<GateAndReceipts />} />
         <Route path="procurement/vendor-payments" element={<VendorPayments />} />
         {/* Direct Trade */}
         <Route path="trade/purchases" element={<DirectPurchases />} />

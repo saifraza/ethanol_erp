@@ -439,6 +439,18 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       // Swallow — don't fail the GRN creation
     }
 
+    // Link gate entry to GRN if gateEntryId provided
+    if (b.gateEntryId) {
+      try {
+        await prisma.gateEntry.update({
+          where: { id: b.gateEntryId },
+          data: { grnId: grn.id },
+        });
+      } catch (_linkErr: unknown) {
+        // Swallow — don't fail GRN creation if gate link fails
+      }
+    }
+
     res.status(201).json(grn);
 }));
 
