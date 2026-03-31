@@ -49,6 +49,7 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
     const user = req.user!;
+    // New requisitions always start as DRAFT (ignore caller-supplied status)
     const pr = await prisma.purchaseRequisition.create({
       data: {
         title: b.title,
@@ -61,7 +62,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         justification: b.justification || null,
         linkedIssueId: b.linkedIssueId || null,
         supplier: b.supplier || null,
-        status: b.status || 'DRAFT',
+        status: 'DRAFT',
         remarks: b.remarks || null,
         requestedBy: user.name || user.email,
         userId: user.id,
@@ -106,10 +107,21 @@ router.put('/:id/issue', asyncHandler(async (req: AuthRequest, res: Response) =>
     const purchaseQty = pr.quantity - issueQty;
     const user = req.user!;
 
-    // If issuing from stock, create inventory transaction
+    // If issuing from stock, validate availability and create proper stock movement
     if (issueQty > 0 && pr.inventoryItemId) {
+      const item = await prisma.inventoryItem.findUnique({
+        where: { id: pr.inventoryItemId },
+        select: { id: true, currentStock: true, avgCost: true, unit: true, name: true },
+      });
+      if (!item) return res.status(400).json({ error: 'Inventory item not found' });
+      if (item.currentStock < issueQty) {
+        return res.status(400).json({
+          error: `Insufficient stock: available ${item.currentStock} ${item.unit}, requested ${issueQty} ${item.unit}`,
+        });
+      }
+
       await prisma.$transaction(async (tx) => {
-        // Create OUT transaction
+        // Create legacy InventoryTransaction (for backward compat)
         await tx.inventoryTransaction.create({
           data: {
             itemId: pr.inventoryItemId!,
@@ -122,10 +134,51 @@ router.put('/:id/issue', asyncHandler(async (req: AuthRequest, res: Response) =>
             userId: user.id,
           },
         });
-        // Decrement stock
+
+        // Create proper StockMovement (new ledger)
+        const defaultWh = await tx.warehouse.findFirst({
+          where: { isActive: true },
+          orderBy: { createdAt: 'asc' },
+          select: { id: true },
+        });
+        if (defaultWh) {
+          await tx.stockMovement.create({
+            data: {
+              itemId: pr.inventoryItemId!,
+              movementType: 'STORE_ISSUE',
+              direction: 'OUT',
+              quantity: issueQty,
+              unit: item.unit,
+              costRate: item.avgCost,
+              totalValue: Math.round(issueQty * item.avgCost * 100) / 100,
+              warehouseId: defaultWh.id,
+              refType: 'INDENT',
+              refId: pr.id,
+              refNo: `INDENT-${pr.reqNo}`,
+              narration: `Store issue: ${pr.title} (${pr.requestedByPerson || pr.requestedBy})`,
+              userId: user.id,
+            },
+          });
+
+          // Update StockLevel
+          const sl = await tx.stockLevel.findFirst({
+            where: { itemId: pr.inventoryItemId!, warehouseId: defaultWh.id, binId: null, batchId: null },
+          });
+          if (sl) {
+            await tx.stockLevel.update({
+              where: { id: sl.id },
+              data: { quantity: { decrement: issueQty } },
+            });
+          }
+        }
+
+        // Decrement global stock
         await tx.inventoryItem.update({
           where: { id: pr.inventoryItemId! },
-          data: { currentStock: { decrement: issueQty } },
+          data: {
+            currentStock: { decrement: issueQty },
+            totalValue: { decrement: Math.round(issueQty * item.avgCost * 100) / 100 },
+          },
         });
       });
     }
@@ -172,8 +225,27 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     if (b.department !== undefined) data.department = b.department;
     if (b.requestedByPerson !== undefined) data.requestedByPerson = b.requestedByPerson;
     if (b.inventoryItemId !== undefined) data.inventoryItemId = b.inventoryItemId;
-    // Status transitions
+    // Status transitions — enforce valid paths server-side
     if (b.status !== undefined) {
+      const existing = await prisma.purchaseRequisition.findUnique({ where: { id: req.params.id }, select: { status: true } });
+      if (!existing) return res.status(404).json({ error: 'Requisition not found' });
+
+      const validTransitions: Record<string, string[]> = {
+        'DRAFT': ['SUBMITTED', 'CANCELLED'],
+        'SUBMITTED': ['APPROVED', 'REJECTED', 'DRAFT'],
+        'APPROVED': ['ISSUED', 'PO_PENDING', 'COMPLETED', 'CANCELLED'],
+        'REJECTED': ['DRAFT'],
+        'PO_PENDING': ['COMPLETED', 'CANCELLED'],
+        'ISSUED': ['COMPLETED'],
+        'COMPLETED': [],
+        'CANCELLED': ['DRAFT'],
+      };
+
+      const allowed = validTransitions[existing.status] || [];
+      if (!allowed.includes(b.status)) {
+        return res.status(400).json({ error: `Invalid status transition: ${existing.status} → ${b.status}` });
+      }
+
       data.status = b.status;
       if (b.status === 'APPROVED') {
         data.approvedBy = req.user!.name || req.user!.email;

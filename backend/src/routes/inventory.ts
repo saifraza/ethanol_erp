@@ -218,7 +218,13 @@ router.post('/transaction', asyncHandler(async (req: AuthRequest, res: Response)
     if (item) {
       let newStock = item.currentStock;
       if (type === 'IN') newStock += qty;
-      else if (type === 'OUT') newStock -= qty;
+      else if (type === 'OUT') {
+        // Reject if insufficient stock — don't silently clamp to 0
+        if (qty > item.currentStock) {
+          throw new Error(`Insufficient stock: available ${item.currentStock} ${item.unit}, requested ${qty} ${item.unit}`);
+        }
+        newStock -= qty;
+      }
       else if (type === 'ADJUST') newStock = qty; // absolute set
       await tx.inventoryItem.update({
         where: { id: b.itemId },

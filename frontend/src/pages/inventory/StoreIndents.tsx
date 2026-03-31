@@ -82,7 +82,14 @@ export default function StoreIndents() {
         api.get<Stats>('/purchase-requisition/stats'),
       ]);
       setData((listRes.data as unknown as { requisitions: PR[] }).requisitions || listRes.data as PR[]);
-      setStats(statsRes.data);
+      // API returns { byStatus: {SUBMITTED: N, ...}, ... } — map to flat Stats shape
+      const bs = (statsRes.data as any).byStatus || statsRes.data;
+      setStats({
+        SUBMITTED: bs.SUBMITTED || 0,
+        APPROVED: bs.APPROVED || 0,
+        ISSUED: bs.ISSUED || 0,
+        PO_PENDING: bs.PO_PENDING || 0,
+      });
     } catch (err) {
       console.error('Failed to fetch indents:', err);
     } finally {

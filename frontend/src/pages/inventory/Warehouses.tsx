@@ -9,7 +9,7 @@ interface Bin {
   id: string;
   code: string;
   name: string;
-  active: boolean;
+  isActive: boolean;
 }
 
 interface WarehouseItem {
@@ -17,7 +17,7 @@ interface WarehouseItem {
   code: string;
   name: string;
   address?: string;
-  active: boolean;
+  isActive: boolean;
   bins: Bin[];
   _count?: { bins: number };
   stockSummary?: { totalItems: number; totalValue: number };
@@ -199,8 +199,8 @@ export default function Warehouses() {
                   <div className="text-right text-sm">
                     <span className="text-gray-500">{wh._count?.bins ?? wh.bins?.length ?? 0} bins</span>
                   </div>
-                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${wh.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                    {wh.active ? 'Active' : 'Inactive'}
+                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${wh.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                    {wh.isActive ? 'Active' : 'Inactive'}
                   </span>
                   <button onClick={(e) => { e.stopPropagation(); openEdit(wh); }} className="p-1 hover:bg-blue-50 rounded" title="Edit">
                     <Edit2 className="w-4 h-4 text-blue-600" />

@@ -182,7 +182,7 @@ export default function MaterialMaster() {
   const handleDeactivate = async (id: string) => {
     if (!confirm('Deactivate this item?')) return;
     try {
-      await api.put(`/inventory/items/${id}`, { status: 'INACTIVE' });
+      await api.put(`/inventory/items/${id}`, { isActive: false });
       setMsg({ type: 'ok', text: 'Item deactivated' });
       fetchItems();
     } catch {

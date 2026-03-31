@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError, ValidationError } from '../shared/errors';
 import { z } from 'zod';
@@ -7,6 +7,7 @@ import prisma from '../config/prisma';
 import { onStockMovement } from '../services/autoJournal';
 
 const router = Router();
+router.use(authenticate as any);
 
 // Type for Prisma transaction client (same query API as PrismaClient)
 type TxClient = { stockLevel: typeof prisma.stockLevel; stockMovement: typeof prisma.stockMovement; inventoryItem: typeof prisma.inventoryItem; batch: typeof prisma.batch };

@@ -1,10 +1,11 @@
 import { Router, Response } from 'express';
-import { AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { NotFoundError } from '../shared/errors';
 import prisma from '../config/prisma';
 
 const router = Router();
+router.use(authenticate as any);
 
 // ─── GET /levels — stock levels grouped by item, with warehouse/batch breakdown ───
 
@@ -94,6 +95,47 @@ router.get('/levels/:itemId', asyncHandler(async (req: AuthRequest, res: Respons
 
 router.get('/valuation', asyncHandler(async (req: AuthRequest, res: Response) => {
   const category = req.query.category as string | undefined;
+  const warehouseId = req.query.warehouseId as string | undefined;
+
+  if (warehouseId) {
+    // Per-warehouse valuation — use StockLevel, not global InventoryItem
+    const slWhere: Record<string, unknown> = { warehouseId, quantity: { gt: 0 } };
+    if (category) slWhere.item = { category, isActive: true };
+    else slWhere.item = { isActive: true };
+
+    const stockLevels = await prisma.stockLevel.findMany({
+      where: slWhere,
+      take: 500,
+      select: {
+        quantity: true,
+        item: {
+          select: { id: true, name: true, code: true, category: true, unit: true, avgCost: true, hsnCode: true },
+        },
+      },
+    });
+
+    const byCategory: Record<string, { items: Array<Record<string, unknown>>; totalValue: number; itemCount: number }> = {};
+    let grandTotal = 0;
+
+    for (const sl of stockLevels) {
+      const val = sl.quantity * sl.item.avgCost;
+      const cat = sl.item.category;
+      if (!byCategory[cat]) byCategory[cat] = { items: [], totalValue: 0, itemCount: 0 };
+      byCategory[cat].items.push({
+        ...sl.item,
+        currentStock: sl.quantity,
+        totalValue: Math.round(val * 100) / 100,
+      });
+      byCategory[cat].totalValue += val;
+      byCategory[cat].itemCount += 1;
+      grandTotal += val;
+    }
+
+    res.json({ byCategory, grandTotal: Math.round(grandTotal * 100) / 100, totalItems: stockLevels.length, warehouseId });
+    return;
+  }
+
+  // Global valuation (no warehouse filter)
   const where: Record<string, unknown> = { isActive: true, currentStock: { gt: 0 } };
   if (category) where.category = category;
 
@@ -114,7 +156,6 @@ router.get('/valuation', asyncHandler(async (req: AuthRequest, res: Response) =>
     },
   });
 
-  // Group by category
   const byCategory: Record<string, { items: typeof items; totalValue: number; itemCount: number }> = {};
   let grandTotal = 0;
 
