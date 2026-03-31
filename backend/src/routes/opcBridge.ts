@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { z } from 'zod';
 import crypto from 'crypto';
@@ -24,6 +24,9 @@ function getOpcPrisma() {
 
 // Shared API key for Windows service to push data
 const OPC_PUSH_KEY = process.env.OPC_PUSH_KEY || 'mspil-opc-2026';
+if (!process.env.OPC_PUSH_KEY) {
+  console.warn('[OPC] WARNING: OPC_PUSH_KEY env var not set — using hardcoded default. Set it in Railway for production.');
+}
 
 function checkPushKey(req: AuthRequest, res: Response): boolean {
   const key = req.headers['x-opc-key'] as string;
@@ -90,7 +93,7 @@ async function checkAlarms(opc: any, readings: { tag: string; property: string; 
   try {
     tagsWithAlarms = await opc.opcMonitoredTag.findMany({
       where: { active: true, OR: [{ hhAlarm: { not: null } }, { llAlarm: { not: null } }] },
-      select: { tag: true, label: true, description: true, hhAlarm: true, llAlarm: true },
+      select: { tag: true, label: true, description: true, hhAlarm: true, llAlarm: true, tagType: true },
     });
   } catch {
     return; // New columns not migrated yet
@@ -101,9 +104,24 @@ async function checkAlarms(opc: any, readings: { tag: string; property: string; 
   const alerts: string[] = [];
   const now = Date.now();
 
+  // Only check alarm-relevant properties per tag type:
+  // - PID tags: check PV (process variable)
+  // - Analog tags: check IO_VALUE
+  // - Totalizer tags: SKIP (PRV_HR/CURRENT are cumulative, not alarm-comparable)
+  const ALARM_PROPERTIES: Record<string, string[]> = {
+    pid: ['PV'],
+    analog: ['IO_VALUE'],
+    totalizer: [], // never alarm on totalizer values
+  };
+
   for (const r of readings) {
     const tagAlarm = alarmMap.get(r.tag) as any;
     if (!tagAlarm) continue;
+
+    // Filter by property — only check alarm-relevant properties for this tag type
+    const tagType = (tagAlarm.tagType || 'analog') as string;
+    const allowedProps = ALARM_PROPERTIES[tagType] || ['PV', 'IO_VALUE'];
+    if (allowedProps.length > 0 && !allowedProps.includes(r.property)) continue;
 
     // Cooldown check
     const lastSent = _lastAlarmSent[r.tag] || 0;
@@ -325,7 +343,7 @@ router.post('/alarm-notify', validate(alarmNotifySchema), asyncHandler(async (re
 // ==========================================================================
 
 // GET /api/opc/health
-router.get('/health', asyncHandler(async (_req: AuthRequest, res: Response) => {
+router.get('/health', authenticate, asyncHandler(async (_req: AuthRequest, res: Response) => {
   const opc = getOpcPrisma();
   const [monitoredCount, latestReading, latestSync] = await Promise.all([
     opc.opcMonitoredTag.count({ where: { active: true } }),
@@ -343,7 +361,7 @@ router.get('/health', asyncHandler(async (_req: AuthRequest, res: Response) => {
 }));
 
 // GET /api/opc/bridge-health — Proxy to factory bridge's /health endpoint via Tailscale
-router.get('/bridge-health', asyncHandler(async (_req: AuthRequest, res: Response) => {
+router.get('/bridge-health', authenticate, asyncHandler(async (_req: AuthRequest, res: Response) => {
   const BRIDGE_URL = process.env.OPC_BRIDGE_URL || 'http://100.74.209.72:8099';
   try {
     const controller = new AbortController();
@@ -362,7 +380,7 @@ router.get('/bridge-health', asyncHandler(async (_req: AuthRequest, res: Respons
 }));
 
 // GET /api/opc/monitor — List monitored tags
-router.get('/monitor', asyncHandler(async (_req: AuthRequest, res: Response) => {
+router.get('/monitor', authenticate, asyncHandler(async (_req: AuthRequest, res: Response) => {
   const opc = getOpcPrisma();
   let tags: any[];
   try {
@@ -388,7 +406,7 @@ const addMonitorSchema = z.object({
   label: z.string().optional(),
 });
 
-router.post('/monitor', validate(addMonitorSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/monitor', authenticate, validate(addMonitorSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const opc = getOpcPrisma();
   const { tag, area, folder, tagType, label } = req.body;
 
@@ -422,7 +440,7 @@ const updateMonitorSchema = z.object({
   llAlarm: z.number().nullable().optional(),
 });
 
-router.patch('/monitor/:tag', validate(updateMonitorSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.patch('/monitor/:tag', authenticate, validate(updateMonitorSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const opc = getOpcPrisma();
   const tag = req.params.tag;
   const data: Record<string, unknown> = {};
@@ -465,7 +483,7 @@ router.patch('/monitor/:tag', validate(updateMonitorSchema), asyncHandler(async 
 }));
 
 // DELETE /api/opc/monitor/:tag — Remove tag from monitoring (soft-delete: set active=false)
-router.delete('/monitor/:tag', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete('/monitor/:tag', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const opc = getOpcPrisma();
   const tag = req.params.tag;
 
@@ -487,7 +505,7 @@ router.delete('/monitor/:tag', asyncHandler(async (req: AuthRequest, res: Respon
 
 // GET /api/opc/live — Latest readings for all monitored tags
 // Optimized: batch-fetch latest readings instead of N+1 per-tag queries
-router.get('/live', asyncHandler(async (_req: AuthRequest, res: Response) => {
+router.get('/live', authenticate, asyncHandler(async (_req: AuthRequest, res: Response) => {
   const opc = getOpcPrisma();
   let tags: any[];
   try {
@@ -545,7 +563,7 @@ router.get('/live', asyncHandler(async (_req: AuthRequest, res: Response) => {
 }));
 
 // GET /api/opc/live/:tag — Latest readings for one tag
-router.get('/live/:tag', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get('/live/:tag', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const opc = getOpcPrisma();
   const tag = req.params.tag;
 
@@ -576,7 +594,7 @@ router.get('/live/:tag', asyncHandler(async (req: AuthRequest, res: Response) =>
 // GET /api/opc/history/:tag?hours=24&property=PV
 // For <=6h: returns raw readings (~every 2 min) for sharp graphs
 // For >6h: returns hourly aggregates (avg/min/max)
-router.get('/history/:tag', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get('/history/:tag', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const opc = getOpcPrisma();
   const tag = req.params.tag;
   const hours = Math.min(parseInt(req.query.hours as string) || 24, 168);
@@ -613,7 +631,7 @@ router.get('/history/:tag', asyncHandler(async (req: AuthRequest, res: Response)
 }));
 
 // GET /api/opc/fermenter-phases — auto-detected fermenter phases from OPC data
-router.get('/fermenter-phases', asyncHandler(async (_req: AuthRequest, res: Response) => {
+router.get('/fermenter-phases', authenticate, asyncHandler(async (_req: AuthRequest, res: Response) => {
   const { getAllFermenterPhases } = await import('../services/fermenterPhaseDetector');
   const phases = await getAllFermenterPhases();
   res.json({ phases });
@@ -621,7 +639,7 @@ router.get('/fermenter-phases', asyncHandler(async (_req: AuthRequest, res: Resp
 
 // GET /api/opc/wash-summary — wash volume prepared per 9AM-9AM shift day
 // Calculates from OPC hourly level readings: sum of all level increases × capacity
-router.get('/wash-summary', asyncHandler(async (_req: AuthRequest, res: Response) => {
+router.get('/wash-summary', authenticate, asyncHandler(async (_req: AuthRequest, res: Response) => {
   const opc = getOpcPrisma();
   const FERM_CAPACITY_KL = 2300;
   const FERM_LEVEL_TAGS = ['LT130201', 'LT130202', 'LT130301', 'LT130302'];
@@ -728,7 +746,7 @@ router.get('/wash-summary', asyncHandler(async (_req: AuthRequest, res: Response
 }));
 
 // GET /api/opc/stats
-router.get('/stats', asyncHandler(async (_req: AuthRequest, res: Response) => {
+router.get('/stats', authenticate, asyncHandler(async (_req: AuthRequest, res: Response) => {
   const opc = getOpcPrisma();
   const [tags, readings, hourly, syncs] = await Promise.all([
     opc.opcMonitoredTag.count({ where: { active: true } }),
@@ -743,7 +761,7 @@ router.get('/stats', asyncHandler(async (_req: AuthRequest, res: Response) => {
 // GAP DETECTION — find missing data hours in last N hours
 // ==========================================================================
 
-router.get('/gaps', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get('/gaps', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const opc = getOpcPrisma();
   const hours = Math.min(parseInt(req.query.hours as string) || 24, 168);
 
@@ -759,16 +777,29 @@ router.get('/gaps', asyncHandler(async (req: AuthRequest, res: Response) => {
     cursor.setTime(cursor.getTime() + 60 * 60 * 1000);
   }
 
-  // Get hours that have data
+  // Get active tag count for coverage threshold
+  const activeTagCount = await opc.opcMonitoredTag.count({ where: { active: true } });
+
+  // Get hours that have data — count distinct tags per hour to detect partial uploads
   const hourlyReadings = await opc.opcHourlyReading.findMany({
     where: { hour: { gte: startTime, lte: now } },
-    select: { hour: true },
-    distinct: ['hour'],
+    select: { hour: true, tag: true },
   });
-  const existingHours = new Set(hourlyReadings.map((r: { hour: Date }) => r.hour.toISOString()));
 
-  // Find gaps — hours with no data
-  const gapHours = expectedHours.filter(h => !existingHours.has(h.toISOString()));
+  // Build map: hour → set of tags that have data
+  const hourTagMap = new Map<string, Set<string>>();
+  for (const r of hourlyReadings) {
+    const key = r.hour.toISOString();
+    if (!hourTagMap.has(key)) hourTagMap.set(key, new Set());
+    hourTagMap.get(key)!.add(r.tag);
+  }
+
+  // Find gaps — hours with no data OR partial coverage (< 50% of active tags)
+  const coverageThreshold = Math.max(1, Math.floor(activeTagCount * 0.5));
+  const gapHours = expectedHours.filter(h => {
+    const tags = hourTagMap.get(h.toISOString());
+    return !tags || tags.size < coverageThreshold;
+  });
 
   // Group consecutive gaps into ranges
   interface GapRange { from: Date; to: Date; durationMinutes: number }
@@ -800,6 +831,8 @@ router.get('/gaps', asyncHandler(async (req: AuthRequest, res: Response) => {
     totalGapMinutes: gaps.reduce((s, g) => s + g.durationMinutes, 0),
     currentlyGapped: !recentReading,
     lastReading: lastReading?.scannedAt || null,
+    activeTagCount,
+    coverageThreshold,
   });
 }));
 
@@ -885,7 +918,7 @@ router.post('/heartbeat', validate(heartbeatSchema), asyncHandler(async (req: Au
 }));
 
 // GET /api/opc/bridge-status — Frontend reads latest heartbeat
-router.get('/bridge-status', asyncHandler(async (_req: AuthRequest, res: Response) => {
+router.get('/bridge-status', authenticate, asyncHandler(async (_req: AuthRequest, res: Response) => {
   if (!_latestHeartbeat) {
     res.json({ online: false, heartbeat: null, message: 'No heartbeat received yet' });
     return;
@@ -908,12 +941,12 @@ export function getLatestHeartbeat() { return _latestHeartbeat; }
 // ALARM TOGGLE ENDPOINTS
 // ==========================================================================
 
-router.get('/alarms/status', asyncHandler(async (_req: AuthRequest, res: Response) => {
+router.get('/alarms/status', authenticate, asyncHandler(async (_req: AuthRequest, res: Response) => {
   await loadAlarmState();
   res.json({ enabled: alarmsEnabled });
 }));
 
-router.post('/alarms/toggle', asyncHandler(async (_req: AuthRequest, res: Response) => {
+router.post('/alarms/toggle', authenticate, asyncHandler(async (_req: AuthRequest, res: Response) => {
   alarmsEnabled = !alarmsEnabled;
   await saveAlarmState();
   console.log(`[OPC] Alarms ${alarmsEnabled ? 'ENABLED' : 'DISABLED'} via UI (persisted)`);
