@@ -37,16 +37,8 @@ const statusColors: Record<string, { badge: string; bgLight: string; border: str
 const materialOptions = ['DDGS', 'ETHANOL', 'MAIZE', 'OTHER'];
 const statusSequence: GateEntry['status'][] = ['INSIDE', 'LOADING', 'LOADED', 'DISPATCHED'];
 
-interface GateAndReceiptsProps {
-  initialTab?: 'gate' | 'grn';
-}
-
-export default function GateAndReceipts({ initialTab }: GateAndReceiptsProps) {
+export default function GateAndReceipts() {
   const [searchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState<'gate' | 'grn'>(() => {
-    if (initialTab) return initialTab;
-    return searchParams.get('tab') === 'grn' ? 'grn' : 'gate';
-  });
 
   // Gate register state
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -236,9 +228,18 @@ export default function GateAndReceipts({ initialTab }: GateAndReceiptsProps) {
     return statusSequence[idx + 1];
   };
 
+  const [showGrnSection, setShowGrnSection] = useState(false);
+  const grnRef = React.useRef<HTMLDivElement>(null);
+
   const handleCreateGrn = () => {
-    setActiveTab('grn');
+    setShowGrnSection(true);
+    setTimeout(() => grnRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
   };
+
+  // Auto-show GRN section if URL has ?tab=grn
+  useEffect(() => {
+    if (searchParams.get('tab') === 'grn') setShowGrnSection(true);
+  }, [searchParams]);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -250,41 +251,18 @@ export default function GateAndReceipts({ initialTab }: GateAndReceiptsProps) {
             <span className="text-[10px] text-slate-400">|</span>
             <span className="text-[10px] text-slate-400">Vehicle tracking & goods receipt</span>
           </div>
+          <div className="flex gap-2">
+            <button onClick={() => setShowForm(true)} className="px-3 py-1 bg-amber-600 text-white text-[11px] font-medium hover:bg-amber-700 flex items-center gap-1">
+              <Plus size={12} /> Register Vehicle
+            </button>
+            <button onClick={handleCreateGrn} className="px-3 py-1 bg-green-600 text-white text-[11px] font-medium hover:bg-green-700 flex items-center gap-1">
+              <PackageCheck size={12} /> Create GRN
+            </button>
+          </div>
         </div>
 
-        {/* Tab Bar */}
-        <div className="flex gap-6 border-b border-slate-300 -mx-3 md:-mx-6 px-4 bg-white">
-          <button
-            onClick={() => setActiveTab('gate')}
-            className={`py-2 text-[11px] font-bold uppercase tracking-widest ${
-              activeTab === 'gate'
-                ? 'border-b-2 border-blue-600 text-blue-700'
-                : 'text-slate-400 hover:text-slate-600'
-            }`}
-          >
-            <span className="flex items-center gap-1.5">
-              <DoorOpen size={14} />
-              Gate Log
-            </span>
-          </button>
-          <button
-            onClick={() => setActiveTab('grn')}
-            className={`py-2 text-[11px] font-bold uppercase tracking-widest ${
-              activeTab === 'grn'
-                ? 'border-b-2 border-blue-600 text-blue-700'
-                : 'text-slate-400 hover:text-slate-600'
-            }`}
-          >
-            <span className="flex items-center gap-1.5">
-              <PackageCheck size={14} />
-              Goods Receipts
-            </span>
-          </button>
-        </div>
-
-        {/* Tab Content */}
-        {activeTab === 'gate' ? (
-          <div className="bg-gradient-to-br from-amber-50 to-orange-50 -mx-3 md:-mx-6 p-3 md:p-4">
+        {/* Gate Log Section */}
+        <div className="bg-gradient-to-br from-amber-50 to-orange-50 -mx-3 md:-mx-6 p-3 md:p-4">
             {/* Date Picker */}
             <div className="mb-4">
               <label className="text-xs text-gray-500">Shift Date</label>
@@ -322,16 +300,6 @@ export default function GateAndReceipts({ initialTab }: GateAndReceiptsProps) {
               >
                 {msg.text}
               </div>
-            )}
-
-            {/* Add Vehicle Button */}
-            {!showForm && (
-              <button
-                onClick={() => setShowForm(true)}
-                className="w-full border-2 border-dashed border-amber-300 rounded-lg py-3 text-amber-600 hover:bg-amber-50 flex items-center justify-center gap-2 mb-4 font-medium text-sm"
-              >
-                <Plus size={18} /> Add Vehicle
-              </button>
             )}
 
             {/* Add Vehicle Form */}
@@ -742,9 +710,22 @@ export default function GateAndReceipts({ initialTab }: GateAndReceiptsProps) {
               </div>
             )}
           </div>
-        ) : (
-          <div className="-mx-3 md:-mx-6">
-            <GoodsReceipts />
+
+        {/* GRN Section — shown when "Create GRN" is clicked or URL has ?tab=grn */}
+        {showGrnSection && (
+          <div ref={grnRef}>
+            <div className="bg-slate-800 text-white px-4 py-2 -mx-3 md:-mx-6 flex items-center justify-between mt-0">
+              <div className="flex items-center gap-2">
+                <PackageCheck size={14} />
+                <span className="text-[11px] font-bold uppercase tracking-widest">Goods Receipts</span>
+              </div>
+              <button onClick={() => setShowGrnSection(false)} className="text-slate-400 hover:text-white">
+                <X size={14} />
+              </button>
+            </div>
+            <div className="-mx-3 md:-mx-6">
+              <GoodsReceipts />
+            </div>
           </div>
         )}
       </div>
