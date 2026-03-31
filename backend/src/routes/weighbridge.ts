@@ -438,12 +438,28 @@ router.get('/master-data', asyncHandler(async (req: Request, res: Response) => {
     }
   }
 
-  // Materials
+  // Materials (from Material table + fuel items from InventoryItem)
   const materials = await prisma.material.findMany({
     take: 500,
     select: { id: true, name: true, category: true },
     orderBy: { name: 'asc' },
   });
+
+  // Also include fuel items from InventoryItem
+  const fuelItems = await prisma.inventoryItem.findMany({
+    where: { category: 'FUEL', isActive: true },
+    take: 100,
+    select: { id: true, name: true, category: true },
+    orderBy: { name: 'asc' },
+  });
+
+  // Merge — add fuel items that aren't already in materials
+  const materialNames = new Set(materials.map(m => m.name.toLowerCase()));
+  for (const f of fuelItems) {
+    if (!materialNames.has(f.name.toLowerCase())) {
+      materials.push({ id: f.id, name: f.name, category: 'FUEL' });
+    }
+  }
 
   // Active POs with pending qty (for raw material & fuel)
   const activePOs = await prisma.purchaseOrder.findMany({
