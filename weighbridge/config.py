@@ -81,3 +81,10 @@ HEARTBEAT_STALE_SECONDS = 300        # 5 min = frozen
 COMPANY_NAME = "Mahakaushal Sugar & Power Industries Ltd"
 PLANT_ADDRESS = "Village Bachai, Dist. Narsinghpur, MP"
 RECEIPT_WIDTH = 40  # Characters for thermal receipt (80mm paper)
+
+# =============================================================================
+#  PC IDENTITY (for multi-PC tracking)
+# =============================================================================
+PC_ID = os.environ.get("WB_PC_ID", "weighbridge-1")
+PC_NAME = os.environ.get("WB_PC_NAME", "Weighbridge Gate 1")
+SERVICE_VERSION = "1.0.0"

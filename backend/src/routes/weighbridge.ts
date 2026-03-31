@@ -18,13 +18,26 @@ function checkWBKey(req: Request, res: Response): boolean {
   return true;
 }
 
-let lastHeartbeat: {
+// Multi-PC heartbeat tracking
+interface PCHeartbeat {
+  pcId: string;
+  pcName: string;
   timestamp: string;
+  receivedAt: string;
   uptimeSeconds?: number;
   queueDepth?: number;
   dbSizeMb?: number;
-  receivedAt: string;
-} | null = null;
+  serialConnected?: boolean;
+  serialProtocol?: string;
+  webPort?: number;
+  tailscaleIp?: string;
+  localUrl?: string;
+  weightsToday?: number;
+  lastTicket?: number;
+  version?: string;
+}
+
+const pcHeartbeats = new Map<string, PCHeartbeat>();
 
 // ==========================================================================
 //  INVENTORY SYNC — reuse exact logic from goodsReceipts.ts
@@ -541,18 +554,70 @@ router.get('/master-data', asyncHandler(async (req: Request, res: Response) => {
 
 router.post('/heartbeat', asyncHandler(async (req: Request, res: Response) => {
   if (!checkWBKey(req, res)) return;
-  lastHeartbeat = { ...req.body, receivedAt: new Date().toISOString() };
+  const pcId = req.body.pcId || req.body.service || 'default';
+  const hb: PCHeartbeat = {
+    pcId,
+    pcName: req.body.pcName || pcId,
+    timestamp: req.body.timestamp || new Date().toISOString(),
+    receivedAt: new Date().toISOString(),
+    uptimeSeconds: req.body.uptimeSeconds,
+    queueDepth: req.body.queueDepth,
+    dbSizeMb: req.body.dbSizeMb,
+    serialConnected: req.body.serialConnected,
+    serialProtocol: req.body.serialProtocol,
+    webPort: req.body.webPort,
+    tailscaleIp: req.body.tailscaleIp,
+    localUrl: req.body.localUrl,
+    weightsToday: req.body.weightsToday,
+    lastTicket: req.body.lastTicket,
+    version: req.body.version,
+  };
+  pcHeartbeats.set(pcId, hb);
   res.json({ ok: true });
 }));
 
+// GET /heartbeat — single PC (backward compat)
 router.get('/heartbeat', asyncHandler(async (req: AuthRequest, res: Response) => {
-  if (!lastHeartbeat) {
+  const allPCs = Array.from(pcHeartbeats.values());
+  if (allPCs.length === 0) {
     return res.json({ connected: false, message: 'No heartbeat received yet' });
   }
-  const receivedAt = new Date(lastHeartbeat.receivedAt).getTime();
+  // Return first PC for backward compat
+  const hb = allPCs[0];
+  const receivedAt = new Date(hb.receivedAt).getTime();
   const staleMs = 5 * 60 * 1000;
   const isAlive = Date.now() - receivedAt < staleMs;
-  res.json({ connected: isAlive, lastHeartbeat, staleAfterMs: staleMs });
+  res.json({ connected: isAlive, lastHeartbeat: hb, staleAfterMs: staleMs });
+}));
+
+// GET /system-status — all PCs status (for admin page)
+router.get('/system-status', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const staleMs = 5 * 60 * 1000;
+  const now = Date.now();
+
+  const pcs = Array.from(pcHeartbeats.values()).map(hb => {
+    const receivedAt = new Date(hb.receivedAt).getTime();
+    const isAlive = now - receivedAt < staleMs;
+    const lastSeenSec = Math.round((now - receivedAt) / 1000);
+    return { ...hb, isAlive, lastSeenSec };
+  });
+
+  // Sync stats
+  const totalSynced = await prisma.grainTruck.count({ where: { remarks: { contains: 'WB:' } } });
+  const todaySynced = await prisma.grainTruck.count({
+    where: {
+      remarks: { contains: 'WB:' },
+      date: { gte: new Date(new Date().setHours(0, 0, 0, 0)) },
+    },
+  });
+
+  res.json({
+    pcs,
+    totalPCs: pcs.length,
+    alivePCs: pcs.filter(p => p.isAlive).length,
+    totalSynced,
+    todaySynced,
+  });
 }));
 
 

@@ -15,6 +15,7 @@ const VerifyDocument = React.lazy(() => import('./pages/VerifyDocument'));
 const Reports = React.lazy(() => import('./pages/Reports'));
 const SettingsPage = React.lazy(() => import('./pages/SettingsPage'));
 const UsersPage = React.lazy(() => import('./pages/UsersPage'));
+const WeighmentSystem = React.lazy(() => import('./pages/admin/WeighmentSystem'));
 const DocumentTemplates = React.lazy(() => import('./pages/DocumentTemplates'));
 const GrainUnloading = React.lazy(() => import('./pages/process/GrainUnloading'));
 const GrainUnloadingTrucks = React.lazy(() => import('./pages/process/GrainUnloadingTrucks'));
@@ -201,6 +202,7 @@ export default function App() {
         <Route path="settings" element={<SettingsPage />} />
         <Route path="document-templates" element={<DocumentTemplates />} />
         <Route path="users" element={<UsersPage />} />
+        <Route path="weighment-system" element={<WeighmentSystem />} />
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>

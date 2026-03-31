@@ -15,6 +15,8 @@ from config import (
     CLOUD_API_URL, CLOUD_API_KEY,
     SYNC_INTERVAL_SECONDS, SYNC_RETRY_MAX,
     MASTER_PULL_INTERVAL_SECONDS,
+    PC_ID, PC_NAME, SERVICE_VERSION,
+    WEB_PORT, SERIAL_PROTOCOL,
     BACKOFF_INITIAL_SECONDS, BACKOFF_MAX_SECONDS, BACKOFF_MULTIPLIER,
     DB_PATH,
 )
@@ -156,11 +158,21 @@ class CloudSync:
         except OSError:
             pass
 
+        # Count today's weighments
+        summary = db.get_daily_summary()
+
         payload = {
+            "pcId": PC_ID,
+            "pcName": PC_NAME,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "service": "weighbridge",
             "queueDepth": sync_stats["pending"],
             "dbSizeMb": db_size,
+            "serialProtocol": SERIAL_PROTOCOL,
+            "webPort": WEB_PORT,
+            "weightsToday": summary.get("completed", 0),
+            "lastTicket": summary.get("total_trucks", 0),
+            "version": SERVICE_VERSION,
+            "localUrl": f"http://localhost:{WEB_PORT}",
         }
         if extra:
             payload.update(extra)
