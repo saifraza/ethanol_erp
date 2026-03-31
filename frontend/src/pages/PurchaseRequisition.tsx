@@ -469,122 +469,35 @@ export default function PurchaseRequisition() {
                       <div className="text-[10px] text-slate-500">Dept: <span className="font-bold">{pr.department}</span> {pr.requestedByPerson ? `| Person: ${pr.requestedByPerson}` : ''}</div>
                     )}
 
-                    {/* Actions */}
-                    <div className="flex flex-wrap gap-2 pt-1">
-                      {pr.status === 'SUBMITTED' && (
-                        <>
-                          <button
-                            onClick={() => updateStatus(pr.id, 'APPROVED')}
-                            className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 flex items-center gap-1"
-                          >
-                            <Check size={12} /> Approve
-                          </button>
-                          <button
-                            onClick={() => {
-                              const reason = prompt('Rejection reason:');
-                              if (reason) updateStatus(pr.id, 'REJECTED', { rejectionReason: reason });
-                            }}
-                            className="px-3 py-1 border border-red-500 bg-red-50 text-red-700 text-[11px] font-medium hover:bg-red-100"
-                          >
-                            Reject
-                          </button>
-                        </>
-                      )}
-                      {pr.status === 'APPROVED' && (
-                        <>
-                        <button
-                          onClick={() => checkStock(pr.id, pr.quantity)}
-                          className="px-3 py-1 bg-green-600 text-white text-[11px] font-medium hover:bg-green-700"
-                        >
-                          Check Stock & Issue
-                        </button>
-                        <a
-                          href={`/procurement/purchase-orders?newPO=1&item=${encodeURIComponent(pr.itemName)}&qty=${pr.quantity}&unit=${pr.unit}&cost=${pr.estimatedCost}&supplier=${encodeURIComponent(pr.supplier || '')}&reqId=${pr.id}`}
-                          className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700"
-                        >
-                          Full Purchase (PO)
-                        </a>
-                        </>
-                      )}
-                      {/* Warehouse Stock Check Panel */}
-                      {pr.status === 'APPROVED' && stockCheck?.id === pr.id && (
-                        <div className="w-full mt-2 border border-slate-300 bg-slate-50 p-3 space-y-2">
-                          <div className="grid grid-cols-3 gap-3 text-xs">
-                            <div>
-                              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Available in Store</span>
-                              <div className={`text-lg font-bold font-mono tabular-nums ${stockCheck.available > 0 ? 'text-green-700' : 'text-red-600'}`}>{stockCheck.available} {stockCheck.unit}</div>
-                            </div>
-                            <div>
-                              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Requested</span>
-                              <div className="text-lg font-bold font-mono tabular-nums text-slate-800">{stockCheck.requested} {stockCheck.unit}</div>
-                            </div>
-                            <div>
-                              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Shortfall (Purchase)</span>
-                              <div className={`text-lg font-bold font-mono tabular-nums ${stockCheck.shortfall > 0 ? 'text-amber-600' : 'text-green-700'}`}>{stockCheck.shortfall} {stockCheck.unit}</div>
-                            </div>
+                    {/* Pipeline Status (read-only — approval/issue happens on Store page) */}
+                    <div className="flex items-center gap-0 pt-2">
+                      {[
+                        { label: 'Submitted', done: !['DRAFT'].includes(pr.status) },
+                        { label: 'Store Review', done: ['APPROVED', 'PO_PENDING', 'ORDERED', 'RECEIVED', 'COMPLETED'].includes(pr.status) },
+                        { label: 'Issued', done: pr.issuedQty > 0, sub: pr.issuedQty > 0 ? `${pr.issuedQty} ${pr.unit}` : '' },
+                        { label: 'Purchase', done: ['ORDERED', 'RECEIVED', 'COMPLETED'].includes(pr.status), sub: pr.purchaseQty > 0 ? `${pr.purchaseQty} ${pr.unit}` : '' },
+                        { label: 'Done', done: ['RECEIVED', 'COMPLETED'].includes(pr.status) },
+                      ].map((step, i) => (
+                        <React.Fragment key={step.label}>
+                          {i > 0 && <div className={`h-0.5 w-4 ${step.done ? 'bg-green-400' : 'bg-slate-200'}`} />}
+                          <div className={`text-center px-2 py-1 border text-[8px] font-bold uppercase tracking-widest ${step.done ? 'border-green-300 bg-green-50 text-green-700' : 'border-slate-200 bg-slate-50 text-slate-400'}`}>
+                            {step.label}
+                            {step.sub && <div className="text-[9px] font-mono">{step.sub}</div>}
                           </div>
-                          <div className="flex items-end gap-3">
-                            <div>
-                              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Issue from Warehouse</label>
-                              <input type="number" step="any" min="0" max={stockCheck.available}
-                                className="border border-slate-300 px-2.5 py-1.5 text-xs w-28 focus:outline-none focus:ring-1 focus:ring-green-500 font-mono font-bold"
-                                value={issueQty} onChange={e => setIssueQty(e.target.value)} />
-                            </div>
-                            <div className="text-xs text-slate-500">
-                              {parseFloat(issueQty) >= pr.quantity ? (
-                                <span className="text-green-700 font-bold">Full from warehouse — no purchase needed</span>
-                              ) : parseFloat(issueQty) > 0 ? (
-                                <span className="text-amber-600 font-bold">{issueQty} from warehouse + {(pr.quantity - (parseFloat(issueQty) || 0)).toFixed(1)} to purchase</span>
-                              ) : (
-                                <span className="text-red-600 font-bold">Full purchase needed — {pr.quantity} {pr.unit}</span>
-                              )}
-                            </div>
-                            <button onClick={() => handleIssue(pr.id)} disabled={issuing}
-                              className="px-3 py-1.5 bg-green-600 text-white text-[11px] font-bold hover:bg-green-700 disabled:opacity-50">
-                              {issuing ? 'Issuing...' : 'Confirm Issue'}
-                            </button>
-                            <button onClick={() => setStockCheck(null)} className="px-3 py-1.5 border border-slate-300 text-slate-500 text-[11px] hover:bg-slate-100">Cancel</button>
-                          </div>
-                        </div>
-                      )}
-                      {/* PO_PENDING — remaining qty needs purchase */}
-                      {pr.status === 'PO_PENDING' && (
-                        <>
-                        <div className="w-full text-xs text-slate-600 mb-1">
-                          {pr.issuedQty > 0 && <span className="text-green-700 font-bold mr-3">{pr.issuedQty} {pr.unit} issued from warehouse</span>}
-                          <span className="text-amber-600 font-bold">{pr.purchaseQty} {pr.unit} pending purchase</span>
-                        </div>
-                        <a
-                          href={`/procurement/purchase-orders?newPO=1&item=${encodeURIComponent(pr.itemName)}&qty=${pr.purchaseQty}&unit=${pr.unit}&cost=${pr.estimatedCost}&supplier=${encodeURIComponent(pr.supplier || '')}&reqId=${pr.id}`}
-                          className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700"
-                        >
-                          Create PO for {pr.purchaseQty} {pr.unit}
-                        </a>
+                        </React.Fragment>
+                      ))}
+                    </div>
+                    {/* Only resubmit for rejected — all other actions on Store page */}
+                    {pr.status === 'REJECTED' && (
+                      <div className="pt-1">
                         <button
-                          onClick={() => updateStatus(pr.id, 'ORDERED')}
-                          className="px-3 py-1 border border-slate-400 bg-white text-slate-700 text-[11px] font-medium hover:bg-slate-100"
-                        >
-                          Mark Ordered
-                        </button>
-                        </>
-                      )}
-                      {pr.status === 'ORDERED' && (
-                        <button
-                          onClick={() => updateStatus(pr.id, 'RECEIVED')}
-                          className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700"
-                        >
-                          Mark Received
-                        </button>
-                      )}
-                      {pr.status === 'REJECTED' && (
-                        <button
-                          onClick={() => updateStatus(pr.id, 'DRAFT')}
+                          onClick={() => updateStatus(pr.id, 'SUBMITTED')}
                           className="px-3 py-1 border border-slate-400 bg-white text-slate-700 text-[11px] font-medium hover:bg-slate-100"
                         >
                           Resubmit
                         </button>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
