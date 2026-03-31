@@ -48,7 +48,7 @@ export default function PurchaseRequisition() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [form, setForm] = useState({
     title: '', itemName: '', quantity: '1', unit: 'nos', estimatedCost: '',
-    urgency: 'ROUTINE', category: 'GENERAL', justification: '', supplier: '', remarks: '',
+    urgency: 'ROUTINE', category: 'GENERAL', justification: '', supplier: '', supplierPhone: '', remarks: '',
     department: '', inventoryItemId: '', requestedByPerson: '',
   });
   const [saving, setSaving] = useState(false);
@@ -113,7 +113,7 @@ export default function PurchaseRequisition() {
     setSaving(true);
     try {
       await api.post('/purchase-requisition', { ...form, status: 'SUBMITTED' });
-      setForm({ title: '', itemName: '', quantity: '1', unit: 'nos', estimatedCost: '', urgency: 'ROUTINE', category: 'GENERAL', justification: '', supplier: '', remarks: '', department: '', inventoryItemId: '', requestedByPerson: '' });
+      setForm({ title: '', itemName: '', quantity: '1', unit: 'nos', estimatedCost: '', urgency: 'ROUTINE', category: 'GENERAL', justification: '', supplier: '', supplierPhone: '', remarks: '', department: '', inventoryItemId: '', requestedByPerson: '' });
       setItemQuery('');
       setTab('list');
       load();
@@ -241,7 +241,7 @@ export default function PurchaseRequisition() {
                                 itemName: it.name,
                                 inventoryItemId: it.id,
                                 unit: it.unit,
-                                estimatedCost: it.costPerUnit ? String(it.costPerUnit) : f.estimatedCost,
+                                estimatedCost: it.costPerUnit && it.costPerUnit > 0 ? String(it.costPerUnit) : f.estimatedCost,
                                 category: it.category || f.category,
                                 supplier: it.supplier || f.supplier,
                                 title: `Need ${it.name}`,
@@ -347,12 +347,21 @@ export default function PurchaseRequisition() {
                 />
               </div>
               <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Preferred Supplier</label>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Supplier Name</label>
                 <input
                   className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                  placeholder="Preferred Supplier"
+                  placeholder="Supplier name (optional)"
                   value={form.supplier}
                   onChange={e => setForm({ ...form, supplier: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Supplier Phone</label>
+                <input
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  placeholder="Phone number (optional)"
+                  value={form.supplierPhone}
+                  onChange={e => setForm({ ...form, supplierPhone: e.target.value })}
                 />
               </div>
             </div>
