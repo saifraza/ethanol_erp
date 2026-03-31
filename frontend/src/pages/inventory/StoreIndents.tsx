@@ -78,8 +78,8 @@ export default function StoreIndents() {
       setLoading(true);
       const params = activeTab !== 'ALL' ? `?status=${activeTab}` : '';
       const [listRes, statsRes] = await Promise.all([
-        api.get<PR[]>(`/api/purchase-requisition${params}`),
-        api.get<Stats>('/api/purchase-requisition/stats'),
+        api.get<PR[]>(`/purchase-requisition${params}`),
+        api.get<Stats>('/purchase-requisition/stats'),
       ]);
       setData(listRes.data);
       setStats(statsRes.data);
@@ -95,7 +95,7 @@ export default function StoreIndents() {
   const fetchStockCheck = useCallback(async (id: string) => {
     try {
       setStockLoading(true);
-      const res = await api.get<StockCheck>(`/api/purchase-requisition/${id}/stock-check`);
+      const res = await api.get<StockCheck>(`/purchase-requisition/${id}/stock-check`);
       setStockCheck(res.data);
       setIssueQty(Math.min(res.data.available, res.data.requested));
     } catch (err) {
@@ -122,7 +122,7 @@ export default function StoreIndents() {
   const handleApprove = async (id: string) => {
     setActionLoading(true);
     try {
-      await api.put(`/api/purchase-requisition/${id}`, { status: 'APPROVED' });
+      await api.put(`/purchase-requisition/${id}`, { status: 'APPROVED' });
       await fetchData();
       setExpandedId(null);
     } finally {
@@ -134,7 +134,7 @@ export default function StoreIndents() {
     if (!showRejectModal || !rejectReason.trim()) return;
     setActionLoading(true);
     try {
-      await api.put(`/api/purchase-requisition/${showRejectModal}`, { status: 'REJECTED', rejectionReason: rejectReason });
+      await api.put(`/purchase-requisition/${showRejectModal}`, { status: 'REJECTED', rejectionReason: rejectReason });
       await fetchData();
       setShowRejectModal(null);
       setRejectReason('');
@@ -147,7 +147,7 @@ export default function StoreIndents() {
   const handleIssue = async (id: string) => {
     setActionLoading(true);
     try {
-      await api.put(`/api/purchase-requisition/${id}/issue`, { issuedQty: issueQty });
+      await api.put(`/purchase-requisition/${id}/issue`, { issuedQty: issueQty });
       await fetchData();
       setExpandedId(null);
       setStockCheck(null);
@@ -159,7 +159,7 @@ export default function StoreIndents() {
   const handleFullPurchase = async (id: string) => {
     setActionLoading(true);
     try {
-      await api.put(`/api/purchase-requisition/${id}/issue`, { issuedQty: 0 });
+      await api.put(`/purchase-requisition/${id}/issue`, { issuedQty: 0 });
       await fetchData();
       setExpandedId(null);
       setStockCheck(null);
@@ -171,7 +171,7 @@ export default function StoreIndents() {
   const handleMarkOrdered = async (id: string) => {
     setActionLoading(true);
     try {
-      await api.put(`/api/purchase-requisition/${id}`, { status: 'ORDERED' });
+      await api.put(`/purchase-requisition/${id}`, { status: 'ORDERED' });
       await fetchData();
       setExpandedId(null);
     } finally {
@@ -182,7 +182,7 @@ export default function StoreIndents() {
   const handleMarkReceived = async (id: string) => {
     setActionLoading(true);
     try {
-      await api.put(`/api/purchase-requisition/${id}`, { status: 'RECEIVED' });
+      await api.put(`/purchase-requisition/${id}`, { status: 'RECEIVED' });
       await fetchData();
       setExpandedId(null);
     } finally {
