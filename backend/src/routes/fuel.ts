@@ -164,10 +164,28 @@ router.get('/consumption', asyncHandler(async (req: AuthRequest, res: Response) 
   });
   const prevMap = new Map(prevEntries.map(e => [e.fuelItemId, e.closingStock]));
 
+  // Get today's GRN receipts for each fuel item (auto-received from weighbridge)
+  const nextDate = new Date(date);
+  nextDate.setDate(nextDate.getDate() + 1);
+  const todayReceipts = await prisma.stockMovement.groupBy({
+    by: ['itemId'],
+    where: {
+      movementType: 'GRN_RECEIPT',
+      direction: 'IN',
+      date: { gte: date, lt: nextDate },
+      itemId: { in: fuelItems.map(f => f.id) },
+    },
+    _sum: { quantity: true },
+  });
+  const receiptMap = new Map(todayReceipts.map(r => [r.itemId, r._sum.quantity || 0]));
+
   // Build response: one row per fuel type
   const rows = fuelItems.map(fuel => {
     const entry = entryMap.get(fuel.id);
     const prevClosing = prevMap.get(fuel.id) ?? fuel.currentStock;
+    // Auto-received from weighbridge GRNs (if no manual entry yet)
+    const autoReceived = receiptMap.get(fuel.id) || 0;
+    const received = entry?.received ?? autoReceived;
 
     return {
       fuelItemId: fuel.id,
@@ -178,9 +196,10 @@ router.get('/consumption', asyncHandler(async (req: AuthRequest, res: Response) 
       // Entry data (or defaults)
       id: entry?.id || null,
       openingStock: entry?.openingStock ?? prevClosing,
-      received: entry?.received ?? 0,
+      received,
+      autoReceived,  // show how much came from weighbridge
       consumed: entry?.consumed ?? 0,
-      closingStock: entry?.closingStock ?? (prevClosing - (entry?.consumed ?? 0) + (entry?.received ?? 0)),
+      closingStock: entry?.closingStock ?? (prevClosing - (entry?.consumed ?? 0) + received),
       steamGenerated: entry?.steamGenerated ?? 0,
       remarks: entry?.remarks ?? '',
     };
