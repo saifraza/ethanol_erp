@@ -125,14 +125,16 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 
 // Helper: generate next warehouse code (WH-001, WH-002, ...)
 async function generateWarehouseCode(): Promise<string> {
-  const last = await prisma.warehouse.findFirst({
-    where: { code: { startsWith: 'WH-' } },
-    orderBy: { code: 'desc' },
-    select: { code: true },
-  });
-  if (!last) return 'WH-001';
-  const num = parseInt(last.code.replace('WH-', ''), 10);
-  return `WH-${String(num + 1).padStart(3, '0')}`;
+  // Get all existing codes to avoid collisions
+  const all = await prisma.warehouse.findMany({ select: { code: true } });
+  const existingCodes = new Set(all.map(w => w.code));
+  let num = all.length + 1;
+  let code = `WH-${String(num).padStart(3, '0')}`;
+  while (existingCodes.has(code)) {
+    num++;
+    code = `WH-${String(num).padStart(3, '0')}`;
+  }
+  return code;
 }
 
 // ─── POST / — create warehouse ───
