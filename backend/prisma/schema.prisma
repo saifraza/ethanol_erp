@@ -1147,23 +1147,32 @@ model PurchaseRequisition {
   unit            String   @default("nos")
   estimatedCost   Float    @default(0)
   urgency         String   @default("ROUTINE") // ROUTINE, SOON, URGENT, EMERGENCY
-  category        String   @default("GENERAL") // SPARE_PART, RAW_MATERIAL, CONSUMABLE, TOOL, SAFETY, GENERAL
+  category        String   @default("GENERAL") // SPARE_PART, RAW_MATERIAL, CONSUMABLE, TOOL, SAFETY, CHEMICAL, MECHANICAL, ELECTRICAL, GENERAL
   justification   String?
   linkedIssueId   String?                      // optional link to PlantIssue
   supplier        String?                      // preferred supplier
-  status          String   @default("DRAFT")   // DRAFT, SUBMITTED, APPROVED, REJECTED, ORDERED, RECEIVED
+  status          String   @default("DRAFT")   // DRAFT, SUBMITTED, APPROVED, REJECTED, PO_PENDING, ORDERED, RECEIVED, COMPLETED
   approvedBy      String?
   approvedAt      DateTime?
   rejectionReason String?
   remarks         String?
   requestedBy     String
   userId          String
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  // Warehouse split fields
+  inventoryItemId   String?                    // FK to InventoryItem (if linked)
+  department        String?                    // requesting department
+  requestedByPerson String?                    // person name who needs the item
+  issuedQty         Float    @default(0)       // qty issued from warehouse stock
+  purchaseQty       Float    @default(0)       // qty that needs external purchase
+  issuedBy          String?                    // warehouse person who issued
+  issuedAt          DateTime?                  // when warehouse issued stock
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@index([status])
   @@index([urgency])
   @@index([userId])
+  @@index([inventoryItemId])
 }
 
 // ═══════════════════════════════════════════════

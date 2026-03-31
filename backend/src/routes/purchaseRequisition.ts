@@ -65,9 +65,93 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         remarks: b.remarks || null,
         requestedBy: user.name || user.email,
         userId: user.id,
+        inventoryItemId: b.inventoryItemId || null,
+        department: b.department || null,
+        requestedByPerson: b.requestedByPerson || null,
       },
     });
     res.status(201).json(pr);
+}));
+
+// GET /:id/stock-check — check available stock for this indent's item
+router.get('/:id/stock-check', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const pr = await prisma.purchaseRequisition.findUnique({ where: { id: req.params.id } });
+    if (!pr) return res.status(404).json({ error: 'Requisition not found' });
+
+    let available = 0;
+    let itemUnit = pr.unit;
+    if (pr.inventoryItemId) {
+      const item = await prisma.inventoryItem.findUnique({ where: { id: pr.inventoryItemId }, select: { currentStock: true, unit: true, costPerUnit: true } });
+      if (item) {
+        available = item.currentStock;
+        itemUnit = item.unit;
+      }
+    }
+    const requested = pr.quantity;
+    const canFulfillFromStock = Math.min(available, requested);
+    const shortfall = Math.max(0, requested - available);
+
+    res.json({ available, requested, canFulfillFromStock, shortfall, unit: itemUnit });
+}));
+
+// PUT /:id/issue — warehouse issues stock and splits remaining to purchase
+router.put('/:id/issue', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const pr = await prisma.purchaseRequisition.findUnique({ where: { id: req.params.id } });
+    if (!pr) return res.status(404).json({ error: 'Requisition not found' });
+    if (!['APPROVED'].includes(pr.status)) return res.status(400).json({ error: 'Can only issue from APPROVED status' });
+
+    const issueQty = parseFloat(req.body.issuedQty) || 0;
+    if (issueQty < 0 || issueQty > pr.quantity) return res.status(400).json({ error: 'Invalid issue quantity' });
+
+    const purchaseQty = pr.quantity - issueQty;
+    const user = req.user!;
+
+    // If issuing from stock, create inventory transaction
+    if (issueQty > 0 && pr.inventoryItemId) {
+      await prisma.$transaction(async (tx) => {
+        // Create OUT transaction
+        await tx.inventoryTransaction.create({
+          data: {
+            itemId: pr.inventoryItemId!,
+            type: 'OUT',
+            quantity: issueQty,
+            reference: `INDENT-${pr.reqNo}`,
+            department: pr.department || 'Production',
+            issuedTo: pr.requestedByPerson || pr.requestedBy,
+            remarks: `Indent #${pr.reqNo}: ${pr.title}`,
+            userId: user.id,
+          },
+        });
+        // Decrement stock
+        await tx.inventoryItem.update({
+          where: { id: pr.inventoryItemId! },
+          data: { currentStock: { decrement: issueQty } },
+        });
+      });
+    }
+
+    // Determine new status
+    let newStatus: string;
+    if (issueQty >= pr.quantity) {
+      newStatus = 'COMPLETED';
+    } else if (purchaseQty > 0) {
+      newStatus = 'PO_PENDING';
+    } else {
+      newStatus = 'COMPLETED';
+    }
+
+    const updated = await prisma.purchaseRequisition.update({
+      where: { id: req.params.id },
+      data: {
+        issuedQty: issueQty,
+        purchaseQty,
+        issuedBy: user.name || user.email,
+        issuedAt: issueQty > 0 ? new Date() : null,
+        status: newStatus,
+      },
+    });
+
+    res.json(updated);
 }));
 
 // PUT /:id — update requisition
@@ -85,6 +169,9 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     if (b.justification !== undefined) data.justification = b.justification;
     if (b.supplier !== undefined) data.supplier = b.supplier;
     if (b.remarks !== undefined) data.remarks = b.remarks;
+    if (b.department !== undefined) data.department = b.department;
+    if (b.requestedByPerson !== undefined) data.requestedByPerson = b.requestedByPerson;
+    if (b.inventoryItemId !== undefined) data.inventoryItemId = b.inventoryItemId;
     // Status transitions
     if (b.status !== undefined) {
       data.status = b.status;

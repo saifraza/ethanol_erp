@@ -5,7 +5,7 @@ import { Plus, Check, X, ChevronDown, ChevronUp, Search } from 'lucide-react';
 
 const URGENCIES = ['ROUTINE', 'SOON', 'URGENT', 'EMERGENCY'];
 const CATEGORIES = ['SPARE_PART', 'RAW_MATERIAL', 'CONSUMABLE', 'TOOL', 'SAFETY', 'CHEMICAL', 'MECHANICAL', 'ELECTRICAL', 'GENERAL'];
-const STATUSES = ['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'ORDERED', 'RECEIVED'];
+const STATUSES = ['DRAFT', 'SUBMITTED', 'APPROVED', 'PO_PENDING', 'ORDERED', 'RECEIVED', 'COMPLETED', 'REJECTED'];
 
 interface InvItem { id: string; name: string; code: string; category: string; unit: string; currentStock: number; minStock: number; costPerUnit: number; supplier: string | null; }
 const URG_COLORS: Record<string, string> = {
@@ -19,8 +19,10 @@ const STATUS_COLORS: Record<string, string> = {
   SUBMITTED: 'border-blue-500 bg-blue-50 text-blue-700',
   APPROVED: 'border-green-600 bg-green-50 text-green-700',
   REJECTED: 'border-red-600 bg-red-50 text-red-700',
+  PO_PENDING: 'border-amber-500 bg-amber-50 text-amber-700',
   ORDERED: 'border-purple-500 bg-purple-50 text-purple-700',
   RECEIVED: 'border-emerald-600 bg-emerald-50 text-emerald-700',
+  COMPLETED: 'border-emerald-600 bg-emerald-50 text-emerald-700',
 };
 
 interface PR {
@@ -30,6 +32,10 @@ interface PR {
   supplier: string | null; status: string; approvedBy: string | null;
   approvedAt: string | null; rejectionReason: string | null;
   requestedBy: string; remarks: string | null; createdAt: string;
+  inventoryItemId: string | null; department: string | null;
+  requestedByPerson: string | null;
+  issuedQty: number; purchaseQty: number;
+  issuedBy: string | null; issuedAt: string | null;
 }
 
 export default function PurchaseRequisition() {
@@ -46,6 +52,29 @@ export default function PurchaseRequisition() {
     department: '', inventoryItemId: '', requestedByPerson: '',
   });
   const [saving, setSaving] = useState(false);
+  // Warehouse issue state
+  const [stockCheck, setStockCheck] = useState<{ id: string; available: number; requested: number; canFulfillFromStock: number; shortfall: number; unit: string } | null>(null);
+  const [issueQty, setIssueQty] = useState('');
+  const [issuing, setIssuing] = useState(false);
+
+  const checkStock = async (prId: string, requested: number) => {
+    try {
+      const res = await api.get(`/purchase-requisition/${prId}/stock-check`);
+      setStockCheck({ id: prId, ...res.data });
+      setIssueQty(String(Math.min(res.data.available, requested)));
+    } catch { setStockCheck({ id: prId, available: 0, requested, canFulfillFromStock: 0, shortfall: requested, unit: 'nos' }); }
+  };
+
+  const handleIssue = async (prId: string) => {
+    setIssuing(true);
+    try {
+      await api.put(`/purchase-requisition/${prId}/issue`, { issuedQty: parseFloat(issueQty) || 0 });
+      setStockCheck(null);
+      setIssueQty('');
+      load();
+    } catch (e: unknown) { alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Issue failed'); }
+    setIssuing(false);
+  };
 
   // Inventory item search for linking
   const [invItems, setInvItems] = useState<InvItem[]>([]);
@@ -433,6 +462,19 @@ export default function PurchaseRequisition() {
                         <X size={12} /> Rejected: {pr.rejectionReason}
                       </div>
                     )}
+                    {pr.issuedQty > 0 && (
+                      <div className="text-xs text-green-700 flex items-center gap-1">
+                        <Check size={12} /> {pr.issuedQty} {pr.unit} issued from warehouse {pr.issuedBy ? `by ${pr.issuedBy}` : ''} {pr.issuedAt ? `on ${new Date(pr.issuedAt).toLocaleDateString()}` : ''}
+                      </div>
+                    )}
+                    {pr.purchaseQty > 0 && ['PO_PENDING', 'ORDERED'].includes(pr.status) && (
+                      <div className="text-xs text-amber-600 font-bold">
+                        {pr.purchaseQty} {pr.unit} pending purchase
+                      </div>
+                    )}
+                    {pr.department && (
+                      <div className="text-[10px] text-slate-500">Dept: <span className="font-bold">{pr.department}</span> {pr.requestedByPerson ? `| Person: ${pr.requestedByPerson}` : ''}</div>
+                    )}
 
                     {/* Actions */}
                     <div className="flex flex-wrap gap-2 pt-1">
@@ -457,11 +499,73 @@ export default function PurchaseRequisition() {
                       )}
                       {pr.status === 'APPROVED' && (
                         <>
+                        <button
+                          onClick={() => checkStock(pr.id, pr.quantity)}
+                          className="px-3 py-1 bg-green-600 text-white text-[11px] font-medium hover:bg-green-700"
+                        >
+                          Check Stock & Issue
+                        </button>
                         <a
                           href={`/procurement/purchase-orders?newPO=1&item=${encodeURIComponent(pr.itemName)}&qty=${pr.quantity}&unit=${pr.unit}&cost=${pr.estimatedCost}&supplier=${encodeURIComponent(pr.supplier || '')}&reqId=${pr.id}`}
                           className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700"
                         >
-                          Create PO
+                          Full Purchase (PO)
+                        </a>
+                        </>
+                      )}
+                      {/* Warehouse Stock Check Panel */}
+                      {pr.status === 'APPROVED' && stockCheck?.id === pr.id && (
+                        <div className="w-full mt-2 border border-slate-300 bg-slate-50 p-3 space-y-2">
+                          <div className="grid grid-cols-3 gap-3 text-xs">
+                            <div>
+                              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Available in Store</span>
+                              <div className={`text-lg font-bold font-mono tabular-nums ${stockCheck.available > 0 ? 'text-green-700' : 'text-red-600'}`}>{stockCheck.available} {stockCheck.unit}</div>
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Requested</span>
+                              <div className="text-lg font-bold font-mono tabular-nums text-slate-800">{stockCheck.requested} {stockCheck.unit}</div>
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Shortfall (Purchase)</span>
+                              <div className={`text-lg font-bold font-mono tabular-nums ${stockCheck.shortfall > 0 ? 'text-amber-600' : 'text-green-700'}`}>{stockCheck.shortfall} {stockCheck.unit}</div>
+                            </div>
+                          </div>
+                          <div className="flex items-end gap-3">
+                            <div>
+                              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Issue from Warehouse</label>
+                              <input type="number" step="any" min="0" max={stockCheck.available}
+                                className="border border-slate-300 px-2.5 py-1.5 text-xs w-28 focus:outline-none focus:ring-1 focus:ring-green-500 font-mono font-bold"
+                                value={issueQty} onChange={e => setIssueQty(e.target.value)} />
+                            </div>
+                            <div className="text-xs text-slate-500">
+                              {parseFloat(issueQty) >= pr.quantity ? (
+                                <span className="text-green-700 font-bold">Full from warehouse — no purchase needed</span>
+                              ) : parseFloat(issueQty) > 0 ? (
+                                <span className="text-amber-600 font-bold">{issueQty} from warehouse + {(pr.quantity - (parseFloat(issueQty) || 0)).toFixed(1)} to purchase</span>
+                              ) : (
+                                <span className="text-red-600 font-bold">Full purchase needed — {pr.quantity} {pr.unit}</span>
+                              )}
+                            </div>
+                            <button onClick={() => handleIssue(pr.id)} disabled={issuing}
+                              className="px-3 py-1.5 bg-green-600 text-white text-[11px] font-bold hover:bg-green-700 disabled:opacity-50">
+                              {issuing ? 'Issuing...' : 'Confirm Issue'}
+                            </button>
+                            <button onClick={() => setStockCheck(null)} className="px-3 py-1.5 border border-slate-300 text-slate-500 text-[11px] hover:bg-slate-100">Cancel</button>
+                          </div>
+                        </div>
+                      )}
+                      {/* PO_PENDING — remaining qty needs purchase */}
+                      {pr.status === 'PO_PENDING' && (
+                        <>
+                        <div className="w-full text-xs text-slate-600 mb-1">
+                          {pr.issuedQty > 0 && <span className="text-green-700 font-bold mr-3">{pr.issuedQty} {pr.unit} issued from warehouse</span>}
+                          <span className="text-amber-600 font-bold">{pr.purchaseQty} {pr.unit} pending purchase</span>
+                        </div>
+                        <a
+                          href={`/procurement/purchase-orders?newPO=1&item=${encodeURIComponent(pr.itemName)}&qty=${pr.purchaseQty}&unit=${pr.unit}&cost=${pr.estimatedCost}&supplier=${encodeURIComponent(pr.supplier || '')}&reqId=${pr.id}`}
+                          className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700"
+                        >
+                          Create PO for {pr.purchaseQty} {pr.unit}
                         </a>
                         <button
                           onClick={() => updateStatus(pr.id, 'ORDERED')}
