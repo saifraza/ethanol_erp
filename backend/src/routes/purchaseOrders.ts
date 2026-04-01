@@ -20,8 +20,20 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const where: any = {};
     if (status) where.status = status;
     if (vendorId) where.vendorId = vendorId;
-    // Filter by vendor category (FUEL, RAW_MATERIAL, GENERAL, etc.)
-    if (category) where.vendor = { category };
+    // Filter by inventory item category on PO lines (not vendor category — those don't match)
+    // FUEL = any PO with a line whose inventoryItem.category is 'FUEL'
+    // RAW_MATERIAL = lines with category 'RAW_MATERIAL' or 'CHEMICAL' or 'GRAIN'
+    // GENERAL = everything else (no fuel/raw material lines)
+    if (category === 'FUEL') {
+      where.lines = { some: { inventoryItem: { category: 'FUEL' } } };
+    } else if (category === 'RAW_MATERIAL') {
+      where.lines = { some: { inventoryItem: { category: { in: ['RAW_MATERIAL', 'CHEMICAL', 'GRAIN'] } } } };
+    } else if (category === 'GENERAL') {
+      where.AND = [
+        { NOT: { lines: { some: { inventoryItem: { category: 'FUEL' } } } } },
+        { NOT: { lines: { some: { inventoryItem: { category: { in: ['RAW_MATERIAL', 'CHEMICAL', 'GRAIN'] } } } } } },
+      ];
+    }
 
     const pos = await prisma.purchaseOrder.findMany({
       where,
