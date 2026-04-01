@@ -30,6 +30,12 @@ interface GrainTruck {
   uidRst: string;
 }
 
+const FUEL_KEYWORDS = ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'firewood', 'biomass'];
+function isFuelTruck(t: GrainTruck): boolean {
+  const text = (t.remarks || '').toLowerCase();
+  return FUEL_KEYWORDS.some(kw => text.includes(kw));
+}
+
 interface LabStats {
   pending: number;
   passedToday: number;
@@ -335,7 +341,16 @@ export default function RawMaterial() {
                       <tr className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
                         <td className="px-3 py-1.5 font-mono font-bold text-slate-800 border-r border-slate-100">{t.vehicleNo || '--'}</td>
                         <td className="px-3 py-1.5 text-slate-700 border-r border-slate-100">{t.supplier || '--'}</td>
-                        <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">{t.remarks || '--'}</td>
+                        <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">
+                          {isFuelTruck(t) && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-orange-300 bg-orange-50 text-orange-700 mr-1">FUEL</span>}
+                          {(() => {
+                            const r = t.remarks || '';
+                            const parts = r.split('|').map(s => s.trim());
+                            const statusPart = parts.find(p => ['GATE_ENTRY', 'FIRST_DONE', 'COMPLETE'].includes(p));
+                            const lastPart = parts[parts.length - 1];
+                            return statusPart && lastPart !== statusPart ? lastPart : parts.length > 3 ? parts[3] : r.substring(0, 30);
+                          })()}
+                        </td>
                         <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-700 border-r border-slate-100">{fmtWt(t.weightGross)}</td>
                         <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-700 border-r border-slate-100">{fmtWt(t.weightTare)}</td>
                         <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold text-slate-800 border-r border-slate-100">{fmtWt(t.weightNet)}</td>
@@ -356,9 +371,15 @@ export default function RawMaterial() {
                         </td>
                       </tr>
                       {labTestingId === t.id && (
-                        <tr className="bg-slate-100 border-b border-slate-300">
+                        <tr className={`border-b border-slate-300 ${isFuelTruck(t) ? 'bg-amber-50' : 'bg-slate-100'}`}>
                           <td colSpan={9} className="px-4 py-3">
-                            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                            {isFuelTruck(t) && (
+                              <div className="text-[10px] font-bold text-orange-700 uppercase tracking-widest mb-2 flex items-center gap-2">
+                                <span className="px-2 py-0.5 border border-orange-400 bg-orange-100">FUEL QUALITY CHECK</span>
+                                <span className="text-slate-400 font-normal normal-case">Moisture only</span>
+                              </div>
+                            )}
+                            <div className={`grid gap-3 ${isFuelTruck(t) ? 'grid-cols-2 md:grid-cols-3' : 'grid-cols-2 md:grid-cols-5'}`}>
                               <div>
                                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Moisture % *</label>
                                 <input type="number" step="0.01" value={labForm.moisture}
@@ -366,27 +387,31 @@ export default function RawMaterial() {
                                   className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
                                   placeholder="e.g. 14.5" />
                               </div>
-                              <div>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Starch %</label>
-                                <input type="number" step="0.01" value={labForm.starchPercent}
-                                  onChange={e => setLabForm(f => ({ ...f, starchPercent: e.target.value }))}
-                                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-                                  placeholder="e.g. 62" />
-                              </div>
-                              <div>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Damaged %</label>
-                                <input type="number" step="0.01" value={labForm.damagedPercent}
-                                  onChange={e => setLabForm(f => ({ ...f, damagedPercent: e.target.value }))}
-                                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-                                  placeholder="e.g. 2.5" />
-                              </div>
-                              <div>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Foreign Matter %</label>
-                                <input type="number" step="0.01" value={labForm.foreignMatter}
-                                  onChange={e => setLabForm(f => ({ ...f, foreignMatter: e.target.value }))}
-                                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-                                  placeholder="e.g. 1.0" />
-                              </div>
+                              {!isFuelTruck(t) && (
+                                <>
+                                  <div>
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Starch %</label>
+                                    <input type="number" step="0.01" value={labForm.starchPercent}
+                                      onChange={e => setLabForm(f => ({ ...f, starchPercent: e.target.value }))}
+                                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
+                                      placeholder="e.g. 62" />
+                                  </div>
+                                  <div>
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Damaged %</label>
+                                    <input type="number" step="0.01" value={labForm.damagedPercent}
+                                      onChange={e => setLabForm(f => ({ ...f, damagedPercent: e.target.value }))}
+                                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
+                                      placeholder="e.g. 2.5" />
+                                  </div>
+                                  <div>
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Foreign Matter %</label>
+                                    <input type="number" step="0.01" value={labForm.foreignMatter}
+                                      onChange={e => setLabForm(f => ({ ...f, foreignMatter: e.target.value }))}
+                                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
+                                      placeholder="e.g. 1.0" />
+                                  </div>
+                                </>
+                              )}
                               <div>
                                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label>
                                 <input type="text" value={labForm.remarks}
@@ -398,11 +423,11 @@ export default function RawMaterial() {
                             <div className="flex gap-2 mt-3">
                               <button onClick={() => submitLabResult('PASS')} disabled={labSubmitting || !labForm.moisture}
                                 className="px-4 py-1.5 bg-green-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-green-700 disabled:opacity-50">
-                                PASS
+                                {isFuelTruck(t) ? 'PASS (FUEL)' : 'PASS'}
                               </button>
                               <button onClick={() => submitLabResult('FAIL')} disabled={labSubmitting || !labForm.moisture}
                                 className="px-4 py-1.5 bg-red-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-red-700 disabled:opacity-50">
-                                FAIL
+                                {isFuelTruck(t) ? 'FAIL (FUEL)' : 'FAIL'}
                               </button>
                             </div>
                           </td>
