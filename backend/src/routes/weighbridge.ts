@@ -290,9 +290,35 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
     // Check for duplicate across ALL tables (GrainTruck, DirectPurchase, DDGSDispatch)
     const dupGrain = await prisma.grainTruck.findFirst({
       where: { remarks: { contains: `WB:${w.id}` } },
-      select: { id: true },
+      select: { id: true, weightNet: true },
     });
-    if (dupGrain) { ids.push(dupGrain.id); continue; }
+    if (dupGrain) {
+      // Update existing record with weights (gate entry created it with 0 weights)
+      if (dupGrain.weightNet === 0 || dupGrain.weightNet === null) {
+        const grossTon = (w.weight_gross || 0) / 1000;
+        const tareTon = (w.weight_tare || 0) / 1000;
+        const netTon = (w.weight_net || 0) / 1000;
+        await prisma.grainTruck.update({
+          where: { id: dupGrain.id },
+          data: {
+            weightGross: grossTon,
+            weightTare: tareTon,
+            weightNet: netTon,
+            moisture: w.lab_moisture || w.moisture || undefined,
+            starchPercent: w.lab_starch || undefined,
+            damagedPercent: w.lab_damaged || undefined,
+            foreignMatter: w.lab_foreign_matter || undefined,
+            quarantine: w.lab_status === 'FAIL' ? true : undefined,
+            quarantineWeight: w.lab_status === 'FAIL' ? netTon : undefined,
+            quarantineReason: w.lab_status === 'FAIL' ? (w.lab_remarks || 'Failed lab test') : undefined,
+            remarks: `WB:${w.id} | Ticket #${w.ticket_no} | COMPLETE | ${w.remarks || ''}`.trim(),
+          },
+        });
+        results.push({ id: dupGrain.id, type: 'GrainTruck', refNo: `UPDATED-${dupGrain.id.slice(0, 8)}` });
+      }
+      ids.push(dupGrain.id);
+      continue;
+    }
 
     const dupDP = await prisma.directPurchase.findFirst({
       where: { remarks: { contains: `WB:${w.id}` } },
