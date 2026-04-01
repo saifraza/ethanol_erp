@@ -428,6 +428,18 @@ For detailed guidance on specific modules, see `.claude/skills/`:
 
 ---
 
+## Codex Integration (GPT-5.4 Second Opinion)
+
+Codex CLI (OpenAI, GPT-5.4) is installed and authenticated in this workspace. Use it as a **second-opinion reviewer and deep auditor** for complex work:
+
+- **`/codex:rescue`** — Primary skill. Delegates investigation, diagnosis, fix requests, or code review to Codex. Use for:
+  - **Deep code audit**: Edge cases, race conditions, security holes, off-by-one errors
+  - **Second opinion**: When stuck or want independent validation of complex logic
+  - **Root-cause diagnosis**: Hard-to-reproduce bugs, multi-file interaction issues
+  - **Test coverage gaps**: Have Codex identify what tests are missing
+- **When to use**: Complex features, multi-file refactors, tricky business logic, payment/financial code, or anything where a second set of eyes adds value
+- **Not for**: Simple one-file edits, typo fixes, or routine CRUD
+
 ## Pre-Push Checklist
 1. `cd backend && npx tsc --noEmit` — Backend compiles
 2. `cd frontend && npx vite build` — Frontend builds

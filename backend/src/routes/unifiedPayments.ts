@@ -567,6 +567,7 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
     let paymentStatus: PendingPayable['paymentStatus'] = 'NO_GRN';
     if (grns.length === 0) paymentStatus = 'NO_GRN';
     else if (invoices.length === 0 && totalPaid === 0) paymentStatus = 'GRN_RECEIVED';
+    else if (invoices.length === 0 && totalPaid > 0) paymentStatus = 'PARTIAL_PAID'; // direct payments (fuel deals)
     else if (totalPaid > 0 && invoiceBalance > 0) paymentStatus = 'PARTIAL_PAID';
     else if (invoices.length > 0 && totalPaid === 0) paymentStatus = 'INVOICED';
     else paymentStatus = 'GRN_RECEIVED';

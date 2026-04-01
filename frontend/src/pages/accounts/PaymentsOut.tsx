@@ -95,6 +95,7 @@ interface Outstanding {
 // ═══════════════════════════════════════════════
 
 const fmt = (n: number) => n === 0 ? '--' : '\u20B9' + Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+const fmtAmt = (n: number) => '\u20B9' + Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 }); // always show ₹0
 const fmtDec = (n: number) => n === 0 ? '--' : '\u20B9' + Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : '--';
 const todayStr = () => new Date().toISOString().split('T')[0];
@@ -726,12 +727,13 @@ export default function PaymentsOut() {
                             <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">PO#</th>
                             <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Vendor</th>
                             <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Terms</th>
-                            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">PO Amt</th>
-                            <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">GRN Date</th>
+                            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Receivable</th>
+                            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Invoiced</th>
+                            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Paid</th>
+                            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Balance</th>
                             <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Status</th>
                             <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Due Date</th>
                             <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Days</th>
-                            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Balance</th>
                             <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Actions</th>
                           </tr>
                         </thead>
@@ -748,8 +750,13 @@ export default function PaymentsOut() {
                               <td className="px-3 py-1.5 border-r border-slate-100">
                                 <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-slate-300 bg-slate-50 text-slate-600">{item.paymentTerms || `NET${item.creditDays}`}</span>
                               </td>
-                              <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">{fmt(item.poAmount)}</td>
-                              <td className="px-3 py-1.5 border-r border-slate-100 whitespace-nowrap">{fmtDate(item.grnDate)}</td>
+                              <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">
+                                {fmt(item.dealType === 'OPEN' ? item.grnTotalValue : item.poAmount)}
+                                {item.dealType === 'OPEN' && <div className="text-[8px] text-slate-400">GRN value</div>}
+                              </td>
+                              <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">{fmtAmt(item.totalInvoiced)}</td>
+                              <td className={`px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums ${item.totalPaid > 0 ? 'text-green-700 font-medium' : 'text-slate-400'}`}>{fmtAmt(item.totalPaid)}</td>
+                              <td className={`px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums font-bold ${item.balance > 0 ? 'text-red-600' : 'text-green-600'}`}>{fmtAmt(item.balance)}</td>
                               <td className="px-3 py-1.5 border-r border-slate-100">
                                 <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
                                   item.paymentStatus === 'NO_GRN' ? 'border-slate-300 bg-slate-50 text-slate-500' :
@@ -759,8 +766,10 @@ export default function PaymentsOut() {
                                   'border-green-400 bg-green-50 text-green-700'
                                 }`}>
                                   {item.paymentStatus === 'NO_GRN' ? 'NO GRN' :
-                                   item.paymentStatus === 'GRN_RECEIVED' ? `GRN (${item.grnCount})` :
-                                   item.paymentStatus.replace('_', ' ')}
+                                   item.paymentStatus === 'GRN_RECEIVED' ? 'AWAITING INV' :
+                                   item.paymentStatus === 'INVOICED' ? 'AWAITING PAY' :
+                                   item.paymentStatus === 'PARTIAL_PAID' ? 'PARTIAL' :
+                                   'PAID'}
                                 </span>
                               </td>
                               <td className={`px-3 py-1.5 border-r border-slate-100 whitespace-nowrap ${urgencyBg(item.urgency)}`}>
@@ -769,7 +778,6 @@ export default function PaymentsOut() {
                               <td className={`px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums font-bold ${item.daysOverdue !== null && item.daysOverdue > 0 ? 'text-red-600' : item.daysOverdue !== null && item.daysOverdue >= -7 ? 'text-amber-600' : 'text-green-600'}`}>
                                 {item.daysOverdue !== null ? (item.daysOverdue > 0 ? `+${item.daysOverdue}` : String(item.daysOverdue)) : '--'}
                               </td>
-                              <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums font-bold text-red-600">{fmt(item.balance)}</td>
                               <td className="px-3 py-1.5 text-center">
                                 <div className="flex items-center justify-center gap-1">
                                   {/* INV button — show when GRN exists and no invoice yet */}
@@ -804,7 +812,7 @@ export default function PaymentsOut() {
                             {/* Pipeline expansion row */}
                             {selectedPOId === item.poId && (
                               <tr>
-                                <td colSpan={10} className="p-0 border-b border-slate-300 bg-slate-50">
+                                <td colSpan={11} className="p-0 border-b border-slate-300 bg-slate-50">
                                   {detailLoading ? (
                                     <div className="p-4 text-center text-xs text-slate-400 uppercase tracking-widest">Loading pipeline...</div>
                                   ) : poDetail?.pipeline ? (
@@ -815,7 +823,7 @@ export default function PaymentsOut() {
                                           { label: 'Ordered', done: true, value: `${poDetail.pipeline.ordered.qty} qty`, sub: fmt(poDetail.pipeline.ordered.amount), mismatch: false },
                                           { label: 'Received', done: poDetail.pipeline.received.grnCount > 0, value: `${poDetail.pipeline.received.qty} qty`, sub: `${poDetail.pipeline.received.grnCount} GRN${poDetail.pipeline.received.grnCount !== 1 ? 's' : ''}${poDetail.pipeline.received.pending > 0 ? ` (${poDetail.pipeline.received.pending} pending)` : ''}`, mismatch: false },
                                           { label: 'Invoiced', done: poDetail.pipeline.invoiced.count > 0, value: fmt(poDetail.pipeline.invoiced.amount), sub: `${poDetail.pipeline.invoiced.count} invoice${poDetail.pipeline.invoiced.count !== 1 ? 's' : ''}`, mismatch: poDetail.pipeline.invoiced.amount > 0 && poDetail.pipeline.ordered.amount > 0 && Math.abs(poDetail.pipeline.invoiced.amount - poDetail.pipeline.ordered.amount) > 10 },
-                                          { label: 'Paid', done: poDetail.pipeline.paid.amount > 0, value: fmt(poDetail.pipeline.paid.amount), sub: poDetail.pipeline.paid.balance > 0 ? `Bal: ${fmt(poDetail.pipeline.paid.balance)}` : 'Settled', mismatch: false },
+                                          { label: 'Paid', done: poDetail.pipeline.paid.amount > 0, value: fmt(poDetail.pipeline.paid.amount), sub: poDetail.pipeline.paid.amount === 0 && poDetail.pipeline.invoiced.amount === 0 ? 'Unpaid' : poDetail.pipeline.paid.balance > 0 ? `Bal: ${fmt(poDetail.pipeline.paid.balance)}` : 'Settled', mismatch: false },
                                         ]).map((step, si) => (
                                           <React.Fragment key={step.label}>
                                             {si > 0 && <div className={`h-0.5 w-8 ${step.mismatch ? 'bg-red-400' : step.done ? 'bg-green-400' : 'bg-slate-300'}`} />}

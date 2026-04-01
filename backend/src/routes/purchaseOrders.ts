@@ -105,11 +105,21 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const totalTDS = (po.vendorInvoices || []).reduce((s: number, inv: any) =>
       s + (inv.payments || []).reduce((ps: number, p: any) => ps + (p.tdsDeducted || 0), 0), 0);
 
+    // For OPEN/fuel deals: grandTotal is 0, use GRN total as effective amount
+    const isOpenDeal = (po as any).dealType === 'OPEN';
+    const grnTotalValue = po.grns.reduce((s: number, g: any) => s + (g.lines || []).reduce((ls: number, gl: any) => ls + ((gl.receivedQty || 0) * (gl.rate || 0)), 0), 0)
+      || po.grns.reduce((s: number, g: any) => s + (g.totalAmount || 0), 0);
+    const effectiveAmount = isOpenDeal && po.grandTotal === 0 ? grnTotalValue : po.grandTotal;
+
+    // Balance: use invoice balance when invoices exist, else effective amount minus direct payments
+    const invoiceBalance = totalInvoiced - totalPaid - totalTDS;
+    const effectiveBalance = totalInvoiced > 0 ? invoiceBalance : Math.max(0, effectiveAmount - totalPaid);
+
     const pipeline = {
-      ordered: { qty: totalOrdered, amount: po.grandTotal },
+      ordered: { qty: totalOrdered, amount: effectiveAmount },
       received: { qty: totalReceived, pending: totalPending, grnCount: po.grns.length },
       invoiced: { amount: totalInvoiced, count: (po.vendorInvoices || []).length },
-      paid: { amount: totalPaid, tds: totalTDS, balance: totalInvoiced - totalPaid - totalTDS },
+      paid: { amount: totalPaid, tds: totalTDS, balance: effectiveBalance },
     };
 
     res.json({ ...po, pipeline });
