@@ -331,6 +331,8 @@ Deploy updated code to factory server. The new PC will appear on the cloud ERP m
 - **ALWAYS delete weighbridge.db** when schema changes (SQLite has no migrations)
 - **ALWAYS check service is running** after deploy: `curl -s http://<IP>:8098/api/weight`
 - **ALWAYS use pure black (#000) text in slip templates** — thermal printers can't print gray (#555) or white-on-black. No `background: #000; color: #fff`
+- **NEVER deploy config.py without checking SERIAL_PROTOCOL** — if default reverts to `file`, weight reading breaks. The PC has `WB_PROTOCOL=serial` set as system env var to prevent this, but still check.
+- **Critical settings are in SYSTEM env vars** on the weighbridge PC (override config.py defaults): `WB_PROTOCOL=serial`
 - **ALWAYS keep sleep disabled** on all factory PCs: `powercfg /change standby-timeout-ac 0`
 
 ## 9. Troubleshooting

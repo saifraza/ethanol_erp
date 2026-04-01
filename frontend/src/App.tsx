@@ -36,7 +36,7 @@ const LabSampling = React.lazy(() => import('./pages/process/LabSampling'));
 const DDGSStock = React.lazy(() => import('./pages/process/DDGSStock'));
 const DDGSDispatch = React.lazy(() => import('./pages/process/DDGSDispatch'));
 const DosingRecipes = React.lazy(() => import('./pages/process/DosingRecipes'));
-const RawMaterialTesting = React.lazy(() => import('./pages/process/RawMaterialTesting'));
+// RawMaterialTesting merged into RawMaterial.tsx
 const Inventory = React.lazy(() => import('./pages/Inventory'));
 const InventoryMasters = React.lazy(() => import('./pages/inventory/Masters'));
 const StoreIndents = React.lazy(() => import('./pages/inventory/StoreIndents'));
@@ -145,7 +145,7 @@ export default function App() {
         <Route path="process/water-utility" element={<WaterUtility />} />
         <Route path="process/lab-sampling" element={<LabSampling />} />
         <Route path="process/dosing-recipes" element={<DosingRecipes />} />
-        <Route path="process/raw-material-testing" element={<RawMaterialTesting />} />
+        {/* raw-material-testing merged into raw-material */}
         <Route path="inventory" element={<Inventory />} />
         <Route path="inventory/masters" element={<InventoryMasters />} />
         <Route path="inventory/store-indents" element={<StoreIndents />} />

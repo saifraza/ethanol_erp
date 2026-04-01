@@ -718,9 +718,11 @@
 
         let actions = '';
         let liveWeightBox = '';
+        const isOutbound = w.direction === 'OUT';
         const labDone = w.lab_status === 'PASS' || w.lab_status === 'FAIL';
-        if (isGate && labDone) {
-            // Lab done — allow gross weight capture
+        const labRequired = isIn && !labDone; // Lab only for INBOUND raw material, not DDGS outbound
+        if (isGate && (!labRequired || isOutbound)) {
+            // Lab done OR outbound (no lab needed) — allow gross weight capture
             liveWeightBox = `<div style="background:#0f172a; text-align:center; padding:12px; margin:0 -1px;">
                 <div style="font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.1em;">Live Scale Reading</div>
                 <div id="scanLiveWeight" style="font-size:36px; font-weight:700; font-family:'Courier New',monospace; color:#22c55e;">${Math.round(currentWeight).toLocaleString()} KG</div>
@@ -728,8 +730,8 @@
             </div>`;
             actions = `<button class="btn-primary green" style="flex:1;" onclick="captureGross('${w.id}')">${firstBtnLabel}</button>
                        <button class="btn-secondary" onclick="showManual('gross','${w.id}')">Manual</button>`;
-        } else if (isGate && !labDone) {
-            // Lab pending — show message, no weight buttons
+        } else if (isGate && labRequired) {
+            // Lab pending (INBOUND only) — show message, no weight buttons
             actions = `<div style="text-align:center; padding:8px; color:#d97706; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em;">
                 Lab result required before weighment. Enter quality above or wait for cloud sync.
             </div>`;
@@ -829,18 +831,29 @@
             const c = document.getElementById('gateList');
             if (!items.length) { c.innerHTML = '<div class="empty">No gate entries pending</div>'; }
             else {
-                c.innerHTML = '<table class="data-table"><thead><tr><th>#</th><th>Vehicle</th><th>Dir</th><th>Supplier</th><th>Material</th><th>Time</th><th></th></tr></thead><tbody>' +
-                    items.map(w => `<tr>
+                c.innerHTML = '<table class="data-table"><thead><tr><th>#</th><th>Vehicle</th><th>Dir</th><th>Supplier</th><th>Material</th><th>Lab</th><th>Time</th><th></th></tr></thead><tbody>' +
+                    items.map(w => {
+                        const ls = w.lab_status || 'PENDING';
+                        const labBadge = ls === 'PASS' ? '<span class="badge" style="background:#dcfce7;color:#16a34a;border:1px solid #86efac;">PASS</span>'
+                            : ls === 'FAIL' ? '<span class="badge" style="background:#fef2f2;color:#dc2626;border:1px solid #fca5a5;">FAIL</span>'
+                            : '<span class="badge" style="background:#fef9c3;color:#a16207;border:1px solid #fde047;">PENDING</span>';
+                        const isOut = w.direction === 'OUT';
+                        const labDone = ls === 'PASS' || ls === 'FAIL';
+                        const canWeigh = isOut || labDone;
+                        const action = canWeigh
+                            ? `<a class="action-link" onclick="captureGross('${w.id}')">Gross</a>`
+                            : `<span style="font-size:9px;color:#a16207;">Awaiting Lab</span>`;
+                        return `<tr>
                         <td class="mono">${w.ticket_no}</td>
                         <td class="bold">${w.vehicle_no}</td>
                         <td><span class="badge badge-${w.direction.toLowerCase()}">${w.direction}</span></td>
                         <td>${w.supplier_name || '-'}</td>
                         <td>${w.material || '-'}</td>
+                        <td>${labBadge}</td>
                         <td style="font-size:11px;">${w.gate_entry_at || w.created_at}</td>
-                        <td><a class="action-link" onclick="lookupAndShow(JSON.parse(decodeURIComponent('${encodeURIComponent(JSON.stringify(w))}')))" style="display:none;"></a>
-                            <a class="action-link" onclick="captureGross('${w.id}')">Gross</a>
-                        </td>
-                    </tr>`).join('') + '</tbody></table>';
+                        <td>${action}</td>
+                    </tr>`;
+                    }).join('') + '</tbody></table>';
             }
             updatePendingBadge();
         });

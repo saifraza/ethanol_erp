@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { FlaskConical, Plus, X, Share2, Save, Loader2, Search, Trash2, ChevronDown, ChevronUp, Pencil } from 'lucide-react';
 import ProcessPage from './ProcessPage';
 import api from '../../services/api';
@@ -9,6 +9,43 @@ interface Entry {
   moisture: number; starch: number; fungus: number; immature: number;
   damaged: number; waterDamaged: number; tfm: number; material?: string; remark: string | null;
 }
+
+// --- Lab Testing (Weighbridge Trucks) ---
+interface GrainTruck {
+  id: string;
+  vehicleNo: string;
+  supplier: string;
+  weightGross: number;
+  weightTare: number;
+  weightNet: number;
+  moisture: number | null;
+  starchPercent: number | null;
+  damagedPercent: number | null;
+  foreignMatter: number | null;
+  quarantine: boolean;
+  quarantineReason: string | null;
+  quarantineWeight: number | null;
+  date: string;
+  remarks: string | null;
+  uidRst: string;
+}
+
+interface LabStats {
+  pending: number;
+  passedToday: number;
+  failedToday: number;
+  quarantineTotal: number;
+}
+
+interface LabTestForm {
+  moisture: string;
+  starchPercent: string;
+  damagedPercent: string;
+  foreignMatter: string;
+  remarks: string;
+}
+
+const emptyLabForm: LabTestForm = { moisture: '', starchPercent: '', damagedPercent: '', foreignMatter: '', remarks: '' };
 
 const MATERIALS = ['Corn', 'Rice', 'Broken Rice', 'Sorghum', 'Other'];
 
@@ -35,6 +72,68 @@ export default function RawMaterial() {
     date: isoDate(new Date()), vehicleCode: '', vehicleNo: '', material: 'Corn',
     moisture: '', starch: '', fungus: '', immature: '', damaged: '', waterDamaged: '', tfm: '', remark: ''
   });
+
+  // --- Lab Testing State ---
+  const [labPending, setLabPending] = useState<GrainTruck[]>([]);
+  const [labHistory, setLabHistory] = useState<GrainTruck[]>([]);
+  const [labStats, setLabStats] = useState<LabStats>({ pending: 0, passedToday: 0, failedToday: 0, quarantineTotal: 0 });
+  const [labTestingId, setLabTestingId] = useState<string | null>(null);
+  const [labForm, setLabForm] = useState<LabTestForm>(emptyLabForm);
+  const [labSubmitting, setLabSubmitting] = useState(false);
+  const [activeTab, setActiveTab] = useState<'lab-analysis' | 'wb-trucks'>('wb-trucks');
+  const labTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const fetchLabData = useCallback(async () => {
+    try {
+      const [pRes, hRes, sRes] = await Promise.all([
+        api.get<GrainTruck[]>('/lab-testing/pending'),
+        api.get<GrainTruck[]>('/lab-testing/history'),
+        api.get<LabStats>('/lab-testing/stats'),
+      ]);
+      setLabPending(pRes.data);
+      setLabHistory(hRes.data);
+      setLabStats(sRes.data);
+    } catch {
+      // handled by api interceptor
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchLabData();
+    labTimerRef.current = setInterval(fetchLabData, 30000);
+    return () => { if (labTimerRef.current) clearInterval(labTimerRef.current); };
+  }, [fetchLabData]);
+
+  const openLabTest = (id: string) => {
+    setLabTestingId(id === labTestingId ? null : id);
+    setLabForm(emptyLabForm);
+  };
+
+  const submitLabResult = async (status: 'PASS' | 'FAIL') => {
+    if (!labTestingId) return;
+    const moisture = parseFloat(labForm.moisture);
+    if (isNaN(moisture)) return;
+    setLabSubmitting(true);
+    try {
+      const body: Record<string, unknown> = { status, moisture };
+      if (labForm.starchPercent) body.starchPercent = parseFloat(labForm.starchPercent);
+      if (labForm.damagedPercent) body.damagedPercent = parseFloat(labForm.damagedPercent);
+      if (labForm.foreignMatter) body.foreignMatter = parseFloat(labForm.foreignMatter);
+      if (labForm.remarks) body.remarks = labForm.remarks;
+      await api.put(`/lab-testing/${labTestingId}`, body);
+      setLabTestingId(null);
+      setLabForm(emptyLabForm);
+      await fetchLabData();
+    } catch {
+      // handled by interceptor
+    } finally {
+      setLabSubmitting(false);
+    }
+  };
+
+  const fmtLabDate = (d: string) => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit', timeZone: 'Asia/Kolkata' });
+  const fmtLabTime = (d: string) => new Date(d).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
+  const fmtWt = (n: number) => n ? n.toFixed(2) : '--';
 
   // Total Damage = all bad params (everything except moisture & starch)
   const totalDamage = useMemo(() => {
@@ -166,6 +265,218 @@ export default function RawMaterial() {
           </div>
         ))}
       </div>
+
+      {/* Lab Testing KPI Strip */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-0 border border-slate-300 mb-4">
+        <div className="bg-white px-4 py-2 border-r border-slate-300 border-l-4 border-l-amber-500">
+          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">WB Pending</div>
+          <div className="text-xl font-bold text-slate-800 mt-0.5 font-mono tabular-nums">{labStats.pending}</div>
+        </div>
+        <div className="bg-white px-4 py-2 border-r border-slate-300 border-l-4 border-l-green-500">
+          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Passed Today</div>
+          <div className="text-xl font-bold text-slate-800 mt-0.5 font-mono tabular-nums">{labStats.passedToday}</div>
+        </div>
+        <div className="bg-white px-4 py-2 border-r border-slate-300 border-l-4 border-l-red-500">
+          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Failed Today</div>
+          <div className="text-xl font-bold text-slate-800 mt-0.5 font-mono tabular-nums">{labStats.failedToday}</div>
+        </div>
+        <div className="bg-white px-4 py-2 border-l-4 border-l-orange-500">
+          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">In Quarantine</div>
+          <div className="text-xl font-bold text-slate-800 mt-0.5 font-mono tabular-nums">{labStats.quarantineTotal}</div>
+        </div>
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="flex gap-0 border-b border-slate-300 mb-4">
+        <button
+          onClick={() => setActiveTab('wb-trucks')}
+          className={`px-4 py-2 text-[11px] font-bold uppercase tracking-widest ${activeTab === 'wb-trucks' ? 'border-b-2 border-blue-600 text-blue-700 bg-white' : 'text-slate-500 hover:text-slate-700'}`}
+        >
+          Weighbridge Trucks ({labStats.pending} pending)
+        </button>
+        <button
+          onClick={() => setActiveTab('lab-analysis')}
+          className={`px-4 py-2 text-[11px] font-bold uppercase tracking-widest ${activeTab === 'lab-analysis' ? 'border-b-2 border-blue-600 text-blue-700 bg-white' : 'text-slate-500 hover:text-slate-700'}`}
+        >
+          Lab Analysis ({stats.totalCount})
+        </button>
+      </div>
+
+      {/* ========== WEIGHBRIDGE TRUCKS TAB ========== */}
+      {activeTab === 'wb-trucks' && (
+        <div>
+          {/* Pending Section Header */}
+          <div className="bg-slate-200 border border-slate-300 px-4 py-2">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Awaiting Lab Test ({labPending.length})</span>
+          </div>
+
+          {/* Pending Table */}
+          <div className="border-x border-b border-slate-300 overflow-x-auto">
+            {labPending.length === 0 ? (
+              <div className="px-4 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">No trucks pending lab test</div>
+            ) : (
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-slate-800 text-white">
+                    <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Vehicle</th>
+                    <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Supplier</th>
+                    <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Material</th>
+                    <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Gross</th>
+                    <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Tare</th>
+                    <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Net</th>
+                    <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Date</th>
+                    <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Lab</th>
+                    <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {labPending.map((t, i) => (
+                    <React.Fragment key={t.id}>
+                      <tr className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                        <td className="px-3 py-1.5 font-mono font-bold text-slate-800 border-r border-slate-100">{t.vehicleNo || '--'}</td>
+                        <td className="px-3 py-1.5 text-slate-700 border-r border-slate-100">{t.supplier || '--'}</td>
+                        <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">{t.remarks || '--'}</td>
+                        <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-700 border-r border-slate-100">{fmtWt(t.weightGross)}</td>
+                        <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-700 border-r border-slate-100">{fmtWt(t.weightTare)}</td>
+                        <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold text-slate-800 border-r border-slate-100">{fmtWt(t.weightNet)}</td>
+                        <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">
+                          <div>{fmtLabDate(t.date)}</div>
+                          <div className="text-[10px] text-slate-400">{fmtLabTime(t.date)}</div>
+                        </td>
+                        <td className="px-3 py-1.5 text-center border-r border-slate-100">
+                          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-yellow-300 bg-yellow-50 text-yellow-700">PENDING</span>
+                        </td>
+                        <td className="px-3 py-1.5 text-center">
+                          <button
+                            onClick={() => openLabTest(t.id)}
+                            className={`px-3 py-1 text-[11px] font-medium ${labTestingId === t.id ? 'bg-slate-600 text-white' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+                          >
+                            {labTestingId === t.id ? 'Cancel' : 'Test'}
+                          </button>
+                        </td>
+                      </tr>
+                      {labTestingId === t.id && (
+                        <tr className="bg-slate-100 border-b border-slate-300">
+                          <td colSpan={9} className="px-4 py-3">
+                            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                              <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Moisture % *</label>
+                                <input type="number" step="0.01" value={labForm.moisture}
+                                  onChange={e => setLabForm(f => ({ ...f, moisture: e.target.value }))}
+                                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
+                                  placeholder="e.g. 14.5" />
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Starch %</label>
+                                <input type="number" step="0.01" value={labForm.starchPercent}
+                                  onChange={e => setLabForm(f => ({ ...f, starchPercent: e.target.value }))}
+                                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
+                                  placeholder="e.g. 62" />
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Damaged %</label>
+                                <input type="number" step="0.01" value={labForm.damagedPercent}
+                                  onChange={e => setLabForm(f => ({ ...f, damagedPercent: e.target.value }))}
+                                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
+                                  placeholder="e.g. 2.5" />
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Foreign Matter %</label>
+                                <input type="number" step="0.01" value={labForm.foreignMatter}
+                                  onChange={e => setLabForm(f => ({ ...f, foreignMatter: e.target.value }))}
+                                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
+                                  placeholder="e.g. 1.0" />
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label>
+                                <input type="text" value={labForm.remarks}
+                                  onChange={e => setLabForm(f => ({ ...f, remarks: e.target.value }))}
+                                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
+                                  placeholder="Optional" />
+                              </div>
+                            </div>
+                            <div className="flex gap-2 mt-3">
+                              <button onClick={() => submitLabResult('PASS')} disabled={labSubmitting || !labForm.moisture}
+                                className="px-4 py-1.5 bg-green-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-green-700 disabled:opacity-50">
+                                PASS
+                              </button>
+                              <button onClick={() => submitLabResult('FAIL')} disabled={labSubmitting || !labForm.moisture}
+                                className="px-4 py-1.5 bg-red-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-red-700 disabled:opacity-50">
+                                FAIL
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* History Section Header */}
+          <div className="bg-slate-200 border-x border-b border-slate-300 px-4 py-2 mt-0">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Test History (Recent {labHistory.length})</span>
+          </div>
+
+          {/* History Table */}
+          <div className="border-x border-b border-slate-300 overflow-x-auto">
+            {labHistory.length === 0 ? (
+              <div className="px-4 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">No test history</div>
+            ) : (
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-slate-800 text-white">
+                    <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Vehicle</th>
+                    <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Supplier</th>
+                    <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Net Wt</th>
+                    <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Moisture</th>
+                    <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Starch</th>
+                    <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Damaged</th>
+                    <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">FM</th>
+                    <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Lab</th>
+                    <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {labHistory.map((t, i) => {
+                    const passed = !t.quarantine && t.moisture !== null;
+                    const failed = t.quarantine;
+                    return (
+                      <tr key={t.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                        <td className="px-3 py-1.5 font-mono font-bold text-slate-800 border-r border-slate-100">{t.vehicleNo || '--'}</td>
+                        <td className="px-3 py-1.5 text-slate-700 border-r border-slate-100">{t.supplier || '--'}</td>
+                        <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-700 border-r border-slate-100">{fmtWt(t.weightNet)}</td>
+                        <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-700 border-r border-slate-100">{t.moisture !== null ? t.moisture.toFixed(1) : '--'}</td>
+                        <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-700 border-r border-slate-100">{t.starchPercent !== null ? t.starchPercent.toFixed(1) : '--'}</td>
+                        <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-700 border-r border-slate-100">{t.damagedPercent !== null ? t.damagedPercent.toFixed(1) : '--'}</td>
+                        <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-700 border-r border-slate-100">{t.foreignMatter !== null ? t.foreignMatter.toFixed(1) : '--'}</td>
+                        <td className="px-3 py-1.5 text-center border-r border-slate-100">
+                          {failed ? (
+                            <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-red-300 bg-red-50 text-red-700">FAIL</span>
+                          ) : passed ? (
+                            <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-300 bg-green-50 text-green-700">PASS</span>
+                          ) : (
+                            <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-slate-300 bg-slate-50 text-slate-600">--</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-1.5 text-slate-600">
+                          <div>{fmtLabDate(t.date)}</div>
+                          <div className="text-[10px] text-slate-400">{fmtLabTime(t.date)}</div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ========== LAB ANALYSIS TAB (original content) ========== */}
+      {activeTab === 'lab-analysis' && (<>
 
       {/* Add Sample Button */}
       {!showForm && (
@@ -503,6 +814,7 @@ export default function RawMaterial() {
           );
         })}
       </div>
+      </>)}
     </ProcessPage>
   );
 }

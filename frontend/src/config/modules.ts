@@ -30,7 +30,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'grain-stock', label: 'Grain Store', to: '/process/grain-stock', icon: Wheat, group: 'process' },
   { key: 'grain-unloading', label: 'Grain Unloading', to: '/process/grain-unloading', icon: Wheat, group: 'process' },
   { key: 'raw-material', label: 'Raw Material', to: '/process/raw-material', icon: Wheat, group: 'process' },
-  { key: 'raw-material-testing', label: 'RM Testing', to: '/process/raw-material-testing', icon: Beaker, group: 'process' },
+  // raw-material-testing merged into raw-material page
   { key: 'milling', label: 'Milling', to: '/process/milling', icon: CogIcon, group: 'process' },
   { key: 'liquefaction', label: 'Liquefaction', to: '/process/liquefaction', icon: Droplets, group: 'process' },
   { key: 'fermentation', label: 'Fermentation', to: '/process/fermentation', icon: Beaker, group: 'process' },
