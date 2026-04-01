@@ -2,64 +2,163 @@ import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 
-interface GateEntryItem {
-  id: string;
-  vehicleNo: string;
-  direction: string;
-  purpose: string;
-  driverName: string | null;
-  driverPhone: string | null;
-  supplierName: string | null;
-  poNumber: string | null;
-  entryTime: string;
-  exitTime: string | null;
-  status: string;
-  createdAt: string;
-}
+interface Supplier { id: string; name: string }
+interface Material { id: string; name: string; category?: string }
+interface PO { id: string; po_no: number; vendor_name: string; status: string; lines: POLine[] }
+interface POLine { id: string; description: string; quantity: number; received_qty: number; pending_qty: number; rate: number; unit: string }
+interface Customer { id: string; name: string }
 
-const PURPOSES = ['RAW_MATERIAL', 'FUEL', 'CHEMICAL', 'DDGS_DISPATCH', 'VISITOR', 'OTHER'];
+const VEHICLE_TYPES = ['Truck 14 Wheel', 'Truck 10 Wheel', 'Truck 6 Wheel', 'Tractor Trolley', 'Pickup', 'Other'];
+const OUTBOUND_PRODUCTS = ['DDGS', 'Ethanol', 'Scrap', 'Press Mud', 'LFO', 'HFO', 'Ash', 'Other'];
+const PAYMENT_MODES = ['CASH', 'UPI', 'BANK_TRANSFER'];
 
 export default function GateEntry() {
-  const { token } = useAuth();
-  const [entries, setEntries] = useState<GateEntryItem[]>([]);
-  const [inside, setInside] = useState<GateEntryItem[]>([]);
-  const [showForm] = useState(true); // Always open — gate entry is the primary job
-  const [form, setForm] = useState({ vehicleNo: '', direction: 'INBOUND', purpose: 'RAW_MATERIAL', driverName: '', driverPhone: '', supplierName: '', poNumber: '' });
-  const [saving, setSaving] = useState(false);
-
+  const { token, user } = useAuth();
   const api = axios.create({ baseURL: '/api', headers: { Authorization: `Bearer ${token}` } });
 
-  const fetchData = useCallback(async () => {
+  // Master data
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [materials, setMaterials] = useState<Material[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [pos, setPos] = useState<PO[]>([]);
+  const [vehicles, setVehicles] = useState<string[]>([]);
+
+  // Form state
+  const [direction, setDirection] = useState<'INBOUND' | 'OUTBOUND'>('INBOUND');
+  const [purchaseType, setPurchaseType] = useState<'PO' | 'SPOT'>('PO');
+  const [vehicleNo, setVehicleNo] = useState('');
+  const [supplierName, setSupplierName] = useState('');
+  const [materialName, setMaterialName] = useState('');
+  const [selectedPoId, setSelectedPoId] = useState('');
+  const [selectedPoLineId, setSelectedPoLineId] = useState('');
+  const [poNumber, setPoNumber] = useState('');
+  const [transporter, setTransporter] = useState('');
+  const [vehicleType, setVehicleType] = useState('');
+  const [driverPhone, setDriverPhone] = useState('');
+  const [bags, setBags] = useState('');
+  const [remarks, setRemarks] = useState('');
+  // Spot fields
+  const [sellerPhone, setSellerPhone] = useState('');
+  const [sellerVillage, setSellerVillage] = useState('');
+  const [rate, setRate] = useState('');
+  const [paymentMode, setPaymentMode] = useState('CASH');
+  // Outbound
+  const [customerName, setCustomerName] = useState('');
+
+  const [saving, setSaving] = useState(false);
+  const [todayCount, setTodayCount] = useState(0);
+  const [vehicleSuggestions, setVehicleSuggestions] = useState<string[]>([]);
+  const [showVehicleSuggestions, setShowVehicleSuggestions] = useState(false);
+  const [masterLoading, setMasterLoading] = useState(true);
+  const [masterError, setMasterError] = useState(false);
+
+  // Load master data
+  const loadMasterData = useCallback(async () => {
+    setMasterLoading(true);
+    setMasterError(false);
     try {
-      const [entriesRes, insideRes] = await Promise.all([
-        api.get('/gate-entry?limit=50'),
-        api.get('/gate-entry/inside'),
-      ]);
-      setEntries(entriesRes.data);
-      setInside(insideRes.data);
-    } catch (err) { console.error(err); }
+      const res = await api.get('/master-data');
+      const data = res.data;
+      setSuppliers(data.suppliers || []);
+      setMaterials(data.materials || []);
+      setCustomers(data.customers || []);
+      setPos(data.pos || []);
+      setVehicles(data.vehicles || []);
+    } catch {
+      setMasterError(true);
+    } finally {
+      setMasterLoading(false);
+    }
   }, [token]);
 
-  useEffect(() => { fetchData(); const iv = setInterval(fetchData, 15000); return () => clearInterval(iv); }, [fetchData]);
+  // Load today's count
+  const loadCount = useCallback(async () => {
+    try {
+      const res = await api.get('/weighbridge/summary');
+      setTodayCount(res.data.totalTrucks || 0);
+    } catch { /* ignore */ }
+  }, [token]);
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
+  useEffect(() => { loadMasterData(); loadCount(); }, [loadMasterData, loadCount]);
+
+  // Filter POs by selected supplier
+  const filteredPOs = pos.filter(p => !supplierName || p.vendor_name.toLowerCase().includes(supplierName.toLowerCase()));
+  const selectedPO = pos.find(p => p.id === selectedPoId);
+
+  // Vehicle autocomplete
+  const handleVehicleChange = (v: string) => {
+    const upper = v.toUpperCase().replace(/\s/g, '');
+    setVehicleNo(upper);
+    if (upper.length >= 2) {
+      setVehicleSuggestions(vehicles.filter(x => x.includes(upper)).slice(0, 5));
+      setShowVehicleSuggestions(true);
+    } else {
+      setShowVehicleSuggestions(false);
+    }
+  };
+
+  // PO selection
+  const handlePoSelect = (poId: string) => {
+    setSelectedPoId(poId);
+    const po = pos.find(p => p.id === poId);
+    if (po) {
+      setPoNumber(String(po.po_no));
+      setSupplierName(po.vendor_name);
+      if (po.lines.length > 0) {
+        setSelectedPoLineId(po.lines[0].id);
+        setMaterialName(po.lines[0].description);
+      }
+    }
+  };
+
+  const resetForm = () => {
+    setVehicleNo(''); setSupplierName(''); setMaterialName('');
+    setSelectedPoId(''); setSelectedPoLineId(''); setPoNumber('');
+    setTransporter(''); setVehicleType(''); setDriverPhone('');
+    setBags(''); setRemarks('');
+    setSellerPhone(''); setSellerVillage(''); setRate(''); setPaymentMode('CASH');
+    setCustomerName('');
+  };
+
+  const handleSubmit = async () => {
+    if (!vehicleNo) { alert('Vehicle number is required'); return; }
     setSaving(true);
     try {
-      await api.post('/gate-entry', { ...form, vehicleNo: form.vehicleNo.toUpperCase().replace(/\s/g, '') });
-      setForm({ vehicleNo: '', direction: 'INBOUND', purpose: 'RAW_MATERIAL', driverName: '', driverPhone: '', supplierName: '', poNumber: '' }); // Reset form but keep open
-      fetchData();
-    } catch { alert('Failed to create entry'); }
-    finally { setSaving(false); }
+      const body: Record<string, unknown> = {
+        vehicleNo,
+        direction,
+        purchaseType: direction === 'OUTBOUND' ? 'OUTBOUND' : purchaseType,
+        supplierName: direction === 'OUTBOUND' ? customerName : supplierName,
+        materialName,
+        transporter, vehicleType, driverPhone,
+        bags: bags ? parseInt(bags) : undefined,
+        remarks,
+        operatorName: user?.name || user?.username,
+      };
+      if (direction === 'INBOUND' && purchaseType === 'PO') {
+        body.poId = selectedPoId || undefined;
+        body.poLineId = selectedPoLineId || undefined;
+        body.poNumber = poNumber || undefined;
+      }
+      if (direction === 'INBOUND' && purchaseType === 'SPOT') {
+        body.sellerPhone = sellerPhone;
+        body.sellerVillage = sellerVillage;
+        body.rate = rate ? parseFloat(rate) : undefined;
+        body.paymentMode = paymentMode;
+      }
+      const res = await api.post('/weighbridge/gate-entry', body);
+      const created = res.data;
+      window.open(`/api/weighbridge/print/gate-pass/${created.id}`, '_blank');
+      resetForm();
+      loadCount();
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response?.data?.error) {
+        alert(err.response.data.error);
+      } else {
+        alert('Failed to create gate entry');
+      }
+    } finally { setSaving(false); }
   };
-
-  const handleExit = async (id: string) => {
-    try { await api.patch(`/gate-entry/${id}/exit`); fetchData(); }
-    catch { alert('Failed to mark exit'); }
-  };
-
-  const fmtTime = (s: string) => new Date(s).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-  const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
 
   return (
     <div className="p-3 md:p-6 space-y-0">
@@ -68,139 +167,225 @@ export default function GateEntry() {
         <div className="flex items-center gap-3">
           <h1 className="text-sm font-bold tracking-wide uppercase">Gate Entry</h1>
           <span className="text-[10px] text-slate-400">|</span>
-          <span className="text-[10px] text-slate-400">Vehicle In/Out Register</span>
+          <span className="text-[10px] text-slate-400">Create entry and print QR pass</span>
         </div>
-        <button onClick={fetchData} className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">
-          Refresh
+        <div className="flex items-center gap-3">
+          {masterLoading && <span className="text-[10px] text-yellow-400 uppercase tracking-widest animate-pulse">Syncing cloud data...</span>}
+          {masterError && <span className="text-[10px] text-red-400 uppercase tracking-widest">Cloud data unavailable — manual entry enabled</span>}
+          {!masterLoading && !masterError && <span className="text-[10px] text-green-400 uppercase tracking-widest">Cloud data loaded</span>}
+          <span className="text-[10px] text-slate-400 uppercase tracking-widest">Today: {todayCount} trucks</span>
+        </div>
+      </div>
+
+      {/* Direction Toggle */}
+      <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 bg-slate-100 px-4 py-3 flex items-center gap-3">
+        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Direction:</span>
+        <button onClick={() => { setDirection('INBOUND'); setPurchaseType('PO'); }}
+          className={`px-4 py-1.5 text-[11px] font-bold uppercase ${direction === 'INBOUND' ? 'bg-green-600 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+          Inbound (Buy)
         </button>
+        <button onClick={() => setDirection('OUTBOUND')}
+          className={`px-4 py-1.5 text-[11px] font-bold uppercase ${direction === 'OUTBOUND' ? 'bg-orange-600 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+          Outbound (Sell)
+        </button>
+
+        {direction === 'INBOUND' && (
+          <>
+            <span className="text-slate-300 mx-2">|</span>
+            <button onClick={() => setPurchaseType('PO')}
+              className={`px-3 py-1.5 text-[11px] font-bold uppercase ${purchaseType === 'PO' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+              PO Purchase
+            </button>
+            <button onClick={() => setPurchaseType('SPOT')}
+              className={`px-3 py-1.5 text-[11px] font-bold uppercase ${purchaseType === 'SPOT' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+              Spot Purchase
+            </button>
+          </>
+        )}
       </div>
 
-      {/* KPI Strip */}
-      <div className="grid grid-cols-3 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
-        <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-green-500">
-          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Inside Now</div>
-          <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{inside.length}</div>
-        </div>
-        <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-blue-500">
-          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Today Total</div>
-          <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{entries.length}</div>
-        </div>
-        <div className="bg-white px-4 py-3 border-l-4 border-l-orange-500">
-          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Inbound</div>
-          <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{entries.filter(e => e.direction === 'INBOUND').length}</div>
-        </div>
-      </div>
+      {/* Form */}
+      <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 bg-white p-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 
-      {/* New Entry Form */}
-      {showForm && (
-        <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 bg-white">
-          <div className="bg-slate-200 px-4 py-1.5 border-b border-slate-300">
-            <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">New Vehicle Entry</span>
-          </div>
-          <form onSubmit={handleCreate} className="p-4 space-y-3">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Vehicle No</label>
-                <input value={form.vehicleNo} onChange={e => setForm({ ...form, vehicleNo: e.target.value })}
-                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="MP 20 XX 1234" required autoFocus />
+          {/* Vehicle Number */}
+          <div className="relative">
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Vehicle Number *</label>
+            <input value={vehicleNo} onChange={e => handleVehicleChange(e.target.value)}
+              onBlur={() => setTimeout(() => setShowVehicleSuggestions(false), 200)}
+              className="w-full border border-slate-300 px-2.5 py-1.5 text-xs font-mono uppercase focus:outline-none focus:ring-1 focus:ring-slate-400"
+              placeholder="e.g. MP20GA1234" />
+            {showVehicleSuggestions && vehicleSuggestions.length > 0 && (
+              <div className="absolute z-10 w-full bg-white border border-slate-300 shadow-lg mt-0.5 max-h-32 overflow-y-auto">
+                {vehicleSuggestions.map(v => (
+                  <button key={v} onClick={() => { setVehicleNo(v); setShowVehicleSuggestions(false); }}
+                    className="w-full text-left px-2.5 py-1.5 text-xs font-mono hover:bg-blue-50 border-b border-slate-100">{v}</button>
+                ))}
               </div>
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Direction</label>
-                <select value={form.direction} onChange={e => setForm({ ...form, direction: e.target.value })}
-                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none">
-                  <option value="INBOUND">INBOUND</option>
-                  <option value="OUTBOUND">OUTBOUND</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Purpose</label>
-                <select value={form.purpose} onChange={e => setForm({ ...form, purpose: e.target.value })}
-                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none">
-                  {PURPOSES.map(p => <option key={p} value={p}>{p.replace(/_/g, ' ')}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Driver Name</label>
-                <input value={form.driverName} onChange={e => setForm({ ...form, driverName: e.target.value })}
-                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none" placeholder="Driver name" />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Driver Phone</label>
-                <input value={form.driverPhone} onChange={e => setForm({ ...form, driverPhone: e.target.value })}
-                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none" placeholder="Phone number" />
-              </div>
-              <div className="md:col-span-2">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Supplier / Company</label>
-                <input value={form.supplierName} onChange={e => setForm({ ...form, supplierName: e.target.value })}
-                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none" placeholder="Supplier or company name" />
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">PO Number</label>
-                <input value={form.poNumber} onChange={e => setForm({ ...form, poNumber: e.target.value })}
-                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none" placeholder="Optional" />
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button type="submit" disabled={saving} className="px-4 py-1.5 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">
-                {saving ? 'Saving...' : 'Save Entry'}
-              </button>
-              <button type="reset" onClick={() => setForm({ vehicleNo: '', direction: 'INBOUND', purpose: 'RAW_MATERIAL', driverName: '', driverPhone: '', supplierName: '', poNumber: '' })} className="px-4 py-1.5 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">
-                Clear
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* Table */}
-      <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-hidden">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="bg-slate-800 text-white">
-              <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Vehicle</th>
-              <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Dir</th>
-              <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Purpose</th>
-              <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Supplier</th>
-              <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Driver</th>
-              <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Entry</th>
-              <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Status</th>
-              <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.map((e, i) => (
-              <tr key={e.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
-                <td className="px-3 py-1.5 text-slate-800 font-mono font-bold border-r border-slate-100">{e.vehicleNo}</td>
-                <td className="px-3 py-1.5 border-r border-slate-100">
-                  <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${e.direction === 'INBOUND' ? 'border-green-300 bg-green-50 text-green-700' : 'border-orange-300 bg-orange-50 text-orange-700'}`}>
-                    {e.direction === 'INBOUND' ? 'IN' : 'OUT'}
-                  </span>
-                </td>
-                <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">{e.purpose?.replace(/_/g, ' ')}</td>
-                <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">{e.supplierName || '--'}</td>
-                <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">{e.driverName || '--'}</td>
-                <td className="px-3 py-1.5 text-slate-500 font-mono border-r border-slate-100">{fmtDate(e.entryTime)} {fmtTime(e.entryTime)}</td>
-                <td className="px-3 py-1.5 text-center border-r border-slate-100">
-                  <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${e.status === 'INSIDE' ? 'border-yellow-300 bg-yellow-50 text-yellow-700' : 'border-slate-300 bg-slate-50 text-slate-500'}`}>
-                    {e.status}
-                  </span>
-                </td>
-                <td className="px-3 py-1.5 text-center">
-                  {e.status === 'INSIDE' && (
-                    <button onClick={() => handleExit(e.id)} className="px-3 py-1 bg-red-600 text-white text-[10px] font-bold uppercase hover:bg-red-700">
-                      Exit
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {entries.length === 0 && (
-              <tr><td colSpan={8} className="text-center py-8 text-xs text-slate-400 uppercase tracking-widest">No entries today</td></tr>
             )}
-          </tbody>
-        </table>
+          </div>
+
+          {/* Supplier / Customer */}
+          {direction === 'OUTBOUND' ? (
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">
+                Customer {masterLoading && <span className="text-yellow-500 animate-pulse">searching...</span>}
+              </label>
+              {customers.length > 0 ? (
+                <select value={customerName} onChange={e => setCustomerName(e.target.value)}
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+                  <option value="">-- Select --</option>
+                  {customers.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                </select>
+              ) : (
+                <input value={customerName} onChange={e => setCustomerName(e.target.value)}
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
+                  placeholder={masterLoading ? 'Loading from cloud...' : 'Type customer name'} />
+              )}
+            </div>
+          ) : (
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">
+                {purchaseType === 'SPOT' ? 'Seller Name' : 'Supplier'}
+                {purchaseType === 'PO' && masterLoading && <span className="text-yellow-500 animate-pulse ml-1">searching...</span>}
+              </label>
+              {purchaseType === 'PO' && suppliers.length > 0 ? (
+                <select value={supplierName} onChange={e => { setSupplierName(e.target.value); setSelectedPoId(''); }}
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+                  <option value="">-- Select --</option>
+                  {suppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                </select>
+              ) : (
+                <input value={supplierName} onChange={e => { setSupplierName(e.target.value); setSelectedPoId(''); }}
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
+                  placeholder={masterLoading ? 'Loading from cloud...' : 'Type supplier/seller name'} />
+              )}
+            </div>
+          )}
+
+          {/* Material / Product */}
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">
+              Product {direction === 'INBOUND' && masterLoading && <span className="text-yellow-500 animate-pulse ml-1">searching...</span>}
+            </label>
+            {direction === 'OUTBOUND' ? (
+              <select value={materialName} onChange={e => setMaterialName(e.target.value)}
+                className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+                <option value="">-- Select --</option>
+                {OUTBOUND_PRODUCTS.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            ) : materials.length > 0 ? (
+              <select value={materialName} onChange={e => setMaterialName(e.target.value)}
+                className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+                <option value="">-- Select --</option>
+                {materials.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+              </select>
+            ) : (
+              <input value={materialName} onChange={e => setMaterialName(e.target.value)}
+                className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
+                placeholder={masterLoading ? 'Loading from cloud...' : 'Type material name'} />
+            )}
+          </div>
+
+          {/* PO Selector (only for PO purchase) */}
+          {direction === 'INBOUND' && purchaseType === 'PO' && (
+            <div className="md:col-span-3">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">
+                Purchase Order {masterLoading && <span className="text-yellow-500 animate-pulse ml-1">searching cloud POs...</span>}
+                {!masterLoading && pos.length === 0 && !masterError && <span className="text-slate-400 ml-1">(no open POs found)</span>}
+              </label>
+              {filteredPOs.length > 0 ? (
+                <select value={selectedPoId} onChange={e => handlePoSelect(e.target.value)}
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+                  <option value="">-- Select PO --</option>
+                  {filteredPOs.map(po => (
+                    <option key={po.id} value={po.id}>
+                      PO#{po.po_no} | {po.vendor_name} | {po.lines[0]?.description || '?'} | Pending: {po.lines[0]?.pending_qty || 0} {po.lines[0]?.unit || 'KG'}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input value={poNumber} onChange={e => setPoNumber(e.target.value)}
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-slate-400"
+                  placeholder={masterLoading ? 'Searching cloud POs...' : 'No POs found — type PO number manually'} />
+              )}
+              {selectedPO && selectedPO.lines[0] && (
+                <div className="mt-2 bg-slate-50 border border-slate-200 px-3 py-2 text-xs">
+                  <span className="font-bold">PO #{selectedPO.po_no}</span> | Rate: {selectedPO.lines[0].rate}/{selectedPO.lines[0].unit} | Pending: {selectedPO.lines[0].pending_qty} {selectedPO.lines[0].unit}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Spot purchase fields */}
+          {direction === 'INBOUND' && purchaseType === 'SPOT' && (
+            <>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Seller Phone</label>
+                <input value={sellerPhone} onChange={e => setSellerPhone(e.target.value)}
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="9876543210" />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Seller Village</label>
+                <input value={sellerVillage} onChange={e => setSellerVillage(e.target.value)}
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Rate (per KG)</label>
+                <input value={rate} onChange={e => setRate(e.target.value)} type="number" step="0.01"
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="0.00" />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Payment Mode</label>
+                <select value={paymentMode} onChange={e => setPaymentMode(e.target.value)}
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+                  {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+            </>
+          )}
+
+          {/* Common fields */}
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Transporter</label>
+            <input value={transporter} onChange={e => setTransporter(e.target.value)}
+              className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Vehicle Type</label>
+            <select value={vehicleType} onChange={e => setVehicleType(e.target.value)}
+              className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+              <option value="">-- Select --</option>
+              {VEHICLE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Driver Mobile</label>
+            <input value={driverPhone} onChange={e => setDriverPhone(e.target.value)}
+              className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="9876543210" />
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Bags</label>
+            <input value={bags} onChange={e => setBags(e.target.value)} type="number"
+              className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="0" />
+          </div>
+          <div className="md:col-span-2">
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Remarks</label>
+            <input value={remarks} onChange={e => setRemarks(e.target.value)}
+              className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+          </div>
+        </div>
+
+        {/* Submit */}
+        <div className="mt-4 flex items-center gap-3">
+          <button onClick={handleSubmit} disabled={saving || !vehicleNo}
+            className="px-6 py-2.5 bg-green-600 text-white text-sm font-bold uppercase tracking-widest hover:bg-green-700 disabled:opacity-50">
+            {saving ? 'Creating...' : 'CREATE GATE ENTRY & PRINT PASS'}
+          </button>
+          <button onClick={resetForm} className="px-4 py-2 bg-white border border-slate-300 text-slate-600 text-[11px] font-bold uppercase hover:bg-slate-50">
+            Clear
+          </button>
+        </div>
       </div>
     </div>
   );

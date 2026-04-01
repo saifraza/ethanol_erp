@@ -154,6 +154,7 @@ export async function pullMasterData(): Promise<Record<string, number>> {
           materialId: firstLine?.inventory_item_id || '',
           quantity: firstLine?.quantity || 0,
           receivedQty: firstLine?.received_qty || 0,
+          rate: firstLine?.rate || 0,
           unit: firstLine?.unit || 'KG', status: po.status,
         },
         update: {
@@ -162,6 +163,7 @@ export async function pullMasterData(): Promise<Record<string, number>> {
           materialId: firstLine?.inventory_item_id || '',
           quantity: firstLine?.quantity || 0,
           receivedQty: firstLine?.received_qty || 0,
+          rate: firstLine?.rate || 0,
           unit: firstLine?.unit || 'KG', status: po.status, updatedAt: new Date(),
         },
       });

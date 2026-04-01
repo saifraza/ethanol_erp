@@ -17,7 +17,26 @@ router.get('/', asyncHandler(async (_req: Request, res: Response) => {
     prisma.cachedCustomer.findMany({ orderBy: { name: 'asc' } }),
   ]);
 
-  res.json({ suppliers, materials, purchaseOrders, customers });
+  // Reshape cached POs to match what GateEntry frontend expects: { id, po_no, vendor_name, lines[] }
+  const pos = purchaseOrders.map(po => ({
+    id: po.id,
+    po_no: parseInt(po.poNumber) || 0,
+    vendor_name: po.supplierName,
+    vendor_id: po.supplierId,
+    status: po.status,
+    lines: [{
+      id: po.id,
+      inventory_item_id: po.materialId,
+      description: po.materialName,
+      quantity: po.quantity,
+      received_qty: po.receivedQty,
+      pending_qty: po.quantity - po.receivedQty,
+      rate: po.rate,
+      unit: po.unit,
+    }],
+  }));
+
+  res.json({ suppliers, materials, pos, customers, vehicles: [] });
 }));
 
 // POST /api/master-data/refresh — pull latest from cloud ERP

@@ -284,37 +284,127 @@ distillery-erp/
 
 ## Current Known Issues
 
-1. **Weight = 0 in file mode** — WtService uses 8-bit instead of 7-bit, can't read indicator. Fix: either change WtService config or switch to serial mode permanently.
-2. **Factory server frontend was not served** — FIXED: now wired up, build outputs to public/.
+1. **Weight = 0 in file mode** — WtService uses 8-bit instead of 7-bit, weight file stays empty. Operators use manual weight entry. Fix: change `ComDataBits` from 8 to 7 in `D:\WT\WtService.exe.config` (needs factory coordination).
+2. **WtService is RE-ENABLED** — disabling it halted old gate entry (2026-03-31 incident). Python runs in FILE mode alongside it. Serial mode works but conflicts with WtService on COM1.
 3. **Only 1 WB PC active** — PC at 192.168.0.83. Architecture supports N PCs, just deploy.
-4. **No weighment correction UI** — PUT endpoint exists but no frontend page for it yet.
+4. **Factory app migration in progress** — GrossWeighment.tsx, TareWeighment.tsx not yet built. See `.claude/plans/breezy-scribbling-quilt.md`.
 
 ---
 
-## Deployment Checklist for Factory Server
+## Server Specs
 
-After code changes:
+| Item | Value |
+|------|-------|
+| **Hostname** | WIN-PBMJ9RMTO6L |
+| **OS** | Windows Server 2019 Standard (Build 17763) |
+| **RAM** | 65 GB |
+| **Disk C:** | 307 GB total, 194 GB free |
+| **Disk E:** | 586 GB total, 313 GB free |
+| **LAN IP 1** | 192.168.0.10 (Embedded NIC 2) |
+| **LAN IP 2** | 192.168.0.92 (Embedded NIC 1) |
+| **Tailscale IP** | 100.126.101.7 |
+| **User** | Administrator / Mspil@1212 |
+| **SSH** | Port 22 (OpenSSH, auto-start) |
+| **Node.js** | v18.20.5 |
+| **Sleep** | Disabled (24/7) |
+
+### Existing Services (DO NOT TOUCH)
+
+| Service | Port | Status |
+|---------|------|--------|
+| Oracle XE 11g | 1521 | Running — Print Consol depends on it |
+| Unknown | 8070, 8080, 8888 | Listening — investigate before using |
+
+### Port Allocation
+
+| Port | Service | Status |
+|------|---------|--------|
+| 5000 | Factory Backend API + React Frontend | **LIVE** |
+| 5432 | PostgreSQL 16 | **LIVE** |
+| 8098 | Weighbridge PC Flask (not on this server) | Reserved |
+| 8099 | OPC Bridge (not on this server) | Reserved |
+
+---
+
+## SSH & Deploy
+
+### SSH from Mac (via Tailscale)
 ```bash
-# 1. Build frontend
-cd factory-server/frontend && npm run build
+# Factory Server
+sshpass -p 'Mspil@1212' ssh -o StrictHostKeyChecking=no Administrator@100.126.101.7
 
-# 2. Compile backend
-cd factory-server && npx tsc --noEmit
+# Weighbridge PC (Tailscale must be on)
+sshpass -p 'acer@123' ssh -o StrictHostKeyChecking=no abc@100.91.152.57
 
-# 3. Deploy to factory server via SCP
-scp -r factory-server/ user@100.126.101.7:C:/mspil-factory-server/
-
-# 4. Restart on factory server
-# (SSH to 100.126.101.7, restart the Node service)
+# Lab PC
+sshpass -p '123' ssh -o StrictHostKeyChecking=no abc@100.74.209.72
 ```
 
-## Deployment Checklist for WB PC App
-
+### Deploy Factory Server
 ```bash
-# From dev machine:
-cd weighbridge
-./deploy.sh 100.91.152.57   # or whatever the PC's Tailscale IP is
+cd ~/Desktop/distillery-erp/factory-server
+npx tsc --outDir dist
+cd frontend && npx vite build && cd ..
+sshpass -p 'Mspil@1212' ssh Administrator@100.126.101.7 "taskkill /F /IM node.exe 2>&1"
+sshpass -p 'Mspil@1212' scp -r -o StrictHostKeyChecking=no dist/* Administrator@100.126.101.7:C:/mspil/factory-server/dist/
+sshpass -p 'Mspil@1212' scp -r -o StrictHostKeyChecking=no public/* Administrator@100.126.101.7:C:/mspil/factory-server/public/
+sshpass -p 'Mspil@1212' scp -o StrictHostKeyChecking=no prisma/schema.prisma Administrator@100.126.101.7:C:/mspil/factory-server/prisma/
+# If schema changed:
+sshpass -p 'Mspil@1212' ssh Administrator@100.126.101.7 "cd C:\mspil\factory-server && npx prisma db push"
+# Start:
+sshpass -p 'Mspil@1212' ssh Administrator@100.126.101.7 "cd C:\mspil\factory-server && node dist/server.js &"
+```
 
+### Deploy Weighbridge PC
+```bash
+cd ~/Desktop/distillery-erp/weighbridge
+sshpass -p 'acer@123' scp -o StrictHostKeyChecking=no *.py abc@100.91.152.57:C:/mspil/weighbridge/
+sshpass -p 'acer@123' scp -o StrictHostKeyChecking=no templates/*.html abc@100.91.152.57:C:/mspil/weighbridge/templates/
 # CRITICAL: restart Flask after deploy (templates cached in memory!)
-ssh user@100.91.152.57 'taskkill /f /im python.exe && cd C:\mspil-weighbridge && start python run.py'
+sshpass -p 'acer@123' ssh abc@100.91.152.57 "taskkill /F /IM pythonw.exe 2>&1"
+sleep 2
+sshpass -p 'acer@123' ssh abc@100.91.152.57 "schtasks /run /tn \"MSPIL Weighbridge\""
 ```
+
+---
+
+## Troubleshooting
+
+### Weighbridge shows weight=0 but connected=true
+- No truck on scale (normal for empty scale), OR
+- WtService 8-bit bug — weight file stays empty. Manual entry works as fallback.
+
+### Weighbridge shows connected=false
+- COM1 conflict — check WtService: `sc query WTReadingNew`
+- Service crashed — restart: `schtasks /run /tn "MSPIL Weighbridge"`
+- Delete PID file first: `Remove-Item C:\mspil\weighbridge\data\weighbridge.pid -Force`
+
+### "table weighments has no column named X"
+- SQLite schema outdated — delete DB and restart:
+```bash
+sshpass -p 'acer@123' ssh abc@100.91.152.57 "taskkill /F /IM pythonw.exe 2>&1"
+sshpass -p 'acer@123' ssh abc@100.91.152.57 "powershell -Command \"Remove-Item 'C:\mspil\weighbridge\data\weighbridge.db*' -Force\""
+sshpass -p 'acer@123' ssh abc@100.91.152.57 "schtasks /run /tn \"MSPIL Weighbridge\""
+```
+
+### Account locked out ("referenced account is currently locked out")
+- Too many failed SSH attempts. Hard reboot the PC, or wait 30 min.
+
+### Factory server won't start
+- Check schtask: `schtasks /query /tn "MSPIL Factory Server"`
+- Port 5000 in use: `netstat -an | findstr 5000`
+
+---
+
+## Safety Rules
+
+1. **NEVER stop/disable WtService** (WTReadingNew) — halted old gate entry on 2026-03-31
+2. **NEVER stop/modify Oracle XE** or Print Consol — legacy system still in use
+3. **NEVER use ports** 1521, 8070, 8080, 8888 — already in use
+4. **NEVER rapidly retry SSH** — causes Windows account lockout (30 min or reboot)
+5. **NEVER delete** `C:\mspil\weighbridge\certs\` on OPC PC
+6. **ALWAYS restart service after deploying** — Flask caches templates in memory
+7. **ALWAYS use schtasks** for auto-start (survives SSH disconnect)
+8. **ALWAYS delete weighbridge.db** when SQLite schema changes
+9. **ALWAYS use pure black (#000) text** in slip templates — thermal printers can't print gray
+10. **ALWAYS keep sleep disabled** on all factory PCs

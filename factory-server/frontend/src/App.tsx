@@ -3,11 +3,14 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import GateEntry from './pages/GateEntry';
+import GrossWeighment from './pages/GrossWeighment';
+import TareWeighment from './pages/TareWeighment';
 import Weighment from './pages/Weighment';
+import History from './pages/History';
 import AdminDashboard from './pages/AdminDashboard';
 import UserManagement from './pages/UserManagement';
 
-// Multi-role: role field can be comma-separated e.g. "GATE_ENTRY,WEIGHBRIDGE"
+// Multi-role: role field can be comma-separated e.g. "GATE_ENTRY,GROSS_WB"
 function hasRole(userRole: string, ...check: string[]): boolean {
   if (userRole === 'ADMIN') return true;
   const roles = userRole.split(',').map(r => r.trim());
@@ -37,8 +40,9 @@ function AppRoutes() {
     const first = role.split(',')[0].trim();
     switch (first) {
       case 'GATE_ENTRY': return '/gate-entry';
-      case 'WEIGHBRIDGE': return '/weighment';
-      default: return '/gate-entry';
+      case 'GROSS_WB': return '/gross';
+      case 'TARE_WB': return '/tare';
+      default: return '/weighment';
     }
   };
 
@@ -48,9 +52,14 @@ function AppRoutes() {
         <Route path="/gate-entry" element={
           hasRole(user.role, 'GATE_ENTRY') ? <GateEntry /> : <Navigate to={homeFor(user.role)} />
         } />
-        <Route path="/weighment" element={
-          hasRole(user.role, 'WEIGHBRIDGE') ? <Weighment /> : <Navigate to={homeFor(user.role)} />
+        <Route path="/gross" element={
+          hasRole(user.role, 'GROSS_WB') ? <GrossWeighment /> : <Navigate to={homeFor(user.role)} />
         } />
+        <Route path="/tare" element={
+          hasRole(user.role, 'TARE_WB') ? <TareWeighment /> : <Navigate to={homeFor(user.role)} />
+        } />
+        <Route path="/weighment" element={<Weighment />} />
+        <Route path="/history" element={<History />} />
         <Route path="/dashboard" element={
           isAdmin(user.role) ? <AdminDashboard /> : <Navigate to={homeFor(user.role)} />
         } />

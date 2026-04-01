@@ -853,7 +853,9 @@ const PurchaseOrders: React.FC = () => {
                               <td className="px-2 py-1 border-r border-slate-100">
                                 <input type="number" value={line.discountPercent || ''} onChange={(e) => handleUpdateLine(idx, 'discountPercent', e.target.value === '' ? 0 : parseFloat(e.target.value))} className="border border-slate-300 px-1.5 py-1 text-xs w-16 text-right focus:outline-none focus:ring-1 focus:ring-slate-400" />
                               </td>
-                              <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums text-slate-500">{line.gstPercent}%</td>
+                              <td className="px-2 py-1 border-r border-slate-100">
+                                <input type="number" value={line.gstPercent || ''} onChange={(e) => handleUpdateLine(idx, 'gstPercent', e.target.value === '' ? 0 : parseFloat(e.target.value))} className="border border-slate-300 px-1.5 py-1 text-xs w-16 text-right focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                              </td>
                               <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums text-slate-500">
                                 {(() => { const a = line.quantity * line.rate; const d = a * (line.discountPercent / 100); return ((a - d) * line.gstPercent / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 }); })()}
                               </td>
@@ -892,6 +894,10 @@ const PurchaseOrders: React.FC = () => {
                       <div>
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Discount %</label>
                         <input type="number" value={newLine.discountPercent || ''} onChange={(e) => setNewLine({ ...newLine, discountPercent: e.target.value === '' ? 0 : parseFloat(e.target.value) })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">GST %</label>
+                        <input type="number" value={newLine.gstPercent || ''} onChange={(e) => setNewLine({ ...newLine, gstPercent: e.target.value === '' ? 0 : parseFloat(e.target.value) })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="18" />
                       </div>
                     </div>
                     <button type="button" onClick={handleAddLine} className="mt-3 px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 flex items-center gap-1">

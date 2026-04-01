@@ -54,10 +54,12 @@ export function requireRole(...roles: string[]) {
       res.status(401).json({ error: 'Not authenticated' });
       return;
     }
-    if (!roles.includes(req.user.role)) {
-      res.status(403).json({ error: 'Access denied' });
+    // Support comma-separated multi-roles (e.g. "GATE_ENTRY,GROSS_WB")
+    const userRoles = req.user.role.split(',').map(r => r.trim());
+    if (userRoles.includes('ADMIN') || userRoles.some(r => roles.includes(r))) {
+      next();
       return;
     }
-    next();
+    res.status(403).json({ error: 'Access denied' });
   };
 }

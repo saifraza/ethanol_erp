@@ -28,34 +28,67 @@ model FactoryUser {
 }
 
 // --- WEIGHMENTS ---
-// Received from weighbridge PCs, synced to cloud ERP
+// Central weighment records — all PCs create/update via factory server API
 model Weighment {
   id            String   @id @default(uuid())
-  localId       String   @unique // UUID from the weighbridge PC
-  pcId          String   // Which PC sent this (WB1, WB2, etc.)
+  localId       String   @unique // UUID (used in QR codes)
+  ticketNo      Int?     @unique // Auto-increment ticket number for slips
+  pcId          String   // Which PC created gate entry
   pcName        String?
   vehicleNo     String
   direction     String   // INBOUND, OUTBOUND
   // Purchase info
   purchaseType  String?  // PO, SPOT, OUTBOUND
   poNumber      String?
+  poId          String?  // Cloud PO UUID
+  poLineId      String?  // Cloud PO line UUID
   supplierName  String?
   supplierId    String?
   materialName  String?
   materialId    String?
+  // Gate entry details
+  gateEntryNo   String?
+  transporter   String?
+  vehicleType   String?  // Truck 14W, 10W, 6W, Tractor Trolley, Pickup
+  driverName    String?
+  driverPhone   String?
+  operatorName  String?  // Who created gate entry
+  shift         String?  // First Shift, Second Shift, Third Shift
+  bags          Int?
+  remarks       String?
+  // Spot purchase fields
+  sellerPhone   String?
+  sellerVillage String?
+  sellerAadhaar String?
+  rate          Float?   // Per KG rate
+  deductions    Float?
+  deductionReason String?
+  paymentMode   String?  // CASH, UPI, BANK_TRANSFER
+  paymentRef    String?
   // Weights
   grossWeight   Float?
   tareWeight    Float?
   netWeight     Float?
+  weightSource  String?  // SERIAL, MANUAL
+  grossPcId     String?  // Which PC captured gross weight
+  tarePcId      String?  // Which PC captured tare weight
   grossTime     DateTime?
   tareTime      DateTime?
+  // Lab quality fields
+  labStatus       String?  @default("PENDING") // PENDING, PASS, FAIL
+  labMoisture     Float?
+  labStarch       Float?
+  labDamaged      Float?
+  labForeignMatter Float?
+  labRemarks      String?
+  labTestedAt     DateTime?
+  labTestedBy     String?
   // Status
-  status        String   @default("GATE_ENTRY") // GATE_ENTRY, GROSS_DONE, COMPLETE
-  // Gate entry
-  gateEntryNo   String?
-  driverName    String?
-  driverPhone   String?
-  remarks       String?
+  status        String   @default("GATE_ENTRY") // GATE_ENTRY, FIRST_DONE, COMPLETE, CANCELLED
+  // Timestamps
+  gateEntryAt   DateTime?
+  firstWeightAt DateTime?
+  secondWeightAt DateTime?
   // Cloud sync
   cloudSynced   Boolean  @default(false)
   cloudSyncedAt DateTime?
@@ -66,10 +99,19 @@ model Weighment {
   updatedAt     DateTime @updatedAt
 
   @@index([pcId])
+  @@index([ticketNo])
   @@index([status])
   @@index([cloudSynced])
   @@index([vehicleNo])
   @@index([createdAt])
+  @@index([labStatus])
+}
+
+// --- COUNTERS ---
+// Auto-increment ticket numbers, shift counters, etc.
+model Counter {
+  id    String @id        // e.g. "ticket_no"
+  value Int    @default(0)
 }
 
 // --- GATE ENTRIES ---
@@ -160,6 +202,7 @@ model CachedPurchaseOrder {
   materialId     String
   quantity       Float
   receivedQty    Float    @default(0)
+  rate           Float    @default(0)
   unit           String
   status         String
   updatedAt      DateTime @default(now())

@@ -13,8 +13,9 @@ interface FactoryUser {
 
 const ROLES = [
   { value: 'ADMIN', label: 'Admin', desc: 'Full access to all pages' },
-  { value: 'GATE_ENTRY', label: 'Gate Entry', desc: 'Gate entry page only' },
-  { value: 'WEIGHBRIDGE', label: 'Weighbridge', desc: 'Weighment monitoring only' },
+  { value: 'GATE_ENTRY', label: 'Gate Entry', desc: 'Gate entry and pass printing' },
+  { value: 'GROSS_WB', label: 'Gross WB', desc: 'Gross weighment capture' },
+  { value: 'TARE_WB', label: 'Tare WB', desc: 'Tare weighment capture' },
   { value: 'FUEL_YARD', label: 'Fuel Yard', desc: 'Fuel intake tracking' },
   { value: 'LAB', label: 'Lab', desc: 'Lab data entry' },
 ];
@@ -22,7 +23,8 @@ const ROLES = [
 const ROLE_COLORS: Record<string, string> = {
   ADMIN: 'border-purple-300 bg-purple-50 text-purple-700',
   GATE_ENTRY: 'border-green-300 bg-green-50 text-green-700',
-  WEIGHBRIDGE: 'border-blue-300 bg-blue-50 text-blue-700',
+  GROSS_WB: 'border-blue-300 bg-blue-50 text-blue-700',
+  TARE_WB: 'border-amber-300 bg-amber-50 text-amber-700',
   FUEL_YARD: 'border-orange-300 bg-orange-50 text-orange-700',
   LAB: 'border-cyan-300 bg-cyan-50 text-cyan-700',
 };
