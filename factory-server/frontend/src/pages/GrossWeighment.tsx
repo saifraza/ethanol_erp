@@ -11,6 +11,7 @@ interface WeighmentRecord {
   poNumber: string | null;
   supplierName: string | null;
   materialName: string | null;
+  materialCategory: string | null;
   grossWeight: number | null;
   tareWeight: number | null;
   netWeight: number | null;
@@ -45,6 +46,10 @@ export default function GrossWeighment() {
   const [capturing, setCapturing] = useState(false);
   const [manualWeight, setManualWeight] = useState('');
   const [showManual, setShowManual] = useState(false);
+
+  // Fuel quick lab check (moisture only, done at gross WB)
+  const [fuelMoisture, setFuelMoisture] = useState('');
+  const [labSaving, setLabSaving] = useState(false);
 
   const scanRef = useRef<HTMLInputElement>(null);
   const scaleTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -115,6 +120,22 @@ export default function GrossWeighment() {
       handleScan(scanInput);
       setScanInput('');
     }
+  };
+
+  // Fuel quick lab check (moisture + pass/fail at gross WB)
+  const handleFuelLab = async (result: 'PASS' | 'FAIL') => {
+    if (!scannedRecord) return;
+    setLabSaving(true);
+    try {
+      await api.post(`/weighbridge/${scannedRecord.id}/lab`, {
+        labStatus: result,
+        labMoisture: parseFloat(fuelMoisture) || 0,
+      });
+      const res = await api.get(`/weighbridge/lookup/${scannedRecord.localId}`);
+      setScannedRecord(res.data);
+      setFuelMoisture('');
+    } catch { alert('Failed to save lab data'); }
+    finally { setLabSaving(false); }
   };
 
   // Capture gross weight
@@ -300,18 +321,54 @@ export default function GrossWeighment() {
             )}
           </div>
 
-          {/* Lab Status Display (lab testing is done on cloud ERP, not here) */}
-          {scannedRecord.direction === 'INBOUND' && scannedRecord.labStatus === 'PENDING' && (
+          {/* Lab Section — varies by material category */}
+          {scannedRecord.direction === 'INBOUND' && scannedRecord.labStatus === 'PENDING' && scannedRecord.materialCategory === 'FUEL' && (
+            <div className="border-t border-amber-200 bg-amber-50 p-4">
+              <div className="text-[10px] font-bold text-amber-700 uppercase tracking-widest mb-3">Fuel Quality Check (Quick)</div>
+              <div className="flex items-center gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Moisture %</label>
+                  <input value={fuelMoisture} onChange={e => setFuelMoisture(e.target.value)} type="number" step="0.1"
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-24 focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="0.0" />
+                </div>
+                <div className="flex gap-2 mt-4">
+                  <button onClick={() => handleFuelLab('PASS')} disabled={labSaving}
+                    className="px-4 py-1.5 bg-green-600 text-white text-[11px] font-bold uppercase hover:bg-green-700 disabled:opacity-50">
+                    {labSaving ? '...' : 'PASS'}
+                  </button>
+                  <button onClick={() => handleFuelLab('FAIL')} disabled={labSaving}
+                    className="px-4 py-1.5 bg-red-600 text-white text-[11px] font-bold uppercase hover:bg-red-700 disabled:opacity-50">
+                    {labSaving ? '...' : 'FAIL'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          {scannedRecord.direction === 'INBOUND' && scannedRecord.labStatus === 'PENDING' && scannedRecord.materialCategory === 'RAW_MATERIAL' && (
             <div className="border-t border-yellow-200 bg-yellow-50 p-4">
               <div className="text-[10px] font-bold text-yellow-700 uppercase tracking-widest">
-                Lab Status: PENDING -- Test on cloud ERP (app.mspil.in) before weighing
+                Lab Status: PENDING -- Full lab test required on cloud ERP (app.mspil.in)
+              </div>
+            </div>
+          )}
+          {scannedRecord.direction === 'INBOUND' && scannedRecord.labStatus === 'PENDING' && !scannedRecord.materialCategory && (
+            <div className="border-t border-yellow-200 bg-yellow-50 p-4">
+              <div className="text-[10px] font-bold text-yellow-700 uppercase tracking-widest">
+                Lab Status: PENDING
+              </div>
+            </div>
+          )}
+          {scannedRecord.direction === 'INBOUND' && scannedRecord.labStatus === 'PASS' && (
+            <div className="border-t border-green-200 bg-green-50 p-4">
+              <div className="text-[10px] font-bold text-green-700 uppercase tracking-widest">
+                Lab: PASS {scannedRecord.labMoisture != null ? `| Moisture: ${scannedRecord.labMoisture}%` : ''}
               </div>
             </div>
           )}
           {scannedRecord.direction === 'INBOUND' && scannedRecord.labStatus === 'FAIL' && (
             <div className="border-t border-red-200 bg-red-50 p-4">
               <div className="text-[10px] font-bold text-red-700 uppercase tracking-widest">
-                Lab Status: FAIL -- Quarantine. Cannot proceed with weighment.
+                Lab: FAIL -- Quarantine. Cannot proceed.
               </div>
             </div>
           )}

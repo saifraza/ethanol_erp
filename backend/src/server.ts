@@ -8,6 +8,7 @@ import { initTelegram } from './services/telegramBot';
 import { initTelegramAutoCollect } from './services/telegramAutoCollect';
 import { initImageHandler } from './services/telegramImageHandler';
 import { startInventoryAlerts } from './services/inventoryAlerts';
+import { startWebhookProcessor } from './services/webhookDelivery';
 
 // Prevent crashes from killing the server
 process.on('uncaughtException', (err) => {
@@ -55,6 +56,9 @@ const server = app.listen(PORT, HOST, async () => {
 
   // Inventory low stock alerts via Telegram
   startInventoryAlerts();
+
+  // Webhook delivery processor (cloud → factory server)
+  startWebhookProcessor();
 
   // OPC health watchdog — monitors bridge connectivity, sends Telegram alerts
   if (process.env.DATABASE_URL_OPC) {

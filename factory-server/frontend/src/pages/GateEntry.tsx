@@ -97,7 +97,7 @@ export default function GateEntry() {
     }
   };
 
-  // PO selection
+  // PO selection — auto-fill supplier, material, rate and lock those fields
   const handlePoSelect = (poId: string) => {
     setSelectedPoId(poId);
     const po = pos.find(p => p.id === poId);
@@ -107,9 +107,17 @@ export default function GateEntry() {
       if (po.lines.length > 0) {
         setSelectedPoLineId(po.lines[0].id);
         setMaterialName(po.lines[0].description);
+        setRate(String(po.lines[0].rate || ''));
       }
+    } else {
+      // Cleared PO selection — unlock fields
+      setPoNumber('');
+      setSelectedPoLineId('');
     }
   };
+
+  // Whether fields are locked by PO selection
+  const poLocked = direction === 'INBOUND' && purchaseType === 'PO' && !!selectedPoId;
 
   const resetForm = () => {
     setVehicleNo(''); setSupplierName(''); setMaterialName('');
@@ -249,7 +257,10 @@ export default function GateEntry() {
                 {purchaseType === 'SPOT' ? 'Seller Name' : 'Supplier'}
                 {purchaseType === 'PO' && masterLoading && <span className="text-yellow-500 animate-pulse ml-1">searching...</span>}
               </label>
-              {purchaseType === 'PO' && suppliers.length > 0 ? (
+              {poLocked ? (
+                <input value={supplierName} readOnly disabled
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs bg-slate-100 text-slate-600 cursor-not-allowed" />
+              ) : purchaseType === 'PO' && suppliers.length > 0 ? (
                 <select value={supplierName} onChange={e => { setSupplierName(e.target.value); setSelectedPoId(''); }}
                   className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
                   <option value="">-- Select --</option>
@@ -268,7 +279,10 @@ export default function GateEntry() {
             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">
               Product {direction === 'INBOUND' && masterLoading && <span className="text-yellow-500 animate-pulse ml-1">searching...</span>}
             </label>
-            {direction === 'OUTBOUND' ? (
+            {poLocked ? (
+              <input value={materialName} readOnly disabled
+                className="w-full border border-slate-300 px-2.5 py-1.5 text-xs bg-slate-100 text-slate-600 cursor-not-allowed" />
+            ) : direction === 'OUTBOUND' ? (
               <select value={materialName} onChange={e => setMaterialName(e.target.value)}
                 className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
                 <option value="">-- Select --</option>

@@ -31,29 +31,34 @@ Cloud ERP (app.mspil.in)
        - Thermal printer for slips
 ```
 
-## Current State (Interim — runs on WB PC directly)
-
-Until SSH is enabled on the factory server, the service runs on the weighbridge PC:
+## Current State (LIVE as of 2026-04-01)
 
 **Weighbridge PC (ethanolwb):**
-- Tailscale IP: 100.91.152.57
+- LAN IP: 192.168.0.83 | Tailscale: 100.91.152.57 (may be off)
 - User: abc / Password: acer@123
 - SSH: port 22 (OpenSSH enabled)
-- Service at: C:\mspil\weighbridge\
+- Service at: `C:\mspil\weighbridge\`
 - Task Scheduler: "MSPIL Weighbridge" (auto-start on boot)
+
+**Weight reading mode**: FILE mode (`WB_PROTOCOL=file` system env var on PC)
+- WtService (WTReadingNew) is **RE-ENABLED** (auto-start) — Oracle Print Consol needs it
+- WtService has 8-bit bug (uses 8 data bits instead of 7), weight file stays empty
+- Net result: weight reads as 0, operators use **manual weight entry** as fallback
+- Serial mode tested (2026-04-01) and works, but conflicts with WtService on COM1
 
 ## CRITICAL SAFETY RULES
 
-- **WtService (WTReadingNew) is RE-ENABLED** (auto-start) — old Oracle Print Consol needs it. Our Python service runs in FILE mode alongside it.
-- **WtService has 8-bit bug** — uses 8 data bits instead of 7, can't read indicator properly, weight file stays empty. Fix: change `ComDataBits` from 8 to 7 in `D:\WT\WtService.exe.config` (needs factory coordination).
-- **Our service is in FILE mode** — `WB_PROTOCOL=file` env var on PC. Weight shows 0 because WtService can't write. Manual weight entry works as fallback.
-- **Serial mode tested and works** — but conflicts with WtService on COM1. Only enable when WtService is fully decommissioned.
+- **NEVER stop/disable WtService** (WTReadingNew) — halted old gate entry on 2026-03-31
 - **NEVER modify the Oracle DB** at 192.168.0.10/XE
-- **NEVER stop/modify the Print Consol** (DirectPrinting.exe) system on factory server
-- **NEVER rapidly retry SSH** to the weighbridge PC — causes Windows account lockout (30 min or reboot to fix)
-- **Incident 2026-03-31:** Disabling WtService halted old gate entry.
-- **Incident 2026-04-01:** Multiple SSH retries locked `abc` account. Fixed by hard reboot.
-- **Incident 2026-04-01:** Serial mode tested successfully (weight reading works), but reverted to file mode for Oracle compatibility.
+- **NEVER stop/modify Print Consol** (DirectPrinting.exe) on factory server
+- **NEVER rapidly retry SSH** to any PC — causes Windows account lockout (30 min or reboot)
+- **NEVER deploy config.py without checking SERIAL_PROTOCOL** — if default reverts to `file`, weight reading behavior changes. PC has `WB_PROTOCOL=serial` as system env var override.
+- Serial mode: only enable when WtService is fully decommissioned (requires factory coordination)
+
+**Incidents:**
+- 2026-03-31: Disabling WtService halted old gate entry system
+- 2026-04-01: Multiple SSH retries locked `abc` account (fixed by hard reboot)
+- 2026-04-01: Serial mode tested successfully, reverted to file mode for Oracle compatibility
 
 ## Serial Protocol (Indicator → PC)
 
@@ -252,6 +257,94 @@ curl http://100.91.152.57:8098/api/weight
 - Unstable scale warning: confirm dialog before capturing weight when scale is unstable
 - Cloud status shows actual reachability (not just queue depth)
 - Dead-lettered items shown as "stuck (need attention)" in status bar
+
+## Cross-System API Contracts
+
+These are the exact payload shapes used between systems. Update this section when modifying any cross-system endpoint.
+
+### 1. POST /api/weighbridge/push (Factory Server → Cloud)
+**Caller**: `factory-server/src/services/syncWorker.ts` line 58
+**Receiver**: `backend/src/routes/weighbridge.ts` line 214
+**Auth**: `X-WB-Key` header (timing-safe comparison)
+
+```json
+{
+  "weighments": [{
+    "id": "local-uuid",
+    "ticket_no": 0,
+    "vehicle_no": "MP20KA1234",
+    "direction": "IN",
+    "purchase_type": "PO",
+    "po_id": "supplier-id-not-po-id",
+    "supplier_name": "Vendor Name",
+    "material": "Broken Rice",
+    "weight_gross": 45000,
+    "weight_tare": 15000,
+    "weight_net": 30000,
+    "weight_source": "factory-server",
+    "first_weight_at": "ISO-8601",
+    "second_weight_at": "ISO-8601",
+    "status": "COMPLETE",
+    "remarks": "",
+    "created_at": "ISO-8601"
+  }]
+}
+```
+**Response**: `{ "ok": true, "ids": ["cloud-uuid-1"] }`
+**Known issue**: `po_id` maps from `supplierId` not actual PO UUID (DEBT-004). `ticket_no` always 0.
+
+### 2. POST /api/weighbridge/heartbeat (Factory Server → Cloud)
+**Caller**: `factory-server/src/services/pcMonitor.ts`
+**Receiver**: `backend/src/routes/weighbridge.ts` (stored in `pcHeartbeats` Map, in-memory)
+
+```json
+{
+  "pcId": "weighbridge-1",
+  "pcName": "Weighbridge Gate 1",
+  "timestamp": "ISO-8601",
+  "uptimeSeconds": 3600,
+  "queueDepth": 0,
+  "dbSizeMb": 1.2,
+  "serialConnected": true,
+  "serialProtocol": "file",
+  "webPort": 8098,
+  "weightsToday": 15,
+  "lastTicket": 42,
+  "version": "1.0.0",
+  "system": { "cpuPercent": 5, "memoryMb": 2048, "diskFreeGb": 180, "hostname": "ethanolwb", "os": "Windows 10" }
+}
+```
+
+### 3. GET /api/weighbridge/master-data (Cloud → Factory Server)
+**Caller**: `factory-server/src/services/syncWorker.ts` line 108
+**Receiver**: `backend/src/routes/weighbridge.ts` line 976
+
+```json
+{
+  "suppliers": [{ "id": "uuid", "name": "Vendor Name" }],
+  "materials": [{ "id": "uuid", "name": "Broken Rice", "category": "RAW_MATERIAL" }],
+  "pos": [{
+    "id": "uuid", "po_no": 101, "vendor_id": "uuid", "vendor_name": "Vendor",
+    "deal_type": "RM_PURCHASE", "status": "APPROVED",
+    "lines": [{
+      "id": "uuid", "inventory_item_id": "uuid",
+      "description": "Broken Rice", "quantity": 5000,
+      "received_qty": 2000, "pending_qty": 3000,
+      "rate": 22.5, "unit": "KG"
+    }]
+  }],
+  "customers": [{ "id": "uuid", "name": "Customer Name" }]
+}
+```
+
+### 4. POST /api/weighbridge/lab-results (Cloud → Weighbridge)
+**Caller**: `weighbridge/cloud_sync.py` `pull_lab_results()`
+**Receiver**: `backend/src/routes/weighbridge.ts` line 941
+
+Request: `{ "weighment_ids": ["uuid-1", "uuid-2"] }`
+Response: `{ "results": [{ "weighment_id": "uuid", "lab_status": "PASS", "moisture": 12.5, "starch": 65, "damaged": 2, "foreign_matter": 1.5 }] }`
+
+---
 
 ## Known Limitations (Accepted Risks)
 

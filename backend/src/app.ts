@@ -99,6 +99,9 @@ import meshBioReportRoutes from './routes/meshBioReport';
 import whatsappRoutes from './routes/whatsapp';
 import autoCollectRoutes from './routes/whatsappAutoCollect';
 import telegramRoutes from './routes/telegram';
+// Webhook delivery (cloud → factory server)
+import webhookRoutes from './routes/webhooks';
+import { authenticate } from './middleware/auth';
 import { errorHandler } from './shared/middleware/errorHandler';
 
 
@@ -226,6 +229,8 @@ app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/auto-collect', autoCollectRoutes);
 // Telegram Bot API (replaces WhatsApp)
 app.use('/api/telegram', telegramRoutes);
+// Webhook delivery (cloud → factory server)
+app.use('/api/webhooks', authenticate, webhookRoutes);
 
 
 // Serve uploaded files

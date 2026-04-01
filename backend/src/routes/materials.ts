@@ -236,6 +236,45 @@ router.post('/seed-chemicals', authorize('ADMIN') as any, async (req: Request, r
   } catch (err: unknown) { res.status(500).json({ error: 'Chemical seed failed' }); }
 });
 
+// POST /normalize-names — one-time fix: trim whitespace and fix known typos in InventoryItem names
+router.post('/normalize-names', authorize('ADMIN') as any, async (req: Request, res: Response) => {
+  try {
+    // Known typo fixes: old name -> correct name
+    const TYPO_FIXES: Record<string, string> = {
+      'Rick Husk': 'Rice Husk',
+    };
+
+    const items = await prisma.inventoryItem.findMany({
+      select: { id: true, name: true },
+    });
+
+    let trimmed = 0;
+    let typoFixed = 0;
+    const changes: Array<{ id: string; oldName: string; newName: string }> = [];
+
+    for (const item of items) {
+      let newName = item.name.trim();
+
+      // Check for known typo fixes
+      if (TYPO_FIXES[newName]) {
+        newName = TYPO_FIXES[newName];
+      }
+
+      if (newName !== item.name) {
+        await prisma.inventoryItem.update({
+          where: { id: item.id },
+          data: { name: newName },
+        });
+        changes.push({ id: item.id, oldName: item.name, newName });
+        if (newName.length !== item.name.length) trimmed++;
+        if (TYPO_FIXES[item.name.trim()]) typoFixed++;
+      }
+    }
+
+    res.json({ ok: true, trimmed, typoFixed, total: items.length, changes });
+  } catch (err: unknown) { res.status(500).json({ error: 'Normalize failed' }); }
+});
+
 // POST /migrate — one-time migration: link old Material records to InventoryItem
 router.post('/migrate', authorize('ADMIN') as any, async (req: Request, res: Response) => {
   try {

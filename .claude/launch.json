@@ -4,8 +4,8 @@
     {
       "name": "dev",
       "runtimeExecutable": "bash",
-      "runtimeArgs": ["-c", "cd backend && npx tsx src/server.ts"],
-      "port": 5001
+      "runtimeArgs": ["-c", "cd backend && PORT=5050 npx tsx src/server.ts"],
+      "port": 5050
     },
     {
       "name": "frontend",

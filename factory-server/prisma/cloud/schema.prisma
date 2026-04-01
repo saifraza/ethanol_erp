@@ -1,0 +1,240 @@
+// ============================================================
+// CLOUD DB SCHEMA — READ-ONLY mirror of select cloud ERP models
+// Used by factory server to query POs, vendors, materials, etc.
+// directly from Railway PostgreSQL instead of cached tables.
+//
+// DO NOT use this client for writes — cloud DB is read-only
+// from the factory server's perspective.
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../node_modules/.prisma/cloud-client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("CLOUD_DATABASE_URL")
+}
+
+// ── Vendor (cloud: Vendor table) ──
+model Vendor {
+  id              String   @id @default(uuid())
+  vendorCode      String?  @unique
+  name            String
+  tradeName       String?
+  category        String   @default("GENERAL")
+  gstin           String?
+  pan             String?
+  gstState        String?
+  gstStateCode    String?
+  isRCM           Boolean  @default(false)
+  isMSME          Boolean  @default(false)
+  msmeRegNo       String?
+  msmeCategory    String?
+  address         String?
+  city            String?
+  state           String?
+  pincode         String?
+  contactPerson   String?
+  phone           String?
+  email           String?
+  bankName        String?
+  bankBranch      String?
+  bankAccount     String?
+  bankIfsc        String?
+  paymentTerms    String?
+  creditLimit     Float    @default(0)
+  creditDays      Int      @default(30)
+  tdsApplicable   Boolean  @default(false)
+  tdsSection      String?
+  tdsPercent      Float    @default(0)
+  isActive        Boolean  @default(true)
+  remarks         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  purchaseOrders  PurchaseOrder[]
+}
+
+// ── Material (cloud: Material table) ──
+model Material {
+  id              String   @id @default(uuid())
+  code            String?  @unique
+  name            String
+  category        String   @default("RAW_MATERIAL")
+  subCategory     String?
+  hsnCode         String?
+  unit            String   @default("KG")
+  gstPercent      Float    @default(18)
+  defaultRate     Float    @default(0)
+  minStock        Float    @default(0)
+  currentStock    Float    @default(0)
+  storageLocation String?
+  isActive        Boolean  @default(true)
+  remarks         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  poLines         POLine[]
+}
+
+// ── InventoryItem (cloud: InventoryItem table) ──
+model InventoryItem {
+  id              String   @id @default(uuid())
+  name            String
+  code            String   @unique
+  category        String   @default("RAW_MATERIAL")
+  unit            String   @default("kg")
+  currentStock    Float    @default(0)
+  minStock        Float    @default(0)
+  maxStock        Float?
+  costPerUnit     Float    @default(0)
+  location        String?
+  supplier        String?
+  leadTimeDays    Int?
+  isActive        Boolean  @default(true)
+  remarks         String?
+  hsnCode         String?
+  gstPercent      Float    @default(18)
+  valuationMethod String   @default("WEIGHTED_AVG")
+  avgCost         Float    @default(0)
+  totalValue      Float    @default(0)
+  batchTracked    Boolean  @default(false)
+  subCategory     String?
+  defaultRate     Float    @default(0)
+  steamRate       Float?
+  calorificValue  Float?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  poLines         POLine[]
+}
+
+// ── PurchaseOrder (cloud: PurchaseOrder table) ──
+model PurchaseOrder {
+  id              String   @id @default(uuid())
+  poNo            Int      @default(autoincrement())
+  vendorId        String
+  vendor          Vendor   @relation(fields: [vendorId], references: [id])
+  poDate          DateTime @default(now())
+  deliveryDate    DateTime?
+  supplyType      String   @default("INTRA_STATE")
+  placeOfSupply   String?
+  subtotal        Float    @default(0)
+  totalCgst       Float    @default(0)
+  totalSgst       Float    @default(0)
+  totalIgst       Float    @default(0)
+  totalGst        Float    @default(0)
+  freightCharge   Float    @default(0)
+  otherCharges    Float    @default(0)
+  roundOff        Float    @default(0)
+  grandTotal      Float    @default(0)
+  tdsApplicable   Boolean  @default(false)
+  tdsSection      String?
+  tdsPercent      Float    @default(0)
+  tdsAmount       Float    @default(0)
+  paymentTerms    String?
+  creditDays      Int      @default(30)
+  deliveryAddress String?
+  transportMode   String?
+  transportBy     String?
+  dealType        String   @default("STANDARD")
+  status          String   @default("DRAFT")
+  approvedBy      String?
+  approvedAt      DateTime?
+  remarks         String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  lines           POLine[]
+
+  @@index([vendorId])
+  @@index([status])
+}
+
+// ── POLine (cloud: POLine table) ──
+model POLine {
+  id              String         @id @default(uuid())
+  poId            String
+  po              PurchaseOrder  @relation(fields: [poId], references: [id], onDelete: Cascade)
+  lineNo          Int            @default(1)
+  materialId      String?
+  material        Material?      @relation(fields: [materialId], references: [id])
+  inventoryItemId String?
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+  description     String
+  hsnCode         String?
+  quantity        Float
+  unit            String         @default("KG")
+  rate            Float
+  amount          Float          @default(0)
+  discountPercent Float          @default(0)
+  discountAmount  Float          @default(0)
+  taxableAmount   Float          @default(0)
+  gstPercent      Float          @default(18)
+  cgstPercent     Float          @default(0)
+  cgstAmount      Float          @default(0)
+  sgstPercent     Float          @default(0)
+  sgstAmount      Float          @default(0)
+  igstPercent     Float          @default(0)
+  igstAmount      Float          @default(0)
+  totalGst        Float          @default(0)
+  lineTotal       Float          @default(0)
+  receivedQty     Float          @default(0)
+  pendingQty      Float          @default(0)
+  isRCM           Boolean        @default(false)
+  createdAt       DateTime       @default(now())
+
+  @@index([inventoryItemId])
+  @@index([poId])
+}
+
+// ── Customer (cloud: Customer table) ──
+model Customer {
+  id              String   @id @default(uuid())
+  name            String
+  shortName       String?
+  address         String?
+  city            String?
+  state           String?
+  pincode         String?
+  gstNo           String?
+  panNo           String?
+  contactPerson   String?
+  phone           String?
+  email           String?
+  creditLimit     Float    @default(0)
+  defaultTerms    String   @default("ADVANCE")
+  isActive        Boolean  @default(true)
+  remarks         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ── GrainTruck (cloud: GrainTruck table) ──
+model GrainTruck {
+  id              String   @id @default(uuid())
+  date            DateTime @default(now())
+  uidRst          String   @default("")
+  vehicleNo       String   @default("")
+  supplier        String   @default("")
+  weightGross     Float    @default(0)
+  weightTare      Float    @default(0)
+  weightNet       Float    @default(0)
+  quarantineWeight Float   @default(0)
+  moisture        Float?
+  starchPercent   Float?
+  damagedPercent  Float?
+  foreignMatter   Float?
+  quarantine      Boolean  @default(false)
+  quarantineReason String?
+  bags            Float?
+  remarks         String?
+  photoUrl        String?
+  userId          String?
+  createdAt       DateTime @default(now())
+
+  @@index([date])
+}

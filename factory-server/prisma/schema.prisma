@@ -46,6 +46,7 @@ model Weighment {
   supplierId    String?
   materialName  String?
   materialId    String?
+  materialCategory String?  // RAW_MATERIAL, FUEL, CHEMICAL, PACKING
   // Gate entry details
   gateEntryNo   String?
   transporter   String?

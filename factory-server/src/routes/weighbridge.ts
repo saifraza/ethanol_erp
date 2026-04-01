@@ -255,6 +255,49 @@ router.post('/gate-entry', requireAuth, requireRole('GATE_ENTRY', 'ADMIN'), asyn
   const shift = getShift();
   const gateEntryAt = new Date();
 
+  // Look up material category to determine lab behavior
+  let materialCategory: string | null = null;
+  if (materialName) {
+    const trimmedName = materialName.trim();
+
+    // 1. Exact match (case-insensitive)
+    let mat = await prisma.cachedMaterial.findFirst({
+      where: { name: { equals: trimmedName, mode: 'insensitive' } },
+      select: { category: true },
+    });
+
+    // 2. Contains match fallback
+    if (!mat) {
+      mat = await prisma.cachedMaterial.findFirst({
+        where: { name: { contains: trimmedName, mode: 'insensitive' } },
+        select: { category: true },
+      });
+    }
+
+    if (mat?.category) {
+      materialCategory = mat.category;
+    } else {
+      // 3. Keyword-based inference when no DB match found
+      const lower = trimmedName.toLowerCase();
+      const FUEL_KEYWORDS = ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'firewood', 'biomass'];
+      const RAW_MATERIAL_KEYWORDS = ['maize', 'corn', 'rice', 'broken', 'grain', 'sorghum', 'milo'];
+      if (FUEL_KEYWORDS.some(kw => lower.includes(kw))) {
+        materialCategory = 'FUEL';
+      } else if (RAW_MATERIAL_KEYWORDS.some(kw => lower.includes(kw))) {
+        materialCategory = 'RAW_MATERIAL';
+      }
+    }
+  }
+
+  // Lab status rules:
+  // - OUTBOUND: no lab
+  // - RAW_MATERIAL (maize, broken rice): full lab on cloud ERP (PENDING)
+  // - FUEL (coal, rice husk, bagasse): quick moisture check at gross WB (PENDING)
+  // - CHEMICAL/PACKING/other: no lab
+  const isInbound = (direction || 'INBOUND') === 'INBOUND';
+  const needsLab = isInbound && (materialCategory === 'RAW_MATERIAL' || materialCategory === 'FUEL');
+  const labStatus = needsLab ? 'PENDING' : null;
+
   const weighment = await prisma.weighment.create({
     data: {
       localId,
@@ -266,6 +309,7 @@ router.post('/gate-entry', requireAuth, requireRole('GATE_ENTRY', 'ADMIN'), asyn
       purchaseType: purchaseType || null,
       supplierName: supplierName || null,
       materialName: materialName || null,
+      materialCategory,
       poId: poId || null,
       poLineId: poLineId || null,
       poNumber: poNumber || null,
@@ -288,8 +332,7 @@ router.post('/gate-entry', requireAuth, requireRole('GATE_ENTRY', 'ADMIN'), asyn
       deductionReason: deductionReason || null,
       paymentMode: paymentMode || null,
       paymentRef: paymentRef || null,
-      // INBOUND gets lab pending
-      labStatus: (direction || 'INBOUND') === 'INBOUND' ? 'PENDING' : null,
+      labStatus,
     },
   });
 
@@ -342,7 +385,7 @@ router.post('/:id/gross', requireAuth, requireRole('GROSS_WB', 'ADMIN'), asyncHa
   // Atomic: only transition if still in GATE_ENTRY (prevents race condition)
   const result = await prisma.weighment.updateMany({
     where: { id, status: 'GATE_ENTRY' },
-    data: updateData,
+    data: { ...updateData, cloudSynced: false },
   });
   if (result.count === 0) {
     res.status(409).json({ error: 'Weighment not in expected state (GATE_ENTRY) — may have been updated by another operator' });
@@ -414,7 +457,7 @@ router.post('/:id/tare', requireAuth, requireRole('TARE_WB', 'ADMIN'), asyncHand
   // Atomic: only transition if still in FIRST_DONE (prevents race condition)
   const result = await prisma.weighment.updateMany({
     where: { id, status: 'FIRST_DONE' },
-    data: updateData,
+    data: { ...updateData, cloudSynced: false },
   });
   if (result.count === 0) {
     res.status(409).json({ error: 'Weighment not in expected state (FIRST_DONE) — may have been updated by another operator' });
@@ -468,6 +511,7 @@ router.post('/:id/lab', requireAuth, requireRole('GROSS_WB', 'LAB', 'ADMIN'), as
       labRemarks: labRemarks || null,
       labTestedBy: labTestedBy || req.user?.name || null,
       labTestedAt: new Date(),
+      cloudSynced: false, // re-sync to cloud with lab result
     },
   });
 

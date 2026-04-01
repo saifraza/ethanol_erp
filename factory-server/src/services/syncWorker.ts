@@ -16,13 +16,13 @@ let _consecutiveFailures = 0;
 const BASE_INTERVAL_MS = 10_000;  // 10s when items pending
 const IDLE_INTERVAL_MS = 60_000;  // 60s when nothing to sync
 const MAX_BACKOFF_MS = 5 * 60_000; // 5 min max backoff on failures
-const MASTER_DATA_INTERVAL_MS = 5 * 60_000; // pull master data every 5 min
+const MASTER_DATA_INTERVAL_MS = 30_000; // pull master data every 30s (fast-poll until webhook push is set up)
 let _lastMasterPull = 0;
 
 /** Push unsynced weighments to cloud ERP. Returns { synced, failed }. */
 export async function pushToCloud(): Promise<{ synced: number; failed: number }> {
   const unsynced = await prisma.weighment.findMany({
-    where: { cloudSynced: false, status: 'COMPLETE' },
+    where: { cloudSynced: false, status: { in: ['GATE_ENTRY', 'FIRST_DONE', 'COMPLETE'] } },
     take: 20,
     orderBy: { createdAt: 'asc' },
   });
@@ -36,11 +36,12 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
   // Fields not in factory schema are omitted (cloud uses defaults)
   const cloudPayload = unsynced.map(w => ({
     id: w.localId,
-    ticket_no: 0,  // factory-server doesn't track ticket numbers
+    ticket_no: w.ticketNo || 0,
     vehicle_no: w.vehicleNo,
     direction: w.direction === 'INBOUND' ? 'IN' : 'OUT',
     purchase_type: w.purchaseType || 'PO',
-    po_id: w.supplierId || null,  // TODO: store cloud PO UUID in schema
+    po_id: w.poId || null,
+    po_line_id: w.poLineId || null,
     supplier_name: w.supplierName || '',
     material: w.materialName || '',
     weight_gross: w.grossWeight,
@@ -50,8 +51,20 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
     first_weight_at: w.grossTime?.toISOString(),
     second_weight_at: w.tareTime?.toISOString(),
     status: w.status,
+    bags: w.bags ?? null,
     remarks: w.remarks || '',
     created_at: w.createdAt.toISOString(),
+    // Lab fields
+    lab_status: w.labStatus || undefined,
+    lab_moisture: w.labMoisture ?? undefined,
+    lab_starch: w.labStarch ?? undefined,
+    lab_damaged: w.labDamaged ?? undefined,
+    lab_foreign_matter: w.labForeignMatter ?? undefined,
+    lab_remarks: w.labRemarks || undefined,
+    // Spot purchase
+    rate: w.rate ?? undefined,
+    seller_phone: w.sellerPhone || undefined,
+    seller_village: w.sellerVillage || undefined,
   }));
 
   try {
@@ -62,19 +75,22 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
     });
 
     if (response.ok) {
-      const result = await response.json() as { ok: boolean; ids: string[] };
-      const syncedIds = new Set(result.ids || []);
-      for (const w of unsynced) {
-        if (syncedIds.has(w.localId)) {
+      const result = await response.json() as { ok: boolean; ids: string[]; count: number };
+      if (result.ok && result.count > 0) {
+        // Cloud processed the batch — mark all as synced
+        for (const w of unsynced) {
           await prisma.weighment.update({
             where: { id: w.id },
             data: { cloudSynced: true, cloudSyncedAt: new Date(), syncAttempts: w.syncAttempts + 1 },
           });
           synced++;
-        } else {
+        }
+      } else {
+        // Cloud returned ok but processed nothing — mark for retry
+        for (const w of unsynced) {
           await prisma.weighment.update({
             where: { id: w.id },
-            data: { cloudError: 'Not in cloud response ids', syncAttempts: w.syncAttempts + 1 },
+            data: { cloudError: `Cloud processed 0/${unsynced.length}`, syncAttempts: w.syncAttempts + 1 },
           });
           failed++;
         }
@@ -243,7 +259,7 @@ function scheduleNext(): void {
   _intervalId = setTimeout(async () => {
     // Quick check: any pending?
     const pending = await prisma.weighment.count({
-      where: { cloudSynced: false, status: 'COMPLETE' },
+      where: { cloudSynced: false, status: { in: ['GATE_ENTRY', 'FIRST_DONE', 'COMPLETE'] } },
     }).catch(() => 0);
 
     if (pending === 0 && _consecutiveFailures === 0) {

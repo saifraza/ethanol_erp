@@ -2539,3 +2539,23 @@ model PaymentPin {
 
   @@index([userId])
 }
+
+// ══════════════════════════════════════════════════════════════
+// WEBHOOK EVENTS — Cloud → Factory Server push delivery
+// ══════════════════════════════════════════════════════════════
+
+model WebhookEvent {
+  id          String    @id @default(uuid())
+  event       String    // PO_CHANGED, LAB_RESULT, VENDOR_CHANGED, MATERIAL_CHANGED, CUSTOMER_CHANGED
+  payload     Json
+  targetUrl   String
+  status      String    @default("PENDING") // PENDING, DELIVERED, FAILED, DEAD
+  attempts    Int       @default(0)
+  lastError   String?
+  nextRetry   DateTime  @default(now())
+  deliveredAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([status, nextRetry])
+  @@index([createdAt])
+}

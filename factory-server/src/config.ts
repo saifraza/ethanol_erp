@@ -16,6 +16,7 @@ export const config = {
   port: parseInt(process.env.PORT || '5000'),
   cloudErpUrl: process.env.CLOUD_ERP_URL || 'https://app.mspil.in/api',
   cloudApiKey: requireEnv('CLOUD_API_KEY', 'mspil-factory-2026'),
+  cloudDatabaseUrl: process.env.CLOUD_DATABASE_URL || '',
   wbApiKey: requireEnv('WB_API_KEY', 'mspil-wb-2026'),
   jwtSecret: requireEnv('JWT_SECRET', 'mspil-factory-jwt-2026'),
 };
