@@ -2,22 +2,31 @@
 MSPIL Weighbridge — Local Web UI (Flask)
 Serves on localhost:8098 for plant operators.
 Big weight display, simple forms, receipt printing.
+Auth via factory server JWT — role-based tab visibility.
 """
 
 import logging
 import threading
+import json
+import os
 from datetime import datetime
+from functools import wraps
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for
+import requests
+from flask import Flask, render_template, request, jsonify, redirect, url_for, make_response
 
 from config import WEB_HOST, WEB_PORT, WEB_DEBUG
 import local_db as db
 
 log = logging.getLogger("web_ui")
 
+# Factory server URL for auth (LAN)
+FACTORY_SERVER_URL = os.environ.get("FACTORY_SERVER_URL", "http://192.168.0.10:5000")
+
 app = Flask(__name__,
             template_folder="templates",
             static_folder="static")
+app.secret_key = "mspil-wb-session-2026"
 
 # Global references (set by run.py)
 _weight_reader = None
@@ -34,6 +43,98 @@ def set_cloud_sync(sync):
     """Called by run.py to inject the cloud sync instance."""
     global _cloud_sync
     _cloud_sync = sync
+
+
+def get_current_user():
+    """Get current user from JWT cookie. Returns dict or None."""
+    token = request.cookies.get("factory_token")
+    if not token:
+        return None
+    try:
+        resp = requests.get(
+            f"{FACTORY_SERVER_URL}/api/auth/me",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=3,
+        )
+        if resp.status_code == 200:
+            return resp.json()
+    except Exception:
+        pass
+    # If factory server unreachable, decode JWT locally (offline mode)
+    try:
+        import jwt
+        payload = jwt.decode(token, options={"verify_signature": False})
+        return {"username": payload.get("username", ""), "name": payload.get("name", ""), "role": payload.get("role", "ADMIN")}
+    except Exception:
+        pass
+    return None
+
+
+def has_role(user, *roles):
+    """Check if user has any of the specified roles. ADMIN has all roles."""
+    if not user:
+        return False
+    user_role = user.get("role", "")
+    if user_role == "ADMIN":
+        return True
+    user_roles = [r.strip() for r in user_role.split(",")]
+    return any(r in user_roles for r in roles)
+
+
+# =========================================================================
+#  AUTH ROUTES
+# =========================================================================
+
+@app.route('/login', methods=['GET'])
+def login_page():
+    """Login page."""
+    return render_template('login.html')
+
+
+@app.route('/api/login', methods=['POST'])
+def api_login():
+    """Login via factory server."""
+    data = request.json or {}
+    username = data.get("username", "")
+    password = data.get("password", "")
+
+    if not username or not password:
+        return jsonify({"error": "Username and password required"}), 400
+
+    try:
+        resp = requests.post(
+            f"{FACTORY_SERVER_URL}/api/auth/login",
+            json={"username": username, "password": password},
+            timeout=5,
+        )
+        if resp.status_code == 200:
+            result = resp.json()
+            response = make_response(jsonify(result))
+            response.set_cookie("factory_token", result["token"], max_age=30 * 24 * 3600, httponly=False, samesite="Lax")
+            return response
+        else:
+            return jsonify({"error": "Invalid credentials"}), 401
+    except requests.ConnectionError:
+        return jsonify({"error": "Factory server unreachable. Check network."}), 503
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/logout', methods=['POST'])
+def api_logout():
+    """Clear session."""
+    response = make_response(jsonify({"ok": True}))
+    response.delete_cookie("factory_token")
+    return response
+
+
+@app.route('/api/me')
+def api_me():
+    """Get current user info."""
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Not logged in"}), 401
+    return jsonify(user)
 
 
 # =========================================================================
@@ -331,6 +432,39 @@ def api_gross_done():
     return jsonify(db.get_gross_done())
 
 
+@app.route('/api/weighments/pending-lab')
+def api_pending_lab():
+    """Get weighments waiting for lab results."""
+    return jsonify(db.get_pending_lab())
+
+
+@app.route('/api/weighments/<weighment_id>/lab-result', methods=['POST'])
+def api_lab_result(weighment_id):
+    """Record lab quality result for a weighment."""
+    data = request.json or {}
+    status = data.get('status', '').upper()
+    if status not in ('PASS', 'FAIL'):
+        return jsonify({"error": "status must be PASS or FAIL"}), 400
+
+    try:
+        result = db.update_lab_result(
+            weighment_id=weighment_id,
+            status=status,
+            moisture=data.get('moisture'),
+            starch=data.get('starch'),
+            damaged=data.get('damaged'),
+            foreign_matter=data.get('foreign_matter'),
+            remarks=data.get('remarks', ''),
+            tested_by=data.get('tested_by', ''),
+        )
+        return jsonify(result)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        log.error("Failed to update lab result: %s", e)
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/api/weighments/<weighment_id>', methods=['DELETE'])
 def api_delete_weighment(weighment_id):
     """Delete a weighment."""
@@ -345,13 +479,24 @@ def api_delete_weighment(weighment_id):
 @app.route('/')
 def index():
     """Main weighbridge screen."""
-    return render_template('index.html')
+    user = get_current_user()
+    if not user:
+        return redirect('/login')
+    return render_template('index.html',
+        user=user,
+        show_gate_entry=has_role(user, 'GATE_ENTRY', 'ADMIN'),
+        show_weighing=has_role(user, 'WEIGHBRIDGE', 'ADMIN'),
+        show_all=user.get('role') == 'ADMIN',
+    )
 
 
 @app.route('/history')
 def history():
     """History / search page."""
-    return render_template('history.html')
+    user = get_current_user()
+    if not user:
+        return redirect('/login')
+    return render_template('history.html', user=user)
 
 
 @app.route('/slip/<weighment_id>')

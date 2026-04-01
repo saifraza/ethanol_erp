@@ -69,6 +69,8 @@ import journalEntryRoutes from './routes/journalEntries';
 import bankReconciliationRoutes from './routes/bankReconciliation';
 // OPC Bridge (factory automation)
 import opcBridgeRoutes from './routes/opcBridge';
+// Lab Testing (raw material quality check)
+import labTestingRoutes from './routes/labTesting';
 // Weighbridge (local service at factory gate)
 import weighbridgeRoutes from './routes/weighbridge';
 import fuelRoutes from './routes/fuel';
@@ -207,6 +209,8 @@ app.use('/api/bank-loans', bankLoanRoutes);
 app.use('/api/gate-entry', gateEntryRoutes);
 // OPC Bridge (factory automation — proxies to on-premise Windows service)
 app.use('/api/opc', opcBridgeRoutes);
+// Lab Testing (raw material quality check)
+app.use('/api/lab-testing', labTestingRoutes);
 // Weighbridge (local service at factory gate — push weighments, pull master data)
 app.use('/api/weighbridge', weighbridgeRoutes);
 // Fuel Management (master + daily consumption)

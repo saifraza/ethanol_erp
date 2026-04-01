@@ -84,6 +84,16 @@ def init_db():
             weight_net REAL,
             weight_source TEXT DEFAULT 'SERIAL',
 
+            -- Lab quality fields
+            lab_status TEXT DEFAULT 'PENDING',
+            lab_moisture REAL,
+            lab_starch REAL,
+            lab_damaged REAL,
+            lab_foreign_matter REAL,
+            lab_remarks TEXT DEFAULT '',
+            lab_tested_at TEXT,
+            lab_tested_by TEXT DEFAULT '',
+
             -- Status: GATE_ENTRY → FIRST_DONE → COMPLETE
             status TEXT DEFAULT 'GATE_ENTRY',
 
@@ -214,10 +224,18 @@ def create_gate_entry(vehicle_no: str, direction: str, supplier_name: str = "",
           seller_phone, seller_village, seller_aadhaar,
           rate, deductions, deduction_reason, payment_mode, payment_ref,
           bags, remarks, now))
+
+    # Enqueue gate entry for cloud sync (so lab can see it immediately)
+    w = get_weighment(wid)
+    payload = json.dumps(dict(w))
+    conn.execute("""
+        INSERT INTO sync_queue (weighment_id, payload) VALUES (?, ?)
+    """, (wid, payload))
+
     conn.commit()
 
     log.info("Gate entry created: ticket=%d vehicle=%s type=%s", ticket_no, vehicle_no, purchase_type)
-    return get_weighment(wid)
+    return w
 
 
 def capture_first_weight(weighment_id: str, weight: float,
@@ -429,6 +447,53 @@ def delete_weighment(weighment_id: str) -> bool:
     conn.execute("DELETE FROM sync_queue WHERE weighment_id = ?", (weighment_id,))
     conn.commit()
     return True
+
+
+def update_lab_result(weighment_id: str, status: str, moisture: float = None,
+                      starch: float = None, damaged: float = None,
+                      foreign_matter: float = None, remarks: str = "",
+                      tested_by: str = "") -> dict:
+    """Update lab quality result for a weighment."""
+    conn = _get_conn()
+    row = conn.execute("SELECT * FROM weighments WHERE id = ?", (weighment_id,)).fetchone()
+    if not row:
+        raise ValueError(f"Weighment {weighment_id} not found")
+
+    if status not in ("PASS", "FAIL"):
+        raise ValueError("Lab status must be PASS or FAIL")
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn.execute("""
+        UPDATE weighments SET
+            lab_status = ?, lab_moisture = ?, lab_starch = ?, lab_damaged = ?,
+            lab_foreign_matter = ?, lab_remarks = ?, lab_tested_at = ?, lab_tested_by = ?
+        WHERE id = ?
+    """, (status, moisture, starch, damaged, foreign_matter, remarks, now, tested_by,
+          weighment_id))
+
+    # Re-enqueue for cloud sync with updated lab data
+    w = get_weighment(weighment_id)
+    payload = json.dumps(dict(w))
+    # Remove old queue entry and add fresh one
+    conn.execute("DELETE FROM sync_queue WHERE weighment_id = ?", (weighment_id,))
+    conn.execute("""
+        INSERT INTO sync_queue (weighment_id, payload) VALUES (?, ?)
+    """, (weighment_id, payload))
+
+    conn.commit()
+    log.info("Lab result updated: ticket=%d status=%s", row["ticket_no"], status)
+    return w
+
+
+def get_pending_lab() -> list[dict]:
+    """Get weighments waiting for lab results (PENDING lab, at GATE_ENTRY status)."""
+    conn = _get_conn()
+    rows = conn.execute("""
+        SELECT * FROM weighments
+        WHERE lab_status = 'PENDING' AND status = 'GATE_ENTRY'
+        ORDER BY created_at DESC
+    """).fetchall()
+    return [dict(r) for r in rows]
 
 
 # =========================================================================

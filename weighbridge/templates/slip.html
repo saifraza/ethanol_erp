@@ -5,34 +5,32 @@
     <title>Weighment Slip #{{ w.ticket_no }}</title>
     <style>
         @page { size: 80mm auto; margin: 2mm; }
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Courier New', monospace; font-size: 12px; width: 76mm; margin: 0 auto; padding: 4px; }
+        * { margin: 0; padding: 0; box-sizing: border-box; color: #000; }
+        body { font-family: 'Courier New', monospace; font-size: 13px; font-weight: 700; width: 76mm; margin: 0 auto; padding: 4px; }
 
         .divider { border-top: 1px dashed #000; margin: 5px 0; }
         .divider-double { border-top: 2px solid #000; margin: 5px 0; }
         .center { text-align: center; }
-        .bold { font-weight: 700; }
+        .bold { font-weight: 900; }
 
-        .company { font-size: 11px; font-weight: 700; text-align: center; line-height: 1.3; }
-        .address { font-size: 9px; text-align: center; color: #555; }
+        .company { font-size: 12px; font-weight: 900; text-align: center; line-height: 1.3; }
+        .address { font-size: 10px; text-align: center; }
 
-        .row { display: flex; justify-content: space-between; padding: 1px 0; }
-        .row .label { color: #555; font-size: 11px; }
-        .row .value { font-weight: 600; text-align: right; font-size: 11px; }
-
-        .weight-table { width: 100%; border-collapse: collapse; border: 1px solid #000; margin: 5px 0; }
-        .weight-table td { padding: 3px 6px; border: 1px solid #000; font-size: 12px; }
-        .weight-table .right { text-align: right; font-weight: 700; font-size: 13px; }
-        .weight-table .product-row { background: #000; color: #fff; }
-        .weight-table .product-row td { font-size: 14px; font-weight: 700; }
+        .row { display: flex; justify-content: space-between; padding: 2px 0; }
+        .row .label { font-size: 11px; font-weight: 700; }
+        .row .value { font-weight: 900; text-align: right; font-size: 12px; }
 
         .sig-row { display: flex; justify-content: space-between; margin-top: 20px; padding-top: 3px; }
-        .sig-box { text-align: center; font-size: 8px; color: #555; border-top: 1px solid #000; width: 30%; padding-top: 2px; }
+        .sig-box { text-align: center; font-size: 9px; border-top: 1px solid #000; width: 30%; padding-top: 2px; }
 
-        .footer { font-size: 8px; text-align: center; color: #888; margin-top: 6px; }
+        .footer { font-size: 9px; text-align: center; margin-top: 6px; }
 
         .no-print { margin-top: 15px; text-align: center; }
-        @media print { .no-print { display: none; } body { width: 76mm; } }
+        @media print {
+            .no-print { display: none; }
+            body { width: 76mm; }
+            * { color: #000 !important; -webkit-print-color-adjust: exact; }
+        }
     </style>
 </head>
 <body>
@@ -56,7 +54,7 @@
     <div class="row"><span class="label">Direction</span><span class="value">{{ 'Inward' if w.direction == 'IN' else 'Outward' }}</span></div>
     <div class="row"><span class="label">Material</span><span class="value">{{ w.material or '-' }}</span></div>
     <div class="row"><span class="label">Supplier</span><span class="value">{{ w.supplier_name or '-' }}</span></div>
-    {% if w.po_number %}
+    {% if w.po_number and w.po_number != '-- Select PO (optional) --' %}
     <div class="row"><span class="label">P.O. No.</span><span class="value">{{ w.po_number }}</span></div>
     {% endif %}
     {% if w.transporter %}
@@ -68,20 +66,10 @@
 
     <div class="divider"></div>
 
-    <table class="weight-table">
-        <tr>
-            <td>Gross Weight</td>
-            <td class="right">{{ "{:,.0f}".format(w.weight_gross or 0) }} KG</td>
-        </tr>
-        <tr>
-            <td>Tare Weight</td>
-            <td class="right">{{ "{:,.0f}".format(w.weight_tare or 0) }} KG</td>
-        </tr>
-        <tr class="product-row">
-            <td>PRODUCT WEIGHT</td>
-            <td class="right">{{ "{:,.0f}".format(w.weight_net or 0) }} KG</td>
-        </tr>
-    </table>
+    <div class="row"><span class="label">Gross Weight</span><span class="value bold">{{ "{:,.0f}".format(w.weight_gross or 0) }} KG</span></div>
+    <div class="row"><span class="label">Tare Weight</span><span class="value bold">{{ "{:,.0f}".format(w.weight_tare or 0) }} KG</span></div>
+    <div class="row" style="font-size:14px;padding:3px 0;"><span class="bold">PRODUCT WEIGHT</span><span class="bold">{{ "{:,.0f}".format(w.weight_net or 0) }} KG</span></div>
+    <div class="divider-double"></div>
 
     {% if w.bags %}
     <div class="row"><span class="label">Bags</span><span class="value">{{ w.bags }}</span></div>

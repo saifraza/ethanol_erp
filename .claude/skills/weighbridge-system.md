@@ -44,14 +44,14 @@ Until SSH is enabled on the factory server, the service runs on the weighbridge 
 
 ## CRITICAL SAFETY RULES
 
-- **NEVER** stop/disable WtService (WTReadingNew) — it feeds the existing Oracle gate entry system
-- **NEVER** touch COM1 directly — WtService owns it
-- **NEVER** modify the Oracle DB at 192.168.0.10/XE
-- **NEVER** stop/modify the Print Consol (DirectPrinting.exe) system
-- Our service reads `D:\WT\new weight.txt` (file mode) — WtService writes to it
-- Deploy alongside existing systems — never replace until explicitly told
-- WtService has a bug (8 data bits instead of 7) — fix ONLY with user approval during planned downtime
-- **Incident 2026-03-31:** Disabling WtService halted the entire factory weighbridge. Re-enabled immediately.
+- **WtService (WTReadingNew) is DISABLED** (2026-04-01) — it was using wrong serial settings (8-bit instead of 7-bit), never wrote weight to file. Our Python service now reads COM1 directly in serial mode.
+- **NEVER re-enable WtService** — it will conflict with our service on COM1
+- **NEVER modify the Oracle DB** at 192.168.0.10/XE
+- **NEVER stop/modify the Print Consol** (DirectPrinting.exe) system on factory server
+- **NEVER rapidly retry SSH** to the weighbridge PC — causes Windows account lockout (30 min or reboot to fix)
+- Our service reads COM1 directly (serial mode, 2400/7/N/1) — not via WtService file
+- **Incident 2026-03-31:** Disabling WtService halted old gate entry. Now resolved — old gate entry no longer depends on WtService.
+- **Incident 2026-04-01:** Multiple SSH retries locked `abc` account. Fixed by hard reboot.
 
 ## Serial Protocol (Indicator → PC)
 

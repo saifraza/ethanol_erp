@@ -60,6 +60,19 @@
         .form-input { border: 1px solid #cbd5e1; padding: 7px 10px; font-size: 13px; outline: none; width: 100%; background: white; }
         .form-input:focus { border-color: #94a3b8; box-shadow: inset 0 0 0 1px #94a3b8; }
         .form-2col { display: grid; grid-template-columns: 1fr 1fr; }
+        .form-4col { display: grid; grid-template-columns: repeat(4, 1fr); }
+
+        /* Lab result styles */
+        .lab-section { border-top: 1px solid #e2e8f0; }
+        .lab-badge { font-size: 9px; font-weight: 700; text-transform: uppercase; padding: 2px 8px; border: 1px solid; display: inline-block; }
+        .lab-badge.pending { color: #d97706; border-color: #fde68a; background: #fffbeb; }
+        .lab-badge.pass { color: #16a34a; border-color: #bbf7d0; background: #f0fdf4; }
+        .lab-badge.fail { color: #dc2626; border-color: #fecaca; background: #fef2f2; }
+        .btn-lab { padding: 10px 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; border: none; color: white; flex: 1; }
+        .btn-lab.pass { background: #16a34a; }
+        .btn-lab.pass:hover { background: #15803d; }
+        .btn-lab.fail { background: #dc2626; }
+        .btn-lab.fail:hover { background: #b91c1c; }
 
         /* Direction toggle */
         .dir-toggle { display: flex; }
@@ -150,6 +163,8 @@
         <span><span class="status-dot" id="scaleDot"></span><span class="status-label">Scale</span></span>
         <span><span class="status-dot" id="syncDot"></span><span class="status-label">Cloud</span></span>
         <a href="/history">History</a>
+        {% if user %}<span class="status-label" style="color:#94a3b8;">{{ user.name }}</span>
+        <a href="#" onclick="doLogout()" style="color:#f87171;">Logout</a>{% endif %}
     </div>
 </div>
 
@@ -161,8 +176,8 @@
 
 <!-- Tabs -->
 <div class="tab-bar">
-    <div class="tab active" onclick="switchTab('gate')">Gate Entry</div>
-    <div class="tab" onclick="switchTab('weigh')">Weighbridge<span class="tab-badge" id="pendingBadge" style="display:none;">0</span></div>
+    {% if show_gate_entry %}<div class="tab active" onclick="switchTab('gate')">Gate Entry</div>{% endif %}
+    {% if show_weighing %}<div class="tab {% if not show_gate_entry %}active{% endif %}" onclick="switchTab('weigh')">Weighbridge<span class="tab-badge" id="pendingBadge" style="display:none;">0</span></div>{% endif %}
     <div class="tab" onclick="switchTab('today')">Today<span class="tab-badge" id="completedBadge" style="display:none;background:#16a34a;">0</span></div>
 </div>
 
@@ -175,7 +190,7 @@
 </div>
 
 <!-- ============ TAB 1: GATE ENTRY ============ -->
-<div class="tab-content active" id="tab-gate">
+<div class="tab-content {% if show_gate_entry %}active{% endif %}" id="tab-gate" {% if not show_gate_entry %}style="display:none!important"{% endif %}>
     <div class="section-header">New Gate Entry</div>
     <form id="gateForm">
         <!-- Direction -->
@@ -324,7 +339,7 @@
 </div>
 
 <!-- ============ TAB 2: WEIGHBRIDGE (Scan + Weigh) ============ -->
-<div class="tab-content" id="tab-weigh">
+<div class="tab-content {% if show_weighing and not show_gate_entry %}active{% endif %}" id="tab-weigh" {% if not show_weighing %}style="display:none!important"{% endif %}>
     <!-- Scan Input -->
     <div class="scan-box">
         <div class="scan-label">Scan QR Code or Enter Ticket Number</div>
@@ -375,11 +390,16 @@
 <script>
     let currentWeight = 0, isStable = false, isConnected = false;
 
+    // === LOGOUT ===
+    async function doLogout() {
+        await fetch('/api/logout', {method: 'POST'});
+        window.location.href = '/login';
+    }
+
     // === TABS ===
     function switchTab(name) {
-        document.querySelectorAll('.tab').forEach((t, i) => {
-            t.classList.toggle('active', ['gate','weigh','today'][i] === name);
-        });
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        event.target.closest('.tab').classList.add('active');
         document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
         document.getElementById('tab-' + name).classList.add('active');
         if (name === 'weigh') document.getElementById('scanInput').focus();
@@ -582,6 +602,86 @@
         }).catch(e => alert('Lookup failed: ' + e));
     }
 
+    function buildLabSection(w) {
+        const ls = (w.lab_status || 'PENDING').toUpperCase();
+        if (ls === 'PASS') {
+            return `<div class="lab-section" style="padding:8px 16px;">
+                <div class="sc-row"><span class="lbl">Lab Status</span><span class="val"><span class="lab-badge pass">PASS</span></span></div>
+                ${w.lab_moisture != null ? `<div class="sc-row"><span class="lbl">Moisture</span><span class="val">${w.lab_moisture}%</span></div>` : ''}
+                ${w.lab_starch != null ? `<div class="sc-row"><span class="lbl">Starch</span><span class="val">${w.lab_starch}%</span></div>` : ''}
+                ${w.lab_damaged != null ? `<div class="sc-row"><span class="lbl">Damaged</span><span class="val">${w.lab_damaged}%</span></div>` : ''}
+                ${w.lab_foreign_matter != null ? `<div class="sc-row"><span class="lbl">Foreign Matter</span><span class="val">${w.lab_foreign_matter}%</span></div>` : ''}
+                ${w.lab_remarks ? `<div class="sc-row"><span class="lbl">Remarks</span><span class="val">${w.lab_remarks}</span></div>` : ''}
+            </div>`;
+        }
+        if (ls === 'FAIL') {
+            return `<div class="lab-section" style="padding:8px 16px;">
+                <div class="sc-row"><span class="lbl">Lab Status</span><span class="val"><span class="lab-badge fail">FAIL</span></span></div>
+                ${w.lab_moisture != null ? `<div class="sc-row"><span class="lbl">Moisture</span><span class="val">${w.lab_moisture}%</span></div>` : ''}
+                ${w.lab_starch != null ? `<div class="sc-row"><span class="lbl">Starch</span><span class="val">${w.lab_starch}%</span></div>` : ''}
+                ${w.lab_damaged != null ? `<div class="sc-row"><span class="lbl">Damaged</span><span class="val">${w.lab_damaged}%</span></div>` : ''}
+                ${w.lab_foreign_matter != null ? `<div class="sc-row"><span class="lbl">Foreign Matter</span><span class="val">${w.lab_foreign_matter}%</span></div>` : ''}
+                ${w.lab_remarks ? `<div class="sc-row"><span class="lbl">Remarks</span><span class="val">${w.lab_remarks}</span></div>` : ''}
+            </div>`;
+        }
+        // PENDING — show entry form
+        return `<div class="lab-section">
+            <div class="section-header">Lab Quality Check</div>
+            <div style="padding:8px 16px;">
+                <div class="sc-row"><span class="lbl">Lab Status</span><span class="val"><span class="lab-badge pending">PENDING</span></span></div>
+            </div>
+            <div class="form-4col" style="padding:0 16px 4px;">
+                <div class="form-row" style="border:none;padding:4px 4px 4px 0;">
+                    <div class="form-label">Moisture %</div>
+                    <input type="number" step="0.1" min="0" max="100" class="form-input" id="labMoisture" placeholder="0.0">
+                </div>
+                <div class="form-row" style="border:none;padding:4px;">
+                    <div class="form-label">Starch %</div>
+                    <input type="number" step="0.1" min="0" max="100" class="form-input" id="labStarch" placeholder="0.0">
+                </div>
+                <div class="form-row" style="border:none;padding:4px;">
+                    <div class="form-label">Damaged %</div>
+                    <input type="number" step="0.1" min="0" max="100" class="form-input" id="labDamaged" placeholder="0.0">
+                </div>
+                <div class="form-row" style="border:none;padding:4px 0 4px 4px;">
+                    <div class="form-label">Foreign Matter %</div>
+                    <input type="number" step="0.1" min="0" max="100" class="form-input" id="labForeign" placeholder="0.0">
+                </div>
+            </div>
+            <div class="form-row" style="padding:4px 16px 8px;">
+                <div class="form-label">Remarks</div>
+                <input type="text" class="form-input" id="labRemarks" placeholder="Optional remarks">
+            </div>
+            <div style="padding:8px 16px 12px; display:flex; gap:8px;">
+                <button class="btn-lab pass" onclick="submitLabResult('${w.id}','PASS')">Pass</button>
+                <button class="btn-lab fail" onclick="submitLabResult('${w.id}','FAIL')">Fail</button>
+            </div>
+        </div>`;
+    }
+
+    function submitLabResult(weighmentId, status) {
+        const payload = {
+            status: status,
+            moisture: parseFloat(document.getElementById('labMoisture').value) || null,
+            starch: parseFloat(document.getElementById('labStarch').value) || null,
+            damaged: parseFloat(document.getElementById('labDamaged').value) || null,
+            foreign_matter: parseFloat(document.getElementById('labForeign').value) || null,
+            remarks: document.getElementById('labRemarks').value || '',
+        };
+        fetch('/api/weighments/' + weighmentId + '/lab-result', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) { alert('Lab result error: ' + data.error); return; }
+            // Refresh the scanned card with updated data
+            lookupAndShow(data.ticket_no || weighmentId);
+        })
+        .catch(e => alert('Failed to save lab result: ' + e));
+    }
+
     function showScannedEntry(w) {
         const isGate = w.status === 'GATE_ENTRY';
         const isFirstDone = w.status === 'FIRST_DONE' || w.status === 'GROSS_DONE';
@@ -618,7 +718,9 @@
 
         let actions = '';
         let liveWeightBox = '';
-        if (isGate) {
+        const labDone = w.lab_status === 'PASS' || w.lab_status === 'FAIL';
+        if (isGate && labDone) {
+            // Lab done — allow gross weight capture
             liveWeightBox = `<div style="background:#0f172a; text-align:center; padding:12px; margin:0 -1px;">
                 <div style="font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.1em;">Live Scale Reading</div>
                 <div id="scanLiveWeight" style="font-size:36px; font-weight:700; font-family:'Courier New',monospace; color:#22c55e;">${Math.round(currentWeight).toLocaleString()} KG</div>
@@ -626,6 +728,11 @@
             </div>`;
             actions = `<button class="btn-primary green" style="flex:1;" onclick="captureGross('${w.id}')">${firstBtnLabel}</button>
                        <button class="btn-secondary" onclick="showManual('gross','${w.id}')">Manual</button>`;
+        } else if (isGate && !labDone) {
+            // Lab pending — show message, no weight buttons
+            actions = `<div style="text-align:center; padding:8px; color:#d97706; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em;">
+                Lab result required before weighment. Enter quality above or wait for cloud sync.
+            </div>`;
         } else if (isFirstDone) {
             liveWeightBox = `<div style="background:#0f172a; text-align:center; padding:12px; margin:0 -1px;">
                 <div style="font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.1em;">Live Scale Reading</div>
@@ -635,7 +742,7 @@
             actions = `<button class="btn-primary amber" style="flex:1;" onclick="captureTare('${w.id}')">${secondBtnLabel}</button>
                        <button class="btn-secondary" onclick="showManual('tare','${w.id}')">Manual</button>`;
         } else {
-            actions = `<a class="action-link" href="/slip/${w.id}" target="_blank">Print Final Slip</a>`;
+            actions = `<a class="action-link" href="/slip/${w.id}?v=3" target="_blank">Print Final Slip</a>`;
         }
 
         document.getElementById('scannedEntry').innerHTML = `
@@ -652,6 +759,7 @@
                     ${w.po_number ? `<div class="sc-row"><span class="lbl">P.O.</span><span class="val">${w.po_number}</span></div>` : ''}
                     ${w.transporter ? `<div class="sc-row"><span class="lbl">Transporter</span><span class="val">${w.transporter}</span></div>` : ''}
                 </div>
+                ${buildLabSection(w)}
                 ${weightSection}
                 ${liveWeightBox}
                 <div class="sc-actions">${actions}</div>
@@ -686,7 +794,7 @@
         .then(r => r.json()).then(data => {
             if (data.error) { alert(data.error); return; }
             if (data.stability_warning) { console.warn('Stability:', data.stability_warning); }
-            window.open('/slip/' + data.id, '_blank', 'width=400,height=600');
+            window.open('/slip/' + data.id + '?v=3', '_blank', 'width=400,height=600');
             document.getElementById('scannedEntry').innerHTML = '';
             refreshLists();
         }).catch(e => alert('Error: ' + e));
@@ -775,9 +883,9 @@
                         <td class="right mono">${fmtNum(w.weight_tare)}</td>
                         <td class="right mono bold" style="color:#16a34a;">${fmtNum(w.weight_net)}</td>
                         <td style="white-space:nowrap;">
-                            <a class="action-link" href="/gate-pass/${w.id}" target="_blank">Gate</a>
-                            <a class="action-link" href="/gross-slip/${w.id}" target="_blank" style="margin-left:6px;">Gross</a>
-                            <a class="action-link" href="/slip/${w.id}" target="_blank" style="margin-left:6px;">Final</a>
+                            <a class="action-link" href="/gate-pass/${w.id}?v=3" target="_blank">Gate</a>
+                            <a class="action-link" href="/gross-slip/${w.id}?v=3" target="_blank" style="margin-left:6px;">Gross</a>
+                            <a class="action-link" href="/slip/${w.id}?v=3" target="_blank" style="margin-left:6px;">Final</a>
                         </td>
                     </tr>`).join('') + '</tbody></table>';
             }

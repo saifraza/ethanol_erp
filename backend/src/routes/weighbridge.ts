@@ -202,6 +202,13 @@ const weighmentSchema = z.object({
   transporter: z.string().nullable().optional(),
   vehicle_type: z.string().nullable().optional(),
   driver_mobile: z.string().nullable().optional(),
+  // Lab quality fields
+  lab_status: z.string().optional(),
+  lab_moisture: z.number().nullable().optional(),
+  lab_starch: z.number().nullable().optional(),
+  lab_damaged: z.number().nullable().optional(),
+  lab_foreign_matter: z.number().nullable().optional(),
+  lab_remarks: z.string().nullable().optional(),
 });
 
 router.post('/push', asyncHandler(async (req: Request, res: Response) => {
@@ -217,6 +224,64 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
 
   for (const raw of weighments) {
     const w = weighmentSchema.parse(raw);
+
+    // For INBOUND raw material: accept gate entries (for lab testing page)
+    // For everything else: only process COMPLETE weighments with weights
+    const isGateOrPending = w.status === 'GATE_ENTRY' || w.status === 'FIRST_DONE';
+    const isInbound = w.direction === 'IN';
+    if (isGateOrPending && isInbound) {
+      // Create/update a GrainTruck record for lab testing page (no weight yet)
+      const dupGrain = await prisma.grainTruck.findFirst({
+        where: { remarks: { contains: `WB:${w.id}` } },
+        select: { id: true },
+      });
+      if (!dupGrain) {
+        const grossTon = (w.weight_gross || 0) / 1000;
+        const tareTon = (w.weight_tare || 0) / 1000;
+        const netTon = (w.weight_net || 0) / 1000;
+        const truck = await prisma.grainTruck.create({
+          data: {
+            date: w.created_at ? new Date(w.created_at) : new Date(),
+            vehicleNo: w.vehicle_no,
+            supplier: w.supplier_name || '',
+            weightGross: grossTon,
+            weightTare: tareTon,
+            weightNet: netTon,
+            moisture: w.lab_moisture || undefined,
+            starchPercent: w.lab_starch || undefined,
+            damagedPercent: w.lab_damaged || undefined,
+            foreignMatter: w.lab_foreign_matter || undefined,
+            quarantine: w.lab_status === 'FAIL' ? true : undefined,
+            quarantineWeight: w.lab_status === 'FAIL' ? netTon : undefined,
+            quarantineReason: w.lab_status === 'FAIL' ? (w.lab_remarks || 'Failed lab test') : undefined,
+            bags: w.bags || undefined,
+            remarks: `WB:${w.id} | Ticket #${w.ticket_no} | ${w.status} | ${w.remarks || ''}`.trim(),
+          },
+        });
+        results.push({ id: truck.id, type: 'GrainTruck', refNo: `PENDING-${truck.id.slice(0, 8)}` });
+        ids.push(truck.id);
+      } else {
+        // Update existing record with latest data (lab result, weights)
+        await prisma.grainTruck.update({
+          where: { id: dupGrain.id },
+          data: {
+            weightGross: (w.weight_gross || 0) / 1000 || undefined,
+            weightTare: (w.weight_tare || 0) / 1000 || undefined,
+            weightNet: (w.weight_net || 0) / 1000 || undefined,
+            moisture: w.lab_moisture || undefined,
+            starchPercent: w.lab_starch || undefined,
+            damagedPercent: w.lab_damaged || undefined,
+            foreignMatter: w.lab_foreign_matter || undefined,
+            quarantine: w.lab_status === 'FAIL' ? true : undefined,
+            quarantineWeight: w.lab_status === 'FAIL' ? (w.weight_net || 0) / 1000 : undefined,
+            quarantineReason: w.lab_status === 'FAIL' ? (w.lab_remarks || 'Failed lab test') : undefined,
+            remarks: `WB:${w.id} | Ticket #${w.ticket_no} | ${w.status} | ${w.remarks || ''}`.trim(),
+          },
+        });
+        ids.push(dupGrain.id);
+      }
+      continue;
+    }
 
     if (w.status !== 'COMPLETE' || !w.weight_net || !w.weight_gross || !w.weight_tare) {
       continue;
@@ -241,10 +306,17 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
     });
     if (dupDDGS) { ids.push(dupDDGS.id); continue; }
 
+    // P1-1: Also check GoodsReceipt for duplicate (PO-linked inbound weighments create GRNs)
+    const dupGRN = await prisma.goodsReceipt.findFirst({
+      where: { remarks: { contains: `WB:${w.id}` } },
+      select: { id: true },
+    });
+    if (dupGRN) { ids.push(dupGRN.id); continue; }
+
     const wbRef = `WB:${w.id} | Ticket #${w.ticket_no} | ${w.weight_source}`;
     const purchaseType = w.purchase_type || 'PO';
 
-    // ── INBOUND + PO → Auto-create GRN ──
+    // ── INBOUND + PO → Auto-create GRN (PASS) or quarantine GrainTruck (FAIL) ──
     if (w.direction === 'IN' && purchaseType === 'PO' && w.po_id) {
       const po = await prisma.purchaseOrder.findUnique({
         where: { id: w.po_id },
@@ -274,12 +346,52 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
           }
           const rate = poLine.rate;
 
-          // Reject if PO line is already exhausted (pendingQty <= 0)
+          // P1-2: Reject if PO line is already exhausted — do NOT fall through to GrainTruck
           if (poLine.pendingQty <= 0) {
-            // Fall through to generic inbound path instead of creating a bad GRN
-          } else {
+            results.push({ id: w.id, type: 'SKIPPED', refNo: `PO-${po.poNo} line exhausted (pendingQty=0)` });
+            ids.push(w.id);
+            continue;
+          }
+
+          // ── LAB FAIL → Quarantine GrainTruck, skip GRN ──
+          if (w.lab_status === 'FAIL') {
+            const grossTon = (w.weight_gross || 0) / 1000;
+            const tareTon = (w.weight_tare || 0) / 1000;
+            const netTon = netKg / 1000;
+            const labInfo = w.lab_remarks ? ` | Lab: ${w.lab_remarks}` : '';
+
+            const truck = await prisma.grainTruck.create({
+              data: {
+                date: w.created_at ? new Date(w.created_at) : new Date(),
+                vehicleNo: w.vehicle_no,
+                supplier: po.vendor.name || w.supplier_name || '',
+                weightGross: grossTon,
+                weightTare: tareTon,
+                weightNet: netTon,
+                moisture: w.lab_moisture ?? undefined,
+                starchPercent: w.lab_starch ?? undefined,
+                damagedPercent: w.lab_damaged ?? undefined,
+                foreignMatter: w.lab_foreign_matter ?? undefined,
+                quarantine: true,
+                quarantineWeight: netTon,
+                quarantineReason: `QUARANTINE — Lab FAIL | PO-${po.poNo}${labInfo}`,
+                bags: w.bags ?? undefined,
+                remarks: `${wbRef} | QUARANTINE — Lab FAIL | PO-${po.poNo}${labInfo}`,
+              },
+            });
+
+            results.push({ id: truck.id, type: 'QUARANTINE', refNo: `PO-${po.poNo} | Vehicle ${w.vehicle_no}` });
+            ids.push(truck.id);
+            continue;
+          }
+
+          // ── LAB PASS or PENDING/unset → Normal GRN flow ──
+          {
             // Use local weighment timestamp, not server time
             const grnDate = w.created_at ? new Date(w.created_at) : new Date();
+            const labRemarksSuffix = w.lab_status === 'PASS'
+              ? ` | Lab PASS${w.lab_moisture != null ? ` (M:${w.lab_moisture}%)` : ''}`
+              : '';
 
             // Create GRN + update PO + sync inventory all in one transaction
             const grn = await prisma.$transaction(async (tx) => {
@@ -291,7 +403,7 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
                   vehicleNo: w.vehicle_no,
                   challanNo: '',
                   invoiceNo: '',
-                  remarks: `${wbRef} | Auto-GRN from weighbridge`,
+                  remarks: `${wbRef} | Auto-GRN from weighbridge${labRemarksSuffix}`,
                   totalAmount: Math.round(receivedQty * rate * 100) / 100,
                   totalQty: receivedQty,
                   status: 'DRAFT',
@@ -309,7 +421,7 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
                       amount: Math.round(receivedQty * rate * 100) / 100,
                       storageLocation: '',
                       batchNo: '',
-                      remarks: `Vehicle: ${w.vehicle_no}`,
+                      remarks: `Vehicle: ${w.vehicle_no}${labRemarksSuffix}`,
                     }],
                   },
                 },
@@ -337,8 +449,30 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
               return grn;
             });
 
+            // Also create a GrainTruck record with lab quality data (for traceability)
+            if (w.lab_moisture != null || w.lab_starch != null) {
+              const grossTon = (w.weight_gross || 0) / 1000;
+              const tareTon = (w.weight_tare || 0) / 1000;
+              const netTon = netKg / 1000;
+              await prisma.grainTruck.create({
+                data: {
+                  date: w.created_at ? new Date(w.created_at) : new Date(),
+                  vehicleNo: w.vehicle_no,
+                  supplier: po.vendor.name || w.supplier_name || '',
+                  weightGross: grossTon,
+                  weightTare: tareTon,
+                  weightNet: netTon,
+                  moisture: w.lab_moisture ?? undefined,
+                  starchPercent: w.lab_starch ?? undefined,
+                  damagedPercent: w.lab_damaged ?? undefined,
+                  foreignMatter: w.lab_foreign_matter ?? undefined,
+                  bags: w.bags ?? undefined,
+                  remarks: `${wbRef} | GRN-${grn.grnNo} | PO-${po.poNo}${labRemarksSuffix}`,
+                },
+              }).catch(() => {}); // best-effort — GRN is the primary record
+            }
+
             // Sync inventory outside transaction (DRAFT GRNs don't affect approved stock)
-            // This is intentional — inventory adjusts on receipt, approval can reject later
             if (poLine.inventoryItemId) {
               try {
                 await syncToInventory(
@@ -360,7 +494,14 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
           }
         }
       }
-      // If PO is cancelled/closed/exhausted, fall through to generic inbound path
+      // P1-2: PO is cancelled/closed/not receivable — skip entirely, don't create GrainTruck
+      if (!po) {
+        results.push({ id: w.id, type: 'SKIPPED', refNo: `PO ${w.po_id} not found` });
+      } else {
+        results.push({ id: w.id, type: 'SKIPPED', refNo: `PO-${po.poNo} not receivable (status=${po.status})` });
+      }
+      ids.push(w.id);
+      continue;
     }
 
     // ── INBOUND + SPOT → Auto-create DirectPurchase ──
@@ -443,6 +584,8 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
       const grossTon = (w.weight_gross || 0) / 1000;
       const tareTon = (w.weight_tare || 0) / 1000;
       const netTon = (w.weight_net || 0) / 1000;
+      const isQuarantine = w.lab_status === 'FAIL';
+      const labInfo = w.lab_remarks ? ` | Lab: ${w.lab_remarks}` : '';
 
       const truck = await prisma.grainTruck.create({
         data: {
@@ -452,13 +595,19 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
           weightGross: grossTon,
           weightTare: tareTon,
           weightNet: netTon,
-          moisture: w.moisture || undefined,
-          bags: w.bags || undefined,
-          remarks: `${wbRef} | ${w.remarks || ''}`.trim(),
+          moisture: w.lab_moisture ?? w.moisture ?? undefined,
+          starchPercent: w.lab_starch ?? undefined,
+          damagedPercent: w.lab_damaged ?? undefined,
+          foreignMatter: w.lab_foreign_matter ?? undefined,
+          quarantine: isQuarantine,
+          quarantineWeight: isQuarantine ? netTon : 0,
+          quarantineReason: isQuarantine ? `QUARANTINE — Lab FAIL${labInfo}` : undefined,
+          bags: w.bags ?? undefined,
+          remarks: `${wbRef} | ${isQuarantine ? 'QUARANTINE — Lab FAIL | ' : ''}${w.remarks || ''}${labInfo}`.trim(),
         },
       });
 
-      results.push({ id: truck.id, type: 'GrainTruck', refNo: truck.id });
+      results.push({ id: truck.id, type: isQuarantine ? 'QUARANTINE' : 'GrainTruck', refNo: truck.id });
       ids.push(truck.id);
     }
   }
