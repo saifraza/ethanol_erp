@@ -15,6 +15,7 @@ export default function LabSampling() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
   const [samples, setSamples] = useState<any[]>([]);
+  const [pendingTrucks, setPendingTrucks] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -34,13 +35,26 @@ export default function LabSampling() {
   const [remarks, setRemarks] = useState('');
   const [result, setResult] = useState('PENDING');
 
-  useEffect(() => { loadSamples(); }, []);
+  useEffect(() => { loadSamples(); loadPendingTrucks(); const iv = setInterval(loadPendingTrucks, 10000); return () => clearInterval(iv); }, []);
 
   async function loadSamples() {
     try {
       const res = await api.get(`/lab-sample?search=${search}`);
       setSamples(res.data.samples || []);
     } catch (e) { console.error(e); }
+  }
+
+  async function loadPendingTrucks() {
+    try {
+      const res = await api.get('/lab-testing/pending');
+      setPendingTrucks(res.data || []);
+    } catch (e) { console.error(e); }
+  }
+
+  function prefillFromTruck(t: any) {
+    resetForm();
+    setRstNumber(t.uidRst || t.vehicleNo || '');
+    setShowForm(true);
   }
 
   function resetForm() {
@@ -104,6 +118,29 @@ export default function LabSampling() {
     <ProcessPage title="Lab Sampling" icon={<FlaskConical size={28} />} description="Enter lab quality data per RST number — auto-links to truck entries" flow={{ from: 'Truck Sample', to: 'Quality Report' }} color="bg-indigo-600">
       {msg && (
         <div className={`rounded-lg p-3 mb-4 text-sm ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>{msg.text}</div>
+      )}
+
+      {/* Pending Gate Entries from Weighbridge */}
+      {pendingTrucks.length > 0 && (
+        <div className="mb-4 border border-yellow-200 bg-yellow-50 rounded-lg overflow-hidden">
+          <div className="px-3 py-2 bg-yellow-100 text-yellow-800 text-xs font-bold uppercase tracking-wider">
+            Awaiting Lab Test ({pendingTrucks.length})
+          </div>
+          <div className="divide-y divide-yellow-100">
+            {pendingTrucks.slice(0, 10).map((t: any) => (
+              <div key={t.id} className="px-3 py-2 flex items-center justify-between text-sm">
+                <div className="flex items-center gap-3">
+                  <span className="font-bold font-mono">{t.vehicleNo}</span>
+                  <span className="text-gray-500">{t.supplier}</span>
+                  <span className="text-gray-400 text-xs">{t.weightNet > 0 ? `${t.weightNet.toFixed(2)} T` : 'No weight yet'}</span>
+                </div>
+                <button onClick={() => prefillFromTruck(t)} className="bg-indigo-600 text-white px-3 py-1 text-xs font-medium">
+                  Test
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* Search + Add */}

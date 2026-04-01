@@ -64,6 +64,29 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
         userId: req.user!.id,
       },
     });
+
+    // Sync lab result to GrainTruck (for weighbridge sync-back)
+    if (result === 'ACCEPTED' || result === 'REJECTED') {
+      const truck = await prisma.grainTruck.findFirst({
+        where: { uidRst: rstNumber.trim() },
+        select: { id: true, weightNet: true, remarks: true },
+      });
+      if (truck) {
+        await prisma.grainTruck.update({
+          where: { id: truck.id },
+          data: {
+            moisture: moisture != null ? parseFloat(moisture) : undefined,
+            starchPercent: starchPercent != null ? parseFloat(starchPercent) : undefined,
+            damagedPercent: damagedPercent != null ? parseFloat(damagedPercent) : undefined,
+            foreignMatter: foreignMatter != null ? parseFloat(foreignMatter) : undefined,
+            quarantine: result === 'REJECTED' ? true : false,
+            quarantineWeight: result === 'REJECTED' ? truck.weightNet : undefined,
+            quarantineReason: result === 'REJECTED' ? (remarks || 'Rejected by lab') : undefined,
+          },
+        });
+      }
+    }
+
     res.status(201).json(sample);
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
@@ -89,6 +112,29 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
         result: result || undefined,
       },
     });
+
+    // Sync lab result to GrainTruck (for weighbridge sync-back)
+    if (result === 'ACCEPTED' || result === 'REJECTED') {
+      const truck = await prisma.grainTruck.findFirst({
+        where: { uidRst: sample.rstNumber },
+        select: { id: true, weightNet: true },
+      });
+      if (truck) {
+        await prisma.grainTruck.update({
+          where: { id: truck.id },
+          data: {
+            moisture: moisture != null ? parseFloat(moisture) : undefined,
+            starchPercent: starchPercent != null ? parseFloat(starchPercent) : undefined,
+            damagedPercent: damagedPercent != null ? parseFloat(damagedPercent) : undefined,
+            foreignMatter: foreignMatter != null ? parseFloat(foreignMatter) : undefined,
+            quarantine: result === 'REJECTED' ? true : false,
+            quarantineWeight: result === 'REJECTED' ? truck.weightNet : undefined,
+            quarantineReason: result === 'REJECTED' ? (remarks || 'Rejected by lab') : undefined,
+          },
+        });
+      }
+    }
+
     res.json(sample);
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
