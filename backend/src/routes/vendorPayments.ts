@@ -332,9 +332,17 @@ router.post('/split-payment', asyncHandler(async (req: AuthRequest, res: Respons
     const paymentDate = b.paymentDate ? new Date(b.paymentDate) : new Date();
     const userId = req.user!.id;
 
-    // Fetch vendor name for cash voucher
+    // Fetch vendor + PO number for tracking
     const vendor = await prisma.vendor.findUnique({ where: { id: vendorId }, select: { name: true } });
     if (!vendor) return res.status(404).json({ error: 'Vendor not found' });
+
+    // Resolve PO number — needed for fuel deal payment tracking
+    let poNo = b.poNo;
+    if (!poNo && invoiceId) {
+      const inv = await prisma.vendorInvoice.findUnique({ where: { id: invoiceId }, select: { po: { select: { poNo: true } } } });
+      poNo = inv?.po?.poNo;
+    }
+    const poRef = poNo ? `Fuel deal PO-${poNo}` : '';
 
     const results = await prisma.$transaction(async (tx: any) => {
       const created: Array<{ type: string; id: string; mode: string; amount: number }> = [];
@@ -344,26 +352,27 @@ router.post('/split-payment', asyncHandler(async (req: AuthRequest, res: Respons
         if (amt <= 0) continue;
 
         if (split.mode === 'CASH') {
-          // Create CashVoucher for cash portion
+          // Create CashVoucher for cash portion — include PO ref in both purpose and remarks
           const cv = await tx.cashVoucher.create({
             data: {
               type: 'PAYMENT',
               date: paymentDate,
               payeeName: vendor.name,
               amount: amt,
-              purpose: b.poNo ? `Vendor payment — PO-${b.poNo}` : 'Vendor payment',
+              purpose: poRef || 'Vendor payment',
               category: 'MATERIAL',
               paymentMode: 'CASH',
               paymentRef: split.reference || '',
               authorizedBy: req.user!.name || req.user!.email,
               status: 'ACTIVE',
-              remarks: split.remarks || `Split payment to ${vendor.name}`,
+              remarks: [poRef, split.remarks || `Split payment to ${vendor.name}`].filter(Boolean).join(' | '),
               userId,
             },
           });
           created.push({ type: 'CashVoucher', id: cv.id, mode: 'CASH', amount: amt });
         } else {
-          // Create VendorPayment for bank portion
+          // Create VendorPayment for bank portion — ALWAYS include PO ref in remarks
+          const remarkParts = [poRef, split.remarks || (splits.length > 1 ? `Split (${split.mode})` : '')].filter(Boolean);
           const vp = await tx.vendorPayment.create({
             data: {
               vendorId,
@@ -371,10 +380,10 @@ router.post('/split-payment', asyncHandler(async (req: AuthRequest, res: Respons
               amount: amt,
               mode: split.mode || 'NEFT',
               reference: split.reference || '',
-              tdsDeducted: created.length === 0 ? tdsDeducted : 0, // TDS only on first split
+              tdsDeducted: created.length === 0 ? tdsDeducted : 0,
               tdsSection: created.length === 0 ? (b.tdsSection || null) : null,
               isAdvance: !invoiceId,
-              remarks: split.remarks || (splits.length > 1 ? `Split payment (${split.mode})` : null),
+              remarks: remarkParts.join(' | ') || null,
               paymentDate,
               userId,
             },

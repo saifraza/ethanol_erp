@@ -485,11 +485,44 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
     const invoices = po.vendorInvoices || [];
     const grns = po.grns || [];
     const totalInvoiced = invoices.reduce((s, inv) => s + (inv.netPayable || 0), 0);
-    const totalPaid = invoices.reduce((s, inv) => s + (inv.paidAmount || 0), 0);
+    let totalPaid = invoices.reduce((s, inv) => s + (inv.paidAmount || 0), 0);
     const invoiceBalance = invoices.reduce((s, inv) => s + (inv.balanceAmount || 0), 0);
 
-    // Skip if all invoices fully paid and at least one invoice exists
+    // For non-invoiced POs (esp. fuel deals): also count direct VendorPayments
+    // These are matched by remarks containing "PO-{poNo}" (same pattern as fuel.ts)
+    if (invoices.length === 0) {
+      const directPayments = await prisma.vendorPayment.findMany({
+        where: {
+          vendorId: po.vendor.id,
+          invoiceId: null,
+          OR: [
+            { remarks: { contains: `PO-${po.poNo} ` } },
+            { remarks: { endsWith: `PO-${po.poNo}` } },
+            { remarks: { contains: `PO-${po.poNo}|` } },
+          ],
+        },
+        select: { amount: true },
+      });
+      totalPaid += directPayments.reduce((s, p) => s + p.amount, 0);
+
+      // Also count cash vouchers linked to this deal
+      try {
+        const cashPaid = await prisma.$queryRawUnsafe(
+          `SELECT COALESCE(SUM(amount), 0) as total FROM "CashVoucher" WHERE type = 'PAYMENT' AND "payeeName" = $1 AND (purpose LIKE $2 OR remarks LIKE $2)`,
+          po.vendor.name, `%PO-${po.poNo}%`
+        ) as Array<{ total: number }>;
+        totalPaid += cashPaid[0]?.total || 0;
+      } catch { /* CashVoucher table may not exist */ }
+    }
+
+    // Skip if fully paid
     if (invoices.length > 0 && invoiceBalance <= 0) continue;
+    if (invoices.length === 0 && totalPaid > 0) {
+      const effectiveAmt = (po.dealType === 'OPEN')
+        ? grns.reduce((s, g) => s + (g.totalAmount || 0), 0)
+        : po.grandTotal;
+      if (totalPaid >= effectiveAmt && effectiveAmt > 0) continue; // Fully paid, skip
+    }
 
     // For OPEN/fuel deals: use GRN totals as the real PO value (grandTotal=0 for open deals)
     const isOpenDeal = po.dealType === 'OPEN';
@@ -538,8 +571,8 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
     else if (invoices.length > 0 && totalPaid === 0) paymentStatus = 'INVOICED';
     else paymentStatus = 'GRN_RECEIVED';
 
-    // Balance: for invoiced POs use invoice balance; for non-invoiced use effective PO amount
-    const balance = invoices.length > 0 ? invoiceBalance : effectivePoAmount;
+    // Balance: for invoiced POs use invoice balance; for non-invoiced subtract direct payments
+    const balance = invoices.length > 0 ? invoiceBalance : Math.max(0, effectivePoAmount - totalPaid);
 
     pending.push({
       poId: po.id,

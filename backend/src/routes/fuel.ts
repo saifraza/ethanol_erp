@@ -575,36 +575,58 @@ router.get('/deals/:id/trucks', authenticate, asyncHandler(async (req: AuthReque
 const fuelPaymentSchema = z.object({
   dealId: z.string().min(1),
   amount: z.number().positive(),
-  mode: z.string().default('CASH'), // CASH, UPI, BANK_TRANSFER, NEFT, RTGS
-  reference: z.string().optional(), // UTR / UPI ref / cheque no
+  mode: z.string().default('CASH'),
+  reference: z.string().optional(),
   remarks: z.string().optional(),
+  paymentDate: z.string().optional(),
+  tdsDeducted: z.number().optional().default(0),
+  tdsSection: z.string().optional(),
 });
 
-// POST /deals/:id/payment — record payment against a deal
+// POST /deals/:id/payment — record payment against a fuel deal
+// Uses the shared AP journal flow (same as vendorPayments POST /)
 router.post('/deals/:id/payment', authenticate, validate(fuelPaymentSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const b = req.body;
   const dealId = req.params.id;
 
-  // Get the deal to find vendor
   const deal = await prisma.purchaseOrder.findUnique({
     where: { id: dealId },
     select: { vendorId: true, poNo: true, dealType: true },
   });
-  if (!deal || deal.dealType !== 'OPEN') return res.status(404).json({ error: 'Open deal not found' });
+  if (!deal) return res.status(404).json({ error: 'Deal not found' });
 
-  // Create VendorPayment (no invoice — direct against deal)
+  const amount = b.amount;
+  const tdsDeducted = parseFloat(b.tdsDeducted) || 0;
+  const paymentDate = b.paymentDate ? new Date(b.paymentDate) : new Date();
+
+  // Create VendorPayment with PO reference in remarks (for fuel deal tracking)
   const payment = await prisma.vendorPayment.create({
     data: {
       vendorId: deal.vendorId,
-      paymentDate: new Date(),
-      amount: b.amount,
+      paymentDate,
+      amount,
       mode: b.mode || 'CASH',
       reference: b.reference || '',
+      tdsDeducted,
+      tdsSection: b.tdsSection || null,
       isAdvance: false,
-      remarks: `Fuel deal PO-${deal.poNo} | ${b.remarks || ''}`.trim(),
+      remarks: `Fuel deal PO-${deal.poNo}${b.remarks ? ' | ' + b.remarks : ''}`,
       userId: req.user!.id,
     },
   });
+
+  // Auto-journal (same as vendorPayments POST /)
+  const { onVendorPaymentMade } = await import('../services/autoJournal');
+  onVendorPaymentMade(prisma as Parameters<typeof onVendorPaymentMade>[0], {
+    id: payment.id,
+    amount,
+    mode: b.mode || 'CASH',
+    reference: b.reference || '',
+    tdsDeducted,
+    vendorId: deal.vendorId,
+    userId: req.user!.id,
+    paymentDate,
+  }).catch(() => {});
 
   res.status(201).json(payment);
 }));
@@ -613,15 +635,19 @@ router.post('/deals/:id/payment', authenticate, validate(fuelPaymentSchema), asy
 router.get('/deals/:id/payments', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const deal = await prisma.purchaseOrder.findUnique({
     where: { id: req.params.id },
-    select: { vendorId: true, poNo: true },
+    select: { vendorId: true, poNo: true, vendor: { select: { name: true } } },
   });
   if (!deal) return res.status(404).json({ error: 'Deal not found' });
 
-  // Get all payments for this vendor that reference this deal
-  const payments = await prisma.vendorPayment.findMany({
+  // Get all payments for this vendor that reference this deal (bank + invoice-based)
+  const directPayments = await prisma.vendorPayment.findMany({
     where: {
       vendorId: deal.vendorId,
-      remarks: { contains: `PO-${deal.poNo}` },
+      OR: [
+        { remarks: { contains: `PO-${deal.poNo} ` } },
+        { remarks: { endsWith: `PO-${deal.poNo}` } },
+        { remarks: { contains: `PO-${deal.poNo}|` } },
+      ],
     },
     take: 200,
     orderBy: { paymentDate: 'desc' },
@@ -631,7 +657,22 @@ router.get('/deals/:id/payments', authenticate, asyncHandler(async (req: AuthReq
     },
   });
 
-  res.json(payments);
+  // Also include cash vouchers linked to this deal
+  let cashPayments: Array<Record<string, unknown>> = [];
+  try {
+    cashPayments = await prisma.$queryRawUnsafe(
+      `SELECT id, "voucherNo" as "paymentNo", date as "paymentDate", amount, 'CASH' as mode, "paymentRef" as reference, remarks FROM "CashVoucher" WHERE type = 'PAYMENT' AND "payeeName" = $1 AND (purpose LIKE $2 OR remarks LIKE $2) ORDER BY date DESC LIMIT 100`,
+      deal.vendor.name, `%PO-${deal.poNo}%`
+    ) as Array<Record<string, unknown>>;
+  } catch { /* CashVoucher table may not exist */ }
+
+  // Merge and return
+  const allPayments = [
+    ...directPayments.map(p => ({ ...p, type: 'BANK' as const })),
+    ...cashPayments.map(p => ({ ...p, type: 'CASH_VOUCHER' as const })),
+  ].sort((a, b) => new Date(String((b as Record<string, unknown>).paymentDate || 0)).getTime() - new Date(String((a as Record<string, unknown>).paymentDate || 0)).getTime());
+
+  res.json(allPayments);
 }));
 
 export default router;
