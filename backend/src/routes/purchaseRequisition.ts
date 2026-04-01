@@ -246,6 +246,15 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
         return res.status(400).json({ error: `Invalid status transition: ${existing.status} → ${b.status}` });
       }
 
+      // Role-based authorization for approval actions
+      const userRole = req.user!.role;
+      if (b.status === 'APPROVED' && !['ADMIN', 'MANAGER'].includes(userRole)) {
+        return res.status(403).json({ error: 'Only ADMIN or MANAGER can approve requisitions' });
+      }
+      if (b.status === 'REJECTED' && !['ADMIN', 'MANAGER'].includes(userRole)) {
+        return res.status(403).json({ error: 'Only ADMIN or MANAGER can reject requisitions' });
+      }
+
       data.status = b.status;
       if (b.status === 'APPROVED') {
         data.approvedBy = req.user!.name || req.user!.email;

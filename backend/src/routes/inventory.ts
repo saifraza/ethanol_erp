@@ -196,9 +196,35 @@ router.post('/transaction', asyncHandler(async (req: AuthRequest, res: Response)
   const qty = parseFloat(b.quantity) || 0;
   const type = b.type; // IN, OUT, ADJUST
 
+  if (!b.itemId) return res.status(400).json({ error: 'itemId is required' });
+  if (qty <= 0) return res.status(400).json({ error: 'quantity must be positive' });
+  if (!['IN', 'OUT', 'ADJUST'].includes(type)) return res.status(400).json({ error: 'type must be IN, OUT, or ADJUST' });
+
+  // Pre-check stock for OUT — reject BEFORE starting transaction
+  if (type === 'OUT') {
+    const currentItem = await prisma.inventoryItem.findUnique({
+      where: { id: b.itemId },
+      select: { currentStock: true, unit: true },
+    });
+    if (!currentItem) return res.status(404).json({ error: 'Item not found' });
+    if (qty > currentItem.currentStock) {
+      return res.status(400).json({
+        error: `Insufficient stock: available ${currentItem.currentStock} ${currentItem.unit}, requested ${qty} ${currentItem.unit}`,
+      });
+    }
+  }
+
   // Wrap in transaction to ensure atomicity
   const result = await prisma.$transaction(async (tx: any) => {
-    // Create transaction with warehouse/department
+    // Re-check stock inside transaction (prevents race condition)
+    const item = await tx.inventoryItem.findUnique({ where: { id: b.itemId } });
+    if (!item) throw new Error('Item not found');
+
+    if (type === 'OUT' && qty > item.currentStock) {
+      throw new Error(`Insufficient stock: ${item.currentStock} ${item.unit} available`);
+    }
+
+    // Create transaction record
     const transaction = await tx.inventoryTransaction.create({
       data: {
         itemId: b.itemId,
@@ -214,27 +240,17 @@ router.post('/transaction', asyncHandler(async (req: AuthRequest, res: Response)
     });
 
     // Update current stock
-    const item = await tx.inventoryItem.findUnique({ where: { id: b.itemId } });
-    if (item) {
-      let newStock = item.currentStock;
-      if (type === 'IN') newStock += qty;
-      else if (type === 'OUT') {
-        // Reject if insufficient stock — don't silently clamp to 0
-        if (qty > item.currentStock) {
-          throw new Error(`Insufficient stock: available ${item.currentStock} ${item.unit}, requested ${qty} ${item.unit}`);
-        }
-        newStock -= qty;
-      }
-      else if (type === 'ADJUST') newStock = qty; // absolute set
-      await tx.inventoryItem.update({
-        where: { id: b.itemId },
-        data: { currentStock: Math.max(0, newStock) },
-      });
+    let newStock = item.currentStock;
+    if (type === 'IN') newStock += qty;
+    else if (type === 'OUT') newStock -= qty;
+    else if (type === 'ADJUST') newStock = qty; // absolute set
 
-      return { transaction, item, newStock: Math.max(0, newStock) };
-    }
+    await tx.inventoryItem.update({
+      where: { id: b.itemId },
+      data: { currentStock: Math.max(0, newStock) },
+    });
 
-    return { transaction, item: null, newStock: 0 };
+    return { transaction, item, newStock: Math.max(0, newStock) };
   });
 
   // Auto-draft PO if stock fell below minimum
