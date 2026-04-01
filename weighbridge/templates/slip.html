@@ -71,6 +71,16 @@
     <div class="row" style="font-size:14px;padding:3px 0;"><span class="bold">PRODUCT WEIGHT</span><span class="bold">{{ "{:,.0f}".format(w.weight_net or 0) }} KG</span></div>
     <div class="divider-double"></div>
 
+    {% if w.lab_status %}
+    <div class="row"><span class="label">Lab Result</span><span class="value bold">{{ w.lab_status }}</span></div>
+    {% endif %}
+    {% if w.lab_status == 'FAIL' %}
+    <div class="row" style="font-size:13px;padding:3px 0;border:2px solid #000;margin:3px 0;"><span class="bold" style="padding-left:4px;">QUARANTINE WEIGHT</span><span class="bold" style="padding-right:4px;">{{ "{:,.0f}".format(w.weight_net or 0) }} KG</span></div>
+    {% endif %}
+    {% if w.lab_moisture %}
+    <div class="row"><span class="label">Moisture</span><span class="value">{{ w.lab_moisture }}%</span></div>
+    {% endif %}
+
     {% if w.bags %}
     <div class="row"><span class="label">Bags</span><span class="value">{{ w.bags }}</span></div>
     {% endif %}
