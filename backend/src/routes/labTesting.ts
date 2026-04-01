@@ -153,8 +153,9 @@ router.put('/:id', authenticate, validate(updateSchema), asyncHandler(async (req
     updateData.quarantineReason = remarks || 'Failed lab quality test';
   }
 
-  if (remarks !== undefined) {
-    updateData.remarks = remarks;
+  if (remarks !== undefined && remarks) {
+    // Append lab remarks to existing remarks (don't overwrite WB:uuid tracking)
+    updateData.remarks = truck.remarks ? `${truck.remarks} | Lab: ${remarks}` : remarks;
   }
 
   const updated = await prisma.grainTruck.update({
