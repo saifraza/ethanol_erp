@@ -3,11 +3,115 @@ import prisma from '../config/prisma';
 import { authenticate, AuthRequest, authorize } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { onVendorPaymentMade } from '../services/autoJournal';
+import { renderDocumentPdf } from '../services/documentRenderer';
 import PDFDocument from 'pdfkit';
 import { sendEmail } from '../services/messaging';
 
 const router = Router();
 router.use(authenticate as any);
+
+// ═══════════════════════════════════════════════
+// GET /:id/pdf — Payment confirmation PDF (single payment or full split view)
+// ═══════════════════════════════════════════════
+router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const payment = await prisma.vendorPayment.findUnique({
+    where: { id: req.params.id },
+    include: {
+      vendor: true,
+      invoice: {
+        include: {
+          po: { select: { poNo: true } },
+          grn: { select: { grnNo: true, grnDate: true, vehicleNo: true, totalAmount: true, totalQty: true } },
+        },
+      },
+    },
+  });
+  if (!payment) return res.status(404).json({ error: 'Payment not found' });
+
+  // Find ALL payments for the same invoice (to show full split picture)
+  interface PaymentSplit { mode: string; amount: number; reference: string; date: Date; type: string }
+  const paymentSplits: PaymentSplit[] = [];
+
+  if (payment.invoiceId) {
+    const siblingPayments = await prisma.vendorPayment.findMany({
+      where: { invoiceId: payment.invoiceId },
+      orderBy: { paymentDate: 'asc' },
+      select: { mode: true, amount: true, reference: true, paymentDate: true },
+    });
+    for (const p of siblingPayments) {
+      paymentSplits.push({ mode: p.mode, amount: p.amount, reference: p.reference || '', date: p.paymentDate, type: 'Bank Transfer' });
+    }
+  } else {
+    paymentSplits.push({ mode: payment.mode, amount: payment.amount, reference: payment.reference || '', date: payment.paymentDate, type: 'Bank Transfer' });
+  }
+
+  // Find CashVouchers linked to same vendor + PO (via remarks)
+  const poNo = payment.invoice?.po?.poNo;
+  if (poNo) {
+    try {
+      const cashVouchers = await prisma.$queryRawUnsafe(
+        `SELECT amount, "paymentRef", date, "paymentMode" FROM "CashVoucher" WHERE type = 'PAYMENT' AND "payeeName" = $1 AND purpose LIKE $2 ORDER BY date`,
+        payment.vendor.name, `%PO-${poNo}%`
+      ) as Array<{ amount: number; paymentRef: string; date: Date; paymentMode: string }>;
+      for (const cv of cashVouchers) {
+        paymentSplits.push({ mode: cv.paymentMode || 'CASH', amount: cv.amount, reference: cv.paymentRef || '', date: cv.date, type: 'Cash Voucher' });
+      }
+    } catch { /* CashVoucher table may not exist */ }
+  }
+
+  // GRN details
+  const grns: Array<Record<string, unknown>> = [];
+  if (payment.invoice?.grn) {
+    const g = payment.invoice.grn;
+    grns.push({
+      grnNo: g.grnNo, grnDate: g.grnDate, vehicleNo: g.vehicleNo || '',
+      grossWeight: 0, tareWeight: 0, netWeight: g.totalQty || 0,
+      totalAmount: g.totalAmount,
+    });
+  }
+
+  const totalPaid = paymentSplits.reduce((s, p) => s + p.amount, 0);
+  const totalPayable = payment.invoice?.netPayable || totalPaid;
+  const tdsDeducted = payment.tdsDeducted || 0;
+
+  const data = {
+    paymentNo: payment.paymentNo,
+    paymentDate: payment.paymentDate,
+    poNo,
+    invoiceRef: payment.invoice?.vendorInvNo || '',
+    vendor: {
+      name: payment.vendor.name,
+      address: [payment.vendor.address, payment.vendor.city, payment.vendor.state].filter(Boolean).join(', '),
+      gstin: payment.vendor.gstin || '',
+      phone: payment.vendor.phone || '',
+      bankName: payment.vendor.bankName || '',
+      bankAccount: payment.vendor.bankAccount || '',
+    },
+    grn: grns.length > 0,
+    grns,
+    invoice: payment.invoice ? {
+      vendorInvNo: payment.invoice.vendorInvNo,
+      invoiceDate: payment.invoice.invoiceDate || payment.invoice.vendorInvDate,
+      subtotal: payment.invoice.subtotal || payment.invoice.totalAmount,
+      gstAmount: (payment.invoice.cgstAmount || 0) + (payment.invoice.sgstAmount || 0) + (payment.invoice.igstAmount || 0),
+      netPayable: payment.invoice.netPayable,
+    } : null,
+    payments: paymentSplits,
+    totalPayable,
+    tdsDeducted,
+    tdsSection: payment.tdsSection || '',
+    totalPaid,
+    balance: Math.max(0, totalPayable - totalPaid - tdsDeducted),
+    preparedBy: 'Accounts Dept',
+    authorizedSignatory: '',
+    remarks: payment.remarks || '',
+  };
+
+  const pdf = await renderDocumentPdf({ docType: 'PAYMENT_CONFIRMATION', data, verifyId: payment.id });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="Payment-${payment.paymentNo}.pdf"`);
+  res.send(pdf);
+}));
 
 // GET / — list payments with filters (vendorId, from, to)
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {

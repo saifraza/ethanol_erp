@@ -188,6 +188,45 @@ export const SAMPLE_DATA: Record<string, Record<string, unknown>> = {
     receivedBy: 'Store Keeper', authorizedSignatory: 'OP Pandey',
     remarks: 'Minor quality issues in batch BATCH-A23.',
   },
+
+  PAYMENT_CONFIRMATION: {
+    paymentNo: 1042,
+    paymentDate: new Date('2026-04-01'),
+    poNo: 46,
+    invoiceRef: 'VENDOR-INV-2026/085',
+    vendor: {
+      name: 'ANNAPURNA CANVASSERS',
+      address: '23, Station Road, Narsinghpur (M.P.)',
+      gstin: '23AABCA9876B1Z2',
+      phone: '9876543210',
+      bankName: 'State Bank of India',
+      bankAccount: '35678901234',
+    },
+    grn: true,
+    grns: [
+      { grnNo: 18, grnDate: new Date('2026-03-29'), vehicleNo: 'MP-23-AB-4567', grossWeight: 24500, tareWeight: 8200, netWeight: 16300, totalAmount: 146700 },
+      { grnNo: 19, grnDate: new Date('2026-03-31'), vehicleNo: 'MP-23-CD-8901', grossWeight: 25100, tareWeight: 8400, netWeight: 16700, totalAmount: 150300 },
+    ],
+    invoice: {
+      vendorInvNo: 'VENDOR-INV-2026/085',
+      invoiceDate: new Date('2026-04-01'),
+      subtotal: 297000,
+      gstAmount: 14850,
+      netPayable: 311850,
+    },
+    payments: [
+      { mode: 'CASH', amount: 50000, reference: 'Slip #42', date: new Date('2026-04-01'), type: 'Cash Voucher' },
+      { mode: 'NEFT', amount: 255925, reference: 'UTR202604010001', date: new Date('2026-04-01'), type: 'Bank Transfer' },
+    ],
+    totalPayable: 311850,
+    tdsDeducted: 5925,
+    tdsSection: '194C',
+    totalPaid: 305925,
+    balance: 0,
+    preparedBy: 'Accounts Dept',
+    authorizedSignatory: 'A.K. Singh',
+    remarks: 'Fuel purchase — 2 trucks coal received.',
+  },
 };
 
 // Map document template docTypes to template file names
@@ -202,4 +241,5 @@ export const DOC_TYPE_TO_TEMPLATE: Record<string, string> = {
   RATE_REQUEST: 'freight-inquiry',
   VENDOR_INVOICE: 'vendor-invoice',
   GOODS_RECEIPT: 'goods-receipt',
+  PAYMENT_CONFIRMATION: 'payment-confirmation',
 };

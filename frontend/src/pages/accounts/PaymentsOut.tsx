@@ -986,7 +986,8 @@ export default function PaymentsOut() {
                         <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Mode</th>
                         <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Reference</th>
                         <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Ref Doc</th>
-                        <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Remarks</th>
+                        <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Remarks</th>
+                        <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest" style="width:40px"></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1006,6 +1007,14 @@ export default function PaymentsOut() {
                           <td className="px-3 py-1.5 text-slate-500 font-mono text-[11px] border-r border-slate-100">{p.reference || '--'}</td>
                           <td className="px-3 py-1.5 text-slate-500 text-[11px] border-r border-slate-100">{p.sourceRef || '--'}</td>
                           <td className="px-3 py-1.5 text-slate-400 text-[11px] max-w-[200px] truncate">{p.remarks || '--'}</td>
+                          <td className="px-3 py-1.5 text-center">
+                            {p.payeeType === 'VENDOR' && (
+                              <button onClick={() => window.open(`/api/vendor-payments/${p.id}/pdf`, '_blank')}
+                                className="px-1.5 py-0.5 bg-slate-600 text-white text-[9px] font-bold uppercase hover:bg-slate-700" title="Print Payment Confirmation">
+                                PDF
+                              </button>
+                            )}
+                          </td>
                         </tr>
                         {expandedPaymentId === p.id && (
                           <tr>

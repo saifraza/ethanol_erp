@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Payment Confirmation</title>{{> base-styles}}</head>
+<body>
+<div class="page">
+  {{> letterhead}}
+  <div class="doc-title">PAYMENT CONFIRMATION</div>
+
+  <div class="details-grid">
+    <div class="detail-row"><span class="detail-label">Confirmation No</span><span class="detail-value bold">PAY-{{paymentNo}}</span></div>
+    <div class="detail-row"><span class="detail-label">Payment Date</span><span class="detail-value">{{formatDate paymentDate}}</span></div>
+    {{#if poNo}}<div class="detail-row"><span class="detail-label">PO Reference</span><span class="detail-value bold">PO-{{poNo}}</span></div>{{/if}}
+    {{#if invoiceRef}}<div class="detail-row"><span class="detail-label">Invoice Ref</span><span class="detail-value">{{invoiceRef}}</span></div>{{/if}}
+    <div class="detail-row"><span class="detail-label">Status</span><span class="detail-value bold" style="color:#166534">PAID</span></div>
+  </div>
+
+  <div class="boxes">
+    <div class="box">
+      <div class="box-header">Paid To (Vendor)</div>
+      <div class="box-body">
+        <div class="name">{{vendor.name}}</div>
+        {{#if vendor.address}}<div class="line">{{vendor.address}}</div>{{/if}}
+        {{#if vendor.gstin}}<div class="gstin">GSTIN: {{vendor.gstin}}</div>{{/if}}
+        {{#if vendor.phone}}<div class="line">Phone: {{vendor.phone}}</div>{{/if}}
+        {{#if vendor.bankAccount}}<div class="line" style="margin-top:4px">Bank: {{vendor.bankName}} | A/c: {{vendor.bankAccount}}</div>{{/if}}
+      </div>
+    </div>
+    <div class="box">
+      <div class="box-header">Paid By</div>
+      <div class="box-body">
+        <div class="name">MSPIL Distillery</div>
+        <div class="line">Village Bachai, Dist. Narsinghpur (M.P.) - 487001</div>
+        <div class="gstin">GSTIN: 23AAECM3666P1Z1</div>
+      </div>
+    </div>
+  </div>
+
+  {{!-- GRN Details (if linked) --}}
+  {{#if grn}}
+  <div style="margin-top:10px">
+    <div style="font-size:7.5px;font-weight:bold;text-transform:uppercase;letter-spacing:0.5px;color:#4a7d28;border-bottom:1px solid #ddd;padding-bottom:2px;margin-bottom:4px">Goods Receipt</div>
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th class="left" style="width:70px">GRN No</th>
+          <th class="left" style="width:70px">GRN Date</th>
+          <th class="left">Vehicle No</th>
+          <th class="right" style="width:65px">Gross (KG)</th>
+          <th class="right" style="width:65px">Tare (KG)</th>
+          <th class="right" style="width:65px">Net (KG)</th>
+          <th class="right" style="width:80px">Amount (Rs.)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each grns}}
+        <tr>
+          <td>GRN-{{grnNo}}</td>
+          <td>{{formatDate grnDate}}</td>
+          <td>{{vehicleNo}}</td>
+          <td class="right">{{formatNum grossWeight}}</td>
+          <td class="right">{{formatNum tareWeight}}</td>
+          <td class="right" style="font-weight:bold">{{formatNum netWeight}}</td>
+          <td class="right">{{formatNum totalAmount}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+  </div>
+  {{/if}}
+
+  {{!-- Invoice Details (if linked) --}}
+  {{#if invoice}}
+  <div style="margin-top:10px">
+    <div style="font-size:7.5px;font-weight:bold;text-transform:uppercase;letter-spacing:0.5px;color:#4a7d28;border-bottom:1px solid #ddd;padding-bottom:2px;margin-bottom:4px">Invoice</div>
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th class="left" style="width:90px">Invoice No</th>
+          <th class="left" style="width:70px">Date</th>
+          <th class="right" style="width:80px">Taxable (Rs.)</th>
+          <th class="right" style="width:65px">GST (Rs.)</th>
+          <th class="right" style="width:80px">Net Payable (Rs.)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>{{invoice.vendorInvNo}}</td>
+          <td>{{formatDate invoice.invoiceDate}}</td>
+          <td class="right">{{formatNum invoice.subtotal}}</td>
+          <td class="right">{{formatNum invoice.gstAmount}}</td>
+          <td class="right" style="font-weight:bold">{{formatNum invoice.netPayable}}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  {{/if}}
+
+  {{!-- Payment Breakdown --}}
+  <div style="margin-top:10px">
+    <div style="font-size:7.5px;font-weight:bold;text-transform:uppercase;letter-spacing:0.5px;color:#4a7d28;border-bottom:1px solid #ddd;padding-bottom:2px;margin-bottom:4px">Payment Details</div>
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th style="width:25px">#</th>
+          <th class="left" style="width:90px">Mode</th>
+          <th class="right" style="width:90px">Amount (Rs.)</th>
+          <th class="left">Reference / UTR</th>
+          <th class="left" style="width:70px">Date</th>
+          <th class="left" style="width:80px">Type</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each payments}}
+        <tr>
+          <td class="center">{{inc @index}}</td>
+          <td>{{mode}}</td>
+          <td class="right" style="font-weight:bold">{{formatNum amount}}</td>
+          <td>{{reference}}</td>
+          <td>{{formatDate date}}</td>
+          <td>{{type}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="totals-section">
+    <div class="totals-box">
+      {{#if totalPayable}}<div class="total-row"><span class="label">Total Payable</span><span class="value">{{formatINR totalPayable}}</span></div>{{/if}}
+      {{#if tdsDeducted}}<div class="total-row"><span class="label">TDS Deducted ({{tdsSection}})</span><span class="value" style="color:#991b1b">(-) {{formatINR tdsDeducted}}</span></div>{{/if}}
+      <div class="total-row grand"><span class="label">TOTAL PAID</span><span class="value" style="color:#166534">{{formatINR totalPaid}}</span></div>
+      {{#if balance}}<div class="total-row"><span class="label">Balance</span><span class="value" style="color:#991b1b">{{formatINR balance}}</span></div>{{/if}}
+    </div>
+  </div>
+
+  <div class="amount-words">
+    <div class="label">Amount in Words:</div>
+    <div class="text">{{numberToWords totalPaid}}</div>
+  </div>
+
+  {{#if remarks}}
+  <div class="remarks-section"><div class="label">Remarks:</div><div class="text">{{remarks}}</div></div>
+  {{/if}}
+
+  {{> signatures sigCount=2 sigLabels=(list "Prepared By" "Authorized Signatory") sigNames=(list preparedBy authorizedSignatory)}}
+
+  <div class="footer-area">
+    {{#if qrDataUrl}}<div class="qr-block"><img src="{{qrDataUrl}}" alt="QR"><div class="qr-text">Scan to verify this document</div></div>{{/if}}
+    <div class="footer-text">{{footer}}</div>
+  </div>
+</div>
+</body>
+</html>
