@@ -210,6 +210,118 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     res.status(201).json(payment);
 }));
 
+// POST /split-payment — Record split payment (cash + bank in parallel)
+// Creates VendorPayment for bank splits and CashVoucher for cash splits atomically
+router.post('/split-payment', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const b = req.body;
+    const splits = b.splits as Array<{ mode: string; amount: number; reference?: string; remarks?: string }>;
+    if (!splits || !Array.isArray(splits) || splits.length === 0) {
+      return res.status(400).json({ error: 'splits array is required' });
+    }
+
+    const totalAmount = splits.reduce((s, sp) => s + (sp.amount || 0), 0);
+    if (totalAmount <= 0) return res.status(400).json({ error: 'Total split amount must be positive' });
+
+    const tdsDeducted = parseFloat(b.tdsDeducted) || 0;
+    const vendorId = b.vendorId;
+    const invoiceId = b.invoiceId || null;
+    const paymentDate = b.paymentDate ? new Date(b.paymentDate) : new Date();
+    const userId = req.user!.id;
+
+    // Fetch vendor name for cash voucher
+    const vendor = await prisma.vendor.findUnique({ where: { id: vendorId }, select: { name: true } });
+    if (!vendor) return res.status(404).json({ error: 'Vendor not found' });
+
+    const results = await prisma.$transaction(async (tx: any) => {
+      const created: Array<{ type: string; id: string; mode: string; amount: number }> = [];
+
+      for (const split of splits) {
+        const amt = parseFloat(String(split.amount)) || 0;
+        if (amt <= 0) continue;
+
+        if (split.mode === 'CASH') {
+          // Create CashVoucher for cash portion
+          const cv = await tx.cashVoucher.create({
+            data: {
+              type: 'PAYMENT',
+              date: paymentDate,
+              payeeName: vendor.name,
+              amount: amt,
+              purpose: b.poNo ? `Vendor payment — PO-${b.poNo}` : 'Vendor payment',
+              category: 'MATERIAL',
+              paymentMode: 'CASH',
+              paymentRef: split.reference || '',
+              authorizedBy: req.user!.name || req.user!.email,
+              status: 'ACTIVE',
+              remarks: split.remarks || `Split payment to ${vendor.name}`,
+              userId,
+            },
+          });
+          created.push({ type: 'CashVoucher', id: cv.id, mode: 'CASH', amount: amt });
+        } else {
+          // Create VendorPayment for bank portion
+          const vp = await tx.vendorPayment.create({
+            data: {
+              vendorId,
+              invoiceId,
+              amount: amt,
+              mode: split.mode || 'NEFT',
+              reference: split.reference || '',
+              tdsDeducted: created.length === 0 ? tdsDeducted : 0, // TDS only on first split
+              tdsSection: created.length === 0 ? (b.tdsSection || null) : null,
+              isAdvance: !invoiceId,
+              remarks: split.remarks || (splits.length > 1 ? `Split payment (${split.mode})` : null),
+              paymentDate,
+              userId,
+            },
+          });
+          created.push({ type: 'VendorPayment', id: vp.id, mode: split.mode, amount: amt });
+        }
+      }
+
+      // Update invoice balance if linked
+      if (invoiceId) {
+        const invoice = await tx.vendorInvoice.findUnique({ where: { id: invoiceId } });
+        if (invoice) {
+          const newPaidAmount = (invoice.paidAmount || 0) + totalAmount;
+          const newBalanceAmount = (invoice.netPayable || 0) - newPaidAmount;
+          let newStatus = invoice.status;
+          if (newBalanceAmount <= 0) newStatus = 'PAID';
+          else if (newPaidAmount > 0) newStatus = 'PARTIAL_PAID';
+
+          await tx.vendorInvoice.update({
+            where: { id: invoiceId },
+            data: {
+              paidAmount: newPaidAmount,
+              balanceAmount: Math.max(0, newBalanceAmount),
+              status: newStatus,
+            },
+          });
+        }
+      }
+
+      return created;
+    });
+
+    // Auto-journal for each bank split
+    for (const r of results) {
+      if (r.type === 'VendorPayment') {
+        onVendorPaymentMade(prisma, {
+          id: r.id,
+          amount: r.amount,
+          mode: r.mode,
+          reference: '',
+          tdsDeducted: results.indexOf(r) === 0 ? tdsDeducted : 0,
+          vendorId,
+          userId,
+          paymentDate,
+        }).catch(() => {});
+      }
+    }
+
+    res.status(201).json({ ok: true, splits: results, totalAmount, invoiceId });
+}));
+
 // GET /tds-report — TDS report
 router.get('/tds-report', asyncHandler(async (req: AuthRequest, res: Response) => {
     const payments = await prisma.vendorPayment.findMany({

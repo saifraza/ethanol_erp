@@ -424,16 +424,16 @@ function parsePaymentTermsDays(terms: string | null | undefined): number | null 
 router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Response) => {
   const pos = await prisma.purchaseOrder.findMany({
     where: {
-      status: { in: ['PARTIAL_RECEIVED', 'RECEIVED', 'CLOSED'] },
+      status: { in: ['APPROVED', 'SENT', 'PARTIAL_RECEIVED', 'RECEIVED', 'CLOSED'] },
     },
     select: {
       id: true, poNo: true, poDate: true, grandTotal: true, subtotal: true, totalGst: true, status: true, paymentTerms: true, creditDays: true,
+      dealType: true,
       vendor: { select: { id: true, name: true, creditDays: true, paymentTerms: true, tdsApplicable: true, tdsPercent: true, tdsSection: true } },
       grns: {
-        where: { status: 'CONFIRMED' },
+        where: { status: { not: 'CANCELLED' } },  // Include DRAFT + CONFIRMED (not just CONFIRMED)
         orderBy: { grnDate: 'desc' },
-        take: 1,
-        select: { id: true, grnNo: true, grnDate: true, totalAmount: true },
+        select: { id: true, grnNo: true, grnDate: true, totalAmount: true, totalQty: true, status: true },
       },
       vendorInvoices: {
         where: { status: { not: 'CANCELLED' } },
@@ -455,17 +455,21 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
     poSubtotal: number;
     poGst: number;
     poStatus: string;
+    dealType: string;
     vendorId: string;
     vendorName: string;
     grnId: string | null;
     grnNo: number | null;
     grnDate: string | null;
+    grnCount: number;
+    grnTotalValue: number;
     paymentTerms: string | null;
     creditDays: number;
     dueDate: string | null;
     daysOverdue: number | null;
     urgency: 'green' | 'amber' | 'red' | 'none';
     invoiceStatus: 'NO_INVOICE' | 'PENDING' | 'PARTIAL_PAID' | 'PAID';
+    paymentStatus: 'NO_GRN' | 'GRN_RECEIVED' | 'INVOICED' | 'PARTIAL_PAID' | 'PAID';
     invoices: Array<{ id: string; vendorInvNo: string | null; netPayable: number; paidAmount: number; balanceAmount: number; status: string }>;
     totalInvoiced: number;
     totalPaid: number;
@@ -479,16 +483,26 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
 
   for (const po of pos) {
     const invoices = po.vendorInvoices || [];
+    const grns = po.grns || [];
     const totalInvoiced = invoices.reduce((s, inv) => s + (inv.netPayable || 0), 0);
     const totalPaid = invoices.reduce((s, inv) => s + (inv.paidAmount || 0), 0);
-    const balance = invoices.reduce((s, inv) => s + (inv.balanceAmount || 0), 0);
+    const invoiceBalance = invoices.reduce((s, inv) => s + (inv.balanceAmount || 0), 0);
 
     // Skip if all invoices fully paid and at least one invoice exists
-    if (invoices.length > 0 && balance <= 0) continue;
+    if (invoices.length > 0 && invoiceBalance <= 0) continue;
 
-    // If no invoices at all, the full PO amount is pending
-    const grn = po.grns[0] || null;
-    // Parse payment terms: PO terms take priority, then vendor terms, fallback 30
+    // For OPEN/fuel deals: use GRN totals as the real PO value (grandTotal=0 for open deals)
+    const isOpenDeal = po.dealType === 'OPEN';
+    const grnTotalValue = grns.reduce((s, g) => s + (g.totalAmount || 0), 0);
+    const effectivePoAmount = isOpenDeal ? grnTotalValue : po.grandTotal;
+
+    // Skip POs with no GRNs and no invoices and not OPEN deals
+    if (grns.length === 0 && invoices.length === 0 && !isOpenDeal) {
+      // Standard PO with no goods received and no invoices — not yet payable
+      if (!['PARTIAL_RECEIVED', 'RECEIVED', 'CLOSED'].includes(po.status)) continue;
+    }
+
+    const latestGrn = grns[0] || null;
     const creditDays = parsePaymentTermsDays(po.paymentTerms) ?? parsePaymentTermsDays(po.vendor.paymentTerms) ?? 30;
     const paymentTerms = po.paymentTerms || po.vendor.paymentTerms || null;
 
@@ -496,8 +510,8 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
     let daysOverdue: number | null = null;
     let urgency: 'green' | 'amber' | 'red' | 'none' = 'none';
 
-    if (grn) {
-      dueDate = new Date(grn.grnDate);
+    if (latestGrn) {
+      dueDate = new Date(latestGrn.grnDate);
       dueDate.setDate(dueDate.getDate() + creditDays);
       const diffMs = today.getTime() - dueDate.getTime();
       daysOverdue = Math.floor(diffMs / (1000 * 60 * 60 * 24));
@@ -516,25 +530,40 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
       else invoiceStatus = 'PENDING';
     }
 
+    // Payment status — clearer lifecycle tracking
+    let paymentStatus: PendingPayable['paymentStatus'] = 'NO_GRN';
+    if (grns.length === 0) paymentStatus = 'NO_GRN';
+    else if (invoices.length === 0 && totalPaid === 0) paymentStatus = 'GRN_RECEIVED';
+    else if (totalPaid > 0 && invoiceBalance > 0) paymentStatus = 'PARTIAL_PAID';
+    else if (invoices.length > 0 && totalPaid === 0) paymentStatus = 'INVOICED';
+    else paymentStatus = 'GRN_RECEIVED';
+
+    // Balance: for invoiced POs use invoice balance; for non-invoiced use effective PO amount
+    const balance = invoices.length > 0 ? invoiceBalance : effectivePoAmount;
+
     pending.push({
       poId: po.id,
       poNo: po.poNo,
       poDate: po.poDate.toISOString(),
-      poAmount: po.grandTotal,
-      poSubtotal: po.subtotal || 0,
-      poGst: po.totalGst || 0,
+      poAmount: effectivePoAmount,
+      poSubtotal: isOpenDeal ? grnTotalValue : (po.subtotal || 0),
+      poGst: isOpenDeal ? 0 : (po.totalGst || 0),
       poStatus: po.status,
+      dealType: po.dealType || 'STANDARD',
       vendorId: po.vendor.id,
       vendorName: po.vendor.name,
-      grnId: grn?.id || null,
-      grnNo: grn?.grnNo || null,
-      grnDate: grn?.grnDate?.toISOString() || null,
+      grnId: latestGrn?.id || null,
+      grnNo: latestGrn?.grnNo || null,
+      grnDate: latestGrn?.grnDate?.toISOString() || null,
+      grnCount: grns.length,
+      grnTotalValue: Math.round(grnTotalValue * 100) / 100,
       paymentTerms,
       creditDays,
       dueDate: dueDate?.toISOString() || null,
       daysOverdue,
       urgency,
       invoiceStatus,
+      paymentStatus,
       invoices: invoices.map(inv => ({
         id: inv.id,
         vendorInvNo: inv.vendorInvNo,
@@ -545,7 +574,7 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
       })),
       totalInvoiced,
       totalPaid,
-      balance: invoices.length > 0 ? balance : po.grandTotal,
+      balance,
       tdsApplicable: po.vendor.tdsApplicable,
       tdsPercent: po.vendor.tdsPercent,
       tdsSection: po.vendor.tdsSection || null,

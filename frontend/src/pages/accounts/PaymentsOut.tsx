@@ -14,17 +14,21 @@ interface PendingPayable {
   poSubtotal: number;
   poGst: number;
   poStatus: string;
+  dealType: string;
   vendorId: string;
   vendorName: string;
   grnId: string | null;
   grnNo: number | null;
   grnDate: string | null;
+  grnCount: number;
+  grnTotalValue: number;
   paymentTerms: string | null;
   creditDays: number;
   dueDate: string | null;
   daysOverdue: number | null;
   urgency: 'green' | 'amber' | 'red' | 'none';
   invoiceStatus: 'NO_INVOICE' | 'PENDING' | 'PARTIAL_PAID' | 'PAID';
+  paymentStatus: 'NO_GRN' | 'GRN_RECEIVED' | 'INVOICED' | 'PARTIAL_PAID' | 'PAID';
   invoices: Array<{ id: string; vendorInvNo: string | null; netPayable: number; paidAmount: number; balanceAmount: number; status: string }>;
   totalInvoiced: number;
   totalPaid: number;
@@ -156,6 +160,9 @@ export default function PaymentsOut() {
   const [extracting, setExtracting] = useState(false);
   const [extracted, setExtracted] = useState<Record<string, unknown> | null>(null);
   const [payForm, setPayForm] = useState({ amount: '', mode: 'NEFT', reference: '', paymentDate: todayStr(), tdsDeducted: '', tdsSection: '', remarks: '' });
+  const [splitMode, setSplitMode] = useState(false);
+  const [splits, setSplits] = useState<Array<{ mode: string; amount: string; reference: string }>>([{ mode: 'NEFT', amount: '', reference: '' }]);
+  const [directPayItem, setDirectPayItem] = useState<PendingPayable | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -322,6 +329,63 @@ export default function PaymentsOut() {
     setError('');
   };
 
+  const openDirectPayModal = (item: PendingPayable) => {
+    // Direct payment for fuel deals without invoice
+    setPayForm({
+      amount: String(item.grnTotalValue || item.poAmount || ''),
+      mode: 'NEFT', reference: '', paymentDate: todayStr(),
+      tdsDeducted: item.tdsApplicable ? String(((item.grnTotalValue || item.poAmount) * (item.tdsPercent || 0) / 100).toFixed(2)) : '',
+      tdsSection: item.tdsSection || '', remarks: `Fuel deal PO-${item.poNo}`,
+    });
+    setSplitMode(false);
+    setSplits([{ mode: 'NEFT', amount: '', reference: '' }]);
+    setDirectPayItem(item);
+    setError('');
+  };
+
+  const submitDirectPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!directPayItem) return;
+    try {
+      setSubmitting(true);
+      setError('');
+      if (splitMode) {
+        // Split payment — cash + bank
+        await api.post('/vendor-payments/split-payment', {
+          vendorId: directPayItem.vendorId,
+          invoiceId: null,
+          poNo: directPayItem.poNo,
+          splits: splits.filter(s => parseFloat(s.amount) > 0).map(s => ({
+            mode: s.mode, amount: parseFloat(s.amount), reference: s.reference,
+          })),
+          paymentDate: payForm.paymentDate,
+          tdsDeducted: parseFloat(payForm.tdsDeducted) || 0,
+          tdsSection: payForm.tdsSection || null,
+        });
+      } else {
+        // Single payment
+        await api.post('/vendor-payments', {
+          vendorId: directPayItem.vendorId,
+          invoiceId: null,
+          amount: parseFloat(payForm.amount) || 0,
+          mode: payForm.mode,
+          reference: payForm.reference,
+          paymentDate: payForm.paymentDate,
+          tdsDeducted: parseFloat(payForm.tdsDeducted) || 0,
+          tdsSection: payForm.tdsSection || null,
+          remarks: payForm.remarks || `Fuel deal PO-${directPayItem.poNo}`,
+        });
+      }
+      setDirectPayItem(null);
+      fetchPending();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Payment failed';
+      setError(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleBankFile = async (item: PendingPayable) => {
     const invoiceIds = item.invoices.filter(inv => inv.balanceAmount > 0).map(inv => inv.id);
     if (invoiceIds.length === 0) return;
@@ -401,18 +465,36 @@ export default function PaymentsOut() {
     try {
       setSubmitting(true);
       setError('');
-      await api.post('/vendor-payments', {
-        vendorId: payModal.item.vendorId,
-        invoiceId: payModal.invoice.id,
-        amount: parseFloat(payForm.amount) || 0,
-        mode: payForm.mode,
-        reference: payForm.reference,
-        paymentDate: payForm.paymentDate,
-        tdsDeducted: parseFloat(payForm.tdsDeducted) || 0,
-        tdsSection: payForm.tdsSection || null,
-        remarks: payForm.remarks || null,
-      });
+
+      if (splitMode) {
+        // Split payment — multiple modes
+        await api.post('/vendor-payments/split-payment', {
+          vendorId: payModal.item.vendorId,
+          invoiceId: payModal.invoice.id,
+          poNo: payModal.item.poNo,
+          splits: splits.filter(s => parseFloat(s.amount) > 0).map(s => ({
+            mode: s.mode, amount: parseFloat(s.amount), reference: s.reference,
+          })),
+          paymentDate: payForm.paymentDate,
+          tdsDeducted: parseFloat(payForm.tdsDeducted) || 0,
+          tdsSection: payForm.tdsSection || null,
+        });
+      } else {
+        // Single payment
+        await api.post('/vendor-payments', {
+          vendorId: payModal.item.vendorId,
+          invoiceId: payModal.invoice.id,
+          amount: parseFloat(payForm.amount) || 0,
+          mode: payForm.mode,
+          reference: payForm.reference,
+          paymentDate: payForm.paymentDate,
+          tdsDeducted: parseFloat(payForm.tdsDeducted) || 0,
+          tdsSection: payForm.tdsSection || null,
+          remarks: payForm.remarks || null,
+        });
+      }
       setPayModal(null);
+      setSplitMode(false);
       fetchPending();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Failed to record payment';
@@ -619,7 +701,7 @@ export default function PaymentsOut() {
                             <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Terms</th>
                             <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">PO Amt</th>
                             <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">GRN Date</th>
-                            <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Invoice</th>
+                            <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Status</th>
                             <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Due Date</th>
                             <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Days</th>
                             <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Balance</th>
@@ -642,8 +724,16 @@ export default function PaymentsOut() {
                               <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">{fmt(item.poAmount)}</td>
                               <td className="px-3 py-1.5 border-r border-slate-100 whitespace-nowrap">{fmtDate(item.grnDate)}</td>
                               <td className="px-3 py-1.5 border-r border-slate-100">
-                                <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${invoiceStatusBadge(item.invoiceStatus)}`}>
-                                  {item.invoiceStatus === 'NO_INVOICE' ? 'NO INV' : item.invoiceStatus.replace('_', ' ')}
+                                <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
+                                  item.paymentStatus === 'NO_GRN' ? 'border-slate-300 bg-slate-50 text-slate-500' :
+                                  item.paymentStatus === 'GRN_RECEIVED' ? 'border-amber-400 bg-amber-50 text-amber-700' :
+                                  item.paymentStatus === 'INVOICED' ? 'border-blue-400 bg-blue-50 text-blue-700' :
+                                  item.paymentStatus === 'PARTIAL_PAID' ? 'border-orange-400 bg-orange-50 text-orange-700' :
+                                  'border-green-400 bg-green-50 text-green-700'
+                                }`}>
+                                  {item.paymentStatus === 'NO_GRN' ? 'NO GRN' :
+                                   item.paymentStatus === 'GRN_RECEIVED' ? `GRN (${item.grnCount})` :
+                                   item.paymentStatus.replace('_', ' ')}
                                 </span>
                               </td>
                               <td className={`px-3 py-1.5 border-r border-slate-100 whitespace-nowrap ${urgencyBg(item.urgency)}`}>
@@ -655,22 +745,30 @@ export default function PaymentsOut() {
                               <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums font-bold text-red-600">{fmt(item.balance)}</td>
                               <td className="px-3 py-1.5 text-center">
                                 <div className="flex items-center justify-center gap-1">
-                                  {item.invoiceStatus === 'NO_INVOICE' && item.grnId && (
+                                  {/* INV button — show when GRN exists and no invoice yet */}
+                                  {item.invoiceStatus === 'NO_INVOICE' && item.grnCount > 0 && (
                                     <button onClick={() => openInvoiceModal(item)} className="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-bold uppercase hover:bg-blue-700 flex items-center gap-1" title="Upload Invoice">
                                       <Upload size={10} /> INV
                                     </button>
                                   )}
+                                  {/* PAY button — show when invoiced OR for fuel deals with GRNs (direct payment) */}
                                   {item.invoices.length > 0 && item.balance > 0 && (
                                     <>
                                       <button onClick={() => handleBankFile(item)} className="px-2 py-0.5 bg-indigo-600 text-white text-[9px] font-bold uppercase hover:bg-indigo-700 flex items-center gap-1" title="Generate Bank File">
                                         <FileText size={10} /> CSV
                                       </button>
-                                      <button onClick={() => openPayModal(item)} className="px-2 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase hover:bg-green-700 flex items-center gap-1" title="Confirm Payment">
-                                        <CreditCard size={10} /> PAID
+                                      <button onClick={() => openPayModal(item)} className="px-2 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase hover:bg-green-700 flex items-center gap-1" title="Record Payment">
+                                        <CreditCard size={10} /> PAY
                                       </button>
                                     </>
                                   )}
-                                  {!item.grnId && (
+                                  {/* Direct PAY for fuel/OPEN deals with GRNs but no invoice */}
+                                  {item.invoices.length === 0 && item.grnCount > 0 && item.dealType === 'OPEN' && (
+                                    <button onClick={() => openDirectPayModal(item)} className="px-2 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase hover:bg-green-700 flex items-center gap-1" title="Direct Payment (no invoice)">
+                                      <CreditCard size={10} /> PAY
+                                    </button>
+                                  )}
+                                  {item.grnCount === 0 && (
                                     <span className="text-[9px] text-slate-400 uppercase">No GRN</span>
                                   )}
                                 </div>
@@ -1298,30 +1396,74 @@ export default function PaymentsOut() {
               <form onSubmit={submitPayment} className="p-4 space-y-3">
                 {error && <div className="text-xs text-red-600 bg-red-50 border border-red-200 px-3 py-1.5">{error}</div>}
 
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Amount *</label>
-                    <input type="number" step="0.01" value={payForm.amount} onChange={e => setPayForm(f => ({ ...f, amount: e.target.value }))}
-                      required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Mode *</label>
-                    <select value={payForm.mode} onChange={e => setPayForm(f => ({ ...f, mode: e.target.value }))}
-                      className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
-                      <option value="NEFT">NEFT</option>
-                      <option value="RTGS">RTGS</option>
-                      <option value="CHEQUE">Cheque</option>
-                      <option value="UPI">UPI</option>
-                      <option value="BANK_TRANSFER">Bank Transfer</option>
-                      <option value="CASH">Cash</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Reference (UTR)</label>
-                    <input type="text" value={payForm.reference} onChange={e => setPayForm(f => ({ ...f, reference: e.target.value }))}
-                      placeholder="UTR / Cheque No" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
-                  </div>
+                {/* Split payment toggle */}
+                <div className="flex items-center gap-2 pb-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Split Payment (Cash + Bank)</label>
+                  <button type="button" onClick={() => { setSplitMode(!splitMode); if (!splitMode) setSplits([{ mode: 'CASH', amount: '', reference: '' }, { mode: 'NEFT', amount: '', reference: '' }]); }}
+                    className={`w-8 h-4 rounded-full transition relative ${splitMode ? 'bg-blue-600' : 'bg-slate-300'}`}>
+                    <span className={`block w-3 h-3 bg-white rounded-full absolute top-0.5 transition ${splitMode ? 'left-4' : 'left-0.5'}`} />
+                  </button>
                 </div>
+
+                {!splitMode ? (
+                  /* Single payment mode */
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Amount *</label>
+                      <input type="number" step="0.01" value={payForm.amount} onChange={e => setPayForm(f => ({ ...f, amount: e.target.value }))}
+                        required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Mode *</label>
+                      <select value={payForm.mode} onChange={e => setPayForm(f => ({ ...f, mode: e.target.value }))}
+                        className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                        {MODES.map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Reference (UTR)</label>
+                      <input type="text" value={payForm.reference} onChange={e => setPayForm(f => ({ ...f, reference: e.target.value }))}
+                        placeholder="UTR / Cheque No" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                    </div>
+                  </div>
+                ) : (
+                  /* Split payment mode — dynamic rows */
+                  <div className="space-y-2">
+                    {splits.map((sp, idx) => (
+                      <div key={idx} className="grid grid-cols-[120px_1fr_1fr_30px] gap-2 items-end">
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Mode</label>
+                          <select value={sp.mode} onChange={e => setSplits(s => s.map((x, i) => i === idx ? { ...x, mode: e.target.value } : x))}
+                            className="border border-slate-300 px-2 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                            {MODES.map(m => <option key={m} value={m}>{m}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Amount</label>
+                          <input type="number" step="0.01" value={sp.amount} onChange={e => setSplits(s => s.map((x, i) => i === idx ? { ...x, amount: e.target.value } : x))}
+                            className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Reference</label>
+                          <input type="text" value={sp.reference} onChange={e => setSplits(s => s.map((x, i) => i === idx ? { ...x, reference: e.target.value } : x))}
+                            placeholder={sp.mode === 'CASH' ? 'Slip #' : 'UTR / Ref'} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                        </div>
+                        <button type="button" onClick={() => setSplits(s => s.filter((_, i) => i !== idx))}
+                          className="text-red-400 hover:text-red-600 pb-1" title="Remove">{splits.length > 1 ? '\u00D7' : ''}</button>
+                      </div>
+                    ))}
+                    <div className="flex items-center justify-between">
+                      <button type="button" onClick={() => setSplits(s => [...s, { mode: 'NEFT', amount: '', reference: '' }])}
+                        className="text-[10px] font-bold text-blue-600 uppercase tracking-widest hover:text-blue-800">+ Add Split</button>
+                      <div className="text-xs font-mono tabular-nums">
+                        Total: <span className={`font-bold ${Math.abs(splits.reduce((s, x) => s + (parseFloat(x.amount) || 0), 0) - (parseFloat(payForm.amount) || payModal?.invoice.balanceAmount || 0)) < 1 ? 'text-green-600' : 'text-red-600'}`}>
+                          {fmtDec(splits.reduce((s, x) => s + (parseFloat(x.amount) || 0), 0))}
+                        </span>
+                        {' / '}{fmtDec(parseFloat(payForm.amount) || payModal?.invoice.balanceAmount || 0)}
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div className="grid grid-cols-3 gap-3">
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Payment Date *</label>
@@ -1350,6 +1492,111 @@ export default function PaymentsOut() {
                     {submitting ? 'CONFIRMING...' : 'CONFIRM PAYMENT'}
                   </button>
                   <button type="button" onClick={() => setPayModal(null)}
+                    className="px-4 py-1.5 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">CANCEL</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+        {/* ═══════════════════════════════════════ */}
+        {/* DIRECT PAYMENT MODAL (fuel deals without invoice) */}
+        {/* ═══════════════════════════════════════ */}
+        {directPayItem && (
+          <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 overflow-y-auto py-4">
+            <div className="bg-white shadow-2xl w-full max-w-2xl mx-4">
+              <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CreditCard size={14} />
+                  <span className="text-xs font-bold uppercase tracking-widest">Direct Payment — Fuel Deal</span>
+                </div>
+                <button onClick={() => setDirectPayItem(null)} className="text-slate-400 hover:text-white"><X size={16} /></button>
+              </div>
+              <div className="bg-slate-100 px-4 py-2 text-xs border-b border-slate-300 flex gap-6">
+                <span><strong>Vendor:</strong> {directPayItem.vendorName}</span>
+                <span><strong>PO:</strong> PO-{directPayItem.poNo}</span>
+                <span><strong>GRN Value:</strong> <span className="text-red-600 font-bold">{fmtDec(directPayItem.grnTotalValue)}</span></span>
+                <span><strong>Trucks:</strong> {directPayItem.grnCount}</span>
+              </div>
+              <form onSubmit={submitDirectPayment} className="p-4 space-y-3">
+                {error && <div className="text-xs text-red-600 bg-red-50 border border-red-200 px-3 py-1.5">{error}</div>}
+                {/* Split toggle */}
+                <div className="flex items-center gap-2 pb-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Split Payment (Cash + Bank)</label>
+                  <button type="button" onClick={() => { setSplitMode(!splitMode); if (!splitMode) setSplits([{ mode: 'CASH', amount: '', reference: '' }, { mode: 'NEFT', amount: '', reference: '' }]); }}
+                    className={`w-8 h-4 rounded-full transition relative ${splitMode ? 'bg-blue-600' : 'bg-slate-300'}`}>
+                    <span className={`block w-3 h-3 bg-white rounded-full absolute top-0.5 transition ${splitMode ? 'left-4' : 'left-0.5'}`} />
+                  </button>
+                </div>
+                {!splitMode ? (
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Amount *</label>
+                      <input type="number" step="0.01" value={payForm.amount} onChange={e => setPayForm(f => ({ ...f, amount: e.target.value }))}
+                        required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Mode *</label>
+                      <select value={payForm.mode} onChange={e => setPayForm(f => ({ ...f, mode: e.target.value }))}
+                        className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                        {MODES.map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Reference</label>
+                      <input type="text" value={payForm.reference} onChange={e => setPayForm(f => ({ ...f, reference: e.target.value }))}
+                        className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {splits.map((sp, idx) => (
+                      <div key={idx} className="grid grid-cols-[120px_1fr_1fr_30px] gap-2 items-end">
+                        <select value={sp.mode} onChange={e => setSplits(s => s.map((x, i) => i === idx ? { ...x, mode: e.target.value } : x))}
+                          className="border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+                          {MODES.map(m => <option key={m} value={m}>{m}</option>)}
+                        </select>
+                        <input type="number" step="0.01" value={sp.amount} onChange={e => setSplits(s => s.map((x, i) => i === idx ? { ...x, amount: e.target.value } : x))}
+                          placeholder="Amount" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                        <input type="text" value={sp.reference} onChange={e => setSplits(s => s.map((x, i) => i === idx ? { ...x, reference: e.target.value } : x))}
+                          placeholder={sp.mode === 'CASH' ? 'Slip #' : 'UTR'} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                        <button type="button" onClick={() => setSplits(s => s.filter((_, i) => i !== idx))}
+                          className="text-red-400 hover:text-red-600 text-lg pb-1">{splits.length > 1 ? '\u00D7' : ''}</button>
+                      </div>
+                    ))}
+                    <div className="flex items-center justify-between">
+                      <button type="button" onClick={() => setSplits(s => [...s, { mode: 'NEFT', amount: '', reference: '' }])}
+                        className="text-[10px] font-bold text-blue-600 uppercase tracking-widest hover:text-blue-800">+ Add Split</button>
+                      <div className="text-xs font-mono tabular-nums">
+                        Total: <span className={`font-bold ${Math.abs(splits.reduce((s, x) => s + (parseFloat(x.amount) || 0), 0) - (directPayItem.grnTotalValue || 0)) < 1 ? 'text-green-600' : 'text-red-600'}`}>
+                          {fmtDec(splits.reduce((s, x) => s + (parseFloat(x.amount) || 0), 0))}
+                        </span> / {fmtDec(directPayItem.grnTotalValue)}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Payment Date *</label>
+                    <input type="date" value={payForm.paymentDate} onChange={e => setPayForm(f => ({ ...f, paymentDate: e.target.value }))}
+                      required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">TDS Deducted</label>
+                    <input type="number" step="0.01" value={payForm.tdsDeducted} onChange={e => setPayForm(f => ({ ...f, tdsDeducted: e.target.value }))}
+                      className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label>
+                    <input type="text" value={payForm.remarks} onChange={e => setPayForm(f => ({ ...f, remarks: e.target.value }))}
+                      className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                  </div>
+                </div>
+                <div className="flex gap-2 pt-3 border-t border-slate-200">
+                  <button type="submit" disabled={submitting}
+                    className="px-4 py-1.5 bg-green-600 text-white text-[11px] font-medium hover:bg-green-700 disabled:opacity-50">
+                    {submitting ? 'PROCESSING...' : 'CONFIRM PAYMENT'}
+                  </button>
+                  <button type="button" onClick={() => setDirectPayItem(null)}
                     className="px-4 py-1.5 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">CANCEL</button>
                 </div>
               </form>
