@@ -18,8 +18,8 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// No frontend — factory server is API-only
-// All management done via cloud ERP (app.mspil.in)
+// Serve React frontend from factory-server/public/
+app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // Health check
 app.get('/api/health', (_req, res) => {
@@ -46,9 +46,19 @@ app.get('/api/factory-pcs', (_req, res) => {
   res.json(getAllPCStatus());
 });
 
-// Redirect any browser visit to weighbridge UI (the operator interface)
-app.get('/', (_req, res) => {
-  res.redirect('http://192.168.0.83:8098');
+// SPA fallback — any non-API route serves the React frontend
+app.get('*', (_req, res) => {
+  const indexPath = path.join(__dirname, '..', 'public', 'index.html');
+  res.sendFile(indexPath, (err) => {
+    if (err) {
+      // Frontend not built yet — show helpful message
+      res.status(200).send(`
+        <h2>MSPIL Factory Hub</h2>
+        <p>Frontend not built. Run: <code>cd factory-server/frontend && npm run build</code></p>
+        <p><a href="/api/health">API Health Check</a></p>
+      `);
+    }
+  });
 });
 
 // Error handler

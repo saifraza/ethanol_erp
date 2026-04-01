@@ -1,0 +1,210 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// FACTORY SERVER SCHEMA — Lightweight, local-first
+// This is SEPARATE from the cloud ERP schema (61 models).
+// Only stores what the factory floor needs locally.
+// ============================================================
+
+// --- USERS ---
+model FactoryUser {
+  id        String   @id @default(uuid())
+  username  String   @unique
+  password  String   // bcrypt hashed
+  name      String
+  role      String   @default("GATE_ENTRY") // ADMIN, GATE_ENTRY, WEIGHBRIDGE, FUEL_YARD, LAB
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([role])
+}
+
+// --- WEIGHMENTS ---
+// Received from weighbridge PCs, synced to cloud ERP
+model Weighment {
+  id            String   @id @default(uuid())
+  localId       String   @unique // UUID from the weighbridge PC
+  pcId          String   // Which PC sent this (WB1, WB2, etc.)
+  pcName        String?
+  vehicleNo     String
+  direction     String   // INBOUND, OUTBOUND
+  // Purchase info
+  purchaseType  String?  // PO, SPOT, OUTBOUND
+  poNumber      String?
+  supplierName  String?
+  supplierId    String?
+  materialName  String?
+  materialId    String?
+  // Weights
+  grossWeight   Float?
+  tareWeight    Float?
+  netWeight     Float?
+  grossTime     DateTime?
+  tareTime      DateTime?
+  // Status
+  status        String   @default("GATE_ENTRY") // GATE_ENTRY, GROSS_DONE, COMPLETE
+  // Gate entry
+  gateEntryNo   String?
+  driverName    String?
+  driverPhone   String?
+  remarks       String?
+  // Cloud sync
+  cloudSynced   Boolean  @default(false)
+  cloudSyncedAt DateTime?
+  cloudError    String?
+  syncAttempts  Int      @default(0)
+  // Timestamps
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([pcId])
+  @@index([status])
+  @@index([cloudSynced])
+  @@index([vehicleNo])
+  @@index([createdAt])
+}
+
+// --- GATE ENTRIES ---
+// Vehicle entry/exit tracking
+model GateEntry {
+  id           String   @id @default(uuid())
+  vehicleNo    String
+  direction    String   // INBOUND, OUTBOUND
+  purpose      String?  // RAW_MATERIAL, FUEL, DDGS_DISPATCH, CHEMICAL, VISITOR, OTHER
+  driverName   String?
+  driverPhone  String?
+  personCount  Int      @default(1)
+  // Linked records
+  weighmentId  String?
+  poNumber     String?
+  supplierName String?
+  // Timing
+  entryTime    DateTime @default(now())
+  exitTime     DateTime?
+  // Status
+  status       String   @default("INSIDE") // INSIDE, EXITED
+  // Cloud sync
+  cloudSynced  Boolean  @default(false)
+  cloudSyncedAt DateTime?
+  // Timestamps
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([vehicleNo])
+  @@index([status])
+  @@index([direction])
+  @@index([createdAt])
+  @@index([cloudSynced])
+}
+
+// --- PC HEARTBEATS ---
+// Health monitoring for all factory PCs
+model PcHeartbeat {
+  id            String   @id @default(uuid())
+  pcId          String
+  pcName        String
+  pcRole        String   @default("WEIGHBRIDGE") // WEIGHBRIDGE, GATE_ENTRY, FUEL_YARD, LAB, CAMERA
+  tailscaleIp   String?
+  lanIp         String?
+  // Health
+  cpuPercent    Float?
+  memoryPercent Float?
+  diskFreeGb    Float?
+  uptime        String?
+  // Service info
+  serviceVersion String?
+  serialProtocol String?
+  dbSizeKb       Int?
+  queueDepth     Int?
+  lastSyncTime   DateTime?
+  // Timestamps
+  lastSeen      DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  @@unique([pcId])
+  @@index([lastSeen])
+}
+
+// --- CACHED MASTER DATA ---
+// Pulled from cloud ERP, used by all PCs
+model CachedSupplier {
+  id        String   @id
+  name      String
+  gstin     String?
+  phone     String?
+  updatedAt DateTime @default(now())
+}
+
+model CachedMaterial {
+  id        String   @id
+  name      String
+  unit      String?
+  category  String?
+  updatedAt DateTime @default(now())
+}
+
+model CachedPurchaseOrder {
+  id             String   @id
+  poNumber       String
+  supplierName   String
+  supplierId     String
+  materialName   String
+  materialId     String
+  quantity       Float
+  receivedQty    Float    @default(0)
+  unit           String
+  status         String
+  updatedAt      DateTime @default(now())
+
+  @@index([status])
+  @@index([supplierId])
+}
+
+model CachedCustomer {
+  id        String   @id
+  name      String
+  gstin     String?
+  updatedAt DateTime @default(now())
+}
+
+// --- SYNC QUEUE ---
+// Dead letter queue for failed cloud syncs
+model SyncQueue {
+  id          String   @id @default(uuid())
+  entityType  String   // WEIGHMENT, GATE_ENTRY
+  entityId    String
+  payload     String   // JSON payload
+  attempts    Int      @default(0)
+  lastError   String?
+  status      String   @default("PENDING") // PENDING, FAILED, DEAD
+  nextRetry   DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status])
+  @@index([nextRetry])
+  @@index([entityType])
+}
+
+// --- PRINT QUEUE ---
+// For managing printer jobs across PCs
+model PrintJob {
+  id         String   @id @default(uuid())
+  pcId       String
+  printerType String  // THERMAL, DOT_MATRIX
+  template   String   // GATE_PASS, WEIGHT_SLIP, DISPATCH_SLIP
+  data       String   // JSON data for template
+  status     String   @default("PENDING") // PENDING, SENT, PRINTED, FAILED
+  createdAt  DateTime @default(now())
+
+  @@index([pcId, status])
+  @@index([createdAt])
+}
