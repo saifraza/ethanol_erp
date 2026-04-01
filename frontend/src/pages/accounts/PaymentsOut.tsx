@@ -163,6 +163,8 @@ export default function PaymentsOut() {
   const [splitMode, setSplitMode] = useState(false);
   const [splits, setSplits] = useState<Array<{ mode: string; amount: string; reference: string }>>([{ mode: 'NEFT', amount: '', reference: '' }]);
   const [directPayItem, setDirectPayItem] = useState<PendingPayable | null>(null);
+  const [payStep, setPayStep] = useState<'instructions' | 'confirm'>('instructions');
+  const [vendorBank, setVendorBank] = useState<{ bankName: string; bankBranch: string; bankAccount: string; bankIfsc: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -316,7 +318,7 @@ export default function PaymentsOut() {
     }
   };
 
-  const openPayModal = (item: PendingPayable) => {
+  const openPayModal = async (item: PendingPayable) => {
     const inv = item.invoices[0];
     if (!inv) return;
     setPayForm({
@@ -325,11 +327,24 @@ export default function PaymentsOut() {
       tdsDeducted: item.tdsApplicable ? String(((inv.balanceAmount || 0) * (item.tdsPercent || 0) / 100).toFixed(2)) : '',
       tdsSection: item.tdsSection || '', remarks: '',
     });
+    setSplitMode(false);
+    setPayStep('instructions');
     setPayModal({ item, invoice: inv });
     setError('');
+    // Fetch vendor bank details
+    try {
+      const res = await api.get(`/vendors/${item.vendorId}`);
+      const v = res.data as Record<string, unknown>;
+      setVendorBank({
+        bankName: (v.bankName as string) || '',
+        bankBranch: (v.bankBranch as string) || '',
+        bankAccount: (v.bankAccount as string) || '',
+        bankIfsc: (v.bankIfsc as string) || '',
+      });
+    } catch { setVendorBank(null); }
   };
 
-  const openDirectPayModal = (item: PendingPayable) => {
+  const openDirectPayModal = async (item: PendingPayable) => {
     // Direct payment for fuel deals without invoice
     setPayForm({
       amount: String(item.grnTotalValue || item.poAmount || ''),
@@ -339,8 +354,20 @@ export default function PaymentsOut() {
     });
     setSplitMode(false);
     setSplits([{ mode: 'NEFT', amount: '', reference: '' }]);
+    setPayStep('instructions');
     setDirectPayItem(item);
     setError('');
+    // Fetch vendor bank details
+    try {
+      const res = await api.get(`/vendors/${item.vendorId}`);
+      const v = res.data as Record<string, unknown>;
+      setVendorBank({
+        bankName: (v.bankName as string) || '',
+        bankBranch: (v.bankBranch as string) || '',
+        bankAccount: (v.bankAccount as string) || '',
+        bankIfsc: (v.bankIfsc as string) || '',
+      });
+    } catch { setVendorBank(null); }
   };
 
   const submitDirectPayment = async (e: React.FormEvent) => {
@@ -1402,6 +1429,74 @@ export default function PaymentsOut() {
                 <span><strong>Balance:</strong> <span className="text-red-600 font-bold">{fmtDec(payModal.invoice.balanceAmount)}</span></span>
               </div>
 
+              {/* STEP 1: Payment Instructions — show bank details for manual transfer */}
+              {payStep === 'instructions' && (
+                <div className="p-4 space-y-3">
+                  <div className="bg-blue-50 border border-blue-200 px-4 py-3">
+                    <div className="text-[10px] font-bold text-blue-800 uppercase tracking-widest mb-2">Payment Instructions</div>
+                    <div className="text-xs text-blue-900">Transfer the amount below to the vendor's bank account, then click "I've Paid" to confirm.</div>
+                  </div>
+
+                  {/* Amount to pay */}
+                  <div className="bg-slate-800 text-white px-4 py-3 text-center">
+                    <div className="text-[10px] uppercase tracking-widest text-slate-400">Amount to Pay</div>
+                    <div className="text-2xl font-bold font-mono tabular-nums mt-1">{fmtDec(parseFloat(payForm.amount) || payModal.invoice.balanceAmount)}</div>
+                    {payForm.tdsDeducted && parseFloat(payForm.tdsDeducted) > 0 && (
+                      <div className="text-[10px] text-slate-400 mt-1">After TDS deduction of {fmtDec(parseFloat(payForm.tdsDeducted))} ({payForm.tdsSection})</div>
+                    )}
+                  </div>
+
+                  {/* Vendor bank details */}
+                  {vendorBank && vendorBank.bankAccount ? (
+                    <div className="border border-slate-300">
+                      <div className="bg-slate-100 px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-300">Vendor Bank Details</div>
+                      <div className="p-3 space-y-1.5 text-xs">
+                        <div className="flex justify-between"><span className="text-slate-500">Beneficiary Name</span><span className="font-bold text-slate-800">{payModal.item.vendorName}</span></div>
+                        <div className="flex justify-between"><span className="text-slate-500">Bank</span><span className="font-medium">{vendorBank.bankName}{vendorBank.bankBranch ? `, ${vendorBank.bankBranch}` : ''}</span></div>
+                        <div className="flex justify-between"><span className="text-slate-500">Account No</span><span className="font-mono font-bold text-slate-800 select-all">{vendorBank.bankAccount}</span></div>
+                        <div className="flex justify-between"><span className="text-slate-500">IFSC Code</span><span className="font-mono font-bold text-slate-800 select-all">{vendorBank.bankIfsc}</span></div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-amber-50 border border-amber-200 px-4 py-3 text-xs text-amber-800">
+                      Vendor bank details not on file. Add them in Vendor Master before generating bank payment.
+                    </div>
+                  )}
+
+                  {/* Payment reference suggestion */}
+                  <div className="border border-slate-200 px-3 py-2 bg-slate-50 text-xs text-slate-600">
+                    <span className="font-bold">Suggested Reference:</span> PO-{payModal.item.poNo} / {payModal.invoice.vendorInvNo || 'INV'}
+                  </div>
+
+                  <div className="flex gap-2 pt-3 border-t border-slate-200">
+                    <button type="button" onClick={() => setPayStep('confirm')}
+                      className="px-4 py-1.5 bg-green-600 text-white text-[11px] font-medium hover:bg-green-700">
+                      I'VE PAID — CONFIRM DETAILS
+                    </button>
+                    <button type="button" onClick={() => {
+                      // Pay with cash instead — switch to split mode with cash
+                      setSplitMode(false);
+                      setPayForm(f => ({ ...f, mode: 'CASH' }));
+                      setPayStep('confirm');
+                    }} className="px-4 py-1.5 bg-amber-600 text-white text-[11px] font-medium hover:bg-amber-700">
+                      PAY CASH
+                    </button>
+                    <button type="button" onClick={() => {
+                      // Split — part cash, part bank
+                      setSplitMode(true);
+                      setSplits([{ mode: 'CASH', amount: '', reference: '' }, { mode: 'NEFT', amount: '', reference: '' }]);
+                      setPayStep('confirm');
+                    }} className="px-4 py-1.5 bg-indigo-600 text-white text-[11px] font-medium hover:bg-indigo-700">
+                      SPLIT (CASH + BANK)
+                    </button>
+                    <button type="button" onClick={() => setPayModal(null)}
+                      className="px-4 py-1.5 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">CANCEL</button>
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 2: Confirm Payment — enter UTR/reference and finalize */}
+              {payStep === 'confirm' && (
               <form onSubmit={submitPayment} className="p-4 space-y-3">
                 {error && <div className="text-xs text-red-600 bg-red-50 border border-red-200 px-3 py-1.5">{error}</div>}
 
@@ -1500,10 +1595,13 @@ export default function PaymentsOut() {
                     className="px-4 py-1.5 bg-green-600 text-white text-[11px] font-medium hover:bg-green-700 disabled:opacity-50">
                     {submitting ? 'CONFIRMING...' : 'CONFIRM PAYMENT'}
                   </button>
+                  <button type="button" onClick={() => setPayStep('instructions')}
+                    className="px-4 py-1.5 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">BACK</button>
                   <button type="button" onClick={() => setPayModal(null)}
                     className="px-4 py-1.5 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">CANCEL</button>
                 </div>
               </form>
+              )}
             </div>
           </div>
         )}
@@ -1526,8 +1624,62 @@ export default function PaymentsOut() {
                 <span><strong>GRN Value:</strong> <span className="text-red-600 font-bold">{fmtDec(directPayItem.grnTotalValue)}</span></span>
                 <span><strong>Trucks:</strong> {directPayItem.grnCount}</span>
               </div>
+
+              {/* STEP 1: Payment Instructions */}
+              {payStep === 'instructions' && (
+                <div className="p-4 space-y-3">
+                  <div className="bg-blue-50 border border-blue-200 px-4 py-3">
+                    <div className="text-[10px] font-bold text-blue-800 uppercase tracking-widest mb-2">Payment Instructions</div>
+                    <div className="text-xs text-blue-900">Choose how to pay. You can pay the full amount or a partial amount now and the rest later.</div>
+                  </div>
+                  <div className="bg-slate-800 text-white px-4 py-3 text-center">
+                    <div className="text-[10px] uppercase tracking-widest text-slate-400">Total Outstanding</div>
+                    <div className="text-2xl font-bold font-mono tabular-nums mt-1">{fmtDec(directPayItem.grnTotalValue)}</div>
+                  </div>
+                  {vendorBank && vendorBank.bankAccount ? (
+                    <div className="border border-slate-300">
+                      <div className="bg-slate-100 px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-300">Vendor Bank Details</div>
+                      <div className="p-3 space-y-1.5 text-xs">
+                        <div className="flex justify-between"><span className="text-slate-500">Beneficiary</span><span className="font-bold text-slate-800">{directPayItem.vendorName}</span></div>
+                        <div className="flex justify-between"><span className="text-slate-500">Bank</span><span className="font-medium">{vendorBank.bankName}{vendorBank.bankBranch ? `, ${vendorBank.bankBranch}` : ''}</span></div>
+                        <div className="flex justify-between"><span className="text-slate-500">Account No</span><span className="font-mono font-bold text-slate-800 select-all">{vendorBank.bankAccount}</span></div>
+                        <div className="flex justify-between"><span className="text-slate-500">IFSC</span><span className="font-mono font-bold text-slate-800 select-all">{vendorBank.bankIfsc}</span></div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-amber-50 border border-amber-200 px-4 py-3 text-xs text-amber-800">
+                      Vendor bank details not on file. Add them in Vendor Master for bank payments.
+                    </div>
+                  )}
+                  <div className="flex gap-2 pt-3 border-t border-slate-200">
+                    <button type="button" onClick={() => { setPayStep('confirm'); setSplitMode(false); setPayForm(f => ({ ...f, mode: 'NEFT' })); }}
+                      className="px-4 py-1.5 bg-green-600 text-white text-[11px] font-medium hover:bg-green-700">
+                      PAY VIA BANK
+                    </button>
+                    <button type="button" onClick={() => { setPayStep('confirm'); setSplitMode(false); setPayForm(f => ({ ...f, mode: 'CASH' })); }}
+                      className="px-4 py-1.5 bg-amber-600 text-white text-[11px] font-medium hover:bg-amber-700">
+                      PAY CASH
+                    </button>
+                    <button type="button" onClick={() => { setPayStep('confirm'); setSplitMode(true); setSplits([{ mode: 'CASH', amount: '', reference: '' }, { mode: 'NEFT', amount: '', reference: '' }]); }}
+                      className="px-4 py-1.5 bg-indigo-600 text-white text-[11px] font-medium hover:bg-indigo-700">
+                      SPLIT (CASH + BANK)
+                    </button>
+                    <button type="button" onClick={() => setDirectPayItem(null)}
+                      className="px-4 py-1.5 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">CANCEL</button>
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 2: Confirm Payment */}
+              {payStep === 'confirm' && (
               <form onSubmit={submitDirectPayment} className="p-4 space-y-3">
                 {error && <div className="text-xs text-red-600 bg-red-50 border border-red-200 px-3 py-1.5">{error}</div>}
+
+                {/* Partial payment hint */}
+                <div className="bg-slate-50 border border-slate-200 px-3 py-2 text-xs text-slate-600">
+                  Enter the amount you are paying now. Remaining balance will stay as outstanding for future payment.
+                </div>
+
                 {/* Split toggle */}
                 <div className="flex items-center gap-2 pb-1">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Split Payment (Cash + Bank)</label>
@@ -1605,10 +1757,13 @@ export default function PaymentsOut() {
                     className="px-4 py-1.5 bg-green-600 text-white text-[11px] font-medium hover:bg-green-700 disabled:opacity-50">
                     {submitting ? 'PROCESSING...' : 'CONFIRM PAYMENT'}
                   </button>
+                  <button type="button" onClick={() => setPayStep('instructions')}
+                    className="px-4 py-1.5 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">BACK</button>
                   <button type="button" onClick={() => setDirectPayItem(null)}
                     className="px-4 py-1.5 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">CANCEL</button>
                 </div>
               </form>
+              )}
             </div>
           </div>
         )}
