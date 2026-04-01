@@ -949,4 +949,89 @@ router.get('/weighments', asyncHandler(async (req: AuthRequest, res: Response) =
   res.json(trucks);
 }));
 
+// ==========================================================================
+//  FACTORY USER MANAGEMENT — proxy to factory server via Tailscale
+// ==========================================================================
+
+const FACTORY_SERVER_URL = process.env.FACTORY_SERVER_URL || 'http://100.126.101.7:5000';
+
+// GET /factory-users — list all factory users
+router.get('/factory-users', asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const token = await getFactoryAdminToken();
+    if (!token) { res.json([]); return; }
+    const resp = await fetch(`${FACTORY_SERVER_URL}/api/auth/users`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (resp.ok) { res.json(await resp.json()); }
+    else { res.json([]); }
+  } catch { res.json([]); }
+}));
+
+// POST /factory-users — create factory user
+router.post('/factory-users', asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const token = await getFactoryAdminToken();
+    if (!token) { res.status(503).json({ error: 'Factory server unreachable' }); return; }
+    const resp = await fetch(`${FACTORY_SERVER_URL}/api/auth/users`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body),
+    });
+    const data = await resp.json();
+    res.status(resp.status).json(data);
+  } catch { res.status(503).json({ error: 'Factory server unreachable' }); }
+}));
+
+// PUT /factory-users/:id — update factory user
+router.put('/factory-users/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const token = await getFactoryAdminToken();
+    if (!token) { res.status(503).json({ error: 'Factory server unreachable' }); return; }
+    const resp = await fetch(`${FACTORY_SERVER_URL}/api/auth/users/${req.params.id}`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body),
+    });
+    const data = await resp.json();
+    res.status(resp.status).json(data);
+  } catch { res.status(503).json({ error: 'Factory server unreachable' }); }
+}));
+
+// PUT /factory-users/:id/password — reset password
+router.put('/factory-users/:id/password', asyncHandler(async (req: AuthRequest, res: Response) => {
+  try {
+    const token = await getFactoryAdminToken();
+    if (!token) { res.status(503).json({ error: 'Factory server unreachable' }); return; }
+    const resp = await fetch(`${FACTORY_SERVER_URL}/api/auth/users/${req.params.id}/password`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body),
+    });
+    const data = await resp.json();
+    res.status(resp.status).json(data);
+  } catch { res.status(503).json({ error: 'Factory server unreachable' }); }
+}));
+
+// Helper: get admin JWT from factory server
+let _factoryToken: string | null = null;
+let _factoryTokenExpiry = 0;
+async function getFactoryAdminToken(): Promise<string | null> {
+  if (_factoryToken && Date.now() < _factoryTokenExpiry) return _factoryToken;
+  try {
+    const resp = await fetch(`${FACTORY_SERVER_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'admin', password: 'admin123' }),
+    });
+    if (resp.ok) {
+      const data = await resp.json() as { token: string };
+      _factoryToken = data.token;
+      _factoryTokenExpiry = Date.now() + 24 * 60 * 60 * 1000; // 24h
+      return _factoryToken;
+    }
+  } catch { /* factory server unreachable */ }
+  return null;
+}
+
 export default router;
