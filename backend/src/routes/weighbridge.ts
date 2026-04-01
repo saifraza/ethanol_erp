@@ -617,6 +617,41 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
 
 
 // ==========================================================================
+//  LAB RESULTS — pull lab status back to weighbridge PC
+// ==========================================================================
+
+router.post('/lab-results', asyncHandler(async (req: Request, res: Response) => {
+  if (!checkWBKey(req, res)) return;
+
+  const { weighment_ids } = req.body;
+  if (!Array.isArray(weighment_ids) || weighment_ids.length === 0) {
+    return res.json({ results: [] });
+  }
+
+  // Find GrainTruck records that match these weighment IDs (via WB:uuid in remarks)
+  const results: Array<{ weighment_id: string; lab_status: string; moisture: number | null; starch: number | null; damaged: number | null; foreign_matter: number | null }> = [];
+
+  for (const wid of weighment_ids.slice(0, 50)) {
+    const truck = await prisma.grainTruck.findFirst({
+      where: { remarks: { contains: `WB:${wid}` } },
+      select: { moisture: true, starchPercent: true, damagedPercent: true, foreignMatter: true, quarantine: true },
+    });
+    if (truck && (truck.moisture !== null || truck.quarantine)) {
+      results.push({
+        weighment_id: wid,
+        lab_status: truck.quarantine ? 'FAIL' : 'PASS',
+        moisture: truck.moisture,
+        starch: truck.starchPercent,
+        damaged: truck.damagedPercent,
+        foreign_matter: truck.foreignMatter,
+      });
+    }
+  }
+
+  res.json({ results });
+}));
+
+// ==========================================================================
 //  MASTER DATA — suppliers + materials + active POs + customers
 // ==========================================================================
 

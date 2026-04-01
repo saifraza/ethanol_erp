@@ -159,6 +159,41 @@ class CloudSync:
                  len(suppliers), len(materials), len(pos), len(customers), len(vehicles))
 
     # =====================================================================
+    #  PULL LAB RESULTS — sync lab status from cloud back to weighbridge
+    # =====================================================================
+
+    def pull_lab_results(self):
+        """Pull lab results from cloud for pending weighments."""
+        pending = db.get_pending_lab()
+        if not pending:
+            return
+
+        ids = [w["id"] for w in pending]
+        result = self._post("/lab-results", {"weighment_ids": ids})
+        if not result:
+            return
+
+        results = result.get("results", [])
+        if not results:
+            return
+
+        for r in results:
+            try:
+                db.update_lab_result(
+                    weighment_id=r["weighment_id"],
+                    status=r["lab_status"],
+                    moisture=r.get("moisture"),
+                    starch=r.get("starch"),
+                    damaged=r.get("damaged"),
+                    foreign_matter=r.get("foreign_matter"),
+                    remarks="From cloud ERP lab",
+                    tested_by="cloud-erp",
+                )
+                log.info("Lab result synced from cloud: %s → %s", r["weighment_id"][:8], r["lab_status"])
+            except Exception as e:
+                log.error("Failed to apply cloud lab result: %s", e)
+
+    # =====================================================================
     #  HEARTBEAT — tell cloud we're alive
     # =====================================================================
 
@@ -243,6 +278,9 @@ class CloudSync:
             try:
                 # Push pending weighments
                 self.push_weighments()
+
+                # Pull lab results from cloud (every cycle — fast feedback)
+                self.pull_lab_results()
 
                 # Pull master data periodically
                 if time.time() - self._last_master_pull > MASTER_PULL_INTERVAL_SECONDS:
