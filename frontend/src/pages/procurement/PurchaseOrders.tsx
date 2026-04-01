@@ -570,9 +570,9 @@ const PurchaseOrders: React.FC = () => {
   const getNextStatusOptions = (currentStatus: string): string[] => {
     const transitions: Record<string, string[]> = {
       DRAFT: ['APPROVED', 'CANCELLED'],
-      APPROVED: ['SENT', 'CANCELLED'],
+      APPROVED: ['SENT', 'CLOSED', 'CANCELLED'],
       SENT: ['PARTIAL_RECEIVED', 'RECEIVED', 'CANCELLED'],
-      PARTIAL_RECEIVED: ['RECEIVED', 'CANCELLED'],
+      PARTIAL_RECEIVED: ['RECEIVED', 'CLOSED', 'CANCELLED'],
       RECEIVED: ['CLOSED', 'CANCELLED'],
       CLOSED: ['ARCHIVED'],
       CANCELLED: ['ARCHIVED'],

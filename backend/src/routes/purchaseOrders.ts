@@ -251,7 +251,7 @@ router.put('/:id/status', asyncHandler(async (req: AuthRequest, res: Response) =
     // Validate status transitions
     const validTransitions: Record<string, string[]> = {
       'DRAFT': ['APPROVED', 'CANCELLED'],
-      'APPROVED': ['SENT', 'CANCELLED'],
+      'APPROVED': ['SENT', 'CLOSED', 'CANCELLED'],
       'SENT': ['PARTIAL_RECEIVED', 'RECEIVED', 'CLOSED', 'CANCELLED'],
       'PARTIAL_RECEIVED': ['RECEIVED', 'CLOSED', 'CANCELLED'],
       'RECEIVED': ['CLOSED'],
