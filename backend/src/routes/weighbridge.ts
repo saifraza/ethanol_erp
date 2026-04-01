@@ -1,5 +1,5 @@
 import { Router, Response, Request } from 'express';
-import { AuthRequest } from '../middleware/auth';
+import { AuthRequest, authenticate, authorize } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import prisma from '../config/prisma';
 import { onStockMovement } from '../services/autoJournal';
@@ -224,6 +224,8 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
 
   for (const raw of weighments) {
     const w = weighmentSchema.parse(raw);
+    // Lab join key — set on every GrainTruck so lab can find it via uidRst
+    const wbUidRst = `WB-${w.ticket_no}`;
 
     // For INBOUND raw material: accept gate entries (for lab testing page)
     // For everything else: only process COMPLETE weighments with weights
@@ -242,6 +244,7 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
         const truck = await prisma.grainTruck.create({
           data: {
             date: w.created_at ? new Date(w.created_at) : new Date(),
+            uidRst: wbUidRst,
             vehicleNo: w.vehicle_no,
             supplier: w.supplier_name || '',
             weightGross: grossTon,
@@ -389,6 +392,7 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
             const truck = await prisma.grainTruck.create({
               data: {
                 date: w.created_at ? new Date(w.created_at) : new Date(),
+                uidRst: wbUidRst,
                 vehicleNo: w.vehicle_no,
                 supplier: po.vendor.name || w.supplier_name || '',
                 weightGross: grossTon,
@@ -483,6 +487,7 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
               await prisma.grainTruck.create({
                 data: {
                   date: w.created_at ? new Date(w.created_at) : new Date(),
+                  uidRst: wbUidRst,
                   vehicleNo: w.vehicle_no,
                   supplier: po.vendor.name || w.supplier_name || '',
                   weightGross: grossTon,
@@ -616,6 +621,7 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
       const truck = await prisma.grainTruck.create({
         data: {
           date: w.created_at ? new Date(w.created_at) : new Date(),
+          uidRst: wbUidRst,
           vehicleNo: w.vehicle_no,
           supplier: w.supplier_name || '',
           weightGross: grossTon,
@@ -639,6 +645,292 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
   }
 
   res.json({ ok: true, ids, results, count: ids.length });
+}));
+
+
+// ==========================================================================
+//  PUT /weighment/:wbId — update a previously pushed weighment
+//  Called by factory PC when operator corrects weight, vehicle no, etc.
+// ==========================================================================
+
+const updateWeighmentSchema = z.object({
+  vehicle_no: z.string().optional(),
+  supplier_name: z.string().optional(),
+  material: z.string().optional(),
+  weight_first: z.number().nullable().optional(),
+  weight_second: z.number().nullable().optional(),
+  weight_gross: z.number().nullable().optional(),
+  weight_tare: z.number().nullable().optional(),
+  weight_net: z.number().nullable().optional(),
+  weight_source: z.string().optional(),
+  status: z.string().optional(),
+  moisture: z.number().nullable().optional(),
+  bags: z.number().nullable().optional(),
+  remarks: z.string().nullable().optional(),
+  first_weight_at: z.string().nullable().optional(),
+  second_weight_at: z.string().nullable().optional(),
+  // Lab quality fields
+  lab_status: z.string().optional(),
+  lab_moisture: z.number().nullable().optional(),
+  lab_starch: z.number().nullable().optional(),
+  lab_damaged: z.number().nullable().optional(),
+  lab_foreign_matter: z.number().nullable().optional(),
+  lab_remarks: z.string().nullable().optional(),
+  // Spot purchase fields
+  rate: z.number().nullable().optional(),
+  deductions: z.number().nullable().optional(),
+  deduction_reason: z.string().nullable().optional(),
+  seller_phone: z.string().nullable().optional(),
+  seller_village: z.string().nullable().optional(),
+  seller_aadhaar: z.string().nullable().optional(),
+  payment_mode: z.string().nullable().optional(),
+  payment_ref: z.string().nullable().optional(),
+});
+
+router.put('/weighment/:wbId', asyncHandler(async (req: Request, res: Response) => {
+  if (!checkWBKey(req, res)) return;
+
+  const { wbId } = req.params;
+  const updates = updateWeighmentSchema.parse(req.body);
+  const wbMarker = `WB:${wbId}`;
+
+  // Search across all tables that /push creates records in
+  const [grainTruck, directPurchase, ddgsDispatch, goodsReceipt] = await Promise.all([
+    prisma.grainTruck.findFirst({
+      where: { remarks: { contains: wbMarker } },
+      select: { id: true, remarks: true, weightNet: true },
+    }),
+    prisma.directPurchase.findFirst({
+      where: { remarks: { contains: wbMarker } },
+      select: { id: true, remarks: true },
+    }),
+    prisma.dDGSDispatchTruck.findFirst({
+      where: { remarks: { contains: wbMarker } },
+      select: { id: true, remarks: true },
+    }),
+    prisma.goodsReceipt.findFirst({
+      where: { remarks: { contains: wbMarker } },
+      select: { id: true, remarks: true, poId: true, lines: { select: { id: true, poLineId: true, receivedQty: true, rate: true, unit: true } } },
+    }),
+  ]);
+
+  if (!grainTruck && !directPurchase && !ddgsDispatch && !goodsReceipt) {
+    return res.status(404).json({ error: `No cloud record found for weighment ${wbId}` });
+  }
+
+  const results: Array<{ table: string; id: string; updated: boolean }> = [];
+
+  // ── Update GrainTruck ──
+  if (grainTruck) {
+    const grossTon = updates.weight_gross != null ? updates.weight_gross / 1000 : undefined;
+    const tareTon = updates.weight_tare != null ? updates.weight_tare / 1000 : undefined;
+    const netTon = updates.weight_net != null ? updates.weight_net / 1000 : undefined;
+    const isQuarantine = updates.lab_status === 'FAIL';
+
+    await prisma.grainTruck.update({
+      where: { id: grainTruck.id },
+      data: {
+        ...(updates.vehicle_no && { vehicleNo: updates.vehicle_no }),
+        ...(updates.supplier_name && { supplier: updates.supplier_name }),
+        ...(grossTon !== undefined && { weightGross: grossTon }),
+        ...(tareTon !== undefined && { weightTare: tareTon }),
+        ...(netTon !== undefined && { weightNet: netTon }),
+        // Lab moisture takes precedence over raw moisture; skip if both undefined
+        ...(updates.lab_moisture !== undefined
+          ? { moisture: updates.lab_moisture }
+          : updates.moisture !== undefined ? { moisture: updates.moisture } : {}),
+        ...(updates.lab_starch !== undefined && { starchPercent: updates.lab_starch }),
+        ...(updates.lab_damaged !== undefined && { damagedPercent: updates.lab_damaged }),
+        ...(updates.lab_foreign_matter !== undefined && { foreignMatter: updates.lab_foreign_matter }),
+        ...(updates.bags !== undefined && { bags: updates.bags }),
+        // BUG-1 fix: explicitly clear quarantine fields when lab passes
+        ...(updates.lab_status && {
+          quarantine: isQuarantine,
+          quarantineWeight: isQuarantine && netTon ? netTon : 0,
+          quarantineReason: isQuarantine ? (updates.lab_remarks || 'Failed lab test') : '',
+        }),
+      },
+    });
+    results.push({ table: 'GrainTruck', id: grainTruck.id, updated: true });
+  }
+
+  // ── Update DirectPurchase ──
+  if (directPurchase) {
+    const netKg = updates.weight_net;
+    const rate = updates.rate;
+    // Recalc amount if weight or rate changed
+    const dpUpdate: Record<string, unknown> = {};
+    if (updates.vehicle_no) dpUpdate.vehicleNo = updates.vehicle_no;
+    if (updates.supplier_name) dpUpdate.sellerName = updates.supplier_name;
+    if (updates.seller_phone !== undefined) dpUpdate.sellerPhone = updates.seller_phone || '';
+    if (updates.seller_village !== undefined) dpUpdate.sellerVillage = updates.seller_village || '';
+    if (updates.seller_aadhaar !== undefined) dpUpdate.sellerAadhaar = updates.seller_aadhaar || '';
+    if (updates.material) dpUpdate.materialName = updates.material;
+    if (netKg != null) {
+      dpUpdate.quantity = netKg;
+      dpUpdate.netWeight = netKg;
+    }
+    if (updates.weight_gross != null) dpUpdate.grossWeight = updates.weight_gross;
+    if (updates.weight_tare != null) dpUpdate.tareWeight = updates.weight_tare;
+    if (rate != null) dpUpdate.rate = rate;
+    if (updates.payment_mode) dpUpdate.paymentMode = updates.payment_mode;
+    if (updates.payment_ref !== undefined) dpUpdate.paymentRef = updates.payment_ref || '';
+    if (updates.deductions != null) dpUpdate.deductions = updates.deductions;
+    if (updates.deduction_reason !== undefined) dpUpdate.deductionReason = updates.deduction_reason || '';
+
+    // Recalculate amount if weight or rate changed — fetch current values for partial updates
+    if (netKg != null || rate != null || updates.deductions != null) {
+      const current = await prisma.directPurchase.findUnique({
+        where: { id: directPurchase.id },
+        select: { quantity: true, rate: true, deductions: true },
+      });
+      if (current) {
+        const finalQty = netKg ?? current.quantity;
+        const finalRate = rate ?? current.rate;
+        const finalDeductions = updates.deductions ?? current.deductions;
+        const amount = Math.round(finalQty * finalRate * 100) / 100;
+        dpUpdate.amount = amount;
+        dpUpdate.netPayable = Math.round((amount - finalDeductions) * 100) / 100;
+      }
+    }
+
+    if (Object.keys(dpUpdate).length > 0) {
+      await prisma.directPurchase.update({
+        where: { id: directPurchase.id },
+        data: dpUpdate,
+      });
+    }
+    results.push({ table: 'DirectPurchase', id: directPurchase.id, updated: Object.keys(dpUpdate).length > 0 });
+  }
+
+  // ── Update DDGSDispatchTruck ──
+  if (ddgsDispatch) {
+    const ddgsUpdate: Record<string, unknown> = {};
+    if (updates.vehicle_no) ddgsUpdate.vehicleNo = updates.vehicle_no;
+    if (updates.supplier_name) ddgsUpdate.partyName = updates.supplier_name;
+    if (updates.weight_gross != null) ddgsUpdate.weightGross = updates.weight_gross;
+    if (updates.weight_tare != null) ddgsUpdate.weightTare = updates.weight_tare;
+    if (updates.weight_net != null) ddgsUpdate.weightNet = updates.weight_net / 1000; // stored as MT
+    if (updates.bags != null) ddgsUpdate.bags = updates.bags;
+
+    if (Object.keys(ddgsUpdate).length > 0) {
+      await prisma.dDGSDispatchTruck.update({
+        where: { id: ddgsDispatch.id },
+        data: ddgsUpdate,
+      });
+    }
+    results.push({ table: 'DDGSDispatchTruck', id: ddgsDispatch.id, updated: Object.keys(ddgsUpdate).length > 0 });
+  }
+
+  // ── Update GoodsReceipt (GRN) — recalc amounts, update PO line ──
+  if (goodsReceipt && goodsReceipt.lines.length > 0) {
+    // MISSING-1 fix: reject if GRN has linked vendor invoice
+    const linkedInvoice = await prisma.vendorInvoice.findFirst({
+      where: { grnId: goodsReceipt.id },
+      select: { id: true, invoiceNo: true },
+    });
+    if (linkedInvoice) {
+      return res.status(409).json({
+        error: `Cannot update weights — GRN has linked vendor invoice #${linkedInvoice.invoiceNo}. Void the invoice first.`,
+      });
+    }
+
+    const line = goodsReceipt.lines[0];
+    const netKg = updates.weight_net;
+
+    if (netKg != null && line.poLineId) {
+      // Convert KG to PO unit
+      const unit = line.unit?.toUpperCase() || 'KG';
+      let newReceivedQty: number;
+      switch (unit) {
+        case 'MT': newReceivedQty = netKg / 1000; break;
+        case 'QUINTAL': case 'QTL': newReceivedQty = netKg / 100; break;
+        default: newReceivedQty = netKg; break;
+      }
+      const oldReceivedQty = line.receivedQty;
+      const qtyDelta = newReceivedQty - oldReceivedQty;
+      const rate = line.rate;
+      const newAmount = Math.round(newReceivedQty * rate * 100) / 100;
+
+      await prisma.$transaction(async (tx) => {
+        // Update GRN line
+        await tx.gRNLine.update({
+          where: { id: line.id },
+          data: {
+            receivedQty: newReceivedQty,
+            acceptedQty: newReceivedQty,
+            amount: newAmount,
+            ...(updates.vehicle_no && { remarks: `Vehicle: ${updates.vehicle_no}` }),
+          },
+        });
+
+        // Update GRN total
+        await tx.goodsReceipt.update({
+          where: { id: goodsReceipt.id },
+          data: {
+            totalQty: newReceivedQty,
+            totalAmount: newAmount,
+            ...(updates.vehicle_no && { vehicleNo: updates.vehicle_no }),
+          },
+        });
+
+        // RACE-3 fix: use atomic increment/decrement for PO line
+        if (line.poLineId && qtyDelta !== 0) {
+          await tx.pOLine.update({
+            where: { id: line.poLineId },
+            data: {
+              receivedQty: { increment: qtyDelta },
+              pendingQty: { decrement: qtyDelta },
+            },
+          });
+
+          // ISSUE-3 fix: only update PO status if not CLOSED/CANCELLED/INVOICED
+          if (goodsReceipt.poId) {
+            const po = await tx.purchaseOrder.findUnique({
+              where: { id: goodsReceipt.poId },
+              select: { status: true },
+            });
+            const frozenStatuses = ['CLOSED', 'CANCELLED', 'INVOICED'];
+            if (po && !frozenStatuses.includes(po.status)) {
+              const allLines = await tx.pOLine.findMany({ where: { poId: goodsReceipt.poId } });
+              const allDone = allLines.every(l => l.pendingQty <= 0);
+              const anyPartial = allLines.some(l => l.receivedQty > 0 && l.pendingQty > 0);
+              if (allDone) {
+                await tx.purchaseOrder.update({ where: { id: goodsReceipt.poId }, data: { status: 'RECEIVED' } });
+              } else if (anyPartial) {
+                await tx.purchaseOrder.update({ where: { id: goodsReceipt.poId }, data: { status: 'PARTIAL_RECEIVED' } });
+              }
+            }
+          }
+        }
+      });
+
+      // Re-sync inventory if item was tracked
+      const grnLine = await prisma.gRNLine.findUnique({
+        where: { id: line.id },
+        select: { inventoryItemId: true },
+      });
+      if (grnLine?.inventoryItemId && qtyDelta !== 0) {
+        try {
+          await syncToInventory(
+            'GRN', goodsReceipt.id, `GRN-CORRECTION`,
+            grnLine.inventoryItemId,
+            Math.abs(qtyDelta),
+            line.rate,
+            qtyDelta > 0 ? 'IN' : 'OUT',
+            'GRN_CORRECTION',
+            `Weight correction for WB:${wbId} (delta: ${qtyDelta > 0 ? '+' : ''}${qtyDelta.toFixed(2)})`,
+            'system-weighbridge',
+          );
+        } catch (_invErr) {
+          // GRN is updated; inventory can be reconciled manually if sync fails
+        }
+      }
+    }
+    results.push({ table: 'GoodsReceipt', id: goodsReceipt.id, updated: netKg != null });
+  }
+
+  res.json({ ok: true, wbId, results });
 }));
 
 
@@ -955,8 +1247,8 @@ router.get('/weighments', asyncHandler(async (req: AuthRequest, res: Response) =
 
 const FACTORY_SERVER_URL = process.env.FACTORY_SERVER_URL || 'http://100.126.101.7:5000';
 
-// GET /factory-users — list all factory users
-router.get('/factory-users', asyncHandler(async (req: AuthRequest, res: Response) => {
+// GET /factory-users — list all factory users (ERP admin only)
+router.get('/factory-users', authenticate, authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const token = await getFactoryAdminToken();
     if (!token) { res.json([]); return; }
@@ -968,8 +1260,8 @@ router.get('/factory-users', asyncHandler(async (req: AuthRequest, res: Response
   } catch { res.json([]); }
 }));
 
-// POST /factory-users — create factory user
-router.post('/factory-users', asyncHandler(async (req: AuthRequest, res: Response) => {
+// POST /factory-users — create factory user (ERP admin only)
+router.post('/factory-users', authenticate, authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const token = await getFactoryAdminToken();
     if (!token) { res.status(503).json({ error: 'Factory server unreachable' }); return; }
@@ -983,8 +1275,8 @@ router.post('/factory-users', asyncHandler(async (req: AuthRequest, res: Respons
   } catch { res.status(503).json({ error: 'Factory server unreachable' }); }
 }));
 
-// PUT /factory-users/:id — update factory user
-router.put('/factory-users/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
+// PUT /factory-users/:id — update factory user (ERP admin only)
+router.put('/factory-users/:id', authenticate, authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const token = await getFactoryAdminToken();
     if (!token) { res.status(503).json({ error: 'Factory server unreachable' }); return; }
@@ -998,8 +1290,8 @@ router.put('/factory-users/:id', asyncHandler(async (req: AuthRequest, res: Resp
   } catch { res.status(503).json({ error: 'Factory server unreachable' }); }
 }));
 
-// PUT /factory-users/:id/password — reset password
-router.put('/factory-users/:id/password', asyncHandler(async (req: AuthRequest, res: Response) => {
+// PUT /factory-users/:id/password — reset password (ERP admin only)
+router.put('/factory-users/:id/password', authenticate, authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const token = await getFactoryAdminToken();
     if (!token) { res.status(503).json({ error: 'Factory server unreachable' }); return; }
@@ -1013,16 +1305,19 @@ router.put('/factory-users/:id/password', asyncHandler(async (req: AuthRequest, 
   } catch { res.status(503).json({ error: 'Factory server unreachable' }); }
 }));
 
-// Helper: get admin JWT from factory server
+// Helper: get admin JWT from factory server (credentials from env vars)
+const FACTORY_ADMIN_USER = process.env.FACTORY_ADMIN_USER || 'admin';
+const FACTORY_ADMIN_PASS = process.env.FACTORY_ADMIN_PASS;
 let _factoryToken: string | null = null;
 let _factoryTokenExpiry = 0;
 async function getFactoryAdminToken(): Promise<string | null> {
+  if (!FACTORY_ADMIN_PASS) return null; // refuse to use hardcoded password
   if (_factoryToken && Date.now() < _factoryTokenExpiry) return _factoryToken;
   try {
     const resp = await fetch(`${FACTORY_SERVER_URL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin123' }),
+      body: JSON.stringify({ username: FACTORY_ADMIN_USER, password: FACTORY_ADMIN_PASS }),
     });
     if (resp.ok) {
       const data = await resp.json() as { token: string };

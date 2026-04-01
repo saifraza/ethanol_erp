@@ -10,6 +10,7 @@ import masterDataRoutes from './routes/masterData';
 import syncRoutes from './routes/sync';
 import authRoutes from './routes/auth';
 import { startPCMonitor, getAllPCStatus } from './services/pcMonitor';
+import { startSyncWorker, getSyncWorkerStatus } from './services/syncWorker';
 
 const app = express();
 
@@ -28,6 +29,7 @@ app.get('/api/health', (_req, res) => {
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     pcs: getAllPCStatus(),
+    sync: getSyncWorkerStatus(),
   });
 });
 
@@ -92,7 +94,10 @@ app.listen(config.port, '0.0.0.0', () => {
   // Start LAN PC monitoring (polls all PCs, forwards heartbeats to cloud)
   startPCMonitor();
 
+  // Start background sync worker (push weighments to cloud + pull master data)
+  startSyncWorker();
+
   // Send factory server's own heartbeat to cloud
   sendHeartbeatToCloud();
-  setInterval(sendHeartbeatToCloud, 15000); // Heartbeat every 15s (not as frequent as PC polling)
+  setInterval(sendHeartbeatToCloud, 15000);
 });

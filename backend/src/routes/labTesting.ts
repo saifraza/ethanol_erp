@@ -151,6 +151,11 @@ router.put('/:id', authenticate, validate(updateSchema), asyncHandler(async (req
     updateData.quarantine = true;
     updateData.quarantineWeight = truck.weightNet;
     updateData.quarantineReason = remarks || 'Failed lab quality test';
+  } else if (status === 'PASS') {
+    // Clear quarantine if correcting a previous FAIL
+    updateData.quarantine = false;
+    updateData.quarantineWeight = 0;
+    updateData.quarantineReason = '';
   }
 
   if (remarks !== undefined && remarks) {
