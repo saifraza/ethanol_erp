@@ -932,8 +932,8 @@ export default function PaymentsOut() {
                                     </>
                                   )}
                                   {/* Direct PAY against PO — only when no invoices exist (running account) */}
-                                  {item.grnCount > 0 && item.invoices.length === 0 && item.balance > 0 && (
-                                    <button onClick={() => { setPoPayItem(item); setPoPayAmount(''); setPoPayMode('NEFT'); setPoPayRef(''); setPoPayRemarks(''); setPoPayIncludeGst(false); fetchPOPayments(item.poId); }}
+                                  {item.grnCount > 0 && item.invoices.length === 0 && item.balance >= 1 && (
+                                    <button onClick={() => { setPoPayItem(item); setPoPayAmount(''); setPoPayMode('NEFT'); setPoPayRef(''); setPoPayRemarks(''); setPoPayIncludeGst(false); setBankPendingPayment(null); fetchPOPayments(item.poId); }}
                                       className="px-2 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase hover:bg-green-700 flex items-center gap-1" title="Pay against PO">
                                       <CreditCard size={10} /> PAY
                                     </button>
