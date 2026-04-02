@@ -1,6 +1,6 @@
 {
   "name": "distillery-erp",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "scripts": {
     "build": "cd backend && npm ci && npx prisma generate && npx prisma generate --schema=prisma/opc/schema.prisma && npx tsc --outDir dist && cp -r src/data dist/ && cp -r src/templates dist/ && cd ../frontend && npm ci && npx vite build --outDir ../backend/public --emptyOutDir",
