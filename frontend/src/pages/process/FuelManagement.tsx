@@ -518,7 +518,7 @@ export default function FuelManagement() {
                     {/* Deal header row */}
                     <tr className={`border-b border-slate-100 cursor-pointer ${i % 2 ? 'bg-slate-50/70' : ''}`} onClick={() => setExpandedDeals(prev => { const s = new Set(prev); s.has(d.id) ? s.delete(d.id) : s.add(d.id); return s; })}>
                       <td className="px-3 py-2 font-mono text-slate-500 border-r border-slate-100">
-                        <span className="text-[9px] mr-1">{expandedDeals.has(d.id) ? '\u25BC' : '\u25B6'}</span>D-{String(i + 1).padStart(3, '0')}
+                        <span className="text-[9px] mr-1">{expandedDeals.has(d.id) ? '\u25BC' : '\u25B6'}</span>PO-{d.poNo}
                       </td>
                       <td className="px-3 py-2 font-semibold text-slate-800 border-r border-slate-100">
                         <div>{d.vendor.name}</div>
