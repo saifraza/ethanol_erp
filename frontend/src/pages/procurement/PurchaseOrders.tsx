@@ -1203,7 +1203,7 @@ const PurchaseOrders: React.FC = () => {
                                   {(poDetail.grns || []).length === 0 ? <div className="text-[10px] text-slate-400">No GRNs yet</div> : (poDetail.grns || []).map((g: any) => (
                                     <div key={g.id} className="border border-slate-100 p-1.5">
                                       <div className="flex justify-between items-center">
-                                        <span className="text-[10px] text-slate-700 font-bold">GRN-{g.grnNo}</span>
+                                        <a href={`/api/goods-receipts/${g.id}/pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noreferrer" className="text-[10px] text-blue-700 font-bold hover:underline" onClick={e => e.stopPropagation()}>GRN-{g.grnNo}</a>
                                         <span className={`text-[8px] font-bold uppercase px-1 py-0 border ${g.status === 'CONFIRMED' ? 'border-green-300 text-green-700' : 'border-slate-300 text-slate-500'}`}>{g.status}</span>
                                       </div>
                                       <div className="text-[9px] text-slate-500 mt-0.5">{new Date(g.grnDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })} | {g.vehicleNo || '--'}</div>

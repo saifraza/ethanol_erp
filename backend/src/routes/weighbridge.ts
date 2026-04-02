@@ -688,18 +688,17 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
         data: { status: 'RECEIVED' },
       });
 
-      // Find active running PO for this trader + material this month
-      const existingPO = invItem?.id ? await prisma.purchaseOrder.findFirst({
+      // Find active running PO for this trader this month (ONE PO per trader per month, all materials)
+      const existingPO = await prisma.purchaseOrder.findFirst({
         where: {
           vendorId: trader.id,
           dealType: 'OPEN',
           status: { in: ['APPROVED', 'PARTIAL_RECEIVED'] },
           poDate: { gte: firstOfMonth },
-          lines: { some: { inventoryItemId: invItem.id } },
         },
         orderBy: { poDate: 'desc' },
         include: { lines: { select: { id: true, lineNo: true } } },
-      }) : null;
+      });
 
       const { po, grn, poLine } = await prisma.$transaction(async (tx) => {
         let po: { id: string; poNo: number; lines: { id: string; lineNo: number }[] };
