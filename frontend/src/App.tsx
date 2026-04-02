@@ -181,7 +181,7 @@ export default function App() {
         <Route path="procurement/traders" element={<Traders />} />
         <Route path="procurement/materials" element={<Navigate to="/inventory" replace />} />
         <Route path="procurement/purchase-orders" element={<PurchaseOrders />} />
-        <Route path="procurement/goods-receipts" element={<GateAndReceipts />} />
+        <Route path="procurement/goods-receipts" element={<Navigate to="/logistics/gate-register?tab=grn" replace />} />
         <Route path="procurement/vendor-payments" element={<VendorPayments />} />
         {/* Direct Trade */}
         <Route path="trade/purchases" element={<DirectPurchases />} />
