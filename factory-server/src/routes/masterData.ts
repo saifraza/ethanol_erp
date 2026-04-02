@@ -13,10 +13,10 @@ router.get('/', asyncHandler(async (_req: Request, res: Response) => {
   if (cloud) {
     // ── Real-time from cloud Railway PostgreSQL ──
     try {
-      const [vendors, inventoryItems, purchaseOrders, customers] = await Promise.all([
+      const [vendors, inventoryItems, purchaseOrders, customers, traders] = await Promise.all([
         cloud.vendor.findMany({
           where: { isActive: true },
-          select: { id: true, name: true, category: true, gstin: true, phone: true },
+          select: { id: true, name: true, category: true, gstin: true, phone: true, isAgent: true },
           orderBy: { name: 'asc' },
           take: 500,
         }),
@@ -62,6 +62,12 @@ router.get('/', asyncHandler(async (_req: Request, res: Response) => {
           select: { id: true, name: true, shortName: true, gstNo: true },
           orderBy: { name: 'asc' },
           take: 500,
+        }),
+        cloud.vendor.findMany({
+          where: { isActive: true, isAgent: true },
+          select: { id: true, name: true, phone: true },
+          orderBy: { name: 'asc' },
+          take: 100,
         }),
       ]);
 
@@ -118,6 +124,7 @@ router.get('/', asyncHandler(async (_req: Request, res: Response) => {
         materials,
         pos,
         customers,
+        traders: traders.map(t => ({ id: t.id, name: t.name, phone: t.phone })),
         vehicles,
         source: 'cloud-db',
       });

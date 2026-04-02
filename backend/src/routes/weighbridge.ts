@@ -187,9 +187,10 @@ const weighmentSchema = z.object({
   second_weight_at: z.string().nullable().optional(),
   created_at: z.string().nullable().optional(),
   // New fields for ERP integration
-  purchase_type: z.enum(['PO', 'SPOT', 'OUTBOUND']).optional().default('PO'),
+  purchase_type: z.enum(['PO', 'SPOT', 'TRADER', 'OUTBOUND']).optional().default('PO'),
   po_id: z.string().nullable().optional(),
   po_line_id: z.string().nullable().optional(),
+  supplier_id: z.string().nullable().optional(),
   // Spot purchase fields
   seller_phone: z.string().nullable().optional(),
   seller_village: z.string().nullable().optional(),
@@ -203,6 +204,8 @@ const weighmentSchema = z.object({
   transporter: z.string().nullable().optional(),
   vehicle_type: z.string().nullable().optional(),
   driver_mobile: z.string().nullable().optional(),
+  driver_name: z.string().nullable().optional(),
+  customer_name: z.string().nullable().optional(),
   // Lab quality fields
   lab_status: z.string().optional(),
   lab_moisture: z.number().nullable().optional(),
@@ -585,38 +588,186 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
       continue;
     }
 
-    // ── OUTBOUND → Create DDGSDispatchTruck ──
-    if (w.direction === 'OUT') {
-      const dupOutbound = await prisma.dDGSDispatchTruck.findFirst({
-        where: { remarks: { contains: `WB:${w.id}` } },
-        select: { id: true },
-      });
-      if (dupOutbound) { ids.push(dupOutbound.id); continue; }
+    // ── INBOUND + TRADER → Auto-create PO + GRN for procurement agent ──
+    if (w.direction === 'IN' && purchaseType === 'TRADER' && w.supplier_id) {
+      const netKg = w.weight_net || 0;
+      const rate = w.rate || 0;
+      const materialName = w.material || 'Unknown';
 
+      // Find the trader's vendor record
+      const trader = await prisma.vendor.findUnique({
+        where: { id: w.supplier_id },
+        select: { id: true, name: true, isAgent: true },
+      });
+      if (!trader) {
+        results.push({ id: w.id, type: 'SKIPPED', refNo: `Trader ${w.supplier_id} not found`, sourceWbId: w.id });
+        continue;
+      }
+
+      // Find matching inventory item by name
+      const invItem = await prisma.inventoryItem.findFirst({
+        where: { name: { equals: materialName, mode: 'insensitive' }, isActive: true },
+        select: { id: true, name: true, unit: true, hsnCode: true, gstPercent: true },
+      });
+
+      // Convert KG to item's unit
+      const unit = invItem?.unit?.toUpperCase() || 'KG';
+      let receivedQty: number;
+      switch (unit) {
+        case 'MT': receivedQty = netKg / 1000; break;
+        case 'QUINTAL': case 'QTL': receivedQty = netKg / 100; break;
+        default: receivedQty = netKg; break;
+      }
+
+      // Auto-create PO + GRN in a transaction
+      const { po, grn } = await prisma.$transaction(async (tx) => {
+        // Create PO
+        const po = await tx.purchaseOrder.create({
+          data: {
+            vendorId: trader.id,
+            dealType: 'STANDARD',
+            status: 'APPROVED',
+            poDate: new Date(),
+            paymentTerms: 'ADVANCE',
+            remarks: `${wbRef} | Auto from trader weighbridge`,
+            userId: 'system-weighbridge',
+            lines: {
+              create: [{
+                inventoryItemId: invItem?.id || null,
+                description: materialName,
+                hsnCode: invItem?.hsnCode || '',
+                quantity: receivedQty,
+                unit: invItem?.unit || 'KG',
+                rate,
+                amount: Math.round(receivedQty * rate * 100) / 100,
+                pendingQty: 0, // Already received
+                receivedQty,
+                gstPercent: invItem?.gstPercent || 5,
+              }],
+            },
+          },
+          include: { lines: true },
+        });
+
+        // Auto-create GRN (DRAFT — stock posts on confirm)
+        const grn = await tx.goodsReceipt.create({
+          data: {
+            poId: po.id,
+            vendorId: trader.id,
+            grnDate: new Date(),
+            vehicleNo: w.vehicle_no,
+            totalQty: receivedQty,
+            totalAmount: Math.round(receivedQty * rate * 100) / 100,
+            status: 'DRAFT',
+            remarks: `${wbRef} | Trader: ${trader.name} | PO-${po.poNo}`,
+            userId: 'system-weighbridge',
+            lines: {
+              create: [{
+                poLineId: po.lines[0].id,
+                inventoryItemId: invItem?.id || null,
+                description: materialName,
+                receivedQty,
+                acceptedQty: receivedQty,
+                rejectedQty: 0,
+                unit: invItem?.unit || 'KG',
+                rate,
+                amount: Math.round(receivedQty * rate * 100) / 100,
+              }],
+            },
+          },
+        });
+
+        // Update PO status to RECEIVED
+        await tx.purchaseOrder.update({ where: { id: po.id }, data: { status: 'RECEIVED' } });
+
+        return { po, grn };
+      });
+
+      results.push({ id: grn.id, type: 'TRADER_GRN', refNo: `GRN-${grn.grnNo} | PO-${po.poNo}`, sourceWbId: w.id });
+      ids.push(grn.id);
+      continue;
+    }
+
+    // ── OUTBOUND → Upsert DDGSDispatchTruck + Shipment (transactional) ──
+    if (w.direction === 'OUT') {
       const grossKg = w.weight_gross || 0;
       const tareKg = w.weight_tare || 0;
       const netKg = w.weight_net || 0;
       const netMT = netKg / 1000;
+      const partyName = w.customer_name || w.supplier_name || '';
+      const dateVal = w.created_at ? new Date(w.created_at) : new Date();
+      const gateInVal = w.first_weight_at ? new Date(w.first_weight_at) : dateVal;
+      const tareTimeVal = w.first_weight_at ? new Date(w.first_weight_at) : undefined;
+      const grossTimeVal = w.second_weight_at ? new Date(w.second_weight_at) : undefined;
 
-      const dispatch = await prisma.dDGSDispatchTruck.create({
-        data: {
-          date: w.created_at ? new Date(w.created_at) : new Date(),
-          vehicleNo: w.vehicle_no,
-          partyName: w.supplier_name || '',
-          weightGross: grossKg,
-          weightTare: tareKg,
-          weightNet: netMT,
-          bags: w.bags || 0,
-          status: 'GROSS_WEIGHED',
-          gateInTime: w.first_weight_at ? new Date(w.first_weight_at) : new Date(),
-          tareTime: w.first_weight_at ? new Date(w.first_weight_at) : undefined,
-          grossTime: w.second_weight_at ? new Date(w.second_weight_at) : undefined,
-          remarks: `${wbRef} | ${w.remarks || ''}`.trim(),
-        },
+      const txResult = await prisma.$transaction(async (tx) => {
+        // 1. Upsert DDGSDispatchTruck using sourceWbId (unique)
+        const dispatch = await tx.dDGSDispatchTruck.upsert({
+          where: { sourceWbId: w.id },
+          update: {
+            weightGross: grossKg,
+            weightTare: tareKg,
+            weightNet: netMT,   // MT for DDGS model
+            status: 'GROSS_WEIGHED',
+            grossTime: grossTimeVal,
+          },
+          create: {
+            sourceWbId: w.id,
+            date: dateVal,
+            vehicleNo: w.vehicle_no,
+            partyName,
+            driverName: w.driver_name || null,
+            driverMobile: w.driver_mobile || null,
+            transporterName: w.transporter || null,
+            weightGross: grossKg,
+            weightTare: tareKg,
+            weightNet: netMT,   // MT for DDGS model
+            bags: w.bags || 0,
+            status: 'GROSS_WEIGHED',
+            gateInTime: gateInVal,
+            tareTime: tareTimeVal,
+            grossTime: grossTimeVal,
+            remarks: `${wbRef} | ${w.remarks || ''}`.trim(),
+          },
+        });
+
+        // 2. Upsert Shipment for logistics tracking
+        const shipment = await tx.shipment.upsert({
+          where: { sourceWbId: w.id },
+          update: {
+            weightTare: tareKg,
+            weightGross: grossKg,
+            weightNet: netKg,   // KG for Shipment model
+            status: 'GROSS_WEIGHED',
+            grossTime: grossTimeVal ? grossTimeVal.toISOString() : undefined,
+          },
+          create: {
+            sourceWbId: w.id,
+            productName: w.material || 'DDGS',
+            customerName: partyName,
+            vehicleNo: w.vehicle_no,
+            driverName: w.driver_name || null,
+            driverMobile: w.driver_mobile || null,
+            transporterName: w.transporter || null,
+            vehicleType: w.vehicle_type || null,
+            weightTare: tareKg,
+            weightGross: grossKg,
+            weightNet: netKg,   // KG for Shipment model
+            bags: w.bags || null,
+            status: 'GROSS_WEIGHED',
+            gateInTime: gateInVal.toISOString(),
+            tareTime: tareTimeVal ? tareTimeVal.toISOString() : null,
+            grossTime: grossTimeVal ? grossTimeVal.toISOString() : null,
+            paymentStatus: 'NOT_REQUIRED',
+            remarks: `WB:${w.id}`,
+          },
+        });
+
+        return { dispatch, shipment };
       });
 
-      results.push({ id: dispatch.id, type: 'DDGSDispatch', refNo: dispatch.id, sourceWbId: w.id });
-      ids.push(dispatch.id);
+      results.push({ id: txResult.dispatch.id, type: 'DDGSDispatch', refNo: txResult.dispatch.id, sourceWbId: w.id });
+      ids.push(txResult.dispatch.id);
       continue;
     }
 

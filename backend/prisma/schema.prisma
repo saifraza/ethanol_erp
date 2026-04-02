@@ -645,6 +645,7 @@ model DDGSDispatchTruck {
   grossTime       DateTime?
   releaseTime     DateTime?
   remarks         String?
+  sourceWbId      String?  @unique  // Factory weighment ID for dedup
   userId          String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @default(now()) @updatedAt
@@ -1426,6 +1427,7 @@ model Shipment {
   gatePassItems   String?                  // JSON array of items [{desc, hsnCode, qty, unit, value}]
   totalValue      Float?                   // declared value of goods
   coveringNote    String?                  // authority letter text
+  sourceWbId      String?  @unique          // Factory weighment ID for dedup/traceability
   userId          String?                  // factory user
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -1612,7 +1614,7 @@ model Vendor {
   vendorCode      String?  @unique          // auto or manual code
   name            String
   tradeName       String?                   // business trade name
-  category        String   @default("GENERAL") // RAW_MATERIAL, CHEMICAL, FUEL, PACKING, SERVICE, GENERAL
+  category        String   @default("GENERAL") // RAW_MATERIAL, CHEMICAL, FUEL, PACKING, SERVICE, TRADER, GENERAL
   gstin           String?                   // 15-char GSTIN
   pan             String?                   // 10-char PAN
   gstState        String?                   // 2-digit state code (e.g., "09" for UP)
@@ -1643,6 +1645,9 @@ model Vendor {
   tdsApplicable   Boolean  @default(false)
   tdsSection      String?                   // 194C, 194Q, etc.
   tdsPercent      Float    @default(0)
+  // Procurement agent/trader
+  isAgent         Boolean  @default(false)   // true = informal procurement agent/trader
+  aadhaarNo       String?                    // Aadhaar number for individual traders
   //
   isActive        Boolean  @default(true)
   remarks         String?

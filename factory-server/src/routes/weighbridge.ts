@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import prisma from '../prisma';
+import { getCloudPrisma } from '../cloudPrisma';
 import { asyncHandler, requireWbKey, requireAuth, requireRole, AuthRequest } from '../middleware';
 
 const router = Router();
@@ -238,7 +239,7 @@ router.get('/stats', requireAuth, asyncHandler(async (_req: AuthRequest, res: Re
 // POST /api/weighbridge/gate-entry — Create new weighment (gate entry step)
 router.post('/gate-entry', requireAuth, requireRole('GATE_ENTRY', 'ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const {
-    vehicleNo, direction, purchaseType, supplierName, materialName,
+    vehicleNo, direction, purchaseType, supplierName, supplierId, materialName,
     poId, poLineId, poNumber, transporter, vehicleType,
     driverName, driverPhone, bags, remarks, operatorName,
     sellerPhone, sellerVillage, sellerAadhaar,
@@ -256,36 +257,47 @@ router.post('/gate-entry', requireAuth, requireRole('GATE_ENTRY', 'ADMIN'), asyn
   const gateEntryAt = new Date();
 
   // Look up material category to determine lab behavior
+  // 1. Try keyword inference first (instant, no DB needed)
+  // 2. Then cloud DB (InventoryItem) for exact match
+  // 3. Then local cache fallback
   let materialCategory: string | null = null;
   if (materialName) {
     const trimmedName = materialName.trim();
+    const lower = trimmedName.toLowerCase();
 
-    // 1. Exact match (case-insensitive)
-    let mat = await prisma.cachedMaterial.findFirst({
-      where: { name: { equals: trimmedName, mode: 'insensitive' } },
-      select: { category: true },
-    });
-
-    // 2. Contains match fallback
-    if (!mat) {
-      mat = await prisma.cachedMaterial.findFirst({
-        where: { name: { contains: trimmedName, mode: 'insensitive' } },
-        select: { category: true },
-      });
+    // 1. Keyword inference (fastest, always works)
+    const FUEL_KEYWORDS = ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'firewood', 'biomass'];
+    const RAW_MATERIAL_KEYWORDS = ['maize', 'corn', 'broken rice', 'grain', 'sorghum', 'milo'];
+    const CHEMICAL_KEYWORDS = ['amylase', 'urea', 'acid', 'antifoam', 'yeast', 'chemical'];
+    if (FUEL_KEYWORDS.some(kw => lower.includes(kw))) {
+      materialCategory = 'FUEL';
+    } else if (RAW_MATERIAL_KEYWORDS.some(kw => lower.includes(kw))) {
+      materialCategory = 'RAW_MATERIAL';
+    } else if (CHEMICAL_KEYWORDS.some(kw => lower.includes(kw))) {
+      materialCategory = 'CHEMICAL';
     }
 
-    if (mat?.category) {
-      materialCategory = mat.category;
-    } else {
-      // 3. Keyword-based inference when no DB match found
-      const lower = trimmedName.toLowerCase();
-      const FUEL_KEYWORDS = ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'firewood', 'biomass'];
-      const RAW_MATERIAL_KEYWORDS = ['maize', 'corn', 'rice', 'broken', 'grain', 'sorghum', 'milo'];
-      if (FUEL_KEYWORDS.some(kw => lower.includes(kw))) {
-        materialCategory = 'FUEL';
-      } else if (RAW_MATERIAL_KEYWORDS.some(kw => lower.includes(kw))) {
-        materialCategory = 'RAW_MATERIAL';
+    // 2. Cloud DB lookup if keyword didn't match
+    if (!materialCategory) {
+      const cloud = getCloudPrisma();
+      if (cloud) {
+        try {
+          const item = await cloud.inventoryItem.findFirst({
+            where: { name: { equals: trimmedName, mode: 'insensitive' }, isActive: true },
+            select: { category: true },
+          });
+          if (item?.category) materialCategory = item.category;
+        } catch { /* cloud DB unreachable */ }
       }
+    }
+
+    // 3. Local cache fallback
+    if (!materialCategory) {
+      const mat = await prisma.cachedMaterial.findFirst({
+        where: { name: { equals: trimmedName, mode: 'insensitive' } },
+        select: { category: true },
+      });
+      if (mat?.category) materialCategory = mat.category;
     }
   }
 
@@ -308,6 +320,7 @@ router.post('/gate-entry', requireAuth, requireRole('GATE_ENTRY', 'ADMIN'), asyn
       direction: direction || 'INBOUND',
       purchaseType: purchaseType || null,
       supplierName: supplierName || null,
+      supplierId: supplierId || null,
       materialName: materialName || null,
       materialCategory,
       poId: poId || null,

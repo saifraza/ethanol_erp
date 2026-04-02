@@ -49,6 +49,8 @@ model Vendor {
   tdsApplicable   Boolean  @default(false)
   tdsSection      String?
   tdsPercent      Float    @default(0)
+  isAgent         Boolean  @default(false)
+  aadhaarNo       String?
   isActive        Boolean  @default(true)
   remarks         String?
   createdAt       DateTime @default(now())

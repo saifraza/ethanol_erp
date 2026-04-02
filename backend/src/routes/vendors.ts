@@ -50,9 +50,16 @@ router.get('/gstin-lookup/:gstin', asyncHandler(async (req: AuthRequest, res: Re
 }));
 
 // GET / — list all active vendors, ordered by name
+// ?isAgent=true — filter to procurement agents/traders only
+// ?isAgent=false — exclude traders (formal vendors only)
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const where: Record<string, unknown> = { isActive: true };
+    if (req.query.isAgent === 'true') where.isAgent = true;
+    if (req.query.isAgent === 'false') where.isAgent = false;
+    if (req.query.category) where.category = req.query.category;
+
     const vendors = await prisma.vendor.findMany({
-      where: { isActive: true },
+      where,
       orderBy: { name: 'asc' },
       take: 500,
     });
@@ -129,6 +136,8 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         tdsSection: b.tdsSection || null,
         tdsPercent: b.tdsPercent ? parseFloat(b.tdsPercent) : 0,
         remarks: b.remarks || null,
+        isAgent: b.isAgent || false,
+        aadhaarNo: b.aadhaarNo || null,
         isActive: true,
       },
     });
@@ -170,6 +179,8 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
         tdsSection: b.tdsSection !== undefined ? b.tdsSection : undefined,
         tdsPercent: b.tdsPercent !== undefined ? parseFloat(b.tdsPercent) : undefined,
         remarks: b.remarks !== undefined ? b.remarks : undefined,
+        isAgent: b.isAgent !== undefined ? b.isAgent : undefined,
+        aadhaarNo: b.aadhaarNo !== undefined ? b.aadhaarNo : undefined,
       },
     });
     res.json(vendor);

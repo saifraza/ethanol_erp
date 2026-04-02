@@ -43,6 +43,7 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
     po_id: w.poId || null,
     po_line_id: w.poLineId || null,
     supplier_name: w.supplierName || '',
+    supplier_id: w.supplierId || null,
     material: w.materialName || '',
     weight_gross: w.grossWeight,
     weight_tare: w.tareWeight,
