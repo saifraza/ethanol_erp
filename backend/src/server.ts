@@ -2,8 +2,6 @@ import app from './app';
 import { config } from './config';
 import prisma from './config/prisma';
 import bcrypt from 'bcryptjs';
-import { initWhatsApp } from './services/whatsappBaileys';
-import { initAutoCollect } from './services/whatsappAutoCollect';
 import { initTelegram } from './services/telegramBot';
 import { initTelegramAutoCollect } from './services/telegramAutoCollect';
 import { initImageHandler } from './services/telegramImageHandler';
@@ -42,17 +40,11 @@ const server = app.listen(PORT, HOST, async () => {
   console.log(`Server running on http://${HOST}:${PORT}`);
   await autoSeed();
 
-  // Initialize Telegram Bot (replaces WhatsApp)
+  // Initialize Telegram Bot
   initTelegram().then(() => {
     initTelegramAutoCollect().catch((err) => console.error('[TG-AutoCollect] Init error:', err));
     initImageHandler();
   }).catch((err) => console.error('[Telegram] Init error:', err));
-
-  // Legacy WhatsApp: only init if WA_WORKER_URL is NOT set AND no Telegram token
-  if (!process.env.TELEGRAM_BOT_TOKEN && !process.env.WA_WORKER_URL) {
-    initWhatsApp().catch((err) => console.error('[WA] Init error:', err));
-    initAutoCollect().catch((err) => console.error('[AutoCollect] Init error:', err));
-  }
 
   // Inventory low stock alerts via Telegram
   startInventoryAlerts();

@@ -33,7 +33,7 @@ export default function SettingsPage() {
     api.get('/settings').then(r => {
       setSettings(r.data);
       try {
-        const routing = r.data.telegramModuleRouting || r.data.whatsappModuleRouting;
+        const routing = r.data.telegramModuleRouting;
         if (routing) setModuleRouting(JSON.parse(routing));
       } catch { /* ignore */ }
     });
@@ -70,9 +70,6 @@ export default function SettingsPage() {
     const payload = { ...settings };
     if (typeof payload.telegramModuleRouting === 'object') {
       payload.telegramModuleRouting = JSON.stringify(payload.telegramModuleRouting);
-    }
-    if (typeof payload.whatsappModuleRouting === 'object') {
-      payload.whatsappModuleRouting = JSON.stringify(payload.whatsappModuleRouting);
     }
     await api.patch('/settings', payload);
     setMsg('Saved!'); setTimeout(() => setMsg(''), 2000);

@@ -282,7 +282,6 @@ function getCurrentSlotStart(intervalMinutes: number): Date {
 
 async function wasAlreadyTriggeredInSlot(module: string, slotStart: Date): Promise<boolean> {
   try {
-    // Check TelegramMessage table first, fall back to WhatsAppMessage for backward compat
     const count = await prisma.telegramMessage.count({
       where: {
         module: `auto-collect-${module}`,
@@ -292,19 +291,7 @@ async function wasAlreadyTriggeredInSlot(module: string, slotStart: Date): Promi
     });
     return count > 0;
   } catch {
-    // TelegramMessage table may not exist yet — check WhatsAppMessage as fallback
-    try {
-      const count = await prisma.whatsAppMessage.count({
-        where: {
-          module: `auto-collect-${module}`,
-          direction: 'outgoing',
-          timestamp: { gte: slotStart },
-        },
-      });
-      return count > 0;
-    } catch {
-      return false;
-    }
+    return false;
   }
 }
 

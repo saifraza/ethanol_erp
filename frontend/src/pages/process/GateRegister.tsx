@@ -190,7 +190,7 @@ export default function GateRegister() {
   const shareEntry = (e: GateEntry) => {
     const text = `*Gate Entry*\n📅 ${new Date(e.date).toLocaleDateString('en-IN')}\n\nVehicle: ${e.vehicleNo}\nCapacity: ${e.capacityTon}T\nMaterial: ${e.material}\nVendor: ${e.vendor}\nTransporter: ${e.transporterName}\nEntry: ${fmtTime(e.entryTime)}\n${e.exitTime ? `Exit: ${fmtTime(e.exitTime)}\n` : ''}Driver: ${e.driverMobile}\nRST: ${e.rstNo}\nStatus: ${e.status}${e.remarks ? '\nRemarks: ' + e.remarks : ''}`;
     if (navigator.share) navigator.share({ text }).catch(() => {});
-    else window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+    else window.open(`https://t.me/share/url?text=${encodeURIComponent(text)}`, '_blank');
   };
 
   const shareAll = () => {
@@ -206,7 +206,7 @@ export default function GateRegister() {
     });
     const text = lines.join('\n');
     if (navigator.share) navigator.share({ text }).catch(() => {});
-    else window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+    else window.open(`https://t.me/share/url?text=${encodeURIComponent(text)}`, '_blank');
   };
 
   const nextStatus = (current: GateEntry['status']): GateEntry['status'] | null => {

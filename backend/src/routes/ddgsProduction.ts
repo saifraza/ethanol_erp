@@ -2,7 +2,7 @@ import { Router, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
-import { sendWhatsApp } from '../services/messaging';
+import { sendTelegramMessage } from '../services/telegramBot';
 
 const router = Router();
 router.use(authenticate as any);
@@ -109,9 +109,9 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     },
   });
 
-  // Auto-push WhatsApp notification (fire-and-forget)
-  pushWhatsAppNotification(shiftDate, entry).catch(err =>
-    console.error('[DDGS WA] Push failed:', err.message)
+  // Auto-push Telegram notification (fire-and-forget)
+  pushTelegramNotification(shiftDate, entry).catch(err =>
+    console.error('[DDGS TG] Push failed:', err.message)
   );
 
   res.status(201).json(entry);
@@ -123,17 +123,17 @@ router.delete('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
   res.json({ ok: true });
 }));
 
-/** Auto-push WhatsApp message to configured numbers */
-async function pushWhatsAppNotification(shiftDate: string, entry: any): Promise<void> {
+/** Auto-push Telegram message to configured chat IDs */
+async function pushTelegramNotification(shiftDate: string, entry: any): Promise<void> {
   const settings = await prisma.settings.findFirst();
-  if (!settings || !(settings as any).whatsappEnabled || !(settings as any).whatsappNumbers) return;
+  if (!settings || !settings.telegramEnabled || !settings.telegramPrivateChatIds) return;
 
-  const numbers: string[] = ((settings as any).whatsappNumbers as string)
+  const chatIds: string[] = settings.telegramPrivateChatIds
     .split(',')
     .map((n: string) => n.trim())
     .filter(Boolean);
 
-  if (numbers.length === 0) return;
+  if (chatIds.length === 0) return;
 
   // Get today's running total
   const todayEntries = await prisma.dDGSProductionEntry.findMany({
@@ -154,9 +154,9 @@ async function pushWhatsAppNotification(shiftDate: string, entry: any): Promise<
     `*Today Total: ${totalBags} bags (${totalMT.toFixed(2)} MT)*`,
   ].filter(Boolean).join('\n');
 
-  for (const phone of numbers) {
-    sendWhatsApp({ phone, message: msg }).catch(err =>
-      console.error(`[DDGS WA] Failed for ${phone}:`, err.message)
+  for (const chatId of chatIds) {
+    sendTelegramMessage(chatId, msg).catch(err =>
+      console.error(`[DDGS TG] Failed for ${chatId}:`, err.message)
     );
   }
 }

@@ -986,7 +986,7 @@ export default function FuelManagement() {
               {/* Section: Documents */}
               <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-1 mt-2">Documents</div>
               <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">PI / Invoice / WhatsApp Screenshot</label>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">PI / Invoice / Screenshot</label>
                 <input type="file" accept="image/*,.pdf" onChange={e => {
                   const file = e.target.files?.[0];
                   if (file) setDealForm({ ...dealForm, remarks: `PI: ${file.name} | ${dealForm.remarks || ''}` });

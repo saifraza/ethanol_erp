@@ -351,7 +351,7 @@ export default function Shipments() {
     const net = s.weightNet || (s.weightGross && s.weightTare ? s.weightGross - s.weightTare : null);
     const text = `🚛 ${s.vehicleNo}\n${s.productName} → ${s.customerName}\n${s.destination}\nStatus: ${STATUS_CFG[s.status]?.label}\n${net ? `Net: ${(net / 1000).toFixed(2)} MT\n` : ''}${s.driverName ? `Driver: ${s.driverName}` : ''}`;
     if (navigator.share) navigator.share({ text }).catch(() => {});
-    else window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+    else window.open(`https://t.me/share/url?text=${encodeURIComponent(text)}`, '_blank');
   };
 
   // ── Bill generation ──
@@ -778,10 +778,9 @@ export default function Shipments() {
                                   <Share2 size={9} /> Share
                                 </button>
                                 {s.driverMobile && (
-                                  <a href={`https://api.whatsapp.com/send?phone=91${s.driverMobile.replace(/\D/g, '').slice(-10)}`}
-                                    target="_blank" rel="noopener"
+                                  <a href={`tel:+91${s.driverMobile.replace(/\D/g, '').slice(-10)}`}
                                     className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[9px] font-medium flex items-center gap-0.5 hover:bg-green-200">
-                                    <MessageCircle size={9} /> WA
+                                    <MessageCircle size={9} /> Call
                                   </a>
                                 )}
                               </div>

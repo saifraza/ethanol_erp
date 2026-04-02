@@ -113,7 +113,7 @@ router.post('/send-report', validate(sendReportSchema), asyncHandler(async (req:
       return;
     }
     const result = await tgSendGroup(chatId, message, module);
-    res.json({ ...result, target });
+    res.json({ ...result, target, sent: result.success ? 1 : 0 });
   }
 }));
 

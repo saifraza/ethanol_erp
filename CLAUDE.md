@@ -22,58 +22,40 @@
 
 ## Core Design Principles
 
-### WhatsApp-First Data Collection
-WhatsApp is a **key feature** of this ERP. Plant operators submit hourly readings via WhatsApp instead of logging into the web UI. This is critical because:
+### Telegram-First Data Collection
+Telegram is a **key feature** of this ERP. Plant operators submit hourly readings via Telegram instead of logging into the web UI. This is critical because:
 - Operators on the plant floor use phones, not desktops
 - Auto-collect bots ask questions on schedule, parse replies, save to DB, and share summary reports to groups
-- Every new module should consider WhatsApp integration from day one
+- Every new module should consider Telegram integration from day one
 
-**WhatsApp Two-Service Architecture (CRITICAL):**
-- WhatsApp runs as a **SEPARATE Railway service** (`mspil-whatsapp` repo, https://github.com/saifraza/mspil-whatsapp.git)
-- The main ERP does NOT run WhatsApp — it proxies to the worker via `WA_WORKER_URL` env var
-- **Reason**: WhatsApp Baileys connection is fragile; if it crashes, it shouldn't take down the ERP
-- Both services share the same PostgreSQL database on Railway
-- The worker auto-deploys from `mspil-whatsapp` repo — **changes to WhatsApp code must be pushed to BOTH repos**
+**Telegram Architecture:**
+- Telegram Bot runs **in-process** on the main ERP server (no separate worker needed)
+- Uses official Telegram Bot API with long-polling (stable, no QR auth)
+- Bot token stored in `Settings.telegramBotToken` or `TELEGRAM_BOT_TOKEN` env var
 
-**Worker service** (`mspil-whatsapp` repo):
-- `src/whatsapp-server.ts` — Express server with send/trigger/sessions endpoints
-- `src/services/whatsappBaileys.ts` — WhatsApp connection via Baileys (QR auth)
-- `src/services/whatsappAutoCollect.ts` — Auto-collect conversation engine + scheduler
-- `src/services/autoCollectModules/` — Module-specific bots (one file per module)
-- Incoming message replies are handled HERE (not on main ERP)
-- Auto-collect sessions (`activeSessions` map) live in worker memory
-- **URL**: `http://mspil-whatsapp.railway.internal:5001` (Railway internal)
+**Services:**
+- `backend/src/services/telegramBot.ts` — Bot API client (long-polling, send/receive)
+- `backend/src/services/telegramAutoCollect.ts` — Auto-collect conversation engine + scheduler
+- `backend/src/services/telegramClient.ts` — Proxy wrapper
+- `backend/src/services/telegramImageHandler.ts` — Gemini Vision OCR for photos
+- `backend/src/services/autoCollectModules/` — Module-specific bots (one file per module)
 
-**Main ERP proxies** (`backend/src/services/whatsappClient.ts`):
-- `waSend()` → `POST /wa/send` on worker
-- `waSendGroup()` → `POST /wa/send-group` on worker
-- `/api/auto-collect/trigger` → `POST /wa/auto-collect/trigger` on worker
-- `/api/auto-collect/sessions` → `GET /wa/auto-collect/sessions` on worker
-
-**Schedules** are stored in `AutoCollectSchedule` DB table (shared by both services):
-- Each module has one row: `module` (unique key), `phone`, `intervalMinutes`, `enabled`, etc.
+**Schedules** are stored in `AutoCollectSchedule` DB table:
+- Each module has one row: `module` (unique key), `phone` (chatId), `intervalMinutes`, `enabled`, etc.
 - Frontend saves via `PUT /api/auto-collect/schedules/:module` on main ERP
-- Worker loads via `prisma.autoCollectSchedule.findMany()` on startup + after saves
-- Legacy fallback: also checks `Settings.autoCollectConfig` JSON blob and auto-migrates
 
-**NEVER DO with WhatsApp:**
-- Never create auto-collect sessions on the main ERP server — they must be on the worker
-- Never store schedules as JSON blobs — use the `AutoCollectSchedule` model
-- Never import from `whatsappBaileys` directly on the main ERP — use `whatsappClient`
-
-**Adding a new WhatsApp auto-collect module:**
-1. Copy `_template.ts` → `yourModule.ts` in `autoCollectModules/` (BOTH repos)
+**Adding a new Telegram auto-collect module:**
+1. Copy `_template.ts` → `yourModule.ts` in `autoCollectModules/`
 2. Define `STEPS` (field groups), implement `buildPrompt`, `parseReply`, `saveData`
-3. Register in `autoCollectModules/index.ts` (BOTH repos)
+3. Register in `autoCollectModules/index.ts`
 4. Add schedule via Settings UI or seed data
-5. Set `privateOnly: false` if reports should go to WhatsApp group
-6. **Push changes to BOTH `ethanol_erp` AND `mspil-whatsapp` repos**
+5. Set `privateOnly: false` if reports should go to Telegram group
 
-### WhatsApp Report Sharing
-Beyond auto-collect, the ERP also supports one-click WhatsApp sharing from the web UI:
-- Fermentation vessel readings → formatted report shared to group
+### Telegram Report Sharing
+The ERP supports one-click Telegram sharing from the web UI:
+- Process readings → formatted report shared to configured groups/private chats
 - Dispatch/shipment details → shared to relevant stakeholders
-- Any module can build a WhatsApp-formatted report string and share via `sendToGroup()` or `sendWhatsAppMessage()`
+- Module routing configured in Settings: each module → group1, group2, or private
 
 ### IST Timezone (Critical)
 Server runs UTC on Railway. Pattern for IST:
@@ -91,7 +73,7 @@ const minutes = ist.getUTCMinutes(); // IST minutes
 When building new modules:
 1. **First create a skill file** in `.claude/skills/` with full spec (models, routes, pages, integration points)
 2. **Build sequentially** — modules are interlinked (accounts hooks into sales/procurement, inventory links to production)
-3. **Always consider WhatsApp integration** — what readings/reports should be auto-collected or shared?
+3. **Always consider Telegram integration** — what readings/reports should be auto-collected or shared?
 4. **Follow existing patterns** — use the code templates below
 5. **Use SAP-style UI** for all non-plant modules (see UI Design System below)
 
@@ -183,7 +165,7 @@ Weighbridge can also push directly to cloud (`CLOUD_API_URL` in config.py) — b
 | Accounts / journal / bank | `backend/src/routes/chartOfAccounts.ts`, `journalEntries.ts`, `bankPayments.ts` |
 | Inventory (SAP-style) | `backend/src/routes/inventory*.ts` (6 route files) |
 | Fuel management | `backend/src/routes/fuel.ts` + `frontend/src/pages/process/FuelManagement.tsx` |
-| WhatsApp auto-collect | `.claude/skills/whatsapp-module.md` |
+| Telegram auto-collect | `backend/src/services/telegramAutoCollect.ts` |
 | Telegram bot | `backend/src/services/telegramBot.ts`, `telegramAutoCollect.ts` |
 | E-invoice / e-way bill | `backend/src/services/eInvoice.ts`, `ewayBill.ts` |
 | UBI bank payments (H2H-STP) | `.claude/skills/ubi-h2h-banking.md` |
@@ -216,12 +198,12 @@ backend/src/
 │   └── authorize.ts          # Module-level authorization
 ├── routes/                   # 80 route files
 ├── services/
-│   ├── whatsappBaileys.ts    # WhatsApp connection (Baileys QR auth, send/receive)
-│   ├── whatsappAutoCollect.ts # Auto-collect engine (scheduler, sessions, prompts)
+│   ├── telegramBot.ts        # Telegram Bot API client (long-polling, send/receive)
+│   ├── telegramAutoCollect.ts # Auto-collect engine (scheduler, sessions, prompts)
 │   ├── autoCollectModules/   # Module-specific bots (ddgsProduction, decanter, _template)
 │   ├── eInvoice.ts           # IRN generation via Saral GSP
 │   ├── ewayBill.ts           # E-way bill generation
-│   └── messaging.ts          # WhatsApp/SMS notifications
+│   └── messaging.ts          # Email + Telegram notifications
 ├── utils/
 │   ├── letterhead.ts         # PDF letterhead helper
 │   └── pdfGenerator.ts       # PDF generation (POs, challans, invoices)
@@ -450,19 +432,19 @@ export default function MyPage() {
 | **Plant Issues** | issues.ts | PlantIssues.tsx | PlantIssue, IssueComment |
 | **Factory/Weighbridge** | weighbridge.ts (cloud), gateEntry.ts | (cloud: system-status page; factory-server has its own frontend) | GrainTruck, GateEntry |
 
-## WhatsApp Integration by Module
+## Telegram Integration by Module
 
 | Module | Auto-Collect Bot | Report Sharing | Group? |
 |--------|-----------------|----------------|--------|
-| **Fermentation** | ✅ (planned) | ✅ Vessel readings shared from UI | Yes |
+| **Fermentation** | Planned | ✅ Vessel readings shared from UI | Yes |
 | **DDGS Production** | ✅ `ddgsProduction.ts` — hourly production data | ✅ Auto report after collection | Yes |
 | **Decanter** | ✅ `decanter.ts` — dryer/decanter readings | ✅ Auto report after collection | Yes |
 | **Distillation** | Planned | Manual share from UI | — |
-| **Sales/Dispatch** | ❌ | ✅ Dispatch details shared | Private |
+| **Sales/Dispatch** | — | ✅ Dispatch details shared | Private |
 | **Accounts** | Planned (daily outstanding alerts) | ✅ Payment confirmations | Private |
-| **Inventory** | Planned (low stock alerts) | ❌ | Private |
+| **Inventory** | ✅ Low stock alerts | — | Private |
 
-To add WhatsApp to a new module, see `autoCollectModules/_template.ts`.
+To add Telegram to a new module, see `autoCollectModules/_template.ts`.
 
 ## Module Skills
 
@@ -497,6 +479,40 @@ Codex CLI (OpenAI, GPT-5.4) is installed and authenticated in this workspace. Us
   - **Test coverage gaps**: Have Codex identify what tests are missing
 - **When to use**: Complex features, multi-file refactors, tricky business logic, payment/financial code, or anything where a second set of eyes adds value
 - **Not for**: Simple one-file edits, typo fixes, or routine CRUD
+
+## Agent Parallelization Patterns
+
+When building features that touch multiple files, use parallel agents to speed up development:
+
+### New Module (most common)
+```
+Agent 1: Prisma schema + backend route file + register in app.ts
+Agent 2: Frontend page (can use placeholder API types)
+  → After both complete: register route in App.tsx, align types
+```
+Rule: backend agent goes first or in parallel — frontend can stub types, but route registration in app.ts must happen before testing.
+
+### Bug Investigation
+```
+Agent 1: Explore backend (routes, services, Prisma queries)
+Agent 2: Explore frontend (pages, API calls, state)
+Agent 3: Git history (recent commits, blame on affected files)
+```
+
+### Multi-File Refactor
+```
+Agent per independent file group — e.g., renaming a field:
+Agent 1: Prisma schema + migration
+Agent 2: All backend route files using that field
+Agent 3: All frontend files using that field
+```
+
+### When NOT to Parallelize
+- Dependent work: route must exist before frontend calls it
+- Schema changes: must run `prisma generate` before backend can use new models
+- Single-file fixes: just do it directly, no agent overhead
+
+---
 
 ## Pre-Push Checklist
 1. `cd backend && npx tsc --noEmit` — Backend compiles

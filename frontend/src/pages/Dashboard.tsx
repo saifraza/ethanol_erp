@@ -189,7 +189,7 @@ export default function Dashboard() {
     const k = data.kpis;
     const t = `*PLANT DASHBOARD — ${data.period.days} Day Summary*\n${data.period.from} to ${data.period.to}\n\n*Grain*\nUnloaded: ${k.grainUnloaded.toFixed(0)} T\nConsumed: ${k.grainConsumed.toFixed(0)} T\nSilo Stock: ${k.siloStock.toFixed(0)} T\n\n*Ethanol*\nProduction: ${fmtNum(k.ethanolProductionBL)} BL (${fmtNum(k.ethanolProductionAL)} AL)\nCurrent Stock: ${fmtNum(k.ethanolStock)} BL\nDispatched: ${fmtNum(k.totalDispatchBL)} BL (${k.dispatchTrucks} trucks)\nKLPD: ${k.latestKlpd.toFixed(1)}\n\n*DDGS*\nProduced: ${k.ddgsProduced.toFixed(0)} Kg\nDispatched: ${k.ddgsDispatched.toFixed(0)} Kg\n\n*Quality*\nAvg Ethanol: ${k.avgEthanolStrength.toFixed(1)}%\nRaw Moisture: ${k.avgMoisture.toFixed(1)}%\nRaw Starch: ${k.avgStarch.toFixed(1)}%`;
     if (navigator.share) { navigator.share({ text: t }).catch(() => {}); }
-    else { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(t)}`, '_blank'); }
+    else { window.open(`https://t.me/share/url?text=${encodeURIComponent(t)}`, '_blank'); }
   };
 
   if (loading && !data) return (

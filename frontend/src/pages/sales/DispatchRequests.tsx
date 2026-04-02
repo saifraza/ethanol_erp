@@ -307,7 +307,7 @@ export default function DispatchRequests() {
     const trucks = dr.shipments?.map(s => s.vehicleNo).join(', ') || 'TBD';
     const text = `*Dispatch #${dr.drNo}*\nCustomer: ${dr.customerName}\nProduct: ${dr.productName} - ${dr.quantity} ${dr.unit}\nDestination: ${dr.destination || 'TBD'}\nDistance: ${dr.distanceKm ? dr.distanceKm + ' km' : 'TBD'}\nTransporter: ${dr.transporterName || 'TBD'}\nRate: ${dr.freightRate ? dr.freightRate + '/MT' : 'TBD'}\nTrucks: ${trucks}`;
     if (navigator.share) navigator.share({ text }).catch(() => {});
-    else window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+    else window.open(`https://t.me/share/url?text=${encodeURIComponent(text)}`, '_blank');
   };
 
   const selectQuoteTransporter = (transporterId: string) => {
@@ -336,7 +336,7 @@ export default function DispatchRequests() {
       });
       if (alsoSend && (quotePhone || quoteEmail)) {
         const channels: string[] = [];
-        if (quotePhone) channels.push('whatsapp');
+        if (quotePhone) channels.push('telegram');
         if (quoteEmail) channels.push('email');
         if (channels.length > 0) await sendRateRequest(inquiryId, channels, quotePhone || undefined, quoteEmail || undefined, quoteTransporterId || undefined, quoteTransporter);
       }
@@ -408,21 +408,19 @@ export default function DispatchRequests() {
     try {
       const res = await api.post('/messaging/send-rate-request', { inquiryId, transporterId, name: transporterName, phone, email, channels });
       const results = res.data.results;
-      if (results.whatsapp?.provider === 'web' && results.whatsapp?.webUrl) window.open(results.whatsapp.webUrl, '_blank');
       const msgs: string[] = [];
       if (results.email?.success) msgs.push('Email sent');
       else if (results.email && !results.email.success) msgs.push(`Email: ${results.email.error}`);
-      if (results.whatsapp?.success && results.whatsapp.provider !== 'web') msgs.push('WhatsApp sent');
-      else if (results.whatsapp?.success && results.whatsapp.provider === 'web') msgs.push('WhatsApp opened');
-      else if (results.whatsapp && !results.whatsapp.success) msgs.push(`WhatsApp: ${results.whatsapp.error}`);
+      if (results.telegram?.success) msgs.push('Telegram sent');
+      else if (results.telegram && !results.telegram.success) msgs.push(`Telegram: ${results.telegram.error}`);
       if (msgs.length) flash('ok', msgs.join(' | '));
       setShowSendForm(null);
     } catch (e: any) { flash('err', e.response?.data?.error || 'Send failed'); }
     finally { setSendingTo(null); }
   };
 
-  const sendDocWhatsApp = async (shipmentId: string, phone: string, docType: string, dr: DR) => {
-    setActionLoading(shipmentId + '_wa_' + docType);
+  const sendDocTelegram = async (shipmentId: string, chatId: string, docType: string, dr: DR) => {
+    setActionLoading(shipmentId + '_tg_' + docType);
     try {
       const token = localStorage.getItem('token');
       const baseUrl = window.location.origin;
@@ -434,9 +432,8 @@ export default function DispatchRequests() {
         const inq = (dr as any).freightInquiry;
         if (inq) { documentUrl = `${baseUrl}/api/freight-inquiries/${inq.id}/pdf?token=${token}`; message = `MSPIL -- Rate Request FI-${inq.inquiryNo} | ${dr.productName} ${dr.quantity} ${dr.unit} to ${dr.destination || 'TBD'}`; }
       } else { message = `MSPIL -- ${docType.replace(/_/g, ' ')} for DR-${dr.drNo}`; }
-      const res = await api.post('/messaging/send-document', { phone, message, documentUrl, documentType: docType.replace(/_/g, ' ') });
-      if (res.data.provider === 'web' && res.data.webUrl) { window.open(res.data.webUrl, '_blank'); flash('ok', 'WhatsApp opened'); }
-      else if (res.data.success) { flash('ok', `${docType.replace(/_/g, ' ')} sent via WhatsApp`); }
+      const res = await api.post('/messaging/send-document', { chatId, message, documentUrl, documentType: docType.replace(/_/g, ' ') });
+      if (res.data.success) { flash('ok', `${docType.replace(/_/g, ' ')} sent via Telegram`); }
       else { flash('err', res.data.error || 'Send failed'); }
     } catch (e: any) { flash('err', e.response?.data?.error || 'Send failed'); }
     finally { setActionLoading(null); }
@@ -445,7 +442,7 @@ export default function DispatchRequests() {
   const shareRateRequest = (dr: DR) => {
     const inq = (dr as any).freightInquiry; if (!inq) return;
     const text = `*MSPIL -- Rate Request FI-${inq.inquiryNo}*\n---\nProduct: ${dr.productName}\nQuantity: ${dr.quantity} ${dr.unit}\nFrom: MSPIL, Narsinghpur MP\nTo: ${dr.destination || 'TBD'}\nDistance: ${dr.distanceKm ? dr.distanceKm + ' km' : 'TBD'}\nTrucks: ${dr.vehicleCount || 'TBD'}\n---\n*Terms:*\n1. Vehicle in good condition with fitness cert\n2. GR (Bilty) at loading\n3. 50% advance after bill, balance after delivery\n4. Insurance by purchaser\n---\nReply with rate per MT.\nMSPIL, Narsinghpur`;
-    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+    window.open(`https://t.me/share/url?text=${encodeURIComponent(text)}`, '_blank');
   };
 
   // ── Filters ──
@@ -737,7 +734,7 @@ export default function DispatchRequests() {
                                   </button>
                                   <button onClick={() => shareRateRequest(dr)}
                                     className="px-3 py-1 bg-green-600 text-white text-[11px] font-medium hover:bg-green-700 flex items-center gap-1">
-                                    <MessageCircle size={11} /> WA
+                                    <MessageCircle size={11} /> Share
                                   </button>
                                   <button onClick={() => { const token = localStorage.getItem('token'); window.open(`/api/freight-inquiries/${inq.id}/pdf?token=${token}`, '_blank'); }}
                                     className="px-3 py-1 bg-slate-600 text-white text-[11px] font-medium hover:bg-slate-700 flex items-center gap-1">
@@ -756,9 +753,9 @@ export default function DispatchRequests() {
                                         <div key={t.id} className="flex items-center justify-between bg-slate-50 px-3 py-2 border border-slate-200">
                                           <div className="text-xs"><span className="font-semibold">{t.name}</span>{t.phone && <span className="text-slate-400 ml-2">{t.phone}</span>}</div>
                                           <div className="flex gap-1">
-                                            {t.phone && <button onClick={() => sendRateRequest(inq.id, ['whatsapp'], t.phone!, undefined, t.id, t.name)} disabled={!!sendingTo} className="px-2 py-1 text-[10px] font-medium bg-green-600 text-white hover:bg-green-700 flex items-center gap-0.5">{sendingTo === inq.id ? <Loader2 size={9} className="animate-spin" /> : <MessageCircle size={9} />} WA</button>}
+                                            {t.phone && <button onClick={() => sendRateRequest(inq.id, ['telegram'], t.phone!, undefined, t.id, t.name)} disabled={!!sendingTo} className="px-2 py-1 text-[10px] font-medium bg-green-600 text-white hover:bg-green-700 flex items-center gap-0.5">{sendingTo === inq.id ? <Loader2 size={9} className="animate-spin" /> : <MessageCircle size={9} />} TG</button>}
                                             {t.email && <button onClick={() => sendRateRequest(inq.id, ['email'], undefined, t.email!, t.id, t.name)} disabled={!!sendingTo} className="px-2 py-1 text-[10px] font-medium bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-0.5">{sendingTo === inq.id ? <Loader2 size={9} className="animate-spin" /> : <Mail size={9} />} Email</button>}
-                                            {t.phone && t.email && <button onClick={() => sendRateRequest(inq.id, ['email', 'whatsapp'], t.phone!, t.email!, t.id, t.name)} disabled={!!sendingTo} className="px-2 py-1 text-[10px] font-medium bg-slate-600 text-white hover:bg-slate-700">Both</button>}
+                                            {t.phone && t.email && <button onClick={() => sendRateRequest(inq.id, ['email', 'telegram'], t.phone!, t.email!, t.id, t.name)} disabled={!!sendingTo} className="px-2 py-1 text-[10px] font-medium bg-slate-600 text-white hover:bg-slate-700">Both</button>}
                                           </div>
                                         </div>
                                       ))}
@@ -769,7 +766,7 @@ export default function DispatchRequests() {
                                     <div className="flex gap-2">
                                       <input value={sendPhone} onChange={e => setSendPhone(e.target.value)} placeholder="Phone" className={`${inputCls} flex-1`} />
                                       <input value={sendEmail} onChange={e => setSendEmail(e.target.value)} placeholder="Email" className={`${inputCls} flex-1`} />
-                                      <button onClick={() => { const ch: string[] = []; if (sendPhone) ch.push('whatsapp'); if (sendEmail) ch.push('email'); if (ch.length === 0) { flash('err', 'Enter phone or email'); return; } sendRateRequest(inq.id, ch, sendPhone || undefined, sendEmail || undefined); }} disabled={!!sendingTo} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 flex items-center gap-1 whitespace-nowrap">{sendingTo ? <Loader2 size={10} className="animate-spin" /> : <Share2 size={10} />} Send</button>
+                                      <button onClick={() => { const ch: string[] = []; if (sendPhone) ch.push('telegram'); if (sendEmail) ch.push('email'); if (ch.length === 0) { flash('err', 'Enter phone or email'); return; } sendRateRequest(inq.id, ch, sendPhone || undefined, sendEmail || undefined); }} disabled={!!sendingTo} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 flex items-center gap-1 whitespace-nowrap">{sendingTo ? <Loader2 size={10} className="animate-spin" /> : <Share2 size={10} />} Send</button>
                                     </div>
                                   </div>
                                 </div>
@@ -796,7 +793,7 @@ export default function DispatchRequests() {
                                       </div>
                                       {q.status === 'ACCEPTED' && (
                                         <div className="flex gap-2 mt-2 pt-2 border-t border-green-300">
-                                          {(() => { const t = transporters.find(tr => tr.name.toLowerCase() === q.transporterName.toLowerCase()); return t?.phone ? <button onClick={() => sendDocWhatsApp('', t.phone!, 'RATE_REQUEST', dr)} disabled={!!actionLoading} className="px-2 py-1 text-[10px] font-medium bg-white text-green-700 border border-green-300 hover:bg-green-50 flex items-center gap-0.5"><MessageCircle size={9} /> WA Confirmation</button> : null; })()}
+                                          {(() => { const t = transporters.find(tr => tr.name.toLowerCase() === q.transporterName.toLowerCase()); return t?.phone ? <button onClick={() => sendDocTelegram('', t.phone!, 'RATE_REQUEST', dr)} disabled={!!actionLoading} className="px-2 py-1 text-[10px] font-medium bg-white text-green-700 border border-green-300 hover:bg-green-50 flex items-center gap-0.5"><MessageCircle size={9} /> TG Confirmation</button> : null; })()}
                                         </div>
                                       )}
                                     </div>
@@ -945,7 +942,7 @@ export default function DispatchRequests() {
                                             </div>
                                             <div className="flex gap-2 flex-wrap">
                                               <button onClick={(e) => { e.stopPropagation(); const token = localStorage.getItem('token'); window.open(`/api/shipments/${s.id}/challan-pdf?token=${token}`, '_blank'); }} className="px-2.5 py-1 text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 flex items-center gap-1"><FileText size={10} /> Challan PDF</button>
-                                              {(s.driverMobile || dr.transporterId) && <button onClick={(e) => { e.stopPropagation(); const phone = s.driverMobile || transporters.find(t => t.id === dr.transporterId)?.phone || ''; if (!phone) { flash('err', 'No phone number'); return; } sendDocWhatsApp(s.id, phone, 'CHALLAN', dr); }} disabled={!!actionLoading} className="px-2.5 py-1 text-[10px] font-medium bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 flex items-center gap-1">{actionLoading === s.id + '_wa_CHALLAN' ? <Loader2 size={9} className="animate-spin" /> : <MessageCircle size={9} />} WA Challan</button>}
+                                              {(s.driverMobile || dr.transporterId) && <button onClick={(e) => { e.stopPropagation(); const chatId = s.driverMobile || transporters.find(t => t.id === dr.transporterId)?.phone || ''; if (!chatId) { flash('err', 'No contact'); return; } sendDocTelegram(s.id, chatId, 'CHALLAN', dr); }} disabled={!!actionLoading} className="px-2.5 py-1 text-[10px] font-medium bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 flex items-center gap-1">{actionLoading === s.id + '_tg_CHALLAN' ? <Loader2 size={9} className="animate-spin" /> : <MessageCircle size={9} />} TG Challan</button>}
                                               {!s.ewayBill && <button onClick={async (e) => { e.stopPropagation(); try { setActionLoading(s.id + '_ewb'); const r = await api.post(`/shipments/${s.id}/eway-bill`); flash('ok', `E-Way Bill: ${r.data.ewayBillNo}`); load(); } catch (e: any) { flash('err', e.response?.data?.error || 'E-Way Bill failed'); } finally { setActionLoading(null); } }} disabled={!!actionLoading} className="px-2.5 py-1 text-[10px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 flex items-center gap-1">{actionLoading === s.id + '_ewb' ? <Loader2 size={9} className="animate-spin" /> : <Truck size={9} />} Generate E-Way Bill</button>}
                                             </div>
                                             {docs.length > 0 && (
@@ -956,7 +953,7 @@ export default function DispatchRequests() {
                                                     <div className="flex items-center gap-2"><span className="text-[9px] font-bold text-slate-500 uppercase bg-slate-100 px-1.5 py-0.5">{d.docType.replace(/_/g, ' ')}</span><span className="text-xs text-slate-700 truncate max-w-[150px]">{d.fileName}</span></div>
                                                     <div className="flex items-center gap-2">
                                                       <button onClick={(e) => { e.stopPropagation(); const token = localStorage.getItem('token'); window.open(`/api/shipment-documents/file/${d.id}?token=${token}`, '_blank'); }} className="text-blue-600 text-xs font-medium hover:underline">View</button>
-                                                      {(s.driverMobile || dr.transporterId) && <button onClick={(e) => { e.stopPropagation(); const phone = s.driverMobile || transporters.find(t => t.id === dr.transporterId)?.phone || ''; if (!phone) { flash('err', 'No phone number'); return; } const token = localStorage.getItem('token'); const docUrl = `${window.location.origin}/api/shipment-documents/file/${d.id}?token=${token}`; api.post('/messaging/send-document', { phone, message: `MSPIL -- ${d.docType.replace(/_/g, ' ')} for ${s.vehicleNo}`, documentUrl: docUrl, documentType: d.docType }).then(r => { if (r.data.provider === 'web' && r.data.webUrl) { window.open(r.data.webUrl, '_blank'); flash('ok', 'WhatsApp opened'); } else if (r.data.success) flash('ok', 'Sent via WhatsApp'); else flash('err', r.data.error || 'Failed'); }).catch(() => flash('err', 'Send failed')); }} className="text-green-600 text-xs font-medium hover:underline flex items-center gap-0.5"><MessageCircle size={9} /> WA</button>}
+                                                      {(s.driverMobile || dr.transporterId) && <button onClick={(e) => { e.stopPropagation(); const chatId = s.driverMobile || transporters.find(t => t.id === dr.transporterId)?.phone || ''; if (!chatId) { flash('err', 'No contact'); return; } const token = localStorage.getItem('token'); const docUrl = `${window.location.origin}/api/shipment-documents/file/${d.id}?token=${token}`; api.post('/messaging/send-document', { chatId, message: `MSPIL -- ${d.docType.replace(/_/g, ' ')} for ${s.vehicleNo}`, documentUrl: docUrl, documentType: d.docType }).then(r => { if (r.data.success) flash('ok', 'Sent via Telegram'); else flash('err', r.data.error || 'Failed'); }).catch(() => flash('err', 'Send failed')); }} className="text-green-600 text-xs font-medium hover:underline flex items-center gap-0.5"><MessageCircle size={9} /> TG</button>}
                                                     </div>
                                                   </div>
                                                 ))}

@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate } from '../middleware/auth';
 import {
-  sendEmail, sendWhatsApp,
+  sendEmail, sendTelegram,
   buildRateRequestMessage, buildRateRequestHTML,
   RateRequestData,
 } from '../services/messaging';
@@ -10,11 +10,10 @@ import {
 const router = Router();
 router.use(authenticate as any);
 
-// POST /send-rate-request — Send freight inquiry to a transporter via email + WhatsApp
+// POST /send-rate-request — Send freight inquiry to a transporter via email + Telegram
 router.post('/send-rate-request', async (req: Request, res: Response) => {
   try {
     const { inquiryId, transporterId, channels } = req.body;
-    // channels: ['email', 'whatsapp'] or ['email'] or ['whatsapp']
 
     if (!inquiryId) {
       res.status(400).json({ error: 'inquiryId is required' });
@@ -61,8 +60,8 @@ router.post('/send-rate-request', async (req: Request, res: Response) => {
       pdfUrl,
     };
 
-    const results: any = { email: null, whatsapp: null };
-    const channelList = channels || ['whatsapp'];
+    const results: any = { email: null, telegram: null };
+    const channelList = channels || ['telegram'];
 
     // Send email
     if (channelList.includes('email')) {
@@ -78,13 +77,17 @@ router.post('/send-rate-request', async (req: Request, res: Response) => {
       }
     }
 
-    // Send WhatsApp
-    if (channelList.includes('whatsapp')) {
-      if (!transporterPhone) {
-        results.whatsapp = { success: false, error: 'No phone number for this transporter' };
+    // Send Telegram
+    if (channelList.includes('telegram')) {
+      // Get Telegram private chat IDs from settings
+      const settings = await prisma.settings.findFirst();
+      const chatIds = settings?.telegramPrivateChatIds?.split(',').map(s => s.trim()).filter(Boolean) || [];
+      if (chatIds.length === 0) {
+        results.telegram = { success: false, error: 'No Telegram chat IDs configured' };
       } else {
         const message = await buildRateRequestMessage(data);
-        results.whatsapp = await sendWhatsApp({ phone: transporterPhone, message, mediaUrl: pdfUrl });
+        // Send to first configured chat ID
+        results.telegram = await sendTelegram({ chatId: chatIds[0], message });
       }
     }
 
@@ -98,7 +101,7 @@ router.post('/send-rate-request', async (req: Request, res: Response) => {
   }
 });
 
-// POST /send-custom — Send a custom message (email or WhatsApp)
+// POST /send-custom — Send a custom message (email or Telegram)
 router.post('/send-custom', async (req: Request, res: Response) => {
   try {
     const { channel, to, subject, message, html } = req.body;
@@ -107,29 +110,28 @@ router.post('/send-custom', async (req: Request, res: Response) => {
       if (!to) { res.status(400).json({ error: 'Email address required' }); return; }
       const result = await sendEmail({ to, subject: subject || 'MSPIL ERP Notification', text: message, html });
       res.json(result);
-    } else if (channel === 'whatsapp') {
-      if (!to) { res.status(400).json({ error: 'Phone number required' }); return; }
-      const result = await sendWhatsApp({ phone: to, message });
+    } else if (channel === 'telegram') {
+      if (!to) { res.status(400).json({ error: 'Chat ID required' }); return; }
+      const result = await sendTelegram({ chatId: to, message });
       res.json(result);
     } else {
-      res.status(400).json({ error: 'Invalid channel. Use "email" or "whatsapp".' });
+      res.status(400).json({ error: 'Invalid channel. Use "email" or "telegram".' });
     }
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST /send-document — Send a document (PDF, image) via WhatsApp
+// POST /send-document — Send a document via Telegram
 router.post('/send-document', async (req: Request, res: Response) => {
   try {
-    const { phone, message, documentUrl, documentType } = req.body;
-    if (!phone) { res.status(400).json({ error: 'Phone number required' }); return; }
+    const { chatId, message, documentUrl, documentType } = req.body;
+    if (!chatId) { res.status(400).json({ error: 'Chat ID required' }); return; }
     if (!documentUrl) { res.status(400).json({ error: 'Document URL required' }); return; }
 
-    const result = await sendWhatsApp({
-      phone,
-      message: message || `MSPIL ERP — ${documentType || 'Document'}`,
-      mediaUrl: documentUrl,
+    const result = await sendTelegram({
+      chatId,
+      message: `${message || `MSPIL ERP — ${documentType || 'Document'}`}\n${documentUrl}`,
     });
     res.json(result);
   } catch (err: any) {
@@ -139,33 +141,16 @@ router.post('/send-document', async (req: Request, res: Response) => {
 
 // GET /config — Check messaging configuration status
 router.get('/config', async (_req: Request, res: Response) => {
-  const provider = process.env.WHATSAPP_PROVIDER || 'web';
-  const providerConfig: any = { provider };
-
-  switch (provider) {
-    case 'twilio':
-      providerConfig.configured = !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN);
-      providerConfig.from = process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886';
-      break;
-    case 'meta':
-      providerConfig.configured = !!(process.env.META_WHATSAPP_TOKEN || process.env.WHATSAPP_TOKEN);
-      break;
-    case 'wapi':
-      providerConfig.configured = !!(process.env.WAPI_API_KEY);
-      break;
-    case 'gupshup':
-      providerConfig.configured = !!(process.env.GUPSHUP_API_KEY);
-      break;
-    default:
-      providerConfig.configured = true; // web mode always works
-  }
-
+  const settings = await prisma.settings.findFirst();
   res.json({
     email: {
       configured: !!(process.env.SMTP_USER && process.env.SMTP_PASS),
       from: process.env.SMTP_FROM || process.env.SMTP_USER || 'Not set',
     },
-    whatsapp: providerConfig,
+    telegram: {
+      configured: !!(settings?.telegramBotToken || process.env.TELEGRAM_BOT_TOKEN),
+      enabled: settings?.telegramEnabled ?? false,
+    },
   });
 });
 
