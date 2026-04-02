@@ -132,7 +132,8 @@ export default function PaymentsOut() {
   // --- PO Pay modal ---
   const [poPayItem, setPoPayItem] = useState<PendingPayable | null>(null);
   const [poPayAmount, setPoPayAmount] = useState('');
-  const [poPayMode, setPoPayMode] = useState('CASH');
+  const [poPayMode, setPoPayMode] = useState('NEFT');
+  const [poPayIncludeGst, setPoPayIncludeGst] = useState(false);
   const [poPayRef, setPoPayRef] = useState('');
   const [poPayRemarks, setPoPayRemarks] = useState('');
   const [poPaySaving, setPoPaySaving] = useState(false);
@@ -386,6 +387,7 @@ export default function PaymentsOut() {
         mode: poPayMode,
         reference: poPayRef,
         remarks: poPayRemarks,
+        includeGst: poPayIncludeGst,
       });
 
       // Cash payments create a voucher, not a direct payment
@@ -900,7 +902,7 @@ export default function PaymentsOut() {
                                   )}
                                   {/* Direct PAY against PO — only when no invoices exist (running account) */}
                                   {item.grnCount > 0 && item.invoices.length === 0 && item.balance > 0 && (
-                                    <button onClick={() => { setPoPayItem(item); setPoPayAmount(''); setPoPayMode('CASH'); setPoPayRef(''); setPoPayRemarks(''); fetchPOPayments(item.poId); }}
+                                    <button onClick={() => { setPoPayItem(item); setPoPayAmount(''); setPoPayMode('NEFT'); setPoPayRef(''); setPoPayRemarks(''); setPoPayIncludeGst(false); fetchPOPayments(item.poId); }}
                                       className="px-2 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase hover:bg-green-700 flex items-center gap-1" title="Pay against PO">
                                       <CreditCard size={10} /> PAY
                                     </button>
@@ -2041,6 +2043,13 @@ export default function PaymentsOut() {
                       <option value="CASH">Cash</option>
                       <option value="CHEQUE">Cheque</option>
                     </select>
+                  </div>
+                  <div className="col-span-2 flex items-center gap-3">
+                    <label className={`flex items-center gap-2 px-3 py-1.5 border cursor-pointer text-xs ${poPayIncludeGst ? 'border-green-500 bg-green-50 text-green-700 font-bold' : 'border-slate-300 bg-white text-slate-500'}`}>
+                      <input type="checkbox" checked={poPayIncludeGst} onChange={e => setPoPayIncludeGst(e.target.checked)} className="w-3.5 h-3.5" />
+                      Include GST in payment
+                    </label>
+                    <span className="text-[10px] text-slate-400">{poPayMode === 'CASH' ? '(Usually NO GST for cash purchases)' : '(Check if vendor charges GST)'}</span>
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">UTR / Reference</label>

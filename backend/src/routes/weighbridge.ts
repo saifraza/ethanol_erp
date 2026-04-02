@@ -655,9 +655,17 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
         default: receivedQty = netKg; break;
       }
 
+      // Calculate totals for the auto-PO
+      const lineAmount = Math.round(receivedQty * rate * 100) / 100;
+      const gstPct = invItem?.gstPercent ?? 0;
+      const gstAmount = Math.round(lineAmount * gstPct / 100 * 100) / 100;
+      const cgst = Math.round(gstAmount / 2 * 100) / 100;
+      const sgst = Math.round(gstAmount / 2 * 100) / 100;
+      const grandTotal = Math.round((lineAmount + gstAmount) * 100) / 100;
+
       // Auto-create PO + GRN in a transaction
       const { po, grn } = await prisma.$transaction(async (tx) => {
-        // Create PO
+        // Create PO with proper totals
         const po = await tx.purchaseOrder.create({
           data: {
             vendorId: trader.id,
@@ -665,6 +673,11 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
             status: 'APPROVED',
             poDate: new Date(),
             paymentTerms: 'ADVANCE',
+            subtotal: lineAmount,
+            totalCgst: cgst,
+            totalSgst: sgst,
+            totalGst: gstAmount,
+            grandTotal,
             remarks: `${wbRef} | Auto from trader weighbridge`,
             userId: 'system-weighbridge',
             lines: {
@@ -675,10 +688,14 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
                 quantity: receivedQty,
                 unit: invItem?.unit || 'KG',
                 rate,
-                amount: Math.round(receivedQty * rate * 100) / 100,
-                pendingQty: 0, // Already received
+                amount: lineAmount,
+                pendingQty: 0,
                 receivedQty,
-                gstPercent: invItem?.gstPercent || 5,
+                gstPercent: gstPct,
+                cgstAmount: cgst,
+                sgstAmount: sgst,
+                taxableAmount: lineAmount,
+                lineTotal: grandTotal,
               }],
             },
           },
@@ -693,7 +710,7 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
             grnDate: new Date(),
             vehicleNo: w.vehicle_no,
             totalQty: receivedQty,
-            totalAmount: Math.round(receivedQty * rate * 100) / 100,
+            totalAmount: lineAmount,
             status: 'DRAFT',
             remarks: `${wbRef} | Trader: ${trader.name} | PO-${po.poNo}`,
             userId: 'system-weighbridge',
