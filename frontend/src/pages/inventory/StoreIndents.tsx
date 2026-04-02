@@ -143,7 +143,7 @@ export default function StoreIndents() {
     }
     setExpandedId(id);
     setStockCheck(null);
-    if (status === 'APPROVED') {
+    if (['DRAFT', 'SUBMITTED', 'APPROVED'].includes(status)) {
       fetchStockCheck(id);
     }
   }, [expandedId, fetchStockCheck]);
@@ -412,6 +412,41 @@ export default function StoreIndents() {
                             {row.supplier && <div><span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Supplier:</span> {row.supplier}</div>}
                             {row.estimatedCost > 0 && <div><span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Est. Cost:</span> <span className="font-mono tabular-nums">Rs.{row.estimatedCost.toLocaleString('en-IN')}</span></div>}
                           </div>
+
+                          {/* Stock Info — shown for DRAFT and SUBMITTED */}
+                          {['DRAFT', 'SUBMITTED'].includes(row.status) && (
+                            <div className="border border-slate-200 bg-white p-3">
+                              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Store Stock</div>
+                              {stockLoading ? (
+                                <div className="text-xs text-slate-400">Checking stock...</div>
+                              ) : stockCheck ? (
+                                <div className="grid grid-cols-3 gap-4 text-xs">
+                                  <div>
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Available</span>
+                                    <span className={`font-mono tabular-nums text-sm font-bold ${stockCheck.available > 0 ? 'text-green-700' : 'text-red-600'}`}>
+                                      {stockCheck.available} {stockCheck.unit}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Requested</span>
+                                    <span className="font-mono tabular-nums text-sm font-bold text-slate-800">{stockCheck.requested} {stockCheck.unit}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Verdict</span>
+                                    {stockCheck.available >= stockCheck.requested ? (
+                                      <span className="text-sm font-bold text-green-700">In Stock</span>
+                                    ) : stockCheck.available > 0 ? (
+                                      <span className="text-sm font-bold text-amber-600">Partial — need {stockCheck.shortfall} more</span>
+                                    ) : (
+                                      <span className="text-sm font-bold text-red-600">Not in Stock — purchase needed</span>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="text-xs text-slate-400">No inventory item linked</div>
+                              )}
+                            </div>
+                          )}
 
                           {/* DRAFT Actions */}
                           {row.status === 'DRAFT' && (
