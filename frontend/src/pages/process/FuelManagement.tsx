@@ -686,7 +686,6 @@ export default function FuelManagement() {
                                     </td>
                                     <td className="px-3 py-1.5" onClick={e => e.stopPropagation()}>
                                       <div className="flex gap-1 flex-wrap">
-                                        {d.outstanding > 0 && <button onClick={() => recordPayment(d.id, d.vendor.name, d.outstanding)} className="text-[10px] text-green-600 font-semibold uppercase hover:underline">Pay</button>}
                                         <button onClick={() => updateRate(d.id)} className="text-[10px] text-blue-600 font-semibold uppercase hover:underline">Rate</button>
                                         <button onClick={() => closeDeal(d.id)} className="text-[10px] text-orange-500 font-semibold uppercase hover:underline">Close</button>
                                         {isAdmin && d.truckCount === 0 && <button onClick={() => deleteDeal(d.id)} className="text-[10px] text-red-600 font-semibold uppercase hover:underline">Del</button>}
