@@ -391,7 +391,7 @@ router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Re
   const deals = await prisma.purchaseOrder.findMany({
     where: {
       dealType: { in: ['OPEN', 'STANDARD'] },
-      status: { in: ['APPROVED', 'SENT', 'PARTIAL_RECEIVED'] },
+      status: { in: ['APPROVED', 'SENT', 'PARTIAL_RECEIVED', 'RECEIVED'] },
       // Only fuel deals — check if any line has a fuel inventory item
       lines: { some: { inventoryItem: { category: 'FUEL' } } },
     },
