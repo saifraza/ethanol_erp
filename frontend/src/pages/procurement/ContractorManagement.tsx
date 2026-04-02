@@ -540,7 +540,10 @@ export default function ContractorManagement() {
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">PAN *</label>
-                    <input value={cForm.pan} onChange={e => setCForm({ ...cForm, pan: e.target.value.toUpperCase() })} maxLength={10} className="w-full border border-slate-300 px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="ABCPD1234E" />
+                    <input value={cForm.pan} onChange={e => setCForm({ ...cForm, pan: e.target.value.toUpperCase() })} maxLength={10} className={`w-full border px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-slate-400 ${cForm.pan.length > 0 && cForm.pan.length !== 10 ? 'border-red-400' : 'border-slate-300'}`} placeholder="ABCPD1234E" />
+                    {cForm.pan.length > 0 && cForm.pan.length !== 10 && (
+                      <div className="mt-0.5 text-[9px] text-red-500 font-medium">PAN must be exactly 10 characters ({cForm.pan.length}/10)</div>
+                    )}
                     {cForm.pan.length >= 4 && (
                       <div className="mt-1">
                         <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${panInfo.panType === 'INDIVIDUAL' ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-violet-300 bg-violet-50 text-violet-700'}`}>
