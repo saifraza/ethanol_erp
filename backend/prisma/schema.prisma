@@ -1194,6 +1194,8 @@ model PurchaseRequisition {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
+  purchaseOrders    PurchaseOrder[]            // auto-generated POs from this indent
+
   @@index([status])
   @@index([urgency])
   @@index([userId])
@@ -1749,6 +1751,8 @@ model PurchaseOrder {
   // Refs
   remarks         String?
   truckCap        Int?                      // Max trucks for FIXED TRUCKS fuel deals (NF-4)
+  requisitionId   String?                   // FK to PurchaseRequisition (auto-PO from indent)
+  requisition     PurchaseRequisition? @relation(fields: [requisitionId], references: [id], onDelete: SetNull)
   userId          String
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -1759,6 +1763,7 @@ model PurchaseOrder {
   @@index([vendorId])
   @@index([status])
   @@index([vendorId, dealType, status])
+  @@index([requisitionId])
 }
 
 // ── PO Line Item ──
@@ -1979,6 +1984,120 @@ model VendorPayment {
   @@index([paymentDate])
   @@index([paymentStatus])
   @@index([bankFileBatch])
+}
+
+// ══════════════════════════════════════════════════════════════
+// CONTRACTORS — Service providers (civil, electrical, manpower, etc.)
+// ══════════════════════════════════════════════════════════════
+
+model Contractor {
+  id              String   @id @default(uuid())
+  contractorCode  String   @unique           // CON-001, CON-002...
+  name            String                     // Name of individual / firm
+  tradeName       String?                    // Firm/trade name (if company)
+  pan             String                     // PAN (10 chars, required)
+  panType         String   @default("INDIVIDUAL") // INDIVIDUAL | COMPANY (derived from PAN 4th char)
+  gstin           String?                    // 15-char GSTIN (null = unregistered)
+  gstState        String?                    // GST state code
+  aadhaarNo       String?                    // For individuals
+  contractorType  String   @default("OTHER") // CIVIL, ELECTRICAL, MANPOWER, TRANSPORT, DAILY_WORK, OTHER
+  phone           String?
+  email           String?
+  address         String?
+  bankName        String?
+  bankBranch      String?
+  bankAccount     String?
+  bankIfsc        String?
+  tdsSection      String   @default("194C")
+  tdsPercent      Float    @default(1)       // 1% individual, 2% company
+  isActive        Boolean  @default(true)
+  remarks         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  bills           ContractorBill[]
+  payments        ContractorPayment[]
+
+  @@index([pan])
+  @@index([isActive])
+  @@index([contractorType])
+}
+
+model ContractorBill {
+  id              String   @id @default(uuid())
+  billNo          Int      @default(autoincrement())
+  contractorId    String
+  contractor      Contractor @relation(fields: [contractorId], references: [id])
+  billDate        DateTime @default(now())
+  billPath        String   @default("CREATED") // CREATED | UPLOADED
+  description     String                     // Summary of work done
+  // Amounts
+  subtotal        Float    @default(0)       // Sum of line items (base before GST)
+  cgstPercent     Float    @default(0)
+  sgstPercent     Float    @default(0)
+  igstPercent     Float    @default(0)
+  cgstAmount      Float    @default(0)
+  sgstAmount      Float    @default(0)
+  igstAmount      Float    @default(0)
+  totalAmount     Float    @default(0)       // subtotal + GST
+  tdsPercent      Float    @default(0)       // From contractor master
+  tdsAmount       Float    @default(0)       // tdsPercent × subtotal
+  netPayable      Float    @default(0)       // totalAmount - tdsAmount
+  paidAmount      Float    @default(0)
+  balanceAmount   Float    @default(0)       // netPayable - paidAmount
+  // Status
+  status          String   @default("DRAFT") // DRAFT | CONFIRMED | PARTIAL_PAID | PAID | CANCELLED
+  vendorBillNo    String?                    // Contractor's own bill number (UPLOADED path)
+  documentUrl     String?                    // Uploaded bill file path (UPLOADED path)
+  confirmedAt     DateTime?
+  confirmedBy     String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  lines           ContractorBillLine[]
+  payments        ContractorPayment[]
+
+  @@index([contractorId])
+  @@index([status])
+  @@index([billDate])
+}
+
+model ContractorBillLine {
+  id              String   @id @default(uuid())
+  billId          String
+  bill            ContractorBill @relation(fields: [billId], references: [id], onDelete: Cascade)
+  description     String                     // Work description
+  quantity        Float    @default(1)
+  unit            String   @default("NOS")   // NOS, DAYS, SQ.FT, CU.M, KG, MT, LUMP
+  rate            Float    @default(0)
+  amount          Float    @default(0)       // qty × rate
+
+  @@index([billId])
+}
+
+model ContractorPayment {
+  id              String   @id @default(uuid())
+  contractorId    String
+  contractor      Contractor @relation(fields: [contractorId], references: [id])
+  billId          String?
+  bill            ContractorBill? @relation(fields: [billId], references: [id])
+  amount          Float
+  tdsDeducted     Float    @default(0)
+  paymentMode     String   @default("NEFT")  // CASH, NEFT, RTGS, UPI, CHEQUE, BANK_TRANSFER
+  paymentRef      String?                    // UTR / cheque no
+  paymentDate     DateTime @default(now())
+  paymentStatus   String   @default("CONFIRMED") // INITIATED | CONFIRMED | CANCELLED
+  isAdvance       Boolean  @default(false)
+  remarks         String?
+  userId          String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([contractorId])
+  @@index([billId])
+  @@index([paymentDate])
+  @@index([paymentStatus])
 }
 
 // ══════════════════════════════════════════════════════════════

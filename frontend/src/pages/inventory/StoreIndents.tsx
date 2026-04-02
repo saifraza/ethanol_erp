@@ -41,6 +41,24 @@ interface StockCheck {
   unit: string;
 }
 
+interface AutoPOResult {
+  created: boolean;
+  poId?: string;
+  poNo?: number;
+  vendorName?: string;
+  rate?: number;
+  quantity?: number;
+  grandTotal?: number;
+  reason?: string;
+}
+
+interface IssueResult {
+  issuedQty: number;
+  purchaseQty: number;
+  status: string;
+  autoPO: AutoPOResult | null;
+}
+
 const STATUS_TABS = ['ALL', 'SUBMITTED', 'APPROVED', 'PO_PENDING', 'COMPLETED'] as const;
 
 const urgencyStyle: Record<string, string> = {
@@ -72,6 +90,7 @@ export default function StoreIndents() {
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectModal, setShowRejectModal] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [issueResult, setIssueResult] = useState<IssueResult | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -154,10 +173,15 @@ export default function StoreIndents() {
   const handleIssue = async (id: string) => {
     setActionLoading(true);
     try {
-      await api.put(`/purchase-requisition/${id}/issue`, { issuedQty: issueQty });
+      const res = await api.put(`/purchase-requisition/${id}/issue`, { issuedQty: issueQty });
+      const { issue, autoPO } = res.data;
       await fetchData();
-      setExpandedId(null);
-      setStockCheck(null);
+      if (autoPO || (issue && issue.purchaseQty > 0)) {
+        setIssueResult({ issuedQty: issue?.issuedQty ?? issueQty, purchaseQty: issue?.purchaseQty ?? 0, status: issue?.status ?? '', autoPO });
+      } else {
+        setExpandedId(null);
+        setStockCheck(null);
+      }
     } finally {
       setActionLoading(false);
     }
@@ -166,13 +190,24 @@ export default function StoreIndents() {
   const handleFullPurchase = async (id: string) => {
     setActionLoading(true);
     try {
-      await api.put(`/purchase-requisition/${id}/issue`, { issuedQty: 0 });
+      const res = await api.put(`/purchase-requisition/${id}/issue`, { issuedQty: 0 });
+      const { issue, autoPO } = res.data;
       await fetchData();
-      setExpandedId(null);
-      setStockCheck(null);
+      if (autoPO) {
+        setIssueResult({ issuedQty: 0, purchaseQty: issue?.purchaseQty ?? 0, status: issue?.status ?? '', autoPO });
+      } else {
+        setExpandedId(null);
+        setStockCheck(null);
+      }
     } finally {
       setActionLoading(false);
     }
+  };
+
+  const dismissIssueResult = () => {
+    setIssueResult(null);
+    setExpandedId(null);
+    setStockCheck(null);
   };
 
   const handleMarkOrdered = async (id: string) => {
@@ -251,6 +286,57 @@ export default function StoreIndents() {
             </button>
           ))}
         </div>
+
+        {/* Auto-PO Result Banner */}
+        {issueResult && (
+          <div className={`-mx-3 md:-mx-6 border-x border-b px-4 py-3 ${
+            issueResult.autoPO?.created
+              ? 'bg-green-50 border-green-300'
+              : 'bg-amber-50 border-amber-300'
+          }`}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                {issueResult.issuedQty > 0 && (
+                  <div className="text-xs text-green-800 font-medium">
+                    Issued {issueResult.issuedQty} from warehouse
+                  </div>
+                )}
+                {issueResult.autoPO?.created ? (
+                  <div className="text-xs text-green-800">
+                    Draft PO <span className="font-bold">#{issueResult.autoPO.poNo}</span> created for{' '}
+                    <span className="font-mono tabular-nums font-bold">{issueResult.autoPO.quantity}</span> units
+                    {issueResult.autoPO.vendorName && <> — Vendor: <span className="font-bold">{issueResult.autoPO.vendorName}</span></>}
+                    {issueResult.autoPO.rate != null && <> @ Rs.{issueResult.autoPO.rate.toLocaleString('en-IN')}</>}
+                    {issueResult.autoPO.grandTotal != null && (
+                      <> — Total: <span className="font-mono tabular-nums font-bold">Rs.{issueResult.autoPO.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></>
+                    )}
+                  </div>
+                ) : issueResult.autoPO ? (
+                  <div className="text-xs text-amber-800">
+                    {issueResult.purchaseQty > 0 && <><span className="font-mono tabular-nums font-bold">{issueResult.purchaseQty}</span> pending purchase — </>}
+                    {issueResult.autoPO.reason}
+                  </div>
+                ) : null}
+              </div>
+              <div className="flex gap-2 shrink-0">
+                {issueResult.autoPO?.created && issueResult.autoPO.poId && (
+                  <a
+                    href={`/procurement/purchase-orders`}
+                    className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700"
+                  >
+                    View PO
+                  </a>
+                )}
+                <button
+                  onClick={dismissIssueResult}
+                  className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Table */}
         <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-x-auto">

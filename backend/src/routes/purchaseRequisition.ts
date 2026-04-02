@@ -2,6 +2,8 @@ import { Router, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, AuthRequest, authorize } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
+import { createPurchaseOrder } from '../services/purchaseOrderService';
+import { COMPANY } from '../shared/config/company';
 
 const router = Router();
 router.use(authenticate as any);
@@ -96,102 +98,112 @@ router.get('/:id/stock-check', asyncHandler(async (req: AuthRequest, res: Respon
 }));
 
 // PUT /:id/issue — warehouse issues stock and splits remaining to purchase
+// Role-guarded: only ADMIN/MANAGER can issue stock and trigger auto-PO
 router.put('/:id/issue', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const user = req.user!;
+    if (!['ADMIN', 'MANAGER'].includes(user.role)) {
+      return res.status(403).json({ error: 'Only ADMIN or MANAGER can issue from store' });
+    }
+
     const pr = await prisma.purchaseRequisition.findUnique({ where: { id: req.params.id } });
     if (!pr) return res.status(404).json({ error: 'Requisition not found' });
-    if (!['APPROVED'].includes(pr.status)) return res.status(400).json({ error: 'Can only issue from APPROVED status' });
+    if (pr.status !== 'APPROVED') return res.status(400).json({ error: 'Can only issue from APPROVED status' });
 
-    const issueQty = parseFloat(req.body.issuedQty) || 0;
-    if (issueQty < 0 || issueQty > pr.quantity) return res.status(400).json({ error: 'Invalid issue quantity' });
+    // Validate issuedQty with strict parsing (Codex: don't let malformed input become 0)
+    const rawQty = req.body.issuedQty;
+    const issueQty = typeof rawQty === 'number' ? rawQty : parseFloat(rawQty);
+    if (isNaN(issueQty) || issueQty < 0 || issueQty > pr.quantity) {
+      return res.status(400).json({ error: `Invalid issue quantity: must be 0–${pr.quantity}` });
+    }
 
-    const purchaseQty = pr.quantity - issueQty;
-    const user = req.user!;
+    const purchaseQty = Math.round((pr.quantity - issueQty) * 1000) / 1000;
 
     // If issuing from stock, validate availability and create proper stock movement
     if (issueQty > 0 && pr.inventoryItemId) {
-      const item = await prisma.inventoryItem.findUnique({
-        where: { id: pr.inventoryItemId },
-        select: { id: true, currentStock: true, avgCost: true, unit: true, name: true },
-      });
-      if (!item) return res.status(400).json({ error: 'Inventory item not found' });
-      if (item.currentStock < issueQty) {
-        return res.status(400).json({
-          error: `Insufficient stock: available ${item.currentStock} ${item.unit}, requested ${issueQty} ${item.unit}`,
-        });
-      }
+      // Stock check + deduction inside transaction to prevent oversell (Codex race condition fix)
+      try {
+        await prisma.$transaction(async (tx) => {
+          const item = await tx.inventoryItem.findUnique({
+            where: { id: pr.inventoryItemId! },
+            select: { id: true, currentStock: true, avgCost: true, unit: true, name: true },
+          });
+          if (!item) throw new Error('Inventory item not found');
+          if (item.currentStock < issueQty) {
+            throw new Error(`Insufficient stock: available ${item.currentStock} ${item.unit}, requested ${issueQty} ${item.unit}`);
+          }
 
-      await prisma.$transaction(async (tx) => {
-        // Create legacy InventoryTransaction (for backward compat)
-        await tx.inventoryTransaction.create({
-          data: {
-            itemId: pr.inventoryItemId!,
-            type: 'OUT',
-            quantity: issueQty,
-            reference: `INDENT-${pr.reqNo}`,
-            department: pr.department || 'Production',
-            issuedTo: pr.requestedByPerson || pr.requestedBy,
-            remarks: `Indent #${pr.reqNo}: ${pr.title}`,
-            userId: user.id,
-          },
-        });
-
-        // Create proper StockMovement (new ledger)
-        const defaultWh = await tx.warehouse.findFirst({
-          where: { isActive: true },
-          orderBy: { createdAt: 'asc' },
-          select: { id: true },
-        });
-        if (defaultWh) {
-          await tx.stockMovement.create({
+          // Create legacy InventoryTransaction (for backward compat)
+          await tx.inventoryTransaction.create({
             data: {
               itemId: pr.inventoryItemId!,
-              movementType: 'STORE_ISSUE',
-              direction: 'OUT',
+              type: 'OUT',
               quantity: issueQty,
-              unit: item.unit,
-              costRate: item.avgCost,
-              totalValue: Math.round(issueQty * item.avgCost * 100) / 100,
-              warehouseId: defaultWh.id,
-              refType: 'INDENT',
-              refId: pr.id,
-              refNo: `INDENT-${pr.reqNo}`,
-              narration: `Store issue: ${pr.title} (${pr.requestedByPerson || pr.requestedBy})`,
+              reference: `INDENT-${pr.reqNo}`,
+              department: pr.department || 'Production',
+              issuedTo: pr.requestedByPerson || pr.requestedBy,
+              remarks: `Indent #${pr.reqNo}: ${pr.title}`,
               userId: user.id,
             },
           });
 
-          // Update StockLevel
-          const sl = await tx.stockLevel.findFirst({
-            where: { itemId: pr.inventoryItemId!, warehouseId: defaultWh.id, binId: null, batchId: null },
+          // Create proper StockMovement (new ledger)
+          const defaultWh = await tx.warehouse.findFirst({
+            where: { isActive: true },
+            orderBy: { createdAt: 'asc' },
+            select: { id: true },
           });
-          if (sl) {
-            await tx.stockLevel.update({
-              where: { id: sl.id },
-              data: { quantity: { decrement: issueQty } },
+          if (defaultWh) {
+            await tx.stockMovement.create({
+              data: {
+                itemId: pr.inventoryItemId!,
+                movementType: 'STORE_ISSUE',
+                direction: 'OUT',
+                quantity: issueQty,
+                unit: item.unit,
+                costRate: item.avgCost,
+                totalValue: Math.round(issueQty * item.avgCost * 100) / 100,
+                warehouseId: defaultWh.id,
+                refType: 'INDENT',
+                refId: pr.id,
+                refNo: `INDENT-${pr.reqNo}`,
+                narration: `Store issue: ${pr.title} (${pr.requestedByPerson || pr.requestedBy})`,
+                userId: user.id,
+              },
             });
-          }
-        }
 
-        // Decrement global stock
-        await tx.inventoryItem.update({
-          where: { id: pr.inventoryItemId! },
-          data: {
-            currentStock: { decrement: issueQty },
-            totalValue: { decrement: Math.round(issueQty * item.avgCost * 100) / 100 },
-          },
+            // Update StockLevel
+            const sl = await tx.stockLevel.findFirst({
+              where: { itemId: pr.inventoryItemId!, warehouseId: defaultWh.id, binId: null, batchId: null },
+            });
+            if (sl) {
+              await tx.stockLevel.update({
+                where: { id: sl.id },
+                data: { quantity: { decrement: issueQty } },
+              });
+            }
+          }
+
+          // Decrement global stock
+          await tx.inventoryItem.update({
+            where: { id: pr.inventoryItemId! },
+            data: {
+              currentStock: { decrement: issueQty },
+              totalValue: { decrement: Math.round(issueQty * item.avgCost * 100) / 100 },
+            },
+          });
         });
-      });
+      } catch (txErr: unknown) {
+        // Map known validation errors to 400 instead of letting them bubble as 500
+        const msg = txErr instanceof Error ? txErr.message : 'Stock issue failed';
+        if (msg.includes('Insufficient stock') || msg.includes('not found')) {
+          return res.status(400).json({ error: msg });
+        }
+        throw txErr; // re-throw unknown errors for asyncHandler to handle as 500
+      }
     }
 
     // Determine new status
-    let newStatus: string;
-    if (issueQty >= pr.quantity) {
-      newStatus = 'COMPLETED';
-    } else if (purchaseQty > 0) {
-      newStatus = 'PO_PENDING';
-    } else {
-      newStatus = 'COMPLETED';
-    }
+    const newStatus = issueQty >= pr.quantity ? 'COMPLETED' : purchaseQty > 0 ? 'PO_PENDING' : 'COMPLETED';
 
     const updated = await prisma.purchaseRequisition.update({
       where: { id: req.params.id },
@@ -204,7 +216,87 @@ router.put('/:id/issue', asyncHandler(async (req: AuthRequest, res: Response) =>
       },
     });
 
-    res.json(updated);
+    // Auto-create DRAFT PO for purchase shortfall (outside stock transaction — failure is non-fatal)
+    let autoPO: { created: boolean; poId?: string; poNo?: number; vendorName?: string; rate?: number; quantity?: number; grandTotal?: number; reason?: string } | null = null;
+
+    if (purchaseQty > 0 && pr.inventoryItemId) {
+      try {
+        // Idempotency check: don't create duplicate PO for same indent (Codex fix)
+        const existingPO = await prisma.purchaseOrder.findFirst({
+          where: { requisitionId: pr.id, status: { not: 'CANCELLED' } },
+          select: { id: true, poNo: true },
+        });
+        if (existingPO) {
+          autoPO = { created: false, reason: `PO #${existingPO.poNo} already exists for this indent` };
+        } else {
+          // Find preferred vendor — also check vendor.isActive (Codex fix)
+          const vendorItem = await prisma.vendorItem.findFirst({
+            where: {
+              inventoryItemId: pr.inventoryItemId,
+              isPreferred: true,
+              isActive: true,
+              vendor: { isActive: true },
+            },
+            orderBy: { updatedAt: 'desc' }, // deterministic: most recently updated preferred vendor
+            include: {
+              vendor: { select: { id: true, name: true, gstState: true, paymentTerms: true, creditDays: true } },
+              item: { select: { name: true, hsnCode: true, gstPercent: true, unit: true } },
+            },
+          });
+
+          if (vendorItem && vendorItem.rate > 0) {
+            // Determine GST supply type: compare vendor state code with company state code
+            const vendorStateCode = vendorItem.vendor.gstState || '';
+            const supplyType = vendorStateCode && vendorStateCode !== COMPANY.stateCode ? 'INTER_STATE' : 'INTRA_STATE';
+
+            const po = await createPurchaseOrder({
+              vendorId: vendorItem.vendor.id,
+              lines: [{
+                inventoryItemId: pr.inventoryItemId,
+                description: vendorItem.item.name,
+                hsnCode: vendorItem.item.hsnCode || undefined,
+                quantity: purchaseQty,
+                unit: vendorItem.item.unit || pr.unit,
+                rate: vendorItem.rate,
+                gstPercent: vendorItem.item.gstPercent || 18,
+              }],
+              supplyType: supplyType as 'INTRA_STATE' | 'INTER_STATE',
+              requisitionId: pr.id,
+              userId: user.id,
+              remarks: `Auto-created from Indent #${pr.reqNo}`,
+              paymentTerms: vendorItem.vendor.paymentTerms || undefined,
+              creditDays: vendorItem.vendor.creditDays || 30,
+            });
+
+            autoPO = {
+              created: true,
+              poId: po.id,
+              poNo: po.poNo,
+              vendorName: vendorItem.vendor.name,
+              rate: vendorItem.rate,
+              quantity: purchaseQty,
+              grandTotal: po.grandTotal,
+            };
+          } else {
+            autoPO = {
+              created: false,
+              reason: !vendorItem
+                ? 'No approved vendor found for this item — manual PO required'
+                : 'Vendor rate is 0 — manual PO required with negotiated rate',
+            };
+          }
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        autoPO = { created: false, reason: `Auto-PO failed: ${message}` };
+      }
+    }
+
+    res.json({
+      requisition: updated,
+      issue: { issuedQty: issueQty, purchaseQty, status: newStatus },
+      autoPO,
+    });
 }));
 
 // PUT /:id — update requisition
@@ -235,7 +327,9 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
         'SUBMITTED': ['APPROVED', 'REJECTED', 'DRAFT'],
         'APPROVED': ['ISSUED', 'PO_PENDING', 'COMPLETED', 'CANCELLED'],
         'REJECTED': ['DRAFT'],
-        'PO_PENDING': ['COMPLETED', 'CANCELLED'],
+        'PO_PENDING': ['ORDERED', 'COMPLETED', 'CANCELLED'],
+        'ORDERED': ['RECEIVED', 'COMPLETED', 'CANCELLED'],
+        'RECEIVED': ['COMPLETED'],
         'ISSUED': ['COMPLETED'],
         'COMPLETED': [],
         'CANCELLED': ['DRAFT'],

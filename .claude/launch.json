@@ -4,13 +4,13 @@
     {
       "name": "dev",
       "runtimeExecutable": "bash",
-      "runtimeArgs": ["-c", "cd backend && PORT=5050 npx tsx src/server.ts"],
+      "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && cd backend && PORT=5050 npx tsx src/server.ts"],
       "port": 5050
     },
     {
       "name": "frontend",
       "runtimeExecutable": "bash",
-      "runtimeArgs": ["-c", "cd frontend && npx vite --port 3000"],
+      "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && cd frontend && npx vite --port 3000"],
       "port": 3000
     }
   ]
