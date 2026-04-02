@@ -401,26 +401,31 @@ export default function PaymentsOut() {
         return;
       }
 
-      // Bank payment initiated (no UTR yet) — show payment slip
+      // Bank payment initiated (no UTR yet) — open payment slip as PDF in new tab
       if (res.data.type === 'BANK_INITIATED') {
         const v = res.data.vendor;
-        const slipInfo = [
-          `PAYMENT SLIP — PO-${res.data.poNo}`,
-          `━━━━━━━━━━━━━━━━━━━━━━━`,
-          `Pay To: ${v?.name || 'Unknown'}`,
-          `Amount: ₹${res.data.payment.amount.toLocaleString('en-IN')}`,
-          `Mode: ${res.data.payment.mode}`,
-          '',
-          `BENEFICIARY BANK DETAILS:`,
-          `Bank: ${v?.bankName || 'N/A'}`,
-          `Account: ${v?.bankAccount || 'N/A'}`,
-          `IFSC: ${v?.bankIfsc || 'N/A'}`,
-          '',
-          `Payment #${res.data.payment.paymentNo} | Status: PENDING UTR`,
-          `━━━━━━━━━━━━━━━━━━━━━━━`,
-          `Enter UTR after bank transfer to confirm.`,
-        ].join('\n');
-        alert(slipInfo);
+        const p = res.data.payment;
+        const slipHtml = `<!DOCTYPE html><html><head><title>Payment Slip — PO-${res.data.poNo}</title>
+          <style>body{font-family:Arial,sans-serif;margin:40px;color:#1e293b}
+          .hdr{background:#1e293b;color:#fff;padding:12px 20px;font-size:14px;font-weight:bold;text-transform:uppercase;letter-spacing:2px}
+          table{width:100%;border-collapse:collapse;margin:16px 0}td{padding:8px 12px;border:1px solid #cbd5e1;font-size:13px}
+          .lbl{font-weight:bold;background:#f1f5f9;width:180px;text-transform:uppercase;font-size:10px;letter-spacing:1px}
+          .amt{font-size:22px;font-weight:bold;font-family:monospace}.foot{text-align:center;margin-top:30px;font-size:10px;color:#94a3b8}
+          @media print{body{margin:20px}}</style></head><body>
+          <div class="hdr">Payment Slip — PO-${res.data.poNo}</div>
+          <table><tr><td class="lbl">Pay To</td><td>${v?.name || 'Unknown'}</td></tr>
+          <tr><td class="lbl">Amount</td><td class="amt">\u20B9${p.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td></tr>
+          <tr><td class="lbl">Mode</td><td>${p.mode}</td></tr>
+          <tr><td class="lbl">Payment #</td><td>${p.paymentNo}</td></tr>
+          <tr><td class="lbl">Status</td><td style="color:#b45309;font-weight:bold">PENDING UTR</td></tr></table>
+          <div class="hdr" style="font-size:11px">Beneficiary Bank Details</div>
+          <table><tr><td class="lbl">Bank</td><td>${v?.bankName || 'N/A'}</td></tr>
+          <tr><td class="lbl">Account No</td><td style="font-family:monospace;font-size:15px;letter-spacing:1px">${v?.bankAccount || 'N/A'}</td></tr>
+          <tr><td class="lbl">IFSC Code</td><td style="font-family:monospace;font-weight:bold">${v?.bankIfsc || 'N/A'}</td></tr></table>
+          <div class="foot">MSPIL Distillery ERP | Generated ${new Date().toLocaleString('en-IN')}<br>Enter UTR after bank transfer to confirm payment.</div>
+          <script>window.print();</script></body></html>`;
+        const slipWindow = window.open('', '_blank');
+        if (slipWindow) { slipWindow.document.write(slipHtml); slipWindow.document.close(); }
         setBankPendingPayment(res.data.payment);
         fetchPOPayments(poPayItem.poId);
         setPoPayAmount('');
@@ -2061,7 +2066,16 @@ export default function PaymentsOut() {
                     {fmt(poPendingCash)} in pending cash voucher{poPendingCashVouchers.length > 1 ? 's' : ''} ({poPendingCashVouchers.map(v => `#${v.voucherNo}`).join(', ')})
                   </div>
                 )}
-                <div className="text-[10px] font-bold text-slate-800 uppercase tracking-widest border-b border-slate-200 pb-1">Payment Against PO (No Invoice Required)</div>
+                <div className="flex items-center justify-between border-b border-slate-200 pb-1">
+                  <span className="text-[10px] font-bold text-slate-800 uppercase tracking-widest">Payment Against PO (No Invoice Required)</span>
+                  {(() => {
+                    const mp = Math.max(0, (poReceivedValue || poPayItem.grnTotalValue) - poPayItem.totalPaid - poPendingCash);
+                    return mp > 0 ? (
+                      <button onClick={() => { setPoPayAmount(String(Math.round(mp))); if (poPayItem.poGst > 0) setPoPayIncludeGst(true); }}
+                        className="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-bold uppercase hover:bg-blue-700">Pay All {fmt(mp)}</button>
+                    ) : null;
+                  })()}
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Amount *</label>
@@ -2141,7 +2155,7 @@ export default function PaymentsOut() {
                           await api.post(`/purchase-orders/payments/${bankPendingPayment.id}/confirm`, { reference: bankUtrInput.trim() });
                           setBankPendingPayment(null);
                           setBankUtrInput('');
-                          if (poPayItem) fetchPOPayments(poPayItem.poId);
+                          setPoPayItem(null); // Close modal after UTR confirmed
                           fetchPending();
                         } catch (err: unknown) {
                           alert((err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Confirm failed');
