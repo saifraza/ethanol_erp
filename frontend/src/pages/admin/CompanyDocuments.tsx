@@ -7,6 +7,7 @@ interface CompanyDoc {
   subcategory: string | null;
   title: string;
   fileName: string;
+  filePath: string;
   issuedBy: string | null;
   issuedDate: string | null;
   expiryDate: string | null;
@@ -254,9 +255,8 @@ export default function CompanyDocuments() {
                     </td>
                     <td className="px-3 py-1.5 text-center">
                       <div className="flex gap-1 justify-center">
-                        <a href={`/uploads/${docs.find(d => d.id === doc.id)?.fileName ? `company-documents/${doc.fileName}` : ''}`}
+                        <a href={`/uploads/${doc.filePath || ''}`}
                           target="_blank" rel="noopener noreferrer"
-                          onClick={(e) => { e.preventDefault(); window.open(`/api/company-documents/file/${doc.id}`, '_blank'); }}
                           className="px-2 py-0.5 bg-white border border-slate-300 text-slate-600 text-[10px] hover:bg-slate-50 cursor-pointer">
                           View
                         </a>

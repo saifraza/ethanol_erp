@@ -105,6 +105,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         subcategory: true,
         title: true,
         fileName: true,
+        filePath: true,
         issuedBy: true,
         issuedDate: true,
         expiryDate: true,
