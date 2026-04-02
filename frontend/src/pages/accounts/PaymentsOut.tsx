@@ -137,6 +137,9 @@ export default function PaymentsOut() {
   const [poPayRef, setPoPayRef] = useState('');
   const [poPayRemarks, setPoPayRemarks] = useState('');
   const [poPaySaving, setPoPaySaving] = useState(false);
+  const [bankPendingPayment, setBankPendingPayment] = useState<any>(null);
+  const [bankUtrInput, setBankUtrInput] = useState('');
+  const [bankConfirming, setBankConfirming] = useState(false);
   const [poPayments, setPoPayments] = useState<Array<{ id: string; paymentDate: string; amount: number; mode: string; reference: string; runningTotal: number }>>([]);
 
   // --- PO Pipeline ---
@@ -390,7 +393,7 @@ export default function PaymentsOut() {
         includeGst: poPayIncludeGst,
       });
 
-      // Cash payments create a voucher, not a direct payment
+      // Cash payments create a voucher
       if (res.data.type === 'CASH_VOUCHER') {
         alert(`Cash Voucher #${res.data.voucher.voucherNo} created.\n\nCash team will see it in Cash Vouchers.\nPO balance updates after they settle it.`);
         setPoPayItem(null);
@@ -398,11 +401,39 @@ export default function PaymentsOut() {
         return;
       }
 
+      // Bank payment initiated (no UTR yet) — show payment slip
+      if (res.data.type === 'BANK_INITIATED') {
+        const v = res.data.vendor;
+        const slipInfo = [
+          `PAYMENT SLIP — PO-${res.data.poNo}`,
+          `━━━━━━━━━━━━━━━━━━━━━━━`,
+          `Pay To: ${v?.name || 'Unknown'}`,
+          `Amount: ₹${res.data.payment.amount.toLocaleString('en-IN')}`,
+          `Mode: ${res.data.payment.mode}`,
+          '',
+          `BENEFICIARY BANK DETAILS:`,
+          `Bank: ${v?.bankName || 'N/A'}`,
+          `Account: ${v?.bankAccount || 'N/A'}`,
+          `IFSC: ${v?.bankIfsc || 'N/A'}`,
+          '',
+          `Payment #${res.data.payment.paymentNo} | Status: PENDING UTR`,
+          `━━━━━━━━━━━━━━━━━━━━━━━`,
+          `Enter UTR after bank transfer to confirm.`,
+        ].join('\n');
+        alert(slipInfo);
+        setBankPendingPayment(res.data.payment);
+        fetchPOPayments(poPayItem.poId);
+        setPoPayAmount('');
+        setPoPayRemarks('');
+        fetchPending();
+        return;
+      }
+
+      // Confirmed payment (UTR was provided)
       fetchPOPayments(poPayItem.poId);
       setPoPayAmount('');
       setPoPayRef('');
       setPoPayRemarks('');
-      // Refresh pending items and close modal if fully paid
       if (res.data.fullyPaid) {
         setPoPayItem(null);
       }
@@ -2083,6 +2114,41 @@ export default function PaymentsOut() {
                   className="w-full px-4 py-2 bg-green-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-green-700 disabled:opacity-50">
                   {poPaySaving ? 'Processing...' : `Pay ${poPayAmount ? '\u20B9' + parseFloat(poPayAmount).toLocaleString('en-IN') : ''} via ${poPayMode}`}
                 </button>
+
+                {/* Pending bank payment — enter UTR to confirm */}
+                {bankPendingPayment && (
+                  <div className="bg-yellow-50 border border-yellow-300 p-3 mt-2">
+                    <div className="text-[10px] font-bold text-yellow-800 uppercase tracking-widest mb-2">
+                      Pending Bank Transfer — Payment #{bankPendingPayment.paymentNo}
+                    </div>
+                    <div className="text-xs text-slate-600 mb-2">
+                      Amount: <b className="font-mono">{fmt(bankPendingPayment.amount)}</b> via <b>{bankPendingPayment.mode}</b>
+                    </div>
+                    <div className="flex gap-2 items-end">
+                      <div className="flex-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Enter UTR / Reference *</label>
+                        <input value={bankUtrInput} onChange={e => setBankUtrInput(e.target.value)} autoFocus
+                          className="w-full border border-yellow-400 bg-white px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-yellow-500" placeholder="UTR number from bank" />
+                      </div>
+                      <button onClick={async () => {
+                        if (!bankUtrInput.trim()) { alert('Enter UTR to confirm'); return; }
+                        setBankConfirming(true);
+                        try {
+                          await api.post(`/purchase-orders/payments/${bankPendingPayment.id}/confirm`, { reference: bankUtrInput.trim() });
+                          setBankPendingPayment(null);
+                          setBankUtrInput('');
+                          if (poPayItem) fetchPOPayments(poPayItem.poId);
+                          fetchPending();
+                        } catch (err: unknown) {
+                          alert((err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Confirm failed');
+                        } finally { setBankConfirming(false); }
+                      }} disabled={bankConfirming || !bankUtrInput.trim()}
+                        className="px-4 py-1.5 bg-green-600 text-white text-[11px] font-bold uppercase hover:bg-green-700 disabled:opacity-50">
+                        {bankConfirming ? '...' : 'Confirm'}
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Payment history ledger */}
                 {poPayments.length > 0 && (

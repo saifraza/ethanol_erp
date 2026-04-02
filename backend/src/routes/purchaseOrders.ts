@@ -702,7 +702,21 @@ router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => 
   });
   const alreadyPaid = existingPayments.reduce((s, p) => s + p.amount, 0);
 
-  // Also count ACTIVE (pending) cash vouchers — committed but not yet confirmed
+  // Count INITIATED (pending bank) payments — committed but UTR not entered yet
+  const pendingBankPayments = await prisma.vendorPayment.findMany({
+    where: {
+      vendorId: po.vendorId,
+      paymentStatus: 'INITIATED',
+      OR: [
+        { remarks: { contains: `PO-${po.poNo} ` } },
+        { remarks: { endsWith: `PO-${po.poNo}` } },
+      ],
+    },
+    select: { amount: true },
+  });
+  const pendingBank = pendingBankPayments.reduce((s, p) => s + p.amount, 0);
+
+  // Count ACTIVE (pending) cash vouchers
   const pendingCashVouchers = await prisma.cashVoucher.findMany({
     where: {
       status: 'ACTIVE',
@@ -712,7 +726,7 @@ router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => 
   });
   const pendingCash = pendingCashVouchers.reduce((s, v) => s + v.amount, 0);
 
-  const totalCommitted = alreadyPaid + pendingCash;
+  const totalCommitted = alreadyPaid + pendingBank + pendingCash;
   const remaining = receivable - totalCommitted;
 
   if (amount > remaining + 0.01) {
@@ -765,43 +779,106 @@ router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => 
     });
   }
 
-  // BANK payments → create VendorPayment directly
+  // BANK payments → create VendorPayment with INITIATED status (pending UTR confirmation)
+  const vendor = await prisma.vendor.findUnique({
+    where: { id: po.vendorId },
+    select: { name: true, phone: true, bankName: true, bankAccount: true, bankIfsc: true },
+  });
+
   const payment = await prisma.vendorPayment.create({
     data: {
       vendorId: po.vendorId,
       paymentDate: new Date(),
       amount,
       mode: payMode,
-      reference: reference || '',
+      reference: reference || '', // UTR can be empty — filled later on confirm
+      paymentStatus: reference ? 'CONFIRMED' : 'INITIATED', // If UTR provided, auto-confirm
+      confirmedAt: reference ? new Date() : null,
       isAdvance: false,
       remarks: `Payment against PO-${po.poNo}${userRemarks ? ' | ' + userRemarks : ''}`,
       userId: req.user!.id,
     },
   });
 
-  // Auto-journal
-  try {
-    const { onVendorPaymentMade } = await import('../services/autoJournal');
-    await onVendorPaymentMade(prisma as Parameters<typeof onVendorPaymentMade>[0], {
-      id: payment.id, amount, mode: payMode, reference: reference || '',
-      tdsDeducted: 0, vendorId: po.vendorId, userId: req.user!.id, paymentDate: payment.paymentDate,
-    });
-  } catch { /* best effort */ }
+  // Auto-journal only if confirmed (has UTR)
+  if (payment.paymentStatus === 'CONFIRMED') {
+    try {
+      const { onVendorPaymentMade } = await import('../services/autoJournal');
+      await onVendorPaymentMade(prisma as Parameters<typeof onVendorPaymentMade>[0], {
+        id: payment.id, amount, mode: payMode, reference: reference || '',
+        tdsDeducted: 0, vendorId: po.vendorId, userId: req.user!.id, paymentDate: payment.paymentDate,
+      });
+    } catch { /* best effort */ }
+  }
 
-  // Auto-close PO when fully paid
-  const newTotalPaid = alreadyPaid + amount;
-  const fullyPaid = newTotalPaid >= receivable - 0.01;
-  if (fullyPaid && po.status !== 'CLOSED') {
-    await prisma.purchaseOrder.update({ where: { id: po.id }, data: { status: 'CLOSED' } });
+  // Auto-close PO when fully paid (only count confirmed payments)
+  if (payment.paymentStatus === 'CONFIRMED') {
+    const newTotalPaid = alreadyPaid + amount;
+    const fullyPaid = newTotalPaid >= receivable - 0.01;
+    if (fullyPaid && po.status !== 'CLOSED') {
+      await prisma.purchaseOrder.update({ where: { id: po.id }, data: { status: 'CLOSED' } });
+    }
   }
 
   res.json({
-    type: 'BANK_PAYMENT',
+    type: payment.paymentStatus === 'CONFIRMED' ? 'BANK_PAYMENT' : 'BANK_INITIATED',
     payment,
-    totalPaid: Math.round(newTotalPaid * 100) / 100,
-    remaining: Math.round(Math.max(0, receivable - newTotalPaid) * 100) / 100,
-    fullyPaid,
+    vendor: vendor ? { name: vendor.name, phone: vendor.phone, bankName: vendor.bankName, bankAccount: vendor.bankAccount, bankIfsc: vendor.bankIfsc } : null,
+    poNo: po.poNo,
+    totalPaid: Math.round((alreadyPaid + (payment.paymentStatus === 'CONFIRMED' ? amount : 0)) * 100) / 100,
+    remaining: Math.round(Math.max(0, receivable - alreadyPaid - (payment.paymentStatus === 'CONFIRMED' ? amount : 0)) * 100) / 100,
+    fullyPaid: payment.paymentStatus === 'CONFIRMED' && (alreadyPaid + amount) >= receivable - 0.01,
   });
+}));
+
+// POST /payments/:paymentId/confirm — enter UTR and confirm a bank payment
+router.post('/payments/:paymentId/confirm', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { reference } = req.body;
+  if (!reference || !reference.trim()) return res.status(400).json({ error: 'UTR / Reference is required to confirm' });
+
+  const payment = await prisma.vendorPayment.findUnique({ where: { id: req.params.paymentId } });
+  if (!payment) return res.status(404).json({ error: 'Payment not found' });
+  if (payment.paymentStatus === 'CONFIRMED') return res.status(400).json({ error: 'Payment already confirmed' });
+
+  const updated = await prisma.vendorPayment.update({
+    where: { id: payment.id },
+    data: { reference: reference.trim(), paymentStatus: 'CONFIRMED', confirmedAt: new Date() },
+  });
+
+  // Now create journal entry (was deferred until confirmation)
+  try {
+    const { onVendorPaymentMade } = await import('../services/autoJournal');
+    await onVendorPaymentMade(prisma as Parameters<typeof onVendorPaymentMade>[0], {
+      id: updated.id, amount: updated.amount, mode: updated.mode, reference: updated.reference || '',
+      tdsDeducted: 0, vendorId: updated.vendorId, userId: req.user!.id, paymentDate: updated.paymentDate,
+    });
+  } catch { /* best effort */ }
+
+  // Check if PO is now fully paid
+  const poMatch = (payment.remarks || '').match(/PO-(\d+)/);
+  if (poMatch) {
+    const poNo = parseInt(poMatch[1]);
+    const po = await prisma.purchaseOrder.findFirst({
+      where: { poNo },
+      select: { id: true, status: true, grandTotal: true, vendorId: true, lines: { select: { receivedQty: true, rate: true, gstPercent: true, quantity: true } } },
+    });
+    if (po && po.status !== 'CLOSED') {
+      const receivable = Math.round(po.lines.reduce((s, l) => {
+        const base = (l.receivedQty || 0) * l.rate;
+        return s + base + base * (l.gstPercent || 0) / 100;
+      }, 0) * 100) / 100;
+      const allPayments = await prisma.vendorPayment.findMany({
+        where: { vendorId: po.vendorId, paymentStatus: 'CONFIRMED', invoiceId: null, OR: [{ remarks: { contains: `PO-${poNo} ` } }, { remarks: { endsWith: `PO-${poNo}` } }] },
+        select: { amount: true },
+      });
+      const totalPaid = allPayments.reduce((s, p) => s + p.amount, 0);
+      if (totalPaid >= receivable - 0.01) {
+        await prisma.purchaseOrder.update({ where: { id: po.id }, data: { status: 'CLOSED' } });
+      }
+    }
+  }
+
+  res.json({ ok: true, payment: updated });
 }));
 
 export default router;

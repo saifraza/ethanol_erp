@@ -1961,6 +1961,9 @@ model VendorPayment {
   // Advance payment (no invoice)
   isAdvance       Boolean  @default(false)
   advanceAdjusted Float    @default(0)      // how much of advance is adjusted
+  // Payment status (bank two-step flow)
+  paymentStatus   String   @default("CONFIRMED") // INITIATED (pending UTR), CONFIRMED, CANCELLED
+  confirmedAt     DateTime?                 // when UTR was entered and payment confirmed
   // Bank file tracking (UBI APPA integration)
   bankFileBatch   String?                   // batch ID when included in bank file
   bankFileSentAt  DateTime?                 // when bank file was generated
