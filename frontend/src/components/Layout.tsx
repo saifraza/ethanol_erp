@@ -5,7 +5,7 @@ import api from '../services/api';
 import AIChatWidget from './AIChatWidget';
 import {
   LayoutDashboard, LogOut, ChevronDown, ChevronRight,
-  WifiOff, Menu, X
+  WifiOff, Menu, X, Bell
 } from 'lucide-react';
 import { processNav, salesNav, procurementNav, tradeNav, accountsNav, booksNav, inventoryNav, logisticsNav, adminNav } from '../config/modules';
 
@@ -39,6 +39,15 @@ export default function Layout() {
   const [serverUp, setServerUp] = useState(true);
   const [reconnecting, setReconnecting] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [pendingApprovals, setPendingApprovals] = useState(0);
+
+  // Poll pending approvals count for bell badge
+  useEffect(() => {
+    const fetchCount = () => api.get('/approvals/count').then(r => setPendingApprovals(r.data.count || 0)).catch(() => {});
+    fetchCount();
+    const iv = setInterval(fetchCount, 30000);
+    return () => clearInterval(iv);
+  }, []);
 
   // Close sidebar on navigation (mobile)
   useEffect(() => { setSidebarOpen(false); }, [location.pathname]);
@@ -221,7 +230,15 @@ export default function Layout() {
         </nav>
 
         <div className="p-3 border-t border-gray-700 text-sm">
-          <div className="font-medium">{user?.name}</div>
+          <div className="flex items-center justify-between">
+            <div className="font-medium">{user?.name}</div>
+            <Link to="/admin/approvals" className="relative p-1 hover:bg-gray-700 rounded">
+              <Bell size={16} className="text-gray-400" />
+              {pendingApprovals > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold w-4 h-4 flex items-center justify-center rounded-full">{pendingApprovals}</span>
+              )}
+            </Link>
+          </div>
           <div className="text-xs text-gray-400 mb-1">{user?.role}</div>
           <button onClick={logout} className="flex items-center gap-2 text-gray-400 hover:text-white text-xs mt-1"><LogOut size={13} />Logout</button>
         </div>

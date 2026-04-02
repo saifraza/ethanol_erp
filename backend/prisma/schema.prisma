@@ -2566,3 +2566,29 @@ model WebhookEvent {
   @@index([status, nextRetry])
   @@index([createdAt])
 }
+
+// ══════════════════════════════════════════════════════════════
+// APPROVALS — Generic admin approval queue
+// Used for: PO overages, rate changes, credit limits, etc.
+// ══════════════════════════════════════════════════════════════
+
+model Approval {
+  id          String    @id @default(uuid())
+  type        String    // PO_OVERAGE, RATE_CHANGE, CREDIT_LIMIT, etc.
+  status      String    @default("PENDING") // PENDING, APPROVED, REJECTED
+  entityType  String    // PurchaseOrder, GoodsReceipt, etc.
+  entityId    String    // ID of the entity needing approval
+  title       String    // Short title for the approval
+  description String    // Detailed description
+  requestedBy String    // userId or 'system-weighbridge'
+  reviewedBy  String?   // admin userId who reviewed
+  reviewedAt  DateTime?
+  reviewNote  String?
+  metadata    Json?     // Extra data (e.g., { overagePercent: 7.2, excessQty: 1.5 })
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status])
+  @@index([type])
+  @@index([entityId])
+}

@@ -399,11 +399,18 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
           }
           const rate = poLine.rate;
 
-          // P1-2: Reject if PO line is already exhausted — do NOT fall through to GrainTruck
-          if (poLine.pendingQty <= 0) {
-            results.push({ id: w.id, type: 'SKIPPED', refNo: `PO-${po.poNo} line exhausted (pendingQty=0)`, sourceWbId: w.id });
-            ids.push(w.id);
-            continue;
+          // Overage tolerance: allow up to 5% over PO qty, flag >5% for admin approval
+          const overageQty = receivedQty - poLine.pendingQty;
+          const overagePercent = poLine.quantity > 0 ? (overageQty / poLine.quantity) * 100 : 0;
+          let needsApproval = false;
+
+          if (poLine.pendingQty <= 0 && overageQty > 0) {
+            if (overagePercent <= 5) {
+              // Within 5% tolerance — auto-allow, proceed to create GRN
+            } else {
+              // Exceeds 5% — allow weighment but flag for admin approval
+              needsApproval = true;
+            }
           }
 
           // ── LAB FAIL → Quarantine GrainTruck, skip GRN ──
@@ -533,7 +540,23 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
             // causing double stock posting (once here, once on confirm) and
             // unrecoverable failures if the sync failed after GRN commit.
 
-            results.push({ id: grn.id, type: 'GRN', refNo: `GRN-${grn.grnNo}`, sourceWbId: w.id });
+            // Create approval record if overage exceeds 5%
+            if (needsApproval) {
+              await prisma.approval.create({
+                data: {
+                  type: 'PO_OVERAGE',
+                  status: 'PENDING',
+                  entityType: 'GoodsReceipt',
+                  entityId: grn.id,
+                  title: `PO-${po.poNo} overage ${overagePercent.toFixed(1)}%`,
+                  description: `Vehicle ${w.vehicle_no} delivered ${receivedQty.toFixed(2)} ${poLine.unit} against PO-${po.poNo} (ordered ${poLine.quantity} ${poLine.unit}). Overage: ${overageQty.toFixed(2)} ${poLine.unit} (${overagePercent.toFixed(1)}%). GRN-${grn.grnNo} created as DRAFT for admin review.`,
+                  requestedBy: 'system-weighbridge',
+                  metadata: { poNo: po.poNo, grnNo: grn.grnNo, orderedQty: poLine.quantity, receivedQty, overageQty: Math.round(overageQty * 100) / 100, overagePercent: Math.round(overagePercent * 10) / 10, vehicleNo: w.vehicle_no },
+                },
+              }).catch(() => {}); // best-effort
+            }
+
+            results.push({ id: grn.id, type: needsApproval ? 'GRN_NEEDS_APPROVAL' : 'GRN', refNo: `GRN-${grn.grnNo}`, sourceWbId: w.id });
             ids.push(grn.id);
             continue;
           }

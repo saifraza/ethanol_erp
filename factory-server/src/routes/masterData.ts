@@ -27,7 +27,11 @@ router.get('/', asyncHandler(async (_req: Request, res: Response) => {
           take: 500,
         }),
         cloud.purchaseOrder.findMany({
-          where: { status: { in: ['APPROVED', 'SENT', 'PARTIAL_RECEIVED'] } },
+          where: {
+            status: { in: ['APPROVED', 'SENT', 'PARTIAL_RECEIVED'] },
+            // Hide expired POs (deliveryDate is used as "valid until" for fuel deals)
+            OR: [{ deliveryDate: null }, { deliveryDate: { gte: new Date() } }],
+          },
           select: {
             id: true,
             poNo: true,

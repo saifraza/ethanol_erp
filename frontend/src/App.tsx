@@ -50,6 +50,7 @@ const StockCount = React.lazy(() => import('./pages/inventory/StockCount'));
 const StockValuation = React.lazy(() => import('./pages/inventory/StockValuation'));
 const ABCAnalysis = React.lazy(() => import('./pages/inventory/ABCAnalysis'));
 const PlantIssues = React.lazy(() => import('./pages/PlantIssues'));
+const Approvals = React.lazy(() => import('./pages/admin/Approvals'));
 const PurchaseRequisition = React.lazy(() => import('./pages/PurchaseRequisition'));
 // Sales & Distribution
 const Customers = React.lazy(() => import('./pages/sales/Customers'));
@@ -160,6 +161,7 @@ export default function App() {
         <Route path="inventory/valuation" element={<StockValuation />} />
         <Route path="inventory/abc" element={<ABCAnalysis />} />
         <Route path="plant-issues" element={<PlantIssues />} />
+        <Route path="admin/approvals" element={<Approvals />} />
         <Route path="purchase-requisition" element={<PurchaseRequisition />} />
         {/* Sales & Distribution */}
         <Route path="sales/customers" element={<Customers />} />

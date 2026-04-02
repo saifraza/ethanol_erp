@@ -90,6 +90,7 @@ import gateEntryRoutes from './routes/gateEntry';
 // Cash Vouchers & Bank Loans
 import cashVoucherRoutes from './routes/cashVouchers';
 import bankLoanRoutes from './routes/bankLoans';
+import approvalRoutes from './routes/approvals';
 // Unified Payments (aggregation views)
 import unifiedPaymentRoutes from './routes/unifiedPayments';
 // Process reports (previously unregistered)
@@ -210,6 +211,7 @@ app.use('/api/unified-payments', unifiedPaymentRoutes);
 // Cash Vouchers & Bank Loans
 app.use('/api/cash-vouchers', cashVoucherRoutes);
 app.use('/api/bank-loans', bankLoanRoutes);
+app.use('/api/approvals', approvalRoutes);
 // Logistics (Gate Entry)
 app.use('/api/gate-entry', gateEntryRoutes);
 // OPC Bridge (factory automation — proxies to on-premise Windows service)

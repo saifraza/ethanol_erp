@@ -98,6 +98,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'masters', label: 'Dept & Warehouses', to: '/inventory/masters', icon: Building2, group: 'inventory' },
 
   // ── ADMIN ──
+  { key: 'approvals', label: 'Approvals', to: '/admin/approvals', icon: ClipboardCheck, group: 'admin' },
   { key: 'plant-issues', label: 'Maintenance', to: '/plant-issues', icon: AlertCircle, group: 'admin' },
   { key: 'reports', label: 'Reports', to: '/reports', icon: BarChart3, group: 'admin' },
   { key: 'doc-templates', label: 'Doc Templates', to: '/document-templates', icon: FileText, group: 'admin', adminOnly: true },
