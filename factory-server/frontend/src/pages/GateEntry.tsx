@@ -95,8 +95,8 @@ export default function GateEntry() {
 
   useEffect(() => {
     loadMasterData(); loadCount();
-    // Auto-refresh master data every 60s so new POs appear without manual refresh (silent — no spinner)
-    const iv = setInterval(() => { loadMasterData(true); loadCount(); }, 60000);
+    // Refresh from server every 15s (reads from in-memory cache, instant)
+    const iv = setInterval(() => { loadMasterData(true); loadCount(); }, 15000);
     return () => clearInterval(iv);
   }, [loadMasterData, loadCount]);
 

@@ -11,6 +11,7 @@ import syncRoutes from './routes/sync';
 import authRoutes from './routes/auth';
 import { startPCMonitor, getAllPCStatus } from './services/pcMonitor';
 import { startSyncWorker, getSyncWorkerStatus } from './services/syncWorker';
+import { initMasterDataCache, getCacheStats } from './services/masterDataCache';
 
 const app = express();
 
@@ -106,6 +107,9 @@ app.listen(config.port, '0.0.0.0', () => {
 
   // Start background sync worker (push weighments to cloud + pull master data)
   startSyncWorker();
+
+  // Initialize in-memory master data cache (load from disk, then 5s cloud sync)
+  initMasterDataCache().catch(err => console.error('[CACHE] Init failed:', err));
 
   // Send factory server's own heartbeat to cloud
   sendHeartbeatToCloud();
