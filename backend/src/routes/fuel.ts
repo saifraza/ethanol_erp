@@ -405,6 +405,7 @@ router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Re
         select: {
           id: true, description: true, rate: true, unit: true, inventoryItemId: true,
           receivedQty: true, quantity: true,
+          inventoryItem: { select: { category: true } },
         },
       },
       grns: {
@@ -417,9 +418,11 @@ router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Re
 
   // Add running balance for each deal
   const result = await Promise.all(deals.map(async (deal) => {
-    const line = deal.lines[0];
-    const totalReceived = line?.receivedQty || 0;
-    const totalValue = totalReceived * (line?.rate || 0);
+    // Sum across ALL fuel-category lines (filter out non-fuel lines in mixed POs)
+    const fuelLines = deal.lines.filter(l => l.inventoryItem?.category === 'FUEL');
+    const linesToSum = fuelLines.length > 0 ? fuelLines : deal.lines; // fallback for legacy
+    const totalReceived = linesToSum.reduce((s, l) => s + (l.receivedQty || 0), 0);
+    const totalValue = linesToSum.reduce((s, l) => s + (l.receivedQty || 0) * (l.rate || 0), 0);
 
     // Get total payments: direct VendorPayments referencing this deal + invoice payments
     // Step 8 fix: Count direct payments (fuel page Pay button) and invoice payments separately
