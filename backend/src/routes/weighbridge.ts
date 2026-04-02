@@ -646,17 +646,18 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
         select: { id: true, name: true, unit: true, hsnCode: true, gstPercent: true },
       });
 
-      // Convert KG to item's unit
+      // Convert KG to item's unit + convert rate from ₹/KG to ₹/unit
       const unit = invItem?.unit?.toUpperCase() || 'KG';
       let receivedQty: number;
+      let unitRate: number; // rate in item's unit (e.g., ₹/MT if item is MT)
       switch (unit) {
-        case 'MT': receivedQty = netKg / 1000; break;
-        case 'QUINTAL': case 'QTL': receivedQty = netKg / 100; break;
-        default: receivedQty = netKg; break;
+        case 'MT': receivedQty = netKg / 1000; unitRate = rate * 1000; break;
+        case 'QUINTAL': case 'QTL': receivedQty = netKg / 100; unitRate = rate * 100; break;
+        default: receivedQty = netKg; unitRate = rate; break; // KG stays as-is
       }
 
       // Calculate totals for the auto-PO
-      const lineAmount = Math.round(receivedQty * rate * 100) / 100;
+      const lineAmount = Math.round(receivedQty * unitRate * 100) / 100;
       const gstPct = invItem?.gstPercent ?? 0;
       const gstAmount = Math.round(lineAmount * gstPct / 100 * 100) / 100;
       const cgst = Math.round(gstAmount / 2 * 100) / 100;
@@ -687,7 +688,7 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
                 hsnCode: invItem?.hsnCode || '',
                 quantity: receivedQty,
                 unit: invItem?.unit || 'KG',
-                rate,
+                rate: unitRate, // Rate in item's unit (₹/MT if item is MT)
                 amount: lineAmount,
                 pendingQty: 0,
                 receivedQty,
@@ -723,8 +724,8 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
                 acceptedQty: receivedQty,
                 rejectedQty: 0,
                 unit: invItem?.unit || 'KG',
-                rate,
-                amount: Math.round(receivedQty * rate * 100) / 100,
+                rate: unitRate,
+                amount: lineAmount,
               }],
             },
           },
