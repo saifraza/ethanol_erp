@@ -105,11 +105,18 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const totalTDS = (po.vendorInvoices || []).reduce((s: number, inv: any) =>
       s + (inv.payments || []).reduce((ps: number, p: any) => ps + (p.tdsDeducted || 0), 0), 0);
 
-    // For OPEN/fuel deals: grandTotal is 0, use GRN total as effective amount
+    // For OPEN/fuel deals: grandTotal is 0, compute from PO line rate * received qty
     const isOpenDeal = (po as any).dealType === 'OPEN';
-    const grnTotalValue = po.grns.reduce((s: number, g: any) => s + (g.lines || []).reduce((ls: number, gl: any) => ls + ((gl.receivedQty || 0) * (gl.rate || 0)), 0), 0)
-      || po.grns.reduce((s: number, g: any) => s + (g.totalAmount || 0), 0);
-    const effectiveAmount = isOpenDeal && po.grandTotal === 0 ? grnTotalValue : po.grandTotal;
+    let effectiveAmount = po.grandTotal;
+    if (isOpenDeal && po.grandTotal === 0) {
+      // Use PO line rate * received qty as effective ordered value
+      const lineValue = po.lines.reduce((s: number, l: any) => s + ((l.receivedQty || 0) * (l.rate || 0)), 0);
+      // Fallback to GRN totals if line-level calc is 0
+      const grnTotalValue = lineValue || po.grns.reduce((s: number, g: any) => s + (g.totalAmount || 0), 0);
+      effectiveAmount = grnTotalValue;
+    }
+    // Compute received value (rate * received qty) for money-first pipeline
+    const receivedValue = po.lines.reduce((s: number, l: any) => s + ((l.receivedQty || 0) * (l.rate || 0)), 0);
 
     // Balance: use invoice balance when invoices exist, else effective amount minus direct payments
     const invoiceBalance = totalInvoiced - totalPaid - totalTDS;
@@ -117,7 +124,7 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 
     const pipeline = {
       ordered: { qty: totalOrdered, amount: effectiveAmount },
-      received: { qty: totalReceived, pending: totalPending, grnCount: po.grns.length },
+      received: { qty: totalReceived, pending: totalPending, grnCount: po.grns.length, amount: receivedValue },
       invoiced: { amount: totalInvoiced, count: (po.vendorInvoices || []).length },
       paid: { amount: totalPaid, tds: totalTDS, balance: effectiveBalance },
     };
@@ -451,28 +458,53 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
       deliveryAddress: po.deliveryAddress,
       transportMode: po.transportMode,
       remarks: po.remarks,
-      lines: po.lines.map((l: any) => ({
-        description: l.description,
-        hsnCode: l.hsnCode || '',
-        quantity: l.quantity,
-        unit: l.unit,
-        rate: l.rate,
-        discountPercent: l.discountPercent || 0,
-        gstPercent: l.gstPercent || 0,
-        isRCM: l.isRCM || false,
-        amount: l.amount || l.quantity * l.rate,
-        taxableAmount: l.taxableAmount || (l.quantity * l.rate * (1 - (l.discountPercent || 0) / 100)),
-        cgst: l.cgstAmount || l.cgst || 0,
-        sgst: l.sgstAmount || l.sgst || 0,
-        igst: l.igstAmount || l.igst || 0,
-        lineTotal: l.lineTotal || 0,
-      })),
-      subtotal: po.subtotal,
-      totalGst: po.totalGst,
+      lines: po.lines.map((l: any) => {
+        // For open fuel deals (qty=999999), use receivedQty for PDF display
+        const displayQty = l.quantity >= 900000 ? (l.receivedQty || l.quantity) : l.quantity;
+        const lineAmount = l.amount && l.amount > 0 ? l.amount : displayQty * l.rate;
+        const taxable = l.taxableAmount && l.taxableAmount > 0 ? l.taxableAmount : lineAmount * (1 - (l.discountPercent || 0) / 100);
+        const gstAmt = taxable * (l.gstPercent || 0) / 100;
+        const isIntra = po.supplyType !== 'INTER_STATE';
+        return {
+          description: l.description,
+          hsnCode: l.hsnCode || '',
+          quantity: displayQty,
+          unit: l.unit,
+          rate: l.rate,
+          discountPercent: l.discountPercent || 0,
+          gstPercent: l.gstPercent || 0,
+          isRCM: l.isRCM || false,
+          amount: Math.round(lineAmount * 100) / 100,
+          taxableAmount: Math.round(taxable * 100) / 100,
+          cgst: l.cgstAmount || (isIntra ? Math.round(gstAmt / 2 * 100) / 100 : 0),
+          sgst: l.sgstAmount || (isIntra ? Math.round(gstAmt / 2 * 100) / 100 : 0),
+          igst: l.igstAmount || (isIntra ? 0 : Math.round(gstAmt * 100) / 100),
+          lineTotal: l.lineTotal && l.lineTotal > 0 ? l.lineTotal : Math.round((taxable + gstAmt) * 100) / 100,
+        };
+      }),
+      // Calculate totals from lines if DB values are 0 (e.g., open fuel deals)
+      subtotal: po.subtotal > 0 ? po.subtotal : (() => {
+        return Math.round(po.lines.reduce((s: number, l: any) => {
+          const qty = l.quantity >= 900000 ? (l.receivedQty || l.quantity) : l.quantity;
+          return s + qty * l.rate;
+        }, 0) * 100) / 100;
+      })(),
+      totalGst: po.totalGst > 0 ? po.totalGst : (() => {
+        return Math.round(po.lines.reduce((s: number, l: any) => {
+          const qty = l.quantity >= 900000 ? (l.receivedQty || l.quantity) : l.quantity;
+          return s + qty * l.rate * (l.gstPercent || 0) / 100;
+        }, 0) * 100) / 100;
+      })(),
       freightCharge: po.freightCharge,
       otherCharges: po.otherCharges,
       roundOff: po.roundOff,
-      grandTotal: po.grandTotal,
+      grandTotal: po.grandTotal > 0 ? po.grandTotal : (() => {
+        return Math.round(po.lines.reduce((s: number, l: any) => {
+          const qty = l.quantity >= 900000 ? (l.receivedQty || l.quantity) : l.quantity;
+          const base = qty * l.rate;
+          return s + base + base * (l.gstPercent || 0) / 100;
+        }, 0) * 100) / 100;
+      })(),
       preparedBy: 'Purchase Department',
       approvedBy: 'Sibtay Hasnain Zaidi',
       authorizedSignatory: 'OP Pandey — Unit Head',
@@ -537,6 +569,123 @@ router.post('/:id/send-email', asyncHandler(async (req: AuthRequest, res: Respon
     } else {
       res.status(500).json({ error: result.error || 'Email send failed' });
     }
+}));
+
+// ═══════════════════════════════════════════════════════
+// PAY ON PO — Running account payments (partial OK)
+// ═══════════════════════════════════════════════════════
+
+// GET /:id/payments — payment ledger for this PO
+router.get('/:id/payments', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const po = await prisma.purchaseOrder.findUnique({
+    where: { id: req.params.id },
+    select: { id: true, poNo: true, grandTotal: true, lines: { select: { quantity: true, receivedQty: true, rate: true, gstPercent: true } } },
+  });
+  if (!po) return res.status(404).json({ error: 'PO not found' });
+
+  // Calculate receivable from actual receipts
+  const receivable = po.grandTotal > 0 ? po.grandTotal : Math.round(po.lines.reduce((s, l) => {
+    const qty = l.quantity >= 900000 ? (l.receivedQty || 0) : l.quantity;
+    const base = qty * l.rate;
+    return s + base + base * (l.gstPercent || 0) / 100;
+  }, 0) * 100) / 100;
+
+  // Find all payments referencing this PO
+  const payments = await prisma.vendorPayment.findMany({
+    where: {
+      OR: [
+        { remarks: { contains: `PO-${po.poNo} ` } },
+        { remarks: { endsWith: `PO-${po.poNo}` } },
+      ],
+    },
+    orderBy: { paymentDate: 'asc' },
+    select: { id: true, paymentDate: true, amount: true, mode: true, reference: true, remarks: true, isAdvance: true },
+  });
+
+  let running = 0;
+  const ledger = payments.map(p => {
+    running += p.amount;
+    return { ...p, runningTotal: Math.round(running * 100) / 100 };
+  });
+
+  res.json({
+    poNo: po.poNo,
+    receivable,
+    totalPaid: Math.round(running * 100) / 100,
+    remaining: Math.round((receivable - running) * 100) / 100,
+    isFullyPaid: running >= receivable,
+    payments: ledger,
+  });
+}));
+
+// POST /:id/pay — record payment against PO (partial OK, auto-close when fully paid)
+router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { amount, mode, reference, remarks: userRemarks } = req.body;
+  if (!amount || amount <= 0) return res.status(400).json({ error: 'Amount must be positive' });
+
+  const po = await prisma.purchaseOrder.findUnique({
+    where: { id: req.params.id },
+    select: { id: true, poNo: true, vendorId: true, grandTotal: true, status: true, lines: { select: { quantity: true, receivedQty: true, rate: true, gstPercent: true } } },
+  });
+  if (!po) return res.status(404).json({ error: 'PO not found' });
+
+  // Calculate receivable
+  const receivable = po.grandTotal > 0 ? po.grandTotal : Math.round(po.lines.reduce((s, l) => {
+    const qty = l.quantity >= 900000 ? (l.receivedQty || 0) : l.quantity;
+    const base = qty * l.rate;
+    return s + base + base * (l.gstPercent || 0) / 100;
+  }, 0) * 100) / 100;
+
+  // Calculate already paid
+  const existingPayments = await prisma.vendorPayment.findMany({
+    where: {
+      OR: [
+        { remarks: { contains: `PO-${po.poNo} ` } },
+        { remarks: { endsWith: `PO-${po.poNo}` } },
+      ],
+    },
+    select: { amount: true },
+  });
+  const alreadyPaid = existingPayments.reduce((s, p) => s + p.amount, 0);
+  const remaining = receivable - alreadyPaid;
+
+  if (amount > remaining + 0.01) {
+    return res.status(400).json({ error: `Payment (${amount}) exceeds remaining balance (${remaining.toFixed(2)})` });
+  }
+
+  // Create payment
+  const payment = await prisma.vendorPayment.create({
+    data: {
+      vendorId: po.vendorId,
+      paymentDate: new Date(),
+      amount,
+      mode: mode || 'CASH',
+      reference: reference || '',
+      isAdvance: false,
+      remarks: `Payment against PO-${po.poNo}${userRemarks ? ' | ' + userRemarks : ''}`,
+      userId: req.user!.id,
+    },
+  });
+
+  // Auto-journal
+  try {
+    const { onVendorPaymentMade } = await import('../services/autoJournal');
+    await onVendorPaymentMade(prisma as Parameters<typeof onVendorPaymentMade>[0], {
+      id: payment.id, amount, mode: mode || 'CASH', reference: reference || '',
+      tdsDeducted: 0, vendorId: po.vendorId, userId: req.user!.id, paymentDate: payment.paymentDate,
+    });
+  } catch { /* best effort */ }
+
+  // Check if fully paid → close PO
+  const newTotalPaid = alreadyPaid + amount;
+  const fullyPaid = newTotalPaid >= receivable - 0.01;
+
+  res.json({
+    payment,
+    totalPaid: Math.round(newTotalPaid * 100) / 100,
+    remaining: Math.round(Math.max(0, receivable - newTotalPaid) * 100) / 100,
+    fullyPaid,
+  });
 }));
 
 export default router;

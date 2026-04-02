@@ -121,6 +121,17 @@ export default function PaymentsOut() {
   const [pendingItems, setPendingItems] = useState<PendingPayable[]>([]);
   const [pendingSummary, setPendingSummary] = useState<PendingSummary | null>(null);
   const [pendingLoading, setPendingLoading] = useState(true);
+  const [pendingSearch, setPendingSearch] = useState('');
+  const [pendingCategory, setPendingCategory] = useState<string>('ALL');
+
+  // --- PO Pay modal ---
+  const [poPayItem, setPoPayItem] = useState<PendingPayable | null>(null);
+  const [poPayAmount, setPoPayAmount] = useState('');
+  const [poPayMode, setPoPayMode] = useState('CASH');
+  const [poPayRef, setPoPayRef] = useState('');
+  const [poPayRemarks, setPoPayRemarks] = useState('');
+  const [poPaySaving, setPoPaySaving] = useState(false);
+  const [poPayments, setPoPayments] = useState<Array<{ id: string; paymentDate: string; amount: number; mode: string; reference: string; runningTotal: number }>>([]);
 
   // --- PO Pipeline ---
   const [selectedPOId, setSelectedPOId] = useState<string | null>(null);
@@ -343,6 +354,36 @@ export default function PaymentsOut() {
         bankIfsc: (v.bankIfsc as string) || '',
       });
     } catch { setVendorBank(null); }
+  };
+
+  // Fetch payment history for a PO (for the PO Pay modal)
+  const fetchPOPayments = async (poId: string) => {
+    try {
+      const res = await api.get(`/purchase-orders/${poId}/payments`);
+      setPoPayments(res.data.payments || []);
+    } catch { setPoPayments([]); }
+  };
+
+  // Submit PO payment
+  const submitPOPayment = async () => {
+    if (!poPayItem || !poPayAmount || parseFloat(poPayAmount) <= 0) { alert('Enter a valid amount'); return; }
+    setPoPaySaving(true);
+    try {
+      await api.post(`/purchase-orders/${poPayItem.poId}/pay`, {
+        amount: parseFloat(poPayAmount),
+        mode: poPayMode,
+        reference: poPayRef,
+        remarks: poPayRemarks,
+      });
+      fetchPOPayments(poPayItem.poId);
+      setPoPayAmount('');
+      setPoPayRef('');
+      setPoPayRemarks('');
+      // Refresh pending items
+      fetchPending();
+    } catch (err: unknown) {
+      alert((err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Payment failed');
+    } finally { setPoPaySaving(false); }
   };
 
   const openDirectPayModal = async (item: PendingPayable) => {
@@ -715,10 +756,46 @@ export default function PaymentsOut() {
                   </div>
                 )}
 
+                {/* Search + Category Filter */}
+                <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 bg-slate-100 px-4 py-2 flex items-center gap-3 flex-wrap">
+                  <input value={pendingSearch} onChange={e => setPendingSearch(e.target.value)} placeholder="Search PO#, vendor, material..."
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-64 focus:outline-none focus:ring-1 focus:ring-slate-400 bg-white" />
+                  {['ALL', 'FUEL', 'RAW_MATERIAL', 'CHEMICAL', 'OTHER'].map(cat => (
+                    <button key={cat} onClick={() => setPendingCategory(cat)}
+                      className={`px-2 py-1 text-[10px] font-bold uppercase ${pendingCategory === cat ? 'bg-slate-800 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+                      {cat.replace('_', ' ')}
+                    </button>
+                  ))}
+                </div>
+
                 {/* Pending Table */}
+                {(() => {
+                  const search = pendingSearch.toLowerCase();
+                  const filtered = pendingItems
+                    .filter(item => {
+                      if (search && !`PO-${item.poNo} ${item.vendorName} ${item.material || ''}`.toLowerCase().includes(search)) return false;
+                      if (pendingCategory !== 'ALL') {
+                        const mat = (item.material || '').toLowerCase();
+                        const isFuel = ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'biomass'].some(kw => mat.includes(kw));
+                        const isRaw = ['maize', 'corn', 'broken rice', 'grain', 'sorghum', 'molasses'].some(kw => mat.includes(kw));
+                        const isChem = ['amylase', 'urea', 'acid', 'antifoam', 'yeast', 'chemical', 'caustic'].some(kw => mat.includes(kw));
+                        if (pendingCategory === 'FUEL' && !isFuel) return false;
+                        if (pendingCategory === 'RAW_MATERIAL' && !isRaw) return false;
+                        if (pendingCategory === 'CHEMICAL' && !isChem) return false;
+                        if (pendingCategory === 'OTHER' && (isFuel || isRaw || isChem)) return false;
+                      }
+                      return true;
+                    })
+                    // Sort: fuel POs first
+                    .sort((a, b) => {
+                      const aFuel = ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'biomass'].some(kw => (a.material || '').toLowerCase().includes(kw)) ? 0 : 1;
+                      const bFuel = ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'biomass'].some(kw => (b.material || '').toLowerCase().includes(kw)) ? 0 : 1;
+                      return aFuel - bFuel;
+                    });
+                  return (
                 <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-hidden">
-                  {pendingItems.length === 0 ? (
-                    <div className="p-8 text-center text-xs text-slate-400 uppercase tracking-widest bg-white">No pending payables</div>
+                  {filtered.length === 0 ? (
+                    <div className="p-8 text-center text-xs text-slate-400 uppercase tracking-widest bg-white">{pendingSearch || pendingCategory !== 'ALL' ? 'No matching POs' : 'No pending payables'}</div>
                   ) : (
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs">
@@ -738,7 +815,7 @@ export default function PaymentsOut() {
                           </tr>
                         </thead>
                         <tbody>
-                          {pendingItems.map((item, i) => (
+                          {filtered.map((item, i) => (
                           <React.Fragment key={item.poId}>
                             <tr className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''} ${selectedPOId === item.poId ? 'bg-blue-50' : ''}`}>
                               <td className="px-3 py-1.5 border-r border-slate-100 font-mono font-medium">
@@ -797,9 +874,10 @@ export default function PaymentsOut() {
                                       </button>
                                     </>
                                   )}
-                                  {/* Direct PAY for fuel/OPEN deals with GRNs but no invoice */}
-                                  {item.invoices.length === 0 && item.grnCount > 0 && item.dealType === 'OPEN' && (
-                                    <button onClick={() => openDirectPayModal(item)} className="px-2 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase hover:bg-green-700 flex items-center gap-1" title="Direct Payment (no invoice)">
+                                  {/* Direct PAY against PO — for any PO with GRNs (running account, no invoice needed) */}
+                                  {item.grnCount > 0 && (
+                                    <button onClick={() => { setPoPayItem(item); setPoPayAmount(''); setPoPayMode('CASH'); setPoPayRef(''); setPoPayRemarks(''); fetchPOPayments(item.poId); }}
+                                      className="px-2 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase hover:bg-green-700 flex items-center gap-1" title="Pay against PO">
                                       <CreditCard size={10} /> PAY
                                     </button>
                                   )}
@@ -820,8 +898,8 @@ export default function PaymentsOut() {
                                       {/* Pipeline Steps */}
                                       <div className="flex items-center justify-center gap-0">
                                         {([
-                                          { label: 'Ordered', done: true, value: `${poDetail.pipeline.ordered.qty} qty`, sub: fmt(poDetail.pipeline.ordered.amount), mismatch: false },
-                                          { label: 'Received', done: poDetail.pipeline.received.grnCount > 0, value: `${poDetail.pipeline.received.qty} qty`, sub: `${poDetail.pipeline.received.grnCount} GRN${poDetail.pipeline.received.grnCount !== 1 ? 's' : ''}${poDetail.pipeline.received.pending > 0 ? ` (${poDetail.pipeline.received.pending} pending)` : ''}`, mismatch: false },
+                                          { label: 'Ordered', done: true, value: fmt(poDetail.pipeline.ordered.amount), sub: `${poDetail.pipeline.ordered.qty} qty`, mismatch: false },
+                                          { label: 'Received', done: poDetail.pipeline.received.grnCount > 0, value: fmt(poDetail.pipeline.received.amount || 0), sub: `${poDetail.pipeline.received.grnCount} GRN${poDetail.pipeline.received.grnCount !== 1 ? 's' : ''} | ${poDetail.pipeline.received.qty} qty`, mismatch: false },
                                           { label: 'Invoiced', done: poDetail.pipeline.invoiced.count > 0, value: fmt(poDetail.pipeline.invoiced.amount), sub: `${poDetail.pipeline.invoiced.count} invoice${poDetail.pipeline.invoiced.count !== 1 ? 's' : ''}`, mismatch: poDetail.pipeline.invoiced.amount > 0 && poDetail.pipeline.ordered.amount > 0 && Math.abs(poDetail.pipeline.invoiced.amount - poDetail.pipeline.ordered.amount) > 10 },
                                           { label: 'Paid', done: poDetail.pipeline.paid.amount > 0, value: fmt(poDetail.pipeline.paid.amount), sub: poDetail.pipeline.paid.amount === 0 && poDetail.pipeline.invoiced.amount === 0 ? 'Unpaid' : poDetail.pipeline.paid.balance > 0 ? `Bal: ${fmt(poDetail.pipeline.paid.balance)}` : 'Settled', mismatch: false },
                                         ]).map((step, si) => (
@@ -926,10 +1004,10 @@ export default function PaymentsOut() {
                         </tbody>
                         <tfoot>
                           <tr className="bg-slate-800 text-white font-semibold">
-                            <td className="px-3 py-2 text-[10px] uppercase tracking-widest" colSpan={3}>Total ({pendingItems.length} POs)</td>
-                            <td className="px-3 py-2 text-right font-mono tabular-nums">{fmt(pendingItems.reduce((s, i) => s + i.poAmount, 0))}</td>
+                            <td className="px-3 py-2 text-[10px] uppercase tracking-widest" colSpan={3}>Total ({filtered.length} POs)</td>
+                            <td className="px-3 py-2 text-right font-mono tabular-nums">{fmt(filtered.reduce((s, i) => s + i.poAmount, 0))}</td>
                             <td colSpan={4}></td>
-                            <td className="px-3 py-2 text-right font-mono tabular-nums">{fmt(pendingItems.reduce((s, i) => s + i.balance, 0))}</td>
+                            <td className="px-3 py-2 text-right font-mono tabular-nums">{fmt(filtered.reduce((s, i) => s + i.balance, 0))}</td>
                             <td></td>
                           </tr>
                         </tfoot>
@@ -937,6 +1015,7 @@ export default function PaymentsOut() {
                     </div>
                   )}
                 </div>
+                  ); })()}
               </>
             )}
           </div>
@@ -1858,6 +1937,83 @@ export default function PaymentsOut() {
                       <button onClick={() => setBankFileModal(false)}
                         className="px-4 py-1.5 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">CANCEL</button>
                     </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+        {/* ═══════════════════════════════════════ */}
+        {/* PO PAY MODAL (Running Account) */}
+        {/* ═══════════════════════════════════════ */}
+        {poPayItem && (
+          <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 overflow-y-auto py-4" onClick={() => setPoPayItem(null)}>
+            <div className="bg-white shadow-2xl w-full max-w-lg mx-4" onClick={e => e.stopPropagation()}>
+              <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-widest">Pay Against PO-{poPayItem.poNo}</span>
+                <button onClick={() => setPoPayItem(null)} className="text-slate-400 hover:text-white"><X size={16} /></button>
+              </div>
+              <div className="bg-slate-100 px-4 py-2 text-xs border-b border-slate-300 flex gap-6">
+                <span>Vendor: <b>{poPayItem.vendorName}</b></span>
+                <span>Receivable: <b className="font-mono">{fmt(poPayItem.poAmount)}</b></span>
+                <span>Balance: <b className="font-mono text-red-600">{fmt(poPayItem.balance)}</b></span>
+              </div>
+              <div className="p-4 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Amount *</label>
+                    <input value={poPayAmount} onChange={e => setPoPayAmount(e.target.value)} type="number" autoFocus
+                      className="w-full border border-slate-300 px-2.5 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="0" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Mode</label>
+                    <select value={poPayMode} onChange={e => setPoPayMode(e.target.value)}
+                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+                      {MODES.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Reference / UTR</label>
+                    <input value={poPayRef} onChange={e => setPoPayRef(e.target.value)}
+                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Remarks</label>
+                    <input value={poPayRemarks} onChange={e => setPoPayRemarks(e.target.value)}
+                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                  </div>
+                </div>
+                <button onClick={submitPOPayment} disabled={poPaySaving || !poPayAmount}
+                  className="w-full px-4 py-2 bg-green-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-green-700 disabled:opacity-50">
+                  {poPaySaving ? 'Processing...' : 'Record Payment'}
+                </button>
+
+                {/* Payment history ledger */}
+                {poPayments.length > 0 && (
+                  <div className="mt-3">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Payment History</div>
+                    <table className="w-full text-[11px] border border-slate-200">
+                      <thead>
+                        <tr className="bg-slate-100">
+                          <th className="text-left px-2 py-1 text-[9px] font-bold uppercase border-r border-slate-200">Date</th>
+                          <th className="text-right px-2 py-1 text-[9px] font-bold uppercase border-r border-slate-200">Amount</th>
+                          <th className="text-left px-2 py-1 text-[9px] font-bold uppercase border-r border-slate-200">Mode</th>
+                          <th className="text-left px-2 py-1 text-[9px] font-bold uppercase border-r border-slate-200">Ref</th>
+                          <th className="text-right px-2 py-1 text-[9px] font-bold uppercase">Running</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {poPayments.map((p, j) => (
+                          <tr key={p.id} className={j % 2 ? 'bg-slate-50' : ''}>
+                            <td className="px-2 py-1 font-mono text-slate-500 border-r border-slate-100">{fmtDate(p.paymentDate)}</td>
+                            <td className="px-2 py-1 text-right font-mono tabular-nums text-green-700 border-r border-slate-100">{fmt(p.amount)}</td>
+                            <td className="px-2 py-1 text-slate-600 border-r border-slate-100">{p.mode}</td>
+                            <td className="px-2 py-1 text-slate-500 font-mono border-r border-slate-100">{p.reference || '--'}</td>
+                            <td className="px-2 py-1 text-right font-mono tabular-nums font-bold">{fmt(p.runningTotal)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </div>
