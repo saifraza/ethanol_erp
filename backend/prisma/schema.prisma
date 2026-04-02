@@ -1976,6 +1976,7 @@ model VendorPayment {
   @@index([vendorId])
   @@index([invoiceId])
   @@index([paymentDate])
+  @@index([paymentStatus])
   @@index([bankFileBatch])
 }
 
