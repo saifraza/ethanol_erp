@@ -466,10 +466,10 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
                   vehicleNo: w.vehicle_no,
                   challanNo: '',
                   invoiceNo: '',
-                  remarks: `${wbRef} | Auto-GRN from weighbridge${labRemarksSuffix}`,
+                  remarks: `${wbRef} | Auto-GRN from weighbridge${labRemarksSuffix} | Auto-confirmed (weighbridge verified)`,
                   totalAmount: Math.round(receivedQty * rate * 100) / 100,
                   totalQty: receivedQty,
-                  status: 'DRAFT',
+                  status: 'CONFIRMED', // Weighbridge-verified = physically weighed, auto-approve
                   userId: 'system-weighbridge',
                   lines: {
                     create: [{
@@ -536,11 +536,20 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
               }).catch(() => {}); // best-effort — GRN is the primary record
             }
 
-            // NF-2/NF-3 FIX: Do NOT sync inventory here. Auto-GRNs are DRAFT.
-            // Stock posts ONLY on confirm via PUT /goods-receipts/:id/status.
-            // Previously this called syncToInventory() outside the transaction,
-            // causing double stock posting (once here, once on confirm) and
-            // unrecoverable failures if the sync failed after GRN commit.
+            // GRN is now auto-CONFIRMED (weighbridge verified) — sync inventory
+            if (poLine.inventoryItemId) {
+              try {
+                await syncToInventory(
+                  'GRN', grn.id, `GRN-${grn.grnNo}`,
+                  poLine.inventoryItemId, receivedQty, rate,
+                  'IN', 'GRN_RECEIPT',
+                  `Auto-GRN from weighbridge: ${w.vehicle_no} | Auto-confirmed`,
+                  'system-weighbridge',
+                );
+              } catch (invErr) {
+                console.error(`[WB] Inventory sync failed for GRN-${grn.grnNo}: ${invErr}`);
+              }
+            }
 
             // Create approval record if overage exceeds 5%
             if (needsApproval) {
@@ -703,7 +712,9 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
           include: { lines: true },
         });
 
-        // Auto-create GRN (DRAFT — stock posts on confirm)
+        // Auto-create GRN — CONFIRMED if weighbridge-verified (auto-approve), else DRAFT
+        const autoApproveGrn = true; // Weighbridge-verified = physically weighed, no manual approval needed
+        const grnStatus = autoApproveGrn ? 'CONFIRMED' : 'DRAFT';
         const grn = await tx.goodsReceipt.create({
           data: {
             poId: po.id,
@@ -712,8 +723,8 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
             vehicleNo: w.vehicle_no,
             totalQty: receivedQty,
             totalAmount: lineAmount,
-            status: 'DRAFT',
-            remarks: `${wbRef} | Trader: ${trader.name} | PO-${po.poNo}`,
+            status: grnStatus,
+            remarks: `${wbRef} | Trader: ${trader.name} | PO-${po.poNo}${autoApproveGrn ? ' | Auto-confirmed (weighbridge verified)' : ''}`,
             userId: 'system-weighbridge',
             lines: {
               create: [{
@@ -736,6 +747,21 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
 
         return { po, grn };
       });
+
+      // If auto-confirmed, sync inventory (stock posts immediately)
+      if (grn.status === 'CONFIRMED' && invItem?.id) {
+        try {
+          await syncToInventory(
+            'GRN', grn.id, `GRN-${grn.grnNo}`,
+            invItem.id, receivedQty, unitRate,
+            'IN', 'GRN_RECEIPT',
+            `Auto-GRN from trader weighbridge: ${w.vehicle_no} | ${trader.name}`,
+            'system-weighbridge',
+          );
+        } catch (invErr) {
+          console.error(`[TRADER] Inventory sync failed for GRN-${grn.grnNo}: ${invErr}`);
+        }
+      }
 
       results.push({ id: grn.id, type: 'TRADER_GRN', refNo: `GRN-${grn.grnNo} | PO-${po.poNo}`, sourceWbId: w.id });
       ids.push(grn.id);
