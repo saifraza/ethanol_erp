@@ -645,7 +645,7 @@ model DDGSDispatchTruck {
   grossTime       DateTime?
   releaseTime     DateTime?
   remarks         String?
-  sourceWbId      String?  @unique  // Factory weighment ID for dedup
+  sourceWbId      String?           // Factory weighment ID for dedup
   userId          String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @default(now()) @updatedAt
@@ -1427,7 +1427,7 @@ model Shipment {
   gatePassItems   String?                  // JSON array of items [{desc, hsnCode, qty, unit, value}]
   totalValue      Float?                   // declared value of goods
   coveringNote    String?                  // authority letter text
-  sourceWbId      String?  @unique          // Factory weighment ID for dedup/traceability
+  sourceWbId      String?                   // Factory weighment ID for dedup/traceability
   userId          String?                  // factory user
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
