@@ -1958,29 +1958,52 @@ export default function PaymentsOut() {
                 <span className="text-xs font-bold uppercase tracking-widest">Pay Against PO-{poPayItem.poNo}</span>
                 <button onClick={() => setPoPayItem(null)} className="text-slate-400 hover:text-white"><X size={16} /></button>
               </div>
-              <div className="bg-slate-100 px-4 py-2 text-xs border-b border-slate-300 flex gap-6">
-                <span>Vendor: <b>{poPayItem.vendorName}</b></span>
-                <span>Receivable: <b className="font-mono">{fmt(poPayItem.poAmount)}</b></span>
-                <span>Balance: <b className="font-mono text-red-600">{fmt(poPayItem.balance)}</b></span>
+              <div className="bg-slate-100 px-4 py-3 text-xs border-b border-slate-300 space-y-2">
+                <div className="flex gap-6">
+                  <span>Vendor: <b>{poPayItem.vendorName}</b></span>
+                  {poPayItem.vendorPhone && <span>Ph: <b>{poPayItem.vendorPhone}</b></span>}
+                  {poPayItem.material && <span>Material: <b>{poPayItem.material}</b></span>}
+                </div>
+                <div className="flex gap-6">
+                  <span>Receivable: <b className="font-mono">{fmt(poPayItem.poAmount)}</b></span>
+                  <span>Paid: <b className="font-mono text-green-700">{fmt(poPayItem.totalPaid)}</b></span>
+                  <span>Due: <b className="font-mono text-red-600">{fmt(poPayItem.balance)}</b></span>
+                  {poPayItem.dueDate && <span>Due Date: <b>{fmtDate(poPayItem.dueDate)}</b></span>}
+                </div>
+                {poPayItem.vendorBank && (
+                  <div className="bg-white border border-slate-200 px-3 py-1.5 flex gap-6">
+                    <span>Bank: <b>{poPayItem.vendorBank}</b></span>
+                    {poPayItem.vendorAccount && <span>A/C: <b className="font-mono">{poPayItem.vendorAccount}</b></span>}
+                    {poPayItem.vendorIfsc && <span>IFSC: <b className="font-mono">{poPayItem.vendorIfsc}</b></span>}
+                  </div>
+                )}
+                {!poPayItem.vendorBank && (
+                  <div className="text-[10px] text-orange-600 font-bold uppercase">No bank details on file — update vendor master</div>
+                )}
               </div>
               <div className="p-4 space-y-3">
+                <div className="text-[10px] font-bold text-slate-800 uppercase tracking-widest border-b border-slate-200 pb-1">Payment Against PO (No Invoice Required)</div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Amount *</label>
                     <input value={poPayAmount} onChange={e => setPoPayAmount(e.target.value)} type="number" autoFocus
-                      className="w-full border border-slate-300 px-2.5 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="0" />
+                      className="w-full border border-slate-300 px-2.5 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder={String(poPayItem.balance || 0)} />
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Mode</label>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Payment Mode</label>
                     <select value={poPayMode} onChange={e => setPoPayMode(e.target.value)}
                       className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
-                      {MODES.map(m => <option key={m} value={m}>{m}</option>)}
+                      <option value="NEFT">NEFT (Bank Transfer)</option>
+                      <option value="RTGS">RTGS</option>
+                      <option value="UPI">UPI</option>
+                      <option value="CASH">Cash</option>
+                      <option value="CHEQUE">Cheque</option>
                     </select>
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Reference / UTR</label>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">UTR / Reference</label>
                     <input value={poPayRef} onChange={e => setPoPayRef(e.target.value)}
-                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="Enter after bank confirms" />
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Remarks</label>
@@ -1988,9 +2011,14 @@ export default function PaymentsOut() {
                       className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
                   </div>
                 </div>
+                {poPayMode === 'CASH' && (
+                  <div className="text-[10px] text-orange-600 bg-orange-50 border border-orange-200 px-3 py-1.5">
+                    Cash payment will auto-create a Cash Voucher entry
+                  </div>
+                )}
                 <button onClick={submitPOPayment} disabled={poPaySaving || !poPayAmount}
                   className="w-full px-4 py-2 bg-green-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-green-700 disabled:opacity-50">
-                  {poPaySaving ? 'Processing...' : 'Record Payment'}
+                  {poPaySaving ? 'Processing...' : `Pay ${poPayAmount ? '\u20B9' + parseFloat(poPayAmount).toLocaleString('en-IN') : ''} via ${poPayMode}`}
                 </button>
 
                 {/* Payment history ledger */}
