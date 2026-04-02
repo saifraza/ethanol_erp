@@ -439,10 +439,10 @@ export default function PaymentsOut() {
       setPoPayAmount('');
       setPoPayRef('');
       setPoPayRemarks('');
+      await fetchPending();
       if (res.data.fullyPaid) {
         setPoPayItem(null);
       }
-      fetchPending();
     } catch (err: unknown) {
       alert((err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Payment failed');
     } finally { setPoPaySaving(false); }
@@ -987,7 +987,7 @@ export default function PaymentsOut() {
                                           <div className="font-bold text-slate-500 uppercase tracking-widest mb-1">GRNs ({(poDetail.grns || []).length})</div>
                                           <div className="max-h-40 overflow-y-auto space-y-1">
                                             {(poDetail.grns || []).map((g: any) => (
-                                              <a key={g.id} href={`/procurement/goods-receipts?grn=${g.id}`} target="_blank" rel="noopener noreferrer" className="block bg-white border border-slate-200 px-2 py-1.5 hover:bg-blue-50 hover:border-blue-300 cursor-pointer">
+                                              <a key={g.id} href={`/api/goods-receipts/${g.id}/pdf`} target="_blank" rel="noopener noreferrer" className="block bg-white border border-slate-200 px-2 py-1.5 hover:bg-blue-50 hover:border-blue-300 cursor-pointer">
                                                 <div className="flex items-center justify-between">
                                                   <span className="font-mono font-medium text-blue-700">GRN-{g.grnNo}</span>
                                                   <span className={`text-[8px] font-bold uppercase px-1 py-0.5 border ${g.status === 'CONFIRMED' ? 'border-green-300 text-green-700' : 'border-slate-300 text-slate-500'}`}>{g.status}</span>
@@ -2155,8 +2155,8 @@ export default function PaymentsOut() {
                           await api.post(`/purchase-orders/payments/${bankPendingPayment.id}/confirm`, { reference: bankUtrInput.trim() });
                           setBankPendingPayment(null);
                           setBankUtrInput('');
-                          setPoPayItem(null); // Close modal after UTR confirmed
-                          fetchPending();
+                          await fetchPending(); // Refresh list BEFORE closing modal
+                          setPoPayItem(null);
                         } catch (err: unknown) {
                           alert((err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Confirm failed');
                         } finally { setBankConfirming(false); }
