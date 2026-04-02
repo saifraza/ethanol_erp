@@ -51,7 +51,8 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
     const user = req.user!;
-    // New requisitions always start as DRAFT (ignore caller-supplied status)
+    // Allow SUBMITTED as initial status (from indent form), otherwise default to DRAFT
+    const initialStatus = b.status === 'SUBMITTED' ? 'SUBMITTED' : 'DRAFT';
     const pr = await prisma.purchaseRequisition.create({
       data: {
         title: b.title,
@@ -64,7 +65,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         justification: b.justification || null,
         linkedIssueId: b.linkedIssueId || null,
         supplier: b.supplier || null,
-        status: 'DRAFT',
+        status: initialStatus,
         remarks: b.remarks || null,
         requestedBy: user.name || user.email,
         userId: user.id,

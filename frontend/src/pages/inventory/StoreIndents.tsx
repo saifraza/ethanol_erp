@@ -27,6 +27,7 @@ interface PR {
 }
 
 interface Stats {
+  DRAFT: number;
   SUBMITTED: number;
   APPROVED: number;
   ISSUED: number;
@@ -59,7 +60,7 @@ interface IssueResult {
   autoPO: AutoPOResult | null;
 }
 
-const STATUS_TABS = ['ALL', 'SUBMITTED', 'APPROVED', 'PO_PENDING', 'COMPLETED'] as const;
+const STATUS_TABS = ['ALL', 'DRAFT', 'SUBMITTED', 'APPROVED', 'PO_PENDING', 'COMPLETED'] as const;
 
 const urgencyStyle: Record<string, string> = {
   ROUTINE: 'border-slate-400 text-slate-700 bg-slate-50',
@@ -69,6 +70,7 @@ const urgencyStyle: Record<string, string> = {
 };
 
 const statusStyle: Record<string, string> = {
+  DRAFT: 'border-slate-400 text-slate-600 bg-slate-50',
   SUBMITTED: 'border-yellow-500 text-yellow-700 bg-yellow-50',
   APPROVED: 'border-blue-500 text-blue-700 bg-blue-50',
   REJECTED: 'border-red-500 text-red-700 bg-red-50',
@@ -80,7 +82,7 @@ const statusStyle: Record<string, string> = {
 
 export default function StoreIndents() {
   const [data, setData] = useState<PR[]>([]);
-  const [stats, setStats] = useState<Stats>({ SUBMITTED: 0, APPROVED: 0, ISSUED: 0, PO_PENDING: 0 });
+  const [stats, setStats] = useState<Stats>({ DRAFT: 0, SUBMITTED: 0, APPROVED: 0, ISSUED: 0, PO_PENDING: 0 });
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<string>('ALL');
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -104,6 +106,7 @@ export default function StoreIndents() {
       // API returns { byStatus: {SUBMITTED: N, ...}, ... } — map to flat Stats shape
       const bs = (statsRes.data as any).byStatus || statsRes.data;
       setStats({
+        DRAFT: bs.DRAFT || 0,
         SUBMITTED: bs.SUBMITTED || 0,
         APPROVED: bs.APPROVED || 0,
         ISSUED: bs.ISSUED || 0,
@@ -144,6 +147,17 @@ export default function StoreIndents() {
       fetchStockCheck(id);
     }
   }, [expandedId, fetchStockCheck]);
+
+  const handleSubmit = async (id: string) => {
+    setActionLoading(true);
+    try {
+      await api.put(`/purchase-requisition/${id}`, { status: 'SUBMITTED' });
+      await fetchData();
+      setExpandedId(null);
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   const handleApprove = async (id: string) => {
     setActionLoading(true);
@@ -253,7 +267,11 @@ export default function StoreIndents() {
         </div>
 
         {/* KPI Strip */}
-        <div className="grid grid-cols-2 md:grid-cols-4 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+        <div className="grid grid-cols-2 md:grid-cols-5 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+          <div className="bg-white px-4 py-3 border-r border-b md:border-b-0 border-slate-300 border-l-4 border-l-slate-400">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Draft</div>
+            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{stats.DRAFT}</div>
+          </div>
           <div className="bg-white px-4 py-3 border-r border-b md:border-b-0 border-slate-300 border-l-4 border-l-yellow-500">
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Pending</div>
             <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{stats.SUBMITTED}</div>
@@ -394,6 +412,16 @@ export default function StoreIndents() {
                             {row.supplier && <div><span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Supplier:</span> {row.supplier}</div>}
                             {row.estimatedCost > 0 && <div><span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Est. Cost:</span> <span className="font-mono tabular-nums">Rs.{row.estimatedCost.toLocaleString('en-IN')}</span></div>}
                           </div>
+
+                          {/* DRAFT Actions */}
+                          {row.status === 'DRAFT' && (
+                            <div className="flex gap-2">
+                              <button onClick={(e) => { e.stopPropagation(); handleSubmit(row.id); }} disabled={actionLoading}
+                                className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">
+                                Submit for Approval
+                              </button>
+                            </div>
+                          )}
 
                           {/* SUBMITTED Actions */}
                           {row.status === 'SUBMITTED' && (
