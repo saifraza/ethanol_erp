@@ -1121,8 +1121,8 @@ const PurchaseOrders: React.FC = () => {
                             + GRN (Partial)
                           </a>
                         )}
-                        {po.status === 'RECEIVED' && (
-                          <button onClick={() => handleStatusChange(po.id, 'CLOSED')} className="px-2.5 py-0.5 bg-slate-600 text-white text-[9px] font-bold uppercase hover:bg-slate-700">
+                        {['APPROVED', 'SENT', 'PARTIAL_RECEIVED', 'RECEIVED'].includes(po.status) && (
+                          <button onClick={() => { if (po.status !== 'RECEIVED' && !confirm(`PO-${po.poNo} is not fully received. Close anyway?`)) return; handleStatusChange(po.id, 'CLOSED'); }} className="px-2.5 py-0.5 bg-slate-600 text-white text-[9px] font-bold uppercase hover:bg-slate-700">
                             Close PO
                           </button>
                         )}
