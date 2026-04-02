@@ -306,8 +306,17 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     if (newStatus === 'LOADING') {
       updateData.loadStartTime = b.loadStartTime || null;
     } else if (newStatus === 'RELEASED') {
-      // ── Payment gate: ADVANCE/COD orders must have payment confirmed before release ──
-      const shipCheck = await prisma.shipment.findUnique({ where: { id: req.params.id }, select: { paymentStatus: true, paymentTerms: true } });
+      // ── Payment + E-Way Bill gates before release ──
+      const shipCheck = await prisma.shipment.findUnique({
+        where: { id: req.params.id },
+        select: {
+          paymentStatus: true, paymentTerms: true,
+          ewayBill: true, gatePassType: true, totalValue: true,
+          documents: { where: { docType: 'EWAY_BILL' }, select: { id: true }, take: 1 },
+        },
+      });
+
+      // Payment gate (existing)
       if (shipCheck && shipCheck.paymentStatus === 'PENDING') {
         res.status(400).json({
           error: `Payment must be confirmed before release (terms: ${shipCheck.paymentTerms || 'ADVANCE'})`,
@@ -315,6 +324,21 @@ router.put('/:id/status', async (req: Request, res: Response) => {
         });
         return;
       }
+
+      // E-Way Bill gate: required unless exempt (returnable gate pass under 50k)
+      if (shipCheck) {
+        const hasEwb = !!shipCheck.ewayBill || (shipCheck.documents?.length || 0) > 0;
+        const isExempt = shipCheck.gatePassType === 'RETURNABLE'
+          && (shipCheck.totalValue || 0) < 50000;
+        if (!hasEwb && !isExempt) {
+          res.status(400).json({
+            error: 'E-Way Bill is required before release. Generate via e-Invoice or upload the document.',
+            code: 'EWAY_BILL_REQUIRED',
+          });
+          return;
+        }
+      }
+
       updateData.releaseTime = b.releaseTime || null;
       if (b.challanNo) updateData.challanNo = b.challanNo;
       if (b.ewayBill) updateData.ewayBill = b.ewayBill;
@@ -347,24 +371,46 @@ router.put('/:id/status', async (req: Request, res: Response) => {
       const productName = (existing.productName || '').toUpperCase();
       if (productName.includes('DDGS')) {
         try {
-          const netMT = existing.weightNet / 1000; // kg → MT
+          const netMT = existing.weightNet / 1000; // KG → MT (Shipment stores KG)
 
-          // 1. Create DDGSDispatchTruck entry
-          await prisma.dDGSDispatchTruck.create({
-            data: {
-              date: new Date(),
-              vehicleNo: existing.vehicleNo || '',
-              partyName: existing.customerName || '',
-              destination: existing.destination || '',
-              bags: existing.bags || 0,
-              weightPerBag: existing.weightPerBag || 50,
-              weightGross: existing.weightGross || 0,
-              weightTare: existing.weightTare || 0,
-              weightNet: existing.weightNet,
-              remarks: `Auto from shipment #${existing.shipmentNo}`,
-              userId: (req as any).user?.id || null,
-            },
-          });
+          // 1. Check for existing DDGSDispatchTruck (may exist from factory sync)
+          let existingDdgs = existing.sourceWbId
+            ? await prisma.dDGSDispatchTruck.findFirst({ where: { sourceWbId: existing.sourceWbId } })
+            : null;
+          // Fallback: match by vehicle + same day
+          if (!existingDdgs) {
+            const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
+            const dayEnd = new Date(); dayEnd.setHours(23, 59, 59, 999);
+            existingDdgs = await prisma.dDGSDispatchTruck.findFirst({
+              where: { vehicleNo: existing.vehicleNo || '', date: { gte: dayStart, lte: dayEnd } },
+            });
+          }
+
+          if (existingDdgs) {
+            // Update existing row status (already created by factory sync)
+            await prisma.dDGSDispatchTruck.update({
+              where: { id: existingDdgs.id },
+              data: { status: 'RELEASED', releaseTime: new Date() },
+            });
+          } else {
+            // Create new DDGSDispatchTruck (manual shipment, not from factory)
+            await prisma.dDGSDispatchTruck.create({
+              data: {
+                date: new Date(),
+                vehicleNo: existing.vehicleNo || '',
+                partyName: existing.customerName || '',
+                destination: existing.destination || '',
+                bags: existing.bags || 0,
+                weightPerBag: existing.weightPerBag || 50,
+                weightGross: existing.weightGross || 0,
+                weightTare: existing.weightTare || 0,
+                weightNet: netMT,  // FIX: KG → MT conversion
+                sourceWbId: existing.sourceWbId || null,
+                remarks: `Auto from shipment #${existing.shipmentNo}`,
+                userId: (req as any).user?.id || null,
+              },
+            });
+          }
 
           // 2. Update today's DDGSStockEntry dispatch total
           const today = new Date();

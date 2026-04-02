@@ -701,67 +701,44 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
       const grossTimeVal = w.second_weight_at ? new Date(w.second_weight_at) : undefined;
 
       const txResult = await prisma.$transaction(async (tx) => {
-        // 1. Upsert DDGSDispatchTruck using sourceWbId (unique)
-        const dispatch = await tx.dDGSDispatchTruck.upsert({
-          where: { sourceWbId: w.id },
-          update: {
-            weightGross: grossKg,
-            weightTare: tareKg,
-            weightNet: netMT,   // MT for DDGS model
-            status: 'GROSS_WEIGHED',
-            grossTime: grossTimeVal,
-          },
-          create: {
-            sourceWbId: w.id,
-            date: dateVal,
-            vehicleNo: w.vehicle_no,
-            partyName,
-            driverName: w.driver_name || null,
-            driverMobile: w.driver_mobile || null,
-            transporterName: w.transporter || null,
-            weightGross: grossKg,
-            weightTare: tareKg,
-            weightNet: netMT,   // MT for DDGS model
-            bags: w.bags || 0,
-            status: 'GROSS_WEIGHED',
-            gateInTime: gateInVal,
-            tareTime: tareTimeVal,
-            grossTime: grossTimeVal,
-            remarks: `${wbRef} | ${w.remarks || ''}`.trim(),
-          },
-        });
+        // 1. Find or create DDGSDispatchTruck by sourceWbId
+        const existingDispatch = await tx.dDGSDispatchTruck.findFirst({ where: { sourceWbId: w.id } });
+        const dispatch = existingDispatch
+          ? await tx.dDGSDispatchTruck.update({
+              where: { id: existingDispatch.id },
+              data: { weightGross: grossKg, weightTare: tareKg, weightNet: netMT, status: 'GROSS_WEIGHED', grossTime: grossTimeVal },
+            })
+          : await tx.dDGSDispatchTruck.create({
+              data: {
+                sourceWbId: w.id, date: dateVal, vehicleNo: w.vehicle_no, partyName,
+                driverName: w.driver_name || null, driverMobile: w.driver_mobile || null,
+                transporterName: w.transporter || null,
+                weightGross: grossKg, weightTare: tareKg, weightNet: netMT,
+                bags: w.bags || 0, status: 'GROSS_WEIGHED',
+                gateInTime: gateInVal, tareTime: tareTimeVal, grossTime: grossTimeVal,
+                remarks: `${wbRef} | ${w.remarks || ''}`.trim(),
+              },
+            });
 
-        // 2. Upsert Shipment for logistics tracking
-        const shipment = await tx.shipment.upsert({
-          where: { sourceWbId: w.id },
-          update: {
-            weightTare: tareKg,
-            weightGross: grossKg,
-            weightNet: netKg,   // KG for Shipment model
-            status: 'GROSS_WEIGHED',
-            grossTime: grossTimeVal ? grossTimeVal.toISOString() : undefined,
-          },
-          create: {
-            sourceWbId: w.id,
-            productName: w.material || 'DDGS',
-            customerName: partyName,
-            vehicleNo: w.vehicle_no,
-            driverName: w.driver_name || null,
-            driverMobile: w.driver_mobile || null,
-            transporterName: w.transporter || null,
-            vehicleType: w.vehicle_type || null,
-            weightTare: tareKg,
-            weightGross: grossKg,
-            weightNet: netKg,   // KG for Shipment model
-            bags: w.bags || null,
-            status: 'GROSS_WEIGHED',
-            gateInTime: gateInVal.toISOString(),
-            tareTime: tareTimeVal ? tareTimeVal.toISOString() : null,
-            grossTime: grossTimeVal ? grossTimeVal.toISOString() : null,
-            paymentStatus: 'NOT_REQUIRED',
-            remarks: `WB:${w.id}`,
-          },
-        });
+        // 2. Find or create Shipment by sourceWbId
+        const existingShipment = await tx.shipment.findFirst({ where: { sourceWbId: w.id } });
+        const shipment = existingShipment
+          ? await tx.shipment.update({
+              where: { id: existingShipment.id },
+              data: { weightTare: tareKg, weightGross: grossKg, weightNet: netKg, status: 'GROSS_WEIGHED', grossTime: grossTimeVal ? grossTimeVal.toISOString() : undefined },
+            })
+          : await tx.shipment.create({
+              data: {
+                sourceWbId: w.id, productName: w.material || 'DDGS', customerName: partyName,
+                vehicleNo: w.vehicle_no, driverName: w.driver_name || null, driverMobile: w.driver_mobile || null,
+                transporterName: w.transporter || null, vehicleType: w.vehicle_type || null,
+                weightTare: tareKg, weightGross: grossKg, weightNet: netKg,
+                bags: w.bags || null, status: 'GROSS_WEIGHED',
+                gateInTime: gateInVal.toISOString(), tareTime: tareTimeVal ? tareTimeVal.toISOString() : null,
+                grossTime: grossTimeVal ? grossTimeVal.toISOString() : null,
+                paymentStatus: 'NOT_REQUIRED', remarks: `WB:${w.id}`,
+              },
+            });
 
         return { dispatch, shipment };
       });
