@@ -391,7 +391,7 @@ router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Re
   const deals = await prisma.purchaseOrder.findMany({
     where: {
       dealType: { in: ['OPEN', 'STANDARD'] },
-      status: { in: ['APPROVED', 'SENT', 'PARTIAL_RECEIVED', 'RECEIVED'] },
+      status: { in: ['APPROVED', 'SENT', 'PARTIAL_RECEIVED', 'RECEIVED', 'CLOSED'] },
       // Only fuel deals — check if any line has a fuel inventory item
       lines: { some: { inventoryItem: { category: 'FUEL' } } },
     },
@@ -421,21 +421,22 @@ router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Re
     const totalValue = totalReceived * (line?.rate || 0);
 
     // Get total payments: direct VendorPayments referencing this deal + invoice payments
-    // Use exact PO number match with word boundary to avoid cross-contamination
-    // (e.g. PO-1 matching PO-10, PO-100)
+    // Step 8 fix: Count direct payments (fuel page Pay button) and invoice payments separately
+    // to avoid double-counting. Direct payments have no invoiceId; invoice payments have one.
     const directPayments = await prisma.vendorPayment.findMany({
       where: {
         vendorId: deal.vendor.id,
+        invoiceId: null, // Only direct payments, not invoice-linked
         OR: [
-          { remarks: { contains: `PO-${deal.poNo} ` } },          // "PO-123 " with trailing space
-          { remarks: { endsWith: `PO-${deal.poNo}` } },           // "PO-123" at end of string
+          { remarks: { contains: `PO-${deal.poNo} ` } },
+          { remarks: { endsWith: `PO-${deal.poNo}` } },
         ],
       },
       select: { amount: true },
     });
     let totalPaid = directPayments.reduce((s, p) => s + p.amount, 0);
 
-    // Also check invoice-based payments on this deal's GRNs
+    // Add invoice-based payments (from vendorPayments route which links to invoiceId)
     const grnIds = deal.grns.map(g => g.id);
     if (grnIds.length > 0) {
       const invoices = await prisma.vendorInvoice.findMany({
@@ -501,12 +502,18 @@ router.post('/deals', authenticate, validate(openDealSchema), asyncHandler(async
   // Get fuel item details
   const fuelItem = await prisma.inventoryItem.findUnique({
     where: { id: b.fuelItemId },
-    select: { id: true, name: true, unit: true, hsnCode: true, gstPercent: true },
+    select: { id: true, name: true, unit: true, hsnCode: true, gstPercent: true, category: true },
   });
   if (!fuelItem) return res.status(404).json({ error: 'Fuel item not found' });
+  // Step 1 fix: guard that item is actually a fuel item
+  if (fuelItem.category !== 'FUEL') return res.status(400).json({ error: `Item "${fuelItem.name}" is not a fuel item (category=${fuelItem.category})` });
 
   const isOpen = b.quantityType !== 'FIXED';
   const isTrucks = b.quantityUnit === 'TRUCKS';
+  // Step 1 fix: fixed non-truck deals must have a positive quantity
+  if (!isOpen && !isTrucks && (!b.quantity || b.quantity <= 0)) {
+    return res.status(400).json({ error: 'Fixed MT deals require a positive quantity' });
+  }
   // For TRUCKS deals: store the truck count in remarks (PO line qty stays in MT/KG for GRN compatibility)
   // An open deal uses 999999 as "unlimited"; a fixed TRUCKS deal also uses 999999 qty
   // because the limit is on truck count, not weight (tracked via grns._count)
@@ -578,7 +585,21 @@ router.put('/deals/:id', authenticate, asyncHandler(async (req: AuthRequest, res
 
   // Update PO fields (status, remarks, payment terms)
   const poUpdate: Record<string, unknown> = {};
-  if (b.status) poUpdate.status = b.status;
+  if (b.status) {
+    // Step 11 fix: validate status transitions
+    const validStatuses = ['APPROVED', 'PARTIAL_RECEIVED', 'RECEIVED', 'CLOSED'];
+    if (!validStatuses.includes(b.status)) {
+      return res.status(400).json({ error: `Invalid status: ${b.status}. Allowed: ${validStatuses.join(', ')}` });
+    }
+    // Only allow CLOSED if deal has at least one confirmed GRN
+    if (b.status === 'CLOSED') {
+      const confirmedGrns = await prisma.goodsReceipt.count({ where: { poId: deal.id, status: 'CONFIRMED' } });
+      if (confirmedGrns === 0) {
+        return res.status(400).json({ error: 'Cannot close deal with no confirmed receipts' });
+      }
+    }
+    poUpdate.status = b.status;
+  }
   if (b.remarks !== undefined) poUpdate.remarks = b.remarks;
   if (b.paymentTerms) poUpdate.paymentTerms = b.paymentTerms;
   if (Object.keys(poUpdate).length > 0) {
@@ -642,9 +663,16 @@ router.post('/deals/:id/payment', authenticate, validate(fuelPaymentSchema), asy
 
   const deal = await prisma.purchaseOrder.findUnique({
     where: { id: dealId },
-    select: { vendorId: true, poNo: true, dealType: true },
+    include: { grns: { select: { id: true, status: true } }, lines: { select: { receivedQty: true } } },
   });
   if (!deal) return res.status(404).json({ error: 'Deal not found' });
+
+  // Step 10 fix: require at least one confirmed GRN before allowing payment
+  const confirmedGrns = deal.grns.filter((g: any) => g.status === 'CONFIRMED');
+  const totalReceived = deal.lines.reduce((s: number, l: any) => s + (l.receivedQty || 0), 0);
+  if (confirmedGrns.length === 0 || totalReceived <= 0) {
+    return res.status(400).json({ error: 'Cannot make payment before any confirmed receipt. Confirm the GRN first.' });
+  }
 
   const amount = b.amount;
   const tdsDeducted = parseFloat(b.tdsDeducted) || 0;

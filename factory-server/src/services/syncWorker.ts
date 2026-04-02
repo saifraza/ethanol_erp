@@ -65,6 +65,13 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
     rate: w.rate ?? undefined,
     seller_phone: w.sellerPhone || undefined,
     seller_village: w.sellerVillage || undefined,
+    // Driver/transporter (captured at gate entry, needed for cloud Shipment)
+    transporter: w.transporter || undefined,
+    driver_name: w.driverName || undefined,
+    driver_phone: w.driverPhone || undefined,
+    vehicle_type: w.vehicleType || undefined,
+    // Outbound overloads supplierName as customer
+    customer_name: w.direction === 'OUTBOUND' ? (w.supplierName || undefined) : undefined,
   }));
 
   try {
@@ -81,7 +88,8 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
         const processedIds = new Set(result.processedWbIds || []);
         const useLegacyBatchAck = processedIds.size === 0; // backward compat with old cloud
         for (const w of unsynced) {
-          if (useLegacyBatchAck || processedIds.has(w.id)) {
+          // Cloud payload sends id=localId, so processedWbIds contains localIds
+          if (useLegacyBatchAck || processedIds.has(w.localId) || processedIds.has(w.id)) {
             await prisma.weighment.update({
               where: { id: w.id },
               data: { cloudSynced: true, cloudSyncedAt: new Date(), syncAttempts: w.syncAttempts + 1 },

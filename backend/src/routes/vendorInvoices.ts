@@ -225,26 +225,27 @@ router.post('/', async (req: Request, res: Response) => {
     const netPayable = totalAmount - tdsAmount;
     const balanceAmount = netPayable;
 
-    // 3-way match
+    // 3-way match — compare invoice qty against GRN accepted qty (not PO ordered qty,
+    // because open/truck fuel deals use qty=999999 as placeholder)
     let matchStatus = 'UNMATCHED';
     if (b.poId && b.grnId) {
-      const po = await prisma.purchaseOrder.findUnique({
-        where: { id: b.poId },
-        include: { lines: true },
-      });
       const grn = await prisma.goodsReceipt.findUnique({
         where: { id: b.grnId },
         include: { lines: true },
       });
 
-      if (po && grn) {
-        const poQty = po.lines.reduce((sum, line) => sum + line.quantity, 0);
-        const grnQty = grn.lines.reduce((sum, line) => sum + line.acceptedQty, 0);
-
-        if (Math.abs(poQty - quantity) < 0.01 && Math.abs(grnQty - quantity) < 0.01) {
-          matchStatus = 'MATCHED';
+      if (grn) {
+        // Step 9 fix: require confirmed GRN for matching
+        if (grn.status !== 'CONFIRMED') {
+          matchStatus = 'MISMATCH'; // GRN not yet confirmed
         } else {
-          matchStatus = 'MISMATCH';
+          const grnQty = grn.lines.reduce((sum, line) => sum + line.acceptedQty, 0);
+          // Match invoice qty against GRN qty (10% tolerance for rounding)
+          if (Math.abs(grnQty - quantity) / Math.max(grnQty, 0.01) < 0.1) {
+            matchStatus = 'MATCHED';
+          } else {
+            matchStatus = 'MISMATCH';
+          }
         }
       }
     }

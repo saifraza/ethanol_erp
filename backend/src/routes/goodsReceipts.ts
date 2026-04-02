@@ -553,8 +553,10 @@ router.put('/:id/status', asyncHandler(async (req: AuthRequest, res: Response) =
           req.user!.id,
         );
       } catch (syncErr: unknown) {
+        // Step 6 fix: Revert GRN to DRAFT if inventory sync fails — don't leave orphaned CONFIRMED with no stock
         console.error(`[GRN] Inventory sync failed on confirm for GRN-${updated.grnNo}: ${syncErr}`);
-        // Don't fail the status change — inventory can be reconciled
+        await prisma.goodsReceipt.update({ where: { id: updated.id }, data: { status: 'DRAFT' } });
+        return res.status(500).json({ error: `GRN confirmed but inventory sync failed. Reverted to DRAFT. Error: ${syncErr instanceof Error ? syncErr.message : 'Unknown'}` });
       }
     }
 
