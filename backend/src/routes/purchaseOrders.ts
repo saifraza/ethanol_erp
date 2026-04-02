@@ -584,12 +584,12 @@ router.get('/:id/payments', asyncHandler(async (req: AuthRequest, res: Response)
   });
   if (!po) return res.status(404).json({ error: 'PO not found' });
 
-  // Calculate receivable from actual receipts
-  const receivable = po.grandTotal > 0 ? po.grandTotal : Math.round(po.lines.reduce((s, l) => {
-    const qty = l.quantity >= 900000 ? (l.receivedQty || 0) : l.quantity;
-    const base = qty * l.rate;
+  // Calculate receivable from RECEIVED quantity only (not full PO)
+  const receivable = Math.round(po.lines.reduce((s, l) => {
+    const base = (l.receivedQty || 0) * l.rate;
     return s + base + base * (l.gstPercent || 0) / 100;
   }, 0) * 100) / 100;
+  const poTotal = po.grandTotal > 0 ? po.grandTotal : receivable;
 
   // Find all payments referencing this PO
   const payments = await prisma.vendorPayment.findMany({
@@ -611,10 +611,11 @@ router.get('/:id/payments', asyncHandler(async (req: AuthRequest, res: Response)
 
   res.json({
     poNo: po.poNo,
-    receivable,
+    poTotal,
+    receivedValue: receivable,
     totalPaid: Math.round(running * 100) / 100,
-    remaining: Math.round((receivable - running) * 100) / 100,
-    isFullyPaid: running >= receivable,
+    remaining: Math.round(Math.max(0, receivable - running) * 100) / 100,
+    isFullyPaid: running >= receivable - 0.01,
     payments: ledger,
   });
 }));
@@ -631,12 +632,18 @@ router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => 
   });
   if (!po) return res.status(404).json({ error: 'PO not found' });
 
-  // Calculate receivable
-  const receivable = po.grandTotal > 0 ? po.grandTotal : Math.round(po.lines.reduce((s, l) => {
+  // Calculate receivable — based on RECEIVED quantity only (not full PO value)
+  // User can only pay for material that's actually been delivered
+  const receivedValue = Math.round(po.lines.reduce((s, l) => {
+    const base = (l.receivedQty || 0) * l.rate;
+    return s + base + base * (l.gstPercent || 0) / 100;
+  }, 0) * 100) / 100;
+  const poTotal = po.grandTotal > 0 ? po.grandTotal : Math.round(po.lines.reduce((s, l) => {
     const qty = l.quantity >= 900000 ? (l.receivedQty || 0) : l.quantity;
     const base = qty * l.rate;
     return s + base + base * (l.gstPercent || 0) / 100;
   }, 0) * 100) / 100;
+  const receivable = receivedValue; // Cap at received value, not PO total
 
   // Calculate already paid (scoped to this vendor + PO reference)
   const existingPayments = await prisma.vendorPayment.findMany({

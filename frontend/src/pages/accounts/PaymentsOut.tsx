@@ -1977,10 +1977,11 @@ export default function PaymentsOut() {
                   {poPayItem.material && <span>Material: <b>{poPayItem.material}</b></span>}
                 </div>
                 <div className="flex gap-6">
-                  <span>Receivable: <b className="font-mono">{fmt(poPayItem.poAmount)}</b></span>
+                  <span>PO Total: <b className="font-mono">{fmt(poPayItem.poAmount)}</b></span>
+                  <span>Received Value: <b className="font-mono text-blue-700">{fmt(poPayItem.grnTotalValue)}</b></span>
                   <span>Paid: <b className="font-mono text-green-700">{fmt(poPayItem.totalPaid)}</b></span>
-                  <span>Due: <b className="font-mono text-red-600">{fmt(poPayItem.balance)}</b></span>
-                  {poPayItem.dueDate && <span>Due Date: <b>{fmtDate(poPayItem.dueDate)}</b></span>}
+                  <span>Max Payable: <b className="font-mono text-red-600">{fmt(Math.max(0, poPayItem.grnTotalValue - poPayItem.totalPaid))}</b></span>
+                  {poPayItem.dueDate && <span>Due: <b>{fmtDate(poPayItem.dueDate)}</b></span>}
                 </div>
                 {poPayItem.vendorBank && (
                   <div className="bg-white border border-slate-200 px-3 py-1.5 flex gap-6">
