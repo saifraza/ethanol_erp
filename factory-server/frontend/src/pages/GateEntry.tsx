@@ -65,10 +65,10 @@ export default function GateEntry() {
   const [masterLoading, setMasterLoading] = useState(true);
   const [masterError, setMasterError] = useState(false);
 
-  // Load master data
-  const loadMasterData = useCallback(async () => {
-    setMasterLoading(true);
-    setMasterError(false);
+  // Load master data (silent=true for background refreshes — no spinner)
+  const loadMasterData = useCallback(async (silent = false) => {
+    if (!silent) setMasterLoading(true);
+    if (!silent) setMasterError(false);
     try {
       const res = await api.get('/master-data');
       const data = res.data;
@@ -81,7 +81,7 @@ export default function GateEntry() {
     } catch {
       setMasterError(true);
     } finally {
-      setMasterLoading(false);
+      if (!silent) setMasterLoading(false);
     }
   }, [token]);
 
@@ -93,7 +93,12 @@ export default function GateEntry() {
     } catch { /* ignore */ }
   }, [token]);
 
-  useEffect(() => { loadMasterData(); loadCount(); }, [loadMasterData, loadCount]);
+  useEffect(() => {
+    loadMasterData(); loadCount();
+    // Auto-refresh master data every 60s so new POs appear without manual refresh (silent — no spinner)
+    const iv = setInterval(() => { loadMasterData(true); loadCount(); }, 60000);
+    return () => clearInterval(iv);
+  }, [loadMasterData, loadCount]);
 
   // Filter POs by selected supplier
   const filteredPOs = pos.filter(p => !supplierName || p.vendor_name.toLowerCase().includes(supplierName.toLowerCase()));
