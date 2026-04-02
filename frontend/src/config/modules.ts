@@ -44,7 +44,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'ddgs-stock', label: 'DDGS Godown', to: '/process/ddgs-stock', icon: Package, group: 'process' },
   { key: 'ddgs-dispatch', label: 'DDGS Dispatch', to: '/process/ddgs-dispatch', icon: Truck, group: 'process' },
   { key: 'water-utility', label: 'Utilities', to: '/process/water-utility', icon: Waves, group: 'process' },
-  { key: 'fuel', label: 'Fuel', to: '/process/fuel', icon: Flame, group: 'process' },
+  { key: 'fuel', label: 'Fuel', to: '/process/fuel', icon: Flame, group: 'procurement' },
   { key: 'opc-live', label: 'OPC Live', to: '/process/opc', icon: Radio, group: 'process' },
   { key: 'plant-indent', label: 'Indent / Request', to: '/purchase-requisition', icon: ShoppingCart, group: 'process' },
 
@@ -62,6 +62,7 @@ export const MODULE_DEFS: ModuleDef[] = [
 
   // ── PROCUREMENT (Grain + Chemicals inward) ──
   { key: 'vendors', label: 'Suppliers', to: '/procurement/vendors', icon: Building2, group: 'procurement' },
+  { key: 'traders', label: 'Traders', to: '/procurement/traders', icon: UserCheck, group: 'procurement' },
   { key: 'materials', label: 'Items', to: '/inventory', icon: Box, group: 'procurement' },
   { key: 'purchase-orders', label: 'Purchase Orders', to: '/procurement/purchase-orders', icon: ShoppingBag, group: 'procurement' },
   { key: 'goods-receipts', label: 'GRN', to: '/logistics/gate-register?tab=grn', icon: PackageCheck, group: 'procurement' },
