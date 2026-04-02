@@ -77,7 +77,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     poCount: poCountMap.get(t.id) || 0,
     totalPaid: Math.round((paymentMap.get(t.id) || 0) * 100) / 100,
     totalPurchased: Math.round((purchaseMap.get(t.id) || 0) * 100) / 100,
-    balance: Math.round(((paymentMap.get(t.id) || 0) - (purchaseMap.get(t.id) || 0)) * 100) / 100,
+    balance: Math.round(((purchaseMap.get(t.id) || 0) - (paymentMap.get(t.id) || 0)) * 100) / 100,
   }));
 
   res.json(result);
@@ -150,6 +150,170 @@ router.delete('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!existing || !existing.isAgent) return res.status(404).json({ error: 'Trader not found' });
   await prisma.vendor.update({ where: { id: req.params.id }, data: { isActive: false } });
   res.json({ ok: true });
+}));
+
+// ── Running PO Endpoints ──
+
+// GET /:id/running-pos — Active running POs for a trader
+router.get('/:id/running-pos', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const traderId = req.params.id;
+  const trader = await prisma.vendor.findUnique({ where: { id: traderId }, select: { isAgent: true } });
+  if (!trader || !trader.isAgent) return res.status(404).json({ error: 'Trader not found' });
+
+  const runningPOs = await prisma.purchaseOrder.findMany({
+    where: {
+      vendorId: traderId,
+      dealType: 'OPEN',
+      status: { in: ['APPROVED', 'PARTIAL_RECEIVED'] },
+    },
+    orderBy: { poDate: 'desc' },
+    take: 20,
+    select: {
+      id: true, poNo: true, poDate: true, status: true,
+      subtotal: true, totalGst: true, grandTotal: true, remarks: true,
+      lines: {
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true, lineNo: true, description: true, quantity: true,
+          unit: true, rate: true, amount: true, createdAt: true,
+        },
+      },
+      _count: { select: { grns: true } },
+    },
+  });
+
+  res.json(runningPOs);
+}));
+
+// GET /:id/ledger — Full trader ledger (deliveries + payments interleaved)
+router.get('/:id/ledger', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const traderId = req.params.id;
+  const trader = await prisma.vendor.findUnique({ where: { id: traderId }, select: { id: true, name: true, isAgent: true } });
+  if (!trader || !trader.isAgent) return res.status(404).json({ error: 'Trader not found' });
+
+  // Fetch all PO lines (deliveries) for this trader (OPEN running POs + legacy STANDARD)
+  const poLines = await prisma.pOLine.findMany({
+    where: { po: { vendorId: traderId } },
+    orderBy: { createdAt: 'asc' },
+    take: 500,
+    select: {
+      id: true, lineNo: true, description: true, quantity: true,
+      unit: true, rate: true, amount: true, createdAt: true,
+      po: { select: { poNo: true, poDate: true, status: true } },
+    },
+  });
+
+  // Fetch all payments for this trader
+  const payments = await prisma.vendorPayment.findMany({
+    where: { vendorId: traderId },
+    orderBy: { paymentDate: 'asc' },
+    take: 500,
+    select: {
+      id: true, amount: true, paymentDate: true, mode: true,
+      reference: true, remarks: true, createdAt: true,
+    },
+  });
+
+  // Build interleaved ledger entries sorted by date
+  interface LedgerEntry {
+    type: 'DELIVERY' | 'PAYMENT';
+    date: Date;
+    description: string;
+    debit: number;   // delivery amount (what we owe)
+    credit: number;  // payment amount (what we paid)
+    poNo?: number;
+    poStatus?: string;
+    qty?: number;
+    unit?: string;
+    rate?: number;
+    paymentMode?: string;
+    referenceNo?: string;
+  }
+
+  const entries: LedgerEntry[] = [];
+
+  for (const line of poLines) {
+    entries.push({
+      type: 'DELIVERY',
+      date: line.createdAt,
+      description: line.description,
+      debit: line.amount,
+      credit: 0,
+      poNo: line.po.poNo,
+      poStatus: line.po.status,
+      qty: line.quantity,
+      unit: line.unit,
+      rate: line.rate,
+    });
+  }
+
+  for (const pmt of payments) {
+    entries.push({
+      type: 'PAYMENT',
+      date: pmt.paymentDate || pmt.createdAt,
+      description: pmt.remarks || `Payment via ${pmt.mode || 'N/A'}`,
+      debit: 0,
+      credit: pmt.amount,
+      paymentMode: pmt.mode || undefined,
+      referenceNo: pmt.reference || undefined,
+    });
+  }
+
+  // Sort by date ascending
+  entries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  // Add running balance (positive = we owe trader)
+  let balance = 0;
+  const ledger = entries.map(e => {
+    balance += e.debit - e.credit;
+    return { ...e, balance: Math.round(balance * 100) / 100 };
+  });
+
+  // Summary
+  const totalDeliveries = Math.round(entries.filter(e => e.type === 'DELIVERY').reduce((s, e) => s + e.debit, 0) * 100) / 100;
+  const totalPayments = Math.round(entries.filter(e => e.type === 'PAYMENT').reduce((s, e) => s + e.credit, 0) * 100) / 100;
+
+  res.json({
+    trader: { id: trader.id, name: trader.name },
+    totalDeliveries,
+    totalPayments,
+    balance: Math.round((totalDeliveries - totalPayments) * 100) / 100,
+    entries: ledger,
+  });
+}));
+
+// POST /:id/close-po/:poId — Manually close a running PO
+router.post('/:id/close-po/:poId', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { id: traderId, poId } = req.params;
+
+  const po = await prisma.purchaseOrder.findFirst({
+    where: {
+      id: poId,
+      vendorId: traderId,
+      dealType: 'OPEN',
+      status: { in: ['APPROVED', 'PARTIAL_RECEIVED'] },
+    },
+    include: { lines: { select: { amount: true, cgstAmount: true, sgstAmount: true, lineTotal: true } } },
+  });
+  if (!po) return res.status(404).json({ error: 'Running PO not found or already closed' });
+
+  // Recalculate totals from all lines
+  const subtotal = Math.round(po.lines.reduce((s, l) => s + l.amount, 0) * 100) / 100;
+  const totalCgst = Math.round(po.lines.reduce((s, l) => s + l.cgstAmount, 0) * 100) / 100;
+  const totalSgst = Math.round(po.lines.reduce((s, l) => s + l.sgstAmount, 0) * 100) / 100;
+  const totalGst = Math.round((totalCgst + totalSgst) * 100) / 100;
+  const grandTotal = Math.round(po.lines.reduce((s, l) => s + l.lineTotal, 0) * 100) / 100;
+
+  await prisma.purchaseOrder.update({
+    where: { id: poId },
+    data: {
+      status: 'RECEIVED',
+      subtotal, totalCgst, totalSgst, totalGst, grandTotal,
+      remarks: `Running PO closed | ${po.lines.length} deliveries | ${po.remarks || ''}`,
+    },
+  });
+
+  res.json({ ok: true, poNo: po.poNo, deliveries: po.lines.length, grandTotal });
 }));
 
 export default router;

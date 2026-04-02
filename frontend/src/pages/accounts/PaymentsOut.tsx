@@ -981,13 +981,16 @@ export default function PaymentsOut() {
                                           <div className="font-bold text-slate-500 uppercase tracking-widest mb-1">GRNs ({(poDetail.grns || []).length})</div>
                                           <div className="max-h-40 overflow-y-auto space-y-1">
                                             {(poDetail.grns || []).map((g: any) => (
-                                              <div key={g.id} className="bg-white border border-slate-200 px-2 py-1.5">
+                                              <a key={g.id} href={`/procurement/goods-receipts?grn=${g.id}`} target="_blank" rel="noopener noreferrer" className="block bg-white border border-slate-200 px-2 py-1.5 hover:bg-blue-50 hover:border-blue-300 cursor-pointer">
                                                 <div className="flex items-center justify-between">
-                                                  <span className="font-mono font-medium">GRN-{g.grnNo}</span>
+                                                  <span className="font-mono font-medium text-blue-700">GRN-{g.grnNo}</span>
                                                   <span className={`text-[8px] font-bold uppercase px-1 py-0.5 border ${g.status === 'CONFIRMED' ? 'border-green-300 text-green-700' : 'border-slate-300 text-slate-500'}`}>{g.status}</span>
                                                 </div>
-                                                <div className="text-[9px] text-slate-400 mt-0.5">{fmtDate(g.grnDate)}</div>
-                                              </div>
+                                                <div className="flex items-center justify-between mt-0.5">
+                                                  <span className="text-[9px] text-slate-400">{fmtDate(g.grnDate)}</span>
+                                                  <span className="text-[9px] font-mono tabular-nums text-slate-600">{g.totalQty ? `${Number(g.totalQty).toLocaleString('en-IN')} qty` : ''}{g.totalAmount ? ` | ${fmt(g.totalAmount)}` : ''}</span>
+                                                </div>
+                                              </a>
                                             ))}
                                             {(!poDetail.grns || poDetail.grns.length === 0) && <div className="text-slate-400">No GRNs</div>}
                                           </div>

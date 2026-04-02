@@ -42,10 +42,10 @@ const STATUS_CFG: Record<string, { label: string; badge: string }> = {
 };
 
 const DOC_TYPES = [
-  { key: 'INVOICE', label: 'Bill', field: 'invoiceRef' },
-  { key: 'EWAY_BILL', label: 'E-Way', field: 'ewayBill' },
-  { key: 'GATE_PASS', label: 'Gate Pass', field: 'gatePassNo' },
-  { key: 'GR_BILTY', label: 'Bilty', field: 'grBiltyNo' },
+  { key: 'INVOICE', label: 'Bill', field: 'invoiceRef', mandatory: true },
+  { key: 'EWAY_BILL', label: 'E-Way', field: 'ewayBill', mandatory: true },
+  { key: 'GATE_PASS', label: 'Gate Pass', field: 'gatePassNo', mandatory: false },
+  { key: 'GR_BILTY', label: 'Bilty', field: 'grBiltyNo', mandatory: false },
 ];
 
 export default function Shipments() {
@@ -284,7 +284,16 @@ export default function Shipments() {
       await api.put(`/shipments/${id}/status`, { status, ...extra });
       flash('ok', STATUS_CFG[status]?.label || status);
       load();
-    } catch { flash('err', 'Failed'); }
+    } catch (e: any) {
+      const code = e?.response?.data?.code;
+      if (code === 'EWAY_BILL_REQUIRED') {
+        flash('err', 'E-Way Bill required before release. Generate via e-Invoice or upload the document.');
+      } else if (code === 'PAYMENT_REQUIRED') {
+        flash('err', e?.response?.data?.error || 'Payment must be confirmed before release');
+      } else {
+        flash('err', e?.response?.data?.error || 'Failed');
+      }
+    }
     setSaving(null);
   };
 
@@ -525,10 +534,10 @@ export default function Shipments() {
             </span>
           )}
 
-          {/* Release — only after EWB (or if no DR / standalone) */}
+          {/* Release — only after EWB (or if no DR / standalone / returnable gate pass) */}
           <button onClick={() => doStatus(s.id, 'RELEASED', { releaseTime: new Date().toISOString() })}
-            disabled={isSaving || needsPayment}
-            title={needsPayment ? 'Confirm payment first' : 'Release truck'}
+            disabled={isSaving || needsPayment || (!hasEwb && s.gatePassType !== 'RETURNABLE')}
+            title={needsPayment ? 'Confirm payment first' : !hasEwb && s.gatePassType !== 'RETURNABLE' ? 'E-Way Bill required before release' : 'Release truck'}
             className="px-2 py-1 bg-orange-600 text-white rounded text-[10px] font-bold hover:bg-orange-700 active:scale-95 disabled:opacity-50">
             {isSaving ? <Loader2 size={10} className="animate-spin" /> : '🔓 Release'}
           </button>
@@ -687,16 +696,18 @@ export default function Shipments() {
                             </div>
 
                             {/* Doc badges on main row */}
-                            {docs.length > 0 && (
-                              <div className="flex items-center gap-0.5 shrink-0">
-                                {DOC_TYPES.map(dt => {
-                                  const has = docs.some(d => d.docType === dt.key);
-                                  return has ? (
-                                    <span key={dt.key} className="text-[7px] font-bold px-1 py-px rounded bg-green-100 text-green-700">{dt.label.split(' ')[0]}</span>
-                                  ) : null;
-                                })}
-                              </div>
-                            )}
+                            <div className="flex items-center gap-0.5 shrink-0">
+                              {DOC_TYPES.map(dt => {
+                                const has = docs.some(d => d.docType === dt.key);
+                                if (has) return (
+                                  <span key={dt.key} className="text-[7px] font-bold px-1 py-px rounded bg-green-100 text-green-700">{dt.label.split(' ')[0]}</span>
+                                );
+                                if (dt.mandatory && s.status !== 'GATE_IN' && s.status !== 'TARE_WEIGHED') return (
+                                  <span key={dt.key} className="text-[7px] font-bold px-1 py-px rounded bg-red-50 text-red-400 border border-red-200">{dt.label.split(' ')[0]}</span>
+                                );
+                                return null;
+                              })}
+                            </div>
 
                             {/* Delete for unlinked */}
                             {isUnlinked && (
@@ -934,14 +945,38 @@ export default function Shipments() {
 
                             {/* ═══ UPLOAD DOCUMENTS ═══ */}
                             <div className="space-y-2">
-                              <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Upload Documents</div>
+                              {(() => {
+                                const mandatoryMissing = DOC_TYPES.filter(dt => dt.mandatory && !docs.some(d => d.docType === dt.key));
+                                return (
+                                  <div className="flex items-center gap-2">
+                                    <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Upload Documents</div>
+                                    {mandatoryMissing.length > 0 && (
+                                      <span className="text-[9px] font-bold px-1.5 py-0.5 bg-red-100 text-red-600 border border-red-200 rounded-full">
+                                        {mandatoryMissing.length} required
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                               <div className="grid grid-cols-4 gap-1.5">
                                 {DOC_TYPES.map(dt => {
                                   const hasDoc = docs.some(d => d.docType === dt.key);
                                   const isUploading = uploadingDoc === `${s.id}_${dt.key}`;
+                                  const isMandatoryMissing = dt.mandatory && !hasDoc;
                                   return (
-                                    <div key={dt.key} className={`rounded-lg border p-1.5 text-center ${hasDoc ? 'bg-green-50 border-green-300' : 'bg-white border-gray-200'}`}>
-                                      <div className="text-[9px] font-bold text-gray-700 mb-1">{hasDoc ? '✓' : ''} {dt.label}</div>
+                                    <div key={dt.key} className={`rounded-lg border p-1.5 text-center ${
+                                      hasDoc ? 'bg-green-50 border-green-300' :
+                                      isMandatoryMissing ? 'bg-red-50 border-red-300' :
+                                      'bg-white border-gray-200'
+                                    }`}>
+                                      <div className={`text-[9px] font-bold mb-1 ${
+                                        hasDoc ? 'text-green-700' :
+                                        isMandatoryMissing ? 'text-red-600' :
+                                        'text-gray-700'
+                                      }`}>
+                                        {hasDoc ? '✓ ' : isMandatoryMissing ? '! ' : ''}{dt.label}
+                                        {isMandatoryMissing && <span className="block text-[7px] text-red-400">REQUIRED</span>}
+                                      </div>
                                       <div className="flex gap-0.5">
                                         <button onClick={() => uploadDoc(s.id, dt.key, 'camera')} disabled={isUploading}
                                           className="flex-1 py-1 rounded text-[8px] font-semibold bg-blue-100 text-blue-700 hover:bg-blue-200 disabled:opacity-50">
@@ -979,34 +1014,54 @@ export default function Shipments() {
       {exitConfirm && (() => {
         const s = exitConfirm;
         const docs = s.documents || [];
-        const missing = DOC_TYPES.filter(dt => !docs.some(d => d.docType === dt.key));
+        const mandatoryMissing = DOC_TYPES.filter(dt => dt.mandatory && !docs.some(d => d.docType === dt.key));
+        const optionalMissing = DOC_TYPES.filter(dt => !dt.mandatory && !docs.some(d => d.docType === dt.key));
+        const hasMandatoryGap = mandatoryMissing.length > 0;
         return (
           <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-4" onClick={() => setExitConfirm(null)}>
             <div className="bg-white rounded-xl w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
               <div className="p-4">
                 <div className="flex items-center gap-2 mb-3">
-                  <AlertCircle size={20} className="text-amber-500" />
-                  <h3 className="font-bold text-sm">Missing Documents</h3>
+                  <AlertCircle size={20} className={hasMandatoryGap ? 'text-red-500' : 'text-amber-500'} />
+                  <h3 className="font-bold text-sm">{hasMandatoryGap ? 'Required Documents Missing' : 'Missing Documents'}</h3>
                 </div>
-                <p className="text-xs text-gray-600 mb-3">
-                  <span className="font-bold">{s.vehicleNo}</span> is missing {missing.length} document{missing.length > 1 ? 's' : ''}:
-                </p>
-                <div className="flex flex-wrap gap-1 mb-4">
-                  {missing.map(m => (
-                    <span key={m.key} className="px-2 py-0.5 bg-red-50 text-red-600 text-[10px] font-medium rounded-full border border-red-200">
-                      ✗ {m.label}
-                    </span>
-                  ))}
-                </div>
+                {hasMandatoryGap && (
+                  <>
+                    <p className="text-xs text-red-600 font-semibold mb-2">
+                      <span className="font-bold">{s.vehicleNo}</span> cannot exit without:
+                    </p>
+                    <div className="flex flex-wrap gap-1 mb-3">
+                      {mandatoryMissing.map(m => (
+                        <span key={m.key} className="px-2 py-0.5 bg-red-50 text-red-600 text-[10px] font-bold rounded-full border border-red-300">
+                          ✗ {m.label} (Required)
+                        </span>
+                      ))}
+                    </div>
+                  </>
+                )}
+                {optionalMissing.length > 0 && (
+                  <>
+                    <p className="text-xs text-gray-500 mb-2">Also missing (optional):</p>
+                    <div className="flex flex-wrap gap-1 mb-4">
+                      {optionalMissing.map(m => (
+                        <span key={m.key} className="px-2 py-0.5 bg-amber-50 text-amber-600 text-[10px] font-medium rounded-full border border-amber-200">
+                          ✗ {m.label}
+                        </span>
+                      ))}
+                    </div>
+                  </>
+                )}
                 <div className="flex gap-2">
                   <button onClick={() => { setExitConfirm(null); setExpandedId(s.id); }}
                     className="flex-1 py-2 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700">
                     Upload Docs
                   </button>
-                  <button onClick={() => { setExitConfirm(null); doStatus(s.id, 'EXITED', { exitTime: new Date().toISOString() }); }}
-                    className="flex-1 py-2 text-xs font-semibold bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
-                    Exit Anyway
-                  </button>
+                  {!hasMandatoryGap && (
+                    <button onClick={() => { setExitConfirm(null); doStatus(s.id, 'EXITED', { exitTime: new Date().toISOString() }); }}
+                      className="flex-1 py-2 text-xs font-semibold bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+                      Exit Anyway
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

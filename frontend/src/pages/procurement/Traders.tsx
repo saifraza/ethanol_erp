@@ -23,12 +23,56 @@ interface Trader {
   poCount: number;
 }
 
+interface LedgerEntry {
+  type: 'DELIVERY' | 'PAYMENT';
+  date: string;
+  description: string;
+  debit: number;
+  credit: number;
+  balance: number;
+  poNo?: number;
+  poStatus?: string;
+  qty?: number;
+  unit?: string;
+  rate?: number;
+  paymentMode?: string;
+  referenceNo?: string;
+}
+
+interface LedgerData {
+  trader: { id: string; name: string };
+  totalDeliveries: number;
+  totalPayments: number;
+  balance: number;
+  entries: LedgerEntry[];
+}
+
+interface RunningPO {
+  id: string;
+  poNo: number;
+  poDate: string;
+  status: string;
+  subtotal: number;
+  totalGst: number;
+  grandTotal: number;
+  remarks: string | null;
+  lines: { id: string; lineNo: number; description: string; quantity: number; unit: string; rate: number; amount: number; createdAt: string }[];
+  _count: { grns: number };
+}
+
 export default function Traders() {
   const [traders, setTraders] = useState<Trader[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // Ledger state
+  const [ledgerTrader, setLedgerTrader] = useState<Trader | null>(null);
+  const [ledger, setLedger] = useState<LedgerData | null>(null);
+  const [runningPOs, setRunningPOs] = useState<RunningPO[]>([]);
+  const [ledgerLoading, setLedgerLoading] = useState(false);
+  const [ledgerTab, setLedgerTab] = useState<'ledger' | 'running'>('ledger');
 
   const [form, setForm] = useState({
     name: '', phone: '', aadhaarNo: '', address: '', city: '', state: '',
@@ -82,7 +126,36 @@ export default function Traders() {
     try { await api.delete(`/traders/${id}`); fetchTraders(); } catch { alert('Failed'); }
   };
 
+  const openLedger = async (t: Trader) => {
+    setLedgerTrader(t);
+    setLedgerTab('ledger');
+    setLedgerLoading(true);
+    try {
+      const [ledgerRes, posRes] = await Promise.all([
+        api.get<LedgerData>(`/traders/${t.id}/ledger`),
+        api.get<RunningPO[]>(`/traders/${t.id}/running-pos`),
+      ]);
+      setLedger(ledgerRes.data);
+      setRunningPOs(posRes.data);
+    } catch { /* ignore */ }
+    finally { setLedgerLoading(false); }
+  };
+
+  const handleClosePO = async (poId: string) => {
+    if (!ledgerTrader || !confirm('Close this running PO? No more deliveries will be added to it.')) return;
+    try {
+      await api.post(`/traders/${ledgerTrader.id}/close-po/${poId}`);
+      openLedger(ledgerTrader);
+      fetchTraders();
+    } catch { alert('Failed to close PO'); }
+  };
+
   const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' });
+  const fmtCurrency = (n: number) => n === 0 ? '--' : '₹' + Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+  const totalPurchased = traders.reduce((s, t) => s + t.totalPurchased, 0);
+  const totalPaid = traders.reduce((s, t) => s + t.totalPaid, 0);
+  const totalBalance = totalPurchased - totalPaid;
 
   if (loading) return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -98,7 +171,7 @@ export default function Traders() {
           <div className="flex items-center gap-3">
             <h1 className="text-sm font-bold tracking-wide uppercase">Procurement Agents</h1>
             <span className="text-[10px] text-slate-400">|</span>
-            <span className="text-[10px] text-slate-400">Traders who buy on behalf of the company</span>
+            <span className="text-[10px] text-slate-400">Traders with running PO ledger</span>
           </div>
           <button onClick={() => { setShowForm(true); resetForm(); }}
             className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">
@@ -107,64 +180,243 @@ export default function Traders() {
         </div>
 
         {/* KPI Strip */}
-        <div className="grid grid-cols-3 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+        <div className="grid grid-cols-4 border-x border-b border-slate-300 -mx-3 md:-mx-6">
           <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-purple-500">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Traders</div>
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Traders</div>
             <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{traders.length}</div>
           </div>
           <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-orange-500">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Purchases</div>
-            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{traders.reduce((s, t) => s + t.poCount, 0)}</div>
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Purchased</div>
+            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmtCurrency(totalPurchased)}</div>
           </div>
-          <div className="bg-white px-4 py-3 border-l-4 border-l-blue-500">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Active Since</div>
-            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{traders.length > 0 ? fmtDate(traders[traders.length - 1].createdAt) : '--'}</div>
+          <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-green-500">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Paid</div>
+            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmtCurrency(totalPaid)}</div>
+          </div>
+          <div className="bg-white px-4 py-3 border-l-4 border-l-red-500">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Balance Due</div>
+            <div className={`text-xl font-bold mt-1 font-mono tabular-nums ${totalBalance > 0 ? 'text-red-600' : 'text-slate-800'}`}>{fmtCurrency(totalBalance)}</div>
           </div>
         </div>
 
         {/* Table */}
-        <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-hidden">
+        <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
               <tr className="bg-slate-800 text-white">
                 <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Code</th>
                 <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Name</th>
                 <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Phone</th>
-                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Aadhaar</th>
                 <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">City</th>
-                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Bank</th>
+                <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Purchased</th>
+                <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Paid</th>
+                <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Balance</th>
                 <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">POs</th>
-                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Added</th>
                 <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {traders.map((t, i) => (
-                <tr key={t.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
-                  <td className="px-3 py-1.5 font-mono text-slate-500 border-r border-slate-100">{t.vendorCode || '--'}</td>
-                  <td className="px-3 py-1.5 font-semibold text-slate-800 border-r border-slate-100">{t.name}</td>
-                  <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">{t.phone || '--'}</td>
-                  <td className="px-3 py-1.5 font-mono text-slate-500 border-r border-slate-100">{t.aadhaarNo || '--'}</td>
-                  <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">{t.city || '--'}</td>
-                  <td className="px-3 py-1.5 text-slate-500 border-r border-slate-100 text-[10px]">
-                    {t.bankName ? `${t.bankName} ${t.bankAccount ? '...' + t.bankAccount.slice(-4) : ''}` : '--'}
-                  </td>
-                  <td className="px-3 py-1.5 text-center font-mono tabular-nums border-r border-slate-100">{t.poCount}</td>
-                  <td className="px-3 py-1.5 text-slate-500 font-mono border-r border-slate-100">{fmtDate(t.createdAt)}</td>
-                  <td className="px-3 py-1.5 text-center">
-                    <button onClick={() => handleEdit(t)}
-                      className="px-2 py-0.5 bg-white border border-slate-300 text-slate-600 text-[10px] font-bold uppercase hover:bg-slate-50 mr-1">Edit</button>
-                    <button onClick={() => handleDelete(t.id)}
-                      className="px-2 py-0.5 bg-white border border-red-300 text-red-600 text-[10px] font-bold uppercase hover:bg-red-50">Del</button>
-                  </td>
-                </tr>
-              ))}
+              {traders.map((t, i) => {
+                const bal = t.totalPurchased - t.totalPaid;
+                return (
+                  <tr key={t.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                    <td className="px-3 py-1.5 font-mono text-slate-500 border-r border-slate-100">{t.vendorCode || '--'}</td>
+                    <td className="px-3 py-1.5 font-semibold text-slate-800 border-r border-slate-100">{t.name}</td>
+                    <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">{t.phone || '--'}</td>
+                    <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">{t.city || '--'}</td>
+                    <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-700 border-r border-slate-100">{fmtCurrency(t.totalPurchased)}</td>
+                    <td className="px-3 py-1.5 text-right font-mono tabular-nums text-green-700 border-r border-slate-100">{fmtCurrency(t.totalPaid)}</td>
+                    <td className={`px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100 ${bal > 0 ? 'text-red-600 font-bold' : 'text-slate-500'}`}>{bal === 0 ? '--' : fmtCurrency(bal)}</td>
+                    <td className="px-3 py-1.5 text-center font-mono tabular-nums border-r border-slate-100">{t.poCount}</td>
+                    <td className="px-3 py-1.5 text-center whitespace-nowrap">
+                      <button onClick={() => openLedger(t)}
+                        className="px-2 py-0.5 bg-blue-600 text-white text-[10px] font-bold uppercase hover:bg-blue-700 mr-1">Ledger</button>
+                      <button onClick={() => handleEdit(t)}
+                        className="px-2 py-0.5 bg-white border border-slate-300 text-slate-600 text-[10px] font-bold uppercase hover:bg-slate-50 mr-1">Edit</button>
+                      <button onClick={() => handleDelete(t.id)}
+                        className="px-2 py-0.5 bg-white border border-red-300 text-red-600 text-[10px] font-bold uppercase hover:bg-red-50">Del</button>
+                    </td>
+                  </tr>
+                );
+              })}
               {traders.length === 0 && (
                 <tr><td colSpan={9} className="text-center py-8 text-xs text-slate-400 uppercase tracking-widest">No traders yet. Click "+ New Trader" to add one.</td></tr>
               )}
             </tbody>
           </table>
         </div>
+
+        {/* Ledger Modal */}
+        {ledgerTrader && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setLedgerTrader(null)}>
+            <div className="bg-white w-full max-w-4xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+              {/* Modal Header */}
+              <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-3">
+                  <h2 className="text-xs font-bold uppercase tracking-widest">{ledgerTrader.name}</h2>
+                  <span className="text-[10px] text-slate-400">|</span>
+                  <span className="text-[10px] text-slate-400">Trader Ledger</span>
+                </div>
+                <button onClick={() => setLedgerTrader(null)} className="text-slate-400 hover:text-white text-lg leading-none">&times;</button>
+              </div>
+
+              {ledgerLoading ? (
+                <div className="p-8 text-center text-xs text-slate-400 uppercase tracking-widest">Loading ledger...</div>
+              ) : (
+                <div className="overflow-y-auto flex-1">
+                  {/* Summary Strip */}
+                  {ledger && (
+                    <div className="grid grid-cols-3 border-b border-slate-300">
+                      <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-orange-500">
+                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Deliveries</div>
+                        <div className="text-lg font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmtCurrency(ledger.totalDeliveries)}</div>
+                      </div>
+                      <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-green-500">
+                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Paid</div>
+                        <div className="text-lg font-bold text-green-700 mt-1 font-mono tabular-nums">{fmtCurrency(ledger.totalPayments)}</div>
+                      </div>
+                      <div className="bg-white px-4 py-3 border-l-4 border-l-red-500">
+                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Balance Due</div>
+                        <div className={`text-lg font-bold mt-1 font-mono tabular-nums ${ledger.balance > 0 ? 'text-red-600' : 'text-slate-800'}`}>{fmtCurrency(ledger.balance)}</div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Tabs */}
+                  <div className="flex border-b border-slate-300 px-4">
+                    <button onClick={() => setLedgerTab('ledger')}
+                      className={`px-3 py-2 text-[11px] font-bold uppercase tracking-widest ${ledgerTab === 'ledger' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}>
+                      Ledger
+                    </button>
+                    <button onClick={() => setLedgerTab('running')}
+                      className={`px-3 py-2 text-[11px] font-bold uppercase tracking-widest ${ledgerTab === 'running' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}>
+                      Running POs ({runningPOs.length})
+                    </button>
+                  </div>
+
+                  {/* Ledger Tab */}
+                  {ledgerTab === 'ledger' && ledger && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="bg-slate-700 text-white">
+                            <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">Date</th>
+                            <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">Type</th>
+                            <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">Description</th>
+                            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">Qty</th>
+                            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">Rate</th>
+                            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">Debit</th>
+                            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">Credit</th>
+                            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Balance</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {ledger.entries.map((e, i) => (
+                            <tr key={i} className={`border-b border-slate-100 ${i % 2 ? 'bg-slate-50/70' : ''} ${e.type === 'PAYMENT' ? 'bg-green-50/50' : ''}`}>
+                              <td className="px-3 py-1.5 font-mono text-slate-500 border-r border-slate-100">{fmtDate(e.date)}</td>
+                              <td className="px-3 py-1.5 border-r border-slate-100">
+                                <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${e.type === 'DELIVERY' ? 'border-orange-300 bg-orange-50 text-orange-700' : 'border-green-300 bg-green-50 text-green-700'}`}>
+                                  {e.type === 'DELIVERY' ? 'DELIVERY' : 'PAYMENT'}
+                                </span>
+                              </td>
+                              <td className="px-3 py-1.5 text-slate-700 border-r border-slate-100 max-w-[200px] truncate" title={e.description}>
+                                {e.description}
+                                {e.poNo ? <span className="text-slate-400 ml-1">PO-{e.poNo}</span> : null}
+                              </td>
+                              <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-600 border-r border-slate-100">
+                                {e.qty ? `${e.qty.toFixed(2)} ${e.unit || ''}` : '--'}
+                              </td>
+                              <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-600 border-r border-slate-100">
+                                {e.rate ? `₹${e.rate.toLocaleString('en-IN')}` : '--'}
+                              </td>
+                              <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-700 border-r border-slate-100">
+                                {e.debit > 0 ? fmtCurrency(e.debit) : '--'}
+                              </td>
+                              <td className="px-3 py-1.5 text-right font-mono tabular-nums text-green-700 border-r border-slate-100">
+                                {e.credit > 0 ? fmtCurrency(e.credit) : '--'}
+                              </td>
+                              <td className={`px-3 py-1.5 text-right font-mono tabular-nums font-bold ${e.balance > 0 ? 'text-red-600' : 'text-slate-600'}`}>
+                                {fmtCurrency(e.balance)}
+                              </td>
+                            </tr>
+                          ))}
+                          {ledger.entries.length === 0 && (
+                            <tr><td colSpan={8} className="text-center py-8 text-xs text-slate-400 uppercase tracking-widest">No ledger entries yet</td></tr>
+                          )}
+                        </tbody>
+                        {ledger.entries.length > 0 && (
+                          <tfoot>
+                            <tr className="bg-slate-800 text-white font-semibold">
+                              <td colSpan={5} className="px-3 py-2 text-[10px] uppercase tracking-widest">Total</td>
+                              <td className="px-3 py-2 text-right font-mono tabular-nums">{fmtCurrency(ledger.totalDeliveries)}</td>
+                              <td className="px-3 py-2 text-right font-mono tabular-nums">{fmtCurrency(ledger.totalPayments)}</td>
+                              <td className="px-3 py-2 text-right font-mono tabular-nums">{fmtCurrency(ledger.balance)}</td>
+                            </tr>
+                          </tfoot>
+                        )}
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Running POs Tab */}
+                  {ledgerTab === 'running' && (
+                    <div className="p-4 space-y-4">
+                      {runningPOs.length === 0 ? (
+                        <div className="text-center py-8 text-xs text-slate-400 uppercase tracking-widest">No active running POs</div>
+                      ) : runningPOs.map(po => (
+                        <div key={po.id} className="border border-slate-300">
+                          {/* PO Header */}
+                          <div className="bg-slate-100 px-4 py-2 flex items-center justify-between border-b border-slate-300">
+                            <div className="flex items-center gap-3">
+                              <span className="text-xs font-bold text-slate-800">PO-{po.poNo}</span>
+                              <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${po.status === 'PARTIAL_RECEIVED' ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-slate-300 bg-slate-50 text-slate-600'}`}>
+                                {po.status}
+                              </span>
+                              <span className="text-[10px] text-slate-400">{fmtDate(po.poDate)}</span>
+                              <span className="text-[10px] text-slate-400">{po.lines.length} deliveries</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="text-xs font-bold font-mono tabular-nums text-slate-800">{fmtCurrency(po.grandTotal)}</span>
+                              <button onClick={() => handleClosePO(po.id)}
+                                className="px-2 py-0.5 bg-white border border-red-300 text-red-600 text-[10px] font-bold uppercase hover:bg-red-50">
+                                Close PO
+                              </button>
+                            </div>
+                          </div>
+                          {/* PO Lines (deliveries) */}
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="bg-slate-200">
+                                <th className="text-left px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-r border-slate-300">#</th>
+                                <th className="text-left px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-r border-slate-300">Description</th>
+                                <th className="text-right px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-r border-slate-300">Qty</th>
+                                <th className="text-right px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-r border-slate-300">Rate</th>
+                                <th className="text-right px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-r border-slate-300">Amount</th>
+                                <th className="text-left px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Date</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {po.lines.map((line, i) => (
+                                <tr key={line.id} className={`border-b border-slate-100 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                                  <td className="px-3 py-1.5 font-mono text-slate-400 border-r border-slate-100">{line.lineNo}</td>
+                                  <td className="px-3 py-1.5 text-slate-700 border-r border-slate-100">{line.description}</td>
+                                  <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-700 border-r border-slate-100">{line.quantity.toFixed(2)} {line.unit}</td>
+                                  <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-700 border-r border-slate-100">₹{line.rate.toLocaleString('en-IN')}</td>
+                                  <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-800 font-semibold border-r border-slate-100">{fmtCurrency(line.amount)}</td>
+                                  <td className="px-3 py-1.5 font-mono text-slate-500">{fmtDate(line.createdAt)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Create/Edit Modal */}
         {showForm && (

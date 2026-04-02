@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import prisma from '../prisma';
 import { getCloudPrisma } from '../cloudPrisma';
-import { asyncHandler, requireWbKey, requireAuth, requireRole, AuthRequest } from '../middleware';
+import { asyncHandler, requireWbKey, requireWbKeyOrAuth, requireAuth, requireRole, AuthRequest } from '../middleware';
 
 const router = Router();
 
@@ -163,7 +163,7 @@ router.post('/push', requireWbKey, asyncHandler(async (req: Request, res: Respon
 }));
 
 // GET /api/weighbridge/lookup/:identifier — QR scan lookup
-router.get('/lookup/:identifier', requireWbKey, asyncHandler(async (req: Request, res: Response) => {
+router.get('/lookup/:identifier', requireWbKeyOrAuth, asyncHandler(async (req: Request, res: Response) => {
   const identifier = req.params.identifier as string;
 
   let weighment = await prisma.weighment.findUnique({

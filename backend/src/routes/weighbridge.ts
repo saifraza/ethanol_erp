@@ -623,7 +623,7 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
       continue;
     }
 
-    // ── INBOUND + TRADER → Auto-create PO + GRN for procurement agent ──
+    // ── INBOUND + TRADER → Running PO: find-or-create monthly PO, add delivery as line ──
     if (w.direction === 'IN' && purchaseType === 'TRADER' && w.supplier_id) {
       const netKg = w.weight_net || 0;
       const rate = w.rate || 0;
@@ -665,97 +665,200 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
         default: receivedQty = netKg; unitRate = rate; break; // KG stays as-is
       }
 
-      // Calculate totals for the auto-PO
+      // Calculate totals for this delivery
       const lineAmount = Math.round(receivedQty * unitRate * 100) / 100;
       const gstPct = invItem?.gstPercent ?? 0;
       const gstAmount = Math.round(lineAmount * gstPct / 100 * 100) / 100;
       const cgst = Math.round(gstAmount / 2 * 100) / 100;
       const sgst = Math.round(gstAmount / 2 * 100) / 100;
-      const grandTotal = Math.round((lineAmount + gstAmount) * 100) / 100;
+      const lineGrandTotal = Math.round((lineAmount + gstAmount) * 100) / 100;
 
-      // Auto-create PO + GRN in a transaction
-      const { po, grn } = await prisma.$transaction(async (tx) => {
-        // Create PO with proper totals
-        const po = await tx.purchaseOrder.create({
-          data: {
-            vendorId: trader.id,
-            dealType: 'STANDARD',
-            status: 'APPROVED',
-            poDate: new Date(),
-            paymentTerms: 'ADVANCE',
-            subtotal: lineAmount,
-            totalCgst: cgst,
-            totalSgst: sgst,
-            totalGst: gstAmount,
-            grandTotal,
-            remarks: `${wbRef} | Auto from trader weighbridge`,
-            userId: 'system-weighbridge',
-            lines: {
-              create: [{
-                inventoryItemId: invItem?.id || null,
-                description: materialName,
-                hsnCode: invItem?.hsnCode || '',
-                quantity: receivedQty,
-                unit: invItem?.unit || 'KG',
-                rate: unitRate, // Rate in item's unit (₹/MT if item is MT)
-                amount: lineAmount,
-                pendingQty: 0,
-                receivedQty,
-                gstPercent: gstPct,
-                cgstAmount: cgst,
-                sgstAmount: sgst,
-                taxableAmount: lineAmount,
-                lineTotal: grandTotal,
-              }],
-            },
-          },
-          include: { lines: true },
-        });
+      // ── Running PO: find existing open PO for this trader+material this month ──
+      const now = new Date();
+      const firstOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 
-        // Auto-create GRN — CONFIRMED if weighbridge-verified (auto-approve), else DRAFT
-        const autoApproveGrn = true; // Weighbridge-verified = physically weighed, no manual approval needed
-        const grnStatus = autoApproveGrn ? 'CONFIRMED' : 'DRAFT';
-        const grn = await tx.goodsReceipt.create({
-          data: {
-            poId: po.id,
-            vendorId: trader.id,
-            grnDate: new Date(),
-            vehicleNo: w.vehicle_no,
-            totalQty: receivedQty,
-            totalAmount: lineAmount,
-            status: grnStatus,
-            remarks: `${wbRef} | Trader: ${trader.name} | PO-${po.poNo}${autoApproveGrn ? ' | Auto-confirmed (weighbridge verified)' : ''}`,
-            userId: 'system-weighbridge',
-            lines: {
-              create: [{
-                poLineId: po.lines[0].id,
-                inventoryItemId: invItem?.id || null,
-                description: materialName,
-                receivedQty,
-                acceptedQty: receivedQty,
-                rejectedQty: 0,
-                unit: invItem?.unit || 'KG',
-                rate: unitRate,
-                amount: lineAmount,
-              }],
-            },
-          },
-        });
-
-        // Update PO status to RECEIVED
-        await tx.purchaseOrder.update({ where: { id: po.id }, data: { status: 'RECEIVED' } });
-
-        return { po, grn };
+      // Auto-close any stale running POs from previous months
+      await prisma.purchaseOrder.updateMany({
+        where: {
+          vendorId: trader.id,
+          dealType: 'OPEN',
+          status: { in: ['APPROVED', 'PARTIAL_RECEIVED'] },
+          poDate: { lt: firstOfMonth },
+        },
+        data: { status: 'RECEIVED' },
       });
 
-      // If auto-confirmed, sync inventory (stock posts immediately)
-      if (grn.status === 'CONFIRMED' && invItem?.id) {
+      // Find active running PO for this trader + material this month
+      const existingPO = invItem?.id ? await prisma.purchaseOrder.findFirst({
+        where: {
+          vendorId: trader.id,
+          dealType: 'OPEN',
+          status: { in: ['APPROVED', 'PARTIAL_RECEIVED'] },
+          poDate: { gte: firstOfMonth },
+          lines: { some: { inventoryItemId: invItem.id } },
+        },
+        orderBy: { poDate: 'desc' },
+        include: { lines: { select: { id: true, lineNo: true } } },
+      }) : null;
+
+      const { po, grn, poLine } = await prisma.$transaction(async (tx) => {
+        let po: { id: string; poNo: number; lines: { id: string; lineNo: number }[] };
+        let newLineNo: number;
+
+        if (existingPO) {
+          // ── Add delivery line to existing running PO ──
+          // Read lineNo inside transaction to avoid race with concurrent trucks
+          const maxLine = await tx.pOLine.findFirst({
+            where: { poId: existingPO.id },
+            orderBy: { lineNo: 'desc' },
+            select: { lineNo: true },
+          });
+          newLineNo = (maxLine?.lineNo ?? 0) + 1;
+
+          const poLine = await tx.pOLine.create({
+            data: {
+              poId: existingPO.id,
+              lineNo: newLineNo,
+              inventoryItemId: invItem?.id || null,
+              description: `${materialName} | ${w.vehicle_no || 'N/A'}`,
+              hsnCode: invItem?.hsnCode || '',
+              quantity: receivedQty,
+              unit: invItem?.unit || 'KG',
+              rate: unitRate,
+              amount: lineAmount,
+              pendingQty: 0,
+              receivedQty,
+              gstPercent: gstPct,
+              cgstAmount: cgst,
+              sgstAmount: sgst,
+              taxableAmount: lineAmount,
+              lineTotal: lineGrandTotal,
+            },
+          });
+
+          // Update PO totals (add this delivery's amounts)
+          await tx.purchaseOrder.update({
+            where: { id: existingPO.id },
+            data: {
+              subtotal: { increment: lineAmount },
+              totalCgst: { increment: cgst },
+              totalSgst: { increment: sgst },
+              totalGst: { increment: gstAmount },
+              grandTotal: { increment: lineGrandTotal },
+              status: 'PARTIAL_RECEIVED',
+              remarks: `Running PO | ${existingPO.lines.length + 1} deliveries | ${trader.name}`,
+            },
+          });
+
+          po = { id: existingPO.id, poNo: existingPO.poNo, lines: [...existingPO.lines, { id: poLine.id, lineNo: newLineNo }] };
+
+          // Create GRN for this delivery
+          const grn = await tx.goodsReceipt.create({
+            data: {
+              poId: existingPO.id,
+              vendorId: trader.id,
+              grnDate: new Date(),
+              vehicleNo: w.vehicle_no,
+              totalQty: receivedQty,
+              totalAmount: lineAmount,
+              status: 'CONFIRMED',
+              remarks: `${wbRef} | Trader: ${trader.name} | Running PO-${existingPO.poNo} | Auto-confirmed (weighbridge verified)`,
+              userId: 'system-weighbridge',
+              lines: {
+                create: [{
+                  poLineId: poLine.id,
+                  inventoryItemId: invItem?.id || null,
+                  description: `${materialName} | ${w.vehicle_no || 'N/A'}`,
+                  receivedQty,
+                  acceptedQty: receivedQty,
+                  rejectedQty: 0,
+                  unit: invItem?.unit || 'KG',
+                  rate: unitRate,
+                  amount: lineAmount,
+                }],
+              },
+            },
+          });
+
+          return { po, grn, poLine };
+        } else {
+          // ── Create new running PO for this trader+material ──
+          const newPo = await tx.purchaseOrder.create({
+            data: {
+              vendorId: trader.id,
+              dealType: 'OPEN',
+              status: 'PARTIAL_RECEIVED',
+              poDate: new Date(),
+              paymentTerms: 'ADVANCE',
+              subtotal: lineAmount,
+              totalCgst: cgst,
+              totalSgst: sgst,
+              totalGst: gstAmount,
+              grandTotal: lineGrandTotal,
+              remarks: `Running PO | 1 delivery | ${trader.name}`,
+              userId: 'system-weighbridge',
+              lines: {
+                create: [{
+                  lineNo: 1,
+                  inventoryItemId: invItem?.id || null,
+                  description: `${materialName} | ${w.vehicle_no || 'N/A'}`,
+                  hsnCode: invItem?.hsnCode || '',
+                  quantity: receivedQty,
+                  unit: invItem?.unit || 'KG',
+                  rate: unitRate,
+                  amount: lineAmount,
+                  pendingQty: 0,
+                  receivedQty,
+                  gstPercent: gstPct,
+                  cgstAmount: cgst,
+                  sgstAmount: sgst,
+                  taxableAmount: lineAmount,
+                  lineTotal: lineGrandTotal,
+                }],
+              },
+            },
+            include: { lines: { select: { id: true, lineNo: true } } },
+          });
+
+          const grn = await tx.goodsReceipt.create({
+            data: {
+              poId: newPo.id,
+              vendorId: trader.id,
+              grnDate: new Date(),
+              vehicleNo: w.vehicle_no,
+              totalQty: receivedQty,
+              totalAmount: lineAmount,
+              status: 'CONFIRMED',
+              remarks: `${wbRef} | Trader: ${trader.name} | Running PO-${newPo.poNo} | Auto-confirmed (weighbridge verified)`,
+              userId: 'system-weighbridge',
+              lines: {
+                create: [{
+                  poLineId: newPo.lines[0].id,
+                  inventoryItemId: invItem?.id || null,
+                  description: `${materialName} | ${w.vehicle_no || 'N/A'}`,
+                  receivedQty,
+                  acceptedQty: receivedQty,
+                  rejectedQty: 0,
+                  unit: invItem?.unit || 'KG',
+                  rate: unitRate,
+                  amount: lineAmount,
+                }],
+              },
+            },
+          });
+
+          return { po: newPo, grn, poLine: newPo.lines[0] };
+        }
+      });
+
+      // Sync inventory (stock posts immediately for confirmed GRN)
+      if (invItem?.id) {
         try {
           await syncToInventory(
             'GRN', grn.id, `GRN-${grn.grnNo}`,
             invItem.id, receivedQty, unitRate,
             'IN', 'GRN_RECEIPT',
-            `Auto-GRN from trader weighbridge: ${w.vehicle_no} | ${trader.name}`,
+            `Auto-GRN from trader weighbridge: ${w.vehicle_no} | ${trader.name} | Running PO-${po.poNo}`,
             'system-weighbridge',
           );
         } catch (invErr) {
@@ -763,7 +866,7 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
         }
       }
 
-      results.push({ id: grn.id, type: 'TRADER_GRN', refNo: `GRN-${grn.grnNo} | PO-${po.poNo}`, sourceWbId: w.id });
+      results.push({ id: grn.id, type: 'TRADER_GRN', refNo: `GRN-${grn.grnNo} | Running PO-${po.poNo}`, sourceWbId: w.id });
       ids.push(grn.id);
       continue;
     }

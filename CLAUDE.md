@@ -148,6 +148,59 @@ The ERP has two distinct UI styles:
 
 ---
 
+## Multi-System Architecture
+
+This ERP runs across 3 systems. When the user mentions a topic, use this table to route to the right codebase.
+
+### Three Systems
+
+| System | Location | Stack | Database | Runs On |
+|--------|----------|-------|----------|---------|
+| **Cloud ERP** | `backend/` + `frontend/` | Express + Prisma + React | Railway PostgreSQL | Railway (app.mspil.in) |
+| **Factory Server** | `factory-server/` | Express + Prisma + React | Same Railway PostgreSQL (via internet) | Windows Server 192.168.0.10:5000 |
+| **Weighbridge PC** | `weighbridge/` | Python Flask + SQLite | Local SQLite per PC | Each WB PC :8098 |
+
+**Data flow**: Weighbridge PC → Factory Server → Cloud ERP (weighments up, master data down).
+Weighbridge can also push directly to cloud (`CLOUD_API_URL` in config.py) — both paths exist.
+
+### AI Routing Table
+
+| When user mentions... | Look in... |
+|---|---|
+| Gate entry operator UI | `factory-server/frontend/src/pages/GateEntry.tsx` + `factory-server/src/routes/gateEntry.ts` |
+| Gross/tare weighment UI | `factory-server/frontend/src/pages/GrossWeighment.tsx`, `TareWeighment.tsx` (being built) |
+| Weighment backend (factory) | `factory-server/src/routes/weighbridge.ts` |
+| Weighment → GRN/inventory sync | `backend/src/routes/weighbridge.ts` (1332 lines — god-route, see debt register) |
+| Cloud sync worker | `factory-server/src/services/syncWorker.ts` |
+| Factory PC monitoring | `factory-server/src/services/pcMonitor.ts` |
+| Live weight from scale | `weighbridge/weight_reader.py` (serial COM1 or file mode) |
+| Print slips (gate pass, weighment) | `weighbridge/templates/` (Flask) or factory-server print endpoints (being built) |
+| OPC/DCS bridge | `.claude/skills/opc-bridge.md` |
+| Factory deploy / SSH / safety | `.claude/skills/factory-architecture.md` |
+| Serial protocol / hardware | `.claude/skills/weighbridge-system.md` |
+| Sales order → dispatch → invoice | `backend/src/routes/salesOrders.ts`, `shipments.ts`, `invoices.ts` |
+| Procurement PO → GRN → payment | `backend/src/routes/purchaseOrders.ts`, `goodsReceipts.ts`, `vendorPayments.ts` |
+| Accounts / journal / bank | `backend/src/routes/chartOfAccounts.ts`, `journalEntries.ts`, `bankPayments.ts` |
+| Inventory (SAP-style) | `backend/src/routes/inventory*.ts` (6 route files) |
+| Fuel management | `backend/src/routes/fuel.ts` + `frontend/src/pages/process/FuelManagement.tsx` |
+| WhatsApp auto-collect | `.claude/skills/whatsapp-module.md` |
+| Telegram bot | `backend/src/services/telegramBot.ts`, `telegramAutoCollect.ts` |
+| E-invoice / e-way bill | `backend/src/services/eInvoice.ts`, `ewayBill.ts` |
+| UBI bank payments (H2H-STP) | `.claude/skills/ubi-h2h-banking.md` |
+| Known tech debt / what needs cleanup | `.claude/skills/debt-register.md` |
+| Any NEW module | `backend/` + `frontend/` (cloud ERP) |
+
+### Boundary Rules
+- **Factory server** = operator-facing UI + local data + sync to cloud. NO business logic (no GRN creation, no accounting).
+- **Cloud backend** = all business logic, accounting, reporting, GST, e-invoicing. Receives weighments via POST /api/weighbridge/push.
+- **Weighbridge PC** = hardware-facing. Reads COM port, Flask UI, local SQLite. Pushes to factory server or cloud.
+- **Cross-system auth**: `X-WB-Key` header (timing-safe comparison, key in `WB_PUSH_KEY` env var).
+
+### Factory App Migration (In Progress)
+The Flask weighbridge app is being replaced by React pages on the factory server. See `.claude/plans/breezy-scribbling-quilt.md` for the full plan. During transition, both systems run in parallel.
+
+---
+
 ## Architecture
 
 ### Backend (backend/src/)
@@ -161,7 +214,7 @@ backend/src/
 ├── middleware/
 │   ├── auth.ts               # JWT auth + AuthRequest interface
 │   └── authorize.ts          # Module-level authorization
-├── routes/                   # 52 route files
+├── routes/                   # 80 route files
 ├── services/
 │   ├── whatsappBaileys.ts    # WhatsApp connection (Baileys QR auth, send/receive)
 │   ├── whatsappAutoCollect.ts # Auto-collect engine (scheduler, sessions, prompts)
@@ -391,9 +444,11 @@ export default function MyPage() {
 | **Trade** | directPurchases.ts, directSales.ts | DirectPurchases.tsx, DirectSales.tsx | DirectPurchase, DirectSale |
 | **Admin** | auth.ts, users.ts, settings.ts, documentTemplates.ts | Login.tsx, UsersPage.tsx, SettingsPage.tsx, DocumentTemplates.tsx | User, Settings, DocumentTemplate |
 | **Analytics** | dashboard.ts, reports.ts | Dashboard.tsx, SalesDashboard.tsx, Reports.tsx | (aggregates from other models) |
-| **Inventory** | inventory.ts | Inventory.tsx | InventoryItem, InventoryTransaction |
+| **Inventory** | inventory.ts, inventoryWarehouses.ts, inventoryMovements.ts, inventoryStock.ts, inventoryCounts.ts, inventoryReorder.ts | StockDashboard.tsx, StockMovements.tsx, StockLedger.tsx, StockCount.tsx, StockValuation.tsx, ABCAnalysis.tsx, Warehouses.tsx | InventoryItem, Warehouse, StorageBin, StockLevel, StockMovement, StockCount, ReorderRule |
+| **Accounts** | accounts.ts, chartOfAccounts.ts, journalEntries.ts, bankReconciliation.ts, bankPayments.ts, accountsReports.ts, cashVouchers.ts, bankLoans.ts, postDatedCheques.ts, unifiedPayments.ts | ChartOfAccounts.tsx, JournalEntry.tsx, Ledger.tsx, TrialBalance.tsx, BankPayments.tsx, PaymentsOut.tsx, PaymentsIn.tsx, CashVouchers.tsx, BankLoans.tsx, BankReconciliation.tsx, ProfitLoss.tsx, BalanceSheet.tsx | Account, JournalEntry, JournalLine, BankTransaction, BankPaymentBatch, CashVoucher, PostDatedCheque, BankLoan |
+| **Fuel** | fuel.ts | FuelManagement.tsx | (uses InventoryItem + PurchaseOrder) |
 | **Plant Issues** | issues.ts | PlantIssues.tsx | PlantIssue, IssueComment |
-| **Accounts** | accounts.ts | PaymentDashboard.tsx | Shipment (payment fields) |
+| **Factory/Weighbridge** | weighbridge.ts (cloud), gateEntry.ts | (cloud: system-status page; factory-server has its own frontend) | GrainTruck, GateEntry |
 
 ## WhatsApp Integration by Module
 
@@ -420,11 +475,14 @@ For detailed guidance on specific modules, see `.claude/skills/`:
 - `procurement-module.md` — Procure-to-pay, PO lifecycle, GRN
 - `accounts-module.md` — Payment desk, receivables, collections, payment flow, future costing
 - `accounts-full-module.md` — Full double-entry bookkeeping spec (Chart of Accounts, Journals, Ledger, P&L, Balance Sheet, Bank Recon, GST)
-- `session-state.md` — Current session state, uncommitted changes, known issues, next steps
 - `dashboard-analytics.md` — Dashboard performance, KPI calculations
 - `admin-settings.md` — Auth, users, settings, audit trail
 - `charts-graphs.md` — Standard chart design system (OPC Live pattern) — colors, axes, tooltips, containers, Brush, reference lines. ALL charts must follow this.
 - `ubi-h2h-banking.md` — **CRITICAL** — UBI H2H-STP direct bank payment integration. Full spec: SFTP, AES-256-GCM encryption, Maker-Checker-Releaser security, data models, routes, file format. Bank side LIVE, ERP side pending SFTP credentials.
+- `factory-architecture.md` — Factory server + weighbridge PC: architecture, deploy, SSH, safety rules, troubleshooting
+- `weighbridge-system.md` — Hardware: serial protocol, 3-step workflow, cross-system API contracts
+- `opc-bridge.md` — OPC bridge to ABB 800xA DCS
+- `debt-register.md` — Known tech debt items with severity and fix direction
 
 ---
 

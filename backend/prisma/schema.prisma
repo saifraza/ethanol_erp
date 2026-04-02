@@ -1758,6 +1758,7 @@ model PurchaseOrder {
   vendorInvoices  VendorInvoice[]
   @@index([vendorId])
   @@index([status])
+  @@index([vendorId, dealType, status])
 }
 
 // ── PO Line Item ──

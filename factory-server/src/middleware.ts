@@ -47,6 +47,32 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
   }
 }
 
+// Accept either WB API key OR JWT auth (for endpoints called by both PCs and frontend)
+export function requireWbKeyOrAuth(req: AuthRequest, res: Response, next: NextFunction): void {
+  // Try WB API key first
+  const key = req.headers['x-wb-key'] as string;
+  if (key && key.length === config.wbApiKey.length) {
+    const keyBuf = Buffer.from(key, 'utf8');
+    const expectedBuf = Buffer.from(config.wbApiKey, 'utf8');
+    if (crypto.timingSafeEqual(keyBuf, expectedBuf)) {
+      next();
+      return;
+    }
+  }
+  // Fall back to JWT auth
+  const header = req.headers.authorization;
+  if (header && header.startsWith('Bearer ')) {
+    try {
+      const token = header.split(' ')[1];
+      const decoded = jwt.verify(token, config.jwtSecret) as { id: string; username: string; name: string; role: string };
+      req.user = decoded;
+      next();
+      return;
+    } catch { /* fall through to reject */ }
+  }
+  res.status(401).json({ error: 'Not authenticated' });
+}
+
 // Role-based access
 export function requireRole(...roles: string[]) {
   return (req: AuthRequest, res: Response, next: NextFunction): void => {
