@@ -1659,6 +1659,7 @@ model Vendor {
   vendorInvoices  VendorInvoice[]
   vendorPayments  VendorPayment[]
   vendorItems     VendorItem[]
+  @@index([isAgent])
 }
 
 // ── Vendor-Item Pricing (what items a vendor supplies + negotiated rates) ──

@@ -536,4 +536,45 @@ export async function onTransporterPaymentMade(
   }
 }
 
+// ═══════════════════════════════════════════════════════
+// TRADER ADVANCE → Journal Entry
+// Dr. Advance to Suppliers (asset 1600), Cr. Bank/Cash
+// ═══════════════════════════════════════════════════════
+
+export async function createAdvanceJournal(
+  prisma: PrismaClient,
+  payment: {
+    id: string;
+    amount: number;
+    mode: string;
+    reference?: string | null;
+    vendorId: string;
+    userId: string;
+    paymentDate: Date;
+  }
+): Promise<string | null> {
+  try {
+    const bankCode = PAYMENT_ACCOUNT[payment.mode] || ACCT.SBI_BANK;
+    const accts = await resolveAccounts(prisma, [bankCode, ACCT.ADVANCE_TO_SUPPLIERS]);
+    if (!accts[bankCode] || !accts[ACCT.ADVANCE_TO_SUPPLIERS]) return null;
+
+    return await prisma.$transaction(async (tx: any) => {
+      return createJournalEntry(tx, {
+        date: payment.paymentDate,
+        narration: `Advance to trader — ${payment.mode} ${payment.reference || ''}`.trim(),
+        refType: 'ADVANCE',
+        refId: payment.id,
+        userId: payment.userId,
+        lines: [
+          { accountId: accts[ACCT.ADVANCE_TO_SUPPLIERS], debit: payment.amount, credit: 0, narration: `Advance ${payment.reference || ''}`.trim() },
+          { accountId: accts[bankCode], debit: 0, credit: payment.amount, narration: `${payment.mode} ${payment.reference || ''}`.trim() },
+        ],
+      });
+    });
+  } catch (err) {
+    console.error('[AutoJournal] Failed to create advance journal:', err);
+    return null;
+  }
+}
+
 export { ACCT, PAYMENT_ACCOUNT };

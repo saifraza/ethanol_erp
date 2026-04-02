@@ -144,6 +144,9 @@ export default function GateEntry() {
 
   const handleSubmit = async () => {
     if (!vehicleNo) { alert('Vehicle number is required'); return; }
+    if (purchaseType === 'TRADER' && !selectedTraderId) { alert('Select a trader'); return; }
+    if (purchaseType === 'TRADER' && (!rate || parseFloat(rate) <= 0)) { alert('Rate is required for trader purchases'); return; }
+    if (purchaseType === 'TRADER' && !materialName) { alert('Select a material/product'); return; }
     setSaving(true);
     try {
       const body: Record<string, unknown> = {
