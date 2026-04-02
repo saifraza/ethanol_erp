@@ -335,10 +335,11 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
       // The dupGRN/dupDP/dupDDGS checks below prevent double-creation.
       const hasPOWork = w.po_id && purchaseType === 'PO';
       const hasSPOTWork = purchaseType === 'SPOT';
-      if (!hasPOWork && !hasSPOTWork) {
+      const hasTRADERWork = purchaseType === 'TRADER' && w.supplier_id;
+      if (!hasPOWork && !hasSPOTWork && !hasTRADERWork) {
         continue; // No downstream work needed — true duplicate
       }
-      // Fall through to PO/SPOT branches
+      // Fall through to PO/SPOT/TRADER branches
     }
 
     const dupDP = await prisma.directPurchase.findFirst({
@@ -594,13 +595,23 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
       const rate = w.rate || 0;
       const materialName = w.material || 'Unknown';
 
-      // Find the trader's vendor record
+      // Validate rate and material
+      if (!rate || rate <= 0) {
+        results.push({ id: w.id, type: 'SKIPPED', refNo: `Trader weighment missing rate`, sourceWbId: w.id });
+        continue;
+      }
+      if (!materialName || materialName === 'Unknown') {
+        results.push({ id: w.id, type: 'SKIPPED', refNo: `Trader weighment missing material`, sourceWbId: w.id });
+        continue;
+      }
+
+      // Find the trader's vendor record and enforce isAgent
       const trader = await prisma.vendor.findUnique({
         where: { id: w.supplier_id },
         select: { id: true, name: true, isAgent: true },
       });
-      if (!trader) {
-        results.push({ id: w.id, type: 'SKIPPED', refNo: `Trader ${w.supplier_id} not found`, sourceWbId: w.id });
+      if (!trader || !trader.isAgent) {
+        results.push({ id: w.id, type: 'SKIPPED', refNo: `Trader ${w.supplier_id} not found or not an agent`, sourceWbId: w.id });
         continue;
       }
 

@@ -130,8 +130,9 @@ export default function GateEntry() {
     }
   };
 
-  // Whether fields are locked by PO selection
-  const poLocked = direction === 'INBOUND' && ((purchaseType === 'PO' && !!selectedPoId) || (purchaseType === 'TRADER' && !!selectedTraderId));
+  // Whether fields are locked by PO selection (supplier locked for PO+TRADER, material locked only for PO)
+  const poLocked = direction === 'INBOUND' && purchaseType === 'PO' && !!selectedPoId;
+  const supplierLocked = poLocked || (direction === 'INBOUND' && purchaseType === 'TRADER' && !!selectedTraderId);
 
   const resetForm = () => {
     setVehicleNo(''); setSupplierName(''); setMaterialName('');
@@ -284,7 +285,7 @@ export default function GateEntry() {
                 {purchaseType === 'SPOT' ? 'Seller Name' : 'Supplier'}
                 {purchaseType === 'PO' && masterLoading && <span className="text-yellow-500 animate-pulse ml-1">searching...</span>}
               </label>
-              {poLocked ? (
+              {supplierLocked ? (
                 <input value={supplierName} readOnly disabled
                   className="w-full border border-slate-300 px-3 py-2.5 text-sm bg-slate-100 text-slate-600 cursor-not-allowed" />
               ) : purchaseType === 'PO' && suppliers.length > 0 ? (

@@ -215,6 +215,10 @@ router.delete('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 router.get('/:id/ledger', asyncHandler(async (req: AuthRequest, res: Response) => {
   const traderId = req.params.id;
 
+  // Verify trader exists and is an agent
+  const traderCheck = await prisma.vendor.findUnique({ where: { id: traderId }, select: { isAgent: true } });
+  if (!traderCheck || !traderCheck.isAgent) return res.status(404).json({ error: 'Trader not found' });
+
   const payments = await prisma.vendorPayment.findMany({
     where: { vendorId: traderId },
     orderBy: { paymentDate: 'asc' },
