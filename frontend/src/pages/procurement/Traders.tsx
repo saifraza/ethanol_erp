@@ -32,7 +32,7 @@ export default function Traders() {
 
   const [form, setForm] = useState({
     name: '', phone: '', aadhaarNo: '', address: '', city: '', state: '',
-    bankName: '', bankAccount: '', bankIfsc: '', pan: '', creditLimit: 0, remarks: '',
+    bankName: '', bankAccount: '', bankIfsc: '', pan: '', productTypes: '' as string, creditLimit: 0, remarks: '',
   });
 
   const fetchTraders = useCallback(async () => {
@@ -52,13 +52,13 @@ export default function Traders() {
       name: t.name, phone: t.phone || '', aadhaarNo: t.aadhaarNo || '',
       address: t.address || '', city: t.city || '', state: t.state || '',
       bankName: t.bankName || '', bankAccount: t.bankAccount || '', bankIfsc: t.bankIfsc || '',
-      pan: t.pan || '', creditLimit: t.creditLimit, remarks: t.remarks || '',
+      pan: t.pan || '', productTypes: (t as any).productTypes || '', creditLimit: t.creditLimit, remarks: t.remarks || '',
     });
     setShowForm(true);
   };
 
   const resetForm = () => {
-    setForm({ name: '', phone: '', aadhaarNo: '', address: '', city: '', state: '', bankName: '', bankAccount: '', bankIfsc: '', pan: '', creditLimit: 0, remarks: '' });
+    setForm({ name: '', phone: '', aadhaarNo: '', address: '', city: '', state: '', bankName: '', bankAccount: '', bankIfsc: '', pan: '', productTypes: '', creditLimit: 0, remarks: '' });
     setEditId(null);
   };
 
@@ -209,6 +209,31 @@ export default function Traders() {
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">State</label>
                     <input value={form.state} onChange={e => { const v = e.target.value; setForm({ ...form, state: v.charAt(0).toUpperCase() + v.slice(1) }); }}
                       className="w-full border border-slate-300 px-2.5 py-1.5 text-xs capitalize focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="Madhya Pradesh" />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Products This Trader Buys</label>
+                    <div className="flex gap-3 flex-wrap">
+                      {[
+                        { value: 'FUEL', label: 'Fuel' },
+                        { value: 'RAW_MATERIAL', label: 'Raw Material' },
+                        { value: 'CHEMICAL', label: 'Chemical' },
+                        { value: 'CONSUMABLE', label: 'Consumable' },
+                        { value: 'SPARE_PART', label: 'Spare Parts' },
+                        { value: 'PACKING', label: 'Packing' },
+                      ].map(opt => {
+                        const types = (form.productTypes || '').split(',').filter(Boolean);
+                        const checked = types.includes(opt.value);
+                        return (
+                          <label key={opt.value} className={`flex items-center gap-1.5 px-2 py-1 border text-[11px] cursor-pointer ${checked ? 'border-blue-500 bg-blue-50 text-blue-700 font-bold' : 'border-slate-300 bg-white text-slate-600'}`}>
+                            <input type="checkbox" checked={checked} onChange={() => {
+                              const next = checked ? types.filter(t => t !== opt.value) : [...types, opt.value];
+                              setForm({ ...form, productTypes: next.join(',') });
+                            }} className="w-3 h-3" />
+                            {opt.label}
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Bank Name</label>

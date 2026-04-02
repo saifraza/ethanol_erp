@@ -1648,6 +1648,7 @@ model Vendor {
   // Procurement agent/trader
   isAgent         Boolean  @default(false)   // true = informal procurement agent/trader
   aadhaarNo       String?                    // Aadhaar number for individual traders
+  productTypes    String?                    // Comma-separated: "FUEL,RAW_MATERIAL,CHEMICAL" — what this trader buys
   //
   isActive        Boolean  @default(true)
   remarks         String?

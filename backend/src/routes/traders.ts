@@ -22,6 +22,7 @@ const traderSchema = z.object({
   bankIfsc: z.string().optional(),
   pan: z.string().optional(),
   category: z.string().optional().default('TRADER'),
+  productTypes: z.string().optional(), // Comma-separated: "FUEL,RAW_MATERIAL"
   creditLimit: z.number().optional().default(0),
   remarks: z.string().optional(),
 });
@@ -38,7 +39,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       id: true, name: true, vendorCode: true, phone: true, aadhaarNo: true,
       address: true, city: true, state: true, pan: true,
       bankName: true, bankAccount: true, bankIfsc: true,
-      creditLimit: true, remarks: true, createdAt: true,
+      productTypes: true, creditLimit: true, remarks: true, createdAt: true,
     },
   });
 
@@ -103,7 +104,7 @@ router.post('/', validate(traderSchema), asyncHandler(async (req: AuthRequest, r
         phone: b.phone || null, aadhaarNo: b.aadhaarNo || null,
         address: b.address || null, city: b.city || null, state: b.state || null,
         bankName: b.bankName || null, bankAccount: b.bankAccount || null, bankIfsc: b.bankIfsc || null,
-        pan: b.pan || null, creditLimit: b.creditLimit || 0, paymentTerms: 'ADVANCE',
+        pan: b.pan || null, productTypes: b.productTypes || null, creditLimit: b.creditLimit || 0, paymentTerms: 'ADVANCE',
         remarks: b.remarks || null, isActive: true,
       },
     });
@@ -116,7 +117,7 @@ router.post('/', validate(traderSchema), asyncHandler(async (req: AuthRequest, r
           phone: b.phone || null, aadhaarNo: b.aadhaarNo || null,
           address: b.address || null, city: b.city || null, state: b.state || null,
           bankName: b.bankName || null, bankAccount: b.bankAccount || null, bankIfsc: b.bankIfsc || null,
-          pan: b.pan || null, creditLimit: b.creditLimit || 0, paymentTerms: 'ADVANCE',
+          pan: b.pan || null, productTypes: b.productTypes || null, creditLimit: b.creditLimit || 0, paymentTerms: 'ADVANCE',
           remarks: b.remarks || null, isActive: true,
         },
       });
@@ -137,7 +138,7 @@ router.put('/:id', validate(traderUpdateSchema), asyncHandler(async (req: AuthRe
       name: b.name, phone: b.phone, aadhaarNo: b.aadhaarNo,
       address: b.address, city: b.city, state: b.state,
       bankName: b.bankName, bankAccount: b.bankAccount, bankIfsc: b.bankIfsc,
-      pan: b.pan, category: b.category, creditLimit: b.creditLimit, remarks: b.remarks,
+      pan: b.pan, category: b.category, productTypes: b.productTypes, creditLimit: b.creditLimit, remarks: b.remarks,
     },
   });
   res.json(trader);

@@ -7,7 +7,7 @@ interface Material { id: string; name: string; category?: string }
 interface PO { id: string; po_no: number; vendor_name: string; status: string; lines: POLine[] }
 interface POLine { id: string; description: string; quantity: number; received_qty: number; pending_qty: number; rate: number; unit: string }
 interface Customer { id: string; name: string }
-interface Trader { id: string; name: string; phone?: string }
+interface Trader { id: string; name: string; phone?: string; productTypes?: string }
 
 const FUEL_KEYWORDS = ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'firewood', 'biomass'];
 const RAW_KEYWORDS = ['maize', 'corn', 'broken rice', 'grain', 'sorghum'];
@@ -326,7 +326,15 @@ export default function GateEntry() {
               <select value={materialName} onChange={e => setMaterialName(e.target.value)}
                 className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
                 <option value="">-- Select --</option>
-                {materials.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                {(() => {
+                  // Filter materials by trader's product types when TRADER mode
+                  const selectedTrader = purchaseType === 'TRADER' ? traders.find(t => t.id === selectedTraderId) : null;
+                  const traderTypes = selectedTrader?.productTypes?.split(',').filter(Boolean) || [];
+                  const filtered = traderTypes.length > 0
+                    ? materials.filter(m => m.category && traderTypes.includes(m.category))
+                    : materials;
+                  return filtered.map(m => <option key={m.id} value={m.name}>{m.name}{m.category ? ` [${m.category}]` : ''}</option>);
+                })()}
               </select>
             ) : (
               <input value={materialName} onChange={e => setMaterialName(e.target.value)}
