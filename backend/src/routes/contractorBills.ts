@@ -9,6 +9,7 @@ import { COMPANY } from '../shared/config/company';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { lightragUpload, isRagEnabled } from '../services/lightragClient';
 
 const router = Router();
 router.use(authenticate as any);
@@ -322,6 +323,17 @@ router.post('/:id/upload', upload.single('document'), asyncHandler(async (req: A
   });
 
   res.json(updated);
+
+  // Fire-and-forget: index in LightRAG
+  if (isRagEnabled()) {
+    setImmediate(() => {
+      lightragUpload(`contractor-bills/${req.file!.filename}`, {
+        sourceType: 'ContractorBill',
+        sourceId: req.params.id,
+        title: req.file!.originalname,
+      }).catch(err => console.error('[ContractorBill] LightRAG indexing failed:', err));
+    });
+  }
 }));
 
 // POST /:id/pay — record payment against bill

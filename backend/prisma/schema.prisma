@@ -87,16 +87,8 @@ model Settings {
   lfoCap                Float    @default(15000)
   ddgsBaseProduction    Float    @default(3160)     // historical DDGS production before ERP (Ton)
   ddgsBaseStock         Float    @default(1956.01)  // DDGS stock at ERP start (Ton)
-  whatsappNumbers       String?  // comma-separated private numbers (sensitive data: DDGS, sales)
-  whatsappEnabled       Boolean  @default(false)    // toggle auto-push on/off
-  whatsappGroupJid      String?  // WhatsApp group 1 JID
-  whatsappGroupName     String?  // Group 1 name (display only)
-  whatsappGroup2Jid     String?  // WhatsApp group 2 JID
-  whatsappGroup2Name    String?  // Group 2 name (display only)
-  whatsappPrivateModules String? // DEPRECATED — use whatsappModuleRouting instead
-  whatsappModuleRouting String?  // JSON: { "module": "group1"|"group2"|"private" }
   autoCollectConfig     String?  // JSON config for auto-collection schedules
-  // Telegram Bot API (replaces WhatsApp)
+  // Telegram Bot API
   telegramBotToken      String?  // Bot token from @BotFather
   telegramEnabled       Boolean  @default(false)
   telegramGroupChatId   String?  // Primary group chat ID
@@ -2284,27 +2276,6 @@ model EthanolLifting {
   updatedAt       DateTime @updatedAt
 }
 
-model WhatsAppSession {
-  id        String   @id @default("default")
-  data      String   @db.Text  // JSON auth state
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model WhatsAppMessage {
-  id        String   @id @default(cuid())
-  direction String   // "incoming" or "outgoing"
-  phone     String   // sender/receiver phone
-  name      String?  // contact name if available
-  message   String   @db.Text
-  module    String?  // which ERP module sent it (e.g. "liquefaction")
-  timestamp DateTime @default(now())
-
-  @@index([direction])
-  @@index([timestamp])
-  @@index([phone])
-}
-
 model TelegramMessage {
   id        String   @id @default(cuid())
   direction String   // "incoming" or "outgoing"
@@ -2517,7 +2488,7 @@ model LoanRepayment {
 }
 
 // ══════════════════════════════════════════════════════════════
-// AUTO-COLLECT SCHEDULE — WhatsApp bot schedules per module
+// AUTO-COLLECT SCHEDULE — Telegram bot schedules per module
 // ══════════════════════════════════════════════════════════════
 
 model AutoCollectSchedule {
@@ -2731,4 +2702,39 @@ model Approval {
   @@index([status])
   @@index([type])
   @@index([entityId])
+}
+
+// ══════════════════════════════════════════════════════════════
+// COMPANY DOCUMENTS — Document vault for compliance, certificates, contracts
+// RAG-indexed via LightRAG microservice for semantic search
+// ══════════════════════════════════════════════════════════════
+
+model CompanyDocument {
+  id            String    @id @default(cuid())
+  category      String    // COMPLIANCE, LICENSE, CERTIFICATE, CONTRACT, INSURANCE, HR, LEGAL, BANK, OTHER
+  subcategory   String?   // EC, POLLUTION_CERT, FACTORY_LICENSE, BOILER_CERT, PESO, FIRE_NOC, etc.
+  title         String
+  description   String?
+  filePath      String
+  fileName      String
+  fileSize      Int?
+  mimeType      String?
+  issuedBy      String?   // Issuing authority
+  issuedDate    DateTime?
+  expiryDate    DateTime?
+  referenceNo   String?   // Certificate/license number
+  department    String?   // Which department owns this
+  tags          String?   // Comma-separated tags for filtering
+  status        String    @default("ACTIVE") // ACTIVE, EXPIRED, SUPERSEDED, ARCHIVED
+  uploadedBy    String?
+  ragTrackId    String?   // LightRAG indexing track ID
+  ragIndexed    Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([category])
+  @@index([subcategory])
+  @@index([expiryDate])
+  @@index([status])
+  @@index([ragIndexed])
 }

@@ -7,6 +7,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import axios from 'axios';
+import { lightragUpload, isRagEnabled } from '../services/lightragClient';
 
 const router = Router();
 router.use(authenticate as any);
@@ -304,6 +305,20 @@ If a field is not found in the documents, use null for strings and 0 for numbers
         matchedVendor,
         matchedPOs,
       });
+
+      // Fire-and-forget: index uploaded files in LightRAG
+      if (isRagEnabled()) {
+        setImmediate(() => {
+          if (invoiceFilePath) {
+            lightragUpload(invoiceFilePath, { sourceType: 'GoodsReceipt', title: 'GRN Invoice' })
+              .catch(err => console.error('[GRN] LightRAG invoice indexing failed:', err));
+          }
+          if (ewayBillFilePath) {
+            lightragUpload(ewayBillFilePath, { sourceType: 'GoodsReceipt', title: 'E-Way Bill' })
+              .catch(err => console.error('[GRN] LightRAG e-way bill indexing failed:', err));
+          }
+        });
+      }
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message || 'AI extraction failed';
       res.json({ invoiceFilePath, ewayBillFilePath, extracted: null, error: msg });

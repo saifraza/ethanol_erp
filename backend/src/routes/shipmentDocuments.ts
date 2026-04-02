@@ -5,6 +5,7 @@ import { asyncHandler } from '../shared/middleware';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { lightragUpload, isRagEnabled } from '../services/lightragClient';
 
 const router = Router();
 router.use(authenticate as any);
@@ -61,6 +62,17 @@ router.post('/upload', upload.single('file'), asyncHandler(async (req: AuthReque
       },
     });
     res.status(201).json(doc);
+
+    // Fire-and-forget: index in LightRAG
+    if (isRagEnabled()) {
+      setImmediate(() => {
+        lightragUpload(`shipment-docs/${req.file!.filename}`, {
+          sourceType: 'ShipmentDocument',
+          sourceId: doc.id,
+          title: req.file!.originalname,
+        }).catch(err => console.error('[ShipmentDoc] LightRAG indexing failed:', err));
+      });
+    }
 }));
 
 // POST /upload-general — Upload general document (quotation, etc.) not tied to shipment

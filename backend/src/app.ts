@@ -100,12 +100,13 @@ import unifiedPaymentRoutes from './routes/unifiedPayments';
 import dailyEntriesRoutes from './routes/dailyEntries';
 import tankDipsRoutes from './routes/tankDips';
 import meshBioReportRoutes from './routes/meshBioReport';
-// WhatsApp (Baileys QR)
-import whatsappRoutes from './routes/whatsapp';
-import autoCollectRoutes from './routes/whatsappAutoCollect';
+import autoCollectRoutes from './routes/autoCollect';
 import telegramRoutes from './routes/telegram';
 // Webhook delivery (cloud → factory server)
 import webhookRoutes from './routes/webhooks';
+// Document Vault & RAG Search
+import companyDocumentRoutes from './routes/companyDocuments';
+import documentSearchRoutes from './routes/documentSearch';
 import { authenticate } from './middleware/auth';
 import { errorHandler } from './shared/middleware/errorHandler';
 
@@ -234,13 +235,13 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/daily-entries', dailyEntriesRoutes);
 app.use('/api/tank-dips', tankDipsRoutes);
 app.use('/api/mesh-bio-report', meshBioReportRoutes);
-// WhatsApp (Baileys QR) — legacy, kept for backward compat
-app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/auto-collect', autoCollectRoutes);
-// Telegram Bot API (replaces WhatsApp)
 app.use('/api/telegram', telegramRoutes);
 // Webhook delivery (cloud → factory server)
 app.use('/api/webhooks', authenticate, webhookRoutes);
+// Document Vault & RAG Search (LightRAG microservice)
+app.use('/api/company-documents', companyDocumentRoutes);
+app.use('/api/document-search', documentSearchRoutes);
 
 
 // Serve uploaded files

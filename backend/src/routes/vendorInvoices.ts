@@ -10,6 +10,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import axios from 'axios';
+import { lightragUpload, isRagEnabled } from '../services/lightragClient';
 
 const router = Router();
 router.use(authenticate as any);
@@ -82,6 +83,14 @@ If a field is not found, use null for strings and 0 for numbers. Return ONLY the
     try { extracted = JSON.parse(jsonStr); } catch { extracted = { raw: rawText }; }
 
     res.json({ filePath, extracted });
+
+    // Fire-and-forget: index in LightRAG for semantic search
+    if (isRagEnabled()) {
+      setImmediate(() => {
+        lightragUpload(filePath, { sourceType: 'VendorInvoice', title: req.file?.originalname })
+          .catch(err => console.error('[VendorInvoice] LightRAG indexing failed:', err));
+      });
+    }
   } catch (err: unknown) {
     const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message || 'AI extraction failed';
     res.json({ filePath, extracted: null, error: msg });

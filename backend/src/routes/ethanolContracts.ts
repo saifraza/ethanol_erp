@@ -3,6 +3,10 @@ import prisma from '../config/prisma';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import multer from 'multer';
+import { lightragInsertText, isRagEnabled } from '../services/lightragClient';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 
 const router = Router();
 router.use(authenticate as any);
@@ -172,6 +176,25 @@ router.post('/:id/pdf', upload.single('pdf'), asyncHandler(async (req: AuthReque
       data: { contractPdf: base64, contractPdfName: file.originalname },
     });
     res.json({ success: true, filename: contract.contractPdfName });
+
+    // Fire-and-forget: write temp file and index in LightRAG
+    if (isRagEnabled()) {
+      setImmediate(async () => {
+        try {
+          const tmpFile = path.join(os.tmpdir(), `contract-${req.params.id}-${Date.now()}.pdf`);
+          fs.writeFileSync(tmpFile, file.buffer);
+          const { lightragUpload } = await import('../services/lightragClient');
+          await lightragUpload(tmpFile, {
+            sourceType: 'EthanolContract',
+            sourceId: req.params.id,
+            title: file.originalname,
+          });
+          fs.unlinkSync(tmpFile);
+        } catch (err) {
+          console.error('[EthanolContract] LightRAG indexing failed:', err);
+        }
+      });
+    }
 }));
 
 // Download contract PDF
