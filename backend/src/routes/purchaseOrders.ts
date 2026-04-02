@@ -628,9 +628,14 @@ router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => 
 
   const po = await prisma.purchaseOrder.findUnique({
     where: { id: req.params.id },
-    select: { id: true, poNo: true, vendorId: true, grandTotal: true, status: true, lines: { select: { quantity: true, receivedQty: true, rate: true, gstPercent: true } } },
+    select: { id: true, poNo: true, vendorId: true, grandTotal: true, status: true, lines: { select: { quantity: true, receivedQty: true, rate: true, gstPercent: true, description: true, inventoryItem: { select: { category: true } } } } },
   });
   if (!po) return res.status(404).json({ error: 'PO not found' });
+
+  // Detect category from inventory item (FUEL, RAW_MATERIAL, CHEMICAL, etc.)
+  const itemCategory = po.lines[0]?.inventoryItem?.category || '';
+  const FUEL_KEYWORDS = ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'biomass'];
+  const isFuel = itemCategory === 'FUEL' || FUEL_KEYWORDS.some(kw => (po.lines[0]?.description || '').toLowerCase().includes(kw));
 
   // Calculate receivable — based on RECEIVED quantity only (not full PO value)
   // User can only pay for material that's actually been delivered
@@ -675,8 +680,8 @@ router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => 
         type: 'PAYMENT',
         payeeName: vendor?.name || 'Unknown',
         payeePhone: vendor?.phone || null,
-        purpose: `Payment against PO-${po.poNo}${userRemarks ? ' | ' + userRemarks : ''}`,
-        category: 'MATERIAL',
+        purpose: `${isFuel ? 'Fuel' : 'Material'} payment against PO-${po.poNo}${userRemarks ? ' | ' + userRemarks : ''}`,
+        category: isFuel ? 'FUEL' : 'MATERIAL',
         amount,
         paymentMode: 'CASH',
         authorizedBy: req.user!.name || 'Admin',

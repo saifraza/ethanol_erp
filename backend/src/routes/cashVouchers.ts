@@ -11,7 +11,7 @@ router.use(authenticate as any);
 // ── Zod Schemas ─────────────────────────────────────────────
 
 const voucherTypeEnum = z.enum(['PAYMENT', 'RECEIPT', 'ADVANCE', 'REFUND']);
-const categoryEnum = z.enum(['LABOUR', 'TRANSPORT', 'REPAIR', 'MATERIAL', 'OFFICE', 'MISC']);
+const categoryEnum = z.enum(['LABOUR', 'TRANSPORT', 'REPAIR', 'MATERIAL', 'FUEL', 'OFFICE', 'MISC']);
 const paymentModeEnum = z.enum(['CASH', 'UPI', 'BANK_TRANSFER']);
 
 const createSchema = z.object({
@@ -48,6 +48,7 @@ const CATEGORY_EXPENSE_CODE: Record<string, string> = {
   TRANSPORT: '4010',
   REPAIR: '4030',
   MATERIAL: '4001',
+  FUEL: '4010',    // Fuel expense
   OFFICE: '4040',
   MISC: '4040',
 };

@@ -33,6 +33,7 @@ const CATEGORIES: { value: string; label: string }[] = [
   { value: 'TRANSPORT', label: 'Transport / Freight' },
   { value: 'REPAIR', label: 'Repair / Maintenance' },
   { value: 'MATERIAL', label: 'Material / Supplies' },
+  { value: 'FUEL', label: 'Fuel Purchase' },
   { value: 'OFFICE', label: 'Office / Admin' },
   { value: 'MISC', label: 'Miscellaneous' },
 ];
