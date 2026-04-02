@@ -532,7 +532,7 @@ router.post('/deals', authenticate, validate(openDealSchema), asyncHandler(async
 
   // Calculate PO totals for PDF (even for open deals, use qty * rate for display)
   const lineAmount = Math.round(qty * b.rate * 100) / 100;
-  const gstPercent = fuelItem.gstPercent || 5;
+  const gstPercent = fuelItem.gstPercent ?? 0; // Use item's actual GST (0 is valid for fuel)
   const gstAmount = Math.round(lineAmount * gstPercent / 100 * 100) / 100;
   const isIntraState = true; // MP to MP (same state)
   const cgst = isIntraState ? Math.round(gstAmount / 2 * 100) / 100 : 0;
