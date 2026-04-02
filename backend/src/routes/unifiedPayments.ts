@@ -514,7 +514,7 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
       // Also count cash vouchers linked to this deal
       try {
         const cashPaid = await prisma.$queryRawUnsafe(
-          `SELECT COALESCE(SUM(amount), 0) as total FROM "CashVoucher" WHERE type = 'PAYMENT' AND "payeeName" = $1 AND (purpose LIKE $2 OR remarks LIKE $2)`,
+          `SELECT COALESCE(SUM(amount), 0) as total FROM "CashVoucher" WHERE type = 'PAYMENT' AND "payeeName" = $1 AND purpose LIKE $2`,
           po.vendor.name, `%PO-${po.poNo}%`
         ) as Array<{ total: number }>;
         totalPaid += cashPaid[0]?.total || 0;
