@@ -261,14 +261,64 @@ router.post('/consumption', authenticate, asyncHandler(async (req: AuthRequest, 
       },
     });
 
-    // Sync closing stock to master InventoryItem so dashboard/reports stay consistent
-    try {
-      await prisma.inventoryItem.update({
-        where: { id: row.fuelItemId },
-        data: { currentStock: finalClosingStock },
-      });
-    } catch (_e) {
-      // Don't fail the daily entry if inventory sync fails
+    // NF-5 FIX: Create StockMovement for fuel consumption instead of blind currentStock overwrite.
+    // This keeps the inventory ledger reconcilable.
+    if (consumed > 0) {
+      try {
+        const defaultWh = await prisma.warehouse.findFirst({
+          where: { isActive: true }, orderBy: { createdAt: 'asc' }, select: { id: true },
+        });
+        if (defaultWh) {
+          // Check for existing movement for this date+item (re-save scenario)
+          const existingMv = await prisma.stockMovement.findFirst({
+            where: { refType: 'FUEL_CONSUMPTION', refId: entry.id, itemId: row.fuelItemId },
+          });
+
+          if (existingMv) {
+            // Re-save: adjust by delta between old and new consumed quantity
+            const delta = consumed - existingMv.quantity;
+            if (Math.abs(delta) > 0.001) {
+              await prisma.stockMovement.update({
+                where: { id: existingMv.id },
+                data: { quantity: consumed, totalValue: consumed * (existingMv.costRate || 0) },
+              });
+              await prisma.inventoryItem.update({
+                where: { id: row.fuelItemId },
+                data: { currentStock: { decrement: delta } },
+              });
+            }
+          } else {
+            // First save: create movement and decrement stock
+            const fuelItem = await prisma.inventoryItem.findUnique({
+              where: { id: row.fuelItemId },
+              select: { avgCost: true, unit: true },
+            });
+            await prisma.stockMovement.create({
+              data: {
+                itemId: row.fuelItemId,
+                movementType: 'FUEL_CONSUMPTION',
+                direction: 'OUT',
+                quantity: consumed,
+                unit: fuelItem?.unit || 'MT',
+                costRate: fuelItem?.avgCost || 0,
+                totalValue: consumed * (fuelItem?.avgCost || 0),
+                warehouseId: defaultWh.id,
+                refType: 'FUEL_CONSUMPTION',
+                refId: entry.id,
+                refNo: `FUEL-${dateStr}`,
+                narration: `Daily fuel consumption`,
+                userId: req.user!.id,
+              },
+            });
+            await prisma.inventoryItem.update({
+              where: { id: row.fuelItemId },
+              data: { currentStock: { decrement: consumed } },
+            });
+          }
+        }
+      } catch (_e) {
+        // Don't fail the daily entry if inventory sync fails
+      }
     }
 
     results.push(entry);
@@ -483,6 +533,7 @@ router.post('/deals', authenticate, validate(openDealSchema), asyncHandler(async
       deliveryAddress: b.deliveryPoint || 'Factory Gate',
       transportBy: b.transportBy || 'BY_SUPPLIER',
       remarks: remarkParts.filter(Boolean).join(' | '),
+      truckCap: isTrucks && b.quantity ? Math.round(b.quantity) : null, // NF-4: explicit truck cap
       userId: req.user!.id,
       lines: {
         create: [{

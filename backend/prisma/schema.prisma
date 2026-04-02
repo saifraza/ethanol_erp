@@ -1741,6 +1741,7 @@ model PurchaseOrder {
   approvedAt      DateTime?
   // Refs
   remarks         String?
+  truckCap        Int?                      // Max trucks for FIXED TRUCKS fuel deals (NF-4)
   userId          String
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

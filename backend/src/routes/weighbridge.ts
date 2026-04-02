@@ -78,15 +78,16 @@ async function syncToInventory(
   });
   if (!defaultWh) return;
 
-  const invItem = await prisma.inventoryItem.findUnique({
-    where: { id: itemId },
-    select: { id: true, name: true, unit: true, currentStock: true, avgCost: true },
-  });
-  if (!invItem) return;
-
   const totalValue = Math.round(qty * costRate * 100) / 100;
 
   await prisma.$transaction(async (tx) => {
+    // NF-6 FIX: Read invItem INSIDE transaction for concurrency-safe avgCost
+    const invItem = await tx.inventoryItem.findUnique({
+      where: { id: itemId },
+      select: { id: true, name: true, unit: true, currentStock: true, avgCost: true },
+    });
+    if (!invItem) return;
+
     const movement = await tx.stockMovement.create({
       data: {
         itemId: invItem.id,
@@ -220,7 +221,7 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
   }
 
   const ids: string[] = [];
-  const results: Array<{ id: string; type: string; refNo: string }> = [];
+  const results: Array<{ id: string; type: string; refNo: string; sourceWbId?: string }> = [];
 
   for (const raw of weighments) {
     const w = weighmentSchema.parse(raw);
@@ -261,7 +262,7 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
             remarks: `WB:${w.id} | Ticket #${w.ticket_no} | ${w.status} | ${w.remarks || ''}`.trim(),
           },
         });
-        results.push({ id: truck.id, type: 'GrainTruck', refNo: `PENDING-${truck.id.slice(0, 8)}` });
+        results.push({ id: truck.id, type: 'GrainTruck', refNo: `PENDING-${truck.id.slice(0, 8)}`, sourceWbId: w.id });
         ids.push(truck.id);
       } else {
         // Update existing record with latest data (lab result, weights)
@@ -290,6 +291,10 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
       continue;
     }
 
+    // Determine purchase type early (needed for dupGrain fall-through logic)
+    const wbRef = `WB:${w.id} | Ticket #${w.ticket_no} | ${w.weight_source}`;
+    const purchaseType = w.purchase_type || 'PO';
+
     // Check for duplicate across ALL tables (GrainTruck, DirectPurchase, DDGSDispatch)
     const dupGrain = await prisma.grainTruck.findFirst({
       where: { remarks: { contains: `WB:${w.id}` } },
@@ -317,10 +322,20 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
             remarks: `WB:${w.id} | Ticket #${w.ticket_no} | COMPLETE | ${w.remarks || ''}`.trim(),
           },
         });
-        results.push({ id: dupGrain.id, type: 'GrainTruck', refNo: `UPDATED-${dupGrain.id.slice(0, 8)}` });
+        results.push({ id: dupGrain.id, type: 'GrainTruck', refNo: `UPDATED-${dupGrain.id.slice(0, 8)}`, sourceWbId: w.id });
       }
       ids.push(dupGrain.id);
-      continue;
+
+      // NF-1 FIX: Only skip downstream if there's no PO/SPOT work to do.
+      // Previously, this always `continue`d — blocking GRN creation for weighments
+      // whose GATE_ENTRY was synced first and created a GrainTruck stub.
+      // The dupGRN/dupDP/dupDDGS checks below prevent double-creation.
+      const hasPOWork = w.po_id && purchaseType === 'PO';
+      const hasSPOTWork = purchaseType === 'SPOT';
+      if (!hasPOWork && !hasSPOTWork) {
+        continue; // No downstream work needed — true duplicate
+      }
+      // Fall through to PO/SPOT branches
     }
 
     const dupDP = await prisma.directPurchase.findFirst({
@@ -342,9 +357,6 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
     });
     if (dupGRN) { ids.push(dupGRN.id); continue; }
 
-    const wbRef = `WB:${w.id} | Ticket #${w.ticket_no} | ${w.weight_source}`;
-    const purchaseType = w.purchase_type || 'PO';
-
     // ── INBOUND + PO → Auto-create GRN (PASS) or quarantine GrainTruck (FAIL) ──
     if (w.direction === 'IN' && purchaseType === 'PO' && w.po_id) {
       const po = await prisma.purchaseOrder.findUnique({
@@ -358,6 +370,14 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
       // Validate PO is still receivable (not cancelled, closed, or already fully received)
       const receivableStatuses = ['APPROVED', 'SENT', 'PARTIAL_RECEIVED'];
       if (po && receivableStatuses.includes(po.status)) {
+        // NF-4 FIX: Check truck cap for FIXED TRUCKS deals
+        if (po.truckCap) {
+          const grnCount = await prisma.goodsReceipt.count({ where: { poId: po.id } });
+          if (grnCount >= po.truckCap) {
+            results.push({ id: w.id, type: 'SKIPPED', refNo: `PO-${po.poNo} truck cap (${po.truckCap}) reached`, sourceWbId: w.id });
+            continue;
+          }
+        }
         const netKg = w.weight_net || 0;
         // Find matching PO line — prefer explicit po_line_id, fall back to first line with pending qty
         const poLine = w.po_line_id
@@ -377,7 +397,7 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
 
           // P1-2: Reject if PO line is already exhausted — do NOT fall through to GrainTruck
           if (poLine.pendingQty <= 0) {
-            results.push({ id: w.id, type: 'SKIPPED', refNo: `PO-${po.poNo} line exhausted (pendingQty=0)` });
+            results.push({ id: w.id, type: 'SKIPPED', refNo: `PO-${po.poNo} line exhausted (pendingQty=0)`, sourceWbId: w.id });
             ids.push(w.id);
             continue;
           }
@@ -410,7 +430,7 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
               },
             });
 
-            results.push({ id: truck.id, type: 'QUARANTINE', refNo: `PO-${po.poNo} | Vehicle ${w.vehicle_no}` });
+            results.push({ id: truck.id, type: 'QUARANTINE', refNo: `PO-${po.poNo} | Vehicle ${w.vehicle_no}`, sourceWbId: w.id });
             ids.push(truck.id);
             continue;
           }
@@ -503,23 +523,13 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
               }).catch(() => {}); // best-effort — GRN is the primary record
             }
 
-            // Sync inventory outside transaction (DRAFT GRNs don't affect approved stock)
-            if (poLine.inventoryItemId) {
-              try {
-                await syncToInventory(
-                  'GRN', grn.id, `GRN-${grn.grnNo}`,
-                  poLine.inventoryItemId, receivedQty, rate,
-                  'IN', 'GRN_RECEIPT',
-                  `Auto-GRN from weighbridge: ${w.vehicle_no}`,
-                  'system-weighbridge',
-                );
-              } catch (invErr) {
-                // Log but don't fail — GRN is created, inventory can be reconciled
-                console.error(`Inventory sync failed for GRN-${grn.grnNo}: ${invErr}`);
-              }
-            }
+            // NF-2/NF-3 FIX: Do NOT sync inventory here. Auto-GRNs are DRAFT.
+            // Stock posts ONLY on confirm via PUT /goods-receipts/:id/status.
+            // Previously this called syncToInventory() outside the transaction,
+            // causing double stock posting (once here, once on confirm) and
+            // unrecoverable failures if the sync failed after GRN commit.
 
-            results.push({ id: grn.id, type: 'GRN', refNo: `GRN-${grn.grnNo}` });
+            results.push({ id: grn.id, type: 'GRN', refNo: `GRN-${grn.grnNo}`, sourceWbId: w.id });
             ids.push(grn.id);
             continue;
           }
@@ -527,9 +537,9 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
       }
       // P1-2: PO is cancelled/closed/not receivable — skip entirely, don't create GrainTruck
       if (!po) {
-        results.push({ id: w.id, type: 'SKIPPED', refNo: `PO ${w.po_id} not found` });
+        results.push({ id: w.id, type: 'SKIPPED', refNo: `PO ${w.po_id} not found`, sourceWbId: w.id });
       } else {
-        results.push({ id: w.id, type: 'SKIPPED', refNo: `PO-${po.poNo} not receivable (status=${po.status})` });
+        results.push({ id: w.id, type: 'SKIPPED', refNo: `PO-${po.poNo} not receivable (status=${po.status})`, sourceWbId: w.id });
       }
       ids.push(w.id);
       continue;
@@ -570,7 +580,7 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
         },
       });
 
-      results.push({ id: dp.id, type: 'DirectPurchase', refNo: `DP-${dp.entryNo}` });
+      results.push({ id: dp.id, type: 'DirectPurchase', refNo: `DP-${dp.entryNo}`, sourceWbId: w.id });
       ids.push(dp.id);
       continue;
     }
@@ -605,7 +615,7 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
         },
       });
 
-      results.push({ id: dispatch.id, type: 'DDGSDispatch', refNo: dispatch.id });
+      results.push({ id: dispatch.id, type: 'DDGSDispatch', refNo: dispatch.id, sourceWbId: w.id });
       ids.push(dispatch.id);
       continue;
     }
@@ -639,12 +649,14 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
         },
       });
 
-      results.push({ id: truck.id, type: isQuarantine ? 'QUARANTINE' : 'GrainTruck', refNo: truck.id });
+      results.push({ id: truck.id, type: isQuarantine ? 'QUARANTINE' : 'GrainTruck', refNo: truck.id, sourceWbId: w.id });
       ids.push(truck.id);
     }
   }
 
-  res.json({ ok: true, ids, results, count: ids.length });
+  // NF-7 FIX: Return per-item processed IDs so factory sync worker can mark individually
+  const processedWbIds = results.map((r: any) => r.sourceWbId).filter(Boolean);
+  res.json({ ok: true, ids, results, count: ids.length, processedWbIds });
 }));
 
 

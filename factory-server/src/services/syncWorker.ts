@@ -52,7 +52,7 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
     second_weight_at: w.tareTime?.toISOString(),
     status: w.status,
     bags: w.bags ?? null,
-    remarks: w.remarks || '',
+    remarks: [w.materialName, w.materialCategory, w.remarks].filter(Boolean).join(' | '),
     created_at: w.createdAt.toISOString(),
     // Lab fields
     lab_status: w.labStatus || undefined,
@@ -75,15 +75,25 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
     });
 
     if (response.ok) {
-      const result = await response.json() as { ok: boolean; ids: string[]; count: number };
+      const result = await response.json() as { ok: boolean; ids: string[]; count: number; processedWbIds?: string[] };
       if (result.ok && result.count > 0) {
-        // Cloud processed the batch — mark all as synced
+        // NF-7 FIX: Per-item acknowledgment instead of batch-level
+        const processedIds = new Set(result.processedWbIds || []);
+        const useLegacyBatchAck = processedIds.size === 0; // backward compat with old cloud
         for (const w of unsynced) {
-          await prisma.weighment.update({
-            where: { id: w.id },
-            data: { cloudSynced: true, cloudSyncedAt: new Date(), syncAttempts: w.syncAttempts + 1 },
-          });
-          synced++;
+          if (useLegacyBatchAck || processedIds.has(w.id)) {
+            await prisma.weighment.update({
+              where: { id: w.id },
+              data: { cloudSynced: true, cloudSyncedAt: new Date(), syncAttempts: w.syncAttempts + 1 },
+            });
+            synced++;
+          } else {
+            await prisma.weighment.update({
+              where: { id: w.id },
+              data: { cloudError: `Not in cloud response (${result.count}/${unsynced.length} processed)`, syncAttempts: w.syncAttempts + 1 },
+            });
+            failed++;
+          }
         }
       } else {
         // Cloud returned ok but processed nothing — mark for retry

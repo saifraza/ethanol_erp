@@ -42,17 +42,18 @@ async function syncGrnToInventory(
     const itemId = line.inventoryItemId || line.materialId;
     if (!itemId || line.acceptedQty <= 0) continue;
 
-    const invItem = await prisma.inventoryItem.findUnique({
-      where: { id: itemId },
-      select: { id: true, name: true, unit: true, currentStock: true, avgCost: true },
-    });
-    if (!invItem) continue;
-
     const qty = line.acceptedQty;
     const costRate = line.rate;
     const totalValue = Math.round(qty * costRate * 100) / 100;
 
     await prisma.$transaction(async (tx) => {
+      // NF-6 FIX: Read invItem INSIDE transaction for concurrency-safe avgCost
+      const invItem = await tx.inventoryItem.findUnique({
+        where: { id: itemId },
+        select: { id: true, name: true, unit: true, currentStock: true, avgCost: true },
+      });
+      if (!invItem) return;
+
       // 1. Create StockMovement
       const movement = await tx.stockMovement.create({
         data: {
@@ -321,6 +322,28 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     });
     if (!po) return res.status(404).json({ error: 'PO not found' });
 
+    // NF-8 FIX: Validate PO is in a receivable status
+    const receivableStatuses = ['APPROVED', 'SENT', 'PARTIAL_RECEIVED'];
+    if (!receivableStatuses.includes(po.status)) {
+      return res.status(400).json({ error: `PO is ${po.status} — cannot receive against it` });
+    }
+
+    // NF-8 FIX: Validate all poLineId values belong to this PO
+    const validLineIds = new Set(po.lines.map((l: any) => l.id));
+    for (const line of (b.lines || [])) {
+      if (line.poLineId && !validLineIds.has(line.poLineId)) {
+        return res.status(400).json({ error: `PO line ${line.poLineId} does not belong to this PO` });
+      }
+    }
+
+    // NF-4 FIX: Check truck cap for FIXED TRUCKS deals
+    if (po.truckCap) {
+      const grnCount = await prisma.goodsReceipt.count({ where: { poId: po.id } });
+      if (grnCount >= po.truckCap) {
+        return res.status(400).json({ error: `Truck cap (${po.truckCap}) reached for this deal` });
+      }
+    }
+
     // Process lines
     const processedLines = (b.lines || []).map((line: any) => {
       const receivedQty = parseFloat(line.receivedQty) || 0;
@@ -347,6 +370,30 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         remarks: line.remarks || '',
       };
     });
+
+    // EX-2 FIX: Validate quantities before creating GRN
+    for (const line of processedLines) {
+      if (line.receivedQty < 0 || line.acceptedQty < 0) {
+        return res.status(400).json({ error: 'Quantities cannot be negative' });
+      }
+      if (line.acceptedQty > line.receivedQty) {
+        return res.status(400).json({
+          error: `Accepted qty (${line.acceptedQty}) cannot exceed received qty (${line.receivedQty})`,
+        });
+      }
+      if (line.poLineId) {
+        const poLine = po.lines.find((l: any) => l.id === line.poLineId);
+        if (poLine && poLine.pendingQty > 0) {
+          // Allow 10% tolerance for weighbridge variance
+          const tolerance = poLine.pendingQty * 1.1;
+          if (line.acceptedQty > tolerance) {
+            return res.status(400).json({
+              error: `Accepted qty (${line.acceptedQty}) exceeds pending qty (${poLine.pendingQty}) + 10% tolerance`,
+            });
+          }
+        }
+      }
+    }
 
     // Calculate totals
     const totalAmount = processedLines.reduce((sum: number, line: any) => sum + line.amount, 0);
@@ -523,6 +570,17 @@ router.delete('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     if (!grn) return res.status(404).json({ error: 'GRN not found' });
     if (grn.status !== 'DRAFT') {
       return res.status(400).json({ error: 'Can only delete GRN in DRAFT status' });
+    }
+
+    // EX-4 FIX: Block delete if stock movements exist (legacy data safety guard)
+    const movementCount = await prisma.stockMovement.count({
+      where: { refType: 'GRN', refId: grn.id },
+    });
+    if (movementCount > 0) {
+      return res.status(409).json({
+        error: 'Cannot delete GRN with stock movements. Cancel the GRN instead, or contact admin.',
+        movementCount,
+      });
     }
 
     // Reverse PO line, inventory, and stock updates atomically
