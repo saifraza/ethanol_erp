@@ -296,6 +296,50 @@ router.put(
       });
     }
 
+    // If this voucher was a PO payment (purpose contains "PO-"), create VendorPayment on settlement
+    const poMatch = voucher.purpose.match(/PO-(\d+)/);
+    if (poMatch) {
+      try {
+        const poNo = parseInt(poMatch[1]);
+        const po = await prisma.purchaseOrder.findFirst({
+          where: { poNo },
+          select: { id: true, vendorId: true, poNo: true, grandTotal: true, lines: { select: { quantity: true, receivedQty: true, rate: true, gstPercent: true } } },
+        });
+        if (po) {
+          await prisma.vendorPayment.create({
+            data: {
+              vendorId: po.vendorId,
+              paymentDate: new Date(),
+              amount: voucher.amount,
+              mode: 'CASH',
+              reference: `CV-${voucher.voucherNo}`,
+              isAdvance: false,
+              remarks: `Payment against PO-${po.poNo} | Cash voucher #${voucher.voucherNo} settled`,
+              userId: req.user!.id,
+            },
+          });
+
+          // Check if PO is now fully paid → auto-close
+          const receivable = po.grandTotal > 0 ? po.grandTotal : Math.round(po.lines.reduce((s: number, l: { quantity: number; receivedQty: number; rate: number; gstPercent: number }) => {
+            const qty = l.quantity >= 900000 ? (l.receivedQty || 0) : l.quantity;
+            const base = qty * l.rate;
+            return s + base + base * (l.gstPercent || 0) / 100;
+          }, 0) * 100) / 100;
+
+          const allPayments = await prisma.vendorPayment.findMany({
+            where: { vendorId: po.vendorId, invoiceId: null, OR: [{ remarks: { contains: `PO-${po.poNo} ` } }, { remarks: { endsWith: `PO-${po.poNo}` } }] },
+            select: { amount: true },
+          });
+          const totalPaid = allPayments.reduce((s: number, p: { amount: number }) => s + p.amount, 0);
+          if (totalPaid >= receivable - 0.01) {
+            await prisma.purchaseOrder.update({ where: { id: po.id }, data: { status: 'CLOSED' } });
+          }
+        }
+      } catch (err) {
+        console.error('[CashVoucher] Failed to create VendorPayment on PO settlement:', err);
+      }
+    }
+
     res.json(settled);
   }),
 );

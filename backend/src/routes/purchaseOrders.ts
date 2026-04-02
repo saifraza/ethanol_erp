@@ -657,13 +657,56 @@ router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => 
     return res.status(400).json({ error: `Payment ₹${amount.toLocaleString('en-IN')} exceeds remaining balance ₹${remaining.toFixed(2)}` });
   }
 
-  // Create payment
+  const payMode = mode || 'NEFT';
+
+  // CASH payments → create CashVoucher (ACTIVE). VendorPayment created on settlement.
+  if (payMode === 'CASH') {
+    const vendor = await prisma.vendor.findUnique({ where: { id: po.vendorId }, select: { name: true, phone: true } });
+    const voucher = await prisma.cashVoucher.create({
+      data: {
+        date: new Date(),
+        type: 'PAYMENT',
+        payeeName: vendor?.name || 'Unknown',
+        payeePhone: vendor?.phone || null,
+        purpose: `Payment against PO-${po.poNo}${userRemarks ? ' | ' + userRemarks : ''}`,
+        category: 'MATERIAL',
+        amount,
+        paymentMode: 'CASH',
+        authorizedBy: req.user!.name || 'Admin',
+        status: 'ACTIVE',
+        userId: req.user!.id,
+      },
+    });
+
+    // Auto-journal for cash advance
+    try {
+      const { createAdvanceJournal } = await import('../services/autoJournal');
+      if (typeof createAdvanceJournal === 'function') {
+        const jid = await createAdvanceJournal(prisma as Parameters<typeof createAdvanceJournal>[0], {
+          id: voucher.id, amount, mode: 'CASH', reference: `CV-${voucher.voucherNo}`,
+          vendorId: po.vendorId, userId: req.user!.id, paymentDate: voucher.date,
+        });
+        if (jid) await prisma.cashVoucher.update({ where: { id: voucher.id }, data: { journalEntryId: jid } });
+      }
+    } catch { /* best effort */ }
+
+    return res.json({
+      type: 'CASH_VOUCHER',
+      voucher,
+      message: `Cash voucher #${voucher.voucherNo} created. Go to Cash Vouchers to confirm payment.`,
+      totalPaid: Math.round(alreadyPaid * 100) / 100,
+      remaining: Math.round(remaining * 100) / 100,
+      fullyPaid: false,
+    });
+  }
+
+  // BANK payments → create VendorPayment directly
   const payment = await prisma.vendorPayment.create({
     data: {
       vendorId: po.vendorId,
       paymentDate: new Date(),
       amount,
-      mode: mode || 'NEFT',
+      mode: payMode,
       reference: reference || '',
       isAdvance: false,
       remarks: `Payment against PO-${po.poNo}${userRemarks ? ' | ' + userRemarks : ''}`,
@@ -675,7 +718,7 @@ router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => 
   try {
     const { onVendorPaymentMade } = await import('../services/autoJournal');
     await onVendorPaymentMade(prisma as Parameters<typeof onVendorPaymentMade>[0], {
-      id: payment.id, amount, mode: mode || 'NEFT', reference: reference || '',
+      id: payment.id, amount, mode: payMode, reference: reference || '',
       tdsDeducted: 0, vendorId: po.vendorId, userId: req.user!.id, paymentDate: payment.paymentDate,
     });
   } catch { /* best effort */ }
@@ -688,6 +731,7 @@ router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => 
   }
 
   res.json({
+    type: 'BANK_PAYMENT',
     payment,
     totalPaid: Math.round(newTotalPaid * 100) / 100,
     remaining: Math.round(Math.max(0, receivable - newTotalPaid) * 100) / 100,

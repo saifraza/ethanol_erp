@@ -374,19 +374,27 @@ export default function PaymentsOut() {
     if (!poPayItem || !poPayAmount || parseFloat(poPayAmount) <= 0) { alert('Enter a valid amount'); return; }
     setPoPaySaving(true);
     try {
-      await api.post(`/purchase-orders/${poPayItem.poId}/pay`, {
+      const res = await api.post(`/purchase-orders/${poPayItem.poId}/pay`, {
         amount: parseFloat(poPayAmount),
         mode: poPayMode,
         reference: poPayRef,
         remarks: poPayRemarks,
       });
+
+      // Cash payments create a voucher, not a direct payment
+      if (res.data.type === 'CASH_VOUCHER') {
+        alert(`Cash Voucher #${res.data.voucher.voucherNo} created.\n\nGo to Cash Vouchers page to confirm the payment.\nPO balance will update after voucher is settled.`);
+        setPoPayItem(null);
+        fetchPending();
+        return;
+      }
+
       fetchPOPayments(poPayItem.poId);
       setPoPayAmount('');
       setPoPayRef('');
       setPoPayRemarks('');
       // Refresh pending items and close modal if fully paid
-      const res2 = await api.get(`/purchase-orders/${poPayItem.poId}/payments`);
-      if (res2.data.isFullyPaid) {
+      if (res.data.fullyPaid) {
         setPoPayItem(null);
       }
       fetchPending();
