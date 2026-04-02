@@ -133,13 +133,19 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     let effectiveAmount = po.grandTotal;
     if (isOpenDeal && po.grandTotal === 0) {
       // Use PO line rate * received qty as effective ordered value
-      const lineValue = po.lines.reduce((s: number, l: any) => s + ((l.receivedQty || 0) * (l.rate || 0)), 0);
+      const lineValue = po.lines.reduce((s: number, l: any) => {
+        const base = (l.receivedQty || 0) * (l.rate || 0);
+        return s + base + base * (l.gstPercent || 0) / 100;
+      }, 0);
       // Fallback to GRN totals if line-level calc is 0
       const grnTotalValue = lineValue || po.grns.reduce((s: number, g: any) => s + (g.totalAmount || 0), 0);
       effectiveAmount = grnTotalValue;
     }
-    // Compute received value (rate * received qty) for money-first pipeline
-    const receivedValue = po.lines.reduce((s: number, l: any) => s + ((l.receivedQty || 0) * (l.rate || 0)), 0);
+    // Compute received value (rate * received qty + GST) for money-first pipeline
+    const receivedValue = Math.round(po.lines.reduce((s: number, l: any) => {
+      const base = (l.receivedQty || 0) * (l.rate || 0);
+      return s + base + base * (l.gstPercent || 0) / 100;
+    }, 0) * 100) / 100;
 
     // Balance: use invoice balance when invoices exist, else effective amount minus direct payments
     const invoiceBalance = totalInvoiced - totalPaid - totalTDS;
