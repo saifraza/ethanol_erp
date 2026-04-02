@@ -1,6 +1,7 @@
-#!/bin/bash
-cd "$(dirname "$0")/backend"
-echo "MSPIL Distillery ERP"
-echo "Starting on http://localhost:3001"
-echo "Press Ctrl+C to stop"
+#!/bin/sh
+cd backend
+echo "[start.sh] Running prisma db push with --accept-data-loss..."
+npx prisma db push --skip-generate --accept-data-loss
+npx prisma db push --skip-generate --accept-data-loss --schema=prisma/opc/schema.prisma
+echo "[start.sh] Starting server..."
 node dist/server.js
