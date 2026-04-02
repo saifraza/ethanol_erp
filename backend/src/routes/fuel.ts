@@ -383,6 +383,7 @@ const openDealSchema = z.object({
   deliveryPoint: z.string().optional(),
   transportBy: z.string().optional(),
   deliverySchedule: z.string().optional(),
+  validUntil: z.string().optional(),     // ISO date — PO won't show at factory after this date
   remarks: z.string().optional(),
 });
 
@@ -529,18 +530,39 @@ router.post('/deals', authenticate, validate(openDealSchema), asyncHandler(async
   if (b.deliverySchedule) remarkParts.push(`Schedule: ${b.deliverySchedule}`);
   if (isTrucks && b.quantity) remarkParts.push(`FIXED_TRUCKS:${b.quantity}`);
 
+  // Calculate PO totals for PDF (even for open deals, use qty * rate for display)
+  const lineAmount = Math.round(qty * b.rate * 100) / 100;
+  const gstPercent = fuelItem.gstPercent || 5;
+  const gstAmount = Math.round(lineAmount * gstPercent / 100 * 100) / 100;
+  const isIntraState = true; // MP to MP (same state)
+  const cgst = isIntraState ? Math.round(gstAmount / 2 * 100) / 100 : 0;
+  const sgst = isIntraState ? Math.round(gstAmount / 2 * 100) / 100 : 0;
+  const igst = isIntraState ? 0 : gstAmount;
+  // For open deals (qty=999999), set totals to 0 — they'll be computed from actual receipts
+  const isRealQty = qty < 900000;
+  const subtotal = isRealQty ? lineAmount : 0;
+  const totalGst = isRealQty ? gstAmount : 0;
+  const grandTotal = isRealQty ? Math.round((lineAmount + gstAmount) * 100) / 100 : 0;
+
   const po = await prisma.purchaseOrder.create({
     data: {
       vendorId,
       dealType: isOpen ? 'OPEN' : 'STANDARD',
       status: 'APPROVED',
       poDate: new Date(),
+      deliveryDate: b.validUntil ? new Date(b.validUntil) : null,
       paymentTerms: b.paymentTerms || 'NET15',
       creditDays,
       deliveryAddress: b.deliveryPoint || 'Factory Gate',
       transportBy: b.transportBy || 'BY_SUPPLIER',
       remarks: remarkParts.filter(Boolean).join(' | '),
-      truckCap: isTrucks && b.quantity ? Math.round(b.quantity) : null, // NF-4: explicit truck cap
+      truckCap: isTrucks && b.quantity ? Math.round(b.quantity) : null,
+      subtotal,
+      totalCgst: isRealQty ? cgst : 0,
+      totalSgst: isRealQty ? sgst : 0,
+      totalIgst: isRealQty ? igst : 0,
+      totalGst,
+      grandTotal,
       userId: req.user!.id,
       lines: {
         create: [{
@@ -550,9 +572,14 @@ router.post('/deals', authenticate, validate(openDealSchema), asyncHandler(async
           quantity: qty,
           unit: fuelItem.unit || 'MT',
           rate: b.rate,
-          amount: isOpen ? 0 : Math.round(qty * b.rate * 100) / 100,
+          amount: isRealQty ? lineAmount : 0,
           pendingQty: qty,
-          gstPercent: fuelItem.gstPercent || 5,
+          gstPercent,
+          cgstAmount: isRealQty ? cgst : 0,
+          sgstAmount: isRealQty ? sgst : 0,
+          igstAmount: isRealQty ? igst : 0,
+          taxableAmount: isRealQty ? lineAmount : 0,
+          lineTotal: isRealQty ? Math.round((lineAmount + gstAmount) * 100) / 100 : 0,
         }],
       },
     },
