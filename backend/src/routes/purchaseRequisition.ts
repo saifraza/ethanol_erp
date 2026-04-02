@@ -106,8 +106,16 @@ router.put('/:id/issue', asyncHandler(async (req: AuthRequest, res: Response) =>
       return res.status(403).json({ error: 'Only ADMIN or MANAGER can issue from store' });
     }
 
-    const pr = await prisma.purchaseRequisition.findUnique({ where: { id: req.params.id } });
+    let pr = await prisma.purchaseRequisition.findUnique({ where: { id: req.params.id } });
     if (!pr) return res.status(404).json({ error: 'Requisition not found' });
+
+    // Fast-track: auto-approve DRAFT/SUBMITTED indents when store manager issues directly
+    if (['DRAFT', 'SUBMITTED'].includes(pr.status)) {
+      pr = await prisma.purchaseRequisition.update({
+        where: { id: pr.id },
+        data: { status: 'APPROVED', approvedBy: user.name || user.email, approvedAt: new Date() },
+      });
+    }
     if (pr.status !== 'APPROVED') return res.status(400).json({ error: 'Can only issue from APPROVED status' });
 
     // Validate issuedQty with strict parsing (Codex: don't let malformed input become 0)
@@ -324,7 +332,7 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
       if (!existing) return res.status(404).json({ error: 'Requisition not found' });
 
       const validTransitions: Record<string, string[]> = {
-        'DRAFT': ['SUBMITTED', 'CANCELLED'],
+        'DRAFT': ['SUBMITTED', 'APPROVED', 'CANCELLED'],
         'SUBMITTED': ['APPROVED', 'REJECTED', 'DRAFT'],
         'APPROVED': ['ISSUED', 'PO_PENDING', 'COMPLETED', 'CANCELLED'],
         'REJECTED': ['DRAFT'],

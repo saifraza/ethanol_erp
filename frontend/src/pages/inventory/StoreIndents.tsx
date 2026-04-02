@@ -413,92 +413,49 @@ export default function StoreIndents() {
                             {row.estimatedCost > 0 && <div><span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Est. Cost:</span> <span className="font-mono tabular-nums">Rs.{row.estimatedCost.toLocaleString('en-IN')}</span></div>}
                           </div>
 
-                          {/* Stock Info — shown for DRAFT and SUBMITTED */}
-                          {['DRAFT', 'SUBMITTED'].includes(row.status) && (
-                            <div className="border border-slate-200 bg-white p-3">
-                              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Store Stock</div>
-                              {stockLoading ? (
-                                <div className="text-xs text-slate-400">Checking stock...</div>
-                              ) : stockCheck ? (
-                                <div className="grid grid-cols-3 gap-4 text-xs">
-                                  <div>
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Available</span>
-                                    <span className={`font-mono tabular-nums text-sm font-bold ${stockCheck.available > 0 ? 'text-green-700' : 'text-red-600'}`}>
-                                      {stockCheck.available} {stockCheck.unit}
-                                    </span>
-                                  </div>
-                                  <div>
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Requested</span>
-                                    <span className="font-mono tabular-nums text-sm font-bold text-slate-800">{stockCheck.requested} {stockCheck.unit}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Verdict</span>
-                                    {stockCheck.available >= stockCheck.requested ? (
-                                      <span className="text-sm font-bold text-green-700">In Stock</span>
-                                    ) : stockCheck.available > 0 ? (
-                                      <span className="text-sm font-bold text-amber-600">Partial — need {stockCheck.shortfall} more</span>
-                                    ) : (
-                                      <span className="text-sm font-bold text-red-600">Not in Stock — purchase needed</span>
-                                    )}
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="text-xs text-slate-400">No inventory item linked</div>
-                              )}
-                            </div>
-                          )}
-
-                          {/* DRAFT Actions */}
-                          {row.status === 'DRAFT' && (
-                            <div className="flex gap-2">
-                              <button onClick={(e) => { e.stopPropagation(); handleSubmit(row.id); }} disabled={actionLoading}
-                                className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">
-                                Submit for Approval
-                              </button>
-                            </div>
-                          )}
-
-                          {/* SUBMITTED Actions */}
-                          {row.status === 'SUBMITTED' && (
-                            <div className="flex gap-2">
-                              <button onClick={(e) => { e.stopPropagation(); handleApprove(row.id); }} disabled={actionLoading}
-                                className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">
-                                Approve
-                              </button>
-                              <button onClick={(e) => { e.stopPropagation(); setShowRejectModal(row.id); }} disabled={actionLoading}
-                                className="px-3 py-1 bg-white border border-red-300 text-red-600 text-[11px] font-medium hover:bg-red-50 disabled:opacity-50">
-                                Reject
-                              </button>
-                            </div>
-                          )}
-
-                          {/* APPROVED Actions — Warehouse Issue Panel */}
-                          {row.status === 'APPROVED' && (
+                          {/* Unified Issue Panel — for DRAFT, SUBMITTED, and APPROVED */}
+                          {['DRAFT', 'SUBMITTED', 'APPROVED'].includes(row.status) && (
                             <div className="border border-slate-300 bg-white p-3 space-y-2">
-                              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Warehouse Issue Panel</div>
+                              <div className="flex items-center justify-between">
+                                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Store Stock & Issue</div>
+                                {['DRAFT', 'SUBMITTED'].includes(row.status) && (
+                                  <div className="flex gap-2">
+                                    <button onClick={(e) => { e.stopPropagation(); setShowRejectModal(row.id); }} disabled={actionLoading}
+                                      className="px-2 py-0.5 bg-white border border-red-300 text-red-600 text-[10px] font-medium hover:bg-red-50 disabled:opacity-50">
+                                      Reject
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                               {stockLoading ? (
                                 <div className="text-xs text-slate-400">Checking stock...</div>
                               ) : stockCheck ? (
                                 <div className="space-y-2">
                                   <div className="grid grid-cols-3 gap-4 text-xs">
                                     <div>
-                                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Available in Store</span>
-                                      <span className="font-mono tabular-nums text-sm font-bold text-slate-800">{stockCheck.available} {stockCheck.unit}</span>
+                                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Available</span>
+                                      <span className={`font-mono tabular-nums text-sm font-bold ${stockCheck.available > 0 ? 'text-green-700' : 'text-red-600'}`}>
+                                        {stockCheck.available} {stockCheck.unit}
+                                      </span>
                                     </div>
                                     <div>
                                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Requested</span>
                                       <span className="font-mono tabular-nums text-sm font-bold text-slate-800">{stockCheck.requested} {stockCheck.unit}</span>
                                     </div>
                                     <div>
-                                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Shortfall</span>
-                                      <span className={`font-mono tabular-nums text-sm font-bold ${stockCheck.shortfall > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                                        {stockCheck.shortfall > 0 ? stockCheck.shortfall : 0} {stockCheck.unit}
-                                      </span>
+                                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Verdict</span>
+                                      {stockCheck.available >= stockCheck.requested ? (
+                                        <span className="text-sm font-bold text-green-700">In Stock</span>
+                                      ) : stockCheck.available > 0 ? (
+                                        <span className="text-sm font-bold text-amber-600">Partial — need {stockCheck.shortfall} more</span>
+                                      ) : (
+                                        <span className="text-sm font-bold text-red-600">Not in Stock</span>
+                                      )}
                                     </div>
                                   </div>
                                   <div className="flex items-end gap-3">
                                     <div>
-                                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Issue from Warehouse</label>
+                                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Issue Qty</label>
                                       <input
                                         type="number"
                                         min={0}
@@ -510,24 +467,24 @@ export default function StoreIndents() {
                                       />
                                     </div>
                                     <div className="text-xs text-slate-500 pb-1.5">
-                                      {issueQty > 0 && <span className="text-green-700 font-medium">{issueQty} from warehouse</span>}
+                                      {issueQty > 0 && <span className="text-green-700 font-medium">{issueQty} from store</span>}
                                       {issueQty > 0 && purchaseQtyPreview > 0 && <span> + </span>}
                                       {purchaseQtyPreview > 0 && <span className="text-purple-700 font-medium">{purchaseQtyPreview} to purchase</span>}
                                     </div>
                                   </div>
                                   <div className="flex gap-2 pt-1">
                                     <button onClick={(e) => { e.stopPropagation(); handleIssue(row.id); }} disabled={actionLoading}
-                                      className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">
-                                      Confirm Issue
+                                      className="px-3 py-1 bg-green-600 text-white text-[11px] font-medium hover:bg-green-700 disabled:opacity-50">
+                                      {row.status !== 'APPROVED' ? 'Approve & Issue' : 'Issue from Store'}
                                     </button>
                                     <button onClick={(e) => { e.stopPropagation(); handleFullPurchase(row.id); }} disabled={actionLoading}
-                                      className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50 disabled:opacity-50">
-                                      Send to Full Purchase
+                                      className="px-3 py-1 bg-purple-600 text-white text-[11px] font-medium hover:bg-purple-700 disabled:opacity-50">
+                                      Approve & Send to Purchase
                                     </button>
                                   </div>
                                 </div>
                               ) : (
-                                <div className="text-xs text-red-500">Failed to load stock data</div>
+                                <div className="text-xs text-slate-400">No inventory item linked — <button onClick={(e) => { e.stopPropagation(); handleIssue(row.id); }} disabled={actionLoading} className="text-blue-600 underline">Approve & Complete</button></div>
                               )}
                             </div>
                           )}
