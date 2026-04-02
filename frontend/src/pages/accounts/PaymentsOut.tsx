@@ -36,6 +36,11 @@ interface PendingPayable {
   tdsApplicable: boolean;
   tdsPercent: number;
   tdsSection: string | null;
+  material: string | null;
+  vendorBank: string | null;
+  vendorAccount: string | null;
+  vendorIfsc: string | null;
+  vendorPhone: string | null;
 }
 
 interface PendingSummary {

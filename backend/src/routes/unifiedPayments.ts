@@ -429,7 +429,8 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
     select: {
       id: true, poNo: true, poDate: true, grandTotal: true, subtotal: true, totalGst: true, status: true, paymentTerms: true, creditDays: true,
       dealType: true,
-      vendor: { select: { id: true, name: true, creditDays: true, paymentTerms: true, tdsApplicable: true, tdsPercent: true, tdsSection: true } },
+      vendor: { select: { id: true, name: true, creditDays: true, paymentTerms: true, tdsApplicable: true, tdsPercent: true, tdsSection: true, bankName: true, bankAccount: true, bankIfsc: true, phone: true } },
+      lines: { select: { description: true }, take: 1 },
       grns: {
         where: { status: { not: 'CANCELLED' } },  // Include DRAFT + CONFIRMED (not just CONFIRMED)
         orderBy: { grnDate: 'desc' },
@@ -477,6 +478,11 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
     tdsApplicable: boolean;
     tdsPercent: number;
     tdsSection: string | null;
+    material: string | null;
+    vendorBank: string | null;
+    vendorAccount: string | null;
+    vendorIfsc: string | null;
+    vendorPhone: string | null;
   }
 
   const pending: PendingPayable[] = [];
@@ -612,6 +618,11 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
       tdsApplicable: po.vendor.tdsApplicable,
       tdsPercent: po.vendor.tdsPercent,
       tdsSection: po.vendor.tdsSection || null,
+      material: (po as any).lines?.[0]?.description || null,
+      vendorBank: po.vendor.bankName || null,
+      vendorAccount: po.vendor.bankAccount || null,
+      vendorIfsc: po.vendor.bankIfsc || null,
+      vendorPhone: po.vendor.phone || null,
     });
   }
 
