@@ -73,7 +73,10 @@ function saveToDisk() {
   try {
     const dir = path.dirname(CACHE_FILE);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(CACHE_FILE, JSON.stringify(cache), 'utf-8');
+    // Atomic write: temp file then rename (survives power loss)
+    const tmp = CACHE_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(cache), 'utf-8');
+    fs.renameSync(tmp, CACHE_FILE);
   } catch (err) {
     console.error('[CACHE] Failed to save to disk:', err instanceof Error ? err.message : err);
   }
@@ -85,6 +88,10 @@ function loadFromDisk(): boolean {
     const raw = fs.readFileSync(CACHE_FILE, 'utf-8');
     const data = JSON.parse(raw) as MasterCache;
     if (data.suppliers && data.materials && data.pos) {
+      // Ensure all arrays exist (handles schema evolution)
+      data.traders = data.traders || [];
+      data.customers = data.customers || [];
+      data.vehicles = data.vehicles || [];
       cache = { ...data, source: 'disk' };
       console.log(`[CACHE] Loaded from disk: ${cache.suppliers.length} suppliers, ${cache.materials.length} materials, ${cache.pos.length} POs, ${cache.traders.length} traders`);
       return true;
@@ -115,7 +122,7 @@ async function getCloudTimestamp(): Promise<string | null> {
   }
 }
 
-async function fullSyncFromCloud(): Promise<boolean> {
+async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
   const cloud = getCloudPrisma();
   if (!cloud) return false;
 
@@ -210,7 +217,7 @@ async function fullSyncFromCloud(): Promise<boolean> {
       vehicles,
       lastCloudSync: now,
       lastCloudCheck: now,
-      cloudTimestamp: now,
+      cloudTimestamp: cloudTs || now, // Use actual cloud timestamp to avoid unnecessary re-sync
       source: 'cloud',
     };
 
@@ -243,9 +250,8 @@ async function smartSync() {
 
     // Something changed — do full sync
     console.log('[CACHE] Cloud data changed, syncing...');
-    const ok = await fullSyncFromCloud();
+    const ok = await fullSyncFromCloud(cloudTs);
     if (ok) {
-      cache.cloudTimestamp = cloudTs;
       console.log(`[CACHE] Synced: ${cache.pos.length} POs, ${cache.traders.length} traders`);
     }
   } catch (err) {
