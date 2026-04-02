@@ -609,13 +609,22 @@ router.get('/:id/payments', asyncHandler(async (req: AuthRequest, res: Response)
     return { ...p, runningTotal: Math.round(running * 100) / 100 };
   });
 
+  // Count pending cash vouchers
+  const pendingCash = await prisma.cashVoucher.findMany({
+    where: { status: 'ACTIVE', purpose: { contains: `PO-${po.poNo}` } },
+    select: { id: true, voucherNo: true, amount: true, date: true },
+  });
+  const pendingCashTotal = pendingCash.reduce((s, v) => s + v.amount, 0);
+
   res.json({
     poNo: po.poNo,
     poTotal,
     receivedValue: receivable,
     totalPaid: Math.round(running * 100) / 100,
-    remaining: Math.round(Math.max(0, receivable - running) * 100) / 100,
-    isFullyPaid: running >= receivable - 0.01,
+    pendingCash: Math.round(pendingCashTotal * 100) / 100,
+    pendingCashVouchers: pendingCash,
+    remaining: Math.round(Math.max(0, receivable - running - pendingCashTotal) * 100) / 100,
+    isFullyPaid: (running + pendingCashTotal) >= receivable - 0.01,
     payments: ledger,
   });
 }));
@@ -650,7 +659,7 @@ router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => 
   }, 0) * 100) / 100;
   const receivable = receivedValue; // Cap at received value, not PO total
 
-  // Calculate already paid (scoped to this vendor + PO reference)
+  // Calculate already paid (confirmed payments)
   const existingPayments = await prisma.vendorPayment.findMany({
     where: {
       vendorId: po.vendorId,
@@ -663,10 +672,25 @@ router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => 
     select: { amount: true },
   });
   const alreadyPaid = existingPayments.reduce((s, p) => s + p.amount, 0);
-  const remaining = receivable - alreadyPaid;
+
+  // Also count ACTIVE (pending) cash vouchers — committed but not yet confirmed
+  const pendingCashVouchers = await prisma.cashVoucher.findMany({
+    where: {
+      status: 'ACTIVE',
+      purpose: { contains: `PO-${po.poNo}` },
+    },
+    select: { amount: true },
+  });
+  const pendingCash = pendingCashVouchers.reduce((s, v) => s + v.amount, 0);
+
+  const totalCommitted = alreadyPaid + pendingCash;
+  const remaining = receivable - totalCommitted;
 
   if (amount > remaining + 0.01) {
-    return res.status(400).json({ error: `Payment ₹${amount.toLocaleString('en-IN')} exceeds remaining balance ₹${remaining.toFixed(2)}` });
+    const parts = [];
+    if (alreadyPaid > 0) parts.push(`paid ₹${alreadyPaid.toLocaleString('en-IN')}`);
+    if (pendingCash > 0) parts.push(`₹${pendingCash.toLocaleString('en-IN')} awaiting cash confirmation`);
+    return res.status(400).json({ error: `Payment ₹${amount.toLocaleString('en-IN')} exceeds remaining ₹${remaining.toFixed(2)} (${parts.join(', ')})` });
   }
 
   const payMode = mode || 'NEFT';

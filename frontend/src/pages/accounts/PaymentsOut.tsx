@@ -361,12 +361,19 @@ export default function PaymentsOut() {
     } catch { setVendorBank(null); }
   };
 
+  const [poPendingCash, setPoPendingCash] = useState(0);
+  const [poPendingCashVouchers, setPoPendingCashVouchers] = useState<Array<{ voucherNo: number; amount: number }>>([]);
+  const [poReceivedValue, setPoReceivedValue] = useState(0);
+
   // Fetch payment history for a PO (for the PO Pay modal)
   const fetchPOPayments = async (poId: string) => {
     try {
       const res = await api.get(`/purchase-orders/${poId}/payments`);
       setPoPayments(res.data.payments || []);
-    } catch { setPoPayments([]); }
+      setPoPendingCash(res.data.pendingCash || 0);
+      setPoPendingCashVouchers(res.data.pendingCashVouchers || []);
+      setPoReceivedValue(res.data.receivedValue || 0);
+    } catch { setPoPayments([]); setPoPendingCash(0); setPoPendingCashVouchers([]); setPoReceivedValue(0); }
   };
 
   // Submit PO payment
@@ -1978,9 +1985,10 @@ export default function PaymentsOut() {
                 </div>
                 <div className="flex gap-6">
                   <span>PO Total: <b className="font-mono">{fmt(poPayItem.poAmount)}</b></span>
-                  <span>Received Value: <b className="font-mono text-blue-700">{fmt(poPayItem.grnTotalValue)}</b></span>
+                  <span>Received Value: <b className="font-mono text-blue-700">{fmt(poReceivedValue || poPayItem.grnTotalValue)}</b></span>
                   <span>Paid: <b className="font-mono text-green-700">{fmt(poPayItem.totalPaid)}</b></span>
-                  <span>Max Payable: <b className="font-mono text-red-600">{fmt(Math.max(0, poPayItem.grnTotalValue - poPayItem.totalPaid))}</b></span>
+                  {poPendingCash > 0 && <span>Pending Cash: <b className="font-mono text-yellow-600">{fmt(poPendingCash)}</b></span>}
+                  <span>Max Payable: <b className="font-mono text-red-600">{fmt(Math.max(0, (poReceivedValue || poPayItem.grnTotalValue) - poPayItem.totalPaid - poPendingCash))}</b></span>
                   {poPayItem.dueDate && <span>Due: <b>{fmtDate(poPayItem.dueDate)}</b></span>}
                 </div>
                 {poPayItem.vendorBank && (
@@ -1995,6 +2003,12 @@ export default function PaymentsOut() {
                 )}
               </div>
               <div className="p-4 space-y-3">
+                {poPendingCash > 0 && (
+                  <div className="bg-yellow-50 border border-yellow-300 px-3 py-2 text-xs">
+                    <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-yellow-400 bg-yellow-100 text-yellow-800 mr-2">Awaiting Cash Confirmation</span>
+                    {fmt(poPendingCash)} in pending cash voucher{poPendingCashVouchers.length > 1 ? 's' : ''} ({poPendingCashVouchers.map(v => `#${v.voucherNo}`).join(', ')})
+                  </div>
+                )}
                 <div className="text-[10px] font-bold text-slate-800 uppercase tracking-widest border-b border-slate-200 pb-1">Payment Against PO (No Invoice Required)</div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
