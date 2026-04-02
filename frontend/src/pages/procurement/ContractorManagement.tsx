@@ -459,7 +459,7 @@ export default function ContractorManagement() {
                             </>
                           )}
                           {['CONFIRMED', 'PARTIAL_PAID'].includes(b.status) && (
-                            <button onClick={() => openPay(b)} className="px-2 py-0.5 bg-emerald-600 text-white text-[10px] hover:bg-emerald-700">Pay</button>
+                            <a href="/accounts/payments-out" className="px-2 py-0.5 bg-emerald-600 text-white text-[10px] hover:bg-emerald-700 inline-block no-underline">Pay via Payment Out</a>
                           )}
                           {b.billPath === 'CREATED' && (
                             <button onClick={() => openPrint(b.id)} className="px-2 py-0.5 bg-white border border-slate-300 text-slate-600 text-[10px] hover:bg-slate-50">Print</button>
