@@ -494,7 +494,9 @@ export default function FuelManagement() {
                   <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Vendor</th>
                   <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Fuel</th>
                   <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Rate</th>
+                  <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Ordered</th>
                   <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Received</th>
+                  <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Pending</th>
                   <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Total Value</th>
                   <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Paid</th>
                   <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Outstanding</th>
@@ -504,7 +506,7 @@ export default function FuelManagement() {
               </thead>
               <tbody>
                 {deals.length === 0 ? (
-                  <tr><td colSpan={10} className="px-3 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">No open deals. Click + New Deal to create one.</td></tr>
+                  <tr><td colSpan={12} className="px-3 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">No open deals. Click + New Deal to create one.</td></tr>
                 ) : deals.map((d, i) => {
                   const line = d.lines[0];
                   const pipelineSteps = [
@@ -528,8 +530,14 @@ export default function FuelManagement() {
                       <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-100">
                         {fmtCurrency(line?.rate || 0)}/{line?.unit || 'MT'}
                       </td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-100">
+                        {line?.quantity && line.quantity < 900000 ? `${fmtNum(line.quantity)} ${line?.unit || 'MT'}` : <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-blue-300 bg-blue-50 text-blue-700">Open</span>}
+                      </td>
                       <td className="px-3 py-2 text-right font-mono tabular-nums font-bold border-r border-slate-100">
                         {fmtNum(d.totalReceived)} {line?.unit || 'MT'}
+                      </td>
+                      <td className={`px-3 py-2 text-right font-mono tabular-nums font-bold border-r border-slate-100 ${line?.quantity && line.quantity < 900000 && (line.quantity - d.totalReceived) > 0 ? 'text-orange-600' : 'text-slate-400'}`}>
+                        {line?.quantity && line.quantity < 900000 ? `${fmtNum(line.quantity - d.totalReceived)} ${line?.unit || 'MT'}` : '--'}
                       </td>
                       <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-100">{fmtCurrency(d.totalValue)}</td>
                       <td className="px-3 py-2 text-right font-mono tabular-nums text-green-700 border-r border-slate-100">{fmtCurrency(d.totalPaid)}</td>
@@ -569,7 +577,10 @@ export default function FuelManagement() {
               {deals.length > 0 && (
                 <tfoot>
                   <tr className="bg-slate-800 text-white font-semibold">
-                    <td colSpan={5} className="px-3 py-2 text-[10px] uppercase tracking-widest border-r border-slate-700">Total</td>
+                    <td colSpan={4} className="px-3 py-2 text-[10px] uppercase tracking-widest border-r border-slate-700">Total</td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-700">--</td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-700">{fmtNum(deals.reduce((s, d) => s + d.totalReceived, 0))}</td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-700">--</td>
                     <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-700">{fmtCurrency(deals.reduce((s, d) => s + d.totalValue, 0))}</td>
                     <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-700">{fmtCurrency(deals.reduce((s, d) => s + d.totalPaid, 0))}</td>
                     <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-700 text-red-300">{fmtCurrency(deals.reduce((s, d) => s + d.outstanding, 0))}</td>
