@@ -2051,10 +2051,17 @@ export default function PaymentsOut() {
                     </select>
                   </div>
                   <div className="col-span-2">
-                    <div className="text-[10px] text-slate-400 bg-slate-50 border border-slate-200 px-3 py-1.5">
-                      GST on this PO: <b>{poPayItem.poGst > 0 ? `${((poPayItem.poGst / poPayItem.poSubtotal) * 100).toFixed(0)}% (₹${poPayItem.poGst.toLocaleString('en-IN')})` : '0% — No GST'}</b>
-                      {poPayMode === 'CASH' && ' | Cash payments typically exclude GST'}
-                    </div>
+                    {poPayItem.poGst > 0 ? (
+                      <label className={`flex items-center gap-2 px-3 py-1.5 border cursor-pointer text-xs ${poPayIncludeGst ? 'border-green-500 bg-green-50 text-green-700 font-bold' : 'border-slate-300 bg-white text-slate-500'}`}>
+                        <input type="checkbox" checked={poPayIncludeGst} onChange={e => setPoPayIncludeGst(e.target.checked)} className="w-3.5 h-3.5" />
+                        Include GST in this payment ({((poPayItem.poGst / (poPayItem.poSubtotal || 1)) * 100).toFixed(0)}% = {fmt(poPayItem.poGst)})
+                        <span className="text-[10px] text-slate-400 ml-2">Uncheck to pay base amount now, GST later</span>
+                      </label>
+                    ) : (
+                      <div className="text-[10px] text-slate-400 bg-slate-50 border border-slate-200 px-3 py-1.5">
+                        GST: <b>0% — No GST on this item</b>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">UTR / Reference</label>
