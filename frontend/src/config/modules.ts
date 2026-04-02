@@ -10,7 +10,7 @@ import {
   Building2, Box, ShoppingBag, PackageCheck, Receipt, CreditCard,
   Store, Tractor, Scale, Handshake,
   BookOpen, Calculator, TrendingUp, Landmark,
-  PackageSearch, ArrowRightLeft, ClipboardCheck, BarChart2, Banknote, PieChart
+  PackageSearch, ArrowRightLeft, ClipboardCheck, BarChart2, Banknote, PieChart, HardHat
 } from 'lucide-react';
 
 export interface ModuleDef {
@@ -66,6 +66,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'materials', label: 'Items', to: '/inventory', icon: Box, group: 'procurement' },
   { key: 'purchase-orders', label: 'Purchase Orders', to: '/procurement/purchase-orders', icon: ShoppingBag, group: 'procurement' },
   { key: 'goods-receipts', label: 'GRN', to: '/logistics/gate-register?tab=grn', icon: PackageCheck, group: 'procurement' },
+  { key: 'contractors', label: 'Contractors', to: '/procurement/contractors', icon: HardHat, group: 'procurement' },
 
   // ── SPOT TRADE (Cash buy/sell at gate) ──
   { key: 'direct-purchase', label: 'Spot Purchase', to: '/trade/purchases', icon: Tractor, group: 'trade' },
@@ -89,7 +90,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'pnl', label: 'Profit & Loss', to: '/accounts/profit-loss', icon: TrendingUp, group: 'books' },
   { key: 'balance-sheet', label: 'Balance Sheet', to: '/accounts/balance-sheet', icon: Landmark, group: 'books' },
   { key: 'bank-recon', label: 'Bank Recon', to: '/accounts/bank-reconciliation', icon: Banknote, group: 'books' },
-  { key: 'gst-summary', label: 'GST Summary', to: '/accounts/gst-summary', icon: PieChart, group: 'books' },
+  { key: 'taxes', label: 'Taxes', to: '/accounts/taxes', icon: PieChart, group: 'books' },
   { key: 'bank-loans', label: 'Bank Loans', to: '/accounts/bank-loans', icon: Landmark, group: 'books' },
 
   // ── INVENTORY ──

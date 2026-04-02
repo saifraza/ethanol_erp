@@ -26,6 +26,7 @@ const ACCT = {
   ADVANCE_TO_SUPPLIERS: '1600',
   // Liabilities
   TRADE_PAYABLE: '2001',
+  CONTRACTOR_PAYABLE: '2002',
   GST_OUTPUT_CGST: '2100',
   GST_OUTPUT_SGST: '2101',
   GST_OUTPUT_IGST: '2102',
@@ -46,6 +47,7 @@ const ACCT = {
   TRANSPORT_EXPENSE: '4010',
   SALARY_EXPENSE: '4020',
   MAINTENANCE_EXPENSE: '4030',
+  CONTRACTOR_EXPENSE: '4035',
   OTHER_EXPENSE: '4040',
   DEPRECIATION: '4050',
   INTEREST_EXPENSE: '4090',
@@ -168,6 +170,10 @@ export async function onSaleInvoiceCreated(
     amount: number;
     gstAmount: number;
     gstPercent: number;
+    cgstAmount?: number;
+    sgstAmount?: number;
+    igstAmount?: number;
+    supplyType?: string;
     productName: string;
     customerId: string;
     userId: string;
@@ -176,7 +182,7 @@ export async function onSaleInvoiceCreated(
   }
 ): Promise<string | null> {
   try {
-    const isInterstate = invoice.customer?.state && invoice.customer.state !== 'Madhya Pradesh';
+    const isInterstate = invoice.supplyType === 'INTER_STATE' || (!invoice.supplyType && invoice.customer?.state && invoice.customer.state !== 'Madhya Pradesh');
     const salesCode = getSalesAccountCode(invoice.productName);
     const gstCodes = isInterstate
       ? [ACCT.GST_OUTPUT_IGST]
@@ -196,11 +202,13 @@ export async function onSaleInvoiceCreated(
     ];
 
     if (isInterstate) {
-      lines.push({ accountId: accts[ACCT.GST_OUTPUT_IGST], debit: 0, credit: invoice.gstAmount, narration: `IGST @${invoice.gstPercent}%` });
+      const igst = invoice.igstAmount ?? invoice.gstAmount;
+      lines.push({ accountId: accts[ACCT.GST_OUTPUT_IGST], debit: 0, credit: igst, narration: `IGST @${invoice.gstPercent}%` });
     } else {
-      const halfGst = invoice.gstAmount / 2;
-      lines.push({ accountId: accts[ACCT.GST_OUTPUT_CGST], debit: 0, credit: halfGst, narration: `CGST @${invoice.gstPercent / 2}%` });
-      lines.push({ accountId: accts[ACCT.GST_OUTPUT_SGST], debit: 0, credit: halfGst, narration: `SGST @${invoice.gstPercent / 2}%` });
+      const cgst = invoice.cgstAmount ?? invoice.gstAmount / 2;
+      const sgst = invoice.sgstAmount ?? (invoice.gstAmount - cgst);
+      lines.push({ accountId: accts[ACCT.GST_OUTPUT_CGST], debit: 0, credit: cgst, narration: `CGST @${invoice.gstPercent / 2}%` });
+      lines.push({ accountId: accts[ACCT.GST_OUTPUT_SGST], debit: 0, credit: sgst, narration: `SGST @${invoice.gstPercent / 2}%` });
     }
 
     return await prisma.$transaction(async (tx: any) => {
@@ -575,6 +583,80 @@ export async function createAdvanceJournal(
     console.error('[AutoJournal] Failed to create advance journal:', err);
     return null;
   }
+}
+
+// ═══════════════════════════════════════════════════════
+// CONTRACTOR BILL CONFIRMED → Journal Entry (Accrual)
+// ═══════════════════════════════════════════════════════
+export async function onContractorBillConfirmed(
+  prisma: PrismaClient,
+  bill: {
+    id: string; billNo: number; subtotal: number;
+    cgstAmount: number; sgstAmount: number; igstAmount: number;
+    totalAmount: number; tdsAmount: number; netPayable: number;
+    contractorId: string; contractorName: string; userId: string; billDate: Date;
+  }
+): Promise<string | null> {
+  try {
+    const gstCodes: string[] = [];
+    if (bill.igstAmount > 0) gstCodes.push(ACCT.GST_INPUT_IGST);
+    if (bill.cgstAmount > 0) gstCodes.push(ACCT.GST_INPUT_CGST);
+    if (bill.sgstAmount > 0) gstCodes.push(ACCT.GST_INPUT_SGST);
+    const allCodes = [ACCT.CONTRACTOR_EXPENSE, ACCT.CONTRACTOR_PAYABLE, ...gstCodes];
+    if (bill.tdsAmount > 0) allCodes.push(ACCT.TDS_PAYABLE);
+    const accts = await resolveAccounts(prisma, allCodes);
+    for (const code of allCodes) { if (!accts[code]) return null; }
+
+    const lines: { accountId: string; debit: number; credit: number; narration?: string }[] = [
+      { accountId: accts[ACCT.CONTRACTOR_EXPENSE], debit: bill.subtotal, credit: 0, narration: `Bill #${bill.billNo} — ${bill.contractorName}` },
+    ];
+    if (bill.igstAmount > 0) lines.push({ accountId: accts[ACCT.GST_INPUT_IGST], debit: bill.igstAmount, credit: 0, narration: `IGST on contractor bill` });
+    if (bill.cgstAmount > 0) lines.push({ accountId: accts[ACCT.GST_INPUT_CGST], debit: bill.cgstAmount, credit: 0, narration: `CGST on contractor bill` });
+    if (bill.sgstAmount > 0) lines.push({ accountId: accts[ACCT.GST_INPUT_SGST], debit: bill.sgstAmount, credit: 0, narration: `SGST on contractor bill` });
+    lines.push({ accountId: accts[ACCT.CONTRACTOR_PAYABLE], debit: 0, credit: bill.netPayable, narration: `Payable — Bill #${bill.billNo}` });
+    if (bill.tdsAmount > 0) lines.push({ accountId: accts[ACCT.TDS_PAYABLE], debit: 0, credit: bill.tdsAmount, narration: `TDS u/s 194C — ${bill.contractorName}` });
+
+    return await prisma.$transaction(async (tx: any) => {
+      return createJournalEntry(tx, {
+        date: bill.billDate, narration: `Contractor bill #${bill.billNo} — ${bill.contractorName}`,
+        refType: 'CONTRACTOR_BILL', refId: bill.id, userId: bill.userId, lines,
+      });
+    });
+  } catch (err) { console.error('[AutoJournal] Failed to create contractor bill journal:', err); return null; }
+}
+
+// ═══════════════════════════════════════════════════════
+// CONTRACTOR PAYMENT → Journal Entry
+// ═══════════════════════════════════════════════════════
+export async function onContractorPaymentMade(
+  prisma: PrismaClient,
+  payment: {
+    id: string; amount: number; mode: string; reference?: string | null;
+    tdsDeducted: number; contractorId: string; contractorName: string;
+    userId: string; paymentDate: Date;
+  }
+): Promise<string | null> {
+  try {
+    const bankCode = PAYMENT_ACCOUNT[payment.mode] || ACCT.SBI_BANK;
+    const codes = [bankCode, ACCT.CONTRACTOR_PAYABLE];
+    if (payment.tdsDeducted > 0) codes.push(ACCT.TDS_PAYABLE);
+    const accts = await resolveAccounts(prisma, codes);
+    for (const code of codes) { if (!accts[code]) return null; }
+
+    const totalSettled = payment.amount + payment.tdsDeducted;
+    const lines: { accountId: string; debit: number; credit: number; narration?: string }[] = [
+      { accountId: accts[ACCT.CONTRACTOR_PAYABLE], debit: totalSettled, credit: 0, narration: `Payment ${payment.reference || ''}`.trim() },
+      { accountId: accts[bankCode], debit: 0, credit: payment.amount, narration: `${payment.mode} ${payment.reference || ''}`.trim() },
+    ];
+    if (payment.tdsDeducted > 0) lines.push({ accountId: accts[ACCT.TDS_PAYABLE], debit: 0, credit: payment.tdsDeducted, narration: `TDS u/s 194C` });
+
+    return await prisma.$transaction(async (tx: any) => {
+      return createJournalEntry(tx, {
+        date: payment.paymentDate, narration: `Contractor payment to ${payment.contractorName} — ${payment.mode} ${payment.reference || ''}`.trim(),
+        refType: 'CONTRACTOR_PAYMENT', refId: payment.id, userId: payment.userId, lines,
+      });
+    });
+  } catch (err) { console.error('[AutoJournal] Failed to create contractor payment journal:', err); return null; }
 }
 
 export { ACCT, PAYMENT_ACCOUNT };

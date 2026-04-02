@@ -18,6 +18,7 @@ const ACCOUNT_CODES = {
   GST_INPUT_CGST: '1200',
   GST_INPUT_SGST: '1201',
   GST_INPUT_IGST: '1202',
+  TDS_PAYABLE: '2200',
 } as const;
 
 // ═══════════════════════════════════════════════
@@ -745,6 +746,82 @@ router.get('/outstanding-payables', asyncHandler(async (req: AuthRequest, res: R
     invoiceCount: invoices.length,
     vendors,
   });
+}));
+
+// GET /gst-documents — Document-level GST breakdown
+router.get('/gst-documents', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const from = req.query.from as string;
+  const to = req.query.to as string;
+  if (!from || !to) { res.status(400).json({ error: 'from and to required' }); return; }
+  const dateFilter = { gte: new Date(from), lte: new Date(to + 'T23:59:59.999Z') };
+  const [salesInvoices, vendorInvoices, contractorBills] = await Promise.all([
+    prisma.invoice.findMany({ where: { invoiceDate: dateFilter, status: { not: 'CANCELLED' } }, select: { id: true, invoiceNo: true, invoiceDate: true, productName: true, supplyType: true, amount: true, gstPercent: true, gstAmount: true, cgstAmount: true, sgstAmount: true, igstAmount: true, totalAmount: true, customer: { select: { name: true, gstNo: true, state: true } } }, orderBy: { invoiceDate: 'desc' }, take: 500 }),
+    prisma.vendorInvoice.findMany({ where: { invoiceDate: dateFilter, status: { not: 'CANCELLED' } }, select: { id: true, invoiceNo: true, invoiceDate: true, supplyType: true, subtotal: true, gstPercent: true, totalGst: true, cgstAmount: true, sgstAmount: true, igstAmount: true, isRCM: true, itcEligible: true, itcClaimed: true, vendor: { select: { name: true, gstin: true } } }, orderBy: { invoiceDate: 'desc' }, take: 500 }),
+    prisma.contractorBill.findMany({ where: { billDate: dateFilter, status: { not: 'CANCELLED' } }, select: { id: true, billNo: true, billDate: true, description: true, subtotal: true, cgstAmount: true, sgstAmount: true, igstAmount: true, totalAmount: true, itcEligible: true, itcClaimed: true, contractor: { select: { name: true, gstin: true } } }, orderBy: { billDate: 'desc' }, take: 500 }),
+  ]);
+  res.json({ salesInvoices, vendorInvoices, contractorBills });
+}));
+
+// GET /tds-summary — TDS deductions for Form 26Q
+router.get('/tds-summary', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const from = req.query.from as string;
+  const to = req.query.to as string;
+  if (!from || !to) { res.status(400).json({ error: 'from and to required' }); return; }
+  const dateFilter = { gte: new Date(from), lte: new Date(to + 'T23:59:59.999Z') };
+  const [vendorPayments, contractorPayments] = await Promise.all([
+    prisma.vendorPayment.findMany({ where: { paymentDate: dateFilter, tdsDeducted: { gt: 0 } }, select: { id: true, paymentDate: true, amount: true, tdsDeducted: true, tdsSection: true, vendor: { select: { name: true, pan: true, gstin: true } } }, orderBy: { paymentDate: 'desc' }, take: 500 }),
+    prisma.contractorPayment.findMany({ where: { paymentDate: dateFilter, tdsDeducted: { gt: 0 } }, select: { id: true, paymentDate: true, amount: true, tdsDeducted: true, bill: { select: { tdsPercent: true, contractor: { select: { name: true, pan: true, gstin: true, tdsSection: true } } } } }, orderBy: { paymentDate: 'desc' }, take: 500 }),
+  ]);
+  const sectionTotals: Record<string, { section: string; count: number; totalPayment: number; totalTds: number }> = {};
+  for (const vp of vendorPayments) { const sec = vp.tdsSection || '194C'; if (!sectionTotals[sec]) sectionTotals[sec] = { section: sec, count: 0, totalPayment: 0, totalTds: 0 }; sectionTotals[sec].count++; sectionTotals[sec].totalPayment += vp.amount; sectionTotals[sec].totalTds += vp.tdsDeducted; }
+  for (const cp of contractorPayments) { const sec = cp.bill?.contractor?.tdsSection || '194C'; if (!sectionTotals[sec]) sectionTotals[sec] = { section: sec, count: 0, totalPayment: 0, totalTds: 0 }; sectionTotals[sec].count++; sectionTotals[sec].totalPayment += cp.amount; sectionTotals[sec].totalTds += cp.tdsDeducted; }
+  const getQuarter = (d: Date): string => { const m = d.getMonth(); if (m >= 3 && m <= 5) return 'Q1 (Apr-Jun)'; if (m >= 6 && m <= 8) return 'Q2 (Jul-Sep)'; if (m >= 9 && m <= 11) return 'Q3 (Oct-Dec)'; return 'Q4 (Jan-Mar)'; };
+  const quarterTotals: Record<string, { quarter: string; totalTds: number; count: number }> = {};
+  for (const vp of vendorPayments) { const q = getQuarter(vp.paymentDate); if (!quarterTotals[q]) quarterTotals[q] = { quarter: q, totalTds: 0, count: 0 }; quarterTotals[q].totalTds += vp.tdsDeducted; quarterTotals[q].count++; }
+  for (const cp of contractorPayments) { const q = getQuarter(cp.paymentDate); if (!quarterTotals[q]) quarterTotals[q] = { quarter: q, totalTds: 0, count: 0 }; quarterTotals[q].totalTds += cp.tdsDeducted; quarterTotals[q].count++; }
+  const tdsAccount = await prisma.account.findFirst({ where: { code: ACCOUNT_CODES.TDS_PAYABLE }, select: { id: true } });
+  let tdsPayableBalance = 0;
+  if (tdsAccount) { const agg = await prisma.journalLine.aggregate({ where: { accountId: tdsAccount.id }, _sum: { debit: true, credit: true } }); tdsPayableBalance = (agg._sum.credit || 0) - (agg._sum.debit || 0); }
+  const round = (v: number): number => Math.round(v * 100) / 100;
+  const deductees: Array<{ name: string; pan: string | null; section: string; date: Date; paymentAmount: number; tdsAmount: number; source: string }> = [];
+  for (const vp of vendorPayments) { deductees.push({ name: vp.vendor?.name || 'Unknown', pan: vp.vendor?.pan || null, section: vp.tdsSection || '194C', date: vp.paymentDate, paymentAmount: vp.amount, tdsAmount: vp.tdsDeducted, source: 'VENDOR' }); }
+  for (const cp of contractorPayments) { deductees.push({ name: cp.bill?.contractor?.name || 'Unknown', pan: cp.bill?.contractor?.pan || null, section: cp.bill?.contractor?.tdsSection || '194C', date: cp.paymentDate, paymentAmount: cp.amount, tdsAmount: cp.tdsDeducted, source: 'CONTRACTOR' }); }
+  res.json({ period: { from, to }, bySections: Object.values(sectionTotals).map(s => ({ ...s, totalPayment: round(s.totalPayment), totalTds: round(s.totalTds) })), byQuarter: Object.values(quarterTotals).map(q => ({ ...q, totalTds: round(q.totalTds) })), deductees: deductees.sort((a, b) => b.date.getTime() - a.date.getTime()), tdsPayableBalance: round(tdsPayableBalance), totalDeducted: round(deductees.reduce((s, d) => s + d.tdsAmount, 0)) });
+}));
+
+// GET /itc-register — Input Tax Credit register
+router.get('/itc-register', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const from = req.query.from as string;
+  const to = req.query.to as string;
+  const status = req.query.status as string;
+  if (!from || !to) { res.status(400).json({ error: 'from and to required' }); return; }
+  const dateFilter = { gte: new Date(from), lte: new Date(to + 'T23:59:59.999Z') };
+  const viWhere: any = { invoiceDate: dateFilter, status: { not: 'CANCELLED' } };
+  if (status === 'eligible') { viWhere.itcEligible = true; viWhere.itcClaimed = false; viWhere.itcReversed = false; }
+  else if (status === 'claimed') { viWhere.itcClaimed = true; }
+  else if (status === 'reversed') { viWhere.itcReversed = true; }
+  const cbWhere: any = { billDate: dateFilter, status: { not: 'CANCELLED' } };
+  if (status === 'eligible') { cbWhere.itcEligible = true; cbWhere.itcClaimed = false; cbWhere.itcReversed = false; }
+  else if (status === 'claimed') { cbWhere.itcClaimed = true; }
+  else if (status === 'reversed') { cbWhere.itcReversed = true; }
+  const [vendorInvoices, contractorBills] = await Promise.all([
+    prisma.vendorInvoice.findMany({ where: viWhere, select: { id: true, invoiceNo: true, invoiceDate: true, subtotal: true, cgstAmount: true, sgstAmount: true, igstAmount: true, totalGst: true, isRCM: true, itcEligible: true, itcClaimed: true, itcClaimedDate: true, itcReversed: true, itcReversalReason: true, vendor: { select: { name: true, gstin: true } } }, orderBy: { invoiceDate: 'desc' }, take: 500 }),
+    prisma.contractorBill.findMany({ where: cbWhere, select: { id: true, billNo: true, billDate: true, description: true, subtotal: true, cgstAmount: true, sgstAmount: true, igstAmount: true, itcEligible: true, itcClaimed: true, itcClaimedDate: true, itcReversed: true, itcReversalReason: true, contractor: { select: { name: true, gstin: true } } }, orderBy: { billDate: 'desc' }, take: 500 }),
+  ]);
+  const round = (v: number): number => Math.round(v * 100) / 100;
+  const viT = vendorInvoices.reduce((s: any, v: any) => ({ cgst: s.cgst + (v.itcEligible ? (v.cgstAmount || 0) : 0), sgst: s.sgst + (v.itcEligible ? (v.sgstAmount || 0) : 0), igst: s.igst + (v.itcEligible ? (v.igstAmount || 0) : 0) }), { cgst: 0, sgst: 0, igst: 0 });
+  const cbT = contractorBills.reduce((s: any, c: any) => ({ cgst: s.cgst + (c.itcEligible ? (c.cgstAmount || 0) : 0), sgst: s.sgst + (c.itcEligible ? (c.sgstAmount || 0) : 0), igst: s.igst + (c.itcEligible ? (c.igstAmount || 0) : 0) }), { cgst: 0, sgst: 0, igst: 0 });
+  res.json({ period: { from, to }, vendorInvoices, contractorBills, totals: { eligibleCgst: round(viT.cgst + cbT.cgst), eligibleSgst: round(viT.sgst + cbT.sgst), eligibleIgst: round(viT.igst + cbT.igst), eligibleTotal: round(viT.cgst + cbT.cgst + viT.sgst + cbT.sgst + viT.igst + cbT.igst), claimedCount: vendorInvoices.filter((v: any) => v.itcClaimed).length + contractorBills.filter((c: any) => c.itcClaimed).length, unclaimedCount: vendorInvoices.filter((v: any) => v.itcEligible && !v.itcClaimed).length + contractorBills.filter((c: any) => c.itcEligible && !c.itcClaimed).length } });
+}));
+
+// POST /itc-claim — Bulk mark ITC as claimed
+router.post('/itc-claim', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { vendorInvoiceIds, contractorBillIds } = req.body;
+  const now = new Date();
+  let updated = 0;
+  if (vendorInvoiceIds?.length > 0) { const r = await prisma.vendorInvoice.updateMany({ where: { id: { in: vendorInvoiceIds }, itcEligible: true, itcClaimed: false }, data: { itcClaimed: true, itcClaimedDate: now } }); updated += r.count; }
+  if (contractorBillIds?.length > 0) { const r = await prisma.contractorBill.updateMany({ where: { id: { in: contractorBillIds }, itcEligible: true, itcClaimed: false }, data: { itcClaimed: true, itcClaimedDate: now } }); updated += r.count; }
+  res.json({ updated });
 }));
 
 export default router;

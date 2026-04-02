@@ -877,8 +877,9 @@ export default function PaymentsOut() {
                             <tr className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''} ${selectedPOId === item.poId ? 'bg-blue-50' : ''}`}>
                               <td className="px-3 py-1.5 border-r border-slate-100 font-mono font-medium">
                                 <button onClick={() => setSelectedPOId(selectedPOId === item.poId ? null : item.poId)} className="text-blue-700 hover:text-blue-900 hover:underline">
-                                  PO-{item.poNo}
+                                  {item.dealType === 'CONTRACTOR' ? `BILL-${item.poNo}` : `PO-${item.poNo}`}
                                 </button>
+                                {item.dealType === 'CONTRACTOR' && <span className="ml-1 text-[8px] font-bold uppercase px-1 py-0.5 border border-violet-300 bg-violet-50 text-violet-700">CONTRACTOR</span>}
                               </td>
                               <td className="px-3 py-1.5 border-r border-slate-100 font-medium text-slate-800 max-w-[180px] truncate">{item.vendorName}</td>
                               <td className="px-3 py-1.5 border-r border-slate-100">

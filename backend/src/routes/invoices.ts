@@ -9,6 +9,18 @@ import { onSaleInvoiceCreated } from '../services/autoJournal';
 
 const router = Router();
 
+const COMPANY_STATE = 'Madhya Pradesh';
+
+function calcGstSplit(amount: number, gstPercent: number, customerState: string | null | undefined) {
+  const gstAmount = Math.round((amount * gstPercent) / 100 * 100) / 100;
+  const isInterstate = customerState && customerState !== COMPANY_STATE;
+  if (isInterstate) {
+    return { supplyType: 'INTER_STATE' as const, cgstPercent: 0, cgstAmount: 0, sgstPercent: 0, sgstAmount: 0, igstPercent: gstPercent, igstAmount: gstAmount, gstAmount };
+  }
+  const half = Math.round(gstAmount / 2 * 100) / 100;
+  return { supplyType: 'INTRA_STATE' as const, cgstPercent: gstPercent / 2, cgstAmount: half, sgstPercent: gstPercent / 2, sgstAmount: Math.round((gstAmount - half) * 100) / 100, igstPercent: 0, igstAmount: 0, gstAmount };
+}
+
 router.use(authenticate as any);
 
 // GET / — List invoices with filters
@@ -117,53 +129,34 @@ router.post('/', async (req: Request, res: Response) => {
     const freightCharge = parseFloat(b.freightCharge) || 0;
 
     const amount = quantity * rate;
-    const gstAmount = (amount * gstPercent) / 100;
-    const totalAmount = amount + gstAmount + freightCharge;
+    const cust = await prisma.customer.findUnique({ where: { id: b.customerId }, select: { state: true } });
+    const gst = calcGstSplit(amount, gstPercent, cust?.state);
+    const totalAmount = amount + gst.gstAmount + freightCharge;
 
     const invoice = await prisma.invoice.create({
       data: {
-        customerId: b.customerId,
-        orderId: b.orderId || null,
-        shipmentId: b.shipmentId || null,
+        customerId: b.customerId, orderId: b.orderId || null, shipmentId: b.shipmentId || null,
         invoiceDate: b.invoiceDate ? new Date(b.invoiceDate) : new Date(),
         dueDate: b.dueDate ? new Date(b.dueDate) : null,
-        productName: b.productName || '',
-        quantity,
-        unit: b.unit || 'KL',
-        rate,
-        gstPercent,
-        amount,
-        gstAmount,
-        freightCharge,
-        totalAmount,
-        paidAmount: 0,
-        balanceAmount: totalAmount,
-        status: 'UNPAID',
-        challanNo: b.challanNo || null,
-        ewayBill: b.ewayBill || null,
-        remarks: b.remarks || null,
+        productName: b.productName || '', quantity, unit: b.unit || 'KL', rate, gstPercent, amount,
+        gstAmount: gst.gstAmount, supplyType: gst.supplyType, placeOfSupply: cust?.state || null,
+        cgstPercent: gst.cgstPercent, cgstAmount: gst.cgstAmount,
+        sgstPercent: gst.sgstPercent, sgstAmount: gst.sgstAmount,
+        igstPercent: gst.igstPercent, igstAmount: gst.igstAmount,
+        freightCharge, totalAmount, paidAmount: 0, balanceAmount: totalAmount, status: 'UNPAID',
+        challanNo: b.challanNo || null, ewayBill: b.ewayBill || null, remarks: b.remarks || null,
         userId: (req as any).user.id,
       },
-      include: {
-        customer: {
-          select: { id: true, name: true, shortName: true },
-        },
-        payments: true,
-      },
+      include: { customer: { select: { id: true, name: true, shortName: true, state: true } }, payments: true },
     });
 
-    // Auto-journal: Dr Receivable, Cr Sales + GST
     onSaleInvoiceCreated(prisma, {
-      id: invoice.id,
-      invoiceNo: invoice.invoiceNo,
-      totalAmount: invoice.totalAmount,
-      amount: invoice.amount,
-      gstAmount: invoice.gstAmount,
-      gstPercent: invoice.gstPercent,
-      productName: invoice.productName,
-      customerId: b.customerId,
-      userId: (req as any).user.id,
-      invoiceDate: invoice.invoiceDate,
+      id: invoice.id, invoiceNo: invoice.invoiceNo, totalAmount: invoice.totalAmount,
+      amount: invoice.amount, gstAmount: invoice.gstAmount, gstPercent: invoice.gstPercent,
+      cgstAmount: invoice.cgstAmount, sgstAmount: invoice.sgstAmount,
+      igstAmount: invoice.igstAmount, supplyType: invoice.supplyType,
+      productName: invoice.productName, customerId: b.customerId,
+      userId: (req as any).user.id, invoiceDate: invoice.invoiceDate,
     }).catch(() => {});
 
     res.status(201).json(invoice);
@@ -212,59 +205,36 @@ router.post('/from-shipment/:shipmentId', async (req: Request, res: Response) =>
     const freightCharge = 0;
 
     const amount = quantity * rate;
-    const gstAmount = (amount * gstPercent) / 100;
-    const totalAmount = amount + gstAmount + freightCharge;
+    const cust2 = await prisma.customer.findUnique({ where: { id: order.customerId }, select: { state: true } });
+    const gst2 = calcGstSplit(amount, gstPercent, cust2?.state);
+    const totalAmount = amount + gst2.gstAmount + freightCharge;
 
     const invoice = await prisma.invoice.create({
       data: {
-        customerId: order.customerId,
-        orderId: order.id,
-        shipmentId: shipment.id,
-        invoiceDate: new Date(),
-        dueDate: null,
+        customerId: order.customerId, orderId: order.id, shipmentId: shipment.id,
+        invoiceDate: new Date(), dueDate: null,
         productName: shipment.productName || orderLine.productName || '',
-        quantity,
-        unit: orderLine.unit || 'KL',
-        rate,
-        gstPercent,
-        amount,
-        gstAmount,
-        freightCharge,
-        totalAmount,
-        paidAmount: 0,
-        balanceAmount: totalAmount,
-        status: 'UNPAID',
-        challanNo: shipment.challanNo || null,
-        ewayBill: shipment.ewayBill || null,
-        remarks: null,
+        quantity, unit: orderLine.unit || 'KL', rate, gstPercent, amount,
+        gstAmount: gst2.gstAmount, supplyType: gst2.supplyType, placeOfSupply: cust2?.state || null,
+        cgstPercent: gst2.cgstPercent, cgstAmount: gst2.cgstAmount,
+        sgstPercent: gst2.sgstPercent, sgstAmount: gst2.sgstAmount,
+        igstPercent: gst2.igstPercent, igstAmount: gst2.igstAmount,
+        freightCharge, totalAmount, paidAmount: 0, balanceAmount: totalAmount, status: 'UNPAID',
+        challanNo: shipment.challanNo || null, ewayBill: shipment.ewayBill || null, remarks: null,
         userId: (req as any).user.id,
       },
-      include: {
-        customer: {
-          select: { id: true, name: true, shortName: true },
-        },
-        payments: true,
-      },
+      include: { customer: { select: { id: true, name: true, shortName: true, state: true } }, payments: true },
     });
 
-    // Update shipment.invoiceRef
-    await prisma.shipment.update({
-      where: { id: shipmentId },
-      data: { invoiceRef: String(invoice.invoiceNo) },
-    });
+    await prisma.shipment.update({ where: { id: shipmentId }, data: { invoiceRef: String(invoice.invoiceNo) } });
 
-    // Auto-journal: Dr Receivable, Cr Sales + GST
     onSaleInvoiceCreated(prisma, {
-      id: invoice.id,
-      invoiceNo: invoice.invoiceNo,
-      totalAmount: invoice.totalAmount,
-      amount: invoice.amount,
-      gstAmount: invoice.gstAmount,
-      gstPercent: invoice.gstPercent,
-      productName: invoice.productName,
-      customerId: order.customerId,
-      userId: (req as any).user.id,
-      invoiceDate: invoice.invoiceDate,
+      id: invoice.id, invoiceNo: invoice.invoiceNo, totalAmount: invoice.totalAmount,
+      amount: invoice.amount, gstAmount: invoice.gstAmount, gstPercent: invoice.gstPercent,
+      cgstAmount: invoice.cgstAmount, sgstAmount: invoice.sgstAmount,
+      igstAmount: invoice.igstAmount, supplyType: invoice.supplyType,
+      productName: invoice.productName, customerId: order.customerId,
+      userId: (req as any).user.id, invoiceDate: invoice.invoiceDate,
     }).catch(() => {});
 
     res.status(201).json(invoice);

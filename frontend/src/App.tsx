@@ -67,6 +67,7 @@ const GateAndReceipts = React.lazy(() => import('./pages/logistics/GateAndReceip
 // Procurement (P2P)
 const Vendors = React.lazy(() => import('./pages/procurement/Vendors'));
 const Traders = React.lazy(() => import('./pages/procurement/Traders'));
+const ContractorManagement = React.lazy(() => import('./pages/procurement/ContractorManagement'));
 const Materials = React.lazy(() => import('./pages/procurement/Materials'));
 const PurchaseOrders = React.lazy(() => import('./pages/procurement/PurchaseOrders'));
 const GoodsReceipts = React.lazy(() => import('./pages/procurement/GoodsReceipts'));
@@ -83,7 +84,7 @@ const DayBook = React.lazy(() => import('./pages/accounts/DayBook'));
 const ProfitLoss = React.lazy(() => import('./pages/accounts/ProfitLoss'));
 const BalanceSheetPage = React.lazy(() => import('./pages/accounts/BalanceSheet'));
 const BankReconciliation = React.lazy(() => import('./pages/accounts/BankReconciliation'));
-const GSTSummary = React.lazy(() => import('./pages/accounts/GSTSummary'));
+const Taxes = React.lazy(() => import('./pages/accounts/Taxes'));
 const CashVouchers = React.lazy(() => import('./pages/accounts/CashVouchers'));
 const BankPayments = React.lazy(() => import('./pages/accounts/BankPayments'));
 const BankLoans = React.lazy(() => import('./pages/accounts/BankLoans'));
@@ -179,6 +180,7 @@ export default function App() {
         {/* Procurement (P2P) */}
         <Route path="procurement/vendors" element={<Vendors />} />
         <Route path="procurement/traders" element={<Traders />} />
+        <Route path="procurement/contractors" element={<ContractorManagement />} />
         <Route path="procurement/materials" element={<Navigate to="/inventory" replace />} />
         <Route path="procurement/purchase-orders" element={<PurchaseOrders />} />
         <Route path="procurement/goods-receipts" element={<Navigate to="/logistics/gate-register?tab=grn" replace />} />
@@ -195,7 +197,7 @@ export default function App() {
         <Route path="accounts/profit-loss" element={<ProfitLoss />} />
         <Route path="accounts/balance-sheet" element={<BalanceSheetPage />} />
         <Route path="accounts/bank-reconciliation" element={<BankReconciliation />} />
-        <Route path="accounts/gst-summary" element={<GSTSummary />} />
+        <Route path="accounts/taxes" element={<Taxes />} />
         <Route path="accounts/cash-vouchers" element={<CashVouchers />} />
         <Route path="accounts/bank-payments" element={<BankPayments />} />
         <Route path="accounts/bank-loans" element={<BankLoans />} />

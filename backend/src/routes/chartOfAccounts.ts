@@ -334,6 +334,7 @@ router.post('/seed', asyncHandler(async (req: AuthRequest, res: Response) => {
 
     // LIABILITIES (2xxx)
     { code: '2001', name: 'Accounts Payable (Control)', type: 'LIABILITY', subType: 'CURRENT_LIABILITY', isSystem: true },
+    { code: '2002', name: 'Contractor Payable', type: 'LIABILITY', subType: 'CURRENT_LIABILITY', isSystem: true },
     { code: '2100', name: 'GST Output Tax (CGST)', type: 'LIABILITY', subType: 'CURRENT_LIABILITY', isSystem: true },
     { code: '2101', name: 'GST Output Tax (SGST)', type: 'LIABILITY', subType: 'CURRENT_LIABILITY', isSystem: true },
     { code: '2102', name: 'GST Output Tax (IGST)', type: 'LIABILITY', subType: 'CURRENT_LIABILITY', isSystem: true },
@@ -358,6 +359,7 @@ router.post('/seed', asyncHandler(async (req: AuthRequest, res: Response) => {
     { code: '4010', name: 'Freight & Transport', type: 'EXPENSE', subType: 'DIRECT_EXPENSE', isSystem: false },
     { code: '4020', name: 'Salary & Wages', type: 'EXPENSE', subType: 'INDIRECT_EXPENSE', isSystem: false },
     { code: '4030', name: 'Repairs & Maintenance', type: 'EXPENSE', subType: 'INDIRECT_EXPENSE', isSystem: false },
+    { code: '4035', name: 'Contractor Expense', type: 'EXPENSE', subType: 'INDIRECT_EXPENSE', isSystem: false },
     { code: '4040', name: 'Administrative Expenses', type: 'EXPENSE', subType: 'INDIRECT_EXPENSE', isSystem: false },
     { code: '4050', name: 'Depreciation', type: 'EXPENSE', subType: 'INDIRECT_EXPENSE', isSystem: false },
     { code: '4060', name: 'Insurance', type: 'EXPENSE', subType: 'INDIRECT_EXPENSE', isSystem: false },

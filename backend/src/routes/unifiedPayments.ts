@@ -123,7 +123,43 @@ router.get('/outgoing', asyncHandler(async (req: AuthRequest, res: Response) => 
     }
   }
 
-  // 3. Cash Vouchers (type=PAYMENT only, not receipts)
+  // 3. Contractor Payments
+  if (!type || type === 'CONTRACTOR') {
+    const cpWhere: Record<string, unknown> = { paymentStatus: { not: 'CANCELLED' } };
+    if (hasDateFilter) cpWhere.paymentDate = dateFilter;
+    if (mode) cpWhere.paymentMode = mode;
+
+    const contractorPayments = await prisma.contractorPayment.findMany({
+      where: cpWhere,
+      take: 200,
+      orderBy: { paymentDate: 'desc' },
+      select: {
+        id: true, paymentDate: true, amount: true, paymentMode: true, paymentRef: true,
+        remarks: true, tdsDeducted: true, isAdvance: true, createdAt: true,
+        contractor: { select: { name: true } },
+        bill: { select: { billNo: true } },
+      },
+    });
+
+    for (const p of contractorPayments) {
+      results.push({
+        id: p.id,
+        date: p.paymentDate,
+        payee: p.contractor.name,
+        payeeType: 'VENDOR',
+        amount: p.amount,
+        mode: p.paymentMode,
+        reference: p.paymentRef,
+        remarks: ['CONTRACTOR', p.tdsDeducted > 0 ? `TDS: \u20B9${p.tdsDeducted}` : null, p.remarks].filter(Boolean).join(' | ') || null,
+        source: 'ContractorPayment',
+        sourceRef: p.bill ? `BILL-${p.bill.billNo}` : null,
+        createdAt: p.createdAt,
+        tdsDeducted: p.tdsDeducted || 0,
+      });
+    }
+  }
+
+  // 4. Cash Vouchers (type=PAYMENT only, not receipts)
   if (!type || type === 'CASH') {
     try {
       let cvQuery = `SELECT id, date, amount, "paymentMode", "paymentRef", "payeeName", purpose, category, status, "createdAt" FROM "CashVoucher" WHERE type = 'PAYMENT'`;
@@ -173,7 +209,7 @@ router.get('/outgoing/summary', asyncHandler(async (_req: AuthRequest, res: Resp
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const [vendorAgg, transporterAgg, cashAgg] = await Promise.all([
+  const [vendorAgg, transporterAgg, contractorAgg, cashAgg] = await Promise.all([
     prisma.vendorPayment.aggregate({
       where: { paymentDate: { gte: monthStart } },
       _sum: { amount: true },
@@ -181,6 +217,11 @@ router.get('/outgoing/summary', asyncHandler(async (_req: AuthRequest, res: Resp
     }),
     prisma.transporterPayment.aggregate({
       where: { paymentDate: { gte: monthStart } },
+      _sum: { amount: true },
+      _count: true,
+    }),
+    prisma.contractorPayment.aggregate({
+      where: { paymentDate: { gte: monthStart }, paymentStatus: { not: 'CANCELLED' } },
       _sum: { amount: true },
       _count: true,
     }),
@@ -195,12 +236,14 @@ router.get('/outgoing/summary', asyncHandler(async (_req: AuthRequest, res: Resp
 
   const vendorTotal = vendorAgg._sum.amount || 0;
   const transporterTotal = transporterAgg._sum.amount || 0;
+  const contractorTotal = contractorAgg._sum.amount || 0;
   const cashTotal = cashAgg._sum.amount || 0;
 
   res.json({
-    totalThisMonth: vendorTotal + transporterTotal + cashTotal,
+    totalThisMonth: vendorTotal + transporterTotal + contractorTotal + cashTotal,
     vendors: { total: vendorTotal, count: vendorAgg._count },
     transporters: { total: transporterTotal, count: transporterAgg._count },
+    contractors: { total: contractorTotal, count: contractorAgg._count },
     cash: { total: cashTotal, count: cashAgg._count },
   });
 }));
@@ -641,6 +684,70 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
       vendorIfsc: po.vendor.bankIfsc || null,
       vendorPhone: po.vendor.phone || null,
     });
+  }
+
+  // ── Contractor bills (confirmed, unpaid) ──
+  const contractorBills = await prisma.contractorBill.findMany({
+    where: { status: { in: ['CONFIRMED', 'PARTIAL_PAID'] }, balanceAmount: { gt: 0 } },
+    select: {
+      id: true, billNo: true, billDate: true, description: true,
+      subtotal: true, totalAmount: true, tdsAmount: true, tdsPercent: true,
+      netPayable: true, paidAmount: true, balanceAmount: true, status: true,
+      contractor: {
+        select: {
+          id: true, name: true, contractorCode: true, tdsPercent: true, tdsSection: true,
+          bankName: true, bankAccount: true, bankIfsc: true, phone: true,
+        },
+      },
+    },
+    orderBy: { billDate: 'asc' },
+    take: 200,
+  });
+
+  for (const cb of contractorBills) {
+    pending.push({
+      poId: cb.id, // reuse field as source ID
+      poNo: cb.billNo,
+      poDate: cb.billDate.toISOString(),
+      poAmount: cb.totalAmount,
+      poSubtotal: cb.subtotal,
+      poGst: cb.totalAmount - cb.subtotal,
+      poStatus: cb.status,
+      dealType: 'CONTRACTOR',
+      vendorId: cb.contractor.id,
+      vendorName: cb.contractor.name,
+      grnId: null,
+      grnNo: null,
+      grnDate: cb.billDate.toISOString(),
+      grnCount: 0,
+      grnTotalValue: cb.totalAmount,
+      paymentTerms: 'COD',
+      creditDays: 0,
+      dueDate: cb.billDate.toISOString(),
+      daysOverdue: Math.floor((today.getTime() - new Date(cb.billDate).getTime()) / (1000 * 60 * 60 * 24)),
+      urgency: Math.floor((today.getTime() - new Date(cb.billDate).getTime()) / (1000 * 60 * 60 * 24)) > 7 ? 'red' : 'amber',
+      invoiceStatus: 'PENDING',
+      paymentStatus: cb.paidAmount > 0 ? 'PARTIAL_PAID' : 'INVOICED',
+      invoices: [{
+        id: cb.id,
+        vendorInvNo: `BILL-${cb.billNo}`,
+        netPayable: cb.netPayable,
+        paidAmount: cb.paidAmount,
+        balanceAmount: cb.balanceAmount,
+        status: cb.status,
+      }],
+      totalInvoiced: cb.netPayable,
+      totalPaid: cb.paidAmount,
+      balance: cb.balanceAmount,
+      tdsApplicable: true,
+      tdsPercent: cb.contractor.tdsPercent,
+      tdsSection: cb.contractor.tdsSection || '194C',
+      material: cb.description,
+      vendorBank: cb.contractor.bankName || null,
+      vendorAccount: cb.contractor.bankAccount || null,
+      vendorIfsc: cb.contractor.bankIfsc || null,
+      vendorPhone: cb.contractor.phone || null,
+    } as PendingPayable);
   }
 
   // Sort by dueDate ascending (most urgent first), nulls last

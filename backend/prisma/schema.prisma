@@ -1555,6 +1555,15 @@ model Invoice {
   amount          Float      @default(0)   // qty × rate
   gstPercent      Float      @default(18)
   gstAmount       Float      @default(0)
+  // GST component split
+  supplyType      String     @default("INTRA_STATE")  // INTRA_STATE or INTER_STATE
+  placeOfSupply   String?                              // State code e.g. "23-MP"
+  cgstPercent     Float      @default(0)
+  cgstAmount      Float      @default(0)
+  sgstPercent     Float      @default(0)
+  sgstAmount      Float      @default(0)
+  igstPercent     Float      @default(0)
+  igstAmount      Float      @default(0)
   freightCharge   Float      @default(0)
   totalAmount     Float      @default(0)   // amount + gst + freight
   // Payment tracking
@@ -2049,6 +2058,12 @@ model ContractorBill {
   status          String   @default("DRAFT") // DRAFT | CONFIRMED | PARTIAL_PAID | PAID | CANCELLED
   vendorBillNo    String?                    // Contractor's own bill number (UPLOADED path)
   documentUrl     String?                    // Uploaded bill file path (UPLOADED path)
+  // ITC tracking (Input Tax Credit)
+  itcEligible       Boolean  @default(true)
+  itcClaimed        Boolean  @default(false)
+  itcClaimedDate    DateTime?
+  itcReversed       Boolean  @default(false)
+  itcReversalReason String?
   confirmedAt     DateTime?
   confirmedBy     String?
   userId          String

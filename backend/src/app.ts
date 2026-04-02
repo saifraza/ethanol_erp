@@ -57,6 +57,9 @@ import vendorInvoiceRoutes from './routes/vendorInvoices';
 import vendorPaymentRoutes from './routes/vendorPayments';
 import bankPaymentRoutes from './routes/bankPayments';
 import pdcRoutes from './routes/postDatedCheques';
+// Contractors
+import contractorRoutes from './routes/contractors';
+import contractorBillRoutes from './routes/contractorBills';
 // Direct Trade (cash purchases/sales without paperwork)
 import directPurchaseRoutes from './routes/directPurchases';
 import directSaleRoutes from './routes/directSales';
@@ -194,6 +197,9 @@ app.use('/api/vendor-invoices', vendorInvoiceRoutes);
 app.use('/api/vendor-payments', vendorPaymentRoutes);
 app.use('/api/bank-payments', bankPaymentRoutes);
 app.use('/api/post-dated-cheques', pdcRoutes);
+// Contractors
+app.use('/api/contractors', contractorRoutes);
+app.use('/api/contractor-bills', contractorBillRoutes);
 // Direct Trade
 app.use('/api/direct-purchases', directPurchaseRoutes);
 app.use('/api/direct-sales', directSaleRoutes);
