@@ -2002,10 +2002,10 @@ export default function PaymentsOut() {
                 </div>
                 <div className="flex gap-6">
                   <span>PO Total: <b className="font-mono">{fmt(poPayItem.poAmount)}</b></span>
-                  <span>Received Value: <b className="font-mono text-blue-700">{fmt(poReceivedValue || poPayItem.grnTotalValue)}</b></span>
+                  <span>Received: <b className="font-mono text-blue-700">{fmt(poReceivedValue || poPayItem.grnTotalValue)}</b></span>
                   <span>Paid: <b className="font-mono text-green-700">{fmt(poPayItem.totalPaid)}</b></span>
-                  {poPendingCash > 0 && <span>Pending Cash: <b className="font-mono text-yellow-600">{fmt(poPendingCash)}</b></span>}
-                  <span>Max Payable: <b className="font-mono text-red-600">{fmt(Math.max(0, (poReceivedValue || poPayItem.grnTotalValue) - poPayItem.totalPaid - poPendingCash))}</b></span>
+                  {poPendingCash > 0 && <span>Pending: <b className="font-mono text-yellow-600">{fmt(poPendingCash)}</b></span>}
+                  <span>Payable Now: <b className="font-mono text-red-600 text-sm">{fmt(Math.max(0, (poReceivedValue || poPayItem.grnTotalValue) - poPayItem.totalPaid - poPendingCash))}</b></span>
                   {poPayItem.dueDate && <span>Due: <b>{fmtDate(poPayItem.dueDate)}</b></span>}
                 </div>
                 {poPayItem.vendorBank && (
@@ -2030,8 +2030,14 @@ export default function PaymentsOut() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Amount *</label>
-                    <input value={poPayAmount} onChange={e => setPoPayAmount(e.target.value)} type="number" autoFocus
-                      className="w-full border border-slate-300 px-2.5 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder={String(poPayItem.balance || 0)} />
+                    {(() => {
+                      const maxPayable = Math.max(0, (poReceivedValue || poPayItem.grnTotalValue) - poPayItem.totalPaid - poPendingCash);
+                      return <>
+                        <input value={poPayAmount} onChange={e => setPoPayAmount(e.target.value)} type="number" autoFocus max={maxPayable}
+                          className="w-full border border-slate-300 px-2.5 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder={String(Math.round(maxPayable))} />
+                        <div className="text-[9px] text-slate-400 mt-0.5">Max payable: {fmt(maxPayable)}</div>
+                      </>;
+                    })()}
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Payment Mode</label>
