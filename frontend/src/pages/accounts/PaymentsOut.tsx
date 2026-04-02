@@ -925,7 +925,7 @@ export default function PaymentsOut() {
                                           { label: 'Ordered', done: true, value: fmt(poDetail.pipeline.ordered.amount), sub: `${poDetail.pipeline.ordered.qty} qty`, mismatch: false },
                                           { label: 'Received', done: poDetail.pipeline.received.grnCount > 0, value: fmt(poDetail.pipeline.received.amount || 0), sub: `${poDetail.pipeline.received.grnCount} GRN${poDetail.pipeline.received.grnCount !== 1 ? 's' : ''} | ${poDetail.pipeline.received.qty} qty`, mismatch: false },
                                           { label: 'Invoiced', done: poDetail.pipeline.invoiced.count > 0, value: fmt(poDetail.pipeline.invoiced.amount), sub: `${poDetail.pipeline.invoiced.count} invoice${poDetail.pipeline.invoiced.count !== 1 ? 's' : ''}`, mismatch: poDetail.pipeline.invoiced.amount > 0 && poDetail.pipeline.ordered.amount > 0 && Math.abs(poDetail.pipeline.invoiced.amount - poDetail.pipeline.ordered.amount) > 10 },
-                                          { label: 'Paid', done: poDetail.pipeline.paid.amount > 0, value: fmt(poDetail.pipeline.paid.amount), sub: poDetail.pipeline.paid.amount === 0 && poDetail.pipeline.invoiced.amount === 0 ? 'Unpaid' : poDetail.pipeline.paid.balance > 0 ? `Bal: ${fmt(poDetail.pipeline.paid.balance)}` : 'Settled', mismatch: false },
+                                          { label: 'Paid', done: poDetail.pipeline.paid.amount > 0, value: fmt(poDetail.pipeline.paid.amount), sub: poDetail.pipeline.paid.pendingCash > 0 ? `+ ${fmt(poDetail.pipeline.paid.pendingCash)} pending cash` : poDetail.pipeline.paid.amount === 0 ? 'Unpaid' : poDetail.pipeline.paid.balance > 0 ? `Bal: ${fmt(poDetail.pipeline.paid.balance)}` : 'Settled', mismatch: false },
                                         ]).map((step, si) => (
                                           <React.Fragment key={step.label}>
                                             {si > 0 && <div className={`h-0.5 w-8 ${step.mismatch ? 'bg-red-400' : step.done ? 'bg-green-400' : 'bg-slate-300'}`} />}
@@ -985,20 +985,35 @@ export default function PaymentsOut() {
                                         </div>
                                         {/* Payments */}
                                         <div>
-                                          <div className="font-bold text-slate-500 uppercase tracking-widest mb-1">Payments ({(poDetail.vendorInvoices || []).flatMap((inv: any) => inv.payments || []).length})</div>
-                                          <div className="max-h-40 overflow-y-auto space-y-1">
-                                            {(poDetail.vendorInvoices || []).flatMap((inv: any) => inv.payments || []).map((p: any) => (
-                                              <div key={p.id} className="bg-white border border-slate-200 px-2 py-1.5">
-                                                <div className="flex items-center justify-between">
-                                                  <span>{fmtDate(p.paymentDate)} <span className="text-[8px] uppercase text-slate-400">{p.mode}</span></span>
-                                                  <span className="font-mono tabular-nums text-green-700 font-medium">{fmt(p.amount)}</span>
-                                                </div>
-                                                {p.reference && <div className="text-[9px] text-slate-400 mt-0.5 font-mono">UTR: {p.reference}</div>}
-                                                {p.tdsDeducted > 0 && <div className="text-[9px] text-slate-400 mt-0.5">TDS: {fmt(p.tdsDeducted)}</div>}
+                                          {(() => {
+                                            const invPayments = (poDetail.vendorInvoices || []).flatMap((inv: any) => inv.payments || []);
+                                            const directPays = poDetail.pipeline?.paid?.directPayments || [];
+                                            const pendingCVs = poDetail.pipeline?.paid?.pendingCashVouchers || [];
+                                            const allPayments = [...invPayments, ...directPays];
+                                            return <>
+                                              <div className="font-bold text-slate-500 uppercase tracking-widest mb-1">Payments ({allPayments.length}{pendingCVs.length > 0 ? ` + ${pendingCVs.length} pending` : ''})</div>
+                                              <div className="max-h-40 overflow-y-auto space-y-1">
+                                                {allPayments.map((p: any) => (
+                                                  <div key={p.id} className="bg-white border border-slate-200 px-2 py-1.5">
+                                                    <div className="flex items-center justify-between">
+                                                      <span>{fmtDate(p.paymentDate)} <span className="text-[8px] uppercase text-slate-400">{p.mode}</span></span>
+                                                      <span className="font-mono tabular-nums text-green-700 font-medium">{fmt(p.amount)}</span>
+                                                    </div>
+                                                    {p.reference && <div className="text-[9px] text-slate-400 mt-0.5 font-mono">Ref: {p.reference}</div>}
+                                                  </div>
+                                                ))}
+                                                {pendingCVs.map((v: any) => (
+                                                  <div key={v.id} className="bg-yellow-50 border border-yellow-300 px-2 py-1.5">
+                                                    <div className="flex items-center justify-between">
+                                                      <span><span className="text-[8px] font-bold uppercase text-yellow-700 bg-yellow-100 px-1 py-0.5 border border-yellow-400">Awaiting Cash</span> CV#{v.voucherNo}</span>
+                                                      <span className="font-mono tabular-nums text-yellow-700 font-medium">{fmt(v.amount)}</span>
+                                                    </div>
+                                                  </div>
+                                                ))}
+                                                {allPayments.length === 0 && pendingCVs.length === 0 && <div className="text-slate-400">No payments</div>}
                                               </div>
-                                            ))}
-                                            {(poDetail.vendorInvoices || []).flatMap((inv: any) => inv.payments || []).length === 0 && <div className="text-slate-400">No payments</div>}
-                                          </div>
+                                            </>;
+                                          })()}
                                         </div>
                                       </div>
 

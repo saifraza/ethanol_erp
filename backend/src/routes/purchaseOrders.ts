@@ -100,10 +100,33 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const totalReceived = po.lines.reduce((s, l) => s + (l.receivedQty || 0), 0);
     const totalPending = po.lines.reduce((s, l) => s + (l.pendingQty || l.quantity - (l.receivedQty || 0)), 0);
     const totalInvoiced = (po.vendorInvoices || []).reduce((s: number, inv: any) => s + (inv.totalAmount || 0), 0);
-    const totalPaid = (po.vendorInvoices || []).reduce((s: number, inv: any) =>
+    let totalPaid = (po.vendorInvoices || []).reduce((s: number, inv: any) =>
       s + (inv.payments || []).reduce((ps: number, p: any) => ps + (p.amount || 0), 0), 0);
     const totalTDS = (po.vendorInvoices || []).reduce((s: number, inv: any) =>
       s + (inv.payments || []).reduce((ps: number, p: any) => ps + (p.tdsDeducted || 0), 0), 0);
+
+    // Also count direct PO payments (not linked to invoices — from Pay on PO flow)
+    const directPayments = await prisma.vendorPayment.findMany({
+      where: {
+        vendorId: po.vendorId,
+        invoiceId: null,
+        OR: [
+          { remarks: { contains: `PO-${po.poNo} ` } },
+          { remarks: { endsWith: `PO-${po.poNo}` } },
+        ],
+      },
+      orderBy: { paymentDate: 'desc' },
+      select: { id: true, amount: true, mode: true, reference: true, paymentDate: true, tdsDeducted: true, remarks: true },
+    });
+    const directPaidTotal = directPayments.reduce((s, p) => s + p.amount, 0);
+    totalPaid += directPaidTotal;
+
+    // Pending cash vouchers (ACTIVE, not yet settled)
+    const pendingCashVouchers = await prisma.cashVoucher.findMany({
+      where: { status: 'ACTIVE', purpose: { contains: `PO-${po.poNo}` } },
+      select: { id: true, voucherNo: true, amount: true, status: true },
+    });
+    const pendingCashTotal = pendingCashVouchers.reduce((s, v) => s + v.amount, 0);
 
     // For OPEN/fuel deals: grandTotal is 0, compute from PO line rate * received qty
     const isOpenDeal = (po as any).dealType === 'OPEN';
@@ -126,7 +149,7 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
       ordered: { qty: totalOrdered, amount: effectiveAmount },
       received: { qty: totalReceived, pending: totalPending, grnCount: po.grns.length, amount: receivedValue },
       invoiced: { amount: totalInvoiced, count: (po.vendorInvoices || []).length },
-      paid: { amount: totalPaid, tds: totalTDS, balance: effectiveBalance },
+      paid: { amount: totalPaid, tds: totalTDS, balance: effectiveBalance, directPayments, pendingCash: pendingCashTotal, pendingCashVouchers },
     };
 
     res.json({ ...po, pipeline });
