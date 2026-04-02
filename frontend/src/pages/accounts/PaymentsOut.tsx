@@ -383,11 +383,9 @@ export default function PaymentsOut() {
 
       // Cash payments create a voucher, not a direct payment
       if (res.data.type === 'CASH_VOUCHER') {
+        alert(`Cash Voucher #${res.data.voucher.voucherNo} created.\n\nCash team will see it in Cash Vouchers.\nPO balance updates after they settle it.`);
         setPoPayItem(null);
         fetchPending();
-        if (confirm(`Cash Voucher #${res.data.voucher.voucherNo} created.\n\nGo to Cash Vouchers page to confirm payment?`)) {
-          window.location.href = '/accounts/cash-vouchers';
-        }
         return;
       }
 
