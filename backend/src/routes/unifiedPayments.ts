@@ -430,7 +430,7 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
       id: true, poNo: true, poDate: true, grandTotal: true, subtotal: true, totalGst: true, status: true, paymentTerms: true, creditDays: true,
       dealType: true,
       vendor: { select: { id: true, name: true, creditDays: true, paymentTerms: true, tdsApplicable: true, tdsPercent: true, tdsSection: true, bankName: true, bankAccount: true, bankIfsc: true, phone: true } },
-      lines: { select: { description: true }, take: 1 },
+      lines: { select: { description: true, receivedQty: true, rate: true, gstPercent: true, quantity: true } },
       grns: {
         where: { status: { not: 'CANCELLED' } },  // Include DRAFT + CONFIRMED (not just CONFIRMED)
         orderBy: { grnDate: 'desc' },
@@ -578,8 +578,25 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
     else if (invoices.length > 0 && totalPaid === 0) paymentStatus = 'INVOICED';
     else paymentStatus = 'GRN_RECEIVED';
 
-    // Balance: for invoiced POs use invoice balance; for non-invoiced subtract direct payments
-    const balance = invoices.length > 0 ? invoiceBalance : Math.max(0, effectivePoAmount - totalPaid);
+    // Calculate received value (what's actually been delivered) — cap payable at this amount
+    const receivedValue = Math.round((po as any).lines?.reduce((s: number, l: any) => {
+      const base = (l.receivedQty || 0) * (l.rate || 0);
+      return s + base + base * (l.gstPercent || 0) / 100;
+    }, 0) * 100) / 100 || grnTotalValue;
+
+    // Count pending cash vouchers (committed but not confirmed)
+    let pendingCash = 0;
+    try {
+      const pendingCVs = await prisma.cashVoucher.findMany({
+        where: { status: 'ACTIVE', purpose: { contains: `PO-${po.poNo}` } },
+        select: { amount: true },
+      });
+      pendingCash = pendingCVs.reduce((s, v) => s + v.amount, 0);
+    } catch { /* ignore */ }
+
+    // Balance: payable = received value - paid - pending cash (NOT full PO amount)
+    const payableBase = invoices.length > 0 ? invoiceBalance : receivedValue;
+    const balance = invoices.length > 0 ? invoiceBalance : Math.max(0, payableBase - totalPaid - pendingCash);
 
     pending.push({
       poId: po.id,
