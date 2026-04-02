@@ -24,7 +24,7 @@ if (LIGHTRAG_URL) {
     baseURL: LIGHTRAG_URL,
     timeout: 60000,
     headers: {
-      ...(LIGHTRAG_API_KEY && { Authorization: `Bearer ${LIGHTRAG_API_KEY}` }),
+      ...(LIGHTRAG_API_KEY && { 'X-API-Key': LIGHTRAG_API_KEY }),
     },
   });
 }
