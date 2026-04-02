@@ -45,12 +45,9 @@ router.put('/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthReque
     return res.status(400).json({ error: 'Status must be APPROVED or REJECTED' });
   }
 
-  const approval = await prisma.approval.findUnique({ where: { id: req.params.id } });
-  if (!approval) return res.status(404).json({ error: 'Approval not found' });
-  if (approval.status !== 'PENDING') return res.status(400).json({ error: `Already ${approval.status}` });
-
-  const updated = await prisma.approval.update({
-    where: { id: req.params.id },
+  // Atomic: only update if still PENDING (prevents race between two admins)
+  const result = await prisma.approval.updateMany({
+    where: { id: req.params.id, status: 'PENDING' },
     data: {
       status,
       reviewedBy: req.user!.id,
@@ -59,6 +56,13 @@ router.put('/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthReque
     },
   });
 
+  if (result.count === 0) {
+    const existing = await prisma.approval.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: 'Approval not found' });
+    return res.status(400).json({ error: `Already ${existing.status}` });
+  }
+
+  const updated = await prisma.approval.findUnique({ where: { id: req.params.id } });
   res.json(updated);
 }));
 

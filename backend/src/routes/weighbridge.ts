@@ -399,12 +399,14 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
           }
           const rate = poLine.rate;
 
-          // Overage tolerance: allow up to 5% over PO qty, flag >5% for admin approval
-          const overageQty = receivedQty - poLine.pendingQty;
-          const overagePercent = poLine.quantity > 0 ? (overageQty / poLine.quantity) * 100 : 0;
+          // Overage tolerance: check if this delivery pushes total received beyond PO qty + 5%
+          // Works for both exhausted POs (pendingQty<=0) AND mid-PO deliveries that exceed
+          const newTotalReceived = poLine.receivedQty + receivedQty;
+          const overageQty = newTotalReceived - poLine.quantity;
+          const overagePercent = poLine.quantity > 0 ? (overageQty / poLine.quantity) * 100 : (newTotalReceived > 0 ? 100 : 0);
           let needsApproval = false;
 
-          if (poLine.pendingQty <= 0 && overageQty > 0) {
+          if (overageQty > 0) {
             if (overagePercent <= 5) {
               // Within 5% tolerance — auto-allow, proceed to create GRN
             } else {

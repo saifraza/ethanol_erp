@@ -399,7 +399,7 @@ router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Re
     take: 100,
     orderBy: { poDate: 'desc' },
     select: {
-      id: true, poNo: true, dealType: true, status: true, poDate: true, remarks: true,
+      id: true, poNo: true, dealType: true, status: true, poDate: true, deliveryDate: true, remarks: true,
       vendor: { select: { id: true, name: true, phone: true } },
       lines: {
         select: {
@@ -550,7 +550,8 @@ router.post('/deals', authenticate, validate(openDealSchema), asyncHandler(async
       dealType: isOpen ? 'OPEN' : 'STANDARD',
       status: 'APPROVED',
       poDate: new Date(),
-      deliveryDate: b.validUntil ? new Date(b.validUntil) : null,
+      // Store as end-of-day IST (23:59 IST = 18:29 UTC) so PO stays active the whole expiry day
+      deliveryDate: b.validUntil ? (() => { const d = new Date(b.validUntil + 'T23:59:00+05:30'); return d; })() : null,
       paymentTerms: b.paymentTerms || 'NET15',
       creditDays,
       deliveryAddress: b.deliveryPoint || 'Factory Gate',
