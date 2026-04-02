@@ -181,7 +181,7 @@ router.get('/outgoing', asyncHandler(async (req: AuthRequest, res: Response) => 
           date: c.date,
           payee: c.payeeName,
           payeeType: 'CASH',
-          amount: c.amount,
+          amount: Number(c.amount),
           mode: c.paymentMode,
           reference: c.paymentRef,
           remarks: [c.category, c.purpose, c.status !== 'ACTIVE' ? c.status : null].filter(Boolean).join(' | ') || null,
@@ -230,7 +230,7 @@ router.get('/outgoing/summary', asyncHandler(async (_req: AuthRequest, res: Resp
       monthStart
     ).then((rows: unknown) => {
       const r = (rows as Array<{ total: number; count: number }>)[0];
-      return { _sum: { amount: r?.total || 0 }, _count: r?.count || 0 };
+      return { _sum: { amount: Number(r?.total) || 0 }, _count: Number(r?.count) || 0 };
     }).catch(() => ({ _sum: { amount: 0 }, _count: 0 })),
   ]);
 
@@ -560,7 +560,7 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
           `SELECT COALESCE(SUM(amount), 0) as total FROM "CashVoucher" WHERE type = 'PAYMENT' AND "payeeName" = $1 AND purpose LIKE $2`,
           po.vendor.name, `%PO-${po.poNo}%`
         ) as Array<{ total: number }>;
-        totalPaid += cashPaid[0]?.total || 0;
+        totalPaid += Number(cashPaid[0]?.total) || 0; // $queryRawUnsafe returns numeric as string
       } catch { /* CashVoucher table may not exist */ }
     }
 
