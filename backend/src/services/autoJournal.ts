@@ -174,6 +174,7 @@ export async function onSaleInvoiceCreated(
     sgstAmount?: number;
     igstAmount?: number;
     supplyType?: string;
+    freightCharge?: number;
     productName: string;
     customerId: string;
     userId: string;
@@ -196,9 +197,11 @@ export async function onSaleInvoiceCreated(
       if (!accts[code]) return null; // Accounts not seeded yet
     }
 
+    // Credit sales revenue includes freight recovery to keep journal balanced
+    const salesCredit = invoice.amount + (invoice.freightCharge || 0);
     const lines: { accountId: string; debit: number; credit: number; narration?: string }[] = [
       { accountId: accts[ACCT.TRADE_RECEIVABLE], debit: invoice.totalAmount, credit: 0, narration: `INV-${invoice.invoiceNo}` },
-      { accountId: accts[salesCode], debit: 0, credit: invoice.amount, narration: `${invoice.productName} sale` },
+      { accountId: accts[salesCode], debit: 0, credit: salesCredit, narration: `${invoice.productName} sale${invoice.freightCharge ? ' + freight' : ''}` },
     ];
 
     if (isInterstate) {

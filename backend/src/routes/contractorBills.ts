@@ -156,6 +156,7 @@ router.post('/', validate(createBillSchema), asyncHandler(async (req: AuthReques
       balanceAmount: netPayable,
       status: 'DRAFT',
       vendorBillNo: vendorBillNo || null,
+      itcEligible: !!contractor.gstin,
       userId: req.user!.id,
       lines: billPath === 'CREATED' && lines ? {
         create: lines.map((l: { description: string; quantity: number; unit: string; rate: number }) => ({

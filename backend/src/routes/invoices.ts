@@ -155,6 +155,7 @@ router.post('/', async (req: Request, res: Response) => {
       amount: invoice.amount, gstAmount: invoice.gstAmount, gstPercent: invoice.gstPercent,
       cgstAmount: invoice.cgstAmount, sgstAmount: invoice.sgstAmount,
       igstAmount: invoice.igstAmount, supplyType: invoice.supplyType,
+      freightCharge: invoice.freightCharge,
       productName: invoice.productName, customerId: b.customerId,
       userId: (req as any).user.id, invoiceDate: invoice.invoiceDate,
     }).catch(() => {});
@@ -261,7 +262,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     if (b.gstPercent !== undefined) updateData.gstPercent = parseFloat(b.gstPercent);
     if (b.freightCharge !== undefined) updateData.freightCharge = parseFloat(b.freightCharge);
 
-    // Recalculate amounts if needed
+    // Recalculate amounts with GST split if needed
     if (b.quantity !== undefined || b.rate !== undefined || b.gstPercent !== undefined || b.freightCharge !== undefined) {
       const quantity = parseFloat(b.quantity) || invoice.quantity;
       const rate = parseFloat(b.rate) || invoice.rate;
@@ -269,11 +270,20 @@ router.put('/:id', async (req: Request, res: Response) => {
       const freightCharge = parseFloat(b.freightCharge) || invoice.freightCharge;
 
       const amount = quantity * rate;
-      const gstAmount = (amount * gstPercent) / 100;
-      const totalAmount = amount + gstAmount + freightCharge;
+      const cust = await prisma.customer.findUnique({ where: { id: invoice.customerId }, select: { state: true } });
+      const gst = calcGstSplit(amount, gstPercent, cust?.state);
+      const totalAmount = amount + gst.gstAmount + freightCharge;
 
       updateData.amount = amount;
-      updateData.gstAmount = gstAmount;
+      updateData.gstAmount = gst.gstAmount;
+      updateData.supplyType = gst.supplyType;
+      updateData.placeOfSupply = cust?.state || null;
+      updateData.cgstPercent = gst.cgstPercent;
+      updateData.cgstAmount = gst.cgstAmount;
+      updateData.sgstPercent = gst.sgstPercent;
+      updateData.sgstAmount = gst.sgstAmount;
+      updateData.igstPercent = gst.igstPercent;
+      updateData.igstAmount = gst.igstAmount;
       updateData.totalAmount = totalAmount;
       updateData.balanceAmount = totalAmount - invoice.paidAmount;
     }

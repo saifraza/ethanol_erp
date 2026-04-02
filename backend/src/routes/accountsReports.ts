@@ -1,10 +1,11 @@
 import { Router, Response } from 'express';
-import { AuthRequest } from '../middleware/auth';
+import { AuthRequest, authenticate } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { NotFoundError } from '../shared/errors';
 import prisma from '../config/prisma';
 
 const router = Router();
+router.use(authenticate as any);
 
 // Account codes used throughout
 const ACCOUNT_CODES = {
@@ -800,7 +801,7 @@ router.get('/itc-register', asyncHandler(async (req: AuthRequest, res: Response)
   if (status === 'eligible') { viWhere.itcEligible = true; viWhere.itcClaimed = false; viWhere.itcReversed = false; }
   else if (status === 'claimed') { viWhere.itcClaimed = true; }
   else if (status === 'reversed') { viWhere.itcReversed = true; }
-  const cbWhere: any = { billDate: dateFilter, status: { not: 'CANCELLED' } };
+  const cbWhere: any = { billDate: dateFilter, status: { notIn: ['CANCELLED', 'DRAFT'] } };
   if (status === 'eligible') { cbWhere.itcEligible = true; cbWhere.itcClaimed = false; cbWhere.itcReversed = false; }
   else if (status === 'claimed') { cbWhere.itcClaimed = true; }
   else if (status === 'reversed') { cbWhere.itcReversed = true; }
@@ -814,14 +815,24 @@ router.get('/itc-register', asyncHandler(async (req: AuthRequest, res: Response)
   res.json({ period: { from, to }, vendorInvoices, contractorBills, totals: { eligibleCgst: round(viT.cgst + cbT.cgst), eligibleSgst: round(viT.sgst + cbT.sgst), eligibleIgst: round(viT.igst + cbT.igst), eligibleTotal: round(viT.cgst + cbT.cgst + viT.sgst + cbT.sgst + viT.igst + cbT.igst), claimedCount: vendorInvoices.filter((v: any) => v.itcClaimed).length + contractorBills.filter((c: any) => c.itcClaimed).length, unclaimedCount: vendorInvoices.filter((v: any) => v.itcEligible && !v.itcClaimed).length + contractorBills.filter((c: any) => c.itcEligible && !c.itcClaimed).length } });
 }));
 
-// POST /itc-claim — Bulk mark ITC as claimed
+// POST /itc-claim — Bulk mark ITC as claimed (transactional, excludes draft/reversed)
 router.post('/itc-claim', asyncHandler(async (req: AuthRequest, res: Response) => {
   const { vendorInvoiceIds, contractorBillIds } = req.body;
+  if (!vendorInvoiceIds?.length && !contractorBillIds?.length) { res.status(400).json({ error: 'No IDs provided' }); return; }
   const now = new Date();
-  let updated = 0;
-  if (vendorInvoiceIds?.length > 0) { const r = await prisma.vendorInvoice.updateMany({ where: { id: { in: vendorInvoiceIds }, itcEligible: true, itcClaimed: false }, data: { itcClaimed: true, itcClaimedDate: now } }); updated += r.count; }
-  if (contractorBillIds?.length > 0) { const r = await prisma.contractorBill.updateMany({ where: { id: { in: contractorBillIds }, itcEligible: true, itcClaimed: false }, data: { itcClaimed: true, itcClaimedDate: now } }); updated += r.count; }
-  res.json({ updated });
+  const result = await prisma.$transaction(async (tx) => {
+    let updated = 0;
+    if (vendorInvoiceIds?.length > 0) {
+      const r = await tx.vendorInvoice.updateMany({ where: { id: { in: vendorInvoiceIds }, itcEligible: true, itcClaimed: false, itcReversed: false, status: { in: ['VERIFIED', 'APPROVED', 'PAID'] } }, data: { itcClaimed: true, itcClaimedDate: now } });
+      updated += r.count;
+    }
+    if (contractorBillIds?.length > 0) {
+      const r = await tx.contractorBill.updateMany({ where: { id: { in: contractorBillIds }, itcEligible: true, itcClaimed: false, itcReversed: false, status: { in: ['CONFIRMED', 'PARTIAL_PAID', 'PAID'] } }, data: { itcClaimed: true, itcClaimedDate: now } });
+      updated += r.count;
+    }
+    return updated;
+  });
+  res.json({ updated: result });
 }));
 
 export default router;
