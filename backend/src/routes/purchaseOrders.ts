@@ -460,7 +460,8 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
       remarks: po.remarks,
       lines: po.lines.map((l: any) => {
         // For open fuel deals (qty=999999), use receivedQty for PDF display
-        const displayQty = l.quantity >= 900000 ? (l.receivedQty || l.quantity) : l.quantity;
+        // For open/truck deals (qty=999999), show receivedQty. If no receipts yet, show 0 (not 999999)
+        const displayQty = l.quantity >= 900000 ? (l.receivedQty || 0) : l.quantity;
         const lineAmount = l.amount && l.amount > 0 ? l.amount : displayQty * l.rate;
         const taxable = l.taxableAmount && l.taxableAmount > 0 ? l.taxableAmount : lineAmount * (1 - (l.discountPercent || 0) / 100);
         const gstAmt = taxable * (l.gstPercent || 0) / 100;
@@ -620,8 +621,9 @@ router.get('/:id/payments', asyncHandler(async (req: AuthRequest, res: Response)
 
 // POST /:id/pay — record payment against PO (partial OK, auto-close when fully paid)
 router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => {
-  const { amount, mode, reference, remarks: userRemarks } = req.body;
-  if (!amount || amount <= 0) return res.status(400).json({ error: 'Amount must be positive' });
+  const { mode, reference, remarks: userRemarks } = req.body;
+  const amount = parseFloat(req.body.amount);
+  if (!amount || !isFinite(amount) || amount <= 0) return res.status(400).json({ error: 'Amount must be a positive number' });
 
   const po = await prisma.purchaseOrder.findUnique({
     where: { id: req.params.id },
@@ -636,9 +638,11 @@ router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => 
     return s + base + base * (l.gstPercent || 0) / 100;
   }, 0) * 100) / 100;
 
-  // Calculate already paid
+  // Calculate already paid (scoped to this vendor + PO reference)
   const existingPayments = await prisma.vendorPayment.findMany({
     where: {
+      vendorId: po.vendorId,
+      invoiceId: null,
       OR: [
         { remarks: { contains: `PO-${po.poNo} ` } },
         { remarks: { endsWith: `PO-${po.poNo}` } },
@@ -650,7 +654,7 @@ router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => 
   const remaining = receivable - alreadyPaid;
 
   if (amount > remaining + 0.01) {
-    return res.status(400).json({ error: `Payment (${amount}) exceeds remaining balance (${remaining.toFixed(2)})` });
+    return res.status(400).json({ error: `Payment ₹${amount.toLocaleString('en-IN')} exceeds remaining balance ₹${remaining.toFixed(2)}` });
   }
 
   // Create payment
@@ -659,7 +663,7 @@ router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => 
       vendorId: po.vendorId,
       paymentDate: new Date(),
       amount,
-      mode: mode || 'CASH',
+      mode: mode || 'NEFT',
       reference: reference || '',
       isAdvance: false,
       remarks: `Payment against PO-${po.poNo}${userRemarks ? ' | ' + userRemarks : ''}`,
@@ -671,14 +675,17 @@ router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => 
   try {
     const { onVendorPaymentMade } = await import('../services/autoJournal');
     await onVendorPaymentMade(prisma as Parameters<typeof onVendorPaymentMade>[0], {
-      id: payment.id, amount, mode: mode || 'CASH', reference: reference || '',
+      id: payment.id, amount, mode: mode || 'NEFT', reference: reference || '',
       tdsDeducted: 0, vendorId: po.vendorId, userId: req.user!.id, paymentDate: payment.paymentDate,
     });
   } catch { /* best effort */ }
 
-  // Check if fully paid → close PO
+  // Auto-close PO when fully paid
   const newTotalPaid = alreadyPaid + amount;
   const fullyPaid = newTotalPaid >= receivable - 0.01;
+  if (fullyPaid && po.status !== 'CLOSED') {
+    await prisma.purchaseOrder.update({ where: { id: po.id }, data: { status: 'CLOSED' } });
+  }
 
   res.json({
     payment,

@@ -384,7 +384,11 @@ export default function PaymentsOut() {
       setPoPayAmount('');
       setPoPayRef('');
       setPoPayRemarks('');
-      // Refresh pending items
+      // Refresh pending items and close modal if fully paid
+      const res2 = await api.get(`/purchase-orders/${poPayItem.poId}/payments`);
+      if (res2.data.isFullyPaid) {
+        setPoPayItem(null);
+      }
       fetchPending();
     } catch (err: unknown) {
       alert((err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Payment failed');
@@ -879,8 +883,8 @@ export default function PaymentsOut() {
                                       </button>
                                     </>
                                   )}
-                                  {/* Direct PAY against PO — for any PO with GRNs (running account, no invoice needed) */}
-                                  {item.grnCount > 0 && (
+                                  {/* Direct PAY against PO — only when no invoices exist (running account) */}
+                                  {item.grnCount > 0 && item.invoices.length === 0 && item.balance > 0 && (
                                     <button onClick={() => { setPoPayItem(item); setPoPayAmount(''); setPoPayMode('CASH'); setPoPayRef(''); setPoPayRemarks(''); fetchPOPayments(item.poId); }}
                                       className="px-2 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase hover:bg-green-700 flex items-center gap-1" title="Pay against PO">
                                       <CreditCard size={10} /> PAY
