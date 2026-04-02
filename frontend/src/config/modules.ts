@@ -10,7 +10,8 @@ import {
   Building2, Box, ShoppingBag, PackageCheck, Receipt, CreditCard,
   Store, Tractor, Scale, Handshake,
   BookOpen, Calculator, TrendingUp, Landmark,
-  PackageSearch, ArrowRightLeft, ClipboardCheck, BarChart2, Banknote, PieChart, HardHat
+  PackageSearch, ArrowRightLeft, ClipboardCheck, BarChart2, Banknote, PieChart, HardHat,
+  FolderArchive, Search
 } from 'lucide-react';
 
 export interface ModuleDef {
@@ -106,6 +107,8 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'settings', label: 'Settings', to: '/settings', icon: Settings, group: 'admin', adminOnly: true },
   { key: 'users', label: 'Users', to: '/users', icon: Users, group: 'admin', adminOnly: true },
   { key: 'weighment-system', label: 'Factory Linkage', to: '/weighment-system', icon: Radio, group: 'admin' },
+  { key: 'company-documents', label: 'Document Vault', to: '/admin/documents', icon: FolderArchive, group: 'admin' },
+  { key: 'document-search', label: 'Doc Search (AI)', to: '/admin/document-search', icon: Search, group: 'admin' },
 ];
 
 // For UsersPage — unique module keys for permission assignment (excludes adminOnly)
