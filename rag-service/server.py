@@ -61,7 +61,10 @@ async def lifespan(app: FastAPI):
     try:
         from raganything import RAGAnything, RAGAnythingConfig
 
-        config = RAGAnythingConfig(working_dir=WORKING_DIR)
+        config = RAGAnythingConfig(
+            working_dir=WORKING_DIR,
+            parse_method="pipeline",  # CPU-optimized (no GPU needed, ~10s/page vs 2.5min/page)
+        )
 
         GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
@@ -184,7 +187,7 @@ async def upload_document(
                 await rag.process_document_complete(
                     file_path=file_path,
                     output_dir=OUTPUT_DIR,
-                    parse_method="auto",
+                    parse_method="pipeline",
                 )
             else:
                 # LightRAG fallback — read text and insert
