@@ -18,10 +18,12 @@ from fastapi import FastAPI, File, UploadFile, Request, Header, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from lightrag.utils import EmbeddingFunc
+import numpy as np
+from lightrag.utils import EmbeddingFunc, wrap_embedding_func_with_attrs
 from lightrag.base import QueryParam
+from lightrag.llm.gemini import gemini_embed
 
-from gemini_funcs import gemini_llm_func, gemini_vision_func, gemini_embed_func
+from gemini_funcs import gemini_llm_func, gemini_vision_func
 from classifier import classify_document
 
 logging.basicConfig(level=logging.INFO)
@@ -61,11 +63,20 @@ async def lifespan(app: FastAPI):
 
         config = RAGAnythingConfig(working_dir=WORKING_DIR)
 
-        embedding_func = EmbeddingFunc(
+        GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+
+        # Use LightRAG's built-in Gemini embedding (handles API correctly)
+        @wrap_embedding_func_with_attrs(
             embedding_dim=768,
             max_token_size=2048,
-            func=gemini_embed_func,
+            model_name="gemini-embedding-001",
         )
+        async def embedding_func(texts: list[str]) -> np.ndarray:
+            return await gemini_embed.func(
+                texts,
+                api_key=GEMINI_API_KEY,
+                model="gemini-embedding-001",
+            )
 
         rag = RAGAnything(
             config=config,
@@ -88,16 +99,22 @@ async def lifespan(app: FastAPI):
         logger.warning("RAG-Anything not available, falling back to LightRAG")
         from lightrag import LightRAG
 
-        embedding_func = EmbeddingFunc(
+        GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+
+        @wrap_embedding_func_with_attrs(
             embedding_dim=768,
             max_token_size=2048,
-            func=gemini_embed_func,
+            model_name="gemini-embedding-001",
         )
+        async def fallback_embed(texts: list[str]) -> np.ndarray:
+            return await gemini_embed.func(
+                texts, api_key=GEMINI_API_KEY, model="gemini-embedding-001",
+            )
 
         rag = LightRAG(
             working_dir=WORKING_DIR,
             llm_model_func=gemini_llm_func,
-            embedding_func=embedding_func,
+            embedding_func=fallback_embed,
         )
 
     yield
