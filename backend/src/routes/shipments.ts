@@ -300,6 +300,39 @@ router.put('/:id/status', async (req: Request, res: Response) => {
   try {
     const b = req.body;
     const newStatus = b.status;
+
+    // ── Validate status transition ──
+    const allowedShipmentTransitions: { [key: string]: string[] } = {
+      GATE_IN:        ['TARE_WEIGHED', 'CANCELLED'],
+      TARE_WEIGHED:   ['LOADING', 'CANCELLED'],
+      LOADING:        ['GROSS_WEIGHED', 'CANCELLED'],
+      GROSS_WEIGHED:  ['RELEASED', 'CANCELLED'],
+      RELEASED:       ['EXITED', 'CANCELLED'],
+      EXITED:         ['DELIVERED'],
+      DELIVERED:      ['GR_RECEIVED'],
+      GR_RECEIVED:    [],
+      CANCELLED:      [],
+    };
+
+    const currentShipment = await prisma.shipment.findUnique({
+      where: { id: req.params.id },
+      select: { status: true },
+    });
+
+    if (!currentShipment) {
+      res.status(404).json({ error: 'Shipment not found' });
+      return;
+    }
+
+    const allowedNext = allowedShipmentTransitions[currentShipment.status] || [];
+    if (!allowedNext.includes(newStatus)) {
+      res.status(400).json({
+        error: `Cannot transition from ${currentShipment.status} to ${newStatus}. Allowed: ${allowedNext.join(', ') || 'none'}`,
+        code: 'INVALID_TRANSITION',
+      });
+      return;
+    }
+
     let updateData: any = { status: newStatus };
 
     // Status-specific logic
@@ -482,6 +515,51 @@ router.put('/:id', async (req: Request, res: Response) => {
       },
     });
     res.json(shipment);
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /:id/delivery — Confirm delivery / GR receipt
+router.post('/:id/delivery', async (req: Request, res: Response) => {
+  try {
+    const b = req.body;
+    const shipment = await prisma.shipment.findUnique({ where: { id: req.params.id } });
+    if (!shipment) { res.status(404).json({ error: 'Shipment not found' }); return; }
+
+    // Only allow delivery updates for shipments that have left the factory
+    if (!['EXITED', 'DELIVERED', 'GR_RECEIVED'].includes(shipment.status)) {
+      res.status(400).json({ error: `Shipment is ${shipment.status} — delivery can only be confirmed after exit` });
+      return;
+    }
+
+    const updateData: any = {};
+
+    // Delivery confirmation
+    if (b.deliveryStatus) updateData.deliveryStatus = b.deliveryStatus;
+    if (b.deliveredAt) updateData.deliveredAt = new Date(b.deliveredAt);
+    if (b.receivedByName) updateData.receivedByName = b.receivedByName;
+    if (b.receivedByPhone) updateData.receivedByPhone = b.receivedByPhone;
+    if (b.podRemarks) updateData.podRemarks = b.podRemarks;
+
+    // GR / Bilty receipt
+    if (b.grBiltyNo) updateData.grBiltyNo = b.grBiltyNo;
+    if (b.grBiltyDate) updateData.grBiltyDate = new Date(b.grBiltyDate);
+    if (b.grReceivedBack !== undefined) updateData.grReceivedBack = !!b.grReceivedBack;
+    if (b.grReceivedDate) updateData.grReceivedDate = new Date(b.grReceivedDate);
+
+    // Auto-advance status if appropriate
+    if (b.deliveryStatus === 'DELIVERED' && shipment.status === 'EXITED') {
+      updateData.status = 'DELIVERED';
+    }
+    if (b.grReceivedBack && shipment.status === 'DELIVERED') {
+      updateData.status = 'GR_RECEIVED';
+    }
+
+    const updated = await prisma.shipment.update({
+      where: { id: req.params.id },
+      data: updateData,
+      include: { dispatchRequest: { include: { orderLine: true } } },
+    });
+    res.json(updated);
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 

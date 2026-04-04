@@ -344,6 +344,7 @@ export default function SalesOrders() {
                     <option value="ADVANCE">Advance</option>
                     <option value="COD">COD</option>
                     <option value="NET7">7 Days</option>
+                    <option value="NET10">10 Days</option>
                     <option value="NET15">15 Days</option>
                     <option value="NET30">30 Days</option>
                   </select>

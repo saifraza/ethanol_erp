@@ -166,6 +166,26 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const b = req.body;
   const amount = parseFloat(b.amount) || 0;
 
+  // Validate: prevent overpayment on invoice
+  if (b.invoiceId) {
+    const invoice = await prisma.invoice.findUnique({ where: { id: b.invoiceId } });
+    if (!invoice) {
+      res.status(404).json({ error: 'Invoice not found' });
+      return;
+    }
+    if (invoice.status === 'PAID') {
+      res.status(400).json({ error: 'Invoice is already fully paid' });
+      return;
+    }
+    if (amount > invoice.balanceAmount) {
+      res.status(400).json({
+        error: `Payment amount (${amount}) exceeds invoice balance (${invoice.balanceAmount})`,
+        code: 'OVERPAYMENT',
+      });
+      return;
+    }
+  }
+
   // Wrap in transaction to ensure atomicity
   const result = await prisma.$transaction(async (tx: any) => {
     // Create payment
@@ -190,6 +210,10 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       });
 
       if (invoice) {
+        // Re-check overpayment inside transaction (race condition safety)
+        if (amount > invoice.balanceAmount) {
+          throw new Error(`Payment amount (${amount}) exceeds invoice balance (${invoice.balanceAmount})`);
+        }
         const newPaidAmount = invoice.paidAmount + amount;
         const newBalanceAmount = invoice.totalAmount - newPaidAmount;
         let newStatus = 'UNPAID';

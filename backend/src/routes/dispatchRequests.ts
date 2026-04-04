@@ -295,6 +295,14 @@ router.put('/:id/status', asyncHandler(async (req: AuthRequest, res: Response) =
       },
     });
 
+    // Cascade cancel FreightInquiry when DR is cancelled
+    if (status === 'CANCELLED') {
+      await prisma.freightInquiry.updateMany({
+        where: { dispatchRequestId: dr.id, status: { notIn: ['CANCELLED', 'AWARDED'] } },
+        data: { status: 'CANCELLED' },
+      });
+    }
+
     // Handle DISPATCHED -> COMPLETED transition
     if (dr.status === 'DISPATCHED' && status === 'COMPLETED') {
       // Update orderLine.dispatchedQty and pendingQty if orderLineId exists

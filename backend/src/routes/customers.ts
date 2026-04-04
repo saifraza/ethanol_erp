@@ -90,6 +90,7 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
     const creditLimit = parseFloat(b.creditLimit) || 0;
+    const cautionDeposit = parseFloat(b.cautionDeposit) || 0;
 
     const customer = await prisma.customer.create({
       data: {
@@ -105,6 +106,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         phone: b.phone || '',
         email: b.email || '',
         creditLimit,
+        cautionDeposit,
         defaultTerms: b.defaultTerms || '',
         isActive: true,
         remarks: b.remarks || '',
@@ -117,6 +119,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
 router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
     const creditLimit = parseFloat(b.creditLimit) || 0;
+    const cautionDeposit = parseFloat(b.cautionDeposit) || 0;
 
     const customer = await prisma.customer.update({
       where: { id: req.params.id },
@@ -133,6 +136,7 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
         phone: b.phone,
         email: b.email,
         creditLimit,
+        cautionDeposit,
         defaultTerms: b.defaultTerms,
         remarks: b.remarks,
       }

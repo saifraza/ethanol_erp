@@ -16,6 +16,7 @@ interface Customer {
   phone?: string;
   email?: string;
   creditLimit?: number;
+  cautionDeposit?: number;
   defaultTerms?: string;
   outstandingBalance?: number;
   active?: boolean;
@@ -44,6 +45,7 @@ export default function Customers() {
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [creditLimit, setCreditLimit] = useState('');
+  const [cautionDeposit, setCautionDeposit] = useState('');
   const [defaultTerms, setDefaultTerms] = useState('COD');
   const [gstLookupLoading, setGstLookupLoading] = useState(false);
 
@@ -108,6 +110,7 @@ export default function Customers() {
     setPhone('');
     setEmail('');
     setCreditLimit('');
+    setCautionDeposit('');
     setDefaultTerms('COD');
     setEditId(null);
     setShowForm(false);
@@ -128,6 +131,7 @@ export default function Customers() {
       setPhone(customer.phone || '');
       setEmail(customer.email || '');
       setCreditLimit(customer.creditLimit?.toString() || '');
+      setCautionDeposit(customer.cautionDeposit?.toString() || '');
       setDefaultTerms(customer.defaultTerms || 'COD');
     }
     setShowForm(true);
@@ -156,6 +160,7 @@ export default function Customers() {
         phone,
         email,
         creditLimit: creditLimit ? parseFloat(creditLimit) : undefined,
+        cautionDeposit: cautionDeposit ? parseFloat(cautionDeposit) : undefined,
         defaultTerms,
       };
 
@@ -320,6 +325,15 @@ export default function Customers() {
                 </div>
               </div>
 
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Caution Deposit</label>
+                  <input type="number" value={cautionDeposit} onChange={e => setCautionDeposit(e.target.value)}
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
+                    placeholder="50000" />
+                </div>
+              </div>
+
               <div className="mb-3">
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Address</label>
                 <input value={address} onChange={e => setAddress(e.target.value)}
@@ -355,6 +369,7 @@ export default function Customers() {
                   <option value="ADVANCE">Advance</option>
                   <option value="COD">Cash on Delivery</option>
                   <option value="NET7">Net 7 Days</option>
+                  <option value="NET10">Net 10 Days</option>
                   <option value="NET15">Net 15 Days</option>
                   <option value="NET30">Net 30 Days</option>
                 </select>

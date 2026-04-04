@@ -1213,7 +1213,8 @@ model Customer {
   phone           String?
   email           String?
   creditLimit     Float    @default(0)     // max outstanding allowed (Rs)
-  defaultTerms    String   @default("ADVANCE") // ADVANCE, COD, NET7, NET15, NET30
+  cautionDeposit  Float    @default(0)     // caution / security deposit (Rs)
+  defaultTerms    String   @default("ADVANCE") // ADVANCE, COD, NET7, NET10, NET15, NET30
   isActive        Boolean  @default(true)
   remarks         String?
   createdAt       DateTime @default(now())
@@ -1261,7 +1262,7 @@ model SalesOrder {
   orderDate       DateTime @default(now())
   deliveryDate    DateTime?
   poNumber        String?                  // customer PO reference
-  paymentTerms    String   @default("ADVANCE") // ADVANCE, COD, NET7, NET15, NET30
+  paymentTerms    String   @default("ADVANCE") // ADVANCE, COD, NET7, NET10, NET15, NET30
   logisticsBy     String   @default("BUYER")   // BUYER or SELLER
   deliveryAddress String?                  // delivery location / full address
   transporterId   String?                  // if SELLER arranges
@@ -1323,8 +1324,8 @@ model DispatchRequest {
   freightRate     Float?                   // Rs per MT (negotiated)
   distanceKm      Float?                   // factory to destination distance
   // Status flow
-  status          String          @default("PENDING")
-  // PENDING → ACCEPTED → VEHICLE_ASSIGNED → LOADING → DISPATCHED → COMPLETED
+  status          String          @default("SCHEDULED")
+  // SCHEDULED → LOADING → DISPATCHED → COMPLETED | CANCELLED
   acceptedAt      DateTime?
   acceptedBy      String?
   remarks         String?
@@ -1394,7 +1395,7 @@ model Shipment {
   insuranceNo     String?
   insuranceProvider String?
   // ── Payment gate (for ADVANCE / COD orders) ──
-  paymentTerms    String?                  // inherited from SalesOrder: ADVANCE, COD, NET7, NET15, NET30
+  paymentTerms    String?                  // inherited from SalesOrder: ADVANCE, COD, NET7, NET10, NET15, NET30
   paymentStatus   String           @default("PENDING") // PENDING, CONFIRMED, NOT_REQUIRED
   paymentMode     String?                  // CASH, UPI, NEFT, RTGS, CHEQUE, BANK_TRANSFER
   paymentRef      String?                  // UTR / cheque no / transaction ID

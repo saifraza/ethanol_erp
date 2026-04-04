@@ -629,6 +629,7 @@ export default function Vendors() {
                         <option value="ADVANCE">Advance</option>
                         <option value="COD">Cash on Delivery</option>
                         <option value="NET7">Net 7 Days</option>
+                        <option value="NET10">Net 10 Days</option>
                         <option value="NET15">Net 15 Days</option>
                         <option value="NET30">Net 30 Days</option>
                         <option value="NET45">Net 45 Days</option>
