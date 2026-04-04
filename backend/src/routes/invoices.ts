@@ -369,6 +369,15 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
       destination: lifting?.destination || null,
       distanceKm: lifting?.distanceKm || null,
       strength: lifting?.strength || null,
+      // Consignee (Ship To) — if different from buyer
+      consignee: lifting?.consigneeName ? {
+        name: lifting.consigneeName,
+        gstin: lifting.consigneeGstin || null,
+        address: lifting.consigneeAddress || null,
+        state: lifting.consigneeState || null,
+        stateCode: lifting.consigneeGstin ? lifting.consigneeGstin.substring(0, 2) : null,
+        pincode: lifting.consigneePincode || null,
+      } : null,
       // E-Invoice / E-Way Bill data
       irn: invoice.irn || null,
       irnDate: invoice.irnDate || null,

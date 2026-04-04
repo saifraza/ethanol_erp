@@ -2277,6 +2277,12 @@ model EthanolLifting {
   invoiceId       String?
   invoice         Invoice?  @relation(fields: [invoiceId], references: [id])
   distanceKm      Int?      // for e-way bill generation
+  // Consignee (Ship To) — if different from buyer
+  consigneeName    String?
+  consigneeGstin   String?
+  consigneeAddress String?
+  consigneeState   String?
+  consigneePincode String?
   // Status
   status          String   @default("LOADED") // LOADED, IN_TRANSIT, DELIVERED, SHORTAGE
   deliveredQtyKL  Float?

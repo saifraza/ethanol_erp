@@ -124,7 +124,9 @@ const emptyForm = {
 
 const emptyLiftingForm = {
   liftingDate: new Date().toISOString().slice(0, 10), vehicleNo: '', driverName: '', driverPhone: '',
-  transporterName: '', destination: '', quantityBL: '', quantityKL: '', strength: '', rate: '', invoiceNo: '', distanceKm: '', remarks: '',
+  transporterName: '', destination: '', quantityBL: '', quantityKL: '', strength: '', rate: '', invoiceNo: '', distanceKm: '',
+  consigneeName: '', consigneeGstin: '', consigneeAddress: '', consigneeState: '', consigneePincode: '',
+  remarks: '',
 };
 
 const typeLabels: Record<string, string> = { JOB_WORK: 'Job Work', FIXED_PRICE: 'Fixed Price', OMC: 'OMC Direct' };
@@ -929,6 +931,20 @@ const EthanolContracts: React.FC = () => {
                 <div><label className={labelCls}>Distance (km)</label><input type="number" value={liftForm.distanceKm} onChange={e => setLiftForm(p => ({ ...p, distanceKm: e.target.value }))} placeholder="for E-Way Bill" className={inputCls} /></div>
                 <div className="col-span-3"><label className={labelCls}>Remarks</label><input type="text" value={liftForm.remarks} onChange={e => setLiftForm(p => ({ ...p, remarks: e.target.value }))} className={inputCls} /></div>
               </div>
+
+              {/* Consignee (Ship To) — collapsible */}
+              <details className="border border-slate-200 bg-slate-50">
+                <summary className="px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest cursor-pointer hover:bg-slate-100">
+                  Ship To (Consignee) — if different from buyer
+                </summary>
+                <div className="p-3 pt-2 grid grid-cols-2 gap-3">
+                  <div><label className={labelCls}>Consignee Name</label><input type="text" value={liftForm.consigneeName} onChange={e => setLiftForm(p => ({ ...p, consigneeName: e.target.value }))} className={inputCls} /></div>
+                  <div><label className={labelCls}>Consignee GSTIN</label><input type="text" value={liftForm.consigneeGstin} onChange={e => setLiftForm(p => ({ ...p, consigneeGstin: e.target.value.toUpperCase() }))} maxLength={15} className={inputCls} /></div>
+                  <div className="col-span-2"><label className={labelCls}>Consignee Address</label><input type="text" value={liftForm.consigneeAddress} onChange={e => setLiftForm(p => ({ ...p, consigneeAddress: e.target.value }))} className={inputCls} /></div>
+                  <div><label className={labelCls}>State</label><input type="text" value={liftForm.consigneeState} onChange={e => setLiftForm(p => ({ ...p, consigneeState: e.target.value }))} className={inputCls} /></div>
+                  <div><label className={labelCls}>Pincode</label><input type="text" value={liftForm.consigneePincode} onChange={e => setLiftForm(p => ({ ...p, consigneePincode: e.target.value }))} maxLength={6} className={inputCls} /></div>
+                </div>
+              </details>
             </div>
             <div className="flex gap-3 p-5 border-t border-slate-200">
               <button onClick={handleLiftingSubmit} disabled={liftSaving}

@@ -80,11 +80,18 @@
       <td rowspan="4">
         <div style="font-size:7.5px; color:#555;">Consignee (Ship to)</div>
         <div class="company-block">
+          {{#if consignee}}
+          <div class="name">{{consignee.name}}</div>
+          {{#if consignee.address}}<div>{{consignee.address}}</div>{{/if}}
+          {{#if consignee.gstin}}<div class="gstin">GSTIN/UIN : {{consignee.gstin}}</div>{{/if}}
+          {{#if consignee.state}}<div>State Name : {{consignee.state}}{{#if consignee.stateCode}}, Code : {{consignee.stateCode}}{{/if}}</div>{{/if}}
+          {{else}}
           <div class="name">{{customer.name}}</div>
           {{#if customer.address}}<div>{{customer.address}}</div>{{/if}}
           {{#if customer.city}}<div>{{customer.city}}</div>{{/if}}
           {{#if customer.gstin}}<div class="gstin">GSTIN/UIN : {{customer.gstin}}</div>{{/if}}
           {{#if customer.state}}<div>State Name : {{customer.state}}{{#if customer.stateCode}}, Code : {{customer.stateCode}}{{/if}}</div>{{/if}}
+          {{/if}}
         </div>
       </td>
       <td class="inv-label">Dispatch Doc No.</td>
