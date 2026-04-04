@@ -69,13 +69,13 @@ async def lifespan(app: FastAPI):
         @wrap_embedding_func_with_attrs(
             embedding_dim=768,
             max_token_size=2048,
-            model_name="gemini-embedding-001",
+            model_name="models/text-embedding-004",
         )
         async def embedding_func(texts: list[str]) -> np.ndarray:
             return await gemini_embed.func(
                 texts,
                 api_key=GEMINI_API_KEY,
-                model="gemini-embedding-001",
+                model="models/text-embedding-004",
             )
 
         rag = RAGAnything(
