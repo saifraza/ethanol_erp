@@ -187,7 +187,7 @@ async def upload_document(
                 await rag.process_document_complete(
                     file_path=file_path,
                     output_dir=OUTPUT_DIR,
-                    parse_method="pipeline",
+                    parse_method="txt",
                 )
             else:
                 # LightRAG fallback — read text and insert
