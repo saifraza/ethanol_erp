@@ -753,4 +753,61 @@ router.patch('/:id/auto-einvoice', asyncHandler(async (req: AuthRequest, res: Re
     res.json({ contract });
 }));
 
+// ── E-WAY BILL PDF ──
+router.get('/:id/liftings/:liftingId/ewb-pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const lifting = await prisma.ethanolLifting.findFirst({
+      where: { id: req.params.liftingId, contractId: req.params.id },
+      include: { invoice: { include: { customer: true } }, contract: true },
+    });
+    if (!lifting) return res.status(404).json({ error: 'Lifting not found' });
+    if (!lifting.invoice?.ewbNo) return res.status(400).json({ error: 'No E-Way Bill generated for this lifting' });
+
+    const inv = lifting.invoice;
+    const cust = inv.customer;
+    const contract = lifting.contract;
+    const buyerStateCode = cust.gstNo ? cust.gstNo.substring(0, 2) : '';
+
+    const { renderDocumentPdf } = await import('../services/documentRenderer');
+    const pdfBuffer = await renderDocumentPdf({
+      docType: 'EWAY_BILL',
+      data: {
+        ewbNo: inv.ewbNo,
+        ewbDate: inv.ewbDate,
+        ewbValidTill: inv.ewbValidTill,
+        invoiceNo: inv.invoiceNo,
+        invoiceDate: inv.invoiceDate,
+        distanceKm: lifting.distanceKm || 0,
+        sellerGstin: '23AAECM3666P1Z1',
+        sellerName: 'Mahakaushal Sugar And Power Ind (Ethanol Div)',
+        sellerState: 'MADHYA PRADESH',
+        sellerAddress: 'Village Agariya, Bachai, District Narsinghpur, Madhya Pradesh - 487001',
+        buyerGstin: cust.gstNo || '',
+        buyerName: cust.name,
+        buyerState: (cust.state || '').toUpperCase(),
+        buyerAddress: [cust.address, cust.city].filter(Boolean).join(', '),
+        buyerPincode: cust.pincode || '',
+        productName: inv.productName,
+        hsnCode: inv.productName?.toUpperCase().includes('ETHANOL') ? '22072000' : inv.productName?.toUpperCase().includes('DDGS') ? '23033000' : '998817',
+        quantity: inv.quantity,
+        unit: inv.unit,
+        amount: inv.amount,
+        supplyType: inv.supplyType,
+        cgstPercent: inv.cgstPercent,
+        cgstAmount: inv.cgstAmount,
+        sgstPercent: inv.sgstPercent,
+        sgstAmount: inv.sgstAmount,
+        igstPercent: inv.igstPercent,
+        igstAmount: inv.igstAmount,
+        totalAmount: inv.totalAmount,
+        vehicleNo: lifting.vehicleNo,
+        transporterName: lifting.transporterName || 'OWN TRANSPORT',
+        destination: lifting.destination || cust.state || '',
+      },
+    });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="EWB-${inv.ewbNo}.pdf"`);
+    res.send(pdfBuffer);
+}));
+
 export default router;

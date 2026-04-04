@@ -242,4 +242,5 @@ export const DOC_TYPE_TO_TEMPLATE: Record<string, string> = {
   VENDOR_INVOICE: 'vendor-invoice',
   GOODS_RECEIPT: 'goods-receipt',
   PAYMENT_CONFIRMATION: 'payment-confirmation',
+  EWAY_BILL: 'eway-bill',
 };

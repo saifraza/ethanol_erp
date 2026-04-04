@@ -698,6 +698,16 @@ const EthanolContracts: React.FC = () => {
                                                 } catch { setError('Failed to load invoice PDF'); }
                                               }} className="text-slate-400 hover:text-slate-700" title="Print Invoice"><FileText size={11} /></button>
                                             )}
+                                            {l.invoice?.ewbNo && (
+                                              <button onClick={async (e) => {
+                                                e.stopPropagation();
+                                                try {
+                                                  const res = await api.get(`/ethanol-contracts/${c.id}/liftings/${l.id}/ewb-pdf`, { responseType: 'blob' });
+                                                  const url = URL.createObjectURL(res.data);
+                                                  window.open(url, '_blank');
+                                                } catch { setError('Failed to load E-Way Bill PDF'); }
+                                              }} className="text-green-400 hover:text-green-700" title="Print E-Way Bill"><Truck size={11} /></button>
+                                            )}
                                             <button onClick={(e) => { e.stopPropagation(); handleDeleteLifting(l.id); }} className="text-red-400 hover:text-red-600"><Trash2 size={11} /></button>
                                           </div>
                                         </td>
