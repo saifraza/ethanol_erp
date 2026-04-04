@@ -4,6 +4,20 @@
 <body>
 <div class="page">
   {{> letterhead}}
+
+  {{#if irn}}
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px; border:1px solid #ccc; padding:6px 10px; font-size:8.5px; background:#fafafa;">
+    <div>
+      <div style="font-weight:bold; font-size:10px; margin-bottom:3px;">e-Invoice</div>
+      <div><span style="font-weight:600;">IRN:</span> <span style="font-family:monospace; font-size:7.5px; word-break:break-all;">{{irn}}</span></div>
+      {{#if ackNo}}<div><span style="font-weight:600;">Ack No:</span> {{ackNo}}</div>{{/if}}
+      {{#if irnDate}}<div><span style="font-weight:600;">Ack Date:</span> {{formatDate irnDate}}</div>{{/if}}
+      {{#if ewbNo}}<div style="margin-top:2px;"><span style="font-weight:600;">E-Way Bill:</span> {{ewbNo}}{{#if ewbDate}} ({{formatDate ewbDate}}){{/if}}{{#if ewbValidTill}} — Valid till {{formatDate ewbValidTill}}{{/if}}</div>{{/if}}
+    </div>
+    {{#if signedQRCode}}<div style="flex-shrink:0; margin-left:10px;"><img src="data:image/png;base64,{{signedQRCode}}" alt="QR" style="width:80px; height:80px;"></div>{{/if}}
+  </div>
+  {{/if}}
+
   <div class="doc-title">TAX INVOICE</div>
 
   <div class="details-grid">

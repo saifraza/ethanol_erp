@@ -687,7 +687,13 @@ const EthanolContracts: React.FC = () => {
                                         </td>
                                         {/* Actions */}
                                         <td className="px-2 py-1.5 text-center">
-                                          <button onClick={(e) => { e.stopPropagation(); handleDeleteLifting(l.id); }} className="text-red-400 hover:text-red-600"><Trash2 size={11} /></button>
+                                          <div className="flex items-center justify-center gap-1">
+                                            {l.invoice && (
+                                              <button onClick={(e) => { e.stopPropagation(); window.open(`/api/invoices/${l.invoice!.id}/pdf`, '_blank'); }}
+                                                className="text-slate-400 hover:text-slate-700" title="Print Invoice"><FileText size={11} /></button>
+                                            )}
+                                            <button onClick={(e) => { e.stopPropagation(); handleDeleteLifting(l.id); }} className="text-red-400 hover:text-red-600"><Trash2 size={11} /></button>
+                                          </div>
                                         </td>
                                       </tr>
                                       {/* IRN/EWB detail row */}

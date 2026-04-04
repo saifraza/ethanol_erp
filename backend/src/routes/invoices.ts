@@ -351,6 +351,14 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
       freightCharge: invoice.freightCharge,
       totalAmount: invoice.totalAmount,
       remarks: invoice.remarks,
+      // E-Invoice / E-Way Bill data
+      irn: invoice.irn || null,
+      irnDate: invoice.irnDate || null,
+      ackNo: invoice.ackNo || null,
+      signedQRCode: invoice.signedQRCode || null,
+      ewbNo: invoice.ewbNo || null,
+      ewbDate: invoice.ewbDate || null,
+      ewbValidTill: invoice.ewbValidTill || null,
     };
 
     const pdfBuffer = await renderDocumentPdf({
