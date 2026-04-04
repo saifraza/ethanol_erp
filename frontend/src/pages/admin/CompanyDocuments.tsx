@@ -56,7 +56,6 @@ export default function CompanyDocuments() {
   });
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [classifying, setClassifying] = useState(false);
 
   const fetchDocs = useCallback(async () => {
     try {
@@ -79,34 +78,9 @@ export default function CompanyDocuments() {
 
   useEffect(() => { fetchDocs(); }, [fetchDocs]);
 
-  const handleFileSelect = async (selectedFile: File) => {
+  const handleFileSelect = (selectedFile: File) => {
     setFile(selectedFile);
-    setClassifying(true);
-    try {
-      const fd = new FormData();
-      fd.append('file', selectedFile);
-      const res = await api.post('/company-documents/classify', fd);
-      const m = res.data;
-      setForm(f => ({
-        ...f,
-        category: m.category || f.category,
-        subcategory: m.subcategory || f.subcategory,
-        title: m.title || selectedFile.name,
-        description: m.summary || f.description,
-        issuedBy: m.issuedBy || f.issuedBy,
-        issuedDate: m.issuedDate || f.issuedDate,
-        expiryDate: m.expiryDate || f.expiryDate,
-        referenceNo: m.referenceNo || f.referenceNo,
-        department: m.department || f.department,
-        tags: m.tags || f.tags,
-      }));
-    } catch (err) {
-      console.error('Auto-classify failed:', err);
-      // Fall back to filename as title
-      setForm(f => ({ ...f, title: selectedFile.name }));
-    } finally {
-      setClassifying(false);
-    }
+    setForm(f => ({ ...f, title: f.title || selectedFile.name.replace(/\.[^.]+$/, '').replace(/[_-]/g, ' ') }));
   };
 
   const handleUpload = async (e: React.FormEvent) => {
@@ -312,18 +286,6 @@ export default function CompanyDocuments() {
                   <input type="file" onChange={e => { const f = e.target.files?.[0]; if (f) handleFileSelect(f); }}
                     accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.tif,.tiff"
                     className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" required />
-                  {classifying && (
-                    <div className="mt-2 space-y-1.5">
-                      <div className="flex items-center gap-2">
-                        <div className="h-1.5 flex-1 bg-slate-200 overflow-hidden">
-                          <div className="h-full bg-blue-600 animate-[progress_3s_ease-in-out_infinite]" style={{ width: '100%', animation: 'progress 3s ease-in-out infinite' }} />
-                        </div>
-                        <span className="text-[10px] text-blue-600 font-bold uppercase tracking-widest whitespace-nowrap">Analyzing...</span>
-                      </div>
-                      <div className="text-[9px] text-slate-400">AI is reading the document and detecting category, dates, issuer, and metadata</div>
-                      <style>{`@keyframes progress { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }`}</style>
-                    </div>
-                  )}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
