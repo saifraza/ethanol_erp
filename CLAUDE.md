@@ -90,14 +90,23 @@ if (isRagEnabled()) {
 }
 ```
 
-**For generated PDFs** — already handled automatically by `documentRenderer.ts`. Any doc rendered via `renderDocumentPdf()` is auto-indexed.
+**For ERP records (POs, invoices, GRNs, sales orders)** — use `ragIndexer.ts`:
+```typescript
+import { indexRecord } from '../services/ragIndexer';
+
+// After record is created/confirmed:
+indexRecord({ sourceType: 'PurchaseOrder', sourceId: po.id });
+```
+This composes a text summary from DB fields (no PDF needed) and sends to RAG. Already hooked into:
+- PurchaseOrder (on APPROVED), Invoice (on create), GoodsReceipt (on create), SalesOrder (on create)
 
 **For Obsidian vault** — `vaultWriter.ts` also inserts summaries into RAG via `lightragInsertText()`.
 
-**When adding a new module with document uploads:**
-1. Import `{ lightragUpload, isRagEnabled }` from `../services/lightragClient`
-2. After the upload response, add `setImmediate` fire-and-forget RAG indexing
-3. Also call `generateVaultNote()` from `../services/vaultWriter` for Obsidian sync
+**When adding a new module:**
+1. **If it has file uploads** — add `lightragUpload()` fire-and-forget after saving file
+2. **If it creates business records** (orders, invoices, receipts) — add `indexRecord()` call and add an indexer function in `ragIndexer.ts`
+3. **Always call** `generateVaultNote()` from `../services/vaultWriter` for Obsidian sync
+4. All three are fire-and-forget — never block the response
 
 ### Module Build Approach
 When building new modules:
