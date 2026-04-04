@@ -19,6 +19,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from lightrag.utils import EmbeddingFunc
+from lightrag.base import QueryParam
 
 from gemini_funcs import gemini_llm_func, gemini_vision_func, gemini_embed_func
 from classifier import classify_document
@@ -250,8 +251,10 @@ async def query(
         raise HTTPException(status_code=400, detail="No query provided")
 
     try:
-        if hasattr(rag, "aquery"):
-            result = await rag.aquery(q, param={"mode": mode})
+        if hasattr(rag, "lightrag") and rag.lightrag:
+            result = await rag.lightrag.aquery(q, param=QueryParam(mode=mode))
+        elif hasattr(rag, "aquery"):
+            result = await rag.aquery(q, mode=mode)
         else:
             result = "RAG not initialized"
         return {"response": result}
@@ -278,7 +281,10 @@ async def query_stream(
         raise HTTPException(status_code=400, detail="No query provided")
 
     try:
-        result = await rag.aquery(q, param={"mode": mode})
+        if hasattr(rag, "lightrag") and rag.lightrag:
+            result = await rag.lightrag.aquery(q, param=QueryParam(mode=mode))
+        else:
+            result = await rag.aquery(q, mode=mode)
 
         async def stream():
             yield json.dumps({"response": result}) + "\n"
