@@ -834,13 +834,19 @@ router.post('/:id/liftings/:liftingId/cancel-ewb', asyncHandler(async (req: Auth
     if (!lifting) return res.status(404).json({ error: 'Lifting not found' });
     if (!lifting.invoice?.ewbNo) return res.status(400).json({ error: 'No E-Way Bill to cancel' });
 
-    const { cancelEwayBill } = await import('../services/ewayBill');
-    const reasonCode = req.body.reasonCode || 3; // 1=Duplicate, 2=Data Entry, 3=Order Cancelled, 4=Others
-    const remarks = req.body.remarks || 'Cancelled from ERP';
+    const forceLocal = req.body.forceLocal === true; // Skip portal, just mark cancelled in DB
 
-    const result = await cancelEwayBill(String(lifting.invoice.ewbNo), reasonCode, remarks);
-    if (!result.success) {
-      return res.status(400).json({ error: result.error || 'EWB cancel failed', rawResponse: result.rawResponse });
+    if (!forceLocal) {
+      const { cancelEwayBill } = await import('../services/ewayBill');
+      const reasonCode = req.body.reasonCode || 3;
+      const remarks = req.body.remarks || 'Cancelled from ERP';
+      const result = await cancelEwayBill(String(lifting.invoice.ewbNo), reasonCode, remarks);
+      if (!result.success) {
+        return res.status(400).json({
+          error: result.error || 'EWB cancel failed on portal. Use forceLocal:true to mark cancelled in DB only.',
+          rawResponse: result.rawResponse,
+        });
+      }
     }
 
     await prisma.invoice.update({
@@ -848,7 +854,7 @@ router.post('/:id/liftings/:liftingId/cancel-ewb', asyncHandler(async (req: Auth
       data: { ewbStatus: 'CANCELLED' } as any,
     });
 
-    res.json({ success: true, message: `E-Way Bill ${lifting.invoice.ewbNo} cancelled` });
+    res.json({ success: true, message: `E-Way Bill ${lifting.invoice.ewbNo} cancelled${forceLocal ? ' (local only)' : ''}` });
 }));
 
 // ── CANCEL IRN for a lifting ──

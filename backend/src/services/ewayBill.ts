@@ -839,8 +839,19 @@ export async function cancelEwayBill(ewayBillNo: string, cancelReason: number, c
         cancelRsnCode: cancelReason,
         cancelRmrk: cancelRemarks || 'Cancelled',
       };
-      const result = await saralApiCall('/eiewb/v1.03/ewbCancel', payload, 'Cancel EWB');
-      return { success: true, ewayBillNo, rawResponse: result };
+      // Try multiple Saral GSP cancel paths
+      const paths = ['/eiewb/v1.03/ewbCancel', '/ewaybillapi/v1.03/ewayapi'];
+      let lastErr = '';
+      for (const p of paths) {
+        try {
+          const result = await saralApiCall(p, payload, `Cancel EWB (${p})`);
+          return { success: true, ewayBillNo, rawResponse: result };
+        } catch (e: any) {
+          lastErr = e.message;
+          console.log(`[EWB Cancel] Path ${p} failed: ${lastErr}`);
+        }
+      }
+      throw new Error(lastErr || 'All cancel paths failed');
     } catch (err: any) {
       return { success: false, error: err.message };
     }
