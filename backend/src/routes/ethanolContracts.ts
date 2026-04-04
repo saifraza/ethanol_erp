@@ -768,6 +768,10 @@ router.get('/:id/liftings/:liftingId/ewb-pdf', asyncHandler(async (req: AuthRequ
     const buyerStateCode = cust.gstNo ? cust.gstNo.substring(0, 2) : '';
 
     const { renderDocumentPdf } = await import('../services/documentRenderer');
+    const { generateQRCode } = await import('../services/templateEngine');
+    let ewbQrDataUrl = '';
+    try { ewbQrDataUrl = await generateQRCode(String(inv.ewbNo)); } catch { /* non-critical */ }
+
     const pdfBuffer = await renderDocumentPdf({
       docType: 'EWAY_BILL',
       data: {
@@ -802,6 +806,7 @@ router.get('/:id/liftings/:liftingId/ewb-pdf', asyncHandler(async (req: AuthRequ
         vehicleNo: lifting.vehicleNo,
         transporterName: lifting.transporterName || 'OWN TRANSPORT',
         destination: lifting.destination || cust.state || '',
+        ewbQrDataUrl,
       },
     });
 

@@ -379,6 +379,15 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
       ewbValidTill: invoice.ewbValidTill || null,
     };
 
+    // Generate QR from IRN if signed QR is missing but IRN exists
+    if (invData.irn && !invData.signedQRCode) {
+      try {
+        const { generateQRCode } = await import('../services/templateEngine');
+        invData.signedQRCode = null; // Will use irnQrDataUrl instead
+        (invData as any).irnQrDataUrl = await generateQRCode(`https://einvoice1.gst.gov.in/Others/VSignQRCode?irn=${invData.irn}`);
+      } catch { /* non-critical */ }
+    }
+
     const pdfBuffer = await renderDocumentPdf({
       docType: 'INVOICE',
       data: invData,

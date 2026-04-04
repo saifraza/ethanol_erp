@@ -41,7 +41,7 @@
       {{#if ackNo}}<div><span style="font-weight:600;">Ack No.</span> : <span class="inv-mono">{{ackNo}}</span></div>{{/if}}
       {{#if irnDate}}<div><span style="font-weight:600;">Ack Date</span> : {{formatDate irnDate}}</div>{{/if}}
     </div>
-    {{#if signedQRCode}}<div class="qr-img"><img src="data:image/png;base64,{{signedQRCode}}" alt="QR"></div>{{/if}}
+    {{#if signedQRCode}}<div class="qr-img"><img src="data:image/png;base64,{{signedQRCode}}" alt="QR"></div>{{else}}{{#if irnQrDataUrl}}<div class="qr-img"><img src="{{irnQrDataUrl}}" alt="QR"></div>{{/if}}{{/if}}
   </div>
   {{/if}}
 

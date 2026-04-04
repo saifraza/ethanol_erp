@@ -151,8 +151,11 @@
     </tbody>
   </table>
 
-  <!-- Barcode -->
-  <div class="barcode">{{ewbNo}}</div>
+  <!-- QR / Barcode -->
+  <div style="text-align:center; margin-top:12px;">
+    {{#if ewbQrDataUrl}}<img src="{{ewbQrDataUrl}}" alt="EWB QR" style="width:100px; height:100px;">{{/if}}
+    <div class="barcode">{{ewbNo}}</div>
+  </div>
 
 </div>
 </body>
