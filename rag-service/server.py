@@ -66,19 +66,23 @@ async def lifespan(app: FastAPI):
         GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
         # Use LightRAG's built-in Gemini embedding (handles API correctly)
-        # Direct v1 API call — bypasses LightRAG's v1beta gemini_embed
+        # Direct v1beta API call with gemini-embedding-001
+        # Returns exactly 1 embedding per request via embedContent (not batchEmbedContents)
         import aiohttp
 
-        async def _embed_v1(texts: list[str]) -> np.ndarray:
-            """Call Gemini v1 embedContent API directly (not v1beta)."""
+        async def _embed_single(texts: list[str]) -> np.ndarray:
+            """Embed one text at a time via Gemini REST API. Guarantees 1 vector per text."""
             all_embeddings = []
             for text in texts:
-                url = f"https://generativelanguage.googleapis.com/v1/models/text-embedding-004:embedContent?key={GEMINI_API_KEY}"
-                payload = {"content": {"parts": [{"text": text}]}}
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key={GEMINI_API_KEY}"
+                payload = {
+                    "content": {"parts": [{"text": text}]},
+                    "outputDimensionality": 768,
+                }
                 async with aiohttp.ClientSession() as session:
                     async with session.post(url, json=payload) as resp:
                         data = await resp.json()
-                        if "embedding" in data:
+                        if "embedding" in data and "values" in data["embedding"]:
                             all_embeddings.append(data["embedding"]["values"])
                         else:
                             raise RuntimeError(f"Embed failed: {data}")
@@ -87,10 +91,10 @@ async def lifespan(app: FastAPI):
         @wrap_embedding_func_with_attrs(
             embedding_dim=768,
             max_token_size=2048,
-            model_name="text-embedding-004",
+            model_name="gemini-embedding-001",
         )
         async def embedding_func(texts: list[str]) -> np.ndarray:
-            return await _embed_v1(texts)
+            return await _embed_single(texts)
 
         rag = RAGAnything(
             config=config,
