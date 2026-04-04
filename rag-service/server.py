@@ -63,7 +63,7 @@ async def lifespan(app: FastAPI):
 
         config = RAGAnythingConfig(
             working_dir=WORKING_DIR,
-            parse_method="pipeline",  # CPU-optimized (no GPU needed, ~10s/page vs 2.5min/page)
+            parse_method="txt",  # Text extraction only (fast on CPU, no VLM/GPU needed)
         )
 
         GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
