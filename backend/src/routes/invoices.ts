@@ -318,12 +318,15 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
   try {
     const invoice = await prisma.invoice.findUnique({
       where: { id: req.params.id },
-      include: { customer: true },
+      include: { customer: true, ethanolLiftings: { take: 1 } },
     });
 
     if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
 
     const isIntraState = invoice.customer.state?.toLowerCase().includes('madhya pradesh');
+    const lifting = invoice.ethanolLiftings?.[0] || null;
+    const stateCode = invoice.customer.gstNo ? invoice.customer.gstNo.substring(0, 2) : '';
+
     const invData = {
       invoiceNo: invoice.invoiceNo,
       invoiceDate: invoice.invoiceDate,
@@ -338,9 +341,11 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
         address: invoice.customer.address,
         city: invoice.customer.city,
         state: invoice.customer.state,
+        stateCode,
         pincode: invoice.customer.pincode,
       },
       productName: invoice.productName,
+      hsnCode: invoice.productName?.toUpperCase().includes('ETHANOL') ? '22072000' : invoice.productName?.toUpperCase().includes('DDGS') ? '23033000' : '998817',
       quantity: invoice.quantity,
       unit: invoice.unit,
       rate: invoice.rate,
@@ -348,9 +353,22 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
       gstPercent: invoice.gstPercent,
       gstAmount: invoice.gstAmount,
       halfGst: invoice.gstAmount / 2,
+      cgstAmount: invoice.cgstAmount || 0,
+      sgstAmount: invoice.sgstAmount || 0,
+      igstAmount: invoice.igstAmount || 0,
+      cgstPercent: invoice.cgstPercent || 0,
+      sgstPercent: invoice.sgstPercent || 0,
+      igstPercent: invoice.igstPercent || 0,
       freightCharge: invoice.freightCharge,
       totalAmount: invoice.totalAmount,
       remarks: invoice.remarks,
+      // Transport / Dispatch info (from ethanol lifting if linked)
+      vehicleNo: lifting?.vehicleNo || null,
+      driverName: lifting?.driverName || null,
+      transporterName: lifting?.transporterName || null,
+      destination: lifting?.destination || null,
+      distanceKm: lifting?.distanceKm || null,
+      strength: lifting?.strength || null,
       // E-Invoice / E-Way Bill data
       irn: invoice.irn || null,
       irnDate: invoice.irnDate || null,
