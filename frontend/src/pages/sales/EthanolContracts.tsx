@@ -124,7 +124,7 @@ const emptyForm = {
 
 const emptyLiftingForm = {
   liftingDate: new Date().toISOString().slice(0, 10), vehicleNo: '', driverName: '', driverPhone: '',
-  transporterName: '', destination: '', quantityBL: '', quantityKL: '', strength: '', rate: '', invoiceNo: '', remarks: '',
+  transporterName: '', destination: '', quantityBL: '', quantityKL: '', strength: '', rate: '', invoiceNo: '', distanceKm: '', remarks: '',
 };
 
 const typeLabels: Record<string, string> = { JOB_WORK: 'Job Work', FIXED_PRICE: 'Fixed Price', OMC: 'OMC Direct' };
@@ -868,7 +868,10 @@ const EthanolContracts: React.FC = () => {
                 <div><label className={labelCls}>Strength %</label><input type="number" value={liftForm.strength} step="0.01" onChange={e => setLiftForm(p => ({ ...p, strength: e.target.value }))} className={inputCls} /></div>
                 <div><label className={labelCls}>Invoice No</label><input type="text" value={liftForm.invoiceNo} onChange={e => setLiftForm(p => ({ ...p, invoiceNo: e.target.value }))} className={inputCls} /></div>
               </div>
-              <div><label className={labelCls}>Remarks</label><input type="text" value={liftForm.remarks} onChange={e => setLiftForm(p => ({ ...p, remarks: e.target.value }))} className={inputCls} /></div>
+              <div className="grid grid-cols-4 gap-3">
+                <div><label className={labelCls}>Distance (km)</label><input type="number" value={liftForm.distanceKm} onChange={e => setLiftForm(p => ({ ...p, distanceKm: e.target.value }))} placeholder="for E-Way Bill" className={inputCls} /></div>
+                <div className="col-span-3"><label className={labelCls}>Remarks</label><input type="text" value={liftForm.remarks} onChange={e => setLiftForm(p => ({ ...p, remarks: e.target.value }))} className={inputCls} /></div>
+              </div>
             </div>
             <div className="flex gap-3 p-5 border-t border-slate-200">
               <button onClick={handleLiftingSubmit} disabled={liftSaving}

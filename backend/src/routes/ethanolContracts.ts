@@ -316,6 +316,7 @@ router.post('/:id/liftings', asyncHandler(async (req: AuthRequest, res: Response
         amount,
         invoiceNo: b.invoiceNo || null,
         invoiceDate: b.invoiceDate ? new Date(b.invoiceDate) : null,
+        distanceKm: b.distanceKm ? parseInt(b.distanceKm) : null,
         status: b.status || 'LOADED',
         remarks: b.remarks || null,
         userId: b.userId || null,
