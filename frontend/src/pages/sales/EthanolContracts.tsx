@@ -689,8 +689,14 @@ const EthanolContracts: React.FC = () => {
                                         <td className="px-2 py-1.5 text-center">
                                           <div className="flex items-center justify-center gap-1">
                                             {l.invoice && (
-                                              <button onClick={(e) => { e.stopPropagation(); window.open(`/api/invoices/${l.invoice!.id}/pdf`, '_blank'); }}
-                                                className="text-slate-400 hover:text-slate-700" title="Print Invoice"><FileText size={11} /></button>
+                                              <button onClick={async (e) => {
+                                                e.stopPropagation();
+                                                try {
+                                                  const res = await api.get(`/invoices/${l.invoice!.id}/pdf`, { responseType: 'blob' });
+                                                  const url = URL.createObjectURL(res.data);
+                                                  window.open(url, '_blank');
+                                                } catch { setError('Failed to load invoice PDF'); }
+                                              }} className="text-slate-400 hover:text-slate-700" title="Print Invoice"><FileText size={11} /></button>
                                             )}
                                             <button onClick={(e) => { e.stopPropagation(); handleDeleteLifting(l.id); }} className="text-red-400 hover:text-red-600"><Trash2 size={11} /></button>
                                           </div>
