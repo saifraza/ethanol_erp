@@ -832,7 +832,21 @@ export async function cancelEwayBill(ewayBillNo: string, cancelReason: number, c
     }
   }
 
-  return { success: false, error: 'Cancel not supported in GSP mode yet' };
+  if (mode === 'saral' || mode === 'gsp') {
+    try {
+      const payload = {
+        ewbNo: parseInt(ewayBillNo),
+        cancelRsnCode: cancelReason,
+        cancelRmrk: cancelRemarks || 'Cancelled',
+      };
+      const result = await saralApiCall('/eiewb/v1.03/ewbCancel', payload, 'Cancel EWB');
+      return { success: true, ewayBillNo, rawResponse: result };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  return { success: false, error: 'Cancel not supported in current mode' };
 }
 
 /**
