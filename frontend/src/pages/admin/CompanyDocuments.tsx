@@ -313,8 +313,15 @@ export default function CompanyDocuments() {
                     accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.tif,.tiff"
                     className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" required />
                   {classifying && (
-                    <div className="mt-1 text-[10px] text-blue-600 font-medium uppercase tracking-widest animate-pulse">
-                      Analyzing document... AI is detecting category, dates, and metadata
+                    <div className="mt-2 space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <div className="h-1.5 flex-1 bg-slate-200 overflow-hidden">
+                          <div className="h-full bg-blue-600 animate-[progress_3s_ease-in-out_infinite]" style={{ width: '100%', animation: 'progress 3s ease-in-out infinite' }} />
+                        </div>
+                        <span className="text-[10px] text-blue-600 font-bold uppercase tracking-widest whitespace-nowrap">Analyzing...</span>
+                      </div>
+                      <div className="text-[9px] text-slate-400">AI is reading the document and detecting category, dates, issuer, and metadata</div>
+                      <style>{`@keyframes progress { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }`}</style>
                     </div>
                   )}
                 </div>
