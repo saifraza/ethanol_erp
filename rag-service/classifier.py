@@ -6,7 +6,6 @@ Analyzes document text and returns structured metadata.
 import json
 import asyncio
 from google import genai
-from google.genai import types
 
 CATEGORIES = [
     "COMPLIANCE", "LICENSE", "CERTIFICATE", "CONTRACT",
@@ -52,7 +51,7 @@ async def classify_document(text: str, gemini_key: str) -> dict:
     """Send document text to Gemini for auto-categorization."""
     client = genai.Client(api_key=gemini_key)
 
-    # Use first 4000 chars for classification (enough for most docs)
+    # Use first 4000 chars for classification
     truncated = text[:4000]
 
     prompt = CLASSIFY_PROMPT.format(
@@ -64,12 +63,10 @@ async def classify_document(text: str, gemini_key: str) -> dict:
     response = await asyncio.to_thread(
         client.models.generate_content,
         model="gemini-2.5-flash",
-        contents=[types.Content(role="user", parts=[types.Part.from_text(prompt)])],
-        config=types.GenerateContentConfig(temperature=0.0, max_output_tokens=1024),
+        contents=prompt,
     )
 
     raw = response.text or ""
-    # Strip markdown fences if present
     cleaned = raw.replace("```json", "").replace("```", "").strip()
 
     try:

@@ -1,7 +1,9 @@
 raganything
 lightrag-hku
+mineru[core]
 fastapi
 uvicorn[standard]
 python-multipart
 google-genai
 numpy
+PyMuPDF
