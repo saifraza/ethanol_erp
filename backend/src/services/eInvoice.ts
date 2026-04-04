@@ -537,8 +537,13 @@ export async function getIRNDetails(irn: string): Promise<any> {
   }
 }
 
-export async function generateEWBByIRN(irn: string, ewbData: any): Promise<any> {
+export async function generateEWBByIRN(irn: string, ewbData: any, retryCount = 0): Promise<any> {
+  const MAX_RETRIES = 2;
   try {
+    if (retryCount > 0) {
+      clearSaralAuthCache();
+      await delay(2000 * retryCount);
+    }
     const auth = await getSaralAuth();
     const baseUrl = (process.env.EWAY_SARAL_URL || 'https://saralgsp.com').replace(/\/+$/, '');
     const gstin = process.env.EWAY_GSTIN || '23AAECM3666P1Z1';
@@ -604,13 +609,13 @@ export async function generateEWBByIRN(irn: string, ewbData: any): Promise<any> 
       throw new Error(`Non-JSON response (HTTP ${response.status}): ${resultText.slice(0, 200)}`);
     }
 
-    if (result.EwbNo || result.EwayBillNo || result.ewayBillNo || result.data?.EwbNo) {
-      const data = result.data || result;
+    const d = result.data || result;
+    if (d.EwbNo || d.ewbNo || d.EwayBillNo || d.ewayBillNo || result.EwbNo || result.ewbNo) {
       return {
         success: true,
-        ewayBillNo: (data.EwbNo || data.EwayBillNo || data.ewayBillNo)?.toString(),
-        ewayBillDate: data.EwbDt || data.ewayBillDate || data.EwayBillDate,
-        validUpto: data.EwbValidTill || data.validUpto || data.ValidUpto,
+        ewayBillNo: (d.EwbNo || d.ewbNo || d.EwayBillNo || d.ewayBillNo || result.EwbNo || result.ewbNo)?.toString(),
+        ewayBillDate: d.EwbDt || d.ewbDt || d.ewayBillDate || d.EwayBillDate,
+        validUpto: d.EwbValidTill || d.ewbValidTill || d.validUpto || d.ValidUpto,
         rawResponse: result,
       };
     }
@@ -622,7 +627,11 @@ export async function generateEWBByIRN(irn: string, ewbData: any): Promise<any> 
 
     return { success: false, error: errorMsg, rawResponse: result };
   } catch (err: any) {
-    console.error('[E-Invoice EWB] Error:', err.message);
+    console.error(`[E-Invoice EWB] Error (attempt ${retryCount + 1}):`, err.message);
+    if (retryCount < MAX_RETRIES && (err.message.includes('Network error') || err.message.includes('socket') || err.message.includes('ECONNRESET') || err.message.includes('timed out') || err.message.includes('fetch failed'))) {
+      console.log(`[E-Invoice EWB] Network error — retrying (${retryCount + 1}/${MAX_RETRIES})...`);
+      return generateEWBByIRN(irn, ewbData, retryCount + 1);
+    }
     if (err.message.includes('auth') || err.message.includes('Auth') || err.message.includes('token')) {
       clearSaralAuthCache();
     }
