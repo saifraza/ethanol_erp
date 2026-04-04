@@ -380,11 +380,20 @@ export async function generateIRN(invoiceData: any, retryCount = 0): Promise<IRN
       let existingAckNo: string | null = null;
       let existingAckDt: string | null = null;
       for (const info of infoDtls) {
-        const desc = info.InfCd || info.infCd || '';
-        const val = info.Desc || info.desc || '';
-        if (desc === 'DUPIRN' || val.length === 64) existingIrn = val;
-        if (desc === 'ACKNO') existingAckNo = val;
-        if (desc === 'ACKDT') existingAckDt = val;
+        const code = info.InfCd || info.infCd || '';
+        const desc = info.Desc || info.desc;
+        // desc can be string or object like {ackNo, ackDt, irn}
+        if (code === 'DUPIRN' && desc && typeof desc === 'object') {
+          existingIrn = desc.irn || desc.Irn || null;
+          existingAckNo = desc.ackNo ? String(desc.ackNo) : (desc.AckNo ? String(desc.AckNo) : null);
+          existingAckDt = desc.ackDt || desc.AckDt || null;
+        } else if (code === 'DUPIRN' && typeof desc === 'string' && desc.length === 64) {
+          existingIrn = desc;
+        } else if (code === 'ACKNO') {
+          existingAckNo = typeof desc === 'string' ? desc : String(desc);
+        } else if (code === 'ACKDT') {
+          existingAckDt = typeof desc === 'string' ? desc : String(desc);
+        }
       }
       // Also try to extract IRN from error message text (pattern: 64-hex-char string)
       if (!existingIrn) {
