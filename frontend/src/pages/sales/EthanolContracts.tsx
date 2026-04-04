@@ -41,8 +41,22 @@ interface Contract {
   remarks?: string;
   contractPdfName?: string;
   hasPdf?: boolean;
+  autoGenerateEInvoice?: boolean;
+  buyerCustomerId?: string;
   createdAt: string;
   liftings?: Lifting[];
+}
+
+interface LiftingInvoice {
+  id: string;
+  invoiceNo: number;
+  totalAmount: number;
+  paidAmount: number;
+  status: string;
+  irn?: string | null;
+  irnStatus?: string | null;
+  ewbNo?: string | null;
+  ewbStatus?: string | null;
 }
 
 interface Lifting {
@@ -59,11 +73,29 @@ interface Lifting {
   rate?: number;
   amount?: number;
   invoiceNo?: string;
+  invoiceId?: string;
+  distanceKm?: number;
+  invoice?: LiftingInvoice | null;
   status: string;
   deliveredQtyKL?: number;
   shortageKL?: number;
   omcReceiptNo?: string;
   remarks?: string;
+}
+
+interface SupplySummary {
+  contractQtyKL: number;
+  suppliedKL: number;
+  remainingKL: number;
+  progressPct: number;
+  invoicedAmount: number;
+  receivedAmount: number;
+  outstanding: number;
+  inTransitCount: number;
+  inTransitKL: number;
+  deliveredCount: number;
+  totalLiftings: number;
+  daysRemaining: number;
 }
 
 interface Stats {
@@ -121,6 +153,12 @@ const EthanolContracts: React.FC = () => {
   const [liftingContractId, setLiftingContractId] = useState<string | null>(null);
   const [liftForm, setLiftForm] = useState({ ...emptyLiftingForm });
   const [liftSaving, setLiftSaving] = useState(false);
+
+  // Supply detail state
+  const [detailSummary, setDetailSummary] = useState<SupplySummary | null>(null);
+  const [detailLiftings, setDetailLiftings] = useState<Lifting[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   useEffect(() => { fetchData(); }, []);
 
@@ -187,7 +225,9 @@ const EthanolContracts: React.FC = () => {
     try {
       setLiftSaving(true);
       await api.post(`/ethanol-contracts/${liftingContractId}/liftings`, liftForm);
+      const contractIdToRefresh = liftingContractId;
       setLiftingContractId(null); setLiftForm({ ...emptyLiftingForm }); fetchData();
+      if (expanded === contractIdToRefresh) loadSupplyDetail(contractIdToRefresh);
     } catch (err: any) {
       setError(err?.response?.data?.error || 'Failed to add lifting');
     } finally { setLiftSaving(false); }
@@ -195,8 +235,11 @@ const EthanolContracts: React.FC = () => {
 
   const handleDeleteLifting = async (liftingId: string) => {
     if (!confirm('Delete this lifting?')) return;
-    try { await api.delete(`/ethanol-contracts/liftings/${liftingId}`); fetchData(); }
-    catch (err: any) { setError(err?.response?.data?.error || 'Failed to delete'); }
+    try {
+      await api.delete(`/ethanol-contracts/liftings/${liftingId}`);
+      fetchData();
+      if (expanded) loadSupplyDetail(expanded);
+    } catch (err: any) { setError(err?.response?.data?.error || 'Failed to delete'); }
   };
 
   const handlePdfUpload = async (contractId: string) => {
@@ -214,6 +257,55 @@ const EthanolContracts: React.FC = () => {
   };
 
   const viewPdf = (contractId: string) => { window.open(`/api/ethanol-contracts/${contractId}/pdf`, '_blank'); };
+
+  // Load supply summary when expanding a contract
+  const loadSupplyDetail = async (contractId: string) => {
+    try {
+      setDetailLoading(true);
+      const res = await api.get(`/ethanol-contracts/${contractId}/supply-summary`);
+      setDetailSummary(res.data.summary);
+      setDetailLiftings(res.data.liftings || []);
+    } catch { setError('Failed to load supply details'); }
+    finally { setDetailLoading(false); }
+  };
+
+  const handleExpand = (contractId: string) => {
+    if (expanded === contractId) {
+      setExpanded(null);
+      setDetailSummary(null);
+      setDetailLiftings([]);
+    } else {
+      setExpanded(contractId);
+      loadSupplyDetail(contractId);
+    }
+  };
+
+  const handleCreateInvoice = async (contractId: string, liftingId: string) => {
+    try {
+      setActionLoading(liftingId);
+      await api.post(`/ethanol-contracts/${contractId}/liftings/${liftingId}/create-invoice`);
+      loadSupplyDetail(contractId);
+    } catch (err: any) { setError(err?.response?.data?.error || 'Failed to create invoice'); }
+    finally { setActionLoading(null); }
+  };
+
+  const handleGenerateEInvoice = async (contractId: string, liftingId: string) => {
+    try {
+      setActionLoading(liftingId);
+      const res = await api.post(`/ethanol-contracts/${contractId}/liftings/${liftingId}/e-invoice`);
+      const d = res.data;
+      if (d.ewbError) { setError(`IRN generated. E-Way Bill failed: ${d.ewbError}`); }
+      loadSupplyDetail(contractId);
+    } catch (err: any) { setError(err?.response?.data?.error || 'Failed to generate e-invoice'); }
+    finally { setActionLoading(null); }
+  };
+
+  const handleToggleAutoEInvoice = async (contractId: string, enabled: boolean) => {
+    try {
+      await api.patch(`/ethanol-contracts/${contractId}/auto-einvoice`, { enabled });
+      fetchData();
+    } catch (err: any) { setError(err?.response?.data?.error || 'Failed to toggle'); }
+  };
 
   const filtered = typeFilter === 'ALL' ? contracts : contracts.filter(c => c.contractType === typeFilter);
   const pctUsed = (c: Contract) => c.contractQtyKL ? Math.round((c.totalSuppliedKL / c.contractQtyKL) * 100) : 0;
@@ -319,7 +411,7 @@ const EthanolContracts: React.FC = () => {
                 return (
                   <React.Fragment key={c.id}>
                     <tr className="border-b border-slate-100 even:bg-slate-50/70 hover:bg-blue-50/60 cursor-pointer"
-                      onClick={() => setExpanded(isExpanded ? null : c.id)}>
+                      onClick={() => handleExpand(c.id)}>
                       <td className="px-3 py-1.5 text-xs border-r border-slate-100">
                         <div className="font-bold text-slate-900">{c.contractNo}</div>
                         <div className="text-[10px] text-slate-400">
@@ -380,92 +472,174 @@ const EthanolContracts: React.FC = () => {
                       </td>
                     </tr>
 
-                    {/* Expanded: lifting history + details */}
+                    {/* Expanded: Supply Dashboard */}
                     {isExpanded && (
                       <tr>
-                        <td colSpan={7} className="bg-slate-50 px-4 py-3 border-b border-slate-200">
-                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Recent Liftings</div>
-                          {c.liftings && c.liftings.length > 0 ? (
-                            <div className="overflow-x-auto mb-3">
-                              <table className="w-full text-xs">
-                                <thead>
-                                  <tr className="bg-slate-800 text-white">
-                                    <th className="text-[10px] uppercase tracking-widest font-semibold px-2 py-1.5 text-left border-r border-slate-700">Date</th>
-                                    <th className="text-[10px] uppercase tracking-widest font-semibold px-2 py-1.5 text-left border-r border-slate-700">Vehicle</th>
-                                    <th className="text-[10px] uppercase tracking-widest font-semibold px-2 py-1.5 text-left border-r border-slate-700">Dest</th>
-                                    <th className="text-[10px] uppercase tracking-widest font-semibold px-2 py-1.5 text-right border-r border-slate-700">BL</th>
-                                    <th className="text-[10px] uppercase tracking-widest font-semibold px-2 py-1.5 text-right border-r border-slate-700">KL</th>
-                                    <th className="text-[10px] uppercase tracking-widest font-semibold px-2 py-1.5 text-right border-r border-slate-700">Amount</th>
-                                    <th className="text-[10px] uppercase tracking-widest font-semibold px-2 py-1.5 text-center border-r border-slate-700">Status</th>
-                                    <th className="text-[10px] uppercase tracking-widest font-semibold px-2 py-1.5 text-center">Del</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {c.liftings.map(l => (
-                                    <tr key={l.id} className="border-b border-slate-100 even:bg-slate-50/70 hover:bg-blue-50/60">
-                                      <td className="px-2 py-1.5 border-r border-slate-100">{new Date(l.liftingDate).toLocaleDateString('en-IN')}</td>
-                                      <td className="px-2 py-1.5 border-r border-slate-100 font-medium">{l.vehicleNo}</td>
-                                      <td className="px-2 py-1.5 border-r border-slate-100">{l.destination || '-'}</td>
-                                      <td className="px-2 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums font-medium">{l.quantityBL.toLocaleString()}</td>
-                                      <td className="px-2 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">{l.quantityKL.toFixed(2)}</td>
-                                      <td className="px-2 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">{(l.amount || 0).toLocaleString()}</td>
-                                      <td className="px-2 py-1.5 border-r border-slate-100 text-center">
-                                        <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${l.status === 'DELIVERED' ? 'bg-green-50 text-green-700 border-green-200' : l.status === 'SHORTAGE' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
-                                          {l.status}
-                                        </span>
-                                      </td>
-                                      <td className="px-2 py-1.5 text-center">
-                                        <button onClick={() => handleDeleteLifting(l.id)} className="text-red-400 hover:text-red-600"><Trash2 size={11} /></button>
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          ) : (
-                            <div className="text-xs text-slate-400 uppercase tracking-widest text-center py-4 mb-3">No liftings yet</div>
-                          )}
+                        <td colSpan={7} className="bg-slate-50 border-b border-slate-300">
+                          {detailLoading ? (
+                            <div className="text-center py-8"><span className="text-xs text-slate-400 uppercase tracking-widest">Loading supply data...</span></div>
+                          ) : detailSummary ? (
+                            <div className="space-y-0">
+                              {/* Supply Progress Bar */}
+                              <div className="px-4 py-3 border-b border-slate-200 bg-white">
+                                <div className="flex items-center justify-between mb-1.5">
+                                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Supply Progress</span>
+                                  <span className="text-xs font-bold font-mono tabular-nums text-slate-700">
+                                    {detailSummary.suppliedKL.toFixed(1)} / {detailSummary.contractQtyKL.toFixed(0)} KL
+                                    <span className="text-slate-400 ml-1">({detailSummary.progressPct}%)</span>
+                                  </span>
+                                </div>
+                                <div className="w-full h-2.5 bg-slate-200 overflow-hidden">
+                                  <div className={`h-full transition-all ${detailSummary.progressPct >= 90 ? 'bg-green-500' : detailSummary.progressPct >= 50 ? 'bg-blue-500' : 'bg-amber-500'}`}
+                                    style={{ width: `${Math.min(detailSummary.progressPct, 100)}%` }} />
+                                </div>
+                                <div className="flex justify-between mt-1 text-[10px] text-slate-400">
+                                  <span>{detailSummary.remainingKL.toFixed(1)} KL remaining</span>
+                                  <span>{detailSummary.daysRemaining}d left</span>
+                                </div>
+                              </div>
 
-                          {/* Contract details */}
-                          <div className="border-t border-slate-200 pt-3">
-                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Contract Details</div>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                              {c.buyerGst && <div><span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">GST:</span> <span className="font-medium">{c.buyerGst}</span></div>}
-                              {c.buyerContact && <div><span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Contact:</span> <span className="font-medium">{c.buyerContact}</span></div>}
-                              {c.buyerPhone && <div><span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Phone:</span> <span className="font-medium">{c.buyerPhone}</span></div>}
-                              {c.gstPercent && <div><span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">GST%:</span> <span className="font-medium">{c.gstPercent}%</span></div>}
-                              {c.supplyType && <div><span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Supply:</span> <span className="font-medium">{c.supplyType === 'INTRA_STATE' ? 'Intra' : 'Inter'}</span></div>}
-                              {c.logisticsBy && <div><span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Logistics:</span> <span className="font-medium">{c.logisticsBy}</span></div>}
-                              {c.tankerCapacityKL && <div><span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Tanker:</span> <span className="font-medium">{c.tankerCapacityKL} KL</span></div>}
-                              {c.dailyTargetKL && <div><span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Daily:</span> <span className="font-medium">{c.dailyTargetKL} KL</span></div>}
-                              {c.paymentTermsDays && <div><span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Pay:</span> <span className="font-medium">{c.paymentTermsDays}d</span></div>}
-                              {c.contractType === 'JOB_WORK' && (
-                                <>
-                                  {c.ethanolBenchmark && <div><span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Yield:</span> <span className="font-medium">{c.ethanolBenchmark} BL/T</span></div>}
-                                  {c.ddgsBenchmark && <div><span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">DDGS:</span> <span className="font-medium">{c.ddgsBenchmark} kg/BL</span></div>}
-                                  {c.ddgsRate && <div><span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">DDGS Rate:</span> <span className="font-medium font-mono tabular-nums">{c.ddgsRate}/kg</span></div>}
-                                </>
-                              )}
-                              {c.totalInvoicedAmt > 0 && <div><span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Invoiced:</span> <span className="font-medium font-mono tabular-nums">{c.totalInvoicedAmt.toLocaleString()}</span></div>}
-                              {c.remarks && <div className="col-span-2"><span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Remarks:</span> <span className="font-medium">{c.remarks}</span></div>}
-                            </div>
-                            {/* PDF */}
-                            <div className="mt-3 pt-3 border-t border-slate-200 flex items-center gap-3">
-                              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Contract PDF:</span>
-                              {c.hasPdf ? (
-                                <>
-                                  <button onClick={() => viewPdf(c.id)} className="text-xs text-purple-600 hover:underline font-medium flex items-center gap-1">
-                                    <FileDown size={12} /> {c.contractPdfName || 'View PDF'}
+                              {/* KPI Strip */}
+                              <div className="grid grid-cols-2 md:grid-cols-4 border-b border-slate-200">
+                                <div className="bg-white px-4 py-2.5 border-r border-slate-200 border-l-4 border-l-blue-500">
+                                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Invoiced</div>
+                                  <div className="text-lg font-bold text-slate-800 font-mono tabular-nums mt-0.5">
+                                    {detailSummary.invoicedAmount > 0 ? `₹${detailSummary.invoicedAmount.toLocaleString('en-IN')}` : '--'}
+                                  </div>
+                                </div>
+                                <div className="bg-white px-4 py-2.5 border-r border-slate-200 border-l-4 border-l-green-500">
+                                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Received</div>
+                                  <div className="text-lg font-bold text-green-700 font-mono tabular-nums mt-0.5">
+                                    {detailSummary.receivedAmount > 0 ? `₹${detailSummary.receivedAmount.toLocaleString('en-IN')}` : '--'}
+                                  </div>
+                                </div>
+                                <div className="bg-white px-4 py-2.5 border-r border-slate-200 border-l-4 border-l-red-500">
+                                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Outstanding</div>
+                                  <div className={`text-lg font-bold font-mono tabular-nums mt-0.5 ${detailSummary.outstanding > 0 ? 'text-red-600' : 'text-slate-400'}`}>
+                                    {detailSummary.outstanding > 0 ? `₹${detailSummary.outstanding.toLocaleString('en-IN')}` : '--'}
+                                  </div>
+                                </div>
+                                <div className="bg-white px-4 py-2.5 border-l-4 border-l-amber-500">
+                                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">In-Transit</div>
+                                  <div className="text-lg font-bold text-amber-700 font-mono tabular-nums mt-0.5">
+                                    {detailSummary.inTransitCount > 0 ? `${detailSummary.inTransitCount} trucks` : '--'}
+                                  </div>
+                                  {detailSummary.inTransitKL > 0 && <div className="text-[10px] text-amber-600 font-mono">{detailSummary.inTransitKL.toFixed(1)} KL</div>}
+                                </div>
+                              </div>
+
+                              {/* Auto E-Invoice Toggle + Contract Info */}
+                              <div className="px-4 py-2 bg-white border-b border-slate-200 flex items-center justify-between">
+                                <div className="flex items-center gap-4 text-xs text-slate-500">
+                                  {c.buyerGst && <span><span className="text-[10px] font-bold uppercase tracking-widest">GST:</span> {c.buyerGst}</span>}
+                                  {c.paymentTermsDays && <span><span className="text-[10px] font-bold uppercase tracking-widest">Pay:</span> {c.paymentTermsDays}d</span>}
+                                  {c.hasPdf && (
+                                    <button onClick={() => viewPdf(c.id)} className="text-purple-600 hover:underline font-medium flex items-center gap-0.5">
+                                      <FileDown size={10} /> PDF
+                                    </button>
+                                  )}
+                                </div>
+                                <label className="flex items-center gap-2 cursor-pointer" onClick={e => e.stopPropagation()}>
+                                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Auto E-Invoice</span>
+                                  <button
+                                    onClick={() => handleToggleAutoEInvoice(c.id, !c.autoGenerateEInvoice)}
+                                    className={`relative w-9 h-5 transition-colors ${c.autoGenerateEInvoice ? 'bg-green-500' : 'bg-slate-300'}`}>
+                                    <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white transition-transform shadow ${c.autoGenerateEInvoice ? 'translate-x-4' : ''}`} />
                                   </button>
-                                  <button onClick={() => handlePdfUpload(c.id)} className="text-xs text-slate-400 hover:text-slate-600">Replace</button>
-                                </>
-                              ) : (
-                                <button onClick={() => handlePdfUpload(c.id)} className="text-xs text-blue-600 hover:underline font-medium flex items-center gap-1">
-                                  <Upload size={12} /> Upload PDF
-                                </button>
-                              )}
+                                </label>
+                              </div>
+
+                              {/* Lifting History Table */}
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-xs">
+                                  <thead>
+                                    <tr className="bg-slate-700 text-white">
+                                      <th className="text-[10px] uppercase tracking-widest font-semibold px-2 py-1.5 text-left border-r border-slate-600">Date</th>
+                                      <th className="text-[10px] uppercase tracking-widest font-semibold px-2 py-1.5 text-left border-r border-slate-600">Vehicle</th>
+                                      <th className="text-[10px] uppercase tracking-widest font-semibold px-2 py-1.5 text-left border-r border-slate-600 hidden md:table-cell">Dest</th>
+                                      <th className="text-[10px] uppercase tracking-widest font-semibold px-2 py-1.5 text-right border-r border-slate-600">BL</th>
+                                      <th className="text-[10px] uppercase tracking-widest font-semibold px-2 py-1.5 text-right border-r border-slate-600">KL</th>
+                                      <th className="text-[10px] uppercase tracking-widest font-semibold px-2 py-1.5 text-right border-r border-slate-600">Amount</th>
+                                      <th className="text-[10px] uppercase tracking-widest font-semibold px-2 py-1.5 text-center border-r border-slate-600">Status</th>
+                                      <th className="text-[10px] uppercase tracking-widest font-semibold px-2 py-1.5 text-center border-r border-slate-600">Invoice</th>
+                                      <th className="text-[10px] uppercase tracking-widest font-semibold px-2 py-1.5 text-center border-r border-slate-600">IRN</th>
+                                      <th className="text-[10px] uppercase tracking-widest font-semibold px-2 py-1.5 text-center border-r border-slate-600">EWB</th>
+                                      <th className="text-[10px] uppercase tracking-widest font-semibold px-2 py-1.5 text-center">Actions</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {detailLiftings.length === 0 ? (
+                                      <tr><td colSpan={11} className="text-center py-6 text-xs text-slate-400 uppercase tracking-widest">No liftings yet</td></tr>
+                                    ) : detailLiftings.map((l, i) => (
+                                      <tr key={l.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-white' : 'bg-slate-50/50'}`}>
+                                        <td className="px-2 py-1.5 border-r border-slate-100 whitespace-nowrap">{new Date(l.liftingDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</td>
+                                        <td className="px-2 py-1.5 border-r border-slate-100 font-medium">{l.vehicleNo}</td>
+                                        <td className="px-2 py-1.5 border-r border-slate-100 hidden md:table-cell">{l.destination || '-'}</td>
+                                        <td className="px-2 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">{l.quantityBL.toLocaleString()}</td>
+                                        <td className="px-2 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">{l.quantityKL.toFixed(2)}</td>
+                                        <td className="px-2 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">{(l.amount || 0).toLocaleString('en-IN')}</td>
+                                        <td className="px-2 py-1.5 border-r border-slate-100 text-center">
+                                          <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
+                                            l.status === 'DELIVERED' ? 'bg-green-50 text-green-700 border-green-200' :
+                                            l.status === 'SHORTAGE' ? 'bg-red-50 text-red-700 border-red-200' :
+                                            l.status === 'IN_TRANSIT' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                            'bg-blue-50 text-blue-700 border-blue-200'
+                                          }`}>{l.status}</span>
+                                        </td>
+                                        {/* Invoice */}
+                                        <td className="px-2 py-1.5 border-r border-slate-100 text-center">
+                                          {l.invoice ? (
+                                            <span className="text-[10px] font-medium text-slate-700">INV-{l.invoice.invoiceNo}</span>
+                                          ) : (
+                                            <button
+                                              onClick={(e) => { e.stopPropagation(); handleCreateInvoice(c.id, l.id); }}
+                                              disabled={actionLoading === l.id}
+                                              className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50">
+                                              {actionLoading === l.id ? '...' : 'Create'}
+                                            </button>
+                                          )}
+                                        </td>
+                                        {/* IRN */}
+                                        <td className="px-2 py-1.5 border-r border-slate-100 text-center">
+                                          {l.invoice?.irnStatus === 'GENERATED' ? (
+                                            <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-300 bg-green-50 text-green-700">IRN</span>
+                                          ) : l.invoice ? (
+                                            <button
+                                              onClick={(e) => { e.stopPropagation(); handleGenerateEInvoice(c.id, l.id); }}
+                                              disabled={actionLoading === l.id}
+                                              className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-50">
+                                              {actionLoading === l.id ? '...' : 'Gen'}
+                                            </button>
+                                          ) : (
+                                            <span className="text-slate-300">--</span>
+                                          )}
+                                        </td>
+                                        {/* EWB */}
+                                        <td className="px-2 py-1.5 border-r border-slate-100 text-center">
+                                          {l.invoice?.ewbStatus === 'GENERATED' ? (
+                                            <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-300 bg-green-50 text-green-700">EWB</span>
+                                          ) : l.invoice?.irnStatus === 'GENERATED' && !l.invoice?.ewbNo ? (
+                                            <button
+                                              onClick={(e) => { e.stopPropagation(); handleGenerateEInvoice(c.id, l.id); }}
+                                              disabled={actionLoading === l.id}
+                                              className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-50">
+                                              {actionLoading === l.id ? '...' : 'EWB'}
+                                            </button>
+                                          ) : (
+                                            <span className="text-slate-300">--</span>
+                                          )}
+                                        </td>
+                                        {/* Actions */}
+                                        <td className="px-2 py-1.5 text-center">
+                                          <button onClick={(e) => { e.stopPropagation(); handleDeleteLifting(l.id); }} className="text-red-400 hover:text-red-600"><Trash2 size={11} /></button>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
                             </div>
-                          </div>
+                          ) : null}
                         </td>
                       </tr>
                     )}

@@ -1222,6 +1222,7 @@ model Customer {
   salesOrders     SalesOrder[]
   invoices        Invoice[]
   payments        Payment[]
+  ethanolContracts EthanolContract[]
 }
 
 // Master: Product catalogue
@@ -1583,6 +1584,7 @@ model Invoice {
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
   payments        Payment[]
+  ethanolLiftings EthanolLifting[]
   @@index([customerId])
   @@index([status])
   @@index([shipmentId])
@@ -2231,6 +2233,11 @@ model EthanolContract {
   supplyType        String?  // INTRA_STATE, INTER_STATE
   logisticsBy       String?  // BUYER, SELLER, PRINCIPAL
 
+  // Buyer → Customer link (for invoice / e-invoice)
+  buyerCustomerId   String?
+  buyerCustomer     Customer? @relation(fields: [buyerCustomerId], references: [id])
+  autoGenerateEInvoice Boolean @default(false)
+
   // Tracking (updated on dispatch)
   totalSuppliedKL   Float    @default(0)
   totalInvoicedAmt  Float    @default(0)
@@ -2244,6 +2251,8 @@ model EthanolContract {
   updatedAt         DateTime @updatedAt
 
   liftings          EthanolLifting[]
+
+  @@index([buyerCustomerId])
 }
 
 model EthanolLifting {
@@ -2265,6 +2274,9 @@ model EthanolLifting {
   amount          Float?
   invoiceNo       String?
   invoiceDate     DateTime?
+  invoiceId       String?
+  invoice         Invoice?  @relation(fields: [invoiceId], references: [id])
+  distanceKm      Int?      // for e-way bill generation
   // Status
   status          String   @default("LOADED") // LOADED, IN_TRANSIT, DELIVERED, SHORTAGE
   deliveredQtyKL  Float?
@@ -2275,6 +2287,9 @@ model EthanolLifting {
   userId          String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  @@index([contractId])
+  @@index([invoiceId])
 }
 
 model TelegramMessage {
