@@ -60,16 +60,37 @@ async def gemini_vision_func(
     return response.text or ""
 
 
+
 async def gemini_embed_func(texts: list[str]) -> np.ndarray:
     """Gemini embedding-001 for vector embeddings (768 dims).
-    Embeds one text at a time to get exactly 1 vector per input."""
+
+    LightRAG sends N texts and expects exactly N vectors back.
+    We embed one text at a time via contents=[text] (list with one element)
+    to guarantee a 1:1 mapping.  If the API ever returns multiple embeddings
+    for a single text (observed with gemini-embedding-001), we mean-pool
+    them into one vector.
+    """
+    import logging
+    logger = logging.getLogger("rag-service")
+
     embeddings = []
     for text in texts:
         response = await asyncio.to_thread(
             client.models.embed_content,
             model="gemini-embedding-001",
-            contents=text,
+            contents=[text],  # list with ONE string -> exactly 1 batch request
         )
-        # Take first embedding only (1 vector per text)
-        embeddings.append(response.embeddings[0].values)
+        n = len(response.embeddings)
+        if n == 1:
+            embeddings.append(response.embeddings[0].values)
+        elif n > 1:
+            # API returned multiple vectors for one text -- mean-pool into one
+            logger.warning(
+                "embed_content returned %d vectors for 1 text (%d chars), mean-pooling",
+                n, len(text),
+            )
+            vecs = np.array([e.values for e in response.embeddings], dtype=np.float32)
+            embeddings.append(vecs.mean(axis=0).tolist())
+        else:
+            raise RuntimeError(f"embed_content returned 0 embeddings for text ({len(text)} chars)")
     return np.array(embeddings, dtype=np.float32)
