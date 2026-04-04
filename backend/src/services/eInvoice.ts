@@ -200,8 +200,8 @@ export function buildIRNPayload(invoice: any): IRNPayload {
       Loc: invoice.customer?.city || invoice.customer?.address?.split(',').pop()?.trim() || 'NA',
       Pin: invoice.customer?.pincode ? parseInt(invoice.customer.pincode) : undefined,
       Stcd: buyerStateCode,
-      Ph: invoice.customer?.phone || '',
-      Em: invoice.customer?.email || '',
+      Ph: (invoice.customer?.phone && invoice.customer.phone.length >= 6) ? invoice.customer.phone : '0000000000',
+      Em: (invoice.customer?.email && invoice.customer.email.length >= 6) ? invoice.customer.email : 'na@na.com',
     },
     ItemList: [
       {
