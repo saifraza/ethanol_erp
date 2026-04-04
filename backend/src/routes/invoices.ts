@@ -526,11 +526,13 @@ router.post('/:id/e-invoice/cancel', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Invoice does not have an IRN' });
     }
 
-    const cancelReason = req.body.cancelReason || 'Cancelled as per request';
+    // NIC Cancel: CnlRsn = 1 (Duplicate), 2 (Data Entry Mistake), 3 (Order Cancelled), 4 (Others)
+    const cancelReason = req.body.cancelReason || '2'; // default: Data Entry Mistake
+    const cancelRemarks = req.body.cancelRemarks || req.body.reason || 'Cancelled from ERP';
 
-    console.log(`[Invoice] Cancelling IRN ${irn}`);
+    console.log(`[Invoice] Cancelling IRN ${irn}, reason=${cancelReason}, remarks=${cancelRemarks}`);
 
-    const result = await cancelIRN(irn, cancelReason);
+    const result = await cancelIRN(irn, cancelReason, cancelRemarks);
 
     if (!result.success) {
       return res.status(400).json({ error: result.error, rawResponse: result.rawResponse });

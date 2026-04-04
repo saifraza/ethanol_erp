@@ -446,8 +446,7 @@ export async function cancelIRN(irn: string, cancelReason: string, cancelRemarks
     const url = `${baseUrl}/eicore/v1.03/Invoice/Cancel`;
     const headers = buildEInvoiceHeaders(auth);
 
-    const payload: any = { Irn: irn, CnlRsn: cancelReason };
-    if (cancelRemarks) payload.CnlRem = cancelRemarks.slice(0, 100);
+    const payload: any = { Irn: irn, CnlRsn: cancelReason, CnlRem: (cancelRemarks || 'Cancelled').slice(0, 100) };
 
     console.log(`[E-Invoice] Cancelling IRN ${irn}, reason=${cancelReason}`);
 
