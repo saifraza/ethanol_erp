@@ -1,6 +1,6 @@
 raganything
 lightrag-hku
-"mineru[core]>=3.0.0"
+mineru[core]>=3.0.0
 fastapi
 uvicorn[standard]
 python-multipart
