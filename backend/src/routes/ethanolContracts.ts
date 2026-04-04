@@ -424,6 +424,7 @@ router.put('/liftings/:liftingId', asyncHandler(async (req: AuthRequest, res: Re
         deliveredAt: b.deliveredAt ? new Date(b.deliveredAt) : existing.deliveredAt,
         invoiceNo: b.invoiceNo !== undefined ? b.invoiceNo : existing.invoiceNo,
         invoiceDate: b.invoiceDate ? new Date(b.invoiceDate) : existing.invoiceDate,
+        distanceKm: b.distanceKm !== undefined ? (b.distanceKm ? parseInt(b.distanceKm) : null) : existing.distanceKm,
         remarks: b.remarks !== undefined ? b.remarks : existing.remarks,
       },
     });
