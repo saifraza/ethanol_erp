@@ -62,12 +62,14 @@ export default function CompanyDocuments() {
     try {
       setLoading(true);
       const params = new URLSearchParams();
+      params.set('includeExpiring', 'true');
       if (filter.category) params.set('category', filter.category);
       if (filter.status) params.set('status', filter.status);
       if (filter.search) params.set('search', filter.search);
       const res = await api.get(`/company-documents?${params}`);
       setDocs(res.data.documents || []);
       setTotal(res.data.total || 0);
+      if (res.data.expiring) setExpiringDocs(res.data.expiring);
     } catch (err) {
       console.error('Failed to fetch documents:', err);
     } finally {
@@ -75,15 +77,7 @@ export default function CompanyDocuments() {
     }
   }, [filter]);
 
-  const fetchExpiring = useCallback(async () => {
-    try {
-      const res = await api.get('/company-documents/expiring?days=30');
-      setExpiringDocs(res.data.documents || []);
-    } catch { /* ignore */ }
-  }, []);
-
   useEffect(() => { fetchDocs(); }, [fetchDocs]);
-  useEffect(() => { fetchExpiring(); }, [fetchExpiring]);
 
   const handleFileSelect = async (selectedFile: File) => {
     setFile(selectedFile);

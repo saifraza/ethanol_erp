@@ -120,7 +120,32 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     prisma.companyDocument.count({ where: where as any }),
   ]);
 
-  res.json({ documents: docs, total });
+  // Optionally include expiring docs in same response (saves a round trip)
+  let expiring: any[] | undefined;
+  if (req.query.includeExpiring === 'true') {
+    const expiringCutoff = new Date();
+    expiringCutoff.setDate(expiringCutoff.getDate() + 30);
+    expiring = await prisma.companyDocument.findMany({
+      where: {
+        status: 'ACTIVE',
+        expiryDate: { lte: expiringCutoff, gte: new Date() },
+      },
+      orderBy: { expiryDate: 'asc' },
+      take: 50,
+      select: {
+        id: true, category: true, subcategory: true, title: true,
+        expiryDate: true, referenceNo: true, issuedBy: true,
+      },
+    });
+
+    // Fire-and-forget: mark expired docs (don't block response)
+    prisma.companyDocument.updateMany({
+      where: { status: 'ACTIVE', expiryDate: { lt: new Date() } },
+      data: { status: 'EXPIRED' },
+    }).catch(err => console.error('Failed to mark expired docs:', err));
+  }
+
+  res.json({ documents: docs, total, ...(expiring !== undefined && { expiring }) });
 }));
 
 // ═══════════════════════════════════════════════════════════
@@ -149,14 +174,14 @@ router.get('/expiring', asyncHandler(async (req: AuthRequest, res: Response) => 
     },
   });
 
-  // Also mark expired documents
-  await prisma.companyDocument.updateMany({
+  // Fire-and-forget: mark expired docs (don't block response)
+  prisma.companyDocument.updateMany({
     where: {
       status: 'ACTIVE',
       expiryDate: { lt: new Date() },
     },
     data: { status: 'EXPIRED' },
-  });
+  }).catch(err => console.error('Failed to mark expired docs:', err));
 
   res.json({ documents: docs, withinDays: days });
 }));
