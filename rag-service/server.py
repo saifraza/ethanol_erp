@@ -73,9 +73,15 @@ async def lifespan(app: FastAPI):
             embedding_func=embedding_func,
         )
 
-        # Ensure LightRAG is initialized
-        await rag._ensure_lightrag_initialized()
-        logger.info("RAG-Anything initialized successfully")
+        # Ensure LightRAG is initialized with explicit kwargs
+        from lightrag import LightRAG
+        rag.lightrag = LightRAG(
+            working_dir=WORKING_DIR,
+            llm_model_func=gemini_llm_func,
+            embedding_func=embedding_func,
+        )
+        await rag.lightrag.initialize_storages()
+        logger.info("RAG-Anything initialized successfully with LightRAG instance")
     except ImportError:
         # Fallback: use plain LightRAG if raganything not available
         logger.warning("RAG-Anything not available, falling back to LightRAG")
