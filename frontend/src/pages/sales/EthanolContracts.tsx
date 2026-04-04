@@ -535,6 +535,14 @@ const EthanolContracts: React.FC = () => {
                                 );
                               })()}
 
+                              {/* Inline error for e-invoice actions */}
+                              {error && (
+                                <div className="bg-red-50 border-b border-red-200 text-red-700 px-4 py-2 text-xs flex items-center justify-between">
+                                  <span>{error}</span>
+                                  <button onClick={() => setError('')} className="text-red-400 hover:text-red-600 ml-2 font-bold">&times;</button>
+                                </div>
+                              )}
+
                               {/* Auto E-Invoice Toggle + Contract Info */}
                               <div className="px-4 py-2 bg-white border-b border-slate-200 flex items-center justify-between">
                                 <div className="flex items-center gap-4 text-xs text-slate-500">
