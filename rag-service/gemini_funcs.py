@@ -61,17 +61,15 @@ async def gemini_vision_func(
 
 
 async def gemini_embed_func(texts: list[str]) -> np.ndarray:
-    """Gemini embedding-001 for vector embeddings (768 dims)."""
+    """Gemini embedding-001 for vector embeddings (768 dims).
+    Embeds one text at a time to get exactly 1 vector per input."""
     embeddings = []
-    # Process in batches of 20 (Gemini limit)
-    batch_size = 20
-    for i in range(0, len(texts), batch_size):
-        batch = texts[i : i + batch_size]
+    for text in texts:
         response = await asyncio.to_thread(
             client.models.embed_content,
             model="gemini-embedding-001",
-            contents=batch,
+            contents=text,
         )
-        for emb in response.embeddings:
-            embeddings.append(emb.values)
+        # Take first embedding only (1 vector per text)
+        embeddings.append(response.embeddings[0].values)
     return np.array(embeddings, dtype=np.float32)
