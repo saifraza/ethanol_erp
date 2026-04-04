@@ -1,0 +1,7 @@
+raganything
+lightrag-hku
+fastapi
+uvicorn[standard]
+python-multipart
+google-genai
+numpy

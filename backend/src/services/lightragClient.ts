@@ -219,6 +219,59 @@ export async function lightragSearchEntities(
   }
 }
 
+/** Auto-classify a document — returns AI-detected metadata */
+export async function lightragClassify(
+  filePath: string
+): Promise<{
+  success: boolean;
+  metadata?: {
+    category: string;
+    subcategory: string | null;
+    title: string | null;
+    tags: string | null;
+    issuedBy: string | null;
+    issuedDate: string | null;
+    expiryDate: string | null;
+    referenceNo: string | null;
+    department: string | null;
+    summary: string | null;
+  };
+  error?: string;
+}> {
+  if (!ragApi) return { success: false, error: 'LightRAG not configured' };
+
+  try {
+    const uploadsRoot = path.resolve(__dirname, '../../uploads');
+    const absPath = filePath.startsWith('/')
+      ? filePath
+      : path.resolve(uploadsRoot, filePath);
+
+    if (!filePath.startsWith('/') && !absPath.startsWith(uploadsRoot)) {
+      return { success: false, error: 'Invalid file path' };
+    }
+    if (!fs.existsSync(absPath)) {
+      return { success: false, error: `File not found: ${filePath}` };
+    }
+
+    const form = new FormData();
+    form.append('file', fs.createReadStream(absPath), {
+      filename: path.basename(absPath),
+    });
+
+    const res = await ragApi.post('/documents/classify', form, {
+      headers: form.getHeaders(),
+      timeout: 60000,
+    });
+
+    return { success: true, metadata: res.data };
+  } catch (err: unknown) {
+    const msg = (err as { response?: { data?: { detail?: string } }; message?: string })
+      ?.response?.data?.detail || (err as { message?: string })?.message || 'Classify failed';
+    console.error(`[LightRAG] Classify failed: ${msg}`);
+    return { success: false, error: msg };
+  }
+}
+
 /** Get LightRAG health status */
 export async function lightragHealth(): Promise<{ connected: boolean; error?: string }> {
   if (!ragApi) return { connected: false, error: 'LightRAG not configured (no LIGHTRAG_URL)' };

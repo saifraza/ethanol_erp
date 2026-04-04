@@ -56,6 +56,7 @@ export default function CompanyDocuments() {
   });
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [classifying, setClassifying] = useState(false);
 
   const fetchDocs = useCallback(async () => {
     try {
@@ -83,6 +84,36 @@ export default function CompanyDocuments() {
 
   useEffect(() => { fetchDocs(); }, [fetchDocs]);
   useEffect(() => { fetchExpiring(); }, [fetchExpiring]);
+
+  const handleFileSelect = async (selectedFile: File) => {
+    setFile(selectedFile);
+    setClassifying(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', selectedFile);
+      const res = await api.post('/company-documents/classify', fd);
+      const m = res.data;
+      setForm(f => ({
+        ...f,
+        category: m.category || f.category,
+        subcategory: m.subcategory || f.subcategory,
+        title: m.title || selectedFile.name,
+        description: m.summary || f.description,
+        issuedBy: m.issuedBy || f.issuedBy,
+        issuedDate: m.issuedDate || f.issuedDate,
+        expiryDate: m.expiryDate || f.expiryDate,
+        referenceNo: m.referenceNo || f.referenceNo,
+        department: m.department || f.department,
+        tags: m.tags || f.tags,
+      }));
+    } catch (err) {
+      console.error('Auto-classify failed:', err);
+      // Fall back to filename as title
+      setForm(f => ({ ...f, title: selectedFile.name }));
+    } finally {
+      setClassifying(false);
+    }
+  };
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -284,9 +315,14 @@ export default function CompanyDocuments() {
               <form onSubmit={handleUpload} className="p-4 space-y-3">
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">File *</label>
-                  <input type="file" onChange={e => setFile(e.target.files?.[0] || null)}
+                  <input type="file" onChange={e => { const f = e.target.files?.[0]; if (f) handleFileSelect(f); }}
                     accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.tif,.tiff"
                     className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" required />
+                  {classifying && (
+                    <div className="mt-1 text-[10px] text-blue-600 font-medium uppercase tracking-widest animate-pulse">
+                      Analyzing document... AI is detecting category, dates, and metadata
+                    </div>
+                  )}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>

@@ -7,7 +7,8 @@ import { z } from 'zod';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { lightragUpload, isRagEnabled } from '../services/lightragClient';
+import { lightragUpload, lightragClassify, isRagEnabled } from '../services/lightragClient';
+import { generateVaultNote } from '../services/vaultWriter';
 
 const router = Router();
 router.use(authenticate as any);
@@ -219,7 +220,44 @@ router.post('/', upload.single('file'), asyncHandler(async (req: AuthRequest, re
     });
   }
 
+  // Fire-and-forget: generate vault note (Obsidian knowledge base)
+  setImmediate(() => {
+    generateVaultNote({
+      sourceType: 'CompanyDocument',
+      sourceId: doc.id,
+      filePath: `company-documents/${req.file!.filename}`,
+      title: doc.title,
+      category: doc.category,
+      mimeType: req.file!.mimetype,
+      issuedBy: doc.issuedBy || undefined,
+      issuedDate: doc.issuedDate?.toISOString().split('T')[0],
+      expiryDate: doc.expiryDate?.toISOString().split('T')[0],
+      referenceNo: doc.referenceNo || undefined,
+    }).catch(err => console.error('[CompanyDoc] Vault note generation failed:', err));
+  });
+
   res.status(201).json(doc);
+}));
+
+// ═══════════════════════════════════════════════════════════
+// POST /classify — Auto-categorize an uploaded file using AI
+// ═══════════════════════════════════════════════════════════
+router.post('/classify', upload.single('file'), asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.file) { res.status(400).json({ error: 'No file uploaded' }); return; }
+  if (!isRagEnabled()) { res.status(503).json({ error: 'RAG service not configured' }); return; }
+
+  const result = await lightragClassify(`company-documents/${req.file.filename}`);
+
+  // Clean up temp file after classification
+  const filePath = path.resolve(__dirname, '../../uploads/company-documents', req.file.filename);
+  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+
+  if (!result.success) {
+    res.status(502).json({ error: result.error || 'Classification failed' });
+    return;
+  }
+
+  res.json(result.metadata);
 }));
 
 // ═══════════════════════════════════════════════════════════
