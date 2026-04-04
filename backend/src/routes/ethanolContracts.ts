@@ -378,7 +378,9 @@ router.post('/:id/liftings', asyncHandler(async (req: AuthRequest, res: Response
 
               // 4. Generate EWB
               const vehNo = (lifting.vehicleNo || '').replace(/\s/g, '');
-              const ewbRes = await generateEWBByIRN(irnRes.irn, { Irn: irnRes.irn, Distance: 100, TransMode: '1', VehNo: vehNo, VehType: 'R', TransId: '', TransName: lifting.transporterName || '' });
+              const autoEwbData: Record<string, any> = { Irn: irnRes.irn, Distance: 100, TransMode: '1', VehNo: vehNo, VehType: 'R' };
+              if (lifting.transporterName && lifting.transporterName.length >= 3) autoEwbData.TransName = lifting.transporterName;
+              const ewbRes = await generateEWBByIRN(irnRes.irn, autoEwbData);
               if (ewbRes.success && ewbRes.ewayBillNo) {
                 await prisma.invoice.update({ where: { id: inv.id }, data: { ewbNo: ewbRes.ewayBillNo, ewbDate: new Date(), ewbStatus: 'GENERATED' } as any });
               }
@@ -682,15 +684,18 @@ router.post('/:id/liftings/:liftingId/e-invoice', asyncHandler(async (req: AuthR
 
     try {
       const distanceKm = lifting.distanceKm || (req.body.distanceKm ? parseInt(req.body.distanceKm) : 100);
-      const ewbData = {
+      const vehNo = (lifting.vehicleNo || '').replace(/\s/g, '');
+      const ewbData: Record<string, any> = {
         Irn: irn,
         Distance: distanceKm,
         TransMode: '1', // Road
-        VehNo: (lifting.vehicleNo || '').replace(/\s/g, ''),
+        VehNo: vehNo,
         VehType: 'R',
-        TransId: '',
-        TransName: lifting.transporterName || '',
       };
+      // Only include TransId/TransName if they're valid (TransId must be exactly 15 chars GSTIN)
+      if (lifting.transporterName && lifting.transporterName.length >= 3) {
+        ewbData.TransName = lifting.transporterName;
+      }
 
       const ewbResult = await generateEWBByIRN(irn!, ewbData);
       if (ewbResult.success && ewbResult.ewayBillNo) {
