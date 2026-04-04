@@ -69,13 +69,44 @@ const minutes = ist.getUTCMinutes(); // IST minutes
 ```
 **NEVER** use `toLocaleTimeString()` or `toLocaleDateString()` on server — output depends on server locale/location.
 
+### RAG Document Indexing (Critical)
+**Every document in the ERP must be indexed in RAG.** This is a core requirement — all uploaded and generated documents must be searchable via AI-powered Doc Search (`/admin/document-search`).
+
+**How it works:**
+- RAG-Anything microservice runs on Railway (`LIGHTRAG_URL` env var)
+- `lightragClient.ts` is the proxy — same pattern as `whatsappClient.ts`
+- `isRagEnabled()` checks if the service is configured
+
+**For uploaded files** — add fire-and-forget after saving:
+```typescript
+import { lightragUpload, isRagEnabled } from '../services/lightragClient';
+
+// After res.json(...)
+if (isRagEnabled()) {
+  setImmediate(() => {
+    lightragUpload('path/to/file.pdf', { sourceType: 'MyModule', sourceId: record.id, title: file.originalname })
+      .catch(err => console.error('[MyModule] RAG indexing failed:', err));
+  });
+}
+```
+
+**For generated PDFs** — already handled automatically by `documentRenderer.ts`. Any doc rendered via `renderDocumentPdf()` is auto-indexed.
+
+**For Obsidian vault** — `vaultWriter.ts` also inserts summaries into RAG via `lightragInsertText()`.
+
+**When adding a new module with document uploads:**
+1. Import `{ lightragUpload, isRagEnabled }` from `../services/lightragClient`
+2. After the upload response, add `setImmediate` fire-and-forget RAG indexing
+3. Also call `generateVaultNote()` from `../services/vaultWriter` for Obsidian sync
+
 ### Module Build Approach
 When building new modules:
 1. **First create a skill file** in `.claude/skills/` with full spec (models, routes, pages, integration points)
 2. **Build sequentially** — modules are interlinked (accounts hooks into sales/procurement, inventory links to production)
 3. **Always consider Telegram integration** — what readings/reports should be auto-collected or shared?
-4. **Follow existing patterns** — use the code templates below
-5. **Use SAP-style UI** for all non-plant modules (see UI Design System below)
+4. **Always add RAG indexing** — every uploaded or generated document must go through RAG + Vault
+5. **Follow existing patterns** — use the code templates below
+6. **Use SAP-style UI** for all non-plant modules (see UI Design System below)
 
 ### UI Design System — Two Tiers
 
