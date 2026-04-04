@@ -494,7 +494,7 @@ const EthanolContracts: React.FC = () => {
                               <Upload size={10} /> PDF
                             </button>
                           )}
-                          <button onClick={(e) => { e.stopPropagation(); setLiftingContractId(c.id); setLiftForm({ ...emptyLiftingForm, destination: c.omcDepot || '' }); }}
+                          <button onClick={(e) => { e.stopPropagation(); setLiftingContractId(c.id); setLiftForm({ ...emptyLiftingForm, destination: c.omcDepot || '', consigneeName: c.buyerName || '', consigneeGstin: c.buyerGst || '', consigneeAddress: c.buyerAddress || '', consigneeState: '', consigneePincode: '' }); }}
                             className="px-2 py-0.5 text-[10px] bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 font-medium flex items-center gap-0.5">
                             <Truck size={10} /> Lift
                           </button>
