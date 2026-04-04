@@ -41,4 +41,5 @@ ENV MINERU_MODEL_SOURCE=local
 
 EXPOSE 9621
 
+# Force rebuild: embedding fix 2026-04-04
 CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "9621", "--timeout-keep-alive", "300"]
