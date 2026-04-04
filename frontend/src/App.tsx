@@ -10,6 +10,7 @@ import { setupApiToast } from './services/apiToast';
 // Lazy-loaded page imports
 const Login = React.lazy(() => import('./pages/Login'));
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
+const SnakeGame = React.lazy(() => import('./pages/SnakeGame'));
 const NotFound = React.lazy(() => import('./pages/NotFound'));
 const VerifyDocument = React.lazy(() => import('./pages/VerifyDocument'));
 const Reports = React.lazy(() => import('./pages/Reports'));
@@ -130,6 +131,7 @@ export default function App() {
         <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route index element={<HomeRedirect />} />
         <Route path="dashboard" element={<Dashboard />} />
+        <Route path="dashboard/snake" element={<SnakeGame />} />
         <Route path="process/raw-material" element={<RawMaterial />} />
         <Route path="process/grain-stock" element={<GrainUnloading />} />
         <Route path="process/grain-unloading" element={<GrainUnloadingTrucks />} />
@@ -172,12 +174,12 @@ export default function App() {
         <Route path="sales/customers" element={<Customers />} />
         <Route path="sales/pipeline" element={<SalesDashboard />} />
         <Route path="sales/orders" element={<SalesDashboard />} />
-        <Route path="sales/dispatch-requests" element={<DispatchRequests />} />
+        <Route path="sales/dispatch-requests" element={<Navigate to="/sales/pipeline" replace />} />
         <Route path="sales/transporters" element={<Transporters />} />
         <Route path="sales/shipments" element={<Shipments />} />
         <Route path="sales/invoices" element={<Invoices />} />
         <Route path="sales/payments" element={<Payments />} />
-        <Route path="sales/freight" element={<FreightManagement />} />
+        <Route path="sales/freight" element={<Navigate to="/sales/pipeline" replace />} />
         <Route path="sales/ethanol-contracts" element={<EthanolContracts />} />
         {/* Logistics */}
         <Route path="logistics/gate-register" element={<GateAndReceipts />} />

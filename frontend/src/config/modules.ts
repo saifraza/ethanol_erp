@@ -52,14 +52,12 @@ export const MODULE_DEFS: ModuleDef[] = [
   // ── SALES (DDGS + Ethanol outward) ──
   { key: 'customers', label: 'Buyers', to: '/sales/customers', icon: UserCheck, group: 'sales' },
   { key: 'sales-orders', label: 'Sales Pipeline', to: '/sales/pipeline', icon: ClipboardList, group: 'sales' },
-  { key: 'dispatch-requests', label: 'Dispatch Requests', to: '/sales/dispatch-requests', icon: Send, group: 'sales' },
   { key: 'ethanol-contracts', label: 'Ethanol Supply', to: '/sales/ethanol-contracts', icon: Handshake, group: 'sales' },
 
   // ── LOGISTICS (Transport, Gate, Shipments) ──
   { key: 'gate-register', label: 'Gate & Receipts', to: '/logistics/gate-register', icon: Scale, group: 'logistics' },
   { key: 'shipments', label: 'Shipments', to: '/sales/shipments', icon: Truck, group: 'logistics' },
   { key: 'transporters', label: 'Transporters', to: '/sales/transporters', icon: Truck, group: 'logistics' },
-  { key: 'freight-mgmt', label: 'Freight & Rates', to: '/sales/freight', icon: IndianRupee, group: 'logistics' },
 
   // ── PROCUREMENT (Grain + Chemicals inward) ──
   { key: 'vendors', label: 'Suppliers', to: '/procurement/vendors', icon: Building2, group: 'procurement' },
