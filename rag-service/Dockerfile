@@ -17,6 +17,12 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
 
+# Verify mineru CLI is installed and in PATH
+RUN which mineru && mineru --version || echo "WARNING: mineru CLI not found"
+
+# Ensure pip script dir is in PATH
+ENV PATH="/usr/local/bin:$PATH"
+
 # Download MinerU models (baked into image so no first-run delay)
 RUN mineru-models-download -s huggingface -m all || echo "Model download skipped — will download on first use"
 
