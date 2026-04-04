@@ -499,34 +499,41 @@ const EthanolContracts: React.FC = () => {
                                 </div>
                               </div>
 
-                              {/* KPI Strip */}
-                              <div className="grid grid-cols-2 md:grid-cols-4 border-b border-slate-200">
-                                <div className="bg-white px-4 py-2.5 border-r border-slate-200 border-l-4 border-l-blue-500">
-                                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Invoiced</div>
-                                  <div className="text-lg font-bold text-slate-800 font-mono tabular-nums mt-0.5">
-                                    {detailSummary.invoicedAmount > 0 ? `₹${detailSummary.invoicedAmount.toLocaleString('en-IN')}` : '--'}
+                              {/* Document Pipeline KPIs */}
+                              {(() => {
+                                const withInvoice = detailLiftings.filter(l => l.invoice).length;
+                                const withIRN = detailLiftings.filter(l => l.invoice?.irnStatus === 'GENERATED').length;
+                                const withEWB = detailLiftings.filter(l => l.invoice?.ewbStatus === 'GENERATED').length;
+                                const pending = detailLiftings.length - withInvoice;
+                                return (
+                                  <div className="grid grid-cols-2 md:grid-cols-5 border-b border-slate-200">
+                                    <div className="bg-white px-4 py-2.5 border-r border-slate-200 border-l-4 border-l-slate-500">
+                                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Liftings</div>
+                                      <div className="text-lg font-bold text-slate-800 font-mono tabular-nums mt-0.5">{detailSummary.totalLiftings}</div>
+                                    </div>
+                                    <div className="bg-white px-4 py-2.5 border-r border-slate-200 border-l-4 border-l-amber-500">
+                                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">In-Transit</div>
+                                      <div className="text-lg font-bold text-amber-700 font-mono tabular-nums mt-0.5">
+                                        {detailSummary.inTransitCount > 0 ? `${detailSummary.inTransitCount}` : '0'}
+                                      </div>
+                                      {detailSummary.inTransitKL > 0 && <div className="text-[10px] text-amber-600 font-mono">{detailSummary.inTransitKL.toFixed(1)} KL</div>}
+                                    </div>
+                                    <div className="bg-white px-4 py-2.5 border-r border-slate-200 border-l-4 border-l-blue-500">
+                                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Invoiced</div>
+                                      <div className="text-lg font-bold text-blue-700 font-mono tabular-nums mt-0.5">{withInvoice} <span className="text-xs text-slate-400 font-normal">/ {detailSummary.totalLiftings}</span></div>
+                                      {pending > 0 && <div className="text-[10px] text-red-500 font-medium">{pending} pending</div>}
+                                    </div>
+                                    <div className="bg-white px-4 py-2.5 border-r border-slate-200 border-l-4 border-l-green-500">
+                                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">IRN Generated</div>
+                                      <div className="text-lg font-bold text-green-700 font-mono tabular-nums mt-0.5">{withIRN} <span className="text-xs text-slate-400 font-normal">/ {withInvoice}</span></div>
+                                    </div>
+                                    <div className="bg-white px-4 py-2.5 border-l-4 border-l-green-500">
+                                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">E-Way Bill</div>
+                                      <div className="text-lg font-bold text-green-700 font-mono tabular-nums mt-0.5">{withEWB} <span className="text-xs text-slate-400 font-normal">/ {withIRN}</span></div>
+                                    </div>
                                   </div>
-                                </div>
-                                <div className="bg-white px-4 py-2.5 border-r border-slate-200 border-l-4 border-l-green-500">
-                                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Received</div>
-                                  <div className="text-lg font-bold text-green-700 font-mono tabular-nums mt-0.5">
-                                    {detailSummary.receivedAmount > 0 ? `₹${detailSummary.receivedAmount.toLocaleString('en-IN')}` : '--'}
-                                  </div>
-                                </div>
-                                <div className="bg-white px-4 py-2.5 border-r border-slate-200 border-l-4 border-l-red-500">
-                                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Outstanding</div>
-                                  <div className={`text-lg font-bold font-mono tabular-nums mt-0.5 ${detailSummary.outstanding > 0 ? 'text-red-600' : 'text-slate-400'}`}>
-                                    {detailSummary.outstanding > 0 ? `₹${detailSummary.outstanding.toLocaleString('en-IN')}` : '--'}
-                                  </div>
-                                </div>
-                                <div className="bg-white px-4 py-2.5 border-l-4 border-l-amber-500">
-                                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">In-Transit</div>
-                                  <div className="text-lg font-bold text-amber-700 font-mono tabular-nums mt-0.5">
-                                    {detailSummary.inTransitCount > 0 ? `${detailSummary.inTransitCount} trucks` : '--'}
-                                  </div>
-                                  {detailSummary.inTransitKL > 0 && <div className="text-[10px] text-amber-600 font-mono">{detailSummary.inTransitKL.toFixed(1)} KL</div>}
-                                </div>
-                              </div>
+                                );
+                              })()}
 
                               {/* Auto E-Invoice Toggle + Contract Info */}
                               <div className="px-4 py-2 bg-white border-b border-slate-200 flex items-center justify-between">
