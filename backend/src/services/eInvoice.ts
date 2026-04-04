@@ -371,6 +371,41 @@ export async function generateIRN(invoiceData: any, retryCount = 0): Promise<IRN
       ? errors.map((e: any) => `${e.ErrorCode || e.errorCode}: ${e.ErrorMessage || e.errorMessage}`).join('; ')
       : result.Error || result.error || result.Message || JSON.stringify(result).slice(0, 300);
 
+    // Handle Duplicate IRN (2150) — extract existing IRN from response or info details
+    const hasDuplicate = errors.some((e: any) => (e.ErrorCode || e.errorCode) === '2150');
+    if (hasDuplicate) {
+      // NIC often returns the existing IRN in InfoDtls or in the error message itself
+      const infoDtls = result.InfoDtls || result.infoDtls || [];
+      let existingIrn: string | null = null;
+      let existingAckNo: string | null = null;
+      let existingAckDt: string | null = null;
+      for (const info of infoDtls) {
+        const desc = info.InfCd || info.infCd || '';
+        const val = info.Desc || info.desc || '';
+        if (desc === 'DUPIRN' || val.length === 64) existingIrn = val;
+        if (desc === 'ACKNO') existingAckNo = val;
+        if (desc === 'ACKDT') existingAckDt = val;
+      }
+      // Also try to extract IRN from error message text (pattern: 64-hex-char string)
+      if (!existingIrn) {
+        const irnMatch = errorMsg.match(/([a-f0-9]{64})/i);
+        if (irnMatch) existingIrn = irnMatch[1];
+      }
+      if (existingIrn) {
+        console.log(`[E-Invoice] Duplicate IRN — recovering existing: ${existingIrn}`);
+        return {
+          success: true,
+          irn: existingIrn,
+          ackNo: existingAckNo || undefined,
+          ackDt: existingAckDt || undefined,
+          status: 'ACT',
+          rawResponse: result,
+        };
+      }
+      // If we can't extract the IRN, return error with hint to fetch it
+      return { success: false, error: `Duplicate IRN exists for this invoice. Use getIRNDetails to retrieve it.`, rawResponse: result };
+    }
+
     // Retry on Invalid Token — force fresh auth
     const hasInvalidToken = errors.some((e: any) => (e.ErrorCode || e.errorCode) === '1005' || (e.ErrorMessage || e.errorMessage || '').includes('Invalid Token'));
     if (hasInvalidToken && retryCount < MAX_RETRIES) {
