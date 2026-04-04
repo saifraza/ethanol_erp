@@ -2,6 +2,7 @@ import { renderTemplate, generateQRCode } from './templateEngine';
 import { renderPdf } from './pdfRenderer';
 import { getTemplate } from '../utils/templateHelper';
 import { SAMPLE_DATA, DOC_TYPE_TO_TEMPLATE } from '../templates/sampleData';
+import { lightragInsertText, isRagEnabled } from './lightragClient';
 
 const BASE_URL = process.env.BASE_URL || 'https://app.mspil.in';
 
@@ -46,7 +47,23 @@ export async function renderDocumentHtml(opts: RenderOptions): Promise<string> {
  */
 export async function renderDocumentPdf(opts: RenderOptions): Promise<Buffer> {
   const html = await renderDocumentHtml(opts);
-  return renderPdf(html);
+  const pdf = await renderPdf(html);
+
+  // Fire-and-forget: index generated document text in RAG
+  if (isRagEnabled() && opts.docType !== 'PREVIEW') {
+    setImmediate(() => {
+      // Strip HTML tags to get plain text for RAG indexing
+      const text = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      if (text.length > 100) {
+        lightragInsertText(text.slice(0, 8000), {
+          sourceType: `Generated_${opts.docType}`,
+          sourceId: opts.verifyId || opts.docType,
+        }).catch(err => console.error(`[DocRenderer] RAG indexing failed for ${opts.docType}:`, err));
+      }
+    });
+  }
+
+  return pdf;
 }
 
 /**
