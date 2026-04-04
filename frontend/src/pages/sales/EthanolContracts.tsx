@@ -55,7 +55,10 @@ interface LiftingInvoice {
   status: string;
   irn?: string | null;
   irnStatus?: string | null;
+  ackNo?: string | null;
+  irnDate?: string | null;
   ewbNo?: string | null;
+  ewbDate?: string | null;
   ewbStatus?: string | null;
 }
 
@@ -159,6 +162,7 @@ const EthanolContracts: React.FC = () => {
   const [detailLiftings, setDetailLiftings] = useState<Lifting[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [showIrnDetail, setShowIrnDetail] = useState<string | null>(null);
 
   useEffect(() => { fetchData(); }, []);
 
@@ -586,7 +590,8 @@ const EthanolContracts: React.FC = () => {
                                     {detailLiftings.length === 0 ? (
                                       <tr><td colSpan={11} className="text-center py-6 text-xs text-slate-400 uppercase tracking-widest">No liftings yet</td></tr>
                                     ) : detailLiftings.map((l, i) => (
-                                      <tr key={l.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-white' : 'bg-slate-50/50'}`}>
+                                      <React.Fragment key={l.id}>
+                                      <tr className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-white' : 'bg-slate-50/50'}`}>
                                         <td className="px-2 py-1.5 border-r border-slate-100 whitespace-nowrap">{new Date(l.liftingDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</td>
                                         <td className="px-2 py-1.5 border-r border-slate-100 font-medium">{l.vehicleNo}</td>
                                         <td className="px-2 py-1.5 border-r border-slate-100 hidden md:table-cell">{l.destination || '-'}</td>
@@ -617,7 +622,8 @@ const EthanolContracts: React.FC = () => {
                                         {/* IRN */}
                                         <td className="px-2 py-1.5 border-r border-slate-100 text-center">
                                           {l.invoice?.irnStatus === 'GENERATED' ? (
-                                            <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-300 bg-green-50 text-green-700">IRN</span>
+                                            <button onClick={(e) => { e.stopPropagation(); setShowIrnDetail(showIrnDetail === l.id ? null : l.id); }}
+                                              className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-300 bg-green-50 text-green-700 hover:bg-green-100 cursor-pointer">IRN</button>
                                           ) : l.invoice ? (
                                             <button
                                               onClick={(e) => { e.stopPropagation(); handleGenerateEInvoice(c.id, l.id); }}
@@ -649,6 +655,32 @@ const EthanolContracts: React.FC = () => {
                                           <button onClick={(e) => { e.stopPropagation(); handleDeleteLifting(l.id); }} className="text-red-400 hover:text-red-600"><Trash2 size={11} /></button>
                                         </td>
                                       </tr>
+                                      {/* IRN/EWB detail row */}
+                                      {showIrnDetail === l.id && l.invoice && (
+                                        <tr className="bg-green-50/50">
+                                          <td colSpan={11} className="px-3 py-2 text-[10px] border-b border-slate-200">
+                                            <div className="flex flex-wrap gap-x-6 gap-y-1">
+                                              {l.invoice.irn && (
+                                                <div><span className="font-bold text-slate-500 uppercase tracking-widest">IRN:</span> <span className="font-mono text-slate-700 break-all">{l.invoice.irn}</span></div>
+                                              )}
+                                              {l.invoice.ackNo && (
+                                                <div><span className="font-bold text-slate-500 uppercase tracking-widest">Ack No:</span> <span className="font-mono text-slate-700">{l.invoice.ackNo}</span></div>
+                                              )}
+                                              {l.invoice.irnDate && (
+                                                <div><span className="font-bold text-slate-500 uppercase tracking-widest">IRN Date:</span> <span className="font-mono text-slate-700">{new Date(l.invoice.irnDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span></div>
+                                              )}
+                                              {l.invoice.ewbNo && (
+                                                <div><span className="font-bold text-slate-500 uppercase tracking-widest">EWB No:</span> <span className="font-mono text-slate-700">{l.invoice.ewbNo}</span></div>
+                                              )}
+                                              {l.invoice.ewbDate && (
+                                                <div><span className="font-bold text-slate-500 uppercase tracking-widest">EWB Date:</span> <span className="font-mono text-slate-700">{new Date(l.invoice.ewbDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span></div>
+                                              )}
+                                              <div><span className="font-bold text-slate-500 uppercase tracking-widest">Invoice Total:</span> <span className="font-mono text-slate-700">{l.invoice.totalAmount?.toLocaleString('en-IN')}</span></div>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      )}
+                                      </React.Fragment>
                                     ))}
                                   </tbody>
                                 </table>

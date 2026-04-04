@@ -459,7 +459,7 @@ router.get('/:id/supply-summary', asyncHandler(async (req: AuthRequest, res: Res
             invoice: {
               select: {
                 id: true, invoiceNo: true, totalAmount: true, paidAmount: true, balanceAmount: true, status: true,
-                irn: true, irnDate: true, irnStatus: true, ackNo: true,
+                irn: true, irnDate: true, irnStatus: true, ackNo: true, signedQRCode: true,
                 ewbNo: true, ewbDate: true, ewbValidTill: true, ewbStatus: true,
               },
             },
