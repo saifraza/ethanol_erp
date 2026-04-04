@@ -8,6 +8,7 @@ import path from 'path';
 import fs from 'fs';
 import axios from 'axios';
 import { lightragUpload, isRagEnabled } from '../services/lightragClient';
+import { indexRecord } from '../services/ragIndexer';
 import { generateVaultNote } from '../services/vaultWriter';
 
 const router = Router();
@@ -531,6 +532,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       }
     }
 
+    indexRecord({ sourceType: 'GoodsReceipt', sourceId: grn.id });
     res.status(201).json(grn);
 }));
 

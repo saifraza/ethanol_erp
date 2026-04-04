@@ -3,6 +3,7 @@ import prisma from '../config/prisma';
 import { authenticate, authorize } from '../middleware/auth';
 import PDFDocument from 'pdfkit';
 import path from 'path';
+import { indexRecord } from '../services/ragIndexer';
 import fs from 'fs';
 import { sendEmail } from '../services/messaging';
 import { drawLetterhead } from '../utils/letterhead';
@@ -180,6 +181,7 @@ router.post('/', async (req: Request, res: Response) => {
       },
     });
 
+    indexRecord({ sourceType: 'SalesOrder', sourceId: order.id });
     res.status(201).json(order);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
