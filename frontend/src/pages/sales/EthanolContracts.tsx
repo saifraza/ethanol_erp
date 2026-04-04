@@ -164,6 +164,10 @@ const EthanolContracts: React.FC = () => {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [showIrnDetail, setShowIrnDetail] = useState<string | null>(null);
 
+  // EWB generation modal
+  const [ewbModal, setEwbModal] = useState<{ contractId: string; liftingId: string; vehicleNo: string; transporterName: string; distanceKm: number } | null>(null);
+  const [ewbForm, setEwbForm] = useState({ distanceKm: '', transporterName: '', transporterGstin: '', vehicleNo: '' });
+
   useEffect(() => { fetchData(); }, []);
 
   const fetchData = async () => {
@@ -293,12 +297,28 @@ const EthanolContracts: React.FC = () => {
     finally { setActionLoading(null); }
   };
 
-  const handleGenerateEInvoice = async (contractId: string, liftingId: string) => {
+  const openEwbModal = (contractId: string, lifting: Lifting) => {
+    setEwbModal({ contractId, liftingId: lifting.id, vehicleNo: lifting.vehicleNo, transporterName: lifting.transporterName || '', distanceKm: lifting.distanceKm || 0 });
+    setEwbForm({ distanceKm: String(lifting.distanceKm || ''), transporterName: lifting.transporterName || '', transporterGstin: '', vehicleNo: lifting.vehicleNo });
+  };
+
+  const handleGenerateEInvoice = async (contractId: string, liftingId: string, ewbData?: { distanceKm?: string; transporterName?: string; transporterGstin?: string; vehicleNo?: string }) => {
     try {
       setActionLoading(liftingId);
-      const res = await api.post(`/ethanol-contracts/${contractId}/liftings/${liftingId}/e-invoice`);
+      // Save distance/transporter to lifting first if provided
+      if (ewbData?.distanceKm || ewbData?.transporterName) {
+        await api.put(`/ethanol-contracts/liftings/${liftingId}`, {
+          distanceKm: ewbData.distanceKm || undefined,
+          transporterName: ewbData.transporterName || undefined,
+        });
+      }
+      const res = await api.post(`/ethanol-contracts/${contractId}/liftings/${liftingId}/e-invoice`, {
+        distanceKm: ewbData?.distanceKm || undefined,
+        transporterGstin: ewbData?.transporterGstin || undefined,
+      });
       const d = res.data;
       if (d.ewbError) { setError(`IRN generated. E-Way Bill failed: ${d.ewbError}`); }
+      setEwbModal(null);
       loadSupplyDetail(contractId);
     } catch (err: any) { setError(err?.response?.data?.error || 'Failed to generate e-invoice'); }
     finally { setActionLoading(null); }
@@ -626,7 +646,7 @@ const EthanolContracts: React.FC = () => {
                                               className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-300 bg-green-50 text-green-700 hover:bg-green-100 cursor-pointer">IRN</button>
                                           ) : l.invoice ? (
                                             <button
-                                              onClick={(e) => { e.stopPropagation(); handleGenerateEInvoice(c.id, l.id); }}
+                                              onClick={(e) => { e.stopPropagation(); openEwbModal(c.id, l); }}
                                               disabled={actionLoading === l.id}
                                               className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-50">
                                               {actionLoading === l.id ? '...' : 'Gen'}
@@ -638,10 +658,10 @@ const EthanolContracts: React.FC = () => {
                                         {/* EWB */}
                                         <td className="px-2 py-1.5 border-r border-slate-100 text-center">
                                           {l.invoice?.ewbStatus === 'GENERATED' ? (
-                                            <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-300 bg-green-50 text-green-700">EWB</span>
+                                            <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-300 bg-green-50 text-green-700" title={l.invoice.ewbNo || ''}>EWB</span>
                                           ) : l.invoice?.irnStatus === 'GENERATED' && !l.invoice?.ewbNo ? (
                                             <button
-                                              onClick={(e) => { e.stopPropagation(); handleGenerateEInvoice(c.id, l.id); }}
+                                              onClick={(e) => { e.stopPropagation(); openEwbModal(c.id, l); }}
                                               disabled={actionLoading === l.id}
                                               className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-50">
                                               {actionLoading === l.id ? '...' : 'EWB'}
@@ -879,6 +899,58 @@ const EthanolContracts: React.FC = () => {
                 {liftSaving ? 'Saving...' : 'Record Lifting'}
               </button>
               <button onClick={() => setLiftingContractId(null)} className="px-6 py-2 bg-slate-200 text-slate-800 text-[11px] font-medium hover:bg-slate-300">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* E-INVOICE / E-WAY BILL GENERATION MODAL */}
+      {ewbModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 overflow-y-auto py-8">
+          <div className="bg-white shadow-2xl w-full max-w-lg mx-4">
+            <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
+              <h2 className="text-sm font-bold tracking-wide uppercase">Generate E-Invoice + E-Way Bill</h2>
+              <button onClick={() => setEwbModal(null)} className="text-slate-400 hover:text-white"><X size={18} /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="bg-slate-50 border border-slate-200 p-3 text-xs space-y-1">
+                <div><span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Vehicle:</span> <span className="font-medium">{ewbForm.vehicleNo}</span></div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelCls}>Distance (km) *</label>
+                  <input type="number" value={ewbForm.distanceKm} onChange={e => setEwbForm(p => ({ ...p, distanceKm: e.target.value }))}
+                    placeholder="e.g. 900" className={inputCls} />
+                  <div className="text-[9px] text-slate-400 mt-0.5">NIC validates against pincodes</div>
+                </div>
+                <div>
+                  <label className={labelCls}>Vehicle No</label>
+                  <input type="text" value={ewbForm.vehicleNo} onChange={e => setEwbForm(p => ({ ...p, vehicleNo: e.target.value.toUpperCase() }))}
+                    className={inputCls} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelCls}>Transporter Name</label>
+                  <input type="text" value={ewbForm.transporterName} onChange={e => setEwbForm(p => ({ ...p, transporterName: e.target.value }))}
+                    className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Transporter GSTIN</label>
+                  <input type="text" value={ewbForm.transporterGstin} onChange={e => setEwbForm(p => ({ ...p, transporterGstin: e.target.value.toUpperCase() }))}
+                    placeholder="15-digit GSTIN" maxLength={15} className={inputCls} />
+                </div>
+              </div>
+              {error && <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 text-xs">{error}</div>}
+            </div>
+            <div className="flex gap-3 p-5 border-t border-slate-200">
+              <button
+                onClick={() => handleGenerateEInvoice(ewbModal.contractId, ewbModal.liftingId, ewbForm)}
+                disabled={actionLoading === ewbModal.liftingId || !ewbForm.distanceKm}
+                className="px-6 py-2 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">
+                {actionLoading === ewbModal.liftingId ? 'Generating...' : 'Generate E-Invoice + EWB'}
+              </button>
+              <button onClick={() => setEwbModal(null)} className="px-6 py-2 bg-slate-200 text-slate-800 text-[11px] font-medium hover:bg-slate-300">Cancel</button>
             </div>
           </div>
         </div>

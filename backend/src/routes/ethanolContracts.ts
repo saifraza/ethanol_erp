@@ -685,8 +685,10 @@ router.post('/:id/liftings/:liftingId/e-invoice', asyncHandler(async (req: AuthR
     let ewbError: string | null = null;
 
     try {
-      const distanceKm = lifting.distanceKm || (req.body.distanceKm ? parseInt(req.body.distanceKm) : 100);
+      const distanceKm = (req.body.distanceKm ? parseInt(req.body.distanceKm) : null) || lifting.distanceKm || 100;
       const vehNo = (lifting.vehicleNo || '').replace(/\s/g, '');
+      const transporterGstin = req.body.transporterGstin || '';
+      const transporterName = lifting.transporterName || '';
       const ewbData: Record<string, any> = {
         Irn: irn,
         Distance: distanceKm,
@@ -694,9 +696,12 @@ router.post('/:id/liftings/:liftingId/e-invoice', asyncHandler(async (req: AuthR
         VehNo: vehNo,
         VehType: 'R',
       };
-      // Only include TransId/TransName if they're valid (TransId must be exactly 15 chars GSTIN)
-      if (lifting.transporterName && lifting.transporterName.length >= 3) {
-        ewbData.TransName = lifting.transporterName;
+      // TransId must be exactly 15 chars (valid GSTIN) or omitted
+      if (transporterGstin && transporterGstin.length === 15) {
+        ewbData.TransId = transporterGstin;
+      }
+      if (transporterName && transporterName.length >= 3) {
+        ewbData.TransName = transporterName;
       }
 
       const ewbResult = await generateEWBByIRN(irn!, ewbData);
