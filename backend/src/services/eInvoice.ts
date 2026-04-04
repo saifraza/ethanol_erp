@@ -357,7 +357,7 @@ export async function generateIRN(invoiceData: any, retryCount = 0): Promise<IRN
       return {
         success: true,
         irn,
-        ackNo: result.AckNo || result.ackNo,
+        ackNo: (result.AckNo || result.ackNo) ? String(result.AckNo || result.ackNo) : undefined,
         ackDt: result.AckDt || result.ackDt,
         signedInvoice: result.SignedInvoice || result.signedInvoice,
         signedQRCode: result.SignedQRCode || result.signedQRCode,

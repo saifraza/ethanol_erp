@@ -480,7 +480,7 @@ router.post('/:id/e-invoice', async (req: Request, res: Response) => {
         irn: result.irn,
         irnDate: new Date(),
         irnStatus: 'GENERATED',
-        ackNo: result.ackNo || null,
+        ackNo: result.ackNo ? String(result.ackNo) : null,
         signedQRCode: result.signedQRCode ? result.signedQRCode.slice(0, 4000) : null,
       } as any,
       include: { customer: true },
@@ -494,7 +494,7 @@ router.post('/:id/e-invoice', async (req: Request, res: Response) => {
           irn: result.irn,
           irnDate: new Date(),
           irnStatus: 'GENERATED',
-          ackNo: result.ackNo || null,
+          ackNo: result.ackNo ? String(result.ackNo) : null,
           signedQRCode: result.signedQRCode ? result.signedQRCode.slice(0, 4000) : null,
         } as any,
       }).catch(() => {}); // Non-critical

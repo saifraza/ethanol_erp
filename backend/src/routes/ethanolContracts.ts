@@ -380,7 +380,7 @@ router.post('/:id/liftings', asyncHandler(async (req: AuthRequest, res: Response
               customer: { gstin: cust.gstNo, name: cust.name, address: cust.address, city: cust.city || '', pincode: cust.pincode, state: cust.state, phone: cust.phone || '', email: cust.email || '' },
             });
             if (irnRes.success && irnRes.irn) {
-              await prisma.invoice.update({ where: { id: inv.id }, data: { irn: irnRes.irn, irnDate: new Date(), irnStatus: 'GENERATED', ackNo: irnRes.ackNo || null, signedQRCode: irnRes.signedQRCode?.slice(0, 4000) || null } as any });
+              await prisma.invoice.update({ where: { id: inv.id }, data: { irn: irnRes.irn, irnDate: new Date(), irnStatus: 'GENERATED', ackNo: irnRes.ackNo ? String(irnRes.ackNo) : null, signedQRCode: irnRes.signedQRCode?.slice(0, 4000) || null } as any });
 
               // 4. Generate EWB
               const vehNo = (lifting.vehicleNo || '').replace(/\s/g, '');
@@ -675,7 +675,7 @@ router.post('/:id/liftings/:liftingId/e-invoice', asyncHandler(async (req: AuthR
       }
 
       irn = irnResult.irn || null;
-      ackNo = irnResult.ackNo || null;
+      ackNo = irnResult.ackNo ? String(irnResult.ackNo) : null;
 
       // Store IRN on Invoice
       await prisma.invoice.update({
