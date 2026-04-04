@@ -66,17 +66,31 @@ async def lifespan(app: FastAPI):
         GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
         # Use LightRAG's built-in Gemini embedding (handles API correctly)
+        # Direct v1 API call — bypasses LightRAG's v1beta gemini_embed
+        import aiohttp
+
+        async def _embed_v1(texts: list[str]) -> np.ndarray:
+            """Call Gemini v1 embedContent API directly (not v1beta)."""
+            all_embeddings = []
+            for text in texts:
+                url = f"https://generativelanguage.googleapis.com/v1/models/text-embedding-004:embedContent?key={GEMINI_API_KEY}"
+                payload = {"content": {"parts": [{"text": text}]}}
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(url, json=payload) as resp:
+                        data = await resp.json()
+                        if "embedding" in data:
+                            all_embeddings.append(data["embedding"]["values"])
+                        else:
+                            raise RuntimeError(f"Embed failed: {data}")
+            return np.array(all_embeddings, dtype=np.float32)
+
         @wrap_embedding_func_with_attrs(
             embedding_dim=768,
             max_token_size=2048,
-            model_name="models/text-embedding-004",
+            model_name="text-embedding-004",
         )
         async def embedding_func(texts: list[str]) -> np.ndarray:
-            return await gemini_embed.func(
-                texts,
-                api_key=GEMINI_API_KEY,
-                model="models/text-embedding-004",
-            )
+            return await _embed_v1(texts)
 
         rag = RAGAnything(
             config=config,
