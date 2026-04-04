@@ -825,4 +825,61 @@ router.get('/:id/liftings/:liftingId/ewb-pdf', asyncHandler(async (req: AuthRequ
     res.send(pdfBuffer);
 }));
 
+// ── CANCEL E-WAY BILL for a lifting ──
+router.post('/:id/liftings/:liftingId/cancel-ewb', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const lifting = await prisma.ethanolLifting.findFirst({
+      where: { id: req.params.liftingId, contractId: req.params.id },
+      include: { invoice: true },
+    });
+    if (!lifting) return res.status(404).json({ error: 'Lifting not found' });
+    if (!lifting.invoice?.ewbNo) return res.status(400).json({ error: 'No E-Way Bill to cancel' });
+
+    const { cancelEwayBill } = await import('../services/ewayBill');
+    const reasonCode = req.body.reasonCode || 3; // 1=Duplicate, 2=Data Entry, 3=Order Cancelled, 4=Others
+    const remarks = req.body.remarks || 'Cancelled from ERP';
+
+    const result = await cancelEwayBill(String(lifting.invoice.ewbNo), reasonCode, remarks);
+    if (!result.success) {
+      return res.status(400).json({ error: result.error || 'EWB cancel failed', rawResponse: result.rawResponse });
+    }
+
+    await prisma.invoice.update({
+      where: { id: lifting.invoice.id },
+      data: { ewbStatus: 'CANCELLED' } as any,
+    });
+
+    res.json({ success: true, message: `E-Way Bill ${lifting.invoice.ewbNo} cancelled` });
+}));
+
+// ── CANCEL IRN for a lifting ──
+router.post('/:id/liftings/:liftingId/cancel-irn', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const lifting = await prisma.ethanolLifting.findFirst({
+      where: { id: req.params.liftingId, contractId: req.params.id },
+      include: { invoice: true },
+    });
+    if (!lifting) return res.status(404).json({ error: 'Lifting not found' });
+    if (!lifting.invoice?.irn) return res.status(400).json({ error: 'No IRN to cancel' });
+
+    // Must cancel EWB first if exists
+    if (lifting.invoice.ewbNo && lifting.invoice.ewbStatus !== 'CANCELLED') {
+      return res.status(400).json({ error: 'Cancel the E-Way Bill first before cancelling the IRN' });
+    }
+
+    const { cancelIRN: doCancelIRN } = await import('../services/eInvoice');
+    const cancelReason = req.body.cancelReason || '2';
+    const cancelRemarks = req.body.cancelRemarks || 'Cancelled from ERP';
+
+    const result = await doCancelIRN(lifting.invoice.irn, cancelReason, cancelRemarks);
+    if (!result.success) {
+      return res.status(400).json({ error: result.error || 'IRN cancel failed', rawResponse: result.rawResponse });
+    }
+
+    await prisma.invoice.update({
+      where: { id: lifting.invoice.id },
+      data: { irnStatus: 'CANCELLED', status: 'CANCELLED' } as any,
+    });
+
+    res.json({ success: true, message: `IRN cancelled for INV-${lifting.invoice.invoiceNo}` });
+}));
+
 export default router;
