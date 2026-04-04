@@ -10,7 +10,6 @@ import { setupApiToast } from './services/apiToast';
 // Lazy-loaded page imports
 const Login = React.lazy(() => import('./pages/Login'));
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
-const SnakeGame = React.lazy(() => import('./pages/SnakeGame'));
 const NotFound = React.lazy(() => import('./pages/NotFound'));
 const VerifyDocument = React.lazy(() => import('./pages/VerifyDocument'));
 const Reports = React.lazy(() => import('./pages/Reports'));
@@ -131,7 +130,6 @@ export default function App() {
         <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route index element={<HomeRedirect />} />
         <Route path="dashboard" element={<Dashboard />} />
-        <Route path="dashboard/snake" element={<SnakeGame />} />
         <Route path="process/raw-material" element={<RawMaterial />} />
         <Route path="process/grain-stock" element={<GrainUnloading />} />
         <Route path="process/grain-unloading" element={<GrainUnloadingTrucks />} />
