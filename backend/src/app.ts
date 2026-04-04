@@ -107,6 +107,7 @@ import webhookRoutes from './routes/webhooks';
 // Document Vault & RAG Search
 import companyDocumentRoutes from './routes/companyDocuments';
 import documentSearchRoutes from './routes/documentSearch';
+import vaultSyncRoutes from './routes/vaultSync';
 import { authenticate } from './middleware/auth';
 import { errorHandler } from './shared/middleware/errorHandler';
 
@@ -242,6 +243,7 @@ app.use('/api/webhooks', authenticate, webhookRoutes);
 // Document Vault & RAG Search (LightRAG microservice)
 app.use('/api/company-documents', companyDocumentRoutes);
 app.use('/api/document-search', documentSearchRoutes);
+app.use('/api/vault', vaultSyncRoutes);
 
 
 // Serve uploaded files

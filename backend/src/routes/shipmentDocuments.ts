@@ -6,6 +6,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { lightragUpload, isRagEnabled } from '../services/lightragClient';
+import { generateVaultNote } from '../services/vaultWriter';
 
 const router = Router();
 router.use(authenticate as any);
@@ -73,6 +74,18 @@ router.post('/upload', upload.single('file'), asyncHandler(async (req: AuthReque
         }).catch(err => console.error('[ShipmentDoc] LightRAG indexing failed:', err));
       });
     }
+
+    // Fire-and-forget: generate vault note
+    setImmediate(() => {
+      generateVaultNote({
+        sourceType: 'ShipmentDocument',
+        sourceId: doc.id,
+        filePath: `shipment-docs/${req.file!.filename}`,
+        title: req.file!.originalname,
+        category: 'CONTRACT',
+        mimeType: req.file!.mimetype,
+      }).catch(err => console.error('[ShipmentDoc] Vault note failed:', err));
+    });
 }));
 
 // POST /upload-general — Upload general document (quotation, etc.) not tied to shipment

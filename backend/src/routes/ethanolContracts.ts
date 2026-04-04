@@ -177,24 +177,37 @@ router.post('/:id/pdf', upload.single('pdf'), asyncHandler(async (req: AuthReque
     });
     res.json({ success: true, filename: contract.contractPdfName });
 
-    // Fire-and-forget: write temp file and index in LightRAG
-    if (isRagEnabled()) {
-      setImmediate(async () => {
-        try {
-          const tmpFile = path.join(os.tmpdir(), `contract-${req.params.id}-${Date.now()}.pdf`);
-          fs.writeFileSync(tmpFile, file.buffer);
+    // Fire-and-forget: write temp file and index in LightRAG + vault
+    setImmediate(async () => {
+      const tmpFile = path.join(os.tmpdir(), `contract-${req.params.id}-${Date.now()}.pdf`);
+      try {
+        fs.writeFileSync(tmpFile, file.buffer);
+
+        if (isRagEnabled()) {
           const { lightragUpload } = await import('../services/lightragClient');
           await lightragUpload(tmpFile, {
             sourceType: 'EthanolContract',
             sourceId: req.params.id,
             title: file.originalname,
           });
-          fs.unlinkSync(tmpFile);
-        } catch (err) {
-          console.error('[EthanolContract] LightRAG indexing failed:', err);
         }
-      });
-    }
+
+        // Generate vault note from temp file
+        const { generateVaultNote } = await import('../services/vaultWriter');
+        await generateVaultNote({
+          sourceType: 'EthanolContract',
+          sourceId: req.params.id,
+          filePath: tmpFile,
+          title: file.originalname,
+          category: 'CONTRACT',
+          mimeType: 'application/pdf',
+        });
+      } catch (err) {
+        console.error('[EthanolContract] LightRAG/vault indexing failed:', err);
+      } finally {
+        if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);
+      }
+    });
 }));
 
 // Download contract PDF

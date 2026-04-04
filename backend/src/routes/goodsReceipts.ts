@@ -8,6 +8,7 @@ import path from 'path';
 import fs from 'fs';
 import axios from 'axios';
 import { lightragUpload, isRagEnabled } from '../services/lightragClient';
+import { generateVaultNote } from '../services/vaultWriter';
 
 const router = Router();
 router.use(authenticate as any);
@@ -319,6 +320,28 @@ If a field is not found in the documents, use null for strings and 0 for numbers
           }
         });
       }
+
+      // Fire-and-forget: generate vault notes for GRN docs
+      setImmediate(() => {
+        if (invoiceFilePath) {
+          generateVaultNote({
+            sourceType: 'GoodsReceipt',
+            sourceId: `grn-invoice-${Date.now()}`,
+            filePath: invoiceFilePath,
+            title: 'GRN Invoice',
+            category: 'OTHER',
+          }).catch(err => console.error('[GRN] Vault note (invoice) failed:', err));
+        }
+        if (ewayBillFilePath) {
+          generateVaultNote({
+            sourceType: 'GoodsReceipt',
+            sourceId: `grn-eway-${Date.now()}`,
+            filePath: ewayBillFilePath,
+            title: 'GRN E-Way Bill',
+            category: 'COMPLIANCE',
+          }).catch(err => console.error('[GRN] Vault note (e-way) failed:', err));
+        }
+      });
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message || 'AI extraction failed';
       res.json({ invoiceFilePath, ewayBillFilePath, extracted: null, error: msg });

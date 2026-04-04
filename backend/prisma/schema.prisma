@@ -2739,3 +2739,24 @@ model CompanyDocument {
   @@index([status])
   @@index([ragIndexed])
 }
+
+// ── Vault Notes (auto-generated summaries for Obsidian knowledge base) ──
+model VaultNote {
+  id          String   @id @default(cuid())
+  sourceType  String   // CompanyDocument, VendorInvoice, GoodsReceipt, ContractorBill, EthanolContract, Manual
+  sourceId    String?  // FK to source record
+  vaultPath   String   @unique // relative path in vault (e.g., documents/compliance/mppcb-clearance.md)
+  title       String
+  category    String   // compliance, contracts, vendor, hr, legal, bank, production, other
+  summary     String   @db.Text
+  entities    String?  @db.Text // JSON: extracted names, dates, amounts for linking
+  contentHash String   // MD5 of source content — skip regeneration if unchanged
+  ragIndexed  Boolean  @default(false)
+  synced      Boolean  @default(false) // true once pulled to local Obsidian vault
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([sourceType, sourceId])
+  @@index([category])
+  @@index([synced])
+}

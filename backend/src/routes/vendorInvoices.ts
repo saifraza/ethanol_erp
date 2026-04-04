@@ -11,6 +11,7 @@ import path from 'path';
 import fs from 'fs';
 import axios from 'axios';
 import { lightragUpload, isRagEnabled } from '../services/lightragClient';
+import { generateVaultNote } from '../services/vaultWriter';
 
 const router = Router();
 router.use(authenticate as any);
@@ -91,6 +92,18 @@ If a field is not found, use null for strings and 0 for numbers. Return ONLY the
           .catch(err => console.error('[VendorInvoice] LightRAG indexing failed:', err));
       });
     }
+
+    // Fire-and-forget: generate vault note
+    setImmediate(() => {
+      generateVaultNote({
+        sourceType: 'VendorInvoice',
+        sourceId: filePath,
+        filePath,
+        title: req.file?.originalname || 'Vendor Invoice',
+        category: 'OTHER',
+        mimeType: req.file?.mimetype,
+      }).catch(err => console.error('[VendorInvoice] Vault note failed:', err));
+    });
   } catch (err: unknown) {
     const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message || 'AI extraction failed';
     res.json({ filePath, extracted: null, error: msg });
