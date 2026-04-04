@@ -165,7 +165,7 @@ const EthanolContracts: React.FC = () => {
   const [showIrnDetail, setShowIrnDetail] = useState<string | null>(null);
 
   // EWB generation modal
-  const [ewbModal, setEwbModal] = useState<{ contractId: string; liftingId: string; vehicleNo: string; transporterName: string; distanceKm: number } | null>(null);
+  const [ewbModal, setEwbModal] = useState<{ contractId: string; liftingId: string; vehicleNo: string; destination: string; transporterName: string; distanceKm: number } | null>(null);
   const [ewbForm, setEwbForm] = useState({ distanceKm: '', transporterName: '', transporterGstin: '', vehicleNo: '' });
 
   useEffect(() => { fetchData(); }, []);
@@ -297,9 +297,20 @@ const EthanolContracts: React.FC = () => {
     finally { setActionLoading(null); }
   };
 
+  // Track last used EWB values per contract for auto-fill
+  const [lastEwbValues, setLastEwbValues] = useState<Record<string, { distanceKm: string; transporterName: string; transporterGstin: string }>>({});
+
   const openEwbModal = (contractId: string, lifting: Lifting) => {
-    setEwbModal({ contractId, liftingId: lifting.id, vehicleNo: lifting.vehicleNo, transporterName: lifting.transporterName || '', distanceKm: lifting.distanceKm || 0 });
-    setEwbForm({ distanceKm: String(lifting.distanceKm || ''), transporterName: lifting.transporterName || '', transporterGstin: '', vehicleNo: lifting.vehicleNo });
+    const last = lastEwbValues[contractId];
+    // Find the parent contract for destination info
+    const contract = contracts.find(c => c.id === contractId);
+    setEwbModal({ contractId, liftingId: lifting.id, vehicleNo: lifting.vehicleNo, destination: lifting.destination || contract?.buyerAddress || '', transporterName: lifting.transporterName || '', distanceKm: lifting.distanceKm || 0 });
+    setEwbForm({
+      distanceKm: String(lifting.distanceKm || last?.distanceKm || ''),
+      transporterName: lifting.transporterName || last?.transporterName || '',
+      transporterGstin: last?.transporterGstin || '',
+      vehicleNo: lifting.vehicleNo,
+    });
   };
 
   const handleGenerateEInvoice = async (contractId: string, liftingId: string, ewbData?: { distanceKm?: string; transporterName?: string; transporterGstin?: string; vehicleNo?: string }) => {
@@ -318,6 +329,10 @@ const EthanolContracts: React.FC = () => {
       });
       const d = res.data;
       if (d.ewbError) { setError(`IRN generated. E-Way Bill failed: ${d.ewbError}`); }
+      // Remember values for next lifting on same contract
+      if (ewbData) {
+        setLastEwbValues(prev => ({ ...prev, [contractId]: { distanceKm: ewbData.distanceKm || '', transporterName: ewbData.transporterName || '', transporterGstin: ewbData.transporterGstin || '' } }));
+      }
       setEwbModal(null);
       loadSupplyDetail(contractId);
     } catch (err: any) { setError(err?.response?.data?.error || 'Failed to generate e-invoice'); }
@@ -914,7 +929,10 @@ const EthanolContracts: React.FC = () => {
             </div>
             <div className="p-5 space-y-4">
               <div className="bg-slate-50 border border-slate-200 p-3 text-xs space-y-1">
-                <div><span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Vehicle:</span> <span className="font-medium">{ewbForm.vehicleNo}</span></div>
+                <div className="flex gap-6">
+                  <div><span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Vehicle:</span> <span className="font-medium">{ewbForm.vehicleNo}</span></div>
+                  {ewbModal.destination && <div><span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Destination:</span> <span className="font-medium">{ewbModal.destination}</span></div>}
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>

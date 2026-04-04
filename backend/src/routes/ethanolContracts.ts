@@ -499,6 +499,9 @@ router.get('/:id/supply-summary', asyncHandler(async (req: AuthRequest, res: Res
       deliveredCount: delivered.length,
       totalLiftings: liftings.length,
       daysRemaining: Math.max(0, Math.ceil((new Date(contract.endDate).getTime() - Date.now()) / (86400000))),
+      // Last used values for auto-fill
+      lastDistanceKm: liftings.find(l => l.distanceKm)?.distanceKm || null,
+      lastTransporterName: liftings.find(l => l.transporterName)?.transporterName || null,
     };
 
     res.json({ contract: { ...contract, hasPdf: !!contractPdf }, summary, liftings });
