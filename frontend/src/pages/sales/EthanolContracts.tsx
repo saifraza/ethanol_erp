@@ -328,15 +328,23 @@ const EthanolContracts: React.FC = () => {
 
   const openEwbModal = (contractId: string, lifting: Lifting) => {
     const last = lastEwbValues[contractId];
-    // Find the parent contract for destination info
     const contract = contracts.find(c => c.id === contractId);
-    setEwbModal({ contractId, liftingId: lifting.id, vehicleNo: lifting.vehicleNo, destination: lifting.destination || contract?.buyerAddress || '', transporterName: lifting.transporterName || '', distanceKm: lifting.distanceKm || 0 });
-    setEwbForm({
-      distanceKm: String(lifting.distanceKm || last?.distanceKm || ''),
-      transporterName: lifting.transporterName || last?.transporterName || '',
-      transporterGstin: last?.transporterGstin || '',
-      vehicleNo: lifting.vehicleNo,
-    });
+    const distKm = String(lifting.distanceKm || last?.distanceKm || '');
+    const transName = lifting.transporterName || last?.transporterName || '';
+    const transGstin = last?.transporterGstin || '';
+
+    // Auto-generate if distance is available (most important field for EWB)
+    if (distKm) {
+      handleGenerateEInvoice(contractId, lifting.id, {
+        distanceKm: distKm, transporterName: transName,
+        transporterGstin: transGstin, vehicleNo: lifting.vehicleNo,
+      });
+      return;
+    }
+
+    // Otherwise show modal to collect missing distance
+    setEwbModal({ contractId, liftingId: lifting.id, vehicleNo: lifting.vehicleNo, destination: lifting.destination || contract?.buyerAddress || '', transporterName: transName, distanceKm: lifting.distanceKm || 0 });
+    setEwbForm({ distanceKm: distKm, transporterName: transName, transporterGstin: transGstin, vehicleNo: lifting.vehicleNo });
   };
 
   const handleGenerateEInvoice = async (contractId: string, liftingId: string, ewbData?: { distanceKm?: string; transporterName?: string; transporterGstin?: string; vehicleNo?: string }) => {
