@@ -498,7 +498,21 @@ router.get('/:id/supply-summary', asyncHandler(async (req: AuthRequest, res: Res
       lastTransporterName: liftings.find(l => l.transporterName)?.transporterName || null,
     };
 
-    res.json({ contract: { ...contract, hasPdf: !!contractPdf }, summary, liftings });
+    // In-progress trucks at site (not yet released = no lifting yet)
+    const activeTrucks = await prisma.dispatchTruck.findMany({
+      where: { contractId: contract.id, status: { in: ['GATE_IN', 'TARE_WEIGHED', 'GROSS_WEIGHED'] } },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      select: {
+        id: true, date: true, vehicleNo: true, driverName: true, driverPhone: true,
+        transporterName: true, destination: true, status: true, quantityBL: true,
+        weightGross: true, weightTare: true, weightNet: true,
+        gateInTime: true, tareTime: true, grossTime: true,
+        rstNo: true, sealNo: true,
+      },
+    });
+
+    res.json({ contract: { ...contract, hasPdf: !!contractPdf }, summary, liftings, activeTrucks });
 }));
 
 // ── CREATE INVOICE from a lifting ──

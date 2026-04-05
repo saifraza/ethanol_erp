@@ -183,6 +183,7 @@ const EthanolContracts: React.FC = () => {
   // Supply detail state
   const [detailSummary, setDetailSummary] = useState<SupplySummary | null>(null);
   const [detailLiftings, setDetailLiftings] = useState<Lifting[]>([]);
+  const [activeTrucks, setActiveTrucks] = useState<any[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [showIrnDetail, setShowIrnDetail] = useState<string | null>(null);
@@ -298,6 +299,7 @@ const EthanolContracts: React.FC = () => {
       const res = await api.get(`/ethanol-contracts/${contractId}/supply-summary`);
       setDetailSummary(res.data.summary);
       setDetailLiftings(res.data.liftings || []);
+      setActiveTrucks(res.data.activeTrucks || []);
       setLiftingPage(1);
     } catch { setError('Failed to load supply details'); }
     finally { setDetailLoading(false); }
@@ -579,7 +581,14 @@ const EthanolContracts: React.FC = () => {
                                 const withEWB = detailLiftings.filter(l => l.invoice?.ewbStatus === 'GENERATED').length;
                                 const pending = detailLiftings.length - withInvoice;
                                 return (
-                                  <div className="grid grid-cols-2 md:grid-cols-5 border-b border-slate-200">
+                                  <div className="grid grid-cols-2 md:grid-cols-6 border-b border-slate-200">
+                                    {activeTrucks.length > 0 && (
+                                    <div className="bg-orange-50 px-4 py-2.5 border-r border-slate-200 border-l-4 border-l-orange-500">
+                                      <div className="text-[10px] font-bold text-orange-600 uppercase tracking-widest">Loading at Site</div>
+                                      <div className="text-lg font-bold text-orange-700 font-mono tabular-nums mt-0.5">{activeTrucks.length}</div>
+                                      <div className="text-[10px] text-orange-500 font-mono">{activeTrucks.map(t => t.vehicleNo).join(', ')}</div>
+                                    </div>
+                                    )}
                                     <div className="bg-white px-4 py-2.5 border-r border-slate-200 border-l-4 border-l-slate-500">
                                       <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Liftings</div>
                                       <div className="text-lg font-bold text-slate-800 font-mono tabular-nums mt-0.5">{detailSummary.totalLiftings}</div>
@@ -656,7 +665,27 @@ const EthanolContracts: React.FC = () => {
                                     </tr>
                                   </thead>
                                   <tbody>
-                                    {detailLiftings.length === 0 ? (
+                                    {/* Active trucks at site (not yet released) */}
+                                    {activeTrucks.map((t: any) => (
+                                      <tr key={`truck-${t.id}`} className="border-b border-orange-200 bg-orange-50/80">
+                                        <td className="px-2 py-1.5 border-r border-orange-100 whitespace-nowrap">{t.gateInTime ? new Date(t.gateInTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '-'}</td>
+                                        <td className="px-2 py-1.5 border-r border-orange-100 font-medium">{t.vehicleNo}</td>
+                                        <td className="px-2 py-1.5 border-r border-orange-100 hidden md:table-cell">{t.destination || '-'}</td>
+                                        <td className="px-2 py-1.5 border-r border-orange-100 text-right font-mono tabular-nums">-</td>
+                                        <td className="px-2 py-1.5 border-r border-orange-100 text-right font-mono tabular-nums">-</td>
+                                        <td className="px-2 py-1.5 border-r border-orange-100 text-right font-mono tabular-nums">-</td>
+                                        <td className="px-2 py-1.5 border-r border-orange-100 text-center">
+                                          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-orange-300 bg-orange-100 text-orange-700">
+                                            {t.status === 'GATE_IN' ? 'AT GATE' : t.status === 'TARE_WEIGHED' ? 'LOADING' : 'WEIGHED'}
+                                          </span>
+                                        </td>
+                                        <td className="px-2 py-1.5 border-r border-orange-100 text-center text-[10px] text-orange-500">--</td>
+                                        <td className="px-2 py-1.5 border-r border-orange-100 text-center">--</td>
+                                        <td className="px-2 py-1.5 border-r border-orange-100 text-center">--</td>
+                                        <td className="px-2 py-1.5 text-center text-[10px] text-orange-500">{t.driverName || '-'}</td>
+                                      </tr>
+                                    ))}
+                                    {detailLiftings.length === 0 && activeTrucks.length === 0 ? (
                                       <tr><td colSpan={11} className="text-center py-6 text-xs text-slate-400 uppercase tracking-widest">No liftings yet</td></tr>
                                     ) : detailLiftings.slice((liftingPage - 1) * LIFTS_PER_PAGE, liftingPage * LIFTS_PER_PAGE).map((l, i) => (
                                       <React.Fragment key={l.id}>
