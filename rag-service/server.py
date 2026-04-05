@@ -182,21 +182,33 @@ async def upload_document(
     # Process in background
     async def process():
         try:
-            if hasattr(rag, "process_document_complete"):
-                # RAG-Anything path
+            import fitz  # PyMuPDF
+
+            # Smart routing: check if PDF has extractable text
+            doc = fitz.open(file_path)
+            text = "\n".join(page.get_text() for page in doc)
+            has_images = any(len(page.get_images()) > 3 for page in doc)
+            has_tables = "│" in text or "+-" in text or text.count("|") > 20
+            is_scanned = len(text.strip()) < 100 and len(doc) > 0  # very little text = scanned
+            doc.close()
+
+            needs_mineru = is_scanned or has_images or has_tables
+
+            if needs_mineru and hasattr(rag, "process_document_complete"):
+                # Complex doc → MinerU (VLM) for tables/images/OCR
+                logger.info(f"Routing to MinerU (scanned={is_scanned}, images={has_images}, tables={has_tables})")
                 await rag.process_document_complete(
                     file_path=file_path,
                     output_dir=OUTPUT_DIR,
-                    parse_method="txt",
+                    parse_method="auto",
                 )
             else:
-                # LightRAG fallback — read text and insert
-                import fitz  # PyMuPDF
-
-                doc = fitz.open(file_path)
-                text = "\n".join(page.get_text() for page in doc)
-                doc.close()
-                await rag.ainsert(text)
+                # Clean text PDF → fast LightRAG direct insert (seconds)
+                logger.info(f"Routing to fast text path ({len(text)} chars)")
+                if hasattr(rag, "lightrag") and rag.lightrag:
+                    await rag.lightrag.ainsert(text)
+                else:
+                    await rag.ainsert(text)
 
             processing_tasks[track_id] = "completed"
             logger.info(f"Document processed successfully: {track_id}")
