@@ -345,14 +345,16 @@ sshpass -p '123' ssh -o StrictHostKeyChecking=no abc@100.74.209.72
 cd ~/Desktop/distillery-erp/factory-server
 npx tsc --outDir dist
 cd frontend && npx vite build && cd ..
-sshpass -p 'Mspil@1212' ssh Administrator@100.126.101.7 "taskkill /F /IM node.exe 2>&1"
+# SCP files:
 sshpass -p 'Mspil@1212' scp -r -o StrictHostKeyChecking=no dist/* Administrator@100.126.101.7:C:/mspil/factory-server/dist/
 sshpass -p 'Mspil@1212' scp -r -o StrictHostKeyChecking=no public/* Administrator@100.126.101.7:C:/mspil/factory-server/public/
 sshpass -p 'Mspil@1212' scp -o StrictHostKeyChecking=no prisma/schema.prisma Administrator@100.126.101.7:C:/mspil/factory-server/prisma/
 # If schema changed:
 sshpass -p 'Mspil@1212' ssh Administrator@100.126.101.7 "cd C:\mspil\factory-server && npx prisma db push"
-# Start:
-sshpass -p 'Mspil@1212' ssh Administrator@100.126.101.7 "cd C:\mspil\factory-server && node dist/server.js &"
+# Restart via pm2 (NEVER use bare node — process must auto-restart on crash/reboot):
+sshpass -p 'Mspil@1212' ssh Administrator@100.126.101.7 "pm2 restart factory-server && pm2 save"
+# Verify:
+sshpass -p 'Mspil@1212' ssh Administrator@100.126.101.7 "pm2 list"
 ```
 
 ### Deploy Weighbridge PC
