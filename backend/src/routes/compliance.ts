@@ -443,7 +443,7 @@ router.post('/:id/auto-link', asyncHandler(async (req: AuthRequest, res: Respons
   const suggestions = matchingDocs.filter(d => !linkedSet.has(d.id));
 
   res.json({
-    ragAnswer: ragResult,
+    ragAnswer: ragResult.answer || ragResult.error || '',
     suggestedDocuments: suggestions,
   });
 }));
@@ -458,12 +458,12 @@ router.post('/ask', validate(askSchema), asyncHandler(async (req: AuthRequest, r
 
   const { question } = req.body;
 
-  const answer = await lightragQuery(
+  const result = await lightragQuery(
     `Compliance question for MSPIL (distillery, sugar mill, cogen power plant, listed company): ${question}`,
     'hybrid'
   );
 
-  res.json({ question, answer });
+  res.json({ question, answer: result.answer || result.error || 'No answer found.' });
 }));
 
 export default router;
