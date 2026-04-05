@@ -325,8 +325,10 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
     const lifting = invoice.ethanolLiftings?.[0] || null;
     const stateCode = invoice.customer.gstNo ? invoice.customer.gstNo.substring(0, 2) : '';
 
+    const customInvNo = lifting?.invoiceNo || invoice.remarks; // custom invoice no stored on lifting or in remarks
     const invData = {
       invoiceNo: invoice.invoiceNo,
+      customInvoiceNo: customInvNo || null,
       invoiceDate: invoice.invoiceDate,
       dueDate: invoice.dueDate,
       challanNo: lifting?.challanNo || invoice.challanNo,
@@ -407,7 +409,7 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
     });
 
     res.setHeader('Content-Type', 'application/pdf');
-    const invLabel = invoice.productName?.toUpperCase().includes('JOB WORK') ? `MSPIL-ETH-${String(invoice.invoiceNo).padStart(3, '0')}` : `INV-${invoice.invoiceNo}`;
+    const invLabel = customInvNo ? customInvNo.replace(/\//g, '-') : `INV-${invoice.invoiceNo}`;
     res.setHeader('Content-Disposition', `inline; filename="${invLabel}.pdf"`);
     res.send(pdfBuffer);
   } catch (err: any) { res.status(500).json({ error: err.message }); }

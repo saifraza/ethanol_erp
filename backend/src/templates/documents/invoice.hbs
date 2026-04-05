@@ -63,7 +63,7 @@
       <td class="inv-label">Dated</td>
     </tr>
     <tr>
-      <td class="inv-val">MSPIL/ETH/{{padNum "" invoiceNo 3}}</td>
+      <td class="inv-val">{{#if customInvoiceNo}}{{customInvoiceNo}}{{else}}MSPIL/ETH/{{padNum "" invoiceNo 3}}{{/if}}</td>
       <td class="inv-val">{{formatDate invoiceDate}}</td>
     </tr>
     <tr>

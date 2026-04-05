@@ -7,6 +7,7 @@ import multer from 'multer';
 import { generateIRN, generateEWBByIRN } from '../services/eInvoice';
 import { onSaleInvoiceCreated } from '../services/autoJournal';
 import { getStateCode, getHsnCode, MSPIL } from '../services/ewayBill';
+import { nextInvoiceNo, getInvoiceSeries } from '../utils/invoiceCounter';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -553,6 +554,10 @@ router.post('/:id/liftings/:liftingId/create-invoice', asyncHandler(async (req: 
       const fresh = await tx.ethanolLifting.findUnique({ where: { id: lifting.id }, select: { invoiceId: true } });
       if (fresh?.invoiceId) throw new Error('Invoice already exists for this lifting');
 
+      // Generate custom invoice number (INV/ETH/001 etc.)
+      const series = getInvoiceSeries(contract.contractType);
+      const customInvNo = await nextInvoiceNo(tx, series);
+
       const inv = await tx.invoice.create({
         data: {
           customerId: customer.id,
@@ -575,13 +580,14 @@ router.post('/:id/liftings/:liftingId/create-invoice', asyncHandler(async (req: 
           totalAmount,
           balanceAmount: totalAmount,
           status: 'UNPAID',
+          remarks: customInvNo, // store custom invoice no in remarks for now
           userId: (req as any).user?.id || 'system',
         },
       });
 
       await tx.ethanolLifting.update({
         where: { id: lifting.id },
-        data: { invoiceId: inv.id, invoiceNo: contract.contractType === 'JOB_WORK' ? `MSPIL/ETH/${String(inv.invoiceNo).padStart(3, '0')}` : `INV-${inv.invoiceNo}` },
+        data: { invoiceId: inv.id, invoiceNo: customInvNo },
       });
 
       return inv;
@@ -645,7 +651,7 @@ router.post('/:id/liftings/:liftingId/e-invoice', asyncHandler(async (req: AuthR
 
     if (!irnAlreadyExists) {
       const invoiceData = {
-        invoiceNo: isJobWork ? `MSPIL/ETH/${String(invoice.invoiceNo).padStart(3, '0')}` : `INV-${invoice.invoiceNo}`,
+        invoiceNo: lifting.invoiceNo || (isJobWork ? `MSPIL/ETH/${String(invoice.invoiceNo).padStart(3, '0')}` : `INV-${invoice.invoiceNo}`),
         invoiceDate: invoice.invoiceDate,
         productName: invoice.productName,
         quantity: invoice.quantity,
