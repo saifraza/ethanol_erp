@@ -440,6 +440,9 @@ router.get('/:id/supply-summary', asyncHandler(async (req: AuthRequest, res: Res
             invoice: {
               select: {
                 id: true, invoiceNo: true, totalAmount: true, paidAmount: true, balanceAmount: true, status: true,
+                amount: true, quantity: true, rate: true, unit: true, productName: true,
+                gstPercent: true, gstAmount: true, cgstAmount: true, sgstAmount: true, igstAmount: true,
+                supplyType: true, freightCharge: true,
                 irn: true, irnDate: true, irnStatus: true, ackNo: true, signedQRCode: true,
                 ewbNo: true, ewbDate: true, ewbValidTill: true, ewbStatus: true,
               },
@@ -531,7 +534,7 @@ router.post('/:id/liftings/:liftingId/create-invoice', asyncHandler(async (req: 
     const gstPercent = contract.gstPercent || 18;
     const amount = lifting.amount || (lifting.quantityBL * (lifting.rate || 0));
     const gst = calcGstSplit(amount, gstPercent, customer.state);
-    const totalAmount = Math.round((amount + gst.gstAmount) * 100) / 100;
+    const totalAmount = Math.round(amount + gst.gstAmount);
 
     // Atomic: create invoice + link to lifting in transaction to prevent double-create race
     const invoice = await prisma.$transaction(async (tx) => {
@@ -543,9 +546,9 @@ router.post('/:id/liftings/:liftingId/create-invoice', asyncHandler(async (req: 
         data: {
           customerId: customer.id,
           invoiceDate: lifting.liftingDate,
-          productName: 'ETHANOL',
+          productName: contract.contractType === 'JOB_WORK' ? 'Job Work Charges for Ethanol Production' : 'ETHANOL',
           quantity: lifting.quantityBL,
-          unit: 'LTR',
+          unit: contract.contractType === 'JOB_WORK' ? 'BL' : 'LTR',
           rate: lifting.rate || 0,
           amount,
           gstPercent,
@@ -566,7 +569,7 @@ router.post('/:id/liftings/:liftingId/create-invoice', asyncHandler(async (req: 
 
       await tx.ethanolLifting.update({
         where: { id: lifting.id },
-        data: { invoiceId: inv.id, invoiceNo: `INV-${inv.invoiceNo}` },
+        data: { invoiceId: inv.id, invoiceNo: contract.contractType === 'JOB_WORK' ? `MSPIL/ETH/${String(inv.invoiceNo).padStart(3, '0')}` : `INV-${inv.invoiceNo}` },
       });
 
       return inv;
@@ -587,6 +590,8 @@ router.post('/:id/liftings/:liftingId/e-invoice', asyncHandler(async (req: AuthR
     if (!lifting.vehicleNo?.trim()) return res.status(400).json({ error: 'Vehicle number is required for e-invoice.' });
 
     const invoice = lifting.invoice;
+    const contract = await prisma.ethanolContract.findUnique({ where: { id: req.params.id }, select: { contractType: true } });
+    const isJobWork = contract?.contractType === 'JOB_WORK';
 
     // Validate rate/amount before IRP submission
     if (!invoice.rate || invoice.rate <= 0) {
@@ -618,7 +623,7 @@ router.post('/:id/liftings/:liftingId/e-invoice', asyncHandler(async (req: AuthR
 
     if (!irnAlreadyExists) {
       const invoiceData = {
-        invoiceNo: `INV-${invoice.invoiceNo}`,
+        invoiceNo: isJobWork ? `MSPIL/ETH/${String(invoice.invoiceNo).padStart(3, '0')}` : `INV-${invoice.invoiceNo}`,
         invoiceDate: invoice.invoiceDate,
         productName: invoice.productName,
         quantity: invoice.quantity,

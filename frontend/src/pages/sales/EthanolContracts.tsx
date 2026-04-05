@@ -52,7 +52,22 @@ interface LiftingInvoice {
   invoiceNo: number;
   totalAmount: number;
   paidAmount: number;
+  balanceAmount: number;
   status: string;
+  // Financial details
+  amount: number;
+  quantity: number;
+  rate: number;
+  unit: string;
+  productName: string;
+  gstPercent: number;
+  gstAmount: number;
+  cgstAmount: number;
+  sgstAmount: number;
+  igstAmount: number;
+  supplyType: string;
+  freightCharge: number;
+  // E-Invoice
   irn?: string | null;
   irnStatus?: string | null;
   ackNo?: string | null;
@@ -646,7 +661,7 @@ const EthanolContracts: React.FC = () => {
                                         {/* Invoice */}
                                         <td className="px-2 py-1.5 border-r border-slate-100 text-center">
                                           {l.invoice ? (
-                                            <span className="text-[10px] font-medium text-slate-700">INV-{l.invoice.invoiceNo}</span>
+                                            <button onClick={(e) => { e.stopPropagation(); setShowIrnDetail(showIrnDetail === l.id ? null : l.id); }} className="text-[10px] font-medium text-blue-700 underline hover:text-blue-900 cursor-pointer">{l.invoiceNo || `INV-${l.invoice.invoiceNo}`}</button>
                                           ) : (
                                             <button
                                               onClick={(e) => { e.stopPropagation(); handleCreateInvoice(c.id, l.id); }}
@@ -716,25 +731,60 @@ const EthanolContracts: React.FC = () => {
                                       </tr>
                                       {/* IRN/EWB detail row */}
                                       {showIrnDetail === l.id && l.invoice && (
-                                        <tr className="bg-green-50/50">
-                                          <td colSpan={11} className="px-3 py-2 text-[10px] border-b border-slate-200">
-                                            <div className="flex flex-wrap gap-x-6 gap-y-1">
+                                        <tr className="bg-slate-50/80">
+                                          <td colSpan={12} className="px-3 py-2 text-[10px] border-b border-slate-200">
+                                            {/* Invoice Financial Details */}
+                                            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-x-6 gap-y-1.5 mb-2">
+                                              <div>
+                                                <span className="font-bold text-slate-400 uppercase tracking-widest">Product</span>
+                                                <div className="font-medium text-slate-700 mt-0.5">{l.invoice.productName || 'ETHANOL'}</div>
+                                              </div>
+                                              <div>
+                                                <span className="font-bold text-slate-400 uppercase tracking-widest">Qty</span>
+                                                <div className="font-mono text-slate-700 mt-0.5">{l.invoice.quantity?.toLocaleString('en-IN')} {l.invoice.unit || 'BL'}</div>
+                                              </div>
+                                              <div>
+                                                <span className="font-bold text-slate-400 uppercase tracking-widest">Rate</span>
+                                                <div className="font-mono text-slate-700 mt-0.5">₹{l.invoice.rate?.toLocaleString('en-IN')}/{l.invoice.unit || 'BL'}</div>
+                                              </div>
+                                              <div>
+                                                <span className="font-bold text-slate-400 uppercase tracking-widest">Base Amount</span>
+                                                <div className="font-mono text-slate-700 mt-0.5">₹{l.invoice.amount?.toLocaleString('en-IN')}</div>
+                                              </div>
+                                              <div>
+                                                <span className="font-bold text-slate-400 uppercase tracking-widest">{l.invoice.supplyType === 'INTER_STATE' ? `IGST ${l.invoice.gstPercent}%` : `GST ${l.invoice.gstPercent}%`}</span>
+                                                <div className="font-mono text-slate-700 mt-0.5">₹{l.invoice.gstAmount?.toLocaleString('en-IN')}</div>
+                                              </div>
+                                              <div>
+                                                <span className="font-bold text-slate-400 uppercase tracking-widest">Total</span>
+                                                <div className="font-mono font-bold text-slate-800 mt-0.5">₹{l.invoice.totalAmount?.toLocaleString('en-IN')}</div>
+                                              </div>
+                                            </div>
+                                            {/* Status + IRN/EWB details */}
+                                            <div className="flex flex-wrap gap-x-6 gap-y-1 pt-1 border-t border-slate-200">
+                                              <div>
+                                                <span className="font-bold text-slate-400 uppercase tracking-widest">Status</span>
+                                                <span className={`ml-1.5 text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
+                                                  l.invoice.status === 'PAID' ? 'bg-green-50 text-green-700 border-green-200' :
+                                                  l.invoice.status === 'PARTIAL' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                                  'bg-red-50 text-red-700 border-red-200'
+                                                }`}>{l.invoice.status}</span>
+                                              </div>
                                               {l.invoice.irn && (
-                                                <div><span className="font-bold text-slate-500 uppercase tracking-widest">IRN:</span> <span className="font-mono text-slate-700 break-all">{l.invoice.irn}</span></div>
+                                                <div><span className="font-bold text-slate-400 uppercase tracking-widest">IRN:</span> <span className="font-mono text-slate-600 break-all">{l.invoice.irn}</span></div>
                                               )}
                                               {l.invoice.ackNo && (
-                                                <div><span className="font-bold text-slate-500 uppercase tracking-widest">Ack No:</span> <span className="font-mono text-slate-700">{l.invoice.ackNo}</span></div>
+                                                <div><span className="font-bold text-slate-400 uppercase tracking-widest">Ack No:</span> <span className="font-mono text-slate-600">{l.invoice.ackNo}</span></div>
                                               )}
                                               {l.invoice.irnDate && (
-                                                <div><span className="font-bold text-slate-500 uppercase tracking-widest">IRN Date:</span> <span className="font-mono text-slate-700">{new Date(l.invoice.irnDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span></div>
+                                                <div><span className="font-bold text-slate-400 uppercase tracking-widest">IRN Date:</span> <span className="font-mono text-slate-600">{new Date(l.invoice.irnDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span></div>
                                               )}
                                               {l.invoice.ewbNo && (
-                                                <div><span className="font-bold text-slate-500 uppercase tracking-widest">EWB No:</span> <span className="font-mono text-slate-700">{l.invoice.ewbNo}</span></div>
+                                                <div><span className="font-bold text-slate-400 uppercase tracking-widest">EWB No:</span> <span className="font-mono text-slate-600">{l.invoice.ewbNo}</span></div>
                                               )}
                                               {l.invoice.ewbDate && (
-                                                <div><span className="font-bold text-slate-500 uppercase tracking-widest">EWB Date:</span> <span className="font-mono text-slate-700">{new Date(l.invoice.ewbDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span></div>
+                                                <div><span className="font-bold text-slate-400 uppercase tracking-widest">EWB Date:</span> <span className="font-mono text-slate-600">{new Date(l.invoice.ewbDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span></div>
                                               )}
-                                              <div><span className="font-bold text-slate-500 uppercase tracking-widest">Invoice Total:</span> <span className="font-mono text-slate-700">{l.invoice.totalAmount?.toLocaleString('en-IN')}</span></div>
                                             </div>
                                           </td>
                                         </tr>

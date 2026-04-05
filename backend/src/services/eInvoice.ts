@@ -241,6 +241,8 @@ function getHsnCode(productName: string): string {
   const hsnMap: Record<string, string> = {
     'DDGS': '23033000',         // Ch 23: Residues of starch/distilling — DDGS for animal feed, 5% GST
     'ETHANOL': '22072000',      // Ch 22: Denatured ethyl alcohol (fuel ethanol), 18% GST
+    'JOB WORK CHARGES FOR ETHANOL PRODUCTION': '998842',  // SAC: Manufacturing services on physical inputs
+    'JOB WORK CHARGES FOR DDGS PRODUCTION': '998817',     // SAC: Maintenance and repair services
     'ENA': '22071090',          // Ch 22: Undenatured ethyl alcohol ≥80% (Extra Neutral Alcohol)
     'RS': '22071019',           // Ch 22: Rectified spirit (other rectified spirit)
     'LFO': '27101960',          // Ch 27: Light diesel oil / light furnace oil
