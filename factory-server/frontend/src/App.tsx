@@ -9,6 +9,7 @@ import Weighment from './pages/Weighment';
 import History from './pages/History';
 import AdminDashboard from './pages/AdminDashboard';
 import UserManagement from './pages/UserManagement';
+import EthanolGatePass from './pages/EthanolGatePass';
 
 // Multi-role: role field can be comma-separated e.g. "GATE_ENTRY,GROSS_WB"
 function hasRole(userRole: string, ...check: string[]): boolean {
@@ -57,6 +58,9 @@ function AppRoutes() {
         } />
         <Route path="/tare" element={
           hasRole(user.role, 'TARE_WB') ? <TareWeighment /> : <Navigate to={homeFor(user.role)} />
+        } />
+        <Route path="/ethanol-gate-pass" element={
+          hasRole(user.role, 'GATE_ENTRY') ? <EthanolGatePass /> : <Navigate to={homeFor(user.role)} />
         } />
         <Route path="/weighment" element={<Weighment />} />
         <Route path="/history" element={<History />} />

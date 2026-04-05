@@ -31,7 +31,6 @@ const OPCTagManager = React.lazy(() => import('./pages/process/OPCTagManager'));
 const Evaporation = React.lazy(() => import('./pages/process/Evaporation'));
 const EthanolProduct = React.lazy(() => import('./pages/process/EthanolProduct'));
 const EthanolDispatch = React.lazy(() => import('./pages/process/EthanolDispatch'));
-const EthanolGatePass = React.lazy(() => import('./pages/process/EthanolGatePass'));
 const WaterUtility = React.lazy(() => import('./pages/process/WaterUtility'));
 const LabSampling = React.lazy(() => import('./pages/process/LabSampling'));
 const DDGSStock = React.lazy(() => import('./pages/process/DDGSStock'));
@@ -153,7 +152,6 @@ export default function App() {
         <Route path="process/ethanol-product" element={<EthanolProduct />} />
         <Route path="process/ethanol-stock" element={<EthanolProduct />} />
         <Route path="process/ethanol-dispatch" element={<EthanolDispatch />} />
-        <Route path="process/ethanol-gate-pass" element={<EthanolGatePass />} />
         <Route path="process/water-utility" element={<WaterUtility />} />
         <Route path="process/lab-sampling" element={<LabSampling />} />
         <Route path="process/dosing-recipes" element={<DosingRecipes />} />

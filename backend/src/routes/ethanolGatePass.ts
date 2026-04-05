@@ -1,4 +1,5 @@
-import { Router, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
+import crypto from 'crypto';
 import prisma from '../config/prisma';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
@@ -6,7 +7,22 @@ import { nextInvoiceNo } from '../utils/invoiceCounter';
 import { onSaleInvoiceCreated } from '../services/autoJournal';
 
 const router = Router();
-router.use(authenticate);
+
+// Accept either JWT auth or X-WB-Key (for factory server proxy)
+const WB_KEY = process.env.WB_PUSH_KEY || 'mspil-wb-2026';
+function authOrWbKey(req: Request, res: Response, next: NextFunction) {
+  const wbKey = req.headers['x-wb-key'] as string;
+  if (wbKey && wbKey.length === WB_KEY.length) {
+    try {
+      if (crypto.timingSafeEqual(Buffer.from(wbKey), Buffer.from(WB_KEY))) {
+        (req as any).user = { id: 'factory-server', role: 'ADMIN' };
+        return next();
+      }
+    } catch { /* fall through to JWT */ }
+  }
+  return authenticate(req as any, res, next);
+}
+router.use(authOrWbKey);
 
 function nowIST(): Date {
   return new Date(Date.now() + 5.5 * 60 * 60 * 1000);
