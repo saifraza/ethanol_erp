@@ -65,6 +65,7 @@ import directPurchaseRoutes from './routes/directPurchases';
 import directSaleRoutes from './routes/directSales';
 // Ethanol Supply
 import ethanolContractRoutes from './routes/ethanolContracts';
+import ethanolGatePassRoutes from './routes/ethanolGatePass';
 // Accounts (Payment Desk)
 import accountsRoutes from './routes/accounts';
 // Accounts (Bookkeeping — Chart of Accounts, Journal Entries, Ledger, Reports)
@@ -210,6 +211,7 @@ app.use('/api/direct-purchases', directPurchaseRoutes);
 app.use('/api/direct-sales', directSaleRoutes);
 // Ethanol Supply
 app.use('/api/ethanol-contracts', ethanolContractRoutes);
+app.use('/api/ethanol-gate-pass', ethanolGatePassRoutes);
 // Accounts (Payment Desk)
 app.use('/api/accounts', accountsRoutes);
 // Accounts (Bookkeeping)
