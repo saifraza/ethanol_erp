@@ -44,3 +44,4 @@ EXPOSE 9621
 # Force rebuild: embedding fix 2026-04-04
 CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "9621", "--timeout-keep-alive", "300"]
 # persistence test Sun Apr  5 08:42:29 IST 2026
+# persistence test 1775360355
