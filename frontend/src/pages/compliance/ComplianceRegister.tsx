@@ -260,10 +260,7 @@ export default function ComplianceRegister() {
     setUploading(true);
 
     const steps: Record<string, 'pending' | 'running' | 'done' | 'error'> = {
-      upload: 'running',
-      rag: 'pending',
-      summary: 'pending',
-      link: 'pending',
+      upload: 'running', link: 'pending', rag: 'pending', summary: 'pending',
     };
     setUploadProgress({ docId: '', step: 'Uploading file...', steps: { ...steps } });
 
@@ -281,96 +278,79 @@ export default function ComplianceRegister() {
       if (uploadForm.deepScan) formData.append('deepScan', 'true');
       formData.append('tags', detail.title);
 
-      // Step 1: Upload to Document Vault
       const res = await api.post('/company-documents', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       const docId = res.data.id;
+      const oblId = detail.id;
 
       steps.upload = 'done';
-      steps.rag = 'running';
-      setUploadProgress({ docId, step: 'RAG indexing document...', steps: { ...steps } });
+      steps.link = 'running';
+      setUploadProgress({ docId, step: 'Linking to obligation...', steps: { ...steps } });
 
-      // Step 2: Link to obligation immediately
-      await api.post(`/compliance/${detail.id}/documents`, {
-        documentId: docId,
-        isFulfilling: true,
-      });
+      await api.post(`/compliance/${oblId}/documents`, { documentId: docId, isFulfilling: true });
 
       steps.link = 'done';
-      setUploadProgress({ docId, step: 'RAG indexing document...', steps: { ...steps } });
+      steps.rag = 'running';
 
-      // Step 3: Poll for RAG + VaultNote completion (max 60s)
+      // Close the modal — show progress as bottom bar instead
+      setShowUpload(false);
+      setUploadForm({ title: '', issuedBy: '', issuedDate: '', expiryDate: '', referenceNo: '', deepScan: false });
+      setUploading(false);
+      openDetail(oblId);
+      fetchList();
+      setUploadProgress({ docId, step: 'RAG indexing...', steps: { ...steps } });
+
+      // Poll for RAG completion in background (non-blocking, bottom bar)
       let pollCount = 0;
-      const maxPolls = 30; // 30 polls x 2s = 60s
+      const maxPolls = 30;
       const pollInterval = setInterval(async () => {
         pollCount++;
         try {
           const docRes = await api.get(`/company-documents/${docId}`);
           const doc = docRes.data;
 
-          // Check RAG status
           if (doc.ragIndexed) {
             steps.rag = 'done';
-          } else if (doc.ragTrackId) {
-            steps.rag = 'running';
-            // Check detailed RAG status
+            steps.summary = 'running';
+            setUploadProgress({ docId, step: 'AI extracting summary...', steps: { ...steps } });
+
+            // Give Gemini a few more seconds for VaultNote
+            setTimeout(() => {
+              steps.summary = 'done';
+              setUploadProgress({ docId, step: 'All done', steps: { ...steps } });
+              openDetail(oblId);
+              setTimeout(() => setUploadProgress(null), 3000);
+            }, 5000);
+
+            clearInterval(pollInterval);
+            return;
+          }
+
+          if (doc.ragTrackId) {
             try {
               const statusRes = await api.get(`/document-search/status/${doc.ragTrackId}`);
-              const ragStatus = statusRes.data?.status;
-              if (ragStatus === 'completed' || ragStatus === 'indexed') {
+              if (statusRes.data?.status === 'completed' || statusRes.data?.status === 'indexed') {
                 steps.rag = 'done';
+                steps.summary = 'running';
+                setUploadProgress({ docId, step: 'AI extracting summary...', steps: { ...steps } });
               }
-            } catch { /* ignore status check errors */ }
+            } catch { /* ignore */ }
           }
 
-          // Check VaultNote (summary extraction)
-          try {
-            const vaultRes = await api.get(`/vault?sourceType=CompanyDocument&sourceId=${docId}`);
-            if (vaultRes.data && (Array.isArray(vaultRes.data) ? vaultRes.data.length > 0 : vaultRes.data.id)) {
-              steps.summary = 'done';
-            } else {
-              steps.summary = steps.rag === 'done' ? 'running' : 'pending';
-            }
-          } catch {
-            steps.summary = steps.rag === 'done' ? 'running' : 'pending';
-          }
+          setUploadProgress({ docId, step: 'RAG indexing...', steps: { ...steps } });
 
-          const currentStep = steps.rag !== 'done' ? 'RAG indexing document...'
-            : steps.summary !== 'done' ? 'AI extracting summary & entities...'
-            : 'Processing complete';
-
-          setUploadProgress({ docId, step: currentStep, steps: { ...steps } });
-
-          // All done or timeout
-          if ((steps.rag === 'done' && steps.summary === 'done') || pollCount >= maxPolls) {
-            clearInterval(pollInterval);
-            if (pollCount >= maxPolls) {
-              // Mark remaining as done (they're async, will finish in background)
-              if (steps.rag !== 'done') steps.rag = 'done';
-              if (steps.summary !== 'done') steps.summary = 'done';
-            }
-            setUploadProgress({ docId, step: 'All done', steps: { ...steps } });
-
-            // Wait a moment then close
-            setTimeout(() => {
-              setShowUpload(false);
-              setUploadProgress(null);
-              setUploadForm({ title: '', issuedBy: '', issuedDate: '', expiryDate: '', referenceNo: '', deepScan: false });
-              setUploading(false);
-              openDetail(detail.id);
-              fetchList();
-            }, 1500);
-          }
-        } catch {
-          // Poll error — keep trying
           if (pollCount >= maxPolls) {
             clearInterval(pollInterval);
-            setShowUpload(false);
+            steps.rag = 'done';
+            steps.summary = 'done';
+            setUploadProgress({ docId, step: 'All done', steps: { ...steps } });
+            setTimeout(() => setUploadProgress(null), 3000);
+          }
+        } catch {
+          if (pollCount >= maxPolls) {
+            clearInterval(pollInterval);
             setUploadProgress(null);
-            setUploading(false);
-            openDetail(detail.id);
-            fetchList();
           }
         }
       }, 2000);
@@ -755,7 +735,7 @@ export default function ComplianceRegister() {
           </div>
         )}
 
-        {/* Upload Document Modal */}
+        {/* Upload Document Modal — just the form, no progress here */}
         {showUpload && detail && (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center pt-20">
             <div className="bg-white shadow-2xl w-full max-w-md">
@@ -764,120 +744,106 @@ export default function ComplianceRegister() {
                   <span className="text-xs font-bold uppercase tracking-widest">Upload Compliance Document</span>
                   <div className="text-[10px] text-slate-400 mt-0.5">{detail.title}</div>
                 </div>
-                {!uploading && <button onClick={() => { setShowUpload(false); setUploadProgress(null); }} className="text-slate-400 hover:text-white">&times;</button>}
+                <button onClick={() => setShowUpload(false)} className="text-slate-400 hover:text-white">&times;</button>
               </div>
-
-              {/* Progress Tracker */}
-              {uploadProgress ? (
-                <div className="p-4 space-y-4">
-                  <div className="text-xs text-slate-600 font-medium">{uploadProgress.step}</div>
-                  <div className="space-y-2">
-                    {([
-                      ['upload', 'File Upload'],
-                      ['link', 'Link to Obligation'],
-                      ['rag', 'RAG Indexing'],
-                      ['summary', 'AI Summary & Entity Extraction'],
-                    ] as [string, string][]).map(([key, label]) => {
-                      const s = uploadProgress.steps[key];
-                      return (
-                        <div key={key} className="flex items-center gap-3">
-                          <div className="w-5 h-5 flex items-center justify-center flex-shrink-0">
-                            {s === 'done' ? (
-                              <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                            ) : s === 'running' ? (
-                              <div className="w-3.5 h-3.5 border-2 border-blue-600 border-t-transparent animate-spin" style={{ borderRadius: '50%' }} />
-                            ) : s === 'error' ? (
-                              <svg className="w-4 h-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-                            ) : (
-                              <div className="w-3 h-3 border-2 border-slate-300" style={{ borderRadius: '50%' }} />
-                            )}
-                          </div>
-                          <span className={`text-xs ${s === 'done' ? 'text-green-700 font-medium' : s === 'running' ? 'text-blue-700 font-medium' : s === 'error' ? 'text-red-700' : 'text-slate-400'}`}>
-                            {label}
-                          </span>
-                          {s === 'running' && key === 'rag' && (
-                            <span className="text-[9px] text-slate-400 ml-auto">may take 1-2 min</span>
-                          )}
-                          {s === 'running' && key === 'summary' && (
-                            <span className="text-[9px] text-slate-400 ml-auto">Gemini processing...</span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {uploadProgress.step === 'All done' && (
-                    <div className="bg-green-50 border border-green-200 px-3 py-2 text-xs text-green-700">
-                      Document processed and linked. Closing...
-                    </div>
-                  )}
+              <form onSubmit={e => {
+                e.preventDefault();
+                const fileInput = (e.target as HTMLFormElement).querySelector('input[type="file"]') as HTMLInputElement;
+                if (fileInput?.files?.[0]) handleUploadDoc(fileInput.files[0]);
+              }} className="p-4 space-y-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">File *</label>
+                  <input type="file" required
+                    accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx,.tif,.tiff"
+                    onChange={e => {
+                      const f = e.target.files?.[0];
+                      if (f && !uploadForm.title) setUploadForm(prev => ({ ...prev, title: f.name.replace(/\.[^.]+$/, '') }));
+                    }}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
                 </div>
-              ) : (
-                /* Upload Form */
-                <form onSubmit={e => {
-                  e.preventDefault();
-                  const fileInput = (e.target as HTMLFormElement).querySelector('input[type="file"]') as HTMLInputElement;
-                  if (fileInput?.files?.[0]) handleUploadDoc(fileInput.files[0]);
-                }} className="p-4 space-y-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Document Title</label>
+                  <input type="text" value={uploadForm.title} onChange={e => setUploadForm({ ...uploadForm, title: e.target.value })}
+                    placeholder="Auto-filled from filename"
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">File *</label>
-                    <input type="file" required
-                      accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx,.tif,.tiff"
-                      onChange={e => {
-                        const f = e.target.files?.[0];
-                        if (f && !uploadForm.title) setUploadForm(prev => ({ ...prev, title: f.name.replace(/\.[^.]+$/, '') }));
-                      }}
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Issued By</label>
+                    <input type="text" value={uploadForm.issuedBy} onChange={e => setUploadForm({ ...uploadForm, issuedBy: e.target.value })}
+                      placeholder={detail.authority || ''}
                       className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Document Title</label>
-                    <input type="text" value={uploadForm.title} onChange={e => setUploadForm({ ...uploadForm, title: e.target.value })}
-                      placeholder="Auto-filled from filename"
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Reference No.</label>
+                    <input type="text" value={uploadForm.referenceNo} onChange={e => setUploadForm({ ...uploadForm, referenceNo: e.target.value })}
                       className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Issued By</label>
-                      <input type="text" value={uploadForm.issuedBy} onChange={e => setUploadForm({ ...uploadForm, issuedBy: e.target.value })}
-                        placeholder={detail.authority || ''}
-                        className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Issued Date</label>
+                    <input type="date" value={uploadForm.issuedDate} onChange={e => setUploadForm({ ...uploadForm, issuedDate: e.target.value })}
+                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Expiry Date</label>
+                    <input type="date" value={uploadForm.expiryDate} onChange={e => setUploadForm({ ...uploadForm, expiryDate: e.target.value })}
+                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input type="checkbox" id="deepScan" checked={uploadForm.deepScan}
+                    onChange={e => setUploadForm({ ...uploadForm, deepScan: e.target.checked })}
+                    className="border border-slate-300" />
+                  <label htmlFor="deepScan" className="text-[10px] text-slate-500">Deep scan (scanned/complex PDFs only — uses MinerU, 2-5 min)</label>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button type="button" onClick={() => setShowUpload(false)}
+                    className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Cancel</button>
+                  <button type="submit" disabled={uploading}
+                    className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">
+                    {uploading ? 'Uploading...' : 'Upload & Link'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Processing Progress — fixed bottom bar (non-blocking) */}
+        {uploadProgress && !showUpload && (
+          <div className="fixed bottom-0 left-0 right-0 z-40 bg-slate-800 text-white px-4 py-2.5 shadow-2xl">
+            <div className="max-w-3xl mx-auto flex items-center gap-4">
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                {uploadProgress.step === 'All done' ? (
+                  <svg className="w-4 h-4 text-green-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                ) : uploadProgress.step === 'Upload failed' ? (
+                  <svg className="w-4 h-4 text-red-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                ) : (
+                  <div className="w-3.5 h-3.5 border-2 border-blue-400 border-t-transparent animate-spin flex-shrink-0" style={{ borderRadius: '50%' }} />
+                )}
+                <span className="text-xs font-medium truncate">{uploadProgress.step}</span>
+              </div>
+              <div className="flex items-center gap-3 flex-shrink-0">
+                {(['upload', 'link', 'rag', 'summary'] as string[]).map(key => {
+                  const s = uploadProgress.steps[key];
+                  const labels: Record<string, string> = { upload: 'Upload', link: 'Link', rag: 'RAG', summary: 'AI' };
+                  return (
+                    <div key={key} className="flex items-center gap-1">
+                      {s === 'done' ? (
+                        <svg className="w-3 h-3 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                      ) : s === 'running' ? (
+                        <div className="w-2.5 h-2.5 border-2 border-blue-400 border-t-transparent animate-spin" style={{ borderRadius: '50%' }} />
+                      ) : (
+                        <div className="w-2.5 h-2.5 border border-slate-500" style={{ borderRadius: '50%' }} />
+                      )}
+                      <span className={`text-[10px] ${s === 'done' ? 'text-green-400' : s === 'running' ? 'text-blue-400' : 'text-slate-500'}`}>{labels[key]}</span>
                     </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Reference No.</label>
-                      <input type="text" value={uploadForm.referenceNo} onChange={e => setUploadForm({ ...uploadForm, referenceNo: e.target.value })}
-                        className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Issued Date</label>
-                      <input type="date" value={uploadForm.issuedDate} onChange={e => setUploadForm({ ...uploadForm, issuedDate: e.target.value })}
-                        className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Expiry Date</label>
-                      <input type="date" value={uploadForm.expiryDate} onChange={e => setUploadForm({ ...uploadForm, expiryDate: e.target.value })}
-                        className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input type="checkbox" id="deepScan" checked={uploadForm.deepScan}
-                      onChange={e => setUploadForm({ ...uploadForm, deepScan: e.target.checked })}
-                      className="border border-slate-300" />
-                    <label htmlFor="deepScan" className="text-[10px] text-slate-500">Deep scan (scanned/complex PDFs — uses MinerU, slower but more accurate)</label>
-                  </div>
-                  <div className="bg-slate-50 border border-slate-200 px-3 py-2 text-[10px] text-slate-500">
-                    Text PDFs: fast LightRAG path (~10s). Deep scan: MinerU parser (~2-5 min for complex/scanned docs).
-                  </div>
-                  <div className="flex justify-end gap-2 pt-2">
-                    <button type="button" onClick={() => setShowUpload(false)}
-                      className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Cancel</button>
-                    <button type="submit" disabled={uploading}
-                      className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">
-                      Upload & Link
-                    </button>
-                  </div>
-                </form>
-              )}
+                  );
+                })}
+              </div>
+              <button onClick={() => setUploadProgress(null)} className="text-slate-400 hover:text-white text-xs ml-2">&times;</button>
             </div>
           </div>
         )}
