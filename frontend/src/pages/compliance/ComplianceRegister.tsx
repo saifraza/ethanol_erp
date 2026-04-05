@@ -560,13 +560,23 @@ export default function ComplianceRegister() {
                     ) : (
                       <div className="space-y-1">
                         {detail.documents.map(link => (
-                          <div key={link.id} className="flex items-center justify-between bg-slate-50 px-2 py-1.5 border border-slate-200">
-                            <div>
-                              <div className="text-xs text-slate-700">{link.document.title}</div>
-                              <div className="text-[10px] text-slate-400">{link.document.fileName} &middot; {link.document.referenceNo || 'No ref'} &middot; Expires: {fmtDate(link.document.expiryDate)}</div>
+                          <div key={link.id} className="bg-slate-50 px-2 py-1.5 border border-slate-200">
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs text-slate-700 truncate">{link.document.title}</div>
+                                <div className="text-[10px] text-slate-400">{link.document.fileName} &middot; {link.document.referenceNo || 'No ref'} &middot; Expires: {fmtDate(link.document.expiryDate)}</div>
+                              </div>
+                              <div className="flex items-center gap-1 ml-2 flex-shrink-0">
+                                <a href={`/api/company-documents/file/${link.document.id}`} target="_blank" rel="noopener noreferrer"
+                                  className="px-1.5 py-0.5 bg-white border border-slate-300 text-slate-600 text-[9px] font-bold uppercase hover:bg-slate-100">
+                                  View
+                                </a>
+                                <button onClick={() => handleUnlinkDoc(link.document.id)}
+                                  className="px-1.5 py-0.5 bg-white border border-red-300 text-red-600 text-[9px] font-bold uppercase hover:bg-red-50">
+                                  Remove
+                                </button>
+                              </div>
                             </div>
-                            <button onClick={() => handleUnlinkDoc(link.document.id)}
-                              className="text-red-400 hover:text-red-600 text-xs px-1">&times;</button>
                           </div>
                         ))}
                       </div>
