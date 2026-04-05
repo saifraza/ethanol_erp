@@ -101,8 +101,11 @@ export default function ComplianceRegister() {
   const [showCreate, setShowCreate] = useState(false);
   const [showLinkDoc, setShowLinkDoc] = useState(false);
   const [showAction, setShowAction] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [linkDocs, setLinkDocs] = useState<CompanyDoc[]>([]);
   const [seeding, setSeeding] = useState(false);
+  const [uploadForm, setUploadForm] = useState({ title: '', issuedBy: '', issuedDate: '', expiryDate: '', referenceNo: '', deepScan: false });
 
   // Create form
   const [form, setForm] = useState({
@@ -248,6 +251,46 @@ export default function ComplianceRegister() {
       }
     } catch (err) {
       console.error('Auto-link failed:', err);
+    }
+  };
+
+  const handleUploadDoc = async (file: File) => {
+    if (!detail || !file) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('category', 'COMPLIANCE');
+      formData.append('subcategory', detail.subcategory || detail.category);
+      formData.append('title', uploadForm.title || file.name.replace(/\.[^.]+$/, ''));
+      formData.append('department', detail.department || '');
+      if (uploadForm.issuedBy) formData.append('issuedBy', uploadForm.issuedBy);
+      if (uploadForm.issuedDate) formData.append('issuedDate', uploadForm.issuedDate);
+      if (uploadForm.expiryDate) formData.append('expiryDate', uploadForm.expiryDate);
+      if (uploadForm.referenceNo) formData.append('referenceNo', uploadForm.referenceNo);
+      if (uploadForm.deepScan) formData.append('deepScan', 'true');
+      formData.append('tags', detail.title);
+
+      // 1. Upload to Document Vault (triggers RAG + VaultNote)
+      const res = await api.post('/company-documents', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      // 2. Link the new doc to this obligation
+      await api.post(`/compliance/${detail.id}/documents`, {
+        documentId: res.data.id,
+        isFulfilling: true,
+      });
+
+      setShowUpload(false);
+      setUploadForm({ title: '', issuedBy: '', issuedDate: '', expiryDate: '', referenceNo: '', deepScan: false });
+      openDetail(detail.id);
+      fetchList();
+    } catch (err) {
+      console.error('Upload failed:', err);
+      alert('Upload failed. Please try again.');
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -414,13 +457,17 @@ export default function ComplianceRegister() {
                           Auto-Link (AI)
                         </button>
                         <button onClick={fetchDocuments}
+                          className="px-2 py-0.5 bg-white border border-slate-300 text-slate-600 text-[10px] font-medium hover:bg-slate-50">
+                          Link Existing
+                        </button>
+                        <button onClick={() => setShowUpload(true)}
                           className="px-2 py-0.5 bg-blue-600 text-white text-[10px] font-medium hover:bg-blue-700">
-                          + Link Doc
+                          Upload Doc
                         </button>
                       </div>
                     </div>
                     {detail.documents.length === 0 ? (
-                      <div className="text-[10px] text-slate-400 italic">No documents linked. Upload documents in Document Vault first.</div>
+                      <div className="text-[10px] text-slate-400 italic">No documents linked. Click "Upload Doc" to add a compliance document.</div>
                     ) : (
                       <div className="space-y-1">
                         {detail.documents.map(link => (
@@ -605,6 +652,82 @@ export default function ComplianceRegister() {
                     className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">Save</button>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Upload Document Modal */}
+        {showUpload && detail && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center pt-20">
+            <div className="bg-white shadow-2xl w-full max-w-md">
+              <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-bold uppercase tracking-widest">Upload Compliance Document</span>
+                  <div className="text-[10px] text-slate-400 mt-0.5">{detail.title}</div>
+                </div>
+                <button onClick={() => setShowUpload(false)} className="text-slate-400 hover:text-white">&times;</button>
+              </div>
+              <form onSubmit={e => {
+                e.preventDefault();
+                const fileInput = (e.target as HTMLFormElement).querySelector('input[type="file"]') as HTMLInputElement;
+                if (fileInput?.files?.[0]) handleUploadDoc(fileInput.files[0]);
+              }} className="p-4 space-y-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">File *</label>
+                  <input type="file" required
+                    accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx,.tif,.tiff"
+                    onChange={e => {
+                      const f = e.target.files?.[0];
+                      if (f && !uploadForm.title) setUploadForm(prev => ({ ...prev, title: f.name.replace(/\.[^.]+$/, '') }));
+                    }}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Document Title</label>
+                  <input type="text" value={uploadForm.title} onChange={e => setUploadForm({ ...uploadForm, title: e.target.value })}
+                    placeholder="Auto-filled from filename"
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Issued By</label>
+                    <input type="text" value={uploadForm.issuedBy} onChange={e => setUploadForm({ ...uploadForm, issuedBy: e.target.value })}
+                      placeholder={detail.authority || ''}
+                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Reference No.</label>
+                    <input type="text" value={uploadForm.referenceNo} onChange={e => setUploadForm({ ...uploadForm, referenceNo: e.target.value })}
+                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Issued Date</label>
+                    <input type="date" value={uploadForm.issuedDate} onChange={e => setUploadForm({ ...uploadForm, issuedDate: e.target.value })}
+                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Expiry Date</label>
+                    <input type="date" value={uploadForm.expiryDate} onChange={e => setUploadForm({ ...uploadForm, expiryDate: e.target.value })}
+                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input type="checkbox" id="deepScan" checked={uploadForm.deepScan}
+                    onChange={e => setUploadForm({ ...uploadForm, deepScan: e.target.checked })}
+                    className="border border-slate-300" />
+                  <label htmlFor="deepScan" className="text-[10px] text-slate-500">Deep scan (for scanned/complex PDFs — slower but more accurate)</label>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button type="button" onClick={() => setShowUpload(false)}
+                    className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Cancel</button>
+                  <button type="submit" disabled={uploading}
+                    className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">
+                    {uploading ? 'Uploading & Processing...' : 'Upload & Link'}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}
