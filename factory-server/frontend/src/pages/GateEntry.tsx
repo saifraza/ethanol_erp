@@ -88,6 +88,7 @@ export default function GateEntry() {
       setPos(data.pos || []);
       setTraders(data.traders || []);
       setVehicles(data.vehicles || []);
+      setEthContracts(data.ethContracts || []);
     } catch {
       setMasterError(true);
     } finally {
@@ -109,15 +110,8 @@ export default function GateEntry() {
     return () => clearInterval(iv);
   }, [loadMasterData, loadCount]);
 
-  // Load ethanol contracts when outbound ethanol selected
-  useEffect(() => {
-    if (!isEthanol) { setEthContracts([]); return; }
-    let cancelled = false;
-    cloudApi.get('/ethanol-gate-pass/active-contracts')
-      .then(r => { if (!cancelled) setEthContracts(Array.isArray(r.data) ? r.data : []); })
-      .catch(() => { if (!cancelled) setEthContracts([]); });
-    return () => { cancelled = true; };
-  }, [isEthanol, cloudApi]);
+  // Ethanol contracts come from master-data cache (works offline)
+  // Updated in loadMasterData alongside suppliers, materials, etc.
 
   // Filter POs by selected supplier
   const filteredPOs = pos.filter(p => !supplierName || p.vendor_name.toLowerCase().includes(supplierName.toLowerCase()));

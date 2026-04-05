@@ -23,6 +23,7 @@ interface POLine { id: string; inventory_item_id: string | null; material_id: st
 interface PO { id: string; po_no: number; vendor_name: string; vendor_id: string; status: string; deal_type: string; lines: POLine[] }
 interface Trader { id: string; name: string; phone: string | null; productTypes: string | null }
 interface Customer { id: string; name: string; shortName: string | null; gstNo: string | null }
+interface EthContract { id: string; contractNo: string; contractType: string; buyerName: string; buyerGst: string | null; buyerAddress: string | null; conversionRate: number | null; ethanolRate: number | null; gstPercent: number | null; paymentTermsDays: number | null; omcDepot: string | null }
 
 interface MasterCache {
   suppliers: Supplier[];
@@ -31,14 +32,15 @@ interface MasterCache {
   traders: Trader[];
   customers: Customer[];
   vehicles: string[];
-  lastCloudSync: string | null; // ISO timestamp
+  ethContracts: EthContract[];
+  lastCloudSync: string | null;
   lastCloudCheck: string | null;
-  cloudTimestamp: string | null; // MAX(updatedAt) from cloud
+  cloudTimestamp: string | null;
   source: 'cloud' | 'disk' | 'empty';
 }
 
 const EMPTY_CACHE: MasterCache = {
-  suppliers: [], materials: [], pos: [], traders: [], customers: [], vehicles: [],
+  suppliers: [], materials: [], pos: [], traders: [], customers: [], vehicles: [], ethContracts: [],
   lastCloudSync: null, lastCloudCheck: null, cloudTimestamp: null, source: 'empty',
 };
 
@@ -92,6 +94,7 @@ function loadFromDisk(): boolean {
       data.traders = data.traders || [];
       data.customers = data.customers || [];
       data.vehicles = data.vehicles || [];
+      data.ethContracts = data.ethContracts || [];
       cache = { ...data, source: 'disk' };
       console.log(`[CACHE] Loaded from disk: ${cache.suppliers.length} suppliers, ${cache.materials.length} materials, ${cache.pos.length} POs, ${cache.traders.length} traders`);
       return true;
@@ -113,7 +116,8 @@ async function getCloudTimestamp(): Promise<string | null> {
         (SELECT MAX("updatedAt") FROM "PurchaseOrder"),
         (SELECT MAX("updatedAt") FROM "Vendor"),
         (SELECT MAX("updatedAt") FROM "InventoryItem"),
-        (SELECT MAX("updatedAt") FROM "Customer")
+        (SELECT MAX("updatedAt") FROM "Customer"),
+        (SELECT MAX("updatedAt") FROM "EthanolContract")
       ) as max
     `;
     return result[0]?.max?.toISOString() || null;
@@ -127,7 +131,7 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
   if (!cloud) return false;
 
   try {
-    const [vendors, inventoryItems, purchaseOrders, customers, traderVendors] = await Promise.all([
+    const [vendors, inventoryItems, purchaseOrders, customers, traderVendors, ethContracts]: [any[], any[], any[], any[], any[], EthContract[]] = await Promise.all([
       cloud.vendor.findMany({
         where: { isActive: true },
         select: { id: true, name: true, gstin: true, phone: true },
@@ -171,6 +175,11 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
         orderBy: { name: 'asc' },
         take: 100,
       }),
+      cloud.$queryRaw<EthContract[]>`
+        SELECT id, "contractNo", "contractType", "buyerName", "buyerGst", "buyerAddress",
+               "conversionRate", "ethanolRate", "gstPercent", "paymentTermsDays", "omcDepot"
+        FROM "EthanolContract" WHERE status = 'ACTIVE' ORDER BY "contractNo" LIMIT 50
+      `,
     ]);
 
     // Get recent vehicles from local DB
@@ -198,7 +207,7 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
         vendor_id: po.vendorId,
         status: po.status,
         deal_type: po.dealType,
-        lines: po.lines.map(l => ({
+        lines: po.lines.map((l: any) => ({
           id: l.id,
           inventory_item_id: l.inventoryItemId,
           material_id: l.materialId,
@@ -214,6 +223,7 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
       })),
       traders: traderVendors.map(t => ({ id: t.id, name: t.name, phone: t.phone, productTypes: t.productTypes })),
       customers: customers.map(c => ({ id: c.id, name: c.name, shortName: c.shortName, gstNo: c.gstNo })),
+      ethContracts: ethContracts.map(c => ({ id: c.id, contractNo: c.contractNo, contractType: c.contractType, buyerName: c.buyerName, buyerGst: c.buyerGst, buyerAddress: c.buyerAddress, conversionRate: c.conversionRate, ethanolRate: c.ethanolRate, gstPercent: c.gstPercent, paymentTermsDays: c.paymentTermsDays, omcDepot: c.omcDepot })),
       vehicles,
       lastCloudSync: now,
       lastCloudCheck: now,
