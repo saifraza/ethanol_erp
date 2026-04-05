@@ -213,6 +213,11 @@ const weighmentSchema = z.object({
   lab_damaged: z.number().nullable().optional(),
   lab_foreign_matter: z.number().nullable().optional(),
   lab_remarks: z.string().nullable().optional(),
+  // Ethanol outbound fields
+  cloud_gate_pass_id: z.string().nullable().optional(),
+  quantity_bl: z.number().nullable().optional(),
+  ethanol_strength: z.number().nullable().optional(),
+  seal_no: z.string().nullable().optional(),
 });
 
 router.post('/push', asyncHandler(async (req: Request, res: Response) => {
@@ -875,7 +880,7 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
       continue;
     }
 
-    // ── OUTBOUND → Upsert DDGSDispatchTruck + Shipment (transactional) ──
+    // ── OUTBOUND → Route to Ethanol or DDGS handler ──
     if (w.direction === 'OUT') {
       const grossKg = w.weight_gross || 0;
       const tareKg = w.weight_tare || 0;
@@ -887,6 +892,80 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
       const tareTimeVal = w.first_weight_at ? new Date(w.first_weight_at) : undefined;
       const grossTimeVal = w.second_weight_at ? new Date(w.second_weight_at) : undefined;
 
+      // ── ETHANOL outbound → Update existing DispatchTruck on cloud ──
+      // Only trust cloud_gate_pass_id if it looks like a UUID (prevents accidental routing)
+      const hasValidGatePassId = w.cloud_gate_pass_id && /^[0-9a-f-]{36}$/i.test(w.cloud_gate_pass_id);
+      const isEthanol = (w.material || '').toLowerCase().includes('ethanol') || !!hasValidGatePassId;
+      if (isEthanol) {
+        const ethResult = await prisma.$transaction(async (tx) => {
+          // Find DispatchTruck: prefer cloudGatePassId, fallback to sourceWbId, then vehicleNo
+          let dispatchTruck = hasValidGatePassId
+            ? await tx.dispatchTruck.findUnique({ where: { id: w.cloud_gate_pass_id! } })
+            : null;
+
+          if (!dispatchTruck) {
+            dispatchTruck = await tx.dispatchTruck.findFirst({ where: { sourceWbId: w.id } });
+          }
+
+          if (!dispatchTruck) {
+            const todayStart = new Date(dateVal);
+            todayStart.setUTCHours(0, 0, 0, 0);
+            const todayEnd = new Date(dateVal);
+            todayEnd.setUTCHours(23, 59, 59, 999);
+            dispatchTruck = await tx.dispatchTruck.findFirst({
+              where: {
+                vehicleNo: w.vehicle_no.toUpperCase(),
+                date: { gte: todayStart, lte: todayEnd },
+                status: { in: ['GATE_IN', 'TARE_WEIGHED'] },
+              },
+              orderBy: { createdAt: 'desc' },
+            });
+          }
+
+          if (!dispatchTruck) return null;
+
+          // Guard: never overwrite a RELEASED or already GROSS_WEIGHED truck
+          if (dispatchTruck.status === 'RELEASED') return { skipped: true, id: dispatchTruck.id };
+          if (dispatchTruck.status === 'GROSS_WEIGHED' && dispatchTruck.sourceWbId === w.id) {
+            return { skipped: false, id: dispatchTruck.id }; // idempotent re-sync
+          }
+
+          // Atomic update with status guard
+          const updated = await tx.dispatchTruck.updateMany({
+            where: { id: dispatchTruck.id, status: { in: ['GATE_IN', 'TARE_WEIGHED', 'GROSS_WEIGHED'] }, NOT: { status: 'RELEASED' } },
+            data: {
+              weightTare: tareKg,
+              weightGross: grossKg,
+              weightNet: grossKg - tareKg,
+              tareTime: tareTimeVal,
+              grossTime: grossTimeVal,
+              status: 'GROSS_WEIGHED',
+              sourceWbId: w.id,
+              ...(w.quantity_bl != null ? { quantityBL: w.quantity_bl } : {}),
+              ...(w.ethanol_strength != null ? { strength: w.ethanol_strength } : {}),
+              ...(w.seal_no ? { sealNo: w.seal_no } : {}),
+            },
+          });
+          return updated.count > 0 ? { skipped: false, id: dispatchTruck.id } : { skipped: true, id: dispatchTruck.id };
+        });
+
+        if (ethResult && !ethResult.skipped) {
+          results.push({ id: ethResult.id, type: 'EthanolDispatch', refNo: ethResult.id, sourceWbId: w.id });
+          ids.push(ethResult.id);
+        } else if (!ethResult) {
+          // No matching DispatchTruck — do NOT mark as synced so it retries
+          console.warn(`[WB-PUSH] Ethanol outbound for ${w.vehicle_no} — no DispatchTruck found, will retry`);
+          results.push({ id: w.id, type: 'EthanolDispatch_SKIPPED', refNo: w.vehicle_no, sourceWbId: w.id });
+          // NOT pushing to ids[] — syncWorker won't mark this as synced
+        } else {
+          // Skipped (already released or already synced)
+          results.push({ id: ethResult.id, type: 'EthanolDispatch', refNo: ethResult.id, sourceWbId: w.id });
+          ids.push(ethResult.id);
+        }
+        continue;
+      }
+
+      // ── DDGS / Other outbound → Upsert DDGSDispatchTruck + Shipment ──
       const txResult = await prisma.$transaction(async (tx) => {
         // 1. Find or create DDGSDispatchTruck by sourceWbId
         const existingDispatch = await tx.dDGSDispatchTruck.findFirst({ where: { sourceWbId: w.id } });

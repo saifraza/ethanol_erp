@@ -84,6 +84,11 @@ model Weighment {
   labRemarks      String?
   labTestedAt     DateTime?
   labTestedBy     String?
+  // Ethanol outbound fields
+  cloudGatePassId String?  // DispatchTruck UUID on cloud ERP (set at gate entry for ethanol)
+  quantityBL      Float?   // Volume in Bulk Litres (ethanol flow meter)
+  strength        Float?   // Alcohol strength %
+  sealNo          String?  // Seal number on tanker
   // Status
   status        String   @default("GATE_ENTRY") // GATE_ENTRY, FIRST_DONE, COMPLETE, CANCELLED
   // Timestamps

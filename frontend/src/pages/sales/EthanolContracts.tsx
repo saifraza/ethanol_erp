@@ -325,6 +325,21 @@ const EthanolContracts: React.FC = () => {
     finally { setActionLoading(null); }
   };
 
+  const handleRelease = async (truckId: string, contractId: string) => {
+    if (!confirm('Release this truck? This will create the invoice, lifting record, gate pass, and delivery challan.')) return;
+    try {
+      setActionLoading(truckId);
+      const res = await api.post(`/ethanol-gate-pass/${truckId}/release`);
+      const d = res.data;
+      // Open all 3 documents
+      if (d.invoiceId) window.open(`/api/ethanol-gate-pass/${truckId}/invoice-pdf`, '_blank');
+      setTimeout(() => window.open(`/api/ethanol-gate-pass/${truckId}/delivery-challan-pdf`, '_blank'), 500);
+      setTimeout(() => window.open(`/api/ethanol-gate-pass/${truckId}/gate-pass-pdf`, '_blank'), 1000);
+      loadSupplyDetail(contractId);
+    } catch (err: any) { setError(err?.response?.data?.error || 'Failed to release truck'); }
+    finally { setActionLoading(null); }
+  };
+
   // Track last used EWB values per contract for auto-fill
   const [lastEwbValues, setLastEwbValues] = useState<Record<string, { distanceKm: string; transporterName: string; transporterGstin: string }>>({});
 
@@ -667,19 +682,30 @@ const EthanolContracts: React.FC = () => {
                                   <tbody>
                                     {/* Active trucks at site (not yet released) */}
                                     {activeTrucks.map((t: any) => (
-                                      <tr key={`truck-${t.id}`} className="border-b border-orange-200 bg-orange-50/80">
+                                      <tr key={`truck-${t.id}`} className={`border-b border-orange-200 ${t.status === 'GROSS_WEIGHED' ? 'bg-green-50/80' : 'bg-orange-50/80'}`}>
                                         <td className="px-2 py-1.5 border-r border-orange-100 whitespace-nowrap">{t.gateInTime ? new Date(t.gateInTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '-'}</td>
                                         <td className="px-2 py-1.5 border-r border-orange-100 font-medium">{t.vehicleNo}</td>
                                         <td className="px-2 py-1.5 border-r border-orange-100 hidden md:table-cell">{t.destination || '-'}</td>
-                                        <td className="px-2 py-1.5 border-r border-orange-100 text-right font-mono tabular-nums">-</td>
-                                        <td className="px-2 py-1.5 border-r border-orange-100 text-right font-mono tabular-nums">-</td>
+                                        <td className="px-2 py-1.5 border-r border-orange-100 text-right font-mono tabular-nums">{t.quantityBL ? t.quantityBL.toLocaleString() : '-'}</td>
+                                        <td className="px-2 py-1.5 border-r border-orange-100 text-right font-mono tabular-nums">{t.quantityBL ? (t.quantityBL / 1000).toFixed(2) : '-'}</td>
                                         <td className="px-2 py-1.5 border-r border-orange-100 text-right font-mono tabular-nums">-</td>
                                         <td className="px-2 py-1.5 border-r border-orange-100 text-center">
-                                          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-orange-300 bg-orange-100 text-orange-700">
+                                          <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
+                                            t.status === 'GROSS_WEIGHED' ? 'border-green-300 bg-green-100 text-green-700' : 'border-orange-300 bg-orange-100 text-orange-700'
+                                          }`}>
                                             {t.status === 'GATE_IN' ? 'AT GATE' : t.status === 'TARE_WEIGHED' ? 'LOADING' : 'WEIGHED'}
                                           </span>
                                         </td>
-                                        <td className="px-2 py-1.5 border-r border-orange-100 text-center text-[10px] text-orange-500">--</td>
+                                        <td className="px-2 py-1.5 border-r border-orange-100 text-center">
+                                          {t.status === 'GROSS_WEIGHED' ? (
+                                            <button
+                                              onClick={(e) => { e.stopPropagation(); handleRelease(t.id, c.id); }}
+                                              disabled={actionLoading === t.id}
+                                              className="text-[9px] font-bold uppercase px-2 py-0.5 border border-green-500 bg-green-600 text-white hover:bg-green-700 disabled:opacity-50">
+                                              {actionLoading === t.id ? '...' : 'Release'}
+                                            </button>
+                                          ) : <span className="text-[10px] text-orange-500">--</span>}
+                                        </td>
                                         <td className="px-2 py-1.5 border-r border-orange-100 text-center">--</td>
                                         <td className="px-2 py-1.5 border-r border-orange-100 text-center">--</td>
                                         <td className="px-2 py-1.5 text-center text-[10px] text-orange-500">{t.driverName || '-'}</td>
@@ -709,12 +735,7 @@ const EthanolContracts: React.FC = () => {
                                           {l.invoice ? (
                                             <button onClick={(e) => { e.stopPropagation(); setShowIrnDetail(showIrnDetail === l.id ? null : l.id); }} className="text-[10px] font-medium text-blue-700 underline hover:text-blue-900 cursor-pointer">{l.invoiceNo || `INV-${l.invoice.invoiceNo}`}</button>
                                           ) : (
-                                            <button
-                                              onClick={(e) => { e.stopPropagation(); handleCreateInvoice(c.id, l.id); }}
-                                              disabled={actionLoading === l.id}
-                                              className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50">
-                                              {actionLoading === l.id ? '...' : 'Create'}
-                                            </button>
+                                            <span className="text-slate-300">--</span>
                                           )}
                                         </td>
                                         {/* IRN */}

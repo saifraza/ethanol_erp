@@ -73,6 +73,11 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
     vehicle_type: w.vehicleType || undefined,
     // Outbound overloads supplierName as customer
     customer_name: w.direction === 'OUTBOUND' ? (w.supplierName || undefined) : undefined,
+    // Ethanol outbound: cloud DispatchTruck link + tanker data
+    cloud_gate_pass_id: w.cloudGatePassId || undefined,
+    quantity_bl: w.quantityBL ?? undefined,
+    ethanol_strength: w.strength ?? undefined,
+    seal_no: w.sealNo || undefined,
   }));
 
   try {

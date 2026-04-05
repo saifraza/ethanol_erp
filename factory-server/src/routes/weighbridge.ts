@@ -244,6 +244,7 @@ router.post('/gate-entry', requireAuth, requireRole('GATE_ENTRY', 'ADMIN'), asyn
     driverName, driverPhone, bags, remarks, operatorName,
     sellerPhone, sellerVillage, sellerAadhaar,
     rate, deductions, deductionReason, paymentMode, paymentRef,
+    cloudGatePassId,
   } = req.body;
 
   if (!vehicleNo) {
@@ -346,6 +347,8 @@ router.post('/gate-entry', requireAuth, requireRole('GATE_ENTRY', 'ADMIN'), asyn
       paymentMode: paymentMode || null,
       paymentRef: paymentRef || null,
       labStatus,
+      // Ethanol outbound: link to cloud DispatchTruck
+      cloudGatePassId: cloudGatePassId || null,
     },
   });
 
@@ -411,7 +414,7 @@ router.post('/:id/gross', requireAuth, requireRole('GROSS_WB', 'ADMIN'), asyncHa
 
 // POST /api/weighbridge/:id/tare — Capture tare weight (second weight)
 router.post('/:id/tare', requireAuth, requireRole('TARE_WB', 'ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
-  const { weight, weightSource, pcId } = req.body;
+  const { weight, weightSource, pcId, quantityBL, strength, sealNo } = req.body;
 
   if (!weight || typeof weight !== 'number' || weight <= 0) {
     res.status(400).json({ error: 'weight must be a positive number (KG)' });
@@ -446,6 +449,10 @@ router.post('/:id/tare', requireAuth, requireRole('TARE_WB', 'ADMIN'), asyncHand
       netWeight: grossW - tareW,
       status: 'COMPLETE',
       secondWeightAt: now,
+      // Ethanol outbound: volume, strength, seal
+      ...(quantityBL != null ? { quantityBL: parseFloat(quantityBL) } : {}),
+      ...(strength != null ? { strength: parseFloat(strength) } : {}),
+      ...(sealNo ? { sealNo } : {}),
     };
   } else {
     // INBOUND: tare (empty) is the second weight

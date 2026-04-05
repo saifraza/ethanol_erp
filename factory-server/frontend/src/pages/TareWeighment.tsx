@@ -39,6 +39,10 @@ export default function TareWeighment() {
   const [capturing, setCapturing] = useState(false);
   const [manualWeight, setManualWeight] = useState('');
   const [showManual, setShowManual] = useState(false);
+  // Ethanol outbound extra fields
+  const [ethanolBL, setEthanolBL] = useState('');
+  const [ethanolStrength, setEthanolStrength] = useState('');
+  const [ethanolSeal, setEthanolSeal] = useState('');
 
   const scanRef = useRef<HTMLInputElement>(null);
   const scaleTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -119,11 +123,20 @@ export default function TareWeighment() {
     }
     setCapturing(true);
     try {
-      await api.post(`/weighbridge/${scannedRecord.id}/tare`, { weight: weightToCapture });
+      const payload: Record<string, unknown> = { weight: weightToCapture };
+      // Ethanol outbound: include volume, strength, seal
+      const isEthanol = scannedRecord.direction === 'OUTBOUND' && (scannedRecord.materialName || '').toLowerCase().includes('ethanol');
+      if (isEthanol) {
+        if (ethanolBL) payload.quantityBL = ethanolBL;
+        if (ethanolStrength) payload.strength = ethanolStrength;
+        if (ethanolSeal) payload.sealNo = ethanolSeal;
+      }
+      await api.post(`/weighbridge/${scannedRecord.id}/tare`, payload);
       window.open(`/api/weighbridge/print/final-slip/${scannedRecord.id}`, '_blank');
       setScannedRecord(null);
       setShowManual(false);
       setManualWeight('');
+      setEthanolBL(''); setEthanolStrength(''); setEthanolSeal('');
       fetchPending();
       scanRef.current?.focus();
     } catch (err) {
@@ -271,13 +284,39 @@ export default function TareWeighment() {
             </div>
           </div>
 
+          {/* Ethanol Outbound: Volume / Strength / Seal */}
+          {scannedRecord.status === 'FIRST_DONE' && scannedRecord.direction === 'OUTBOUND' && (scannedRecord.materialName || '').toLowerCase().includes('ethanol') && (
+            <div className="border-t border-slate-200 p-4">
+              <div className="bg-amber-50 border border-amber-300 p-3 mb-0">
+                <div className="text-[10px] font-bold text-amber-800 uppercase tracking-widest mb-2">Ethanol Tanker Details</div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Volume (BL)</label>
+                    <input value={ethanolBL} onChange={e => setEthanolBL(e.target.value)} type="number" step="0.01"
+                      className="w-full border border-slate-300 px-2.5 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-amber-400" placeholder="e.g. 12000" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Strength (%)</label>
+                    <input value={ethanolStrength} onChange={e => setEthanolStrength(e.target.value)} type="number" step="0.01"
+                      className="w-full border border-slate-300 px-2.5 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-amber-400" placeholder="e.g. 99.6" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Seal No</label>
+                    <input value={ethanolSeal} onChange={e => setEthanolSeal(e.target.value)}
+                      className="w-full border border-slate-300 px-2.5 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-amber-400" placeholder="Seal number" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Capture Button */}
           {scannedRecord.status === 'FIRST_DONE' && (
             <div className="border-t border-slate-200 p-4">
               <div className="flex items-center gap-3">
                 <button onClick={handleCapture} disabled={!canCapture || capturing}
                   className="px-6 py-3 bg-amber-600 text-white text-sm font-bold uppercase tracking-widest hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed">
-                  {capturing ? 'Capturing...' : 'CAPTURE TARE WEIGHT'}
+                  {capturing ? 'Capturing...' : scannedRecord.direction === 'OUTBOUND' ? 'CAPTURE GROSS WEIGHT' : 'CAPTURE TARE WEIGHT'}
                 </button>
                 <button onClick={() => setShowManual(!showManual)}
                   className="px-3 py-1.5 bg-white border border-slate-300 text-slate-600 text-xs font-bold uppercase hover:bg-slate-50">
