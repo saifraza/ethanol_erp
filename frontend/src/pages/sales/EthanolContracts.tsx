@@ -93,6 +93,11 @@ interface Lifting {
   invoiceNo?: string;
   invoiceId?: string;
   distanceKm?: number;
+  rstNo?: string;
+  challanNo?: string;
+  dispatchMode?: string;
+  productRatePerLtr?: number;
+  productValue?: number;
   invoice?: LiftingInvoice | null;
   status: string;
   deliveredQtyKL?: number;
@@ -140,6 +145,7 @@ const emptyForm = {
 const emptyLiftingForm = {
   liftingDate: new Date().toISOString().slice(0, 10), vehicleNo: '', driverName: '', driverPhone: '',
   transporterName: '', destination: '', quantityBL: '', quantityKL: '', strength: '', rate: '', invoiceNo: '', distanceKm: '',
+  rstNo: '', challanNo: '', dispatchMode: 'TANKER', productRatePerLtr: '', productValue: '',
   consigneeName: '', consigneeGstin: '', consigneeAddress: '', consigneeState: '', consigneePincode: '',
   remarks: '',
 };
@@ -760,6 +766,15 @@ const EthanolContracts: React.FC = () => {
                                                 <div className="font-mono font-bold text-slate-800 mt-0.5">₹{l.invoice.totalAmount?.toLocaleString('en-IN')}</div>
                                               </div>
                                             </div>
+                                            {/* Transport/Dispatch details from lifting */}
+                                            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-x-6 gap-y-1.5 mb-2 pt-1 border-t border-slate-200">
+                                              {l.rstNo && <div><span className="font-bold text-slate-400 uppercase tracking-widest">RST No</span><div className="font-mono text-slate-700 mt-0.5">{l.rstNo}</div></div>}
+                                              <div><span className="font-bold text-slate-400 uppercase tracking-widest">Vehicle</span><div className="font-mono text-slate-700 mt-0.5">{l.vehicleNo}</div></div>
+                                              {l.driverName && <div><span className="font-bold text-slate-400 uppercase tracking-widest">Driver</span><div className="text-slate-700 mt-0.5">{l.driverName}{l.driverPhone ? ` (${l.driverPhone})` : ''}</div></div>}
+                                              {l.transporterName && <div><span className="font-bold text-slate-400 uppercase tracking-widest">Transporter</span><div className="text-slate-700 mt-0.5">{l.transporterName}</div></div>}
+                                              {l.dispatchMode && <div><span className="font-bold text-slate-400 uppercase tracking-widest">Dispatched Via</span><div className="text-slate-700 mt-0.5">{l.dispatchMode}</div></div>}
+                                              {l.productRatePerLtr && <div><span className="font-bold text-slate-400 uppercase tracking-widest">Product Rate</span><div className="font-mono text-slate-700 mt-0.5">₹{l.productRatePerLtr}/Ltr (Value: ₹{l.productValue?.toLocaleString('en-IN')})</div></div>}
+                                            </div>
                                             {/* Status + IRN/EWB details */}
                                             <div className="flex flex-wrap gap-x-6 gap-y-1 pt-1 border-t border-slate-200">
                                               <div>
@@ -978,8 +993,22 @@ const EthanolContracts: React.FC = () => {
                 <div><label className={labelCls}>Invoice No</label><input type="text" value={liftForm.invoiceNo} onChange={e => setLiftForm(p => ({ ...p, invoiceNo: e.target.value }))} className={inputCls} /></div>
               </div>
               <div className="grid grid-cols-4 gap-3">
+                <div><label className={labelCls}>RST No</label><input type="text" value={liftForm.rstNo} onChange={e => setLiftForm(p => ({ ...p, rstNo: e.target.value }))} placeholder="e.g. 1053" className={inputCls} /></div>
+                <div><label className={labelCls}>Challan No</label><input type="text" value={liftForm.challanNo} onChange={e => setLiftForm(p => ({ ...p, challanNo: e.target.value }))} className={inputCls} /></div>
+                <div><label className={labelCls}>Product Rate (₹/Ltr)</label><input type="number" value={liftForm.productRatePerLtr} step="0.01" onChange={e => {
+                  const r = e.target.value; const bl = parseFloat(liftForm.quantityBL) || 0;
+                  setLiftForm(p => ({ ...p, productRatePerLtr: r, productValue: r ? String(Math.round(bl * parseFloat(r))) : '' }));
+                }} placeholder="71.86" className={inputCls} /></div>
+                <div><label className={labelCls}>Product Value</label><input type="number" value={liftForm.productValue} readOnly className="border border-slate-200 px-2.5 py-1.5 text-xs w-full bg-slate-50" /></div>
+              </div>
+              <div className="grid grid-cols-4 gap-3">
                 <div><label className={labelCls}>Distance (km)</label><input type="number" value={liftForm.distanceKm} onChange={e => setLiftForm(p => ({ ...p, distanceKm: e.target.value }))} placeholder="for E-Way Bill" className={inputCls} /></div>
-                <div className="col-span-3"><label className={labelCls}>Remarks</label><input type="text" value={liftForm.remarks} onChange={e => setLiftForm(p => ({ ...p, remarks: e.target.value }))} className={inputCls} /></div>
+                <div><label className={labelCls}>Dispatch Mode</label>
+                  <select value={liftForm.dispatchMode} onChange={e => setLiftForm(p => ({ ...p, dispatchMode: e.target.value }))} className={inputCls}>
+                    <option value="TANKER">TANKER</option><option value="TRUCK">TRUCK</option><option value="PIPELINE">PIPELINE</option>
+                  </select>
+                </div>
+                <div className="col-span-2"><label className={labelCls}>Remarks</label><input type="text" value={liftForm.remarks} onChange={e => setLiftForm(p => ({ ...p, remarks: e.target.value }))} className={inputCls} /></div>
               </div>
 
               {/* Consignee (Ship To) — collapsible */}

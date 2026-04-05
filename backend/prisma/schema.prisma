@@ -2305,6 +2305,12 @@ model EthanolLifting {
   shortageKL      Float?
   omcReceiptNo    String?
   deliveredAt     DateTime?
+  // Dispatch/transport details (from Tally)
+  rstNo           String?                  // RST / Delivery Note number (e.g. "1053")
+  challanNo       String?                  // Challan / dispatch doc number
+  dispatchMode    String?  @default("TANKER") // TANKER, TRUCK, PIPELINE
+  productRatePerLtr Float?                 // Actual product rate ₹/Ltr (e.g. 71.86) — for EWB value
+  productValue    Float?                   // Product basic value (qty × productRate) — for EWB/insurance
   remarks         String?
   userId          String?
   createdAt       DateTime @default(now())
