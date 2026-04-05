@@ -24,10 +24,21 @@ interface Obligation {
   _count: { documents: number; actions: number };
 }
 
+interface DocInsight {
+  documentId: string;
+  title: string;
+  summary: string;
+  keyDates: { label: string; date: string }[];
+  parties: string[];
+  keyAmounts: { label: string; amount: string }[];
+  obligations: string[];
+}
+
 interface ObligationDetail extends Obligation {
   description: string | null;
   documents: { id: string; isFulfilling: boolean; notes: string | null; document: { id: string; title: string; category: string; fileName: string; expiryDate: string | null; status: string; referenceNo: string | null; issuedBy: string | null } }[];
   actions: { id: string; actionType: string; description: string; performedBy: string | null; performedDate: string; documentId: string | null; metadata: Record<string, unknown> | null }[];
+  insights?: DocInsight[];
 }
 
 interface CompanyDoc {
@@ -562,6 +573,76 @@ export default function ComplianceRegister() {
                       </div>
                     )}
                   </div>
+
+                  {/* Document Insights (from RAG/Gemini — no extra API cost) */}
+                  {detail.insights && detail.insights.length > 0 && (
+                    <div className="px-4 py-3 border-b border-slate-200">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Document Insights (AI-Extracted)</span>
+                      {detail.insights.map(insight => (
+                        <div key={insight.documentId} className="mt-2 bg-slate-50 border border-slate-200 px-3 py-2 space-y-2">
+                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{insight.title}</div>
+
+                          {/* Summary */}
+                          {insight.summary && (
+                            <div className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">{insight.summary}</div>
+                          )}
+
+                          {/* Key Dates */}
+                          {Array.isArray(insight.keyDates) && insight.keyDates.length > 0 && (
+                            <div>
+                              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Key Dates</div>
+                              <div className="flex flex-wrap gap-2">
+                                {insight.keyDates.map((d, i) => (
+                                  <div key={i} className="bg-white border border-slate-200 px-2 py-1">
+                                    <div className="text-[9px] text-slate-400">{d.label}</div>
+                                    <div className="text-xs font-mono text-slate-700">{d.date}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Parties */}
+                          {Array.isArray(insight.parties) && insight.parties.length > 0 && (
+                            <div>
+                              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Parties</div>
+                              <div className="text-xs text-slate-700">{insight.parties.join(' | ')}</div>
+                            </div>
+                          )}
+
+                          {/* Key Amounts */}
+                          {Array.isArray(insight.keyAmounts) && insight.keyAmounts.length > 0 && (
+                            <div>
+                              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Key Amounts</div>
+                              <div className="flex flex-wrap gap-2">
+                                {insight.keyAmounts.map((a, i) => (
+                                  <div key={i} className="bg-white border border-slate-200 px-2 py-1">
+                                    <div className="text-[9px] text-slate-400">{a.label}</div>
+                                    <div className="text-xs font-mono font-medium text-slate-700">{a.amount}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Obligations extracted from doc */}
+                          {Array.isArray(insight.obligations) && insight.obligations.length > 0 && (
+                            <div>
+                              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Obligations Mentioned</div>
+                              <ul className="text-xs text-slate-700 space-y-0.5">
+                                {insight.obligations.map((o, i) => (
+                                  <li key={i} className="flex items-start gap-1">
+                                    <span className="text-slate-400 mt-0.5">-</span>
+                                    <span>{o}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Action History */}
                   <div className="px-4 py-3">

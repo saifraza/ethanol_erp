@@ -233,7 +233,31 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     },
   });
   if (!item) throw new NotFoundError('ComplianceObligation', req.params.id);
-  res.json(item);
+
+  // Fetch VaultNote insights for linked documents (already generated, zero API cost)
+  const docIds = item.documents.map(d => d.documentId);
+  const vaultNotes = docIds.length > 0 ? await prisma.vaultNote.findMany({
+    where: { sourceType: 'CompanyDocument', sourceId: { in: docIds } },
+    select: { sourceId: true, summary: true, entities: true, title: true },
+    take: 10,
+  }) : [];
+
+  // Parse entities JSON and attach to response
+  const insights = vaultNotes.map(vn => {
+    let parsed: Record<string, unknown> = {};
+    try { parsed = vn.entities ? JSON.parse(vn.entities) : {}; } catch { /* ignore */ }
+    return {
+      documentId: vn.sourceId,
+      title: vn.title,
+      summary: vn.summary,
+      keyDates: parsed.key_dates || [],
+      parties: parsed.parties || [],
+      keyAmounts: parsed.key_amounts || [],
+      obligations: parsed.obligations || [],
+    };
+  });
+
+  res.json({ ...item, insights });
 }));
 
 // ── Create obligation ────────────────────────────────────
