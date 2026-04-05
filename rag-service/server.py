@@ -212,11 +212,14 @@ async def upload_document(
             is_scanned = len(text.strip()) < 100 and len(doc) > 0  # very little text = scanned
             doc.close()
 
-            needs_mineru = force_mineru or is_scanned or has_images or has_tables
+            # Only use MinerU when explicitly requested OR when doc is truly scanned (no text)
+            # Images/tables alone should NOT trigger MinerU — logos, stamps, simple tables
+            # are fine with fast text path. User can always force via deepScan checkbox.
+            needs_mineru = force_mineru or is_scanned
 
             if needs_mineru and hasattr(rag, "process_document_complete"):
-                # Complex doc → MinerU (VLM) for tables/images/OCR
-                logger.info(f"Routing to MinerU (scanned={is_scanned}, images={has_images}, tables={has_tables})")
+                # Scanned/forced → MinerU (VLM) for OCR
+                logger.info(f"Routing to MinerU (forced={force_mineru}, scanned={is_scanned}, images={has_images}, tables={has_tables})")
                 await rag.process_document_complete(
                     file_path=file_path,
                     output_dir=OUTPUT_DIR,
