@@ -307,20 +307,11 @@ th{background:#f5f5f5;font-weight:600}
 <br><br><p class="right bold">For Mahakaushal Sugar and Power Industries Limited<br><br><br><br>Authorized Signatory</p>
 </body></html>`;
 
-  try {
-    const puppeteer = await import('puppeteer');
-    const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
-    const pdf = await page.pdf({ format: 'A4', margin: { top: '20mm', bottom: '20mm', left: '15mm', right: '15mm' } });
-    await browser.close();
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="Challan-${(truck.challanNo || truck.id).replace(/\//g, '-')}.pdf"`);
-    res.send(pdf);
-  } catch {
-    res.setHeader('Content-Type', 'text/html');
-    res.send(html);
-  }
+  const { renderPdf } = await import('../services/pdfRenderer');
+  const pdf = await renderPdf(html, { margin: { top: '20mm', bottom: '20mm', left: '15mm', right: '15mm' } });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="Challan-${(truck.challanNo || truck.id).replace(/\//g, '-')}.pdf"`);
+  res.send(pdf);
 }));
 
 // ── GET /:id/gate-pass-pdf ── Ethanol-specific gate pass
@@ -376,20 +367,11 @@ th{background:#f5f5f5;font-size:10px;font-weight:600}
 <p style="text-align:center;font-size:9px;color:#999;margin-top:20px">Computer Generated Gate Pass</p>
 </body></html>`;
 
-  try {
-    const puppeteer = await import('puppeteer');
-    const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
-    const pdf = await page.pdf({ format: 'A4', margin: { top: '15mm', bottom: '15mm', left: '15mm', right: '15mm' } });
-    await browser.close();
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="GatePass-${(truck.gatePassNo || truck.id).replace(/\//g, '-')}.pdf"`);
-    res.send(pdf);
-  } catch {
-    res.setHeader('Content-Type', 'text/html');
-    res.send(html);
-  }
+  const { renderPdf } = await import('../services/pdfRenderer');
+  const pdf = await renderPdf(html, { margin: { top: '15mm', bottom: '15mm', left: '15mm', right: '15mm' } });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="GatePass-${(truck.gatePassNo || truck.id).replace(/\//g, '-')}.pdf"`);
+  res.send(pdf);
 }));
 
 // ── PUT /:id ── Update (pre-release only)
