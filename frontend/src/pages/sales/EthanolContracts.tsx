@@ -332,10 +332,16 @@ const EthanolContracts: React.FC = () => {
       setActionLoading(truckId);
       const res = await api.post(`/ethanol-gate-pass/${truckId}/release`);
       const d = res.data;
-      // Open all 3 documents
-      if (d.invoiceId) window.open(`/api/ethanol-gate-pass/${truckId}/invoice-pdf`, '_blank');
-      setTimeout(() => window.open(`/api/ethanol-gate-pass/${truckId}/delivery-challan-pdf`, '_blank'), 500);
-      setTimeout(() => window.open(`/api/ethanol-gate-pass/${truckId}/gate-pass-pdf`, '_blank'), 1000);
+      // Open all 3 documents via authenticated blob fetch
+      const openPdf = async (url: string) => {
+        try {
+          const r = await api.get(url, { responseType: 'blob' });
+          window.open(URL.createObjectURL(r.data), '_blank');
+        } catch { /* non-critical */ }
+      };
+      if (d.invoiceId) openPdf(`/ethanol-gate-pass/${truckId}/invoice-pdf`);
+      setTimeout(() => openPdf(`/ethanol-gate-pass/${truckId}/delivery-challan-pdf`), 300);
+      setTimeout(() => openPdf(`/ethanol-gate-pass/${truckId}/gate-pass-pdf`), 600);
       loadSupplyDetail(contractId);
     } catch (err: any) { setError(err?.response?.data?.error || 'Failed to release truck'); }
     finally { setActionLoading(null); }
@@ -785,10 +791,20 @@ const EthanolContracts: React.FC = () => {
                                             )}
                                             {l.dispatchTruck?.id && (
                                               <>
-                                                <button onClick={(e) => { e.stopPropagation(); window.open(`/api/ethanol-gate-pass/${l.dispatchTruck!.id}/delivery-challan-pdf`, '_blank'); }}
-                                                  className="text-blue-400 hover:text-blue-700" title="Delivery Challan"><FileDown size={11} /></button>
-                                                <button onClick={(e) => { e.stopPropagation(); window.open(`/api/ethanol-gate-pass/${l.dispatchTruck!.id}/gate-pass-pdf`, '_blank'); }}
-                                                  className="text-amber-400 hover:text-amber-700" title="Gate Pass"><Truck size={11} /></button>
+                                                <button onClick={async (e) => {
+                                                  e.stopPropagation();
+                                                  try {
+                                                    const res = await api.get(`/ethanol-gate-pass/${l.dispatchTruck!.id}/delivery-challan-pdf`, { responseType: 'blob' });
+                                                    window.open(URL.createObjectURL(res.data), '_blank');
+                                                  } catch { setError('Failed to load Delivery Challan'); }
+                                                }} className="text-blue-400 hover:text-blue-700" title="Delivery Challan"><FileDown size={11} /></button>
+                                                <button onClick={async (e) => {
+                                                  e.stopPropagation();
+                                                  try {
+                                                    const res = await api.get(`/ethanol-gate-pass/${l.dispatchTruck!.id}/gate-pass-pdf`, { responseType: 'blob' });
+                                                    window.open(URL.createObjectURL(res.data), '_blank');
+                                                  } catch { setError('Failed to load Gate Pass'); }
+                                                }} className="text-amber-400 hover:text-amber-700" title="Gate Pass"><Truck size={11} /></button>
                                               </>
                                             )}
                                             {l.invoice?.ewbNo && (
