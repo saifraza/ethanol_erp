@@ -156,6 +156,10 @@ router.post('/:id/release', asyncHandler(async (req: AuthRequest, res: Response)
   const ist = nowIST();
 
   const result = await prisma.$transaction(async (tx: any) => {
+    // Re-check status inside transaction to prevent double-release race
+    const fresh = await tx.dispatchTruck.findUnique({ where: { id: truck.id }, select: { status: true, liftingId: true } });
+    if (fresh?.status === 'RELEASED' || fresh?.liftingId) throw new Error('Already released');
+
     const gatePassNo = await nextCounter(tx, 'GP/ETH');
     const challanNo = await nextCounter(tx, 'DCH/ETH');
     const invoiceNo = await nextInvoiceNo(tx, 'ETH');
