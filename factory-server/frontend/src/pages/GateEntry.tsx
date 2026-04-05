@@ -8,6 +8,7 @@ interface PO { id: string; po_no: number; vendor_name: string; status: string; l
 interface POLine { id: string; description: string; quantity: number; received_qty: number; pending_qty: number; rate: number; unit: string }
 interface Customer { id: string; name: string }
 interface Trader { id: string; name: string; phone?: string; productTypes?: string }
+interface EthContract { id: string; contractNo: string; contractType: string; buyerName: string; buyerAddress?: string; omcDepot?: string }
 
 const FUEL_KEYWORDS = ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'firewood', 'biomass'];
 const RAW_KEYWORDS = ['maize', 'corn', 'broken rice', 'grain', 'sorghum'];
@@ -26,6 +27,8 @@ const PAYMENT_MODES = ['CASH', 'UPI', 'BANK_TRANSFER'];
 export default function GateEntry() {
   const { token, user } = useAuth();
   const api = axios.create({ baseURL: '/api', headers: { Authorization: `Bearer ${token}` } });
+  const cloudApi = axios.create({ baseURL: '/api/cloud', headers: { Authorization: `Bearer ${token}` } });
+  const isEthanol = direction === 'OUTBOUND' && materialName === 'Ethanol';
 
   // Master data
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -57,6 +60,13 @@ export default function GateEntry() {
   const [paymentMode, setPaymentMode] = useState('CASH');
   // Outbound
   const [customerName, setCustomerName] = useState('');
+  // Ethanol-specific
+  const [ethContracts, setEthContracts] = useState<EthContract[]>([]);
+  const [ethContractId, setEthContractId] = useState('');
+  const [driverName, setDriverName] = useState('');
+  const [destination, setDestination] = useState('');
+  const [rstNo, setRstNo] = useState('');
+  const [sealNo, setSealNo] = useState('');
 
   const [saving, setSaving] = useState(false);
   const [todayCount, setTodayCount] = useState(0);
@@ -95,10 +105,16 @@ export default function GateEntry() {
 
   useEffect(() => {
     loadMasterData(); loadCount();
-    // Refresh from server every 15s (reads from in-memory cache, instant)
     const iv = setInterval(() => { loadMasterData(true); loadCount(); }, 15000);
     return () => clearInterval(iv);
   }, [loadMasterData, loadCount]);
+
+  // Load ethanol contracts when outbound ethanol selected
+  useEffect(() => {
+    if (isEthanol && ethContracts.length === 0) {
+      cloudApi.get('/ethanol-gate-pass/active-contracts').then(r => setEthContracts(r.data || [])).catch(() => {});
+    }
+  }, [isEthanol]);
 
   // Filter POs by selected supplier
   const filteredPOs = pos.filter(p => !supplierName || p.vendor_name.toLowerCase().includes(supplierName.toLowerCase()));
@@ -146,10 +162,12 @@ export default function GateEntry() {
     setBags(''); setRemarks('');
     setSellerPhone(''); setSellerVillage(''); setRate(''); setPaymentMode('CASH');
     setCustomerName(''); setSelectedTraderId('');
+    setEthContractId(''); setDriverName(''); setDestination(''); setRstNo(''); setSealNo('');
   };
 
   const handleSubmit = async () => {
     if (!vehicleNo) { alert('Vehicle number is required'); return; }
+    if (isEthanol && !ethContractId) { alert('Select an ethanol contract'); return; }
     if (purchaseType === 'TRADER' && !selectedTraderId) { alert('Select a trader'); return; }
     if (purchaseType === 'TRADER' && (!rate || parseFloat(rate) <= 0)) { alert('Rate is required for trader purchases'); return; }
     if (purchaseType === 'TRADER' && !materialName) { alert('Select a material/product'); return; }
@@ -182,6 +200,24 @@ export default function GateEntry() {
         body.supplierId = selectedTraderId || undefined;
         body.rate = rate ? parseFloat(rate) : undefined;
         // supplierName is already set from trader selection
+      }
+      // For ethanol: also create DispatchTruck on cloud ERP
+      if (isEthanol) {
+        body.driverName = driverName;
+        body.destination = destination;
+        body.rstNo = rstNo;
+        body.sealNo = sealNo;
+        try {
+          await cloudApi.post('/ethanol-gate-pass', {
+            contractId: ethContractId,
+            vehicleNo, driverName, driverPhone,
+            transporterName: transporter,
+            destination, rstNo, sealNo,
+          });
+        } catch (err: any) {
+          console.error('Cloud gate pass failed:', err?.response?.data?.error || err.message);
+          // Don't block — local entry still created
+        }
       }
       const res = await api.post('/weighbridge/gate-entry', body);
       const created = res.data;
@@ -427,6 +463,43 @@ export default function GateEntry() {
                 <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">Rate (per KG)</label>
                 <input value={rate} onChange={e => setRate(e.target.value)} type="number" step="0.01"
                   className="w-full border border-slate-300 px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="0.00" />
+              </div>
+            </>
+          )}
+
+          {/* Ethanol-specific fields */}
+          {isEthanol && (
+            <>
+              <div className="md:col-span-3">
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">Ethanol Contract *</label>
+                <select value={ethContractId} onChange={e => {
+                  setEthContractId(e.target.value);
+                  const c = ethContracts.find(x => x.id === e.target.value);
+                  if (c) { setCustomerName(c.buyerName); setDestination(c.omcDepot || c.buyerAddress || ''); }
+                }} className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
+                  <option value="">-- Select Contract --</option>
+                  {ethContracts.map(c => <option key={c.id} value={c.id}>{c.contractNo} — {c.buyerName} ({c.contractType})</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">Driver Name</label>
+                <input value={driverName} onChange={e => setDriverName(e.target.value)}
+                  className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">Destination</label>
+                <input value={destination} onChange={e => setDestination(e.target.value)}
+                  className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">RST No</label>
+                <input value={rstNo} onChange={e => setRstNo(e.target.value)}
+                  className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">Seal No</label>
+                <input value={sealNo} onChange={e => setSealNo(e.target.value)}
+                  className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400" />
               </div>
             </>
           )}

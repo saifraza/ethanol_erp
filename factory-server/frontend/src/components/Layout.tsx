@@ -14,7 +14,6 @@ function isAdmin(role: string): boolean {
 
 const NAV_ITEMS = [
   { to: '/gate-entry', label: 'Gate Entry', roles: ['GATE_ENTRY'], group: 'operations' },
-  { to: '/ethanol-gate-pass', label: 'Ethanol Gate Pass', roles: ['GATE_ENTRY'], group: 'operations' },
   { to: '/gross', label: 'Gross Weighment', roles: ['GROSS_WB'], group: 'operations' },
   { to: '/tare', label: 'Tare Weighment', roles: ['TARE_WB'], group: 'operations' },
   { to: '/weighment', label: "Today's Weighments", roles: ['ALL'], group: 'operations' },
