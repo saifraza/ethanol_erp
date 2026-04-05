@@ -459,6 +459,7 @@ router.get('/:id/supply-summary', asyncHandler(async (req: AuthRequest, res: Res
                 ewbNo: true, ewbDate: true, ewbValidTill: true, ewbStatus: true,
               },
             },
+            dispatchTruck: { select: { id: true } },
           },
         },
       },

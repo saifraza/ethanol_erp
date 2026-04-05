@@ -99,6 +99,7 @@ interface Lifting {
   productRatePerLtr?: number;
   productValue?: number;
   invoice?: LiftingInvoice | null;
+  dispatchTruck?: { id: string } | null;
   status: string;
   deliveredQtyKL?: number;
   shortageKL?: number;
@@ -782,6 +783,14 @@ const EthanolContracts: React.FC = () => {
                                                 } catch { setError('Failed to load invoice PDF'); }
                                               }} className="text-slate-400 hover:text-slate-700" title="Print Invoice"><FileText size={11} /></button>
                                             )}
+                                            {l.dispatchTruck?.id && (
+                                              <>
+                                                <button onClick={(e) => { e.stopPropagation(); window.open(`/api/ethanol-gate-pass/${l.dispatchTruck!.id}/delivery-challan-pdf`, '_blank'); }}
+                                                  className="text-blue-400 hover:text-blue-700" title="Delivery Challan"><FileDown size={11} /></button>
+                                                <button onClick={(e) => { e.stopPropagation(); window.open(`/api/ethanol-gate-pass/${l.dispatchTruck!.id}/gate-pass-pdf`, '_blank'); }}
+                                                  className="text-amber-400 hover:text-amber-700" title="Gate Pass"><Truck size={11} /></button>
+                                              </>
+                                            )}
                                             {l.invoice?.ewbNo && (
                                               <button onClick={async (e) => {
                                                 e.stopPropagation();
@@ -790,7 +799,7 @@ const EthanolContracts: React.FC = () => {
                                                   const url = URL.createObjectURL(res.data);
                                                   window.open(url, '_blank');
                                                 } catch { setError('Failed to load E-Way Bill PDF'); }
-                                              }} className="text-green-400 hover:text-green-700" title="Print E-Way Bill"><Truck size={11} /></button>
+                                              }} className="text-green-400 hover:text-green-700" title="E-Way Bill PDF"><Truck size={11} /></button>
                                             )}
                                             <button onClick={(e) => { e.stopPropagation(); handleDeleteLifting(l.id); }} className="text-red-400 hover:text-red-600"><Trash2 size={11} /></button>
                                           </div>
