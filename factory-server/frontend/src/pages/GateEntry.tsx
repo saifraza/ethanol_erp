@@ -28,7 +28,6 @@ export default function GateEntry() {
   const { token, user } = useAuth();
   const api = axios.create({ baseURL: '/api', headers: { Authorization: `Bearer ${token}` } });
   const cloudApi = axios.create({ baseURL: '/api/cloud', headers: { Authorization: `Bearer ${token}` } });
-  const isEthanol = direction === 'OUTBOUND' && materialName === 'Ethanol';
 
   // Master data
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -74,6 +73,7 @@ export default function GateEntry() {
   const [showVehicleSuggestions, setShowVehicleSuggestions] = useState(false);
   const [masterLoading, setMasterLoading] = useState(true);
   const [masterError, setMasterError] = useState(false);
+  const isEthanol = direction === 'OUTBOUND' && materialName === 'Ethanol';
 
   // Load master data (silent=true for background refreshes — no spinner)
   const loadMasterData = useCallback(async (silent = false) => {
