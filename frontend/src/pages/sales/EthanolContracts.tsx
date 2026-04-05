@@ -186,6 +186,8 @@ const EthanolContracts: React.FC = () => {
   const [detailLoading, setDetailLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [showIrnDetail, setShowIrnDetail] = useState<string | null>(null);
+  const [liftingPage, setLiftingPage] = useState(1);
+  const LIFTS_PER_PAGE = 15;
 
   // EWB generation modal
   const [ewbModal, setEwbModal] = useState<{ contractId: string; liftingId: string; vehicleNo: string; destination: string; transporterName: string; distanceKm: number } | null>(null);
@@ -296,6 +298,7 @@ const EthanolContracts: React.FC = () => {
       const res = await api.get(`/ethanol-contracts/${contractId}/supply-summary`);
       setDetailSummary(res.data.summary);
       setDetailLiftings(res.data.liftings || []);
+      setLiftingPage(1);
     } catch { setError('Failed to load supply details'); }
     finally { setDetailLoading(false); }
   };
@@ -647,7 +650,7 @@ const EthanolContracts: React.FC = () => {
                                   <tbody>
                                     {detailLiftings.length === 0 ? (
                                       <tr><td colSpan={11} className="text-center py-6 text-xs text-slate-400 uppercase tracking-widest">No liftings yet</td></tr>
-                                    ) : detailLiftings.map((l, i) => (
+                                    ) : detailLiftings.slice((liftingPage - 1) * LIFTS_PER_PAGE, liftingPage * LIFTS_PER_PAGE).map((l, i) => (
                                       <React.Fragment key={l.id}>
                                       <tr className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-white' : 'bg-slate-50/50'}`}>
                                         <td className="px-2 py-1.5 border-r border-slate-100 whitespace-nowrap">{new Date(l.liftingDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</td>
@@ -812,6 +815,22 @@ const EthanolContracts: React.FC = () => {
                                     ))}
                                   </tbody>
                                 </table>
+                                {/* Pagination */}
+                                {detailLiftings.length > LIFTS_PER_PAGE && (
+                                  <div className="flex items-center justify-between px-3 py-1.5 bg-slate-100 border-t border-slate-200">
+                                    <span className="text-[10px] text-slate-500">
+                                      Showing {((liftingPage - 1) * LIFTS_PER_PAGE) + 1}-{Math.min(liftingPage * LIFTS_PER_PAGE, detailLiftings.length)} of {detailLiftings.length}
+                                    </span>
+                                    <div className="flex gap-1">
+                                      {Array.from({ length: Math.ceil(detailLiftings.length / LIFTS_PER_PAGE) }, (_, p) => (
+                                        <button key={p} onClick={() => setLiftingPage(p + 1)}
+                                          className={`px-2 py-0.5 text-[10px] font-medium border ${liftingPage === p + 1 ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
+                                          {p + 1}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           ) : null}
