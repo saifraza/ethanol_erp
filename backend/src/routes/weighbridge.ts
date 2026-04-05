@@ -440,6 +440,8 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
                 quarantineReason: `QUARANTINE — Lab FAIL | PO-${po.poNo}${labInfo}`,
                 bags: w.bags ?? undefined,
                 remarks: `${wbRef} | QUARANTINE — Lab FAIL | PO-${po.poNo}${labInfo}`,
+                poId: po.id,
+                materialId: poLine.inventoryItemId || undefined,
               },
             });
 
@@ -532,6 +534,9 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
                   foreignMatter: w.lab_foreign_matter ?? undefined,
                   bags: w.bags ?? undefined,
                   remarks: `${wbRef} | GRN-${grn.grnNo} | PO-${po.poNo}${labRemarksSuffix}`,
+                  poId: po.id,
+                  grnId: grn.id,
+                  materialId: poLine.inventoryItemId || undefined,
                 },
               }).catch(() => {}); // best-effort — GRN is the primary record
             }

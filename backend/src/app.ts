@@ -78,6 +78,7 @@ import labTestingRoutes from './routes/labTesting';
 // Weighbridge (local service at factory gate)
 import weighbridgeRoutes from './routes/weighbridge';
 import fuelRoutes from './routes/fuel';
+import rawMaterialPurchaseRoutes from './routes/rawMaterialPurchase';
 import accountsReportsRoutes from './routes/accountsReports';
 // AI Assistant
 import aiRoutes from './routes/ai';
@@ -232,6 +233,8 @@ app.use('/api/lab-testing', labTestingRoutes);
 app.use('/api/weighbridge', weighbridgeRoutes);
 // Fuel Management (master + daily consumption)
 app.use('/api/fuel', fuelRoutes);
+// Raw Material Purchase (deals, receipts, payments — mirrors fuel pattern)
+app.use('/api/raw-material-purchase', rawMaterialPurchaseRoutes);
 // AI Assistant
 app.use('/api/ai', aiRoutes);
 // Process reports

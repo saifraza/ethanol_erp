@@ -815,10 +815,26 @@ model DispatchTruck {
   rstNo           String?   // RST / Receipt number
   sealNo          String?   // Tank seal number
   pesoDate        String?   // Peso calibration date
+  // Gate pass + weighbridge fields
+  status          String   @default("GATE_IN") // GATE_IN, TARE_WEIGHED, LOADING, GROSS_WEIGHED, RELEASED
+  weightGross     Float?   // KG
+  weightTare      Float?   // KG
+  weightNet       Float?   // KG (gross - tare, for density verification)
+  gateInTime      DateTime?
+  tareTime        DateTime?
+  grossTime       DateTime?
+  releaseTime     DateTime?
+  gatePassNo      String?
+  challanNo       String?  // Delivery challan number
+  sourceWbId      String?  // link to weighbridge record for dedup
+  productRatePerLtr Float? // Product value rate (e.g. 71.86/Ltr)
+  productValue    Float?   // Total product value (qty × productRate)
   createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt @default(now())
   @@index([date])
   @@index([entryId])
   @@index([contractId])
+  @@index([status])
 }
 
 // Per-truck grain unloading (real-time)
@@ -842,8 +858,18 @@ model GrainTruck {
   remarks         String?
   photoUrl        String?
   userId          String?
+  // Traceability FKs (set by weighbridge push)
+  poId            String?                  // FK → PurchaseOrder (which deal)
+  purchaseOrder   PurchaseOrder? @relation(fields: [poId], references: [id])
+  grnId           String?                  // FK → GoodsReceipt (auto-created GRN)
+  goodsReceipt    GoodsReceipt?  @relation(fields: [grnId], references: [id])
+  labSampleId     String?                  // FK → LabSample (lab result)
+  labSample       LabSample?     @relation(fields: [labSampleId], references: [id])
+  materialId      String?                  // FK → InventoryItem (what was delivered)
   createdAt       DateTime @default(now())
   @@index([date])
+  @@index([poId])
+  @@index([grnId])
 }
 
 // ═══════════════════════════════════════════════
@@ -866,6 +892,7 @@ model LabSample {
   userId          String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  grainTrucks     GrainTruck[]
 }
 
 model AuditLog {
@@ -1779,6 +1806,7 @@ model PurchaseOrder {
   lines           POLine[]
   grns            GoodsReceipt[]
   vendorInvoices  VendorInvoice[]
+  grainTrucks     GrainTruck[]
   @@index([vendorId])
   @@index([status])
   @@index([vendorId, dealType, status])
@@ -1863,6 +1891,7 @@ model GoodsReceipt {
 
   lines           GRNLine[]
   vendorInvoices  VendorInvoice[]
+  grainTrucks     GrainTruck[]
   @@index([poId])
   @@index([vendorId])
 }

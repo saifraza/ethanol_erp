@@ -335,6 +335,72 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
       },
     });
 
+    // Create/update/delete StockMovement for grain consumption (mirrors fuel pattern)
+    try {
+      // Deterministic grain item: first RAW_MATERIAL by code (RM-001 preferred)
+      const grainItem = await prisma.inventoryItem.findFirst({
+        where: { category: 'RAW_MATERIAL', isActive: true },
+        orderBy: { code: 'asc' },
+        select: { id: true, avgCost: true, unit: true },
+      });
+      const defaultWh = await prisma.warehouse.findFirst({
+        where: { isActive: true }, orderBy: { createdAt: 'asc' }, select: { id: true },
+      });
+      if (grainItem && defaultWh) {
+        const dateStr = entryDate.toISOString().slice(0, 10);
+        const existingMv = await prisma.stockMovement.findFirst({
+          where: { refType: 'GRAIN_CONSUMPTION', refId: entry.id, itemId: grainItem.id },
+        });
+
+        if (calc.grainConsumed > 0 && existingMv) {
+          // Re-save: adjust by delta
+          const delta = calc.grainConsumed - existingMv.quantity;
+          if (Math.abs(delta) > 0.001) {
+            await prisma.stockMovement.update({
+              where: { id: existingMv.id },
+              data: { quantity: calc.grainConsumed, totalValue: calc.grainConsumed * (existingMv.costRate || 0) },
+            });
+            await prisma.inventoryItem.update({
+              where: { id: grainItem.id },
+              data: { currentStock: { decrement: delta } },
+            });
+          }
+        } else if (calc.grainConsumed > 0 && !existingMv) {
+          // First save: create movement + decrement stock
+          await prisma.stockMovement.create({
+            data: {
+              itemId: grainItem.id,
+              movementType: 'GRAIN_CONSUMPTION',
+              direction: 'OUT',
+              quantity: calc.grainConsumed,
+              unit: grainItem.unit || 'MT',
+              costRate: grainItem.avgCost || 0,
+              totalValue: calc.grainConsumed * (grainItem.avgCost || 0),
+              warehouseId: defaultWh.id,
+              refType: 'GRAIN_CONSUMPTION',
+              refId: entry.id,
+              refNo: `GRAIN-${dateStr}`,
+              narration: 'Daily grain consumption',
+              userId: req.user!.id,
+            },
+          });
+          await prisma.inventoryItem.update({
+            where: { id: grainItem.id },
+            data: { currentStock: { decrement: calc.grainConsumed } },
+          });
+        } else if (calc.grainConsumed <= 0 && existingMv) {
+          // Consumption dropped to zero — reverse old movement and restore stock
+          await prisma.inventoryItem.update({
+            where: { id: grainItem.id },
+            data: { currentStock: { increment: existingMv.quantity } },
+          });
+          await prisma.stockMovement.delete({ where: { id: existingMv.id } });
+        }
+      }
+    } catch (_e) {
+      // Don't fail the daily entry if inventory sync fails
+    }
+
     res.status(201).json(entry);
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
@@ -389,6 +455,69 @@ router.put('/:id', authenticate, authorize('ADMIN'), async (req: AuthRequest, re
         moisture, starchPercent, damagedPercent, foreignMatter, trucks, avgTruckWeight, supplier, remarks,
       },
     });
+
+    // Update/create/delete StockMovement for grain consumption (admin edit)
+    try {
+      const grainItem = await prisma.inventoryItem.findFirst({
+        where: { category: 'RAW_MATERIAL', isActive: true },
+        orderBy: { code: 'asc' },
+        select: { id: true, avgCost: true, unit: true },
+      });
+      const defaultWh = await prisma.warehouse.findFirst({
+        where: { isActive: true }, orderBy: { createdAt: 'asc' }, select: { id: true },
+      });
+      if (grainItem && defaultWh) {
+        const dateStr = existing.date.toISOString().slice(0, 10);
+        const existingMv = await prisma.stockMovement.findFirst({
+          where: { refType: 'GRAIN_CONSUMPTION', refId: entry.id, itemId: grainItem.id },
+        });
+
+        if (calc.grainConsumed > 0 && existingMv) {
+          const delta = calc.grainConsumed - existingMv.quantity;
+          if (Math.abs(delta) > 0.001) {
+            await prisma.stockMovement.update({
+              where: { id: existingMv.id },
+              data: { quantity: calc.grainConsumed, totalValue: calc.grainConsumed * (existingMv.costRate || 0) },
+            });
+            await prisma.inventoryItem.update({
+              where: { id: grainItem.id },
+              data: { currentStock: { decrement: delta } },
+            });
+          }
+        } else if (calc.grainConsumed > 0 && !existingMv) {
+          await prisma.stockMovement.create({
+            data: {
+              itemId: grainItem.id,
+              movementType: 'GRAIN_CONSUMPTION',
+              direction: 'OUT',
+              quantity: calc.grainConsumed,
+              unit: grainItem.unit || 'MT',
+              costRate: grainItem.avgCost || 0,
+              totalValue: calc.grainConsumed * (grainItem.avgCost || 0),
+              warehouseId: defaultWh.id,
+              refType: 'GRAIN_CONSUMPTION',
+              refId: entry.id,
+              refNo: `GRAIN-${dateStr}`,
+              narration: 'Daily grain consumption (admin edit)',
+              userId: req.user!.id,
+            },
+          });
+          await prisma.inventoryItem.update({
+            where: { id: grainItem.id },
+            data: { currentStock: { decrement: calc.grainConsumed } },
+          });
+        } else if (calc.grainConsumed <= 0 && existingMv) {
+          // Consumption dropped to zero — reverse and delete old movement
+          await prisma.inventoryItem.update({
+            where: { id: grainItem.id },
+            data: { currentStock: { increment: existingMv.quantity } },
+          });
+          await prisma.stockMovement.delete({ where: { id: existingMv.id } });
+        }
+      }
+    } catch (_e) {
+      // Don't fail the entry update if inventory sync fails
+    }
 
     res.json(entry);
   } catch (err: any) { res.status(500).json({ error: err.message }); }

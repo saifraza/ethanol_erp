@@ -66,6 +66,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'purchase-orders', label: 'Purchase Orders', to: '/procurement/purchase-orders', icon: ShoppingBag, group: 'procurement' },
   { key: 'goods-receipts', label: 'GRN', to: '/logistics/gate-register?tab=grn', icon: PackageCheck, group: 'procurement' },
   { key: 'contractors', label: 'Contractors', to: '/procurement/contractors', icon: HardHat, group: 'procurement' },
+  { key: 'raw-material-purchase', label: 'RM Purchase', to: '/procurement/raw-material-purchase', icon: Handshake, group: 'procurement' },
 
   // ── SPOT TRADE (Cash buy/sell at gate) ──
   { key: 'direct-purchase', label: 'Spot Purchase', to: '/trade/purchases', icon: Tractor, group: 'trade' },

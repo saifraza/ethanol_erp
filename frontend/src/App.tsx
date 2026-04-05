@@ -78,6 +78,7 @@ const Materials = React.lazy(() => import('./pages/procurement/Materials'));
 const PurchaseOrders = React.lazy(() => import('./pages/procurement/PurchaseOrders'));
 const GoodsReceipts = React.lazy(() => import('./pages/procurement/GoodsReceipts'));
 const VendorPayments = React.lazy(() => import('./pages/procurement/VendorPayments'));
+const RawMaterialPurchase = React.lazy(() => import('./pages/procurement/RawMaterialPurchase'));
 // Direct Trade
 const DirectPurchases = React.lazy(() => import('./pages/trade/DirectPurchases'));
 const DirectSales = React.lazy(() => import('./pages/trade/DirectSales'));
@@ -197,6 +198,7 @@ export default function App() {
         <Route path="procurement/purchase-orders" element={<PurchaseOrders />} />
         <Route path="procurement/goods-receipts" element={<Navigate to="/logistics/gate-register?tab=grn" replace />} />
         <Route path="procurement/vendor-payments" element={<VendorPayments />} />
+        <Route path="procurement/raw-material-purchase" element={<RawMaterialPurchase />} />
         {/* Direct Trade */}
         <Route path="trade/purchases" element={<DirectPurchases />} />
         <Route path="trade/sales" element={<DirectSales />} />
