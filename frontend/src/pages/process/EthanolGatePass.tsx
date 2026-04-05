@@ -168,8 +168,8 @@ export default function EthanolGatePass() {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gray-100 border-b">
-              {['#', 'Time', 'Vehicle', 'Contract / Party', 'Status', 'Tare (KG)', 'Gross (KG)', 'Net (KG)', 'Vol (BL)', 'Density', 'Invoice', 'Actions'].map(h => (
-                <th key={h} className={`px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase ${['Tare (KG)', 'Gross (KG)', 'Net (KG)', 'Vol (BL)'].includes(h) ? 'text-right' : h === 'Status' || h === 'Density' || h === 'Actions' ? 'text-center' : 'text-left'}`}>{h}</th>
+              {['#', 'Time', 'Vehicle', 'Contract / Party', 'Status', 'Tare (KG)', 'Gross (KG)', 'Net (KG)', 'Vol (BL)', 'Wt Check', 'Invoice', 'Actions'].map(h => (
+                <th key={h} className={`px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase ${['Tare (KG)', 'Gross (KG)', 'Net (KG)', 'Vol (BL)'].includes(h) ? 'text-right' : h === 'Status' || h === 'Wt Check' || h === 'Actions' ? 'text-center' : 'text-left'}`}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -189,9 +189,11 @@ export default function EthanolGatePass() {
                 <td className="px-3 py-2 text-right font-mono text-gray-700 font-medium">{t.quantityBL ? t.quantityBL.toLocaleString('en-IN') : '-'}</td>
                 <td className="px-3 py-2 text-center">
                   {t.weightNet && t.quantityBL ? (() => {
-                    const d = t.weightNet! / t.quantityBL;
-                    const ok = d >= 0.75 && d <= 0.82;
-                    return <span className={`text-xs font-mono ${ok ? 'text-green-600' : 'text-red-600'}`}>{d.toFixed(3)} {ok ? <CheckCircle size={12} className="inline" /> : <AlertTriangle size={12} className="inline" />}</span>;
+                    const expected = Math.round(t.quantityBL * 0.789);
+                    const diff = Math.abs(t.weightNet! - expected);
+                    const pct = expected > 0 ? (diff / expected * 100) : 0;
+                    const ok = pct <= 2;
+                    return <span className={`text-xs font-mono ${ok ? 'text-green-600' : 'text-red-600'}`}>{ok ? <CheckCircle size={12} className="inline" /> : <AlertTriangle size={12} className="inline" />} {pct.toFixed(1)}%</span>;
                   })() : '-'}
                 </td>
                 <td className="px-3 py-2 text-xs">{t.challanNo ? <span className="text-green-700 font-medium">{t.challanNo.replace('DCH/', '')}</span> : '-'}</td>
@@ -270,8 +272,10 @@ export default function EthanolGatePass() {
         const grossKG = parseFloat(grossForm.weightGross) || 0;
         const volBL = parseFloat(grossForm.quantityBL) || 0;
         const netKG = grossKG - tareKG;
-        const density = volBL > 0 ? netKG / volBL : 0;
-        const densityOk = density >= 0.75 && density <= 0.82;
+        const expectedKG = Math.round(volBL * 0.789);
+        const diffKG = Math.abs(netKG - expectedKG);
+        const diffPct = expectedKG > 0 ? (diffKG / expectedKG * 100) : 0;
+        const weightOk = diffPct <= 2;
         return (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
@@ -285,9 +289,9 @@ export default function EthanolGatePass() {
                   <div><label className="block text-xs font-medium text-gray-500 mb-1">Product Rate (per Ltr)</label><input type="number" value={grossForm.productRatePerLtr} onChange={e => setGrossForm(p => ({ ...p, productRatePerLtr: e.target.value }))} step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm" /></div>
                 </div>
                 {grossKG > 0 && volBL > 0 && (
-                  <div className={`rounded-lg p-3 text-sm ${densityOk ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
-                    <div className="flex items-center gap-2">{densityOk ? <CheckCircle size={16} className="text-green-600" /> : <AlertTriangle size={16} className="text-red-600" />}<span className="font-medium">Net: {netKG.toLocaleString('en-IN')} KG | Density: {density.toFixed(3)} kg/L</span></div>
-                    <div className="text-xs mt-1 text-gray-500">Expected: ~0.789 kg/L for ethanol (range: 0.75 - 0.82)</div>
+                  <div className={`rounded-lg p-3 text-sm ${weightOk ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                    <div className="flex items-center gap-2">{weightOk ? <CheckCircle size={16} className="text-green-600" /> : <AlertTriangle size={16} className="text-red-600" />}<span className="font-medium">Net: {netKG.toLocaleString('en-IN')} KG | Expected: {expectedKG.toLocaleString('en-IN')} KG ({diffPct.toFixed(1)}% {netKG > expectedKG ? 'over' : 'under'})</span></div>
+                    <div className="text-xs mt-1 text-gray-500">Expected = {volBL.toLocaleString('en-IN')} BL x 0.789 kg/L</div>
                   </div>
                 )}
               </div>
