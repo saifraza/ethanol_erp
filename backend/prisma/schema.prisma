@@ -801,9 +801,20 @@ model DispatchTruck {
   photoUrl        String?
   remarks         String?
   userId          String?
+  // Link to contract + lifting (auto-created on dispatch)
+  contractId      String?
+  contract        EthanolContract? @relation(fields: [contractId], references: [id])
+  liftingId       String?  @unique
+  lifting         EthanolLifting?  @relation(fields: [liftingId], references: [id])
+  // Driver/transport info for e-way bill
+  driverName      String?
+  driverPhone     String?
+  transporterName String?
+  distanceKm      Int?
   createdAt       DateTime @default(now())
   @@index([date])
   @@index([entryId])
+  @@index([contractId])
 }
 
 // Per-truck grain unloading (real-time)
@@ -2251,6 +2262,7 @@ model EthanolContract {
   updatedAt         DateTime @updatedAt
 
   liftings          EthanolLifting[]
+  dispatches        DispatchTruck[]
 
   @@index([buyerCustomerId])
 }
@@ -2293,6 +2305,8 @@ model EthanolLifting {
   userId          String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  dispatchTruck   DispatchTruck?
 
   @@index([contractId])
   @@index([invoiceId])

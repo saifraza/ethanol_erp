@@ -14,18 +14,29 @@ export default function EthanolDispatch() {
   const [history, setHistory] = useState<Record<string, any[]>>({});
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
 
+  // Active contracts for party dropdown
+  const [contracts, setContracts] = useState<any[]>([]);
+
   // Form state
   const [batchNo, setBatchNo] = useState('');
   const [vehicleNo, setVehicleNo] = useState('');
   const [partyName, setPartyName] = useState('');
+  const [contractId, setContractId] = useState('');
   const [destination, setDestination] = useState('');
   const [quantityBL, setQuantityBL] = useState('');
   const [strength, setStrength] = useState('');
+  const [driverName, setDriverName] = useState('');
+  const [driverPhone, setDriverPhone] = useState('');
+  const [transporterName, setTransporterName] = useState('');
+  const [distanceKm, setDistanceKm] = useState('');
   const [remarks, setRemarks] = useState('');
   const [photo, setPhoto] = useState<File | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { loadDispatches(); }, [date]);
+  useEffect(() => {
+    api.get('/dispatch/active-contracts').then(r => setContracts(r.data.contracts || [])).catch(() => {});
+  }, []);
 
   async function loadDispatches() {
     try {
@@ -42,10 +53,23 @@ export default function EthanolDispatch() {
   }
 
   function resetForm() {
-    setBatchNo(''); setVehicleNo(''); setPartyName(''); setDestination('');
-    setQuantityBL(''); setStrength(''); setRemarks('');
+    setBatchNo(''); setVehicleNo(''); setPartyName(''); setContractId(''); setDestination('');
+    setQuantityBL(''); setStrength(''); setDriverName(''); setDriverPhone('');
+    setTransporterName(''); setDistanceKm(''); setRemarks('');
     setPhoto(null); setShowForm(false);
   }
+
+  function handleContractSelect(cid: string) {
+    setContractId(cid);
+    if (cid) {
+      const c = contracts.find(x => x.id === cid);
+      if (c) setPartyName(c.buyerName);
+    } else {
+      setPartyName('');
+    }
+  }
+
+  const selectedContract = contracts.find(c => c.id === contractId);
 
   async function handleSave(share = false) {
     if (!vehicleNo && !quantityBL) { setMsg({ type: 'err', text: 'Vehicle No or Quantity required' }); return; }
@@ -60,6 +84,11 @@ export default function EthanolDispatch() {
       fd.append('quantityBL', quantityBL);
       fd.append('strength', strength);
       fd.append('remarks', remarks);
+      if (contractId) fd.append('contractId', contractId);
+      if (driverName) fd.append('driverName', driverName);
+      if (driverPhone) fd.append('driverPhone', driverPhone);
+      if (transporterName) fd.append('transporterName', transporterName);
+      if (distanceKm) fd.append('distanceKm', distanceKm);
       if (photo) fd.append('photo', photo);
 
       await api.post('/dispatch', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
@@ -160,9 +189,20 @@ export default function EthanolDispatch() {
                 className="border rounded px-2 py-2 w-full text-sm" placeholder="MH 12 AB 1234" />
             </div>
             <div>
-              <label className="text-[10px] text-gray-400">Party Name</label>
-              <input type="text" value={partyName} onChange={e => setPartyName(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" />
+              <label className="text-[10px] text-gray-400">Party / Contract</label>
+              <select value={contractId} onChange={e => handleContractSelect(e.target.value)}
+                className="border rounded px-2 py-2 w-full text-sm">
+                <option value="">-- Other (no contract) --</option>
+                {contracts.map(c => (
+                  <option key={c.id} value={c.id}>{c.buyerName} ({c.contractType === 'JOB_WORK' ? 'JW' : c.contractType === 'OMC' ? 'OMC' : 'FP'})</option>
+                ))}
+              </select>
+              {selectedContract && (
+                <div className="text-[10px] text-blue-600 mt-0.5">
+                  {selectedContract.contractNo} | Rate: {selectedContract.contractType === 'JOB_WORK' ? `₹${selectedContract.conversionRate}/BL` : `₹${selectedContract.ethanolRate}/L`}
+                  {selectedContract.autoGenerateEInvoice && <span className="text-green-600 ml-1">(Auto E-Invoice ON)</span>}
+                </div>
+              )}
             </div>
             <div>
               <label className="text-[10px] text-gray-400">Destination</label>
@@ -180,6 +220,32 @@ export default function EthanolDispatch() {
                 className="border rounded px-2 py-2 w-full text-sm" />
             </div>
           </div>
+          {/* Driver & Transport (for e-way bill) */}
+          {contractId && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+              <div>
+                <label className="text-[10px] text-gray-400">Driver Name</label>
+                <input type="text" value={driverName} onChange={e => setDriverName(e.target.value)}
+                  className="border rounded px-2 py-2 w-full text-sm" />
+              </div>
+              <div>
+                <label className="text-[10px] text-gray-400">Driver Phone</label>
+                <input type="text" value={driverPhone} onChange={e => setDriverPhone(e.target.value)}
+                  className="border rounded px-2 py-2 w-full text-sm" />
+              </div>
+              <div>
+                <label className="text-[10px] text-gray-400">Transporter</label>
+                <input type="text" value={transporterName} onChange={e => setTransporterName(e.target.value)}
+                  className="border rounded px-2 py-2 w-full text-sm" />
+              </div>
+              <div>
+                <label className="text-[10px] text-gray-400">Distance (km)</label>
+                <input type="number" value={distanceKm} onChange={e => setDistanceKm(e.target.value)}
+                  className="border rounded px-2 py-2 w-full text-sm" placeholder="for E-Way Bill" />
+              </div>
+            </div>
+          )}
+
           <div className="mb-3">
             <label className="text-[10px] text-gray-400">Remarks</label>
             <input type="text" value={remarks} onChange={e => setRemarks(e.target.value)}
@@ -226,6 +292,7 @@ export default function EthanolDispatch() {
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className="text-xs font-bold text-gray-400">#{dispatches.length - i}</span>
+                  {d.contractId && <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium">Contract</span>}
                   {d.batchNo && <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">{d.batchNo}</span>}
                   <span className="font-semibold text-sm">{d.vehicleNo}</span>
                   <span className="text-xs text-gray-400">

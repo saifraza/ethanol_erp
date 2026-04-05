@@ -17,6 +17,22 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB max
 
+// GET /api/dispatch/active-contracts — active ethanol contracts for party dropdown
+router.get('/active-contracts', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const contracts = await prisma.ethanolContract.findMany({
+      where: { status: 'ACTIVE' },
+      select: {
+        id: true, contractNo: true, contractType: true, buyerName: true,
+        ethanolRate: true, conversionRate: true, omcName: true, omcDepot: true,
+        autoGenerateEInvoice: true,
+      },
+      orderBy: { buyerName: 'asc' },
+    });
+    res.json({ contracts });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
 // GET /api/dispatch — list standalone dispatches
 // ?date=YYYY-MM-DD  — single date (default: today)
 // ?from=ISO&to=ISO   — date range (for production calc: dispatches since last entry)
@@ -105,14 +121,17 @@ router.get('/history', authenticate, async (req: AuthRequest, res: Response) => 
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-// POST /api/dispatch — create a dispatch entry with optional photo
+// POST /api/dispatch — create a dispatch entry with optional photo + optional lifting
 router.post('/', authenticate, upload.single('photo'), async (req: AuthRequest, res: Response) => {
   try {
-    const { vehicleNo, partyName, destination, quantityBL, strength, remarks, date, batchNo } = req.body;
+    const { vehicleNo, partyName, destination, quantityBL, strength, remarks, date, batchNo,
+            contractId, driverName, driverPhone, transporterName, distanceKm } = req.body;
     const dispatchDate = date ? new Date(date) : new Date();
     dispatchDate.setHours(new Date().getHours(), new Date().getMinutes());
 
     const photoUrl = req.file ? `/uploads/dispatch/${req.file.filename}` : null;
+    const qtyBL = parseFloat(quantityBL) || 0;
+    const qtyKL = qtyBL / 1000;
 
     const dispatch = await prisma.dispatchTruck.create({
       data: {
@@ -121,14 +140,141 @@ router.post('/', authenticate, upload.single('photo'), async (req: AuthRequest, 
         vehicleNo: vehicleNo || '',
         partyName: partyName || '',
         destination: destination || '',
-        quantityBL: parseFloat(quantityBL) || 0,
+        quantityBL: qtyBL,
         strength: strength ? parseFloat(strength) : null,
         photoUrl,
         remarks: remarks || null,
         userId: req.user!.id,
+        contractId: contractId || null,
+        driverName: driverName || null,
+        driverPhone: driverPhone || null,
+        transporterName: transporterName || null,
+        distanceKm: distanceKm ? parseInt(distanceKm) : null,
       },
     });
-    res.status(201).json(dispatch);
+
+    // If linked to a contract, auto-create a lifting
+    let lifting: any = null;
+    if (contractId) {
+      try {
+        const contract = await prisma.ethanolContract.findUnique({ where: { id: contractId } });
+        if (contract) {
+          // Calculate rate/amount from contract
+          let rate: number | null = null;
+          if (contract.contractType === 'JOB_WORK') rate = contract.conversionRate;
+          else rate = contract.ethanolRate;
+          const amount = rate ? qtyBL * rate : null;
+
+          lifting = await prisma.ethanolLifting.create({
+            data: {
+              contractId,
+              liftingDate: dispatchDate,
+              vehicleNo: vehicleNo || '',
+              driverName: driverName || null,
+              driverPhone: driverPhone || null,
+              transporterName: transporterName || null,
+              destination: destination || contract.omcDepot || null,
+              quantityBL: qtyBL,
+              quantityKL: qtyKL,
+              strength: strength ? parseFloat(strength) : null,
+              rate,
+              amount,
+              distanceKm: distanceKm ? parseInt(distanceKm) : null,
+              status: 'LOADED',
+              userId: req.user!.id,
+            },
+          });
+
+          // Link dispatch → lifting
+          await prisma.dispatchTruck.update({
+            where: { id: dispatch.id },
+            data: { liftingId: lifting.id },
+          });
+
+          // Update contract totals
+          await prisma.ethanolContract.update({
+            where: { id: contractId },
+            data: {
+              totalSuppliedKL: { increment: qtyKL },
+              totalInvoicedAmt: amount ? { increment: amount } : undefined,
+            },
+          });
+
+          // Auto e-invoice if enabled (fire-and-forget)
+          if (contract.autoGenerateEInvoice && rate && amount && contract.buyerGst) {
+            setImmediate(async () => {
+              try {
+                const { generateIRN, generateEWBByIRN } = await import('../services/eInvoice');
+
+                // Resolve customer
+                let custId = contract.buyerCustomerId;
+                if (!custId) {
+                  let cust = await prisma.customer.findFirst({ where: { gstNo: contract.buyerGst! } });
+                  if (!cust) {
+                    cust = await prisma.customer.create({
+                      data: { name: contract.buyerName, gstNo: contract.buyerGst, address: contract.buyerAddress, phone: contract.buyerPhone, email: contract.buyerEmail },
+                    });
+                  }
+                  custId = cust.id;
+                  await prisma.ethanolContract.update({ where: { id: contractId }, data: { buyerCustomerId: custId } });
+                }
+                const cust = await prisma.customer.findUnique({ where: { id: custId! } });
+                if (!cust) return;
+
+                // Create invoice
+                const gstPct = contract.gstPercent || 18;
+                const gstAmt = Math.round(amount! * gstPct / 100 * 100) / 100;
+                const isInter = cust.state && cust.state !== 'Madhya Pradesh';
+                const total = Math.round((amount! + gstAmt) * 100) / 100;
+
+                const inv = await prisma.invoice.create({
+                  data: {
+                    customerId: cust.id, invoiceDate: dispatchDate, productName: 'ETHANOL',
+                    quantity: qtyBL, unit: 'LTR', rate: rate!, amount: amount!,
+                    gstPercent: gstPct, gstAmount: gstAmt,
+                    supplyType: isInter ? 'INTER_STATE' : 'INTRA_STATE',
+                    cgstPercent: isInter ? 0 : gstPct / 2, cgstAmount: isInter ? 0 : Math.round(gstAmt / 2 * 100) / 100,
+                    sgstPercent: isInter ? 0 : gstPct / 2, sgstAmount: isInter ? 0 : Math.round(gstAmt / 2 * 100) / 100,
+                    igstPercent: isInter ? gstPct : 0, igstAmount: isInter ? gstAmt : 0,
+                    totalAmount: total, balanceAmount: total, status: 'UNPAID', userId: 'system',
+                  },
+                });
+                await prisma.ethanolLifting.update({ where: { id: lifting.id }, data: { invoiceId: inv.id, invoiceNo: `INV-${inv.invoiceNo}` } });
+
+                // Generate IRN
+                if (cust.gstNo && cust.state && cust.pincode && cust.address) {
+                  const irnRes = await generateIRN({
+                    invoiceNo: `INV-${inv.invoiceNo}`, invoiceDate: inv.invoiceDate,
+                    productName: 'ETHANOL', quantity: inv.quantity, unit: 'LTR', rate: inv.rate, amount: inv.amount, gstPercent: inv.gstPercent,
+                    customer: { gstin: cust.gstNo, name: cust.name, address: cust.address, city: cust.city || '', pincode: cust.pincode, state: cust.state, phone: cust.phone || '', email: cust.email || '' },
+                  });
+                  if (irnRes.success && irnRes.irn) {
+                    await prisma.invoice.update({ where: { id: inv.id }, data: { irn: irnRes.irn, irnDate: new Date(), irnStatus: 'GENERATED', ackNo: irnRes.ackNo ? String(irnRes.ackNo) : null, signedQRCode: irnRes.signedQRCode?.slice(0, 4000) || null } as any });
+                    // Generate EWB
+                    const vehNo = (vehicleNo || '').replace(/\s/g, '');
+                    const dist = distanceKm ? parseInt(distanceKm) : 100;
+                    const ewbData: Record<string, any> = { Irn: irnRes.irn, Distance: dist, TransMode: '1', VehNo: vehNo, VehType: 'R' };
+                    if (transporterName && transporterName.length >= 3) ewbData.TransName = transporterName;
+                    const ewbRes = await generateEWBByIRN(irnRes.irn, ewbData);
+                    if (ewbRes.success && ewbRes.ewayBillNo) {
+                      await prisma.invoice.update({ where: { id: inv.id }, data: { ewbNo: ewbRes.ewayBillNo, ewbDate: new Date(), ewbStatus: 'GENERATED' } as any });
+                    }
+                  }
+                }
+                console.log(`[Dispatch] Auto e-invoice complete for dispatch ${dispatch.id}`);
+              } catch (err: any) {
+                console.error(`[Dispatch] Auto e-invoice failed:`, err.message);
+              }
+            });
+          }
+        }
+      } catch (liftErr: any) {
+        console.error('[Dispatch] Lifting creation failed:', liftErr.message);
+        // Dispatch still saved, lifting failed — non-blocking
+      }
+    }
+
+    res.status(201).json({ ...dispatch, lifting, contractNo: lifting ? 'linked' : null });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
