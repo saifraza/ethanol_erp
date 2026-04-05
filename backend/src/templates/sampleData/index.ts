@@ -243,4 +243,6 @@ export const DOC_TYPE_TO_TEMPLATE: Record<string, string> = {
   GOODS_RECEIPT: 'goods-receipt',
   PAYMENT_CONFIRMATION: 'payment-confirmation',
   EWAY_BILL: 'eway-bill',
+  ETHANOL_CHALLAN: 'ethanol-challan',
+  ETHANOL_GATE_PASS: 'ethanol-gate-pass',
 };

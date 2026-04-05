@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Ethanol Delivery Challan</title>{{> base-styles}}</head>
+<body>
+<div class="page">
+  {{> letterhead}}
+  <div class="doc-title">DELIVERY CHALLAN</div>
+  <div class="doc-subtitle">Ethanol Dispatch — {{#if isJobWork}}Job Work{{else}}Sale{{/if}}</div>
+
+  <div class="details-grid">
+    <div class="detail-row"><span class="detail-label">Challan No</span><span class="detail-value bold">{{challanNo}}</span></div>
+    <div class="detail-row"><span class="detail-label">Date</span><span class="detail-value">{{formatDate date}}</span></div>
+    <div class="detail-row"><span class="detail-label">Vehicle No</span><span class="detail-value bold">{{vehicleNo}}</span></div>
+    <div class="detail-row"><span class="detail-label">Driver</span><span class="detail-value">{{driverName}} {{#if driverPhone}}(+91 {{driverPhone}}){{/if}}</span></div>
+    {{#if transporterName}}<div class="detail-row"><span class="detail-label">Transporter</span><span class="detail-value">{{transporterName}}</span></div>{{/if}}
+    {{#if rstNo}}<div class="detail-row"><span class="detail-label">RST No</span><span class="detail-value">{{rstNo}}</span></div>{{/if}}
+    {{#if sealNo}}<div class="detail-row"><span class="detail-label">Seal No</span><span class="detail-value">{{sealNo}}</span></div>{{/if}}
+  </div>
+
+  <div class="boxes">
+    <div class="box">
+      <div class="box-header">Consignee (Ship To)</div>
+      <div class="box-body">
+        <div class="name">{{buyerName}}</div>
+        {{#if buyerAddress}}<div class="line">{{buyerAddress}}</div>{{/if}}
+        {{#if buyerGst}}<div class="gstin">GSTIN: {{buyerGst}}</div>{{/if}}
+      </div>
+    </div>
+    <div class="box">
+      <div class="box-header">Consignor (Ship From)</div>
+      <div class="box-body">
+        <div class="name">MSPIL Distillery</div>
+        <div class="line">Village Bachai, Dist. Narsinghpur (M.P.) - 487001</div>
+        <div class="gstin">GSTIN: 23AAECM3666P1Z1</div>
+        {{#if destination}}<div class="meta-row mt-4"><span class="meta-label">Place of Supply:</span><span class="meta-val">{{destination}}</span></div>{{/if}}
+      </div>
+    </div>
+  </div>
+
+  <table class="items-table">
+    <thead>
+      <tr>
+        <th style="width:25px">#</th>
+        <th class="left">Description of Goods</th>
+        <th style="width:70px">Quantity</th>
+        <th style="width:40px">Unit</th>
+        <th class="right" style="width:70px">Rate (Rs.)</th>
+        <th class="right" style="width:100px">Value (inc.{{gstRate}}% GST)</th>
+        <th style="width:100px">Remarks</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="center">1</td>
+        <td>Ethanol</td>
+        <td class="center">{{formatNum quantityBL}} ltr</td>
+        <td class="center">Litres</td>
+        <td class="right">{{productRate}}/ltr</td>
+        <td class="right">{{formatINR totalValue}}/-</td>
+        <td>(produced on job work)</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div style="font-style:italic;font-size:10px;margin:5px 0">(Distilling, Rectifying and Blending of Spirits)</div>
+
+  <div class="weight-box">
+    <div class="wb-header">Delivery Details</div>
+    <div class="wb-grid">
+      <div class="wb-item"><div class="wb-label">Mode of Transport</div><div class="wb-val">By Road</div></div>
+      <div class="wb-item"><div class="wb-label">Vehicle No</div><div class="wb-val">{{vehicleNo}}</div></div>
+      <div class="wb-item"><div class="wb-label">Place of Supply</div><div class="wb-val">{{default destination "-"}}</div></div>
+    </div>
+    <div class="wb-grid" style="border-top: 1px solid #eee;">
+      <div class="wb-item"><div class="wb-label">Purpose</div><div class="wb-val">Delivery of Ethanol Spirit produced on job work basis</div></div>
+    </div>
+  </div>
+
+  <div style="margin-top:20px;font-size:11px">
+    <div style="font-weight:bold;margin-bottom:5px">Declaration:</div>
+    <div style="font-style:italic">We hereby declare that the goods mentioned above are being delivered as per the terms of job work and are subject to the conditions agreed upon between Mahakaushal Sugar and Power Industries Limited and {{buyerName}}</div>
+  </div>
+
+  {{> signatures sigCount=3 sigLabels=(list "For MSPIL" "Transporter / Driver" "Consignee") sigNames=(list "" driverName "")}}
+
+  <div class="footer-area">
+    {{#if qrDataUrl}}<div class="qr-block"><img src="{{qrDataUrl}}" alt="QR"><div class="qr-text">Scan to verify this document</div></div>{{/if}}
+    <div class="footer-text">{{footer}}</div>
+  </div>
+</div>
+</body>
+</html>

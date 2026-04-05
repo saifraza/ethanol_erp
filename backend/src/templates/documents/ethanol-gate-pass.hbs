@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Ethanol Gate Pass</title>{{> base-styles}}</head>
+<body>
+<div class="page">
+  {{> letterhead}}
+  <div class="doc-title">GATE PASS CUM CHALLAN<div style="margin-top:4px"><span class="badge-nonreturnable">NON-RETURNABLE</span></div></div>
+  <div class="doc-subtitle">Ethanol Dispatch — {{#if isJobWork}}Job Work{{else}}Sale{{/if}}</div>
+
+  <div class="details-grid">
+    <div class="detail-row"><span class="detail-label">Gate Pass No</span><span class="detail-value bold">{{gatePassNo}}</span></div>
+    <div class="detail-row"><span class="detail-label">Date</span><span class="detail-value">{{formatDate date}}</span></div>
+    <div class="detail-row"><span class="detail-label">Vehicle No</span><span class="detail-value bold">{{vehicleNo}}</span></div>
+    <div class="detail-row"><span class="detail-label">Driver</span><span class="detail-value">{{driverName}} {{#if driverPhone}}({{driverPhone}}){{/if}}</span></div>
+    {{#if contractNo}}<div class="detail-row"><span class="detail-label">Contract</span><span class="detail-value">{{contractNo}}</span></div>{{/if}}
+    {{#if rstNo}}<div class="detail-row"><span class="detail-label">RST No</span><span class="detail-value">{{rstNo}}</span></div>{{/if}}
+    {{#if transporterName}}<div class="detail-row"><span class="detail-label">Transporter</span><span class="detail-value">{{transporterName}}</span></div>{{/if}}
+    {{#if sealNo}}<div class="detail-row"><span class="detail-label">Seal No</span><span class="detail-value">{{sealNo}}</span></div>{{/if}}
+    {{#if destination}}<div class="detail-row"><span class="detail-label">Destination</span><span class="detail-value">{{destination}}</span></div>{{/if}}
+  </div>
+
+  <div class="boxes">
+    <div class="box">
+      <div class="box-header">Party Details</div>
+      <div class="box-body">
+        <div class="name">{{buyerName}}</div>
+        {{#if buyerAddress}}<div class="line">{{buyerAddress}}</div>{{/if}}
+        {{#if buyerGst}}<div class="gstin">GSTIN: {{buyerGst}}</div>{{/if}}
+      </div>
+    </div>
+    <div class="box">
+      <div class="box-header">From</div>
+      <div class="box-body">
+        <div class="name">MSPIL Distillery</div>
+        <div class="line">Village Bachai, Dist. Narsinghpur (M.P.) - 487001</div>
+        <div class="gstin">GSTIN: 23AAECM3666P1Z1</div>
+      </div>
+    </div>
+  </div>
+
+  <table class="items-table">
+    <thead>
+      <tr>
+        <th class="left">Description</th>
+        <th style="width:60px">HSN/SAC</th>
+        <th class="right" style="width:60px">Qty</th>
+        <th style="width:35px">Unit</th>
+        <th class="right" style="width:60px">Rate</th>
+        <th class="right" style="width:80px">Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>{{productDescription}}</td>
+        <td class="center">{{hsnCode}}</td>
+        <td class="right">{{formatNum quantityBL}}</td>
+        <td class="center">BL</td>
+        <td class="right">{{formatNum rate}}</td>
+        <td class="right">{{formatINR amount}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="weight-box">
+    <div class="wb-header">Weight Summary</div>
+    <div class="wb-grid">
+      <div class="wb-item"><div class="wb-label">Gross Weight</div><div class="wb-val">{{formatNum weightGross}} KG</div></div>
+      <div class="wb-item"><div class="wb-label">Tare Weight</div><div class="wb-val">{{formatNum weightTare}} KG</div></div>
+      <div class="wb-item"><div class="wb-label">Net Weight</div><div class="wb-val">{{formatNum weightNet}} KG</div></div>
+    </div>
+    <div class="wb-grid" style="border-top: 1px solid #eee;">
+      <div class="wb-item"><div class="wb-label">Volume (BL)</div><div class="wb-val">{{formatNum quantityBL}}</div></div>
+      {{#if strength}}<div class="wb-item"><div class="wb-label">Strength</div><div class="wb-val">{{strength}}%</div></div>{{/if}}
+      {{#if sealNo}}<div class="wb-item"><div class="wb-label">Seal No</div><div class="wb-val">{{sealNo}}</div></div>{{/if}}
+    </div>
+  </div>
+
+  {{> signatures sigCount=4 sigLabels=(list "Gate Keeper" "Weigh Bridge Operator" "Store In-Charge" "Authorized by MSPIL") sigNames=(list "" "" "" "")}}
+
+  <div class="footer-area">
+    {{#if qrDataUrl}}<div class="qr-block"><img src="{{qrDataUrl}}" alt="QR"><div class="qr-text">Scan to verify this document</div></div>{{/if}}
+    <div class="footer-text">Computer Generated Gate Pass</div>
+  </div>
+</div>
+</body>
+</html>
