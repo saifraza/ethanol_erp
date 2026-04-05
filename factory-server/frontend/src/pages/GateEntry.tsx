@@ -112,7 +112,7 @@ export default function GateEntry() {
   // Load ethanol contracts when outbound ethanol selected
   useEffect(() => {
     if (isEthanol && ethContracts.length === 0) {
-      cloudApi.get('/ethanol-gate-pass/active-contracts').then(r => setEthContracts(r.data || [])).catch(() => {});
+      cloudApi.get('/ethanol-gate-pass/active-contracts').then(r => setEthContracts(Array.isArray(r.data) ? r.data : [])).catch(() => setEthContracts([]));
     }
   }, [isEthanol]);
 
@@ -478,7 +478,7 @@ export default function GateEntry() {
                   if (c) { setCustomerName(c.buyerName); setDestination(c.omcDepot || c.buyerAddress || ''); }
                 }} className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
                   <option value="">-- Select Contract --</option>
-                  {ethContracts.map(c => <option key={c.id} value={c.id}>{c.contractNo} — {c.buyerName} ({c.contractType})</option>)}
+                  {(ethContracts || []).map(c => <option key={c.id} value={c.id}>{c.contractNo} — {c.buyerName} ({c.contractType})</option>)}
                 </select>
               </div>
               <div>
