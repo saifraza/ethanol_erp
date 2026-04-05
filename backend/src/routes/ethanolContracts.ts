@@ -546,6 +546,7 @@ router.post('/:id/liftings/:liftingId/create-invoice', asyncHandler(async (req: 
         data: {
           customerId: customer.id,
           invoiceDate: lifting.liftingDate,
+          dueDate: contract.paymentTermsDays ? new Date(lifting.liftingDate.getTime() + contract.paymentTermsDays * 86400000) : null,
           productName: contract.contractType === 'JOB_WORK' ? 'Job Work Charges for Ethanol Production' : 'ETHANOL',
           quantity: lifting.quantityBL,
           unit: contract.contractType === 'JOB_WORK' ? 'BL' : 'LTR',

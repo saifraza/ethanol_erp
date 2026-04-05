@@ -316,7 +316,7 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
   try {
     const invoice = await prisma.invoice.findUnique({
       where: { id: req.params.id },
-      include: { customer: true, ethanolLiftings: { take: 1 } },
+      include: { customer: true, ethanolLiftings: { take: 1, include: { contract: { select: { paymentTermsDays: true, paymentMode: true } } } } },
     });
 
     if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
@@ -331,6 +331,7 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
       dueDate: invoice.dueDate,
       challanNo: lifting?.challanNo || invoice.challanNo,
       ewayBill: invoice.ewayBill,
+      paymentMode: lifting?.contract?.paymentTermsDays ? `${lifting.contract.paymentTermsDays} Days` : (lifting?.contract?.paymentMode || null),
       supplyType: isIntraState ? 'INTRA_STATE' : 'INTER_STATE',
       customer: {
         name: invoice.customer.name,

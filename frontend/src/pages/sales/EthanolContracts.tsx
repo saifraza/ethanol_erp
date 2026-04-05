@@ -737,8 +737,17 @@ const EthanolContracts: React.FC = () => {
                                       </tr>
                                       {/* IRN/EWB detail row */}
                                       {showIrnDetail === l.id && l.invoice && (
-                                        <tr className="bg-slate-50/80">
-                                          <td colSpan={12} className="px-3 py-2 text-[10px] border-b border-slate-200">
+                                        <tr>
+                                          <td colSpan={12} className="p-0 border-b-2 border-slate-300">
+                                            <div className="bg-slate-800 text-white px-3 py-1.5 flex items-center justify-between">
+                                              <span className="text-[10px] font-bold uppercase tracking-widest">Invoice: {l.invoiceNo || `INV-${l.invoice.invoiceNo}`}</span>
+                                              <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
+                                                l.invoice.status === 'PAID' ? 'bg-green-900/50 text-green-300 border-green-600' :
+                                                l.invoice.status === 'PARTIAL' ? 'bg-amber-900/50 text-amber-300 border-amber-600' :
+                                                'bg-red-900/50 text-red-300 border-red-600'
+                                              }`}>{l.invoice.status}</span>
+                                            </div>
+                                            <div className="bg-slate-50 px-3 py-2 text-[10px] border-l-4 border-l-blue-500">
                                             {/* Invoice Financial Details */}
                                             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-x-6 gap-y-1.5 mb-2">
                                               <div>
@@ -775,16 +784,9 @@ const EthanolContracts: React.FC = () => {
                                               {l.dispatchMode && <div><span className="font-bold text-slate-400 uppercase tracking-widest">Dispatched Via</span><div className="text-slate-700 mt-0.5">{l.dispatchMode}</div></div>}
                                               {l.productRatePerLtr && <div><span className="font-bold text-slate-400 uppercase tracking-widest">Product Rate</span><div className="font-mono text-slate-700 mt-0.5">₹{l.productRatePerLtr}/Ltr (Value: ₹{l.productValue?.toLocaleString('en-IN')})</div></div>}
                                             </div>
-                                            {/* Status + IRN/EWB details */}
+                                            {/* IRN/EWB details */}
+                                            {(l.invoice.irn || l.invoice.ewbNo) && (
                                             <div className="flex flex-wrap gap-x-6 gap-y-1 pt-1 border-t border-slate-200">
-                                              <div>
-                                                <span className="font-bold text-slate-400 uppercase tracking-widest">Status</span>
-                                                <span className={`ml-1.5 text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
-                                                  l.invoice.status === 'PAID' ? 'bg-green-50 text-green-700 border-green-200' :
-                                                  l.invoice.status === 'PARTIAL' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                                                  'bg-red-50 text-red-700 border-red-200'
-                                                }`}>{l.invoice.status}</span>
-                                              </div>
                                               {l.invoice.irn && (
                                                 <div><span className="font-bold text-slate-400 uppercase tracking-widest">IRN:</span> <span className="font-mono text-slate-600 break-all">{l.invoice.irn}</span></div>
                                               )}
@@ -800,6 +802,8 @@ const EthanolContracts: React.FC = () => {
                                               {l.invoice.ewbDate && (
                                                 <div><span className="font-bold text-slate-400 uppercase tracking-widest">EWB Date:</span> <span className="font-mono text-slate-600">{new Date(l.invoice.ewbDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span></div>
                                               )}
+                                            </div>
+                                            )}
                                             </div>
                                           </td>
                                         </tr>
