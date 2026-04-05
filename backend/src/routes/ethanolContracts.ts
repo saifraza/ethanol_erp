@@ -5,6 +5,7 @@ import { asyncHandler } from '../shared/middleware';
 import multer from 'multer';
 // RAG indexing removed — only compliance docs go to RAG
 import { generateIRN, generateEWBByIRN } from '../services/eInvoice';
+import { onSaleInvoiceCreated } from '../services/autoJournal';
 import { getStateCode, getHsnCode, MSPIL } from '../services/ewayBill';
 import fs from 'fs';
 import path from 'path';
@@ -341,6 +342,16 @@ router.post('/:id/liftings', asyncHandler(async (req: AuthRequest, res: Response
           });
           await prisma.ethanolLifting.update({ where: { id: lifting.id }, data: { invoiceId: inv.id, invoiceNo: `INV-${inv.invoiceNo}` } });
 
+          // 2b. Auto-journal: Dr Trade Receivable, Cr Sales + GST
+          onSaleInvoiceCreated(prisma, {
+            id: inv.id, invoiceNo: inv.invoiceNo, totalAmount: total,
+            amount: amount!, gstAmount: gst.gstAmount, gstPercent: contract.gstPercent || 18,
+            cgstAmount: gst.cgstAmount, sgstAmount: gst.sgstAmount, igstAmount: gst.igstAmount,
+            supplyType: gst.supplyType, productName: 'ETHANOL',
+            customerId: cust.id, userId: 'system', invoiceDate: lifting.liftingDate,
+            customer: { state: cust.state },
+          });
+
           // 3. Generate IRN
           if (cust.gstNo && cust.state && cust.pincode && cust.address) {
             const irnRes = await generateIRN({
@@ -574,6 +585,16 @@ router.post('/:id/liftings/:liftingId/create-invoice', asyncHandler(async (req: 
       });
 
       return inv;
+    });
+
+    // Auto-journal: Dr Trade Receivable, Cr Sales + GST
+    onSaleInvoiceCreated(prisma, {
+      id: invoice.id, invoiceNo: invoice.invoiceNo, totalAmount: invoice.totalAmount,
+      amount: invoice.amount, gstAmount: gst.gstAmount, gstPercent,
+      cgstAmount: gst.cgstAmount, sgstAmount: gst.sgstAmount, igstAmount: gst.igstAmount,
+      supplyType: gst.supplyType, productName: invoice.productName,
+      customerId: customer.id, userId: (req as any).user?.id || 'system',
+      invoiceDate: lifting.liftingDate, customer: { state: customer.state },
     });
 
     res.json({ invoice });
@@ -861,6 +882,72 @@ router.post('/:id/liftings/:liftingId/cancel-irn', asyncHandler(async (req: Auth
     });
 
     res.json({ success: true, message: `IRN cancelled for INV-${lifting.invoice.invoiceNo}` });
+}));
+
+// ── IMPORT HISTORICAL LIFTINGS (one-time migration) ──
+router.post('/:id/import-history', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const contract = await prisma.ethanolContract.findUnique({ where: { id: req.params.id } });
+    if (!contract) return res.status(404).json({ error: 'Contract not found' });
+
+    const rows: { date: string; invoiceNo: string; vehicleNo: string; driverName: string; driverPhone: string; quantityBL: number; rate: number }[] = req.body.rows;
+    if (!rows?.length) return res.status(400).json({ error: 'No rows provided' });
+
+    const customerId = contract.buyerCustomerId;
+    if (!customerId) return res.status(400).json({ error: 'Contract has no buyer customer linked' });
+
+    const gstPercent = contract.gstPercent || 18;
+    let imported = 0, skipped = 0;
+
+    for (const row of rows) {
+      // Skip if already exists (by vehicleNo + date)
+      const existing = await prisma.ethanolLifting.findFirst({
+        where: { contractId: contract.id, vehicleNo: row.vehicleNo.replace(/\s/g, ''), liftingDate: new Date(row.date) },
+      });
+      if (existing) { skipped++; continue; }
+
+      const amount = row.quantityBL * row.rate;
+      const gst = calcGstSplit(amount, gstPercent, 'Odisha');
+      const totalAmount = Math.round(amount + gst.gstAmount);
+
+      const invoice = await prisma.invoice.create({
+        data: {
+          customerId,
+          invoiceDate: new Date(row.date),
+          productName: 'Job Work Charges for Ethanol Production',
+          quantity: row.quantityBL, unit: 'BL', rate: row.rate, amount,
+          gstPercent, gstAmount: gst.gstAmount, supplyType: gst.supplyType,
+          cgstPercent: gst.cgstPercent, cgstAmount: gst.cgstAmount,
+          sgstPercent: gst.sgstPercent, sgstAmount: gst.sgstAmount,
+          igstPercent: gst.igstPercent, igstAmount: gst.igstAmount,
+          totalAmount, paidAmount: totalAmount, balanceAmount: 0,
+          status: 'PAID', irnStatus: 'GENERATED', irnDate: new Date(row.date),
+          ewbStatus: 'GENERATED',
+          userId: (req as any).user?.id || 'system',
+        },
+      });
+
+      await prisma.ethanolLifting.create({
+        data: {
+          contractId: contract.id, liftingDate: new Date(row.date),
+          vehicleNo: row.vehicleNo.replace(/\s/g, ''),
+          driverName: row.driverName || null, driverPhone: row.driverPhone || null,
+          destination: 'Odisha', quantityBL: row.quantityBL, quantityKL: row.quantityBL / 1000,
+          rate: row.rate, amount, status: 'DELIVERED', deliveredQtyKL: row.quantityBL / 1000,
+          invoiceId: invoice.id, invoiceNo: row.invoiceNo,
+          dispatchMode: 'TANKER',
+        },
+      });
+      imported++;
+    }
+
+    // Update contract totalSuppliedKL
+    const allLiftings = await prisma.ethanolLifting.findMany({
+      where: { contractId: contract.id }, select: { quantityKL: true },
+    });
+    const totalKL = allLiftings.reduce((s, l) => s + l.quantityKL, 0);
+    await prisma.ethanolContract.update({ where: { id: contract.id }, data: { totalSuppliedKL: totalKL } });
+
+    res.json({ success: true, imported, skipped, totalLiftings: allLiftings.length, totalKL });
 }));
 
 export default router;

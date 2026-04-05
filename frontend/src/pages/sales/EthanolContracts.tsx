@@ -749,6 +749,8 @@ const EthanolContracts: React.FC = () => {
                                                 l.invoice.status === 'PARTIAL' ? 'bg-amber-900/50 text-amber-300 border-amber-600' :
                                                 'bg-red-900/50 text-red-300 border-red-600'
                                               }`}>{l.invoice.status}</span>
+                                              <button onClick={() => window.open(`/api/invoices/${l.invoice!.id}/pdf`, '_blank')}
+                                                className="px-2 py-0.5 text-[9px] font-bold uppercase bg-white/10 text-white border border-white/30 hover:bg-white/20 ml-2">PDF</button>
                                             </div>
                                             <div className="bg-slate-50 px-3 py-2 text-[10px] border-l-4 border-l-blue-500">
                                             {/* Invoice Financial Details */}
