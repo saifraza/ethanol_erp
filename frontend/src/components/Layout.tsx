@@ -7,11 +7,11 @@ import {
   LayoutDashboard, LogOut, ChevronDown, ChevronRight,
   WifiOff, Menu, X, Bell
 } from 'lucide-react';
-import { processNav, salesNav, procurementNav, tradeNav, accountsNav, booksNav, inventoryNav, logisticsNav, adminNav } from '../config/modules';
+import { processNav, salesNav, procurementNav, tradeNav, accountsNav, booksNav, inventoryNav, logisticsNav, complianceNav, adminNav } from '../config/modules';
 
 function hasModuleAccess(user: any, moduleKey: string): boolean {
   if (!user) return false;
-  if (user.role === 'ADMIN') return true;
+  if (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') return true;
   if (!user.allowedModules) return false; // no modules assigned
   return user.allowedModules.split(',').includes(moduleKey);
 }
@@ -35,6 +35,7 @@ export default function Layout() {
   const [accountsOpen, setAccountsOpen] = useState(false);
   const [booksOpen, setBooksOpen] = useState(false);
   const [inventoryOpen, setInventoryOpen] = useState(false);
+  const [complianceOpen, setComplianceOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
   const [serverUp, setServerUp] = useState(true);
   const [reconnecting, setReconnecting] = useState(false);
@@ -214,14 +215,28 @@ export default function Layout() {
           )}
           </>)}
 
-          {adminNav.some(n => (!n.adminOnly || user?.role === 'ADMIN') && hasModuleAccess(user, n.moduleKey)) && (<>
+          {complianceNav.some(n => hasModuleAccess(user, n.moduleKey)) && (<>
+          <button onClick={() => setComplianceOpen(!complianceOpen)} className="flex items-center justify-between w-full px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mt-3 hover:text-gray-200">
+            <span>Compliance</span>
+            {complianceOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </button>
+          {complianceOpen && (
+            <div className="space-y-0.5 ml-1 border-l border-gray-700 pl-2">
+              {complianceNav.filter(n => hasModuleAccess(user, n.moduleKey)).map(n => (
+                <NavLink key={n.to} {...n} active={location.pathname === n.to} onClick={closeSidebar} />
+              ))}
+            </div>
+          )}
+          </>)}
+
+          {adminNav.some(n => (!n.adminOnly || user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') && hasModuleAccess(user, n.moduleKey)) && (<>
           <button onClick={() => setAdminOpen(!adminOpen)} className="flex items-center justify-between w-full px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mt-3 hover:text-gray-200">
             <span>Admin</span>
             {adminOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           </button>
           {adminOpen && (
             <div className="space-y-0.5 ml-1 border-l border-gray-700 pl-2">
-              {adminNav.filter(n => (!n.adminOnly || user?.role === 'ADMIN') && hasModuleAccess(user, n.moduleKey)).map(n => (
+              {adminNav.filter(n => (!n.adminOnly || user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') && hasModuleAccess(user, n.moduleKey)).map(n => (
                 <NavLink key={n.to} {...n} active={location.pathname === n.to} onClick={closeSidebar} />
               ))}
             </div>

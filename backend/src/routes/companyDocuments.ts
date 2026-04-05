@@ -262,6 +262,40 @@ router.post('/', upload.single('file'), asyncHandler(async (req: AuthRequest, re
     }).catch(err => console.error('[CompanyDoc] Vault note generation failed:', err));
   });
 
+  // Fire-and-forget: auto-link to matching ComplianceObligations
+  if (['COMPLIANCE', 'LICENSE', 'CERTIFICATE'].includes(doc.category)) {
+    setImmediate(async () => {
+      try {
+        // Use longer keywords (5+ chars) to avoid false positives like "Fire", "Form", "Boiler"
+        const stopWords = new Set(['annual', 'monthly', 'quarterly', 'renewal', 'compliance', 'certificate', 'license', 'report', 'return', 'registration']);
+        const keywords = doc.title
+          .split(/[\s—–\-,()]+/)
+          .filter((w: string) => w.length >= 5 && !stopWords.has(w.toLowerCase()))
+          .slice(0, 5);
+        if (keywords.length < 2) return; // Require at least 2 meaningful keywords
+        const matchingObligations = await prisma.complianceObligation.findMany({
+          where: {
+            AND: keywords.slice(0, 3).map((k: string) => ({
+              title: { contains: k, mode: 'insensitive' as const },
+            })),
+          },
+          select: { id: true },
+          take: 3,
+        });
+        for (const obl of matchingObligations) {
+          await prisma.complianceDocument.create({
+            data: { obligationId: obl.id, documentId: doc.id, isFulfilling: true },
+          }).catch(() => {}); // Ignore duplicate link errors
+        }
+        if (matchingObligations.length > 0) {
+          console.log(`[CompanyDoc] Auto-linked "${doc.title}" to ${matchingObligations.length} compliance obligation(s)`);
+        }
+      } catch (err) {
+        console.error('[CompanyDoc] Compliance auto-link failed:', err);
+      }
+    });
+  }
+
   res.status(201).json(doc);
 }));
 

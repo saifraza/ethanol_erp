@@ -53,6 +53,10 @@ const PlantIssues = React.lazy(() => import('./pages/PlantIssues'));
 const Approvals = React.lazy(() => import('./pages/admin/Approvals'));
 const CompanyDocuments = React.lazy(() => import('./pages/admin/CompanyDocuments'));
 const DocumentSearch = React.lazy(() => import('./pages/admin/DocumentSearch'));
+// Compliance
+const ComplianceDashboard = React.lazy(() => import('./pages/compliance/ComplianceDashboard'));
+const ComplianceRegister = React.lazy(() => import('./pages/compliance/ComplianceRegister'));
+const ComplianceAI = React.lazy(() => import('./pages/compliance/ComplianceAI'));
 const PurchaseRequisition = React.lazy(() => import('./pages/PurchaseRequisition'));
 // Sales & Distribution
 const Customers = React.lazy(() => import('./pages/sales/Customers'));
@@ -106,7 +110,7 @@ function HomeRedirect() {
   const { user } = useAuth();
   // If user has dashboard access, go there
   const allowed = user?.allowedModules?.split(',') || [];
-  if (user?.role === 'ADMIN' || allowed.includes('dashboard')) return <Navigate to="/dashboard" replace />;
+  if (user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN' || allowed.includes('dashboard')) return <Navigate to="/dashboard" replace />;
   // Otherwise redirect to first allowed module
   const firstModule = MODULE_DEFS.find(m => allowed.includes(m.key));
   if (firstModule) return <Navigate to={firstModule.to} replace />;
@@ -167,6 +171,10 @@ export default function App() {
         <Route path="admin/approvals" element={<Approvals />} />
         <Route path="admin/documents" element={<CompanyDocuments />} />
         <Route path="admin/document-search" element={<DocumentSearch />} />
+        {/* Compliance */}
+        <Route path="compliance" element={<ComplianceDashboard />} />
+        <Route path="compliance/register" element={<ComplianceRegister />} />
+        <Route path="compliance/ai" element={<ComplianceAI />} />
         <Route path="purchase-requisition" element={<PurchaseRequisition />} />
         {/* Sales & Distribution */}
         <Route path="sales/customers" element={<Customers />} />

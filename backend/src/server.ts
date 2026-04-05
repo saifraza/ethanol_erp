@@ -6,6 +6,7 @@ import { initTelegram } from './services/telegramBot';
 import { initTelegramAutoCollect } from './services/telegramAutoCollect';
 import { initImageHandler } from './services/telegramImageHandler';
 import { startInventoryAlerts } from './services/inventoryAlerts';
+import { startComplianceAlerts } from './services/complianceAlerts';
 import { startWebhookProcessor } from './services/webhookDelivery';
 
 // Prevent crashes from killing the server
@@ -25,7 +26,7 @@ async function autoSeed() {
       const adminHash = await bcrypt.hash('admin123', 10);
       const opHash = await bcrypt.hash('operator123', 10);
       const labHash = await bcrypt.hash('lab@1234', 10);
-      await prisma.user.create({ data: { email: 'admin@distillery.com', password: adminHash, name: 'Admin User', role: 'ADMIN' } });
+      await prisma.user.create({ data: { email: 'admin@distillery.com', password: adminHash, name: 'Admin User', role: 'SUPER_ADMIN' } });
       await prisma.user.create({ data: { email: 'operator@distillery.com', password: opHash, name: 'Operator User', role: 'OPERATOR' } });
       await prisma.user.create({ data: { email: 'lab@mspil.in', password: labHash, name: 'Lab User', role: 'LAB' } });
       console.log('Seed complete.');
@@ -63,12 +64,33 @@ async function seedMashBioContract() {
   } catch (e) { console.error('[Seed] Mash Bio contract error:', e); }
 }
 
+// One-time: create SUPER_ADMIN user "saif" and upgrade admin@distillery.com
+async function migrateSuperAdmin() {
+  try {
+    // Upgrade existing admin to SUPER_ADMIN
+    await prisma.user.updateMany({
+      where: { email: 'admin@distillery.com', role: 'ADMIN' },
+      data: { role: 'SUPER_ADMIN' },
+    });
+    // Create "saif" user if not exists
+    const exists = await prisma.user.findFirst({ where: { name: { equals: 'saif', mode: 'insensitive' } } });
+    if (!exists) {
+      const hash = await bcrypt.hash('1234', 10);
+      await prisma.user.create({
+        data: { email: 'saif@mspil.in', password: hash, name: 'Saif', role: 'SUPER_ADMIN' },
+      });
+      console.log('[Migration] Created SUPER_ADMIN user "Saif"');
+    }
+  } catch (e) { console.error('[Migration] SUPER_ADMIN error:', e); }
+}
+
 const PORT = config.port;
 const HOST = '0.0.0.0';
 
 const server = app.listen(PORT, HOST, async () => {
   console.log(`Server running on http://${HOST}:${PORT}`);
   await autoSeed();
+  await migrateSuperAdmin();
   await seedMashBioContract();
 
   // Initialize Telegram Bot
@@ -79,6 +101,9 @@ const server = app.listen(PORT, HOST, async () => {
 
   // Inventory low stock alerts via Telegram
   startInventoryAlerts();
+
+  // Compliance alerts via Telegram
+  startComplianceAlerts();
 
   // Webhook delivery processor (cloud → factory server)
   startWebhookProcessor();

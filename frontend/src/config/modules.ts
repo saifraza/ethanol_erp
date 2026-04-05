@@ -11,7 +11,7 @@ import {
   Store, Tractor, Scale, Handshake,
   BookOpen, Calculator, TrendingUp, Landmark,
   PackageSearch, ArrowRightLeft, ClipboardCheck, BarChart2, Banknote, PieChart, HardHat,
-  FolderArchive, Search
+  FolderArchive, Search, ShieldCheck, ListChecks, BotMessageSquare
 } from 'lucide-react';
 
 export interface ModuleDef {
@@ -97,6 +97,11 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'store-indents', label: 'Store Indents', to: '/inventory/store-indents', icon: ShoppingCart, group: 'inventory' },
   { key: 'masters', label: 'Dept & Warehouses', to: '/inventory/masters', icon: Building2, group: 'inventory' },
 
+  // ── COMPLIANCE ─���
+  { key: 'compliance-dashboard', label: 'Compliance', to: '/compliance', icon: ShieldCheck, group: 'compliance' },
+  { key: 'compliance-register', label: 'Register', to: '/compliance/register', icon: ListChecks, group: 'compliance' },
+  { key: 'compliance-ai', label: 'Compliance AI', to: '/compliance/ai', icon: BotMessageSquare, group: 'compliance' },
+
   // ── ADMIN ──
   { key: 'approvals', label: 'Approvals', to: '/admin/approvals', icon: ClipboardCheck, group: 'admin' },
   { key: 'plant-issues', label: 'Maintenance', to: '/plant-issues', icon: AlertCircle, group: 'admin' },
@@ -118,7 +123,7 @@ export const ALL_MODULES = MODULE_DEFS
 const GROUP_LABELS: Record<string, string> = {
   process: 'Plant / Process', sales: 'Sales', procurement: 'Purchase',
   trade: 'Spot Trade', accounts: 'Accounts', books: 'Books',
-  inventory: 'Inventory', logistics: 'Logistics', admin: 'Admin',
+  inventory: 'Inventory', logistics: 'Logistics', compliance: 'Compliance', admin: 'Admin',
 };
 
 export const GROUPED_MODULES = Object.entries(GROUP_LABELS).map(([group, label]) => ({
@@ -156,6 +161,10 @@ export const logisticsNav = MODULE_DEFS.filter(m => m.group === 'logistics').map
 }));
 
 export const inventoryNav = MODULE_DEFS.filter(m => m.group === 'inventory').map(m => ({
+  to: m.to, label: m.label, icon: m.icon, moduleKey: m.key,
+}));
+
+export const complianceNav = MODULE_DEFS.filter(m => m.group === 'compliance').map(m => ({
   to: m.to, label: m.label, icon: m.icon, moduleKey: m.key,
 }));
 

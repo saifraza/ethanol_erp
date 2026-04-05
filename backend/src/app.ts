@@ -108,6 +108,8 @@ import webhookRoutes from './routes/webhooks';
 import companyDocumentRoutes from './routes/companyDocuments';
 import documentSearchRoutes from './routes/documentSearch';
 import vaultSyncRoutes from './routes/vaultSync';
+// Compliance Management
+import complianceRoutes from './routes/compliance';
 import { authenticate } from './middleware/auth';
 import { errorHandler } from './shared/middleware/errorHandler';
 
@@ -244,6 +246,8 @@ app.use('/api/webhooks', authenticate, webhookRoutes);
 app.use('/api/company-documents', companyDocumentRoutes);
 app.use('/api/document-search', documentSearchRoutes);
 app.use('/api/vault', vaultSyncRoutes);
+// Compliance Management
+app.use('/api/compliance', complianceRoutes);
 
 
 // Serve uploaded files
