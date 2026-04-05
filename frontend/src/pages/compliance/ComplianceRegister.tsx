@@ -101,10 +101,10 @@ export default function ComplianceRegister() {
   const [detail, setDetail] = useState<ObligationDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  // Filters
-  const [category, setCategory] = useState('');
-  const [status, setStatus] = useState('');
-  const [risk, setRisk] = useState('');
+  // Filters — initialize from URL params (for drill-down from dashboard)
+  const [category, setCategory] = useState(searchParams.get('category') || '');
+  const [status, setStatus] = useState(searchParams.get('status') || '');
+  const [risk, setRisk] = useState(searchParams.get('riskLevel') || '');
   const [dept, setDept] = useState('');
   const [search, setSearch] = useState('');
 
