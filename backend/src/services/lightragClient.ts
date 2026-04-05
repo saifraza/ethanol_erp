@@ -40,7 +40,7 @@ export function isRagEnabled(): boolean {
  */
 export async function lightragUpload(
   filePath: string,
-  metadata?: { sourceType?: string; sourceId?: string; title?: string }
+  metadata?: { sourceType?: string; sourceId?: string; title?: string; deepScan?: boolean }
 ): Promise<{ success: boolean; trackId?: string; error?: string }> {
   if (!ragApi) return { success: false, error: 'LightRAG not configured' };
 
@@ -73,6 +73,7 @@ export async function lightragUpload(
         metadata.title && `Title: ${metadata.title}`,
       ].filter(Boolean).join(' | ');
       if (desc) form.append('description', desc);
+      if (metadata.deepScan) form.append('deepScan', 'true');
     }
 
     const res = await ragApi.post('/documents/upload', form, {

@@ -232,6 +232,7 @@ router.post('/', upload.single('file'), asyncHandler(async (req: AuthRequest, re
         sourceType: 'CompanyDocument',
         sourceId: doc.id,
         title: doc.title,
+        deepScan: body.deepScan === 'true',
       })
         .then(result => {
           if (result.success) {

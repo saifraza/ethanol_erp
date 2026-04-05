@@ -56,6 +56,7 @@ export default function CompanyDocuments() {
   });
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [deepScan, setDeepScan] = useState(false); // MinerU for scanned/complex docs
 
   const fetchDocs = useCallback(async () => {
     try {
@@ -91,6 +92,7 @@ export default function CompanyDocuments() {
       const fd = new FormData();
       fd.append('file', file);
       Object.entries(form).forEach(([k, v]) => { if (v) fd.append(k, v); });
+      if (deepScan) fd.append('deepScan', 'true');
       await api.post('/company-documents', fd);
       setShowUpload(false);
       setFile(null);
@@ -286,6 +288,12 @@ export default function CompanyDocuments() {
                   <input type="file" onChange={e => { const f = e.target.files?.[0]; if (f) handleFileSelect(f); }}
                     accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.tif,.tiff"
                     className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" required />
+                  <label className="flex items-center gap-2 mt-2 cursor-pointer">
+                    <input type="checkbox" checked={deepScan} onChange={e => setDeepScan(e.target.checked)}
+                      className="w-3.5 h-3.5 border border-slate-300" />
+                    <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Deep scan</span>
+                    <span className="text-[9px] text-slate-400">(scanned docs, complex tables, images - slower ~10 min)</span>
+                  </label>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>

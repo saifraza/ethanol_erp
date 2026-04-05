@@ -164,9 +164,12 @@ async def health():
 @app.post("/documents/upload")
 async def upload_document(
     file: UploadFile = File(...),
+    deepScan: str | None = None,
+    description: str | None = None,
     x_api_key: str | None = Header(None, alias="X-API-Key"),
 ):
     verify_api_key(x_api_key)
+    force_mineru = deepScan == "true"
 
     track_id = str(uuid.uuid4())[:8]
     processing_tasks[track_id] = "processing"
@@ -192,7 +195,7 @@ async def upload_document(
             is_scanned = len(text.strip()) < 100 and len(doc) > 0  # very little text = scanned
             doc.close()
 
-            needs_mineru = is_scanned or has_images or has_tables
+            needs_mineru = force_mineru or is_scanned or has_images or has_tables
 
             if needs_mineru and hasattr(rag, "process_document_complete"):
                 # Complex doc → MinerU (VLM) for tables/images/OCR
