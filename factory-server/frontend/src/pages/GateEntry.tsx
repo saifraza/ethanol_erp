@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 
@@ -26,8 +26,8 @@ const PAYMENT_MODES = ['CASH', 'UPI', 'BANK_TRANSFER'];
 
 export default function GateEntry() {
   const { token, user } = useAuth();
-  const api = axios.create({ baseURL: '/api', headers: { Authorization: `Bearer ${token}` } });
-  const cloudApi = axios.create({ baseURL: '/api/cloud', headers: { Authorization: `Bearer ${token}` } });
+  const api = useMemo(() => axios.create({ baseURL: '/api', headers: { Authorization: `Bearer ${token}` } }), [token]);
+  const cloudApi = useMemo(() => axios.create({ baseURL: '/api/cloud' }), []);
 
   // Master data
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -93,7 +93,7 @@ export default function GateEntry() {
     } finally {
       if (!silent) setMasterLoading(false);
     }
-  }, [token]);
+  }, [api]);
 
   // Load today's count
   const loadCount = useCallback(async () => {
@@ -101,7 +101,7 @@ export default function GateEntry() {
       const res = await api.get('/weighbridge/summary');
       setTodayCount(res.data.totalTrucks || 0);
     } catch { /* ignore */ }
-  }, [token]);
+  }, [api]);
 
   useEffect(() => {
     loadMasterData(); loadCount();
@@ -111,10 +111,13 @@ export default function GateEntry() {
 
   // Load ethanol contracts when outbound ethanol selected
   useEffect(() => {
-    if (isEthanol && ethContracts.length === 0) {
-      cloudApi.get('/ethanol-gate-pass/active-contracts').then(r => setEthContracts(Array.isArray(r.data) ? r.data : [])).catch(() => setEthContracts([]));
-    }
-  }, [isEthanol]);
+    if (!isEthanol) { setEthContracts([]); return; }
+    let cancelled = false;
+    cloudApi.get('/ethanol-gate-pass/active-contracts')
+      .then(r => { if (!cancelled) setEthContracts(Array.isArray(r.data) ? r.data : []); })
+      .catch(() => { if (!cancelled) setEthContracts([]); });
+    return () => { cancelled = true; };
+  }, [isEthanol, cloudApi]);
 
   // Filter POs by selected supplier
   const filteredPOs = pos.filter(p => !supplierName || p.vendor_name.toLowerCase().includes(supplierName.toLowerCase()));
@@ -201,23 +204,19 @@ export default function GateEntry() {
         body.rate = rate ? parseFloat(rate) : undefined;
         // supplierName is already set from trader selection
       }
-      // For ethanol: also create DispatchTruck on cloud ERP
+      // For ethanol: create DispatchTruck on cloud ERP FIRST (blocking — must succeed)
       if (isEthanol) {
         body.driverName = driverName;
         body.destination = destination;
         body.rstNo = rstNo;
         body.sealNo = sealNo;
-        try {
-          await cloudApi.post('/ethanol-gate-pass', {
-            contractId: ethContractId,
-            vehicleNo, driverName, driverPhone,
-            transporterName: transporter,
-            destination, rstNo, sealNo,
-          });
-        } catch (err: any) {
-          console.error('Cloud gate pass failed:', err?.response?.data?.error || err.message);
-          // Don't block — local entry still created
-        }
+        const cloudRes = await cloudApi.post('/ethanol-gate-pass', {
+          contractId: ethContractId,
+          vehicleNo, driverName, driverPhone,
+          transporterName: transporter,
+          destination, rstNo, sealNo,
+        });
+        body.cloudGatePassId = cloudRes.data?.id;
       }
       const res = await api.post('/weighbridge/gate-entry', body);
       const created = res.data;

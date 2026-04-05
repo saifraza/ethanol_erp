@@ -1,6 +1,5 @@
 /**
  * Cloud ERP proxy — forwards requests from factory frontend to cloud API.
- * Used for features where business logic lives on cloud (ethanol gate pass, contracts).
  * Factory frontend calls /api/cloud/ethanol-gate-pass → proxy to app.mspil.in/api/ethanol-gate-pass
  */
 import { Router, Request, Response } from 'express';
@@ -8,19 +7,19 @@ import { config } from '../config';
 
 const router = Router();
 
-// Proxy all requests under /api/cloud/* to cloud ERP
 router.all('/*', async (req: Request, res: Response) => {
   const cloudPath = req.originalUrl.replace('/api/cloud', '');
   const cloudUrl = `${config.cloudErpUrl}${cloudPath}`;
 
   try {
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
       'X-WB-Key': config.cloudApiKey,
     };
-    // Forward auth token if present
     if (req.headers.authorization) {
       headers['Authorization'] = req.headers.authorization;
+    }
+    if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
+      headers['Content-Type'] = 'application/json';
     }
 
     const fetchOpts: RequestInit = {
@@ -32,19 +31,24 @@ router.all('/*', async (req: Request, res: Response) => {
     }
 
     const response = await fetch(cloudUrl, fetchOpts);
+    const contentType = response.headers.get('content-type') || '';
 
-    // Forward content-type for PDFs
-    const contentType = response.headers.get('content-type') || 'application/json';
-    res.setHeader('Content-Type', contentType);
-
-    if (contentType.includes('application/pdf') || contentType.includes('text/html')) {
+    // Binary responses (PDF, images)
+    if (contentType.includes('application/pdf') || contentType.includes('text/html') || contentType.includes('image/')) {
       const buffer = Buffer.from(await response.arrayBuffer());
+      res.setHeader('Content-Type', contentType);
       const disposition = response.headers.get('content-disposition');
       if (disposition) res.setHeader('Content-Disposition', disposition);
       res.status(response.status).send(buffer);
     } else {
-      const data = await response.json();
-      res.status(response.status).json(data);
+      // Safe JSON parse — don't crash on non-JSON responses
+      const text = await response.text();
+      try {
+        const data = JSON.parse(text);
+        res.status(response.status).json(data);
+      } catch {
+        res.status(response.status).type('text').send(text);
+      }
     }
   } catch (err: any) {
     console.error(`[CLOUD PROXY] ${req.method} ${cloudUrl} failed:`, err.message);
