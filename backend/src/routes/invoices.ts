@@ -329,7 +329,7 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
       invoiceNo: invoice.invoiceNo,
       invoiceDate: invoice.invoiceDate,
       dueDate: invoice.dueDate,
-      challanNo: invoice.challanNo,
+      challanNo: lifting?.challanNo || invoice.challanNo,
       ewayBill: invoice.ewayBill,
       supplyType: isIntraState ? 'INTRA_STATE' : 'INTER_STATE',
       customer: {
@@ -343,7 +343,7 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
         pincode: invoice.customer.pincode,
       },
       productName: invoice.productName,
-      hsnCode: invoice.productName?.toUpperCase().includes('ETHANOL') ? '22072000' : invoice.productName?.toUpperCase().includes('DDGS') ? '23033000' : '998817',
+      hsnCode: invoice.productName?.toUpperCase().includes('JOB WORK') ? (invoice.productName?.toUpperCase().includes('DDGS') ? '998817' : '998842') : invoice.productName?.toUpperCase().includes('ETHANOL') ? '22072000' : invoice.productName?.toUpperCase().includes('DDGS') ? '23033000' : '998817',
       quantity: invoice.quantity,
       unit: invoice.unit,
       rate: invoice.rate,
@@ -367,6 +367,10 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
       destination: lifting?.destination || null,
       distanceKm: lifting?.distanceKm || null,
       strength: lifting?.strength || null,
+      rstNo: lifting?.rstNo || null,
+      dispatchMode: lifting?.dispatchMode || 'TANKER',
+      productRatePerLtr: lifting?.productRatePerLtr || null,
+      productValue: lifting?.productValue || null,
       // Consignee (Ship To) — if different from buyer
       consignee: lifting?.consigneeName ? {
         name: lifting.consigneeName,
@@ -402,7 +406,8 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
     });
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="INV-${invoice.invoiceNo}.pdf"`);
+    const invLabel = invoice.productName?.toUpperCase().includes('JOB WORK') ? `MSPIL-ETH-${String(invoice.invoiceNo).padStart(3, '0')}` : `INV-${invoice.invoiceNo}`;
+    res.setHeader('Content-Disposition', `inline; filename="${invLabel}.pdf"`);
     res.send(pdfBuffer);
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });

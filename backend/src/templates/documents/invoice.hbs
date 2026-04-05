@@ -71,7 +71,7 @@
       <td class="inv-label">Mode/Terms of Payment</td>
     </tr>
     <tr>
-      <td class="inv-val">{{#if challanNo}}{{challanNo}}{{else}}-{{/if}}</td>
+      <td class="inv-val">{{#if ewbNo}}{{ewbNo}}{{else}}{{#if challanNo}}{{challanNo}}{{else}}-{{/if}}{{/if}}</td>
       <td class="inv-val">{{#if paymentMode}}{{paymentMode}}{{else}}-{{/if}}</td>
     </tr>
 
@@ -98,7 +98,7 @@
       <td class="inv-label">Delivery Note Date</td>
     </tr>
     <tr>
-      <td class="inv-val">{{#if challanNo}}{{challanNo}}{{else}}-{{/if}}</td>
+      <td class="inv-val">{{#if rstNo}}RST NO {{rstNo}}{{else}}{{#if challanNo}}{{challanNo}}{{else}}SELF{{/if}}{{/if}}</td>
       <td class="inv-val">{{formatDate invoiceDate}}</td>
     </tr>
     <tr>
@@ -106,7 +106,7 @@
       <td class="inv-label">Destination</td>
     </tr>
     <tr>
-      <td class="inv-val">TRUCK</td>
+      <td class="inv-val">{{#if dispatchMode}}{{dispatchMode}}{{else}}TANKER{{/if}}</td>
       <td class="inv-val">{{#if destination}}{{destination}}{{else}}{{#if customer.state}}{{customer.state}}{{else}}-{{/if}}{{/if}}</td>
     </tr>
 
@@ -156,7 +156,7 @@
     <tbody>
       <tr style="height:40px;">
         <td class="inv-center">1</td>
-        <td style="font-weight:600;">{{productName}}</td>
+        <td style="font-weight:600; font-style:italic;">{{productName}}<br><span style="font-weight:400; font-size:7.5px;">{{formatNum quantity}}{{unit}} @ RS {{formatNum rate}}/{{unit}}</span></td>
         <td class="inv-center inv-mono">{{hsnCode}}</td>
         <td class="inv-right inv-mono">{{formatNum quantity}}</td>
         <td class="inv-center">{{unit}}</td>
