@@ -3,7 +3,7 @@ import prisma from '../config/prisma';
 import { authenticate, AuthRequest, authorize } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { generatePOPdf } from '../utils/pdfGenerator';
-import { indexRecord } from '../services/ragIndexer';
+// RAG indexing removed — only compliance docs go to RAG
 import { renderDocumentPdf } from '../services/documentRenderer';
 import { sendEmail } from '../services/messaging';
 
@@ -321,11 +321,6 @@ router.put('/:id/status', asyncHandler(async (req: AuthRequest, res: Response) =
       data: updateData,
       include: { lines: true },
     });
-
-    // Index in RAG when PO is approved
-    if (newStatus === 'APPROVED') {
-      indexRecord({ sourceType: 'PurchaseOrder', sourceId: req.params.id });
-    }
 
     res.json(updated);
 }));

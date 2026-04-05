@@ -3,7 +3,7 @@ import prisma from '../config/prisma';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import multer from 'multer';
-import { lightragInsertText, isRagEnabled } from '../services/lightragClient';
+// RAG indexing removed — only compliance docs go to RAG
 import { generateIRN, generateEWBByIRN } from '../services/eInvoice';
 import { getStateCode, getHsnCode, MSPIL } from '../services/ewayBill';
 import fs from 'fs';
@@ -218,37 +218,6 @@ router.post('/:id/pdf', upload.single('pdf'), asyncHandler(async (req: AuthReque
     });
     res.json({ success: true, filename: contract.contractPdfName });
 
-    // Fire-and-forget: write temp file and index in LightRAG + vault
-    setImmediate(async () => {
-      const tmpFile = path.join(os.tmpdir(), `contract-${req.params.id}-${Date.now()}.pdf`);
-      try {
-        fs.writeFileSync(tmpFile, file.buffer);
-
-        if (isRagEnabled()) {
-          const { lightragUpload } = await import('../services/lightragClient');
-          await lightragUpload(tmpFile, {
-            sourceType: 'EthanolContract',
-            sourceId: req.params.id,
-            title: file.originalname,
-          });
-        }
-
-        // Generate vault note from temp file
-        const { generateVaultNote } = await import('../services/vaultWriter');
-        await generateVaultNote({
-          sourceType: 'EthanolContract',
-          sourceId: req.params.id,
-          filePath: tmpFile,
-          title: file.originalname,
-          category: 'CONTRACT',
-          mimeType: 'application/pdf',
-        });
-      } catch (err) {
-        console.error('[EthanolContract] LightRAG/vault indexing failed:', err);
-      } finally {
-        if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);
-      }
-    });
 }));
 
 // Download contract PDF

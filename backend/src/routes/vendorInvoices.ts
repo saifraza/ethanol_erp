@@ -10,7 +10,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import axios from 'axios';
-import { lightragUpload, isRagEnabled } from '../services/lightragClient';
+// RAG indexing removed — only compliance docs go to RAG
 import { generateVaultNote } from '../services/vaultWriter';
 
 const router = Router();
@@ -85,13 +85,6 @@ If a field is not found, use null for strings and 0 for numbers. Return ONLY the
 
     res.json({ filePath, extracted });
 
-    // Fire-and-forget: index in LightRAG for semantic search
-    if (isRagEnabled()) {
-      setImmediate(() => {
-        lightragUpload(filePath, { sourceType: 'VendorInvoice', title: req.file?.originalname })
-          .catch(err => console.error('[VendorInvoice] LightRAG indexing failed:', err));
-      });
-    }
 
     // Fire-and-forget: generate vault note
     setImmediate(() => {

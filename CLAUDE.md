@@ -70,43 +70,30 @@ const minutes = ist.getUTCMinutes(); // IST minutes
 **NEVER** use `toLocaleTimeString()` or `toLocaleDateString()` on server — output depends on server locale/location.
 
 ### RAG Document Indexing (Critical)
-**Every document in the ERP must be indexed in RAG.** This is a core requirement — all uploaded and generated documents must be searchable via AI-powered Doc Search (`/admin/document-search`).
+**RAG is for compliance & company documents ONLY.** Do NOT index ERP transactional data (POs, invoices, GRNs) — those are structured in the DB and better searched via SQL.
+
+**What goes to RAG:**
+- Company documents uploaded via Document Vault (`/admin/documents`)
+- Compliance certificates, licenses, contracts, legal docs, insurance
+- Any unstructured document that can't be queried via normal DB fields
+
+**What does NOT go to RAG:**
+- POs, invoices, GRNs, sales orders (structured DB data)
+- Vendor invoice attachments, shipment docs, contractor bills
+- Plant photos (iodine tests, dispatch, grain truck)
 
 **How it works:**
 - RAG-Anything microservice runs on Railway (`LIGHTRAG_URL` env var)
 - `lightragClient.ts` is the proxy — same pattern as `whatsappClient.ts`
 - `isRagEnabled()` checks if the service is configured
-
-**For uploaded files** — add fire-and-forget after saving:
-```typescript
-import { lightragUpload, isRagEnabled } from '../services/lightragClient';
-
-// After res.json(...)
-if (isRagEnabled()) {
-  setImmediate(() => {
-    lightragUpload('path/to/file.pdf', { sourceType: 'MyModule', sourceId: record.id, title: file.originalname })
-      .catch(err => console.error('[MyModule] RAG indexing failed:', err));
-  });
-}
-```
-
-**For ERP records (POs, invoices, GRNs, sales orders)** — use `ragIndexer.ts`:
-```typescript
-import { indexRecord } from '../services/ragIndexer';
-
-// After record is created/confirmed:
-indexRecord({ sourceType: 'PurchaseOrder', sourceId: po.id });
-```
-This composes a text summary from DB fields (no PDF needed) and sends to RAG. Already hooked into:
-- PurchaseOrder (on APPROVED), Invoice (on create), GoodsReceipt (on create), SalesOrder (on create)
+- Smart routing: text PDFs → fast LightRAG path (seconds), scanned/complex → MinerU (minutes)
 
 **For Obsidian vault** — `vaultWriter.ts` also inserts summaries into RAG via `lightragInsertText()`.
 
 **When adding a new module:**
-1. **If it has file uploads** — add `lightragUpload()` fire-and-forget after saving file
-2. **If it creates business records** (orders, invoices, receipts) — add `indexRecord()` call and add an indexer function in `ragIndexer.ts`
+1. **If it uploads compliance/company documents** — add `lightragUpload()` fire-and-forget
+2. **If it uploads ERP transactional files** (invoices, bills) — do NOT add RAG, use DB search instead
 3. **Always call** `generateVaultNote()` from `../services/vaultWriter` for Obsidian sync
-4. All three are fire-and-forget — never block the response
 
 ### Module Build Approach
 When building new modules:
