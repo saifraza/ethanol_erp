@@ -524,7 +524,16 @@ export default function ComplianceRegister() {
                       <div><span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Last Completed</span><p className="text-slate-700">{fmtDate(detail.lastCompletedDate)}</p></div>
                     </div>
                     {detail.penaltyInfo && <div><span className="text-[10px] font-bold text-red-400 uppercase tracking-widest">Penalty</span><p className="text-red-700">{detail.penaltyInfo}</p></div>}
-                    {detail.notes && <div><span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Notes</span><p className="text-slate-700">{detail.notes}</p></div>}
+                    {detail.notes && (
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                          {detail.notes.startsWith('[AI]') ? 'AI Insights (from RAG)' : 'Notes'}
+                        </span>
+                        <p className="text-slate-700 whitespace-pre-wrap leading-relaxed mt-0.5">
+                          {detail.notes.startsWith('[AI]') ? detail.notes.slice(5) : detail.notes}
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   {/* Linked Documents */}

@@ -257,6 +257,25 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     };
   });
 
+  // Fallback: if no VaultNotes but docs are linked and RAG is enabled,
+  // do a one-time RAG query and cache result in obligation notes
+  if (insights.length === 0 && docIds.length > 0 && isRagEnabled() && !item.notes?.startsWith('[AI]')) {
+    setImmediate(async () => {
+      try {
+        const result = await lightragQuery(
+          `Summarize key details about: ${item.title}. Include dates, parties, obligations, and important conditions.`,
+          'hybrid'
+        );
+        if (result.success && result.answer) {
+          await prisma.complianceObligation.update({
+            where: { id: item.id },
+            data: { notes: `[AI] ${result.answer}` },
+          });
+        }
+      } catch { /* ignore */ }
+    });
+  }
+
   res.json({ ...item, insights });
 }));
 
