@@ -317,6 +317,17 @@ router.post('/:id/documents', validate(linkDocSchema), asyncHandler(async (req: 
     },
   });
 
+  // Auto-populate obligation fields from document metadata (only fill empty fields)
+  const updates: Record<string, unknown> = {};
+  if (!obligation.dueDate && doc.expiryDate) updates.dueDate = doc.expiryDate;
+  if (!obligation.department && doc.department) updates.department = doc.department;
+  if (Object.keys(updates).length > 0) {
+    await prisma.complianceObligation.update({
+      where: { id: req.params.id },
+      data: updates as any,
+    });
+  }
+
   res.status(201).json(link);
 }));
 
@@ -418,19 +429,35 @@ router.post('/:id/auto-link', asyncHandler(async (req: AuthRequest, res: Respons
   const query = `${obligation.title} ${obligation.actOrRegulation || ''} ${obligation.authority || ''}`.trim();
   const ragResult = await lightragQuery(query, 'hybrid');
 
-  // Find matching CompanyDocuments by searching title/description
-  const keywords = obligation.title.split(/[\s—–-]+/).filter(w => w.length > 3).slice(0, 5);
+  // Extract abbreviations in parentheses like (CTE), (CTO), (EC) + regular keywords
+  const abbrMatch = obligation.title.match(/\(([A-Z]{2,})\)/g);
+  const abbreviations = abbrMatch ? abbrMatch.map(m => m.replace(/[()]/g, '')) : [];
+  const words = obligation.title.split(/[\s—–\-(),]+/).filter(w => w.length > 2);
+  const allKeywords = [...new Set([...abbreviations, ...words])].slice(0, 8);
+
+  // Search CompanyDocuments using OR (any keyword match)
+  const searchConditions = allKeywords.map(k => ({
+    OR: [
+      { title: { contains: k, mode: 'insensitive' as const } },
+      { description: { contains: k, mode: 'insensitive' as const } },
+      { tags: { contains: k, mode: 'insensitive' as const } },
+    ],
+  }));
+
+  // Also match by compliance category
+  const categorySearch = obligation.subcategory
+    ? { subcategory: { contains: obligation.subcategory, mode: 'insensitive' as const } }
+    : undefined;
+
   const matchingDocs = await prisma.companyDocument.findMany({
     where: {
-      OR: keywords.map(k => ({
-        OR: [
-          { title: { contains: k, mode: 'insensitive' as const } },
-          { description: { contains: k, mode: 'insensitive' as const } },
-        ],
-      })),
+      OR: [
+        ...searchConditions,
+        ...(categorySearch ? [categorySearch] : []),
+      ],
     },
     select: { id: true, title: true, category: true, expiryDate: true, status: true, referenceNo: true },
-    take: 10,
+    take: 15,
   });
 
   // Get already linked doc IDs
