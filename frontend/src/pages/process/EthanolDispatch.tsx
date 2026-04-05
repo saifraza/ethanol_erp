@@ -27,8 +27,12 @@ export default function EthanolDispatch() {
   const [strength, setStrength] = useState('');
   const [driverName, setDriverName] = useState('');
   const [driverPhone, setDriverPhone] = useState('');
+  const [driverLicense, setDriverLicense] = useState('');
   const [transporterName, setTransporterName] = useState('');
   const [distanceKm, setDistanceKm] = useState('');
+  const [rstNo, setRstNo] = useState('');
+  const [sealNo, setSealNo] = useState('');
+  const [pesoDate, setPesoDate] = useState('');
   const [remarks, setRemarks] = useState('');
   const [photo, setPhoto] = useState<File | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -54,8 +58,8 @@ export default function EthanolDispatch() {
 
   function resetForm() {
     setBatchNo(''); setVehicleNo(''); setPartyName(''); setContractId(''); setDestination('');
-    setQuantityBL(''); setStrength(''); setDriverName(''); setDriverPhone('');
-    setTransporterName(''); setDistanceKm(''); setRemarks('');
+    setQuantityBL(''); setStrength(''); setDriverName(''); setDriverPhone(''); setDriverLicense('');
+    setTransporterName(''); setDistanceKm(''); setRstNo(''); setSealNo(''); setPesoDate(''); setRemarks('');
     setPhoto(null); setShowForm(false);
   }
 
@@ -87,8 +91,12 @@ export default function EthanolDispatch() {
       if (contractId) fd.append('contractId', contractId);
       if (driverName) fd.append('driverName', driverName);
       if (driverPhone) fd.append('driverPhone', driverPhone);
+      if (driverLicense) fd.append('driverLicense', driverLicense);
       if (transporterName) fd.append('transporterName', transporterName);
       if (distanceKm) fd.append('distanceKm', distanceKm);
+      if (rstNo) fd.append('rstNo', rstNo);
+      if (sealNo) fd.append('sealNo', sealNo);
+      if (pesoDate) fd.append('pesoDate', pesoDate);
       if (photo) fd.append('photo', photo);
 
       await api.post('/dispatch', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
@@ -220,31 +228,53 @@ export default function EthanolDispatch() {
                 className="border rounded px-2 py-2 w-full text-sm" />
             </div>
           </div>
-          {/* Driver & Transport (for e-way bill) */}
-          {contractId && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
-              <div>
-                <label className="text-[10px] text-gray-400">Driver Name</label>
-                <input type="text" value={driverName} onChange={e => setDriverName(e.target.value)}
-                  className="border rounded px-2 py-2 w-full text-sm" />
-              </div>
-              <div>
-                <label className="text-[10px] text-gray-400">Driver Phone</label>
-                <input type="text" value={driverPhone} onChange={e => setDriverPhone(e.target.value)}
-                  className="border rounded px-2 py-2 w-full text-sm" />
-              </div>
-              <div>
-                <label className="text-[10px] text-gray-400">Transporter</label>
-                <input type="text" value={transporterName} onChange={e => setTransporterName(e.target.value)}
-                  className="border rounded px-2 py-2 w-full text-sm" />
-              </div>
+          {/* Driver & Transport */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+            <div>
+              <label className="text-[10px] text-gray-400">Driver Name</label>
+              <input type="text" value={driverName} onChange={e => setDriverName(e.target.value)}
+                className="border rounded px-2 py-2 w-full text-sm" />
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-400">Driver Phone</label>
+              <input type="text" value={driverPhone} onChange={e => setDriverPhone(e.target.value)}
+                className="border rounded px-2 py-2 w-full text-sm" />
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-400">DL No</label>
+              <input type="text" value={driverLicense} onChange={e => setDriverLicense(e.target.value)}
+                className="border rounded px-2 py-2 w-full text-sm" placeholder="Driving License" />
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-400">Transporter</label>
+              <input type="text" value={transporterName} onChange={e => setTransporterName(e.target.value)}
+                className="border rounded px-2 py-2 w-full text-sm" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+            <div>
+              <label className="text-[10px] text-gray-400">RST No</label>
+              <input type="text" value={rstNo} onChange={e => setRstNo(e.target.value)}
+                className="border rounded px-2 py-2 w-full text-sm" />
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-400">Seal No</label>
+              <input type="text" value={sealNo} onChange={e => setSealNo(e.target.value)}
+                className="border rounded px-2 py-2 w-full text-sm" />
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-400">Peso Date</label>
+              <input type="text" value={pesoDate} onChange={e => setPesoDate(e.target.value)}
+                className="border rounded px-2 py-2 w-full text-sm" placeholder="DD/MM/YY" />
+            </div>
+            {contractId && (
               <div>
                 <label className="text-[10px] text-gray-400">Distance (km)</label>
                 <input type="number" value={distanceKm} onChange={e => setDistanceKm(e.target.value)}
                   className="border rounded px-2 py-2 w-full text-sm" placeholder="for E-Way Bill" />
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           <div className="mb-3">
             <label className="text-[10px] text-gray-400">Remarks</label>
@@ -305,6 +335,14 @@ export default function EthanolDispatch() {
                   <span className="font-semibold text-red-600">{d.quantityBL} BL</span>
                   {d.strength && <span> @ {d.strength}%</span>}
                 </div>
+                {(d.driverName || d.transporterName || d.rstNo || d.sealNo) && (
+                  <div className="text-[10px] text-gray-400 mt-0.5 flex flex-wrap gap-x-3">
+                    {d.driverName && <span>Driver: {d.driverName}</span>}
+                    {d.transporterName && <span>Transport: {d.transporterName}</span>}
+                    {d.rstNo && <span>RST: {d.rstNo}</span>}
+                    {d.sealNo && <span>Seal: {d.sealNo}</span>}
+                  </div>
+                )}
                 {d.remarks && <div className="text-[11px] text-gray-400 mt-0.5">{d.remarks}</div>}
               </div>
               <div className="flex items-center gap-2">

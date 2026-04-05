@@ -125,7 +125,8 @@ router.get('/history', authenticate, async (req: AuthRequest, res: Response) => 
 router.post('/', authenticate, upload.single('photo'), async (req: AuthRequest, res: Response) => {
   try {
     const { vehicleNo, partyName, destination, quantityBL, strength, remarks, date, batchNo,
-            contractId, driverName, driverPhone, transporterName, distanceKm } = req.body;
+            contractId, driverName, driverPhone, driverLicense, transporterName, distanceKm,
+            rstNo, sealNo, pesoDate } = req.body;
     const dispatchDate = date ? new Date(date) : new Date();
     dispatchDate.setHours(new Date().getHours(), new Date().getMinutes());
 
@@ -148,8 +149,12 @@ router.post('/', authenticate, upload.single('photo'), async (req: AuthRequest, 
         contractId: contractId || null,
         driverName: driverName || null,
         driverPhone: driverPhone || null,
+        driverLicense: driverLicense || null,
         transporterName: transporterName || null,
         distanceKm: distanceKm ? parseInt(distanceKm) : null,
+        rstNo: rstNo || null,
+        sealNo: sealNo || null,
+        pesoDate: pesoDate || null,
       },
     });
 

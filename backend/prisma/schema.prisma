@@ -809,8 +809,12 @@ model DispatchTruck {
   // Driver/transport info for e-way bill
   driverName      String?
   driverPhone     String?
+  driverLicense   String?   // DL No
   transporterName String?
   distanceKm      Int?
+  rstNo           String?   // RST / Receipt number
+  sealNo          String?   // Tank seal number
+  pesoDate        String?   // Peso calibration date
   createdAt       DateTime @default(now())
   @@index([date])
   @@index([entryId])
