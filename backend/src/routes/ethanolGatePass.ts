@@ -252,54 +252,78 @@ router.get('/:id/invoice-pdf', asyncHandler(async (req: AuthRequest, res: Respon
   res.redirect(`/api/invoices/${lifting.invoiceId}/pdf`);
 }));
 
-// ── GET /:id/delivery-challan-pdf ── HBS template PDF
+// ── GET /:id/delivery-challan-pdf ── Ethanol-specific challan
 router.get('/:id/delivery-challan-pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
   const truck = await prisma.dispatchTruck.findUnique({
     where: { id: req.params.id },
-    include: { contract: { select: { buyerName: true, buyerAddress: true, buyerGst: true, contractType: true, buyerContact: true, buyerPhone: true } } },
+    include: { contract: { select: { buyerName: true, buyerAddress: true, buyerGst: true, contractType: true, conversionRate: true, ethanolRate: true } } },
   });
   if (!truck) return res.status(404).json({ error: 'Not found' });
 
-  const productRate = truck.productRatePerLtr || 0;
-  const productValue = truck.quantityBL * productRate;
-  const isJobWork = truck.contract?.contractType === 'JOB_WORK';
+  const productRate = truck.productRatePerLtr || 71.86;
+  const productValue = Math.round(truck.quantityBL * productRate);
+  const gstRate = 5; // 5% GST on ethanol product value
+  const gstValue = Math.round(productValue * gstRate / 100);
+  const totalValue = productValue + gstValue;
+  const ist = new Date(truck.date.getTime() + 5.5 * 60 * 60 * 1000);
+  const fmtDate = `${String(ist.getUTCDate()).padStart(2,'0')}.${String(ist.getUTCMonth()+1).padStart(2,'0')}.${ist.getUTCFullYear()}`;
+  const fmtINR = (n: number) => n.toLocaleString('en-IN');
 
-  const { renderDocumentPdf } = await import('../services/documentRenderer');
-  const challanData = {
-    challanNo: truck.challanNo || '-',
-    date: truck.date,
-    vehicleNo: truck.vehicleNo,
-    driverName: truck.driverName,
-    driverMobile: truck.driverPhone,
-    transporterName: truck.transporterName,
-    destination: truck.destination,
-    weightGross: truck.weightGross,
-    weightTare: truck.weightTare,
-    weightNet: truck.weightNet,
-    customer: {
-      name: truck.contract?.buyerName || truck.partyName,
-      address: truck.contract?.buyerAddress || '',
-      city: '', state: '', pincode: '',
-      gstNo: truck.contract?.buyerGst || '',
-      phone: truck.contract?.buyerPhone || '',
-    },
-    lines: [{
-      productName: isJobWork ? 'Ethanol (produced on Job Work basis)' : 'Ethanol',
-      hsnCode: isJobWork ? '998842' : '22072000',
-      quantity: truck.quantityBL,
-      unit: 'BL',
-      rate: productRate,
-      value: productValue,
-    }],
-  };
+  const html = `<!DOCTYPE html><html><head><title>Delivery Challan</title>
+<style>body{font-family:Arial,sans-serif;font-size:12px;padding:30px;line-height:1.6;color:#333}
+.header{font-size:14px;font-weight:bold;text-align:center;margin-bottom:5px}
+.company{text-align:center;font-size:11px;margin-bottom:15px;color:#555}
+.row{display:flex;justify-content:space-between;margin-bottom:8px}
+.label{font-weight:bold}
+table{width:100%;border-collapse:collapse;margin:15px 0}
+td,th{border:1px solid #333;padding:6px 10px;text-align:left;font-size:11px}
+th{background:#f5f5f5;font-weight:600}
+.right{text-align:right}
+.bold{font-weight:bold}
+</style></head><body>
+<div class="header">Delivery Challan</div>
+<div class="company">Mahakaushal Sugar And Power Industries Limited<br>Village Agariya, Bachai, District Narsinghpur, Madhya Pradesh - 487 001<br>GSTIN: 23AAECM3666P1Z1</div>
+<hr>
+<div class="row"><span>Challan No: <b>${truck.challanNo || '-'}</b></span><span>Date: <b>${fmtDate}</b></span></div>
+<p>To,<br><b>${truck.contract?.buyerName || truck.partyName}</b><br>${truck.contract?.buyerAddress || ''}<br>GSTIN: ${truck.contract?.buyerGst || '-'}</p>
+<p class="label">Details of Goods Delivered:</p>
+<table>
+<tr><th>Sno.</th><th>Description of Goods</th><th>Quantity</th><th>Unit</th><th class="right">Rate (Rs.)</th><th class="right">Value (inc.${gstRate}% GST)</th><th>Remarks</th></tr>
+<tr><td>1</td><td>Ethanol</td><td class="right">${fmtINR(truck.quantityBL)} ltr</td><td>Litres</td><td class="right">${productRate}/ltr</td><td class="right">${fmtINR(totalValue)}/-</td><td>(produced on job work)</td></tr>
+</table>
+<p><i>(Distilling, Rectifying and Blending of Spirits)</i></p>
+<p class="label">Delivery Details:</p>
+<ul style="list-style:none;padding-left:5px">
+<li>- Mode of Transport: By Road</li>
+<li>- Vehicle No: <b>${truck.vehicleNo}</b></li>
+<li>- Driver Name: ${truck.driverName || '-'}</li>
+<li>- Mob No: ${truck.driverPhone ? '+91 ' + truck.driverPhone : '-'}</li>
+<li>- Transport Name: ${truck.transporterName || '-'}</li>
+<li>- Place of Supply: ${truck.destination || '-'}</li>
+<li>- Purpose of Delivery: Delivery of Ethanol Spirit produced on job work basis</li>
+</ul>
+<p style="margin-top:20px"><b>Declaration:</b></p>
+<p><i>We hereby declare that the goods mentioned above are being delivered as per the terms of job work and are subject to the conditions agreed upon between Mahakaushal Sugar and Power Industries Limited and ${truck.contract?.buyerName || truck.partyName}</i></p>
+<br><br><p class="right bold">For Mahakaushal Sugar and Power Industries Limited<br><br><br><br>Authorized Signatory</p>
+</body></html>`;
 
-  const pdfBuffer = await renderDocumentPdf({ docType: 'CHALLAN', data: challanData, verifyId: truck.id });
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="Challan-${(truck.challanNo || truck.id).replace(/\//g, '-')}.pdf"`);
-  res.send(pdfBuffer);
+  try {
+    const puppeteer = await import('puppeteer');
+    const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: 'networkidle0' });
+    const pdf = await page.pdf({ format: 'A4', margin: { top: '20mm', bottom: '20mm', left: '15mm', right: '15mm' } });
+    await browser.close();
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="Challan-${(truck.challanNo || truck.id).replace(/\//g, '-')}.pdf"`);
+    res.send(pdf);
+  } catch {
+    res.setHeader('Content-Type', 'text/html');
+    res.send(html);
+  }
 }));
 
-// ── GET /:id/gate-pass-pdf ── HBS template PDF
+// ── GET /:id/gate-pass-pdf ── Ethanol-specific gate pass
 router.get('/:id/gate-pass-pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
   const truck = await prisma.dispatchTruck.findUnique({
     where: { id: req.params.id },
@@ -307,42 +331,65 @@ router.get('/:id/gate-pass-pdf', asyncHandler(async (req: AuthRequest, res: Resp
   });
   if (!truck) return res.status(404).json({ error: 'Not found' });
 
-  const isJobWork = truck.contract?.contractType === 'JOB_WORK';
   const rate = truck.contract?.conversionRate || truck.contract?.ethanolRate || 14;
-  const amount = truck.quantityBL * rate;
+  const amount = Math.round(truck.quantityBL * rate);
+  const ist = new Date(truck.date.getTime() + 5.5 * 60 * 60 * 1000);
+  const fmtDate = `${String(ist.getUTCDate()).padStart(2,'0')}.${String(ist.getUTCMonth()+1).padStart(2,'0')}.${ist.getUTCFullYear()}`;
+  const isJobWork = truck.contract?.contractType === 'JOB_WORK';
+  const fmtINR = (n: number) => n.toLocaleString('en-IN');
+  const fmtKg = (n: number | null) => n ? fmtINR(n) : '-';
 
-  const { renderDocumentPdf } = await import('../services/documentRenderer');
-  const gatePassData = {
-    gatePassNo: truck.gatePassNo || '-',
-    date: truck.date,
-    vehicleNo: truck.vehicleNo,
-    driverName: truck.driverName,
-    driverMobile: truck.driverPhone,
-    transporterName: truck.transporterName,
-    destination: truck.destination,
-    isReturnable: false,
-    partyName: truck.contract?.buyerName || truck.partyName,
-    partyAddress: truck.contract?.buyerAddress || '',
-    partyGstin: truck.contract?.buyerGst || '',
-    weightGross: truck.weightGross,
-    weightTare: truck.weightTare,
-    weightNet: truck.weightNet,
-    totalValue: amount,
-    purpose: isJobWork ? 'Delivery of Ethanol Spirit produced on Job Work basis' : 'Sale of Ethanol',
-    coveringNote: truck.contract?.contractNo ? `Contract: ${truck.contract.contractNo} | RST: ${truck.rstNo || '-'} | Seal: ${truck.sealNo || '-'} | Strength: ${truck.strength || '-'}%` : '',
-    items: [{
-      description: isJobWork ? 'Job Work Charges for Ethanol Production' : 'Ethanol',
-      hsnCode: isJobWork ? '998842' : '22072000',
-      qty: truck.quantityBL,
-      unit: 'BL',
-      value: amount,
-    }],
-  };
+  const html = `<!DOCTYPE html><html><head><title>Gate Pass</title>
+<style>body{font-family:Arial,sans-serif;font-size:12px;padding:30px;line-height:1.5;color:#333}
+.header{font-size:16px;font-weight:bold;text-align:center;margin-bottom:3px}
+.sub{text-align:center;font-size:10px;color:#555;margin-bottom:15px}
+.row{display:flex;justify-content:space-between;margin-bottom:5px;font-size:11px}
+table{width:100%;border-collapse:collapse;margin:10px 0}
+td,th{border:1px solid #333;padding:5px 8px;font-size:11px}
+th{background:#f5f5f5;font-size:10px;font-weight:600}
+.right{text-align:right}
+.sig{display:flex;justify-content:space-between;margin-top:50px;font-size:10px}
+.sig div{text-align:center;width:22%}
+</style></head><body>
+<div class="header">GATE PASS CUM CHALLAN</div>
+<div class="sub">ETHANOL DISPATCH — ${isJobWork ? 'JOB WORK' : 'SALE'}</div>
+<div class="row"><span>Gate Pass No: <b>${truck.gatePassNo || '-'}</b></span><span>Date: <b>${fmtDate}</b></span></div>
+<div class="row"><span>Vehicle: <b>${truck.vehicleNo}</b></span><span>Driver: <b>${truck.driverName || '-'}</b> | ${truck.driverPhone || '-'}</span></div>
+<div class="row"><span>Contract: <b>${truck.contract?.contractNo || '-'}</b></span><span>RST No: <b>${truck.rstNo || '-'}</b></span></div>
+<div class="row"><span>Transporter: <b>${truck.transporterName || '-'}</b></span><span>Destination: <b>${truck.destination || '-'}</b></span></div>
+<div class="row"><span>Seal No: <b>${truck.sealNo || '-'}</b></span><span></span></div>
+<p style="font-size:11px;margin:8px 0"><b>Party:</b> ${truck.contract?.buyerName || truck.partyName}<br>${truck.contract?.buyerAddress || ''}<br>GSTIN: ${truck.contract?.buyerGst || '-'}</p>
+<table>
+<tr><th>Description</th><th>HSN/SAC</th><th class="right">Qty</th><th>Unit</th><th class="right">Rate</th><th class="right">Amount</th></tr>
+<tr><td>${isJobWork ? 'Job Work Charges for Ethanol Production' : 'Ethanol'}</td><td>${isJobWork ? '998842' : '22072000'}</td><td class="right">${fmtINR(truck.quantityBL)}</td><td>BL</td><td class="right">${rate}</td><td class="right">${fmtINR(amount)}</td></tr>
+</table>
+<table>
+<tr><th>Gross (KG)</th><th>Tare (KG)</th><th>Net (KG)</th><th>Volume (BL)</th><th>Strength %</th></tr>
+<tr><td class="right">${fmtKg(truck.weightGross)}</td><td class="right">${fmtKg(truck.weightTare)}</td><td class="right">${fmtKg(truck.weightNet)}</td><td class="right">${fmtINR(truck.quantityBL)}</td><td class="right">${truck.strength || '-'}</td></tr>
+</table>
+<div class="sig">
+<div>___________<br>Gate Keeper</div>
+<div>___________<br>WB Operator</div>
+<div>___________<br>Store In-Charge</div>
+<div>___________<br>Auth. by MSPIL</div>
+</div>
+<p style="text-align:center;font-size:9px;color:#999;margin-top:20px">Computer Generated Gate Pass</p>
+</body></html>`;
 
-  const pdfBuffer = await renderDocumentPdf({ docType: 'GATE_PASS', data: gatePassData, verifyId: truck.id });
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="GatePass-${(truck.gatePassNo || truck.id).replace(/\//g, '-')}.pdf"`);
-  res.send(pdfBuffer);
+  try {
+    const puppeteer = await import('puppeteer');
+    const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: 'networkidle0' });
+    const pdf = await page.pdf({ format: 'A4', margin: { top: '15mm', bottom: '15mm', left: '15mm', right: '15mm' } });
+    await browser.close();
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="GatePass-${(truck.gatePassNo || truck.id).replace(/\//g, '-')}.pdf"`);
+    res.send(pdf);
+  } catch {
+    res.setHeader('Content-Type', 'text/html');
+    res.send(html);
+  }
 }));
 
 // ── PUT /:id ── Update (pre-release only)
