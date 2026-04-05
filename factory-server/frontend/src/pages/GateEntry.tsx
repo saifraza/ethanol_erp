@@ -21,6 +21,7 @@ function detectCategory(name: string): string | null {
 }
 
 const VEHICLE_TYPES = ['Truck 14 Wheel', 'Truck 10 Wheel', 'Truck 6 Wheel', 'Tractor Trolley', 'Pickup', 'Other'];
+const TANKER_CAPACITIES = ['10 KL', '20 KL', '30 KL', '40 KL'];
 const OUTBOUND_PRODUCTS = ['DDGS', 'Ethanol', 'Scrap', 'Press Mud', 'LFO', 'HFO', 'Ash', 'Other'];
 const PAYMENT_MODES = ['CASH', 'UPI', 'BANK_TRANSFER'];
 
@@ -489,11 +490,6 @@ export default function GateEntry() {
                 <input value={rstNo} onChange={e => setRstNo(e.target.value)}
                   className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400" />
               </div>
-              <div>
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">Seal No</label>
-                <input value={sealNo} onChange={e => setSealNo(e.target.value)}
-                  className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400" />
-              </div>
             </>
           )}
 
@@ -504,11 +500,11 @@ export default function GateEntry() {
               className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400" />
           </div>
           <div>
-            <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">Vehicle Type</label>
+            <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">{isEthanol ? 'Tanker Capacity' : 'Vehicle Type'}</label>
             <select value={vehicleType} onChange={e => setVehicleType(e.target.value)}
               className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
               <option value="">-- Select --</option>
-              {VEHICLE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              {(isEthanol ? TANKER_CAPACITIES : VEHICLE_TYPES).map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
           <div>
@@ -516,11 +512,13 @@ export default function GateEntry() {
             <input value={driverPhone} onChange={e => setDriverPhone(e.target.value)}
               className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="9876543210" />
           </div>
+          {!isEthanol && (
           <div>
             <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">Bags</label>
             <input value={bags} onChange={e => setBags(e.target.value)} type="number"
               className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="0" />
           </div>
+          )}
           <div className="md:col-span-2">
             <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">Remarks</label>
             <input value={remarks} onChange={e => setRemarks(e.target.value)}

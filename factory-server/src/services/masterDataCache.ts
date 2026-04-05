@@ -131,7 +131,7 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
   if (!cloud) return false;
 
   try {
-    const [vendors, inventoryItems, purchaseOrders, customers, traderVendors, ethContracts]: [any[], any[], any[], any[], any[], EthContract[]] = await Promise.all([
+    const [vendors, inventoryItems, purchaseOrders, customers, traderVendors]: [any[], any[], any[], any[], any[]] = await Promise.all([
       cloud.vendor.findMany({
         where: { isActive: true },
         select: { id: true, name: true, gstin: true, phone: true },
@@ -175,12 +175,20 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
         orderBy: { name: 'asc' },
         take: 100,
       }),
-      cloud.$queryRaw<EthContract[]>`
-        SELECT id, "contractNo", "contractType", "buyerName", "buyerGst", "buyerAddress",
-               "conversionRate", "ethanolRate", "gstPercent", "paymentTermsDays", "omcDepot"
-        FROM "EthanolContract" WHERE status = 'ACTIVE' ORDER BY "contractNo" LIMIT 50
-      `,
     ]);
+
+    // Ethanol contracts — separate query with own error handling (won't break other data)
+    let ethContracts: EthContract[] = cache.ethContracts; // keep existing on failure
+    try {
+      ethContracts = await cloud.$queryRawUnsafe<EthContract[]>(
+        `SELECT id, "contractNo", "contractType", "buyerName", "buyerGst", "buyerAddress",
+                "conversionRate", "ethanolRate", "gstPercent", "paymentTermsDays", "omcDepot"
+         FROM "EthanolContract" WHERE status = 'ACTIVE' ORDER BY "contractNo" LIMIT 50`
+      );
+      console.log(`[CACHE] Ethanol contracts: ${ethContracts.length}`);
+    } catch (err) {
+      console.error('[CACHE] Ethanol contracts sync failed:', err instanceof Error ? err.message : err);
+    }
 
     // Get recent vehicles from local DB
     let vehicles: string[] = cache.vehicles; // Keep existing if local query fails
