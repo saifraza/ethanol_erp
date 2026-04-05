@@ -467,8 +467,15 @@ router.get('/:id/supply-summary', asyncHandler(async (req: AuthRequest, res: Res
     if (!raw) return res.status(404).json({ error: 'Contract not found' });
     const { contractPdf, ...contract } = raw;
 
-    const liftings = contract.liftings;
-    const inTransit = liftings.filter(l => l.status === 'LOADED' || l.status === 'IN_TRANSIT');
+    // Sort: active (LOADED/IN_TRANSIT) first, then by date desc
+    const activeStatuses = new Set(['LOADED', 'IN_TRANSIT']);
+    const liftings = contract.liftings.sort((a, b) => {
+      const aActive = activeStatuses.has(a.status) ? 0 : 1;
+      const bActive = activeStatuses.has(b.status) ? 0 : 1;
+      if (aActive !== bActive) return aActive - bActive;
+      return new Date(b.liftingDate).getTime() - new Date(a.liftingDate).getTime();
+    });
+    const inTransit = liftings.filter(l => activeStatuses.has(l.status));
     const delivered = liftings.filter(l => l.status === 'DELIVERED');
 
     // Payment summary from linked invoices
