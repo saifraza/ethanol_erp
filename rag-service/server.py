@@ -70,11 +70,17 @@ async def lifespan(app: FastAPI):
 
         # Use LightRAG's built-in Gemini embedding (handles API correctly)
         # Direct v1beta API call with gemini-embedding-001
-        # Returns exactly 1 embedding per request via embedContent (not batchEmbedContents)
+        # Returns exactly 1 embedding per request via embedContent
         import aiohttp
+
+        _embed_session: aiohttp.ClientSession | None = None
 
         async def _embed_single(texts: list[str]) -> np.ndarray:
             """Embed one text at a time via Gemini REST API. Guarantees 1 vector per text."""
+            nonlocal _embed_session
+            if _embed_session is None or _embed_session.closed:
+                _embed_session = aiohttp.ClientSession()
+
             all_embeddings = []
             for text in texts:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key={GEMINI_API_KEY}"
@@ -82,13 +88,19 @@ async def lifespan(app: FastAPI):
                     "content": {"parts": [{"text": text}]},
                     "outputDimensionality": 768,
                 }
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(url, json=payload) as resp:
+                for attempt in range(3):
+                    async with _embed_session.post(url, json=payload) as resp:
+                        if resp.status == 429:
+                            await asyncio.sleep(2 ** attempt)
+                            continue
                         data = await resp.json()
                         if "embedding" in data and "values" in data["embedding"]:
                             all_embeddings.append(data["embedding"]["values"])
+                            break
+                        elif attempt == 2:
+                            raise RuntimeError("Embed failed after 3 attempts")
                         else:
-                            raise RuntimeError(f"Embed failed: {data}")
+                            await asyncio.sleep(1)
             return np.array(all_embeddings, dtype=np.float32)
 
         @wrap_embedding_func_with_attrs(
@@ -99,21 +111,22 @@ async def lifespan(app: FastAPI):
         async def embedding_func(texts: list[str]) -> np.ndarray:
             return await _embed_single(texts)
 
+        # Create LightRAG FIRST so it loads existing data from disk
+        from lightrag import LightRAG
+        lightrag_instance = LightRAG(
+            working_dir=WORKING_DIR,
+            llm_model_func=gemini_llm_func,
+            embedding_func=embedding_func,
+        )
+        await lightrag_instance.initialize_storages()
+
         rag = RAGAnything(
             config=config,
             llm_model_func=gemini_llm_func,
             vision_model_func=gemini_vision_func,
             embedding_func=embedding_func,
         )
-
-        # Ensure LightRAG is initialized with explicit kwargs
-        from lightrag import LightRAG
-        rag.lightrag = LightRAG(
-            working_dir=WORKING_DIR,
-            llm_model_func=gemini_llm_func,
-            embedding_func=embedding_func,
-        )
-        await rag.lightrag.initialize_storages()
+        rag.lightrag = lightrag_instance  # reuse loaded instance (preserves data!)
         logger.info("RAG-Anything initialized successfully with LightRAG instance")
     except ImportError:
         # Fallback: use plain LightRAG if raganything not available
@@ -169,15 +182,19 @@ async def upload_document(
     x_api_key: str | None = Header(None, alias="X-API-Key"),
 ):
     verify_api_key(x_api_key)
-    force_mineru = deepScan == "true"
+    force_mineru = str(deepScan).lower() in ("true", "1", "yes")
 
     track_id = str(uuid.uuid4())[:8]
     processing_tasks[track_id] = "processing"
 
     # Save uploaded file
-    file_path = os.path.join(INPUT_DIR, file.filename or f"{track_id}.pdf")
+    # Sanitize filename (prevent path traversal)
+    safe_name = os.path.basename(file.filename or f"{track_id}.pdf")
+    file_path = os.path.join(INPUT_DIR, f"{track_id}_{safe_name}")
+    content = await file.read()
+    if len(content) > 100 * 1024 * 1024:  # 100MB limit
+        raise HTTPException(status_code=413, detail="File too large (max 100MB)")
     with open(file_path, "wb") as f:
-        content = await file.read()
         f.write(content)
 
     logger.info(f"Received file: {file.filename} ({len(content)} bytes), track_id={track_id}")
@@ -313,7 +330,7 @@ async def query(
         return {"response": result}
     except Exception as e:
         logger.error(f"Query failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Processing failed")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -344,7 +361,7 @@ async def query_stream(
 
         return StreamingResponse(stream(), media_type="application/x-ndjson")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Processing failed")
 
 
 # ═══════════════════════════════════════════════════════════
