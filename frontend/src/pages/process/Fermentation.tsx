@@ -62,7 +62,7 @@ const elapsed = (iso?: string) => {
    ═══════════════════════════════════════════════════════════════ */
 export default function Fermentation() {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
   const [pfBatches, setPfBatches] = useState<PFBatch[]>([]);
   const [fermBatches, setFermBatches] = useState<FermBatch[]>([]);
   const [fermEntries, setFermEntries] = useState<Record<number, LabReading[]>>({});

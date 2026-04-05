@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { AuthRequest } from '../middleware/auth';
+import { AuthRequest, authorize } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import prisma from '../config/prisma';
 
@@ -38,8 +38,8 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
   res.json(dept);
 }));
 
-// DELETE /:id — deactivate (soft delete)
-router.delete('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
+// DELETE /:id — deactivate (soft delete), SUPER_ADMIN only
+router.delete('/:id', authorize('SUPER_ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
   await prisma.department.update({
     where: { id: req.params.id },
     data: { isActive: false },

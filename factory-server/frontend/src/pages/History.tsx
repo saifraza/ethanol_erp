@@ -13,6 +13,8 @@ interface WeighmentRecord {
   grossWeight: number | null;
   tareWeight: number | null;
   netWeight: number | null;
+  grossTime: string | null;
+  tareTime: string | null;
   status: string;
   labStatus: string | null;
   createdAt: string;
@@ -91,7 +93,8 @@ export default function History() {
           <thead>
             <tr className="bg-slate-800 text-white">
               <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Ticket</th>
-              <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Date</th>
+              <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Gross Date</th>
+              <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Tare Date</th>
               <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Vehicle</th>
               <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Dir</th>
               <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Supplier</th>
@@ -108,8 +111,10 @@ export default function History() {
               <tr key={w.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
                 <td className="px-3 py-1.5 font-mono text-slate-500 border-r border-slate-100">#{w.ticketNo || '--'}</td>
                 <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">
-                  <div>{fmtDate(w.createdAt)}</div>
-                  <div className="text-slate-400">{fmtTime(w.createdAt)}</div>
+                  {w.grossTime ? <><div>{fmtDate(w.grossTime)}</div><div className="text-slate-400">{fmtTime(w.grossTime)}</div></> : <span className="text-slate-300">--</span>}
+                </td>
+                <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">
+                  {w.tareTime ? <><div>{fmtDate(w.tareTime)}</div><div className="text-slate-400">{fmtTime(w.tareTime)}</div></> : <span className="text-slate-300">--</span>}
                 </td>
                 <td className="px-3 py-1.5 font-mono font-bold text-slate-800 border-r border-slate-100">{w.vehicleNo}</td>
                 <td className="px-3 py-1.5 border-r border-slate-100">
@@ -154,10 +159,10 @@ export default function History() {
               </tr>
             ))}
             {results.length === 0 && searched && !loading && (
-              <tr><td colSpan={11} className="text-center py-8 text-xs text-slate-400 uppercase tracking-widest">No results found</td></tr>
+              <tr><td colSpan={12} className="text-center py-8 text-xs text-slate-400 uppercase tracking-widest">No results found</td></tr>
             )}
             {!searched && (
-              <tr><td colSpan={11} className="text-center py-8 text-xs text-slate-400 uppercase tracking-widest">Enter search criteria and click Search</td></tr>
+              <tr><td colSpan={12} className="text-center py-8 text-xs text-slate-400 uppercase tracking-widest">Enter search criteria and click Search</td></tr>
             )}
           </tbody>
         </table>

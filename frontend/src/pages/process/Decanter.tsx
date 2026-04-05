@@ -24,7 +24,7 @@ const empty = (): DecForm => {
 
 export default function Decanter() {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
   const [form, setForm] = useState<DecForm>(empty());
   const [entries, setEntries] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);

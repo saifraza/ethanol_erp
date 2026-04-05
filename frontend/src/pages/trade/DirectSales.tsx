@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Trash2, Check, X } from 'lucide-react';
 import api from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 interface Sale {
   id: string;
@@ -58,6 +59,7 @@ const UNITS = ['KG', 'MT', 'QTL', 'LTR'];
 const PAYMENT_MODES = ['CASH', 'UPI', 'BANK_TRANSFER', 'CHEQUE'];
 
 export default function DirectSales() {
+  const { user } = useAuth();
   const [sales, setSales] = useState<Sale[]>([]);
   const [stats, setStats] = useState<Stats>({
     totalEntries: 0,
@@ -600,13 +602,13 @@ export default function DirectSales() {
                               <Check size={14} />
                             </button>
                           )}
-                          <button
+                          {user?.role === 'SUPER_ADMIN' && <button
                             onClick={() => handleDelete(sale.id)}
                             className="p-1 text-red-600 hover:bg-red-100 transition"
                             title="Delete"
                           >
                             <Trash2 size={14} />
-                          </button>
+                          </button>}
                         </div>
                       </td>
                     </tr>
@@ -694,12 +696,12 @@ export default function DirectSales() {
                         <Check size={14} /> Mark Paid
                       </button>
                     )}
-                    <button
+                    {user?.role === 'SUPER_ADMIN' && <button
                       onClick={() => handleDelete(sale.id)}
                       className="flex-1 bg-red-50 border border-red-600 text-red-800 py-1.5 font-medium flex items-center justify-center gap-1 text-[11px] uppercase tracking-wide"
                     >
                       <Trash2 size={14} /> Delete
-                    </button>
+                    </button>}
                   </div>
                 </div>
               ))}

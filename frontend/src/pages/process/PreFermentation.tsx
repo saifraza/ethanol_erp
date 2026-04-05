@@ -26,7 +26,7 @@ const PF_VOLUME_M3 = PF_CAPACITY_KL;
 
 export default function PreFermentation() {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
   const isField = user?.role === 'FIELD';
 
   const [batches, setBatches] = useState<Batch[]>([]);

@@ -83,7 +83,7 @@ const EMPTY_FORM: Partial<FuelItem> = {
 
 export default function FuelManagement() {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
   const [tab, setTab] = useState<'master' | 'daily' | 'deals'>('deals');
   const [fuels, setFuels] = useState<FuelItem[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);

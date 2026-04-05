@@ -63,7 +63,7 @@ function isYesterday(d: string) { const y = new Date(); y.setDate(y.getDate() - 
 
 export default function RawMaterial() {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
   const [entries, setEntries] = useState<Entry[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);

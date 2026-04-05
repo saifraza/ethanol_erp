@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import api from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import { UserPlus, Shield, Trash2, Pencil, Key, Save, X, Check } from 'lucide-react';
 
 import { ALL_MODULES, GROUPED_MODULES } from '../config/modules';
@@ -14,6 +15,8 @@ function modulesToString(arr: string[]): string | null {
 }
 
 export default function UsersPage() {
+  const { user: currentUser } = useAuth();
+  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
   const [users, setUsers] = useState<any[]>([]);
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ name: '', password: '', role: 'OPERATOR', modules: [] as string[] });
@@ -49,7 +52,7 @@ export default function UsersPage() {
     try {
       await api.post('/users', {
         name: form.name, password: form.password, role: form.role,
-        allowedModules: form.role === 'ADMIN' ? null : modulesToString(form.modules),
+        allowedModules: (form.role === 'ADMIN' || form.role === 'SUPER_ADMIN') ? null : modulesToString(form.modules),
       });
       flash('User created!');
       setShowAdd(false);
@@ -63,7 +66,7 @@ export default function UsersPage() {
   };
 
   const changeRole = async (id: string, role: string) => {
-    await api.put(`/users/${id}`, { role, allowedModules: role === 'ADMIN' ? null : undefined }); load();
+    await api.put(`/users/${id}`, { role, allowedModules: (role === 'ADMIN' || role === 'SUPER_ADMIN') ? null : undefined }); load();
   };
 
   const startEditModules = (u: any) => { setEditingModulesId(u.id); setEditModules(parseModules(u.allowedModules)); };
@@ -123,10 +126,11 @@ export default function UsersPage() {
               <option value="FIELD">Field</option>
               <option value="SUPERVISOR">Supervisor</option>
               <option value="ADMIN">Admin</option>
+              {isSuperAdmin && <option value="SUPER_ADMIN">Super Admin</option>}
             </select>
           </div>
 
-          {form.role !== 'ADMIN' && (
+          {form.role !== 'ADMIN' && form.role !== 'SUPER_ADMIN' && (
             <div className="mb-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-medium text-gray-600 flex items-center gap-1"><Shield size={14} /> Module Access</span>
@@ -168,7 +172,7 @@ export default function UsersPage() {
               {form.modules.length > 0 && <p className="text-xs text-slate-500 mt-2">{form.modules.length} pages selected</p>}
             </div>
           )}
-          {form.role === 'ADMIN' && <p className="text-xs text-gray-500 mb-3">Admins have access to all modules</p>}
+          {(form.role === 'ADMIN' || form.role === 'SUPER_ADMIN') && <p className="text-xs text-gray-500 mb-3">{form.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin'} — full access to all modules</p>}
           <button onClick={addUser} className="bg-blue-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">Create User</button>
         </div>
       )}
@@ -197,10 +201,12 @@ export default function UsersPage() {
               </div>
 
               <div className="flex items-center gap-3">
-                <select value={u.role} onChange={e => changeRole(u.id, e.target.value)} className="text-xs border rounded px-2 py-1">
+                <select value={u.role} onChange={e => changeRole(u.id, e.target.value)} className="text-xs border rounded px-2 py-1"
+                  disabled={u.role === 'SUPER_ADMIN' && !isSuperAdmin}>
                   <option value="OPERATOR">Operator</option>
                   <option value="SUPERVISOR">Supervisor</option>
                   <option value="ADMIN">Admin</option>
+                  {isSuperAdmin && <option value="SUPER_ADMIN">Super Admin</option>}
                 </select>
                 <select value={u.paymentRole || ''} onChange={e => changePaymentRole(u.id, e.target.value)} className="text-xs border rounded px-2 py-1" title="Bank Payment Role">
                   <option value="">No Bank Role</option>
@@ -238,7 +244,7 @@ export default function UsersPage() {
             )}
 
             {/* Module permissions for non-admin */}
-            {u.role !== 'ADMIN' && (
+            {u.role !== 'ADMIN' && u.role !== 'SUPER_ADMIN' && (
               <div className="mt-3 pt-3 border-t">
                 {editingModulesId === u.id ? (
                   <div>
@@ -304,8 +310,8 @@ export default function UsersPage() {
                 )}
               </div>
             )}
-            {u.role === 'ADMIN' && (
-              <div className="mt-2 text-xs text-gray-400">Admin — full access to all modules</div>
+            {(u.role === 'ADMIN' || u.role === 'SUPER_ADMIN') && (
+              <div className="mt-2 text-xs text-gray-400">{u.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin'} — full access to all modules</div>
             )}
           </div>
         ))}

@@ -102,8 +102,11 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     res.json(transporter);
 }));
 
-// DELETE /:id — soft delete (set isActive: false)
-router.delete('/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+// DELETE /:id — soft delete (set isActive: false), SUPER_ADMIN only, with reference check
+router.delete('/:id', authorize('SUPER_ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { checkTransporterReferences } = await import('../utils/referenceCheck');
+    const check = await checkTransporterReferences(req.params.id);
+    if (!check.canDelete) { res.status(409).json({ error: check.message }); return; }
     await prisma.transporter.update({
       where: { id: req.params.id },
       data: { isActive: false }

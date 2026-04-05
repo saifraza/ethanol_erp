@@ -1,3 +1,29 @@
 {
-  "model": "claude-opus-4-6[1m]"
+  "model": "claude-opus-4-6[1m]",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$TOOL_INPUT\" | grep -q 'git commit'; then cd /Users/saifraza/Desktop/distillery-erp/backend && npx tsc --noEmit 2>&1 && npx prisma validate 2>&1 && cd /Users/saifraza/Desktop/distillery-erp/frontend && npx tsc --noEmit 2>&1; fi",
+            "timeout": 60000
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$TOOL_INPUT\" | grep -qE '\\.tsx?$'; then FILE=$(echo \"$TOOL_INPUT\" | grep -oE '/[^ ]*\\.tsx?'); if [ -n \"$FILE\" ] && [ -f \"$FILE\" ]; then ISSUES=''; if grep -n ': any' \"$FILE\" 2>/dev/null | grep -v '// eslint-disable' | head -3; then ISSUES=\"${ISSUES}WARNING: Found ': any' type usage\\n\"; fi; if grep -n 'console\\.log' \"$FILE\" 2>/dev/null | head -3; then ISSUES=\"${ISSUES}WARNING: Found console.log\\n\"; fi; if echo \"$FILE\" | grep -q 'routes/' && ! grep -q 'asyncHandler' \"$FILE\" 2>/dev/null; then ISSUES=\"${ISSUES}WARNING: Route file missing asyncHandler\\n\"; fi; if grep -n 'findMany' \"$FILE\" 2>/dev/null | grep -v 'take' | head -3; then ISSUES=\"${ISSUES}WARNING: findMany without take limit\\n\"; fi; if [ -n \"$ISSUES\" ]; then echo \"$ISSUES\"; fi; fi; fi",
+            "timeout": 5000
+          }
+        ]
+      }
+    ]
+  }
 }

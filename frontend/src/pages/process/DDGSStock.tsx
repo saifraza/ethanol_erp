@@ -41,7 +41,7 @@ function currentTimeStr(): string {
 
 export default function DDGSStock() {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
 
   // Production entry form
   const [bags, setBags] = useState('');

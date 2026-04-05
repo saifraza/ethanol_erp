@@ -15,7 +15,7 @@ const API_BASE = import.meta.env.VITE_API_URL || '';
 
 export default function DDGSDispatch() {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
 
   const [dispatches, setDispatches] = useState<DDGSTruck[]>([]);
   const [date, setDate] = useState(() => {

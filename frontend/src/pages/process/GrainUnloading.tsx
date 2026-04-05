@@ -230,7 +230,7 @@ function pctToKlNullable(pct: number | null, cap: number): number | null {
 
 export default function GrainUnloading() {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
   const [form, setForm] = useState<GrainForm>({ ...emptyForm });
   const [defaults, setDefaults] = useState<any>({});
   const [prev, setPrev] = useState<any>(null);

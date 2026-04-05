@@ -32,10 +32,14 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
 
 export const authorize = (...roles: string[]) => {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
-    if (!req.user || !roles.includes(req.user.role)) {
+    if (!req.user) {
       res.status(403).json({ error: 'Insufficient permissions' });
       return;
     }
-    next();
+    const userRole = req.user.role;
+    if (roles.includes(userRole)) { next(); return; }
+    // SUPER_ADMIN inherits ADMIN access
+    if (userRole === 'SUPER_ADMIN' && roles.includes('ADMIN')) { next(); return; }
+    res.status(403).json({ error: 'Insufficient permissions' });
   };
 };

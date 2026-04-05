@@ -10,7 +10,7 @@ const router = Router();
 router.post('/register', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     // Only ADMIN users can register new accounts
-    if (!req.user || req.user.role !== 'ADMIN') {
+    if (!req.user || !['ADMIN', 'SUPER_ADMIN'].includes(req.user.role)) {
       res.status(403).json({ error: 'Only administrators can create new users' });
       return;
     }

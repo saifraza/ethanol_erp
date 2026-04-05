@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Users, Plus, X, Save, Loader2, Trash2, Search, ChevronDown, RotateCcw } from 'lucide-react';
 import api from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 interface Customer {
   id: string;
@@ -23,6 +24,7 @@ interface Customer {
 }
 
 export default function Customers() {
+  const { user } = useAuth();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [showForm, setShowForm] = useState(false);
@@ -187,8 +189,8 @@ export default function Customers() {
       await api.delete(`/customers/${id}`);
       setMsg({ type: 'ok', text: 'Customer deactivated!' });
       loadCustomers();
-    } catch (error) {
-      setMsg({ type: 'err', text: 'Delete failed' });
+    } catch (error: any) {
+      setMsg({ type: 'err', text: error.response?.data?.error || 'Delete failed' });
     }
   }
 
@@ -477,10 +479,10 @@ export default function Customers() {
                               className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">
                               Edit
                             </button>
-                            <button onClick={() => deleteCustomer(customer.id)}
+                            {user?.role === 'SUPER_ADMIN' && <button onClick={() => deleteCustomer(customer.id)}
                               className="px-3 py-1 text-[11px] font-medium text-red-600 border border-red-200 hover:bg-red-50 flex items-center gap-1">
                               <Trash2 size={11} /> Deactivate
-                            </button>
+                            </button>}
                           </div>
                         </td>
                       </tr>

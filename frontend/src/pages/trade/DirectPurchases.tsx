@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Trash2, Check, X } from 'lucide-react';
 import api from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 interface Purchase {
   id: string;
@@ -37,6 +38,7 @@ interface Stats {
 }
 
 const DirectPurchases: React.FC = () => {
+  const { user } = useAuth();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [stats, setStats] = useState<Stats>({
     totalEntries: 0,
@@ -688,13 +690,13 @@ const DirectPurchases: React.FC = () => {
                             >
                               <Check className="w-4 h-4" />
                             </button>
-                            <button
+                            {user?.role === 'SUPER_ADMIN' && <button
                               onClick={() => handleDelete(purchase.id)}
                               className="p-1 hover:bg-red-100 text-red-600 transition"
                               title="Delete"
                             >
                               <Trash2 className="w-4 h-4" />
-                            </button>
+                            </button>}
                           </div>
                         </td>
                       </tr>
@@ -735,12 +737,12 @@ const DirectPurchases: React.FC = () => {
                         >
                           <Check className="w-4 h-4" />
                         </button>
-                        <button
+                        {user?.role === 'SUPER_ADMIN' && <button
                           onClick={() => handleDelete(purchase.id)}
                           className="p-1.5 hover:bg-red-100 text-red-600 transition"
                         >
                           <Trash2 className="w-4 h-4" />
-                        </button>
+                        </button>}
                       </div>
                     </div>
 

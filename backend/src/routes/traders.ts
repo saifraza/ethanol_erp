@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, authorize, AuthRequest } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { z } from 'zod';
 
@@ -144,10 +144,13 @@ router.put('/:id', validate(traderUpdateSchema), asyncHandler(async (req: AuthRe
   res.json(trader);
 }));
 
-// DELETE /:id — soft delete
-router.delete('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
+// DELETE /:id — soft delete, SUPER_ADMIN only, with reference check
+router.delete('/:id', authorize('SUPER_ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
   const existing = await prisma.vendor.findUnique({ where: { id: req.params.id }, select: { isAgent: true } });
   if (!existing || !existing.isAgent) return res.status(404).json({ error: 'Trader not found' });
+  const { checkVendorReferences } = await import('../utils/referenceCheck');
+  const check = await checkVendorReferences(req.params.id);
+  if (!check.canDelete) { res.status(409).json({ error: check.message }); return; }
   await prisma.vendor.update({ where: { id: req.params.id }, data: { isActive: false } });
   res.json({ ok: true });
 }));

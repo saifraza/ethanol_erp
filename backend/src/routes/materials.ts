@@ -104,9 +104,12 @@ router.put('/:id', async (req: Request, res: Response) => {
   } catch (err: unknown) { res.status(500).json({ error: 'Failed to update material' }); }
 });
 
-// DELETE /:id — deactivate
-router.delete('/:id', async (req: Request, res: Response) => {
+// DELETE /:id — deactivate, SUPER_ADMIN only, with reference check
+router.delete('/:id', authorize('SUPER_ADMIN') as any, async (req: Request, res: Response) => {
   try {
+    const { checkMaterialReferences } = await import('../utils/referenceCheck');
+    const check = await checkMaterialReferences(req.params.id);
+    if (!check.canDelete) { res.status(409).json({ error: check.message }); return; }
     await prisma.inventoryItem.update({ where: { id: req.params.id }, data: { isActive: false } });
     res.json({ ok: true });
   } catch (err: unknown) { res.status(500).json({ error: 'Failed to delete material' }); }

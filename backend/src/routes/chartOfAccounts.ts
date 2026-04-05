@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { AuthRequest } from '../middleware/auth';
+import { AuthRequest, authorize } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError, ValidationError } from '../shared/errors';
 import { z } from 'zod';
@@ -282,8 +282,8 @@ router.put('/:id', validate(updateAccountSchema), asyncHandler(async (req: AuthR
   res.json(updated);
 }));
 
-// ── DELETE /:id — Soft-deactivate (never hard delete) ──
-router.delete('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
+// ── DELETE /:id — Soft-deactivate (never hard delete), SUPER_ADMIN only ──
+router.delete('/:id', authorize('SUPER_ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
   const account = await prisma.account.findUnique({ where: { id: req.params.id } });
   if (!account) throw new NotFoundError('Account', req.params.id);
 

@@ -20,7 +20,7 @@ function parseNumberInput(value: string): number | null {
 
 export default function GrainUnloadingTrucks() {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
   const [trucks, setTrucks] = useState<any[]>([]);
   const [date, setDate] = useState(shiftDate());
   const [showForm, setShowForm] = useState(false);

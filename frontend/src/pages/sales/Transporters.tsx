@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Truck, Plus, X, Save, Loader2, Trash2, Edit2, Phone, User, Hash, CheckCircle, RotateCcw, Search } from 'lucide-react';
 import api from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 interface Transporter {
   id: string; name: string; contactPerson?: string; phone?: string;
@@ -10,6 +11,7 @@ interface Transporter {
 }
 
 export default function Transporters() {
+  const { user } = useAuth();
   const [transporters, setTransporters] = useState<Transporter[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -281,10 +283,10 @@ export default function Transporters() {
                           className="p-1 text-slate-400 hover:text-blue-600 transition">
                           <Edit2 size={13} />
                         </button>
-                        <button onClick={() => deleteTransporter(t)}
+                        {user?.role === 'SUPER_ADMIN' && <button onClick={() => deleteTransporter(t)}
                           className="p-1 text-slate-400 hover:text-red-600 transition">
                           <Trash2 size={13} />
-                        </button>
+                        </button>}
                       </div>
                     </td>
                   </tr>

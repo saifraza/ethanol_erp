@@ -13,7 +13,7 @@ const RESULT_COLORS: Record<string, string> = {
 
 export default function LabSampling() {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
   const [samples, setSamples] = useState<any[]>([]);
   const [pendingTrucks, setPendingTrucks] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);

@@ -182,9 +182,12 @@ router.put('/items/:id', authorize('ADMIN') as any, asyncHandler(async (req: Aut
   res.json(item);
 }));
 
-// DELETE /items/:id
-router.delete('/items/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
-  await prisma.inventoryItem.delete({ where: { id: req.params.id } });
+// DELETE /items/:id — soft delete, SUPER_ADMIN only, with reference check
+router.delete('/items/:id', authorize('SUPER_ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { checkInventoryItemReferences } = await import('../utils/referenceCheck');
+  const check = await checkInventoryItemReferences(req.params.id);
+  if (!check.canDelete) { res.status(409).json({ error: check.message }); return; }
+  await prisma.inventoryItem.update({ where: { id: req.params.id }, data: { isActive: false } });
   res.json({ ok: true });
 }));
 

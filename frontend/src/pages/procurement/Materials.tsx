@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Box, Plus, X, Save, Loader2, Trash2, Search } from 'lucide-react';
 import api from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 interface Material {
   id: string;
@@ -18,6 +19,7 @@ interface Material {
 }
 
 export default function Materials() {
+  const { user } = useAuth();
   const [materials, setMaterials] = useState<Material[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [showForm, setShowForm] = useState(false);
@@ -137,8 +139,8 @@ export default function Materials() {
       await api.delete(`/materials/${id}`);
       setMsg({ type: 'ok', text: 'Material deleted!' });
       loadMaterials();
-    } catch (error) {
-      setMsg({ type: 'err', text: 'Delete failed' });
+    } catch (error: any) {
+      setMsg({ type: 'err', text: error.response?.data?.error || 'Delete failed' });
     }
   }
 
@@ -361,7 +363,7 @@ export default function Materials() {
                     <td className="px-3 py-1.5 text-xs text-center">
                       <div className="flex items-center justify-center gap-1">
                         <button onClick={() => openForm(material)} className="px-2 py-0.5 bg-blue-600 text-white text-[10px] font-medium hover:bg-blue-700">Edit</button>
-                        <button onClick={() => deleteMaterial(material.id)} className="px-2 py-0.5 bg-red-600 text-white text-[10px] font-medium hover:bg-red-700">Del</button>
+                        {user?.role === 'SUPER_ADMIN' && <button onClick={() => deleteMaterial(material.id)} className="px-2 py-0.5 bg-red-600 text-white text-[10px] font-medium hover:bg-red-700">Del</button>}
                       </div>
                     </td>
                   </tr>

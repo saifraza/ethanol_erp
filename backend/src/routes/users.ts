@@ -48,13 +48,20 @@ router.post('/', authenticate, authorize('ADMIN'), async (req: AuthRequest, res:
       return;
     }
 
+    // Only SUPER_ADMIN can create SUPER_ADMIN users
+    const targetRole = role || 'OPERATOR';
+    if (targetRole === 'SUPER_ADMIN' && req.user?.role !== 'SUPER_ADMIN') {
+      res.status(403).json({ error: 'Only Super Admin can create Super Admin users' });
+      return;
+    }
+
     const hash = await bcrypt.hash(password, 10);
     const user = await prisma.user.create({
       data: {
         email,
         password: hash,
         name: name.trim(),
-        role: role || 'OPERATOR',
+        role: targetRole,
         allowedModules: allowedModules || null,
         paymentRole: req.body.paymentRole || null,
       },
@@ -77,6 +84,17 @@ router.post('/', authenticate, authorize('ADMIN'), async (req: AuthRequest, res:
 // PUT /api/users/:id — update role, allowedModules, isActive
 router.put('/:id', authenticate, authorize('ADMIN'), async (req: AuthRequest, res: Response) => {
   try {
+    // Prevent ADMIN from editing SUPER_ADMIN users or promoting to SUPER_ADMIN
+    const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { role: true } });
+    if (target?.role === 'SUPER_ADMIN' && req.user?.role !== 'SUPER_ADMIN') {
+      res.status(403).json({ error: 'Only Super Admin can edit Super Admin users' });
+      return;
+    }
+    if (req.body.role === 'SUPER_ADMIN' && req.user?.role !== 'SUPER_ADMIN') {
+      res.status(403).json({ error: 'Only Super Admin can assign Super Admin role' });
+      return;
+    }
+
     const data: any = {};
     if (req.body.role !== undefined) data.role = req.body.role;
     if (req.body.allowedModules !== undefined) data.allowedModules = req.body.allowedModules || null;
@@ -105,6 +123,10 @@ router.put('/:id', authenticate, authorize('ADMIN'), async (req: AuthRequest, re
 router.patch('/:id/role', authenticate, authorize('ADMIN'), async (req: AuthRequest, res: Response) => {
   try {
     const { role } = req.body;
+    if (role === 'SUPER_ADMIN' && req.user?.role !== 'SUPER_ADMIN') {
+      res.status(403).json({ error: 'Only Super Admin can assign Super Admin role' });
+      return;
+    }
     const user = await prisma.user.update({
       where: { id: req.params.id },
       data: { role },
@@ -143,6 +165,12 @@ router.delete('/:id', authenticate, authorize('ADMIN'), async (req: AuthRequest,
     // Don't allow deleting yourself
     if (req.params.id === req.user?.id) {
       res.status(400).json({ error: 'Cannot delete yourself' });
+      return;
+    }
+    // Prevent ADMIN from deleting SUPER_ADMIN users
+    const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { role: true } });
+    if (target?.role === 'SUPER_ADMIN' && req.user?.role !== 'SUPER_ADMIN') {
+      res.status(403).json({ error: 'Only Super Admin can delete Super Admin users' });
       return;
     }
     await prisma.user.delete({ where: { id: req.params.id } });

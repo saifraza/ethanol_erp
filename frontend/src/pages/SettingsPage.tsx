@@ -20,7 +20,7 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<any>({});
   const [msg, setMsg] = useState('');
   const { user } = useAuth();
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
 
   // Telegram state
   const [tgStatus, setTgStatus] = useState<{ connected: boolean; username?: string }>({ connected: false });
