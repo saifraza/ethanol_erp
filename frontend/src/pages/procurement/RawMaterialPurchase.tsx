@@ -277,8 +277,8 @@ export default function RawMaterialPurchase() {
 
   // Deal CRUD
   const createDeal = async () => {
-    if (!dealForm.materialItemId || !dealForm.rate) {
-      alert('Select material and enter rate'); return;
+    if (!dealForm.materialItemId) {
+      alert('Select a material'); return;
     }
     if (!dealForm.vendorId && !dealForm.vendorName) {
       alert('Select a vendor or add a new one'); return;
