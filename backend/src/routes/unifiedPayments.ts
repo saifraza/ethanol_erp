@@ -476,6 +476,16 @@ router.get('/incoming/invoice-detail/:invoiceId', asyncHandler(async (req: AuthR
           },
         },
       },
+      ethanolLiftings: {
+        orderBy: { liftingDate: 'desc' },
+        select: {
+          id: true, liftingDate: true, vehicleNo: true, driverName: true, transporterName: true,
+          destination: true, quantityBL: true, quantityKL: true, strength: true,
+          rate: true, amount: true, invoiceNo: true, challanNo: true, rstNo: true,
+          status: true, dispatchMode: true, contractId: true,
+          contract: { select: { id: true, contractNo: true, contractType: true, buyerName: true, omcName: true } },
+        },
+      },
       payments: {
         orderBy: { paymentDate: 'desc' },
         select: { id: true, paymentNo: true, amount: true, mode: true, reference: true, paymentDate: true, remarks: true },
@@ -485,9 +495,9 @@ router.get('/incoming/invoice-detail/:invoiceId', asyncHandler(async (req: AuthR
 
   if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
 
-  // Also fetch shipment directly linked to invoice (if shipmentId is set but no order)
+  // Also fetch shipment directly linked to invoice
   let directShipment = null;
-  if (invoice.shipmentId && !invoice.order) {
+  if (invoice.shipmentId) {
     directShipment = await prisma.shipment.findUnique({
       where: { id: invoice.shipmentId },
       select: {
@@ -499,14 +509,19 @@ router.get('/incoming/invoice-detail/:invoiceId', asyncHandler(async (req: AuthR
     });
   }
 
-  // Collect all shipments from dispatch requests
+  // Collect all shipments from dispatch requests OR direct shipment
   const allShipments = invoice.order
     ? invoice.order.dispatchRequests.flatMap(dr => dr.shipments)
     : directShipment ? [directShipment] : [];
 
+  // Ethanol liftings as dispatch data (when no SO/Shipment path)
+  const liftings = invoice.ethanolLiftings || [];
+  const hasLiftings = liftings.length > 0;
+  const contract = hasLiftings ? liftings[0].contract : null;
+
   const totalPaid = invoice.payments.reduce((s, p) => s + p.amount, 0);
 
-  // Build pipeline
+  // Build pipeline — adapt for ethanol lifting flow
   const pipeline = {
     ordered: invoice.order ? {
       orderNo: (invoice.order as any).orderNo,
@@ -514,11 +529,19 @@ router.get('/incoming/invoice-detail/:invoiceId', asyncHandler(async (req: AuthR
       qty: invoice.order.lines.reduce((s, l) => s + l.quantity, 0),
       date: (invoice.order as any).orderDate,
       status: invoice.order.status,
+    } : contract ? {
+      orderNo: contract.contractNo,
+      amount: liftings.reduce((s, l) => s + (l.amount || 0), 0),
+      qty: liftings.reduce((s, l) => s + (l.quantityKL || 0), 0),
+      date: liftings[0].liftingDate,
+      status: 'CONTRACT',
     } : null,
     dispatched: {
-      drCount: invoice.order ? invoice.order.dispatchRequests.length : 0,
-      shipmentCount: allShipments.length,
-      totalQtyKL: allShipments.reduce((s, sh) => s + (sh.quantityKL || 0), 0),
+      drCount: invoice.order ? invoice.order.dispatchRequests.length : liftings.length,
+      shipmentCount: allShipments.length > 0 ? allShipments.length : liftings.length,
+      totalQtyKL: allShipments.length > 0
+        ? allShipments.reduce((s, sh) => s + (sh.quantityKL || 0), 0)
+        : liftings.reduce((s, l) => s + (l.quantityKL || 0), 0),
       totalNetKg: allShipments.reduce((s, sh) => s + (sh.weightNet || 0), 0),
     },
     invoiced: {
@@ -574,6 +597,21 @@ router.get('/incoming/invoice-detail/:invoiceId', asyncHandler(async (req: AuthR
         unit: dr.unit, status: dr.status, deliveryDate: dr.deliveryDate,
       })),
     } : null,
+    contract: contract ? {
+      id: contract.id,
+      contractNo: contract.contractNo,
+      contractType: contract.contractType,
+      buyerName: contract.buyerName,
+      omcName: contract.omcName,
+    } : null,
+    liftings: liftings.map(l => ({
+      id: l.id, liftingDate: l.liftingDate, vehicleNo: l.vehicleNo,
+      driverName: l.driverName, transporterName: l.transporterName,
+      destination: l.destination, quantityBL: l.quantityBL, quantityKL: l.quantityKL,
+      strength: l.strength, rate: l.rate, amount: l.amount,
+      invoiceNo: l.invoiceNo, challanNo: l.challanNo, rstNo: l.rstNo,
+      status: l.status, dispatchMode: l.dispatchMode,
+    })),
     shipments: allShipments,
     payments: invoice.payments,
     pipeline,

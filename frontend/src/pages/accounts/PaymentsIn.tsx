@@ -89,6 +89,17 @@ interface InvoiceDetail {
     lines: Array<{ id: string; productName: string; quantity: number; unit: string; rate: number; amount: number; gstAmount: number }>;
     dispatchRequests: Array<{ id: string; drNo: number; productName: string; quantity: number; unit: string; status: string; deliveryDate: string | null }>;
   } | null;
+  contract: {
+    id: string; contractNo: string; contractType: string; buyerName: string; omcName: string | null;
+  } | null;
+  liftings: Array<{
+    id: string; liftingDate: string; vehicleNo: string; driverName: string | null;
+    transporterName: string | null; destination: string | null;
+    quantityBL: number; quantityKL: number; strength: number | null;
+    rate: number | null; amount: number | null;
+    invoiceNo: string | null; challanNo: string | null; rstNo: string | null;
+    status: string; dispatchMode: string | null;
+  }>;
   shipments: Array<{
     id: string; shipmentNo: number; productName: string; vehicleNo: string; vehicleType: string | null;
     weightNet: number | null; quantityKL: number | null; quantityBL: number | null; bags: number | null;
@@ -97,7 +108,7 @@ interface InvoiceDetail {
   }>;
   payments: Array<{ id: string; paymentNo: number; amount: number; mode: string; reference: string | null; paymentDate: string; remarks: string | null }>;
   pipeline: {
-    ordered: { orderNo: number; amount: number; qty: number; date: string; status: string } | null;
+    ordered: { orderNo: number | string; amount: number; qty: number; date: string; status: string } | null;
     dispatched: { drCount: number; shipmentCount: number; totalQtyKL: number; totalNetKg: number };
     invoiced: { invoiceNo: number; amount: number; irn: string | null; irnStatus: string | null; ewbNo: string | null; ewbStatus: string | null };
     collected: { amount: number; balance: number; paymentCount: number };
@@ -462,7 +473,11 @@ export default function PaymentsIn() {
                                             label: 'Ordered',
                                             done: !!invoiceDetail.pipeline.ordered,
                                             value: invoiceDetail.pipeline.ordered ? fmt(invoiceDetail.pipeline.ordered.amount) : '--',
-                                            sub: invoiceDetail.pipeline.ordered ? `SO-${invoiceDetail.pipeline.ordered.orderNo} | ${invoiceDetail.pipeline.ordered.qty} qty` : 'No Sales Order',
+                                            sub: invoiceDetail.pipeline.ordered
+                                              ? invoiceDetail.pipeline.ordered.status === 'CONTRACT'
+                                                ? `${invoiceDetail.pipeline.ordered.orderNo} | ${invoiceDetail.pipeline.ordered.qty.toFixed(2)} KL`
+                                                : `SO-${invoiceDetail.pipeline.ordered.orderNo} | ${invoiceDetail.pipeline.ordered.qty} qty`
+                                              : 'No Sales Order',
                                           },
                                           {
                                             label: 'Dispatched',
@@ -508,10 +523,12 @@ export default function PaymentsIn() {
 
                                       {/* Documents Grid */}
                                       <div className="grid grid-cols-3 gap-3 text-[10px]">
-                                        {/* Sales Order + Dispatches */}
+                                        {/* Column 1: Contract/SO + Liftings/Dispatches */}
                                         <div>
                                           <div className="font-bold text-slate-500 uppercase tracking-widest mb-1">
-                                            Sales Order {invoiceDetail.order ? `(SO-${invoiceDetail.order.orderNo})` : ''}
+                                            {invoiceDetail.order ? `Sales Order (SO-${invoiceDetail.order.orderNo})`
+                                              : invoiceDetail.contract ? `Contract (${invoiceDetail.contract.contractNo})`
+                                              : 'Order'}
                                           </div>
                                           <div className="max-h-40 overflow-y-auto space-y-1">
                                             {invoiceDetail.order ? (
@@ -540,42 +557,82 @@ export default function PaymentsIn() {
                                                   </div>
                                                 ))}
                                               </>
+                                            ) : invoiceDetail.contract ? (
+                                              <div className="bg-white border border-slate-200 px-2 py-1.5">
+                                                <div className="flex items-center justify-between">
+                                                  <span className="font-mono font-medium text-blue-700">{invoiceDetail.contract.contractNo}</span>
+                                                  <span className="text-[8px] font-bold uppercase px-1 py-0.5 border border-blue-300 text-blue-700">{invoiceDetail.contract.contractType}</span>
+                                                </div>
+                                                <div className="text-[9px] text-slate-400 mt-0.5">{invoiceDetail.contract.buyerName}{invoiceDetail.contract.omcName ? ` | ${invoiceDetail.contract.omcName}` : ''}</div>
+                                              </div>
                                             ) : (
-                                              <div className="text-slate-400">Standalone invoice (no SO)</div>
+                                              <div className="text-slate-400">Standalone invoice</div>
                                             )}
                                           </div>
                                         </div>
 
-                                        {/* Shipments */}
+                                        {/* Column 2: Liftings/Shipments — the dispatch detail */}
                                         <div>
-                                          <div className="font-bold text-slate-500 uppercase tracking-widest mb-1">Shipments ({invoiceDetail.shipments.length})</div>
-                                          <div className="max-h-40 overflow-y-auto space-y-1">
-                                            {invoiceDetail.shipments.map(sh => (
-                                              <div key={sh.id} className="bg-white border border-slate-200 px-2 py-1.5">
-                                                <div className="flex items-center justify-between">
-                                                  <span className="font-mono font-medium text-blue-700">SHP-{sh.shipmentNo}</span>
-                                                  <span className={`text-[8px] font-bold uppercase px-1 py-0.5 border ${
-                                                    sh.status === 'DELIVERED' ? 'border-green-300 text-green-700' : 'border-blue-300 text-blue-700'
-                                                  }`}>{sh.status}</span>
-                                                </div>
-                                                <div className="flex items-center justify-between mt-0.5">
-                                                  <span className="text-[9px] text-slate-400">{sh.vehicleNo || '--'}</span>
-                                                  <span className="text-[9px] font-mono tabular-nums text-slate-600">
-                                                    {sh.quantityKL ? `${sh.quantityKL.toFixed(2)} KL` : sh.weightNet ? `${(sh.weightNet / 1000).toFixed(2)} MT` : sh.bags ? `${sh.bags} bags` : '--'}
-                                                  </span>
-                                                </div>
-                                                {sh.challanNo && <div className="text-[9px] text-slate-400 mt-0.5">Challan: {sh.challanNo}</div>}
-                                                <div className="flex items-center gap-2 mt-0.5">
-                                                  {sh.irn && <span className="text-[8px] font-bold uppercase px-1 py-0.5 border border-green-300 text-green-700">IRN</span>}
-                                                  {sh.ewayBill && <span className="text-[8px] font-bold uppercase px-1 py-0.5 border border-indigo-300 text-indigo-700">EWB</span>}
-                                                </div>
+                                          {invoiceDetail.liftings.length > 0 ? (
+                                            <>
+                                              <div className="font-bold text-slate-500 uppercase tracking-widest mb-1">Liftings ({invoiceDetail.liftings.length})</div>
+                                              <div className="max-h-40 overflow-y-auto space-y-1">
+                                                {invoiceDetail.liftings.map(l => (
+                                                  <div key={l.id} className="bg-white border border-slate-200 px-2 py-1.5">
+                                                    <div className="flex items-center justify-between">
+                                                      <span className="font-mono font-medium text-blue-700">{l.vehicleNo}</span>
+                                                      <span className={`text-[8px] font-bold uppercase px-1 py-0.5 border ${
+                                                        l.status === 'DELIVERED' ? 'border-green-300 text-green-700' : 'border-blue-300 text-blue-700'
+                                                      }`}>{l.status}</span>
+                                                    </div>
+                                                    <div className="flex items-center justify-between mt-0.5">
+                                                      <span className="text-[9px] text-slate-400">{fmtDate(l.liftingDate)}{l.destination ? ` | ${l.destination}` : ''}</span>
+                                                      <span className="text-[9px] font-mono tabular-nums text-slate-600">{l.quantityKL.toFixed(2)} KL</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 mt-0.5">
+                                                      {l.challanNo && <span className="text-[9px] text-slate-400">Ch: {l.challanNo}</span>}
+                                                      {l.rstNo && <span className="text-[9px] text-slate-400">RST: {l.rstNo}</span>}
+                                                    </div>
+                                                  </div>
+                                                ))}
                                               </div>
-                                            ))}
-                                            {invoiceDetail.shipments.length === 0 && <div className="text-slate-400">No shipments</div>}
-                                          </div>
+                                            </>
+                                          ) : invoiceDetail.shipments.length > 0 ? (
+                                            <>
+                                              <div className="font-bold text-slate-500 uppercase tracking-widest mb-1">Shipments ({invoiceDetail.shipments.length})</div>
+                                              <div className="max-h-40 overflow-y-auto space-y-1">
+                                                {invoiceDetail.shipments.map(sh => (
+                                                  <div key={sh.id} className="bg-white border border-slate-200 px-2 py-1.5">
+                                                    <div className="flex items-center justify-between">
+                                                      <span className="font-mono font-medium text-blue-700">SHP-{sh.shipmentNo}</span>
+                                                      <span className={`text-[8px] font-bold uppercase px-1 py-0.5 border ${
+                                                        sh.status === 'DELIVERED' ? 'border-green-300 text-green-700' : 'border-blue-300 text-blue-700'
+                                                      }`}>{sh.status}</span>
+                                                    </div>
+                                                    <div className="flex items-center justify-between mt-0.5">
+                                                      <span className="text-[9px] text-slate-400">{sh.vehicleNo || '--'}</span>
+                                                      <span className="text-[9px] font-mono tabular-nums text-slate-600">
+                                                        {sh.quantityKL ? `${sh.quantityKL.toFixed(2)} KL` : sh.weightNet ? `${(sh.weightNet / 1000).toFixed(2)} MT` : sh.bags ? `${sh.bags} bags` : '--'}
+                                                      </span>
+                                                    </div>
+                                                    {sh.challanNo && <div className="text-[9px] text-slate-400 mt-0.5">Challan: {sh.challanNo}</div>}
+                                                    <div className="flex items-center gap-2 mt-0.5">
+                                                      {sh.irn && <span className="text-[8px] font-bold uppercase px-1 py-0.5 border border-green-300 text-green-700">IRN</span>}
+                                                      {sh.ewayBill && <span className="text-[8px] font-bold uppercase px-1 py-0.5 border border-indigo-300 text-indigo-700">EWB</span>}
+                                                    </div>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <div className="font-bold text-slate-500 uppercase tracking-widest mb-1">Dispatches</div>
+                                              <div className="text-slate-400">No dispatch data</div>
+                                            </>
+                                          )}
                                         </div>
 
-                                        {/* Payments */}
+                                        {/* Column 3: Payments */}
                                         <div>
                                           <div className="font-bold text-slate-500 uppercase tracking-widest mb-1">Payments ({invoiceDetail.payments.length})</div>
                                           <div className="max-h-40 overflow-y-auto space-y-1">
