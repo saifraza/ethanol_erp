@@ -645,11 +645,11 @@ export async function generateEWBByIRN(irn: string, ewbData: any, retryCount = 0
  * Uses same auth as e-invoice portal but sends NIC EWB payload format.
  */
 export async function generateStandaloneEWB(ewbPayload: any, retryCount = 0): Promise<any> {
-  const MAX_RETRIES = 2;
+  const MAX_RETRIES = 3;
   try {
     if (retryCount > 0) {
       clearSaralAuthCache();
-      await delay(2000 * retryCount);
+      await delay(3000 * retryCount);
     }
     const auth = await getSaralAuth();
     const baseUrl = (process.env.EWAY_SARAL_URL || 'https://saralgsp.com').replace(/\/+$/, '');
@@ -657,8 +657,8 @@ export async function generateStandaloneEWB(ewbPayload: any, retryCount = 0): Pr
     const ewaybillUsername = process.env.EWAY_EWB_USERNAME || process.env.EWAY_NIC_USERNAME || '';
     const ewaybillPassword = process.env.EWAY_EWB_PASSWORD || process.env.EWAY_NIC_PASSWORD || '';
 
-    // Use the same endpoint as EWB-from-IRN — it accepts standalone payloads too
-    const url = `${baseUrl}/eiewb/v1.03/ewaybill`;
+    // Standalone EWB uses the EWB portal API, not the e-invoice portal
+    const url = `${baseUrl}/ewaybillapi/v1.03/ewayapi`;
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
