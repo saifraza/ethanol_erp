@@ -976,8 +976,10 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
           if (dispatchTruck.contractId && bl > 0) {
             const contract = await tx.ethanolContract.findUnique({ where: { id: dispatchTruck.contractId }, select: { contractType: true, ethanolRate: true, conversionRate: true } });
             if (contract) {
-              productRate = contract.contractType === 'JOB_WORK' ? contract.conversionRate : contract.ethanolRate;
-              productValue = productRate ? bl * productRate : null;
+              // Product rate is for delivery challan/e-way bill (actual product value)
+              // For JOB_WORK: use fixed ethanol value (71.86/L), not the job work conversion rate
+              productRate = contract.contractType === 'JOB_WORK' ? 71.86 : (contract.ethanolRate || null);
+              productValue = productRate && bl > 0 ? Math.round(bl * productRate) : null;
             }
           }
 
