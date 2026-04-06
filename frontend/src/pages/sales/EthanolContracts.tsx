@@ -329,6 +329,9 @@ const EthanolContracts: React.FC = () => {
     finally { setActionLoading(null); }
   };
 
+  // Track just-released lifting for highlight + auto-expand
+  const [justReleasedId, setJustReleasedId] = useState<string | null>(null);
+
   const handleRelease = async (truckId: string, contractId: string) => {
     if (!confirm('Release this truck? This will create the invoice, lifting record, gate pass, and delivery challan.')) return;
     try {
@@ -345,6 +348,11 @@ const EthanolContracts: React.FC = () => {
       if (d.invoiceId) openPdf(`/ethanol-gate-pass/${truckId}/invoice-pdf`);
       setTimeout(() => openPdf(`/ethanol-gate-pass/${truckId}/delivery-challan-pdf`), 300);
       setTimeout(() => openPdf(`/ethanol-gate-pass/${truckId}/gate-pass-pdf`), 600);
+      // Auto-expand the new lifting's IRN detail row
+      if (d.liftingId) {
+        setJustReleasedId(d.liftingId);
+        setShowIrnDetail(d.liftingId);
+      }
       loadSupplyDetail(contractId);
     } catch (err: any) { setError(err?.response?.data?.error || 'Failed to release truck'); }
     finally { setActionLoading(null); }
@@ -727,7 +735,7 @@ const EthanolContracts: React.FC = () => {
                                       <tr><td colSpan={11} className="text-center py-6 text-xs text-slate-400 uppercase tracking-widest">No liftings yet</td></tr>
                                     ) : detailLiftings.slice((liftingPage - 1) * LIFTS_PER_PAGE, liftingPage * LIFTS_PER_PAGE).map((l, i) => (
                                       <React.Fragment key={l.id}>
-                                      <tr className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-white' : 'bg-slate-50/50'}`}>
+                                      <tr className={`border-b border-slate-100 hover:bg-blue-50/60 ${justReleasedId === l.id ? 'bg-green-50 ring-2 ring-inset ring-green-400' : i % 2 ? 'bg-white' : 'bg-slate-50/50'}`}>
                                         <td className="px-2 py-1.5 border-r border-slate-100 whitespace-nowrap">{new Date(l.liftingDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</td>
                                         <td className="px-2 py-1.5 border-r border-slate-100 font-medium">{l.vehicleNo}</td>
                                         <td className="px-2 py-1.5 border-r border-slate-100 hidden md:table-cell">{l.destination || '-'}</td>
