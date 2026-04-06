@@ -798,9 +798,10 @@ const EthanolContracts: React.FC = () => {
                                         </td>
                                         {/* EWB */}
                                         <td className="px-2 py-1.5 border-r border-slate-100 text-center">
-                                          {l.invoice?.ewbStatus === 'GENERATED' ? (
-                                            <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-300 bg-green-50 text-green-700" title={l.invoice.ewbNo || ''}>EWB</span>
-                                          ) : l.invoice?.irnStatus === 'GENERATED' && !l.invoice?.ewbNo ? (
+                                          {l.invoice?.ewbStatus === 'GENERATED' && manualEwb?.liftingId !== l.id ? (
+                                            <button onClick={(e) => { e.stopPropagation(); setManualEwb({ liftingId: l.id, ewbNo: l.invoice!.ewbNo || '', file: null }); }}
+                                              className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-300 bg-green-50 text-green-700 hover:bg-green-100 cursor-pointer" title={`${l.invoice.ewbNo || ''} — click to upload PDF`}>EWB</button>
+                                          ) : (l.invoice?.irnStatus === 'GENERATED' || l.invoice?.ewbStatus === 'GENERATED') ? (
                                             manualEwb?.liftingId === l.id ? (
                                               <div className="flex flex-col gap-1" onClick={e => e.stopPropagation()}>
                                                 <div className="flex items-center gap-0.5">
