@@ -593,23 +593,54 @@ export default function PaymentsIn() {
                                         </div>
                                       </div>
 
-                                      {/* Document Downloads */}
-                                      <div className="flex items-center gap-2 pt-2 border-t border-slate-200">
+                                      {/* Document Downloads — all documents from supply chain */}
+                                      <div className="flex items-center gap-2 pt-2 border-t border-slate-200 flex-wrap">
                                         <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Documents:</span>
+                                        {/* Sales Order PDF */}
                                         {invoiceDetail.order && (
                                           <a href={`/api/sales-orders/${invoiceDetail.order.id}/pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noopener noreferrer"
                                             className="px-2 py-0.5 bg-slate-700 text-white text-[9px] font-bold uppercase hover:bg-slate-800 inline-flex items-center gap-1">
-                                            <FileText size={9} /> SO
+                                            <FileText size={9} /> Sales Order
                                           </a>
                                         )}
+                                        {/* Challan PDFs (per shipment) */}
+                                        {invoiceDetail.shipments.filter(sh => sh.challanNo).map(sh => (
+                                          <a key={`ch-${sh.id}`} href={`/api/shipments/${sh.id}/challan-pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noopener noreferrer"
+                                            className="px-2 py-0.5 bg-amber-600 text-white text-[9px] font-bold uppercase hover:bg-amber-700 inline-flex items-center gap-1">
+                                            <FileText size={9} /> Challan {sh.challanNo}
+                                          </a>
+                                        ))}
+                                        {/* Gate Pass PDFs (per shipment) */}
+                                        {invoiceDetail.shipments.map(sh => (
+                                          <a key={`gp-${sh.id}`} href={`/api/shipments/${sh.id}/gate-pass-pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noopener noreferrer"
+                                            className="px-2 py-0.5 bg-slate-600 text-white text-[9px] font-bold uppercase hover:bg-slate-700 inline-flex items-center gap-1">
+                                            <FileText size={9} /> Gate Pass
+                                          </a>
+                                        ))}
+                                        {/* Invoice PDF */}
                                         <a href={`/api/invoices/${invoiceDetail.invoice.id}/pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noopener noreferrer"
                                           className="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-bold uppercase hover:bg-blue-700 inline-flex items-center gap-1">
                                           <FileText size={9} /> Invoice
                                         </a>
-                                        {invoiceDetail.shipments.filter(sh => sh.challanNo).map(sh => (
-                                          <a key={sh.id} href={`/api/shipments/${sh.id}/challan-pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noopener noreferrer"
+                                        {/* IRN / E-Invoice details */}
+                                        {invoiceDetail.invoice.irn && (
+                                          <a href={`/api/invoices/${invoiceDetail.invoice.id}/e-invoice/details?token=${localStorage.getItem('token')}`} target="_blank" rel="noopener noreferrer"
+                                            className="px-2 py-0.5 bg-green-700 text-white text-[9px] font-bold uppercase hover:bg-green-800 inline-flex items-center gap-1">
+                                            <FileText size={9} /> IRN
+                                          </a>
+                                        )}
+                                        {/* E-Way Bill PDF (uploaded on invoice) */}
+                                        {(invoiceDetail.invoice.ewbNo || invoiceDetail.invoice.ewbStatus) && (
+                                          <a href={`/api/invoices/${invoiceDetail.invoice.id}/ewb-pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noopener noreferrer"
                                             className="px-2 py-0.5 bg-indigo-600 text-white text-[9px] font-bold uppercase hover:bg-indigo-700 inline-flex items-center gap-1">
-                                            <FileText size={9} /> Challan
+                                            <FileText size={9} /> E-Way Bill
+                                          </a>
+                                        )}
+                                        {/* Shipment-level EWB (if generated via shipment route) */}
+                                        {invoiceDetail.shipments.filter(sh => sh.ewayBill).map(sh => (
+                                          <a key={`ewb-${sh.id}`} href={`/api/shipments/${sh.id}/eway-bill/details?token=${localStorage.getItem('token')}`} target="_blank" rel="noopener noreferrer"
+                                            className="px-2 py-0.5 bg-purple-600 text-white text-[9px] font-bold uppercase hover:bg-purple-700 inline-flex items-center gap-1">
+                                            <FileText size={9} /> EWB-{sh.ewayBill}
                                           </a>
                                         ))}
                                       </div>

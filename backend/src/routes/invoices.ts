@@ -604,6 +604,21 @@ router.get('/:id/e-invoice/details', async (req: Request, res: Response) => {
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
+// GET /:id/ewb-pdf — Serve uploaded E-Way Bill PDF
+router.get('/:id/ewb-pdf', async (req: Request, res: Response) => {
+  try {
+    const invoice = await prisma.invoice.findUnique({
+      where: { id: req.params.id },
+      select: { ewbPdfData: true, ewbNo: true },
+    });
+    if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
+    if (!invoice.ewbPdfData) { res.status(404).json({ error: 'No EWB PDF uploaded' }); return; }
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="EWB-${invoice.ewbNo || 'unknown'}.pdf"`);
+    res.send(invoice.ewbPdfData);
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
 // POST /:id/send-email — Send Invoice PDF to customer via email
 router.post('/:id/send-email', async (req: Request, res: Response) => {
   try {
