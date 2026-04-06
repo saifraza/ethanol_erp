@@ -221,6 +221,7 @@ const weighmentSchema = z.object({
   rst_no: z.string().nullable().optional(),
   driver_license: z.string().nullable().optional(),
   peso_date: z.string().nullable().optional(),
+  material_category: z.string().nullable().optional(),
 });
 
 router.post('/push', asyncHandler(async (req: Request, res: Response) => {
@@ -245,6 +246,14 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
     try {
     // Lab join key — set on every GrainTruck so lab can find it via uidRst
     const wbUidRst = `WB-${w.ticket_no}`;
+    const materialCategory = w.material_category || (w.remarks?.includes('| FUEL |') ? 'FUEL' : undefined);
+
+    // Skip fuel weighments — they don't belong in GrainTruck (RM Management)
+    if (materialCategory === 'FUEL') {
+      results.push({ id: w.id, type: 'SKIPPED', refNo: `FUEL-${w.vehicle_no}`, sourceWbId: w.id });
+      ids.push(w.id);
+      continue;
+    }
 
     // For INBOUND raw material: accept gate entries (for lab testing page)
     // For everything else: only process COMPLETE weighments with weights

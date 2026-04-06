@@ -101,7 +101,10 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
     const { start, end } = shiftWindow(dateStr);
 
     const trucks = await prisma.grainTruck.findMany({
-      where: { date: { gte: start, lt: end } },
+      where: {
+        date: { gte: start, lt: end },
+        NOT: { remarks: { contains: '| FUEL |' } },
+      },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -120,7 +123,10 @@ router.get('/summary', authenticate, async (req: AuthRequest, res: Response) => 
     const { start, end } = shiftWindow(dateStr);
 
     const trucks = await prisma.grainTruck.findMany({
-      where: { date: { gte: start, lt: end } },
+      where: {
+        date: { gte: start, lt: end },
+        NOT: { remarks: { contains: '| FUEL |' } },
+      },
     });
 
     // Partial quarantine: to silo = net - quarantineWeight
