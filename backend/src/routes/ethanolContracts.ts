@@ -4,7 +4,7 @@ import { authenticate, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import multer from 'multer';
 // RAG indexing removed — only compliance docs go to RAG
-import { generateIRN, generateEWBByIRN } from '../services/eInvoice';
+import { generateIRN, generateEWBByIRN, generateStandaloneEWB } from '../services/eInvoice';
 import { onSaleInvoiceCreated } from '../services/autoJournal';
 import { getStateCode, getHsnCode, MSPIL } from '../services/ewayBill';
 import { nextInvoiceNo, getInvoiceSeries } from '../utils/invoiceCounter';
@@ -741,43 +741,68 @@ router.post('/:id/liftings/:liftingId/e-invoice', asyncHandler(async (req: AuthR
         const productValue = Math.round(lifting.quantityBL * productRate);
         const gstRate = 5;
         const isInterstate = getStateCode(MSPIL.state) !== getStateCode(customer.state || '');
+        const igstAmt = isInterstate ? Math.round(productValue * gstRate / 100) : 0;
+        const cgstAmt = isInterstate ? 0 : Math.round(productValue * gstRate / 200);
+        const sgstAmt = cgstAmt;
         const invDate = new Date(invoice.invoiceDate || lifting.liftingDate);
         const dateStr = `${String(invDate.getDate()).padStart(2, '0')}/${String(invDate.getMonth() + 1).padStart(2, '0')}/${invDate.getFullYear()}`;
+        const fromSC = getStateCode(MSPIL.state);
+        const toSC = customer.gstNo ? customer.gstNo.substring(0, 2) : getStateCode(customer.state || '');
 
-        const { generateEwayBill } = await import('../services/ewayBill');
-        ewbResult = await generateEwayBill({
-          supplierGstin: MSPIL.gstin,
-          supplierName: MSPIL.name,
-          supplierAddress: MSPIL.address,
-          supplierState: MSPIL.state,
-          supplierPincode: MSPIL.pincode,
-          recipientGstin: customer.gstNo || undefined,
-          recipientName: customer.name,
-          recipientAddress: customer.address || '',
-          recipientState: customer.state || '',
-          recipientPincode: customer.pincode || '',
-          documentType: 'CHL',
-          documentNo: lifting.challanNo || lifting.invoiceNo || `DCH-${lifting.id.slice(0, 8)}`,
-          documentDate: dateStr,
-          items: [{
+        // NIC standalone EWB payload format
+        const ewbPayload = {
+          supplyType: 'O',
+          subSupplyType: '3', // Job Work
+          docType: 'CHL',
+          docNo: lifting.challanNo || lifting.invoiceNo || `DCH-${lifting.id.slice(0, 8)}`,
+          docDate: dateStr,
+          fromGstin: MSPIL.gstin,
+          fromTrdName: MSPIL.name,
+          fromAddr1: MSPIL.address,
+          fromAddr2: '',
+          fromPlace: 'Narsinghpur',
+          fromPincode: parseInt(MSPIL.pincode),
+          fromStateCode: parseInt(fromSC),
+          actFromStateCode: parseInt(fromSC),
+          toGstin: customer.gstNo || 'URP',
+          toTrdName: customer.name,
+          toAddr1: (customer.address || '').substring(0, 120),
+          toAddr2: '',
+          toPlace: customer.city || '',
+          toPincode: parseInt(customer.pincode || '0'),
+          toStateCode: parseInt(toSC),
+          actToStateCode: parseInt(toSC),
+          transactionType: 1,
+          totalValue: productValue,
+          cgstValue: cgstAmt,
+          sgstValue: sgstAmt,
+          igstValue: igstAmt,
+          cessValue: 0,
+          totInvValue: productValue + igstAmt + cgstAmt + sgstAmt,
+          transporterId: transporterGstin.length === 15 ? transporterGstin : '',
+          transporterName: transporterName.length >= 3 ? transporterName : '',
+          transDocNo: '',
+          transDocDate: '',
+          transMode: '1',
+          vehicleNo: vehNo,
+          vehicleType: 'R',
+          transDistance: distanceKm,
+          itemList: [{
+            itemNo: 1,
             productName: 'Ethanol',
-            hsnCode: '22072000',
+            productDesc: 'Ethanol',
+            hsnCode: 22072000,
             quantity: lifting.quantityBL,
-            unit: 'LTR',
-            taxableValue: productValue,
+            qtyUnit: 'LTR',
+            taxableAmount: productValue,
             cgstRate: isInterstate ? 0 : gstRate / 2,
             sgstRate: isInterstate ? 0 : gstRate / 2,
             igstRate: isInterstate ? gstRate : 0,
+            cessRate: 0,
           }],
-          transportMode: '1',
-          vehicleNo: vehNo,
-          vehicleType: 'R',
-          distanceKm,
-          transporterId: transporterGstin.length === 15 ? transporterGstin : undefined,
-          transporterName: transporterName.length >= 3 ? transporterName : undefined,
-          supplyType: 'O',
-          subType: '3',
-        });
+        };
+
+        ewbResult = await generateStandaloneEWB(ewbPayload);
       } else {
         // Non-job-work: EWB from IRN
         const ewbData: Record<string, any> = {

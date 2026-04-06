@@ -640,6 +640,86 @@ export async function generateEWBByIRN(irn: string, ewbData: any, retryCount = 0
 }
 
 /**
+ * Generate standalone E-Way Bill via Saral GSP (not from IRN)
+ * Used for job work where SAC codes can't generate EWB from IRN.
+ * Uses same auth as e-invoice portal but sends NIC EWB payload format.
+ */
+export async function generateStandaloneEWB(ewbPayload: any, retryCount = 0): Promise<any> {
+  const MAX_RETRIES = 2;
+  try {
+    if (retryCount > 0) {
+      clearSaralAuthCache();
+      await delay(2000 * retryCount);
+    }
+    const auth = await getSaralAuth();
+    const baseUrl = (process.env.EWAY_SARAL_URL || 'https://saralgsp.com').replace(/\/+$/, '');
+    const gstin = process.env.EWAY_GSTIN || '23AAECM3666P1Z1';
+    const ewaybillUsername = process.env.EWAY_EWB_USERNAME || process.env.EWAY_NIC_USERNAME || '';
+    const ewaybillPassword = process.env.EWAY_EWB_PASSWORD || process.env.EWAY_NIC_PASSWORD || '';
+
+    // Use the eivital EWB generation endpoint (same portal, standalone format)
+    const url = `${baseUrl}/eivital/v1.04/ewaybill`;
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'AuthenticationToken': auth.saralToken,
+      'SubscriptionId': auth.subscriptionId,
+      'Gstin': gstin,
+      'UserName': ewaybillUsername,
+    };
+    if (ewaybillPassword) headers['Password'] = ewaybillPassword;
+    if (auth.nicAuthToken && auth.nicAuthToken !== auth.saralToken) headers['AuthToken'] = auth.nicAuthToken;
+    if (auth.nicSek) headers['sek'] = auth.nicSek;
+
+    const bodyStr = JSON.stringify(ewbPayload);
+    console.log(`[E-Invoice] Generating standalone EWB at ${url}`);
+    console.log(`[E-Invoice] Standalone EWB payload (first 500): ${bodyStr.slice(0, 500)}`);
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 45000);
+
+    let response: Response;
+    try {
+      response = await fetch(url, { method: 'POST', headers, body: bodyStr, signal: controller.signal });
+    } catch (fetchErr: any) {
+      clearTimeout(timeout);
+      throw new Error(`Network error: ${fetchErr.message}${fetchErr.cause ? ` (${fetchErr.cause.code || fetchErr.cause.message})` : ''}`);
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    const resultText = await response.text();
+    console.log(`[E-Invoice] Standalone EWB Response status=${response.status}:`, resultText.slice(0, 500));
+
+    let result: any;
+    try { result = JSON.parse(resultText); } catch { throw new Error(`Non-JSON response (HTTP ${response.status}): ${resultText.slice(0, 200)}`); }
+
+    const d = result.data || result;
+    if (d.EwbNo || d.ewbNo || d.EwayBillNo || d.ewayBillNo) {
+      return {
+        success: true,
+        ewayBillNo: (d.EwbNo || d.ewbNo || d.EwayBillNo || d.ewayBillNo)?.toString(),
+        ewayBillDate: d.EwbDt || d.ewbDt || d.ewayBillDate,
+        validUpto: d.EwbValidTill || d.ewbValidTill || d.validUpto,
+        rawResponse: result,
+      };
+    }
+
+    const errors = result.ErrorDetails || result.errorDetails || [];
+    const errorMsg = errors.length > 0
+      ? errors.map((e: any) => `${e.ErrorCode || e.errorCode}: ${e.ErrorMessage || e.errorMessage}`).join('; ')
+      : JSON.stringify(result).slice(0, 300);
+    return { success: false, error: errorMsg, rawResponse: result };
+  } catch (err: any) {
+    console.error(`[E-Invoice Standalone EWB] Error (attempt ${retryCount + 1}):`, err.message);
+    if (retryCount < MAX_RETRIES && (err.message.includes('Network') || err.message.includes('socket') || err.message.includes('fetch failed'))) {
+      return generateStandaloneEWB(ewbPayload, retryCount + 1);
+    }
+    return { success: false, error: `Standalone EWB error: ${err.message}` };
+  }
+}
+
+/**
  * Get GSTIN details from NIC via Saral GSP
  * Endpoint: GET /eicore/v1.03/Master/gstin/{gstin}
  * Returns: legal name, trade name, address, state, pincode, status, etc.
