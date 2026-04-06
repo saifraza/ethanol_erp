@@ -88,7 +88,7 @@
           {{else}}
           <div class="name">{{customer.name}}</div>
           {{#if customer.address}}<div>{{customer.address}}</div>{{/if}}
-          {{#if customer.city}}<div>{{customer.city}}</div>{{/if}}
+          {{#if customer.city}}<div>{{customer.city}}{{#if customer.pincode}} - {{customer.pincode}}{{/if}}</div>{{/if}}
           {{#if customer.gstin}}<div class="gstin">GSTIN/UIN : {{customer.gstin}}</div>{{/if}}
           {{#if customer.state}}<div>State Name : {{customer.state}}{{#if customer.stateCode}}, Code : {{customer.stateCode}}{{/if}}</div>{{/if}}
           {{/if}}
@@ -117,7 +117,7 @@
         <div class="company-block">
           <div class="name">{{customer.name}}</div>
           {{#if customer.address}}<div>{{customer.address}}</div>{{/if}}
-          {{#if customer.city}}<div>{{customer.city}}</div>{{/if}}
+          {{#if customer.city}}<div>{{customer.city}}{{#if customer.pincode}} - {{customer.pincode}}{{/if}}</div>{{/if}}
           {{#if customer.gstin}}<div class="gstin">GSTIN/UIN : {{customer.gstin}}</div>{{/if}}
           {{#if customer.state}}<div>State Name : {{customer.state}}{{#if customer.stateCode}}, Code : {{customer.stateCode}}{{/if}}</div>{{/if}}
         </div>
