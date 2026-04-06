@@ -392,8 +392,9 @@ router.get('/:id/liftings', asyncHandler(async (req: AuthRequest, res: Response)
     res.json({ liftings });
 }));
 
-// PATCH manual EWB number entry (for job work where API generation isn't available)
-router.patch('/:id/liftings/:liftingId/manual-ewb', asyncHandler(async (req: AuthRequest, res: Response) => {
+// PATCH manual EWB number + optional PDF upload (for job work where API generation isn't available)
+const ewbUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+router.patch('/:id/liftings/:liftingId/manual-ewb', ewbUpload.single('ewbPdf'), asyncHandler(async (req: AuthRequest, res: Response) => {
     const { ewbNo } = req.body;
     if (!ewbNo?.trim()) return res.status(400).json({ error: 'EWB number is required' });
 
@@ -403,15 +404,36 @@ router.patch('/:id/liftings/:liftingId/manual-ewb', asyncHandler(async (req: Aut
     });
     if (!lifting?.invoiceId) return res.status(404).json({ error: 'Lifting or invoice not found' });
 
-    await prisma.invoice.update({
-      where: { id: lifting.invoiceId },
-      data: {
-        ewbNo: ewbNo.trim(),
-        ewbDate: new Date(),
-        ewbStatus: 'GENERATED',
-      } as any,
+    const data: any = {
+      ewbNo: ewbNo.trim(),
+      ewbDate: new Date(),
+      ewbStatus: 'GENERATED',
+    };
+    if (req.file?.buffer) {
+      data.ewbPdfData = req.file.buffer;
+    }
+
+    await prisma.invoice.update({ where: { id: lifting.invoiceId }, data });
+    res.json({ success: true, ewbNo: ewbNo.trim(), hasPdf: !!req.file });
+}));
+
+// GET EWB PDF for a lifting (serves uploaded PDF)
+router.get('/:id/liftings/:liftingId/ewb-pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const lifting = await prisma.ethanolLifting.findFirst({
+      where: { id: req.params.liftingId, contractId: req.params.id },
+      select: { invoiceId: true },
     });
-    res.json({ success: true, ewbNo: ewbNo.trim() });
+    if (!lifting?.invoiceId) return res.status(404).json({ error: 'Not found' });
+
+    const invoice = await prisma.invoice.findUnique({
+      where: { id: lifting.invoiceId },
+      select: { ewbPdfData: true, ewbNo: true },
+    });
+    if (!invoice?.ewbPdfData) return res.status(404).json({ error: 'No EWB PDF uploaded' });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="EWB-${invoice.ewbNo || 'unknown'}.pdf"`);
+    res.send(invoice.ewbPdfData);
 }));
 
 // PUT update lifting status (delivery confirmation)

@@ -1637,6 +1637,7 @@ model Invoice {
   ewbDate         DateTime?                // EWB generation date
   ewbValidTill    DateTime?                // EWB validity
   ewbStatus       String?                  // GENERATED, CANCELLED, EXPIRED
+  ewbPdfData      Bytes?                   // Uploaded EWB PDF (for manual entries)
   // Document refs
   shipmentId      String?                  // which shipment
   challanNo       String?

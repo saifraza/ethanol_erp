@@ -194,7 +194,7 @@ const EthanolContracts: React.FC = () => {
   // EWB generation modal
   const [ewbModal, setEwbModal] = useState<{ contractId: string; liftingId: string; vehicleNo: string; destination: string; transporterName: string; distanceKm: number } | null>(null);
   const [ewbForm, setEwbForm] = useState({ distanceKm: '', transporterName: '', transporterGstin: '', vehicleNo: '' });
-  const [manualEwb, setManualEwb] = useState<{ liftingId: string; ewbNo: string } | null>(null);
+  const [manualEwb, setManualEwb] = useState<{ liftingId: string; ewbNo: string; file: File | null } | null>(null);
 
   // Truck detail modal (before release)
   const [truckDetail, setTruckDetail] = useState<{ truck: any; contract: Contract } | null>(null);
@@ -409,11 +409,16 @@ const EthanolContracts: React.FC = () => {
     finally { setActionLoading(null); }
   };
 
-  const handleSaveManualEwb = async (contractId: string, liftingId: string, ewbNo: string) => {
-    if (!ewbNo.trim()) return;
+  const handleSaveManualEwb = async (contractId: string, liftingId: string) => {
+    if (!manualEwb?.ewbNo.trim()) return;
     try {
       setActionLoading(liftingId);
-      await api.patch(`/ethanol-contracts/${contractId}/liftings/${liftingId}/manual-ewb`, { ewbNo: ewbNo.trim() });
+      const formData = new FormData();
+      formData.append('ewbNo', manualEwb.ewbNo.trim());
+      if (manualEwb.file) formData.append('ewbPdf', manualEwb.file);
+      await api.patch(`/ethanol-contracts/${contractId}/liftings/${liftingId}/manual-ewb`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
       setManualEwb(null);
       loadSupplyDetail(contractId);
     } catch (err: any) { setError(err?.response?.data?.error || 'Failed to save EWB'); }
@@ -797,15 +802,21 @@ const EthanolContracts: React.FC = () => {
                                             <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-300 bg-green-50 text-green-700" title={l.invoice.ewbNo || ''}>EWB</span>
                                           ) : l.invoice?.irnStatus === 'GENERATED' && !l.invoice?.ewbNo ? (
                                             manualEwb?.liftingId === l.id ? (
-                                              <div className="flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
-                                                <input type="text" value={manualEwb.ewbNo} onChange={e => setManualEwb({ ...manualEwb, ewbNo: e.target.value })}
-                                                  placeholder="EWB No" className="border border-slate-300 px-1 py-0.5 text-[9px] w-24 focus:outline-none focus:ring-1 focus:ring-blue-400"
-                                                  onKeyDown={e => { if (e.key === 'Enter') handleSaveManualEwb(c.id, l.id, manualEwb.ewbNo); }} autoFocus />
-                                                <button onClick={() => handleSaveManualEwb(c.id, l.id, manualEwb.ewbNo)}
-                                                  disabled={actionLoading === l.id}
-                                                  className="text-[8px] font-bold px-1 py-0.5 border border-green-400 bg-green-500 text-white hover:bg-green-600 disabled:opacity-50">
-                                                  {actionLoading === l.id ? '...' : 'OK'}</button>
-                                                <button onClick={() => setManualEwb(null)} className="text-[8px] px-0.5 text-slate-400 hover:text-slate-600">X</button>
+                                              <div className="flex flex-col gap-1" onClick={e => e.stopPropagation()}>
+                                                <div className="flex items-center gap-0.5">
+                                                  <input type="text" value={manualEwb.ewbNo} onChange={e => setManualEwb({ ...manualEwb, ewbNo: e.target.value })}
+                                                    placeholder="EWB No" className="border border-slate-300 px-1 py-0.5 text-[9px] w-24 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                                                    onKeyDown={e => { if (e.key === 'Enter') handleSaveManualEwb(c.id, l.id); }} autoFocus />
+                                                  <button onClick={() => handleSaveManualEwb(c.id, l.id)}
+                                                    disabled={actionLoading === l.id}
+                                                    className="text-[8px] font-bold px-1 py-0.5 border border-green-400 bg-green-500 text-white hover:bg-green-600 disabled:opacity-50">
+                                                    {actionLoading === l.id ? '...' : 'OK'}</button>
+                                                  <button onClick={() => setManualEwb(null)} className="text-[8px] px-0.5 text-slate-400 hover:text-slate-600">X</button>
+                                                </div>
+                                                <label className="flex items-center gap-1 text-[8px] text-slate-500 cursor-pointer">
+                                                  <input type="file" accept=".pdf" className="hidden" onChange={e => setManualEwb({ ...manualEwb, file: e.target.files?.[0] || null })} />
+                                                  <span className="border border-slate-300 px-1 py-0.5 bg-white hover:bg-slate-50">{manualEwb.file ? manualEwb.file.name.slice(0, 15) : 'Attach PDF'}</span>
+                                                </label>
                                               </div>
                                             ) : (
                                               <div className="flex items-center gap-0.5">
@@ -816,7 +827,7 @@ const EthanolContracts: React.FC = () => {
                                                     {actionLoading === l.id ? '...' : 'Gen'}
                                                   </button>
                                                 )}
-                                                <button onClick={(e) => { e.stopPropagation(); setManualEwb({ liftingId: l.id, ewbNo: '' }); }}
+                                                <button onClick={(e) => { e.stopPropagation(); setManualEwb({ liftingId: l.id, ewbNo: '', file: null }); }}
                                                   className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100">
                                                   Enter
                                                 </button>
