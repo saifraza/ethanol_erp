@@ -187,7 +187,7 @@ const weighmentSchema = z.object({
   second_weight_at: z.string().nullable().optional(),
   created_at: z.string().nullable().optional(),
   // New fields for ERP integration
-  purchase_type: z.enum(['PO', 'SPOT', 'TRADER', 'OUTBOUND']).optional().default('PO'),
+  purchase_type: z.enum(['PO', 'SPOT', 'TRADER', 'OUTBOUND', 'JOB_WORK']).optional().default('PO'),
   po_id: z.string().nullable().optional(),
   po_line_id: z.string().nullable().optional(),
   supplier_id: z.string().nullable().optional(),
@@ -362,7 +362,7 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
       // Previously, this always `continue`d — blocking GRN creation for weighments
       // whose GATE_ENTRY was synced first and created a GrainTruck stub.
       // The dupGRN/dupDP/dupDDGS checks below prevent double-creation.
-      const hasPOWork = w.po_id && purchaseType === 'PO';
+      const hasPOWork = w.po_id && (purchaseType === 'PO' || purchaseType === 'JOB_WORK');
       const hasSPOTWork = purchaseType === 'SPOT';
       const hasTRADERWork = purchaseType === 'TRADER' && w.supplier_id;
       if (!hasPOWork && !hasSPOTWork && !hasTRADERWork) {
@@ -391,7 +391,7 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
     if (dupGRN) { ids.push(dupGRN.id); continue; }
 
     // ── INBOUND + PO → Auto-create GRN (PASS) or quarantine GrainTruck (FAIL) ──
-    if (w.direction === 'IN' && purchaseType === 'PO' && w.po_id) {
+    if (w.direction === 'IN' && (purchaseType === 'PO' || purchaseType === 'JOB_WORK') && w.po_id) {
       const po = await prisma.purchaseOrder.findUnique({
         where: { id: w.po_id },
         include: {
