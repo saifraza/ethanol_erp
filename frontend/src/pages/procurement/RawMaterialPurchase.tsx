@@ -94,7 +94,7 @@ export default function RawMaterialPurchase() {
   const [editingDealId, setEditingDealId] = useState<string | null>(null);
   const [expandedDeals, setExpandedDeals] = useState<Set<string>>(new Set());
   const [expandedMaterials, setExpandedMaterials] = useState<Set<string>>(new Set());
-  const [dealForm, setDealForm] = useState({ vendorId: '', vendorName: '', vendorPhone: '', materialItemId: '', rate: 0, remarks: '' });
+  const [dealForm, setDealForm] = useState({ vendorId: '', vendorName: '', vendorPhone: '', materialItemId: '', rate: 0, remarks: '', quantityType: 'OPEN' });
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -322,7 +322,7 @@ export default function RawMaterialPurchase() {
       }
       setShowDealModal(false);
       setEditingDealId(null);
-      setDealForm({ vendorId: '', vendorName: '', vendorPhone: '', materialItemId: '', rate: 0, remarks: '' });
+      setDealForm({ vendorId: '', vendorName: '', vendorPhone: '', materialItemId: '', rate: 0, remarks: '', quantityType: 'OPEN' });
       fetchDeals();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Failed';
@@ -437,7 +437,7 @@ export default function RawMaterialPurchase() {
             </button>
           )}
           {tab === 'deals' && isAdmin && (
-            <button onClick={() => { setEditingDealId(null); setDealForm({ vendorId: '', vendorName: '', vendorPhone: '', materialItemId: '', rate: 0, remarks: '' }); setShowDealModal(true); }} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">
+            <button onClick={() => { setEditingDealId(null); setDealForm({ vendorId: '', vendorName: '', vendorPhone: '', materialItemId: '', rate: 0, remarks: '', quantityType: 'OPEN' }); setShowDealModal(true); }} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">
               + New Deal
             </button>
           )}
