@@ -513,10 +513,13 @@ router.get('/:id/supply-summary', asyncHandler(async (req: AuthRequest, res: Res
       take: 50,
       select: {
         id: true, date: true, vehicleNo: true, driverName: true, driverPhone: true,
-        transporterName: true, destination: true, status: true, quantityBL: true,
+        driverLicense: true, transporterName: true, destination: true, status: true,
+        quantityBL: true, strength: true, batchNo: true,
         weightGross: true, weightTare: true, weightNet: true,
         gateInTime: true, tareTime: true, grossTime: true,
-        rstNo: true, sealNo: true,
+        rstNo: true, sealNo: true, pesoDate: true,
+        gatePassNo: true, challanNo: true,
+        productRatePerLtr: true, productValue: true,
       },
     });
 

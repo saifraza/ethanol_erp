@@ -195,6 +195,9 @@ const EthanolContracts: React.FC = () => {
   const [ewbModal, setEwbModal] = useState<{ contractId: string; liftingId: string; vehicleNo: string; destination: string; transporterName: string; distanceKm: number } | null>(null);
   const [ewbForm, setEwbForm] = useState({ distanceKm: '', transporterName: '', transporterGstin: '', vehicleNo: '' });
 
+  // Truck detail modal (before release)
+  const [truckDetail, setTruckDetail] = useState<{ truck: any; contract: Contract } | null>(null);
+
   useEffect(() => { fetchData(); }, []);
 
   const fetchData = async () => {
@@ -691,11 +694,13 @@ const EthanolContracts: React.FC = () => {
                                     {activeTrucks.map((t: any) => (
                                       <tr key={`truck-${t.id}`} className={`border-b border-orange-200 ${t.status === 'GROSS_WEIGHED' ? 'bg-green-50/80' : 'bg-orange-50/80'}`}>
                                         <td className="px-2 py-1.5 border-r border-orange-100 whitespace-nowrap">{t.gateInTime ? new Date(t.gateInTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '-'}</td>
-                                        <td className="px-2 py-1.5 border-r border-orange-100 font-medium">{t.vehicleNo}</td>
+                                        <td className="px-2 py-1.5 border-r border-orange-100 font-medium">
+                                          <button onClick={(e) => { e.stopPropagation(); setTruckDetail({ truck: t, contract: c }); }} className="text-blue-700 underline hover:text-blue-900">{t.vehicleNo}</button>
+                                        </td>
                                         <td className="px-2 py-1.5 border-r border-orange-100 hidden md:table-cell">{t.destination || '-'}</td>
                                         <td className="px-2 py-1.5 border-r border-orange-100 text-right font-mono tabular-nums">{t.quantityBL ? t.quantityBL.toLocaleString() : '-'}</td>
                                         <td className="px-2 py-1.5 border-r border-orange-100 text-right font-mono tabular-nums">{t.quantityBL ? (t.quantityBL / 1000).toFixed(2) : '-'}</td>
-                                        <td className="px-2 py-1.5 border-r border-orange-100 text-right font-mono tabular-nums">-</td>
+                                        <td className="px-2 py-1.5 border-r border-orange-100 text-right font-mono tabular-nums">{t.quantityBL ? (t.quantityBL * (c.contractType === 'JOB_WORK' ? (c.conversionRate || 0) : (c.ethanolRate || 0))).toLocaleString('en-IN') : '-'}</td>
                                         <td className="px-2 py-1.5 border-r border-orange-100 text-center">
                                           <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
                                             t.status === 'GROSS_WEIGHED' ? 'border-green-300 bg-green-100 text-green-700' : 'border-orange-300 bg-orange-100 text-orange-700'
@@ -1198,6 +1203,90 @@ const EthanolContracts: React.FC = () => {
           </div>
         </div>
       )}
+      {/* Truck Detail Modal */}
+      {truckDetail && (() => {
+        const t = truckDetail.truck;
+        const c = truckDetail.contract;
+        const rate = c.contractType === 'JOB_WORK' ? (c.conversionRate || 0) : (c.ethanolRate || 0);
+        const amount = t.quantityBL ? t.quantityBL * rate : 0;
+        const fmtTime = (d: string | null) => d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true }) : '--';
+        const Row = ({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) => (
+          <div className="flex justify-between py-1 border-b border-slate-100">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{label}</span>
+            <span className={`text-xs text-slate-800 ${mono ? 'font-mono tabular-nums' : ''}`}>{value || '--'}</span>
+          </div>
+        );
+        return (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => setTruckDetail(null)}>
+            <div className="bg-white shadow-2xl w-full max-w-lg mx-4" onClick={e => e.stopPropagation()}>
+              <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-widest">Truck Details</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">{t.vehicleNo} | {c.contractNo}</div>
+                </div>
+                <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
+                  t.status === 'GROSS_WEIGHED' ? 'border-green-400 bg-green-500 text-white' : 'border-orange-400 bg-orange-500 text-white'
+                }`}>{t.status === 'GATE_IN' ? 'AT GATE' : t.status === 'TARE_WEIGHED' ? 'LOADING' : 'WEIGHED'}</span>
+              </div>
+              <div className="p-4 space-y-3 max-h-[70vh] overflow-y-auto">
+                {/* Quantity & Value */}
+                <div className="border border-slate-200 p-3">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Quantity & Value</div>
+                  <Row label="Quantity (BL)" value={t.quantityBL ? t.quantityBL.toLocaleString() : null} mono />
+                  <Row label="Quantity (KL)" value={t.quantityBL ? (t.quantityBL / 1000).toFixed(2) : null} mono />
+                  <Row label="Strength" value={t.strength ? `${t.strength}%` : null} mono />
+                  <Row label="Rate" value={rate ? `${rate}/${c.contractType === 'JOB_WORK' ? 'BL' : 'L'}` : null} mono />
+                  <Row label="Amount" value={amount ? `₹${amount.toLocaleString('en-IN')}` : null} mono />
+                  <Row label="Batch No" value={t.batchNo} />
+                </div>
+                {/* Weighment */}
+                <div className="border border-slate-200 p-3">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Weighment</div>
+                  <Row label="Gross Weight" value={t.weightGross ? `${t.weightGross.toLocaleString()} kg` : null} mono />
+                  <Row label="Tare Weight" value={t.weightTare ? `${t.weightTare.toLocaleString()} kg` : null} mono />
+                  <Row label="Net Weight" value={t.weightNet ? `${t.weightNet.toLocaleString()} kg` : null} mono />
+                </div>
+                {/* Driver & Transport */}
+                <div className="border border-slate-200 p-3">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Driver & Transport</div>
+                  <Row label="Driver" value={t.driverName} />
+                  <Row label="Phone" value={t.driverPhone} />
+                  <Row label="License (DL)" value={t.driverLicense} />
+                  <Row label="Transporter" value={t.transporterName} />
+                  <Row label="Destination" value={t.destination} />
+                </div>
+                {/* Documents & Compliance */}
+                <div className="border border-slate-200 p-3">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Documents & Compliance</div>
+                  <Row label="RST No" value={t.rstNo} />
+                  <Row label="Seal No" value={t.sealNo} />
+                  <Row label="PESO Date" value={t.pesoDate} />
+                  <Row label="Gate Pass No" value={t.gatePassNo} />
+                  <Row label="Challan No" value={t.challanNo} />
+                </div>
+                {/* Timeline */}
+                <div className="border border-slate-200 p-3">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Timeline</div>
+                  <Row label="Gate In" value={fmtTime(t.gateInTime)} />
+                  <Row label="Tare Weighed" value={fmtTime(t.tareTime)} />
+                  <Row label="Gross Weighed" value={fmtTime(t.grossTime)} />
+                </div>
+              </div>
+              <div className="flex gap-3 p-4 border-t border-slate-200">
+                {t.status === 'GROSS_WEIGHED' && (
+                  <button
+                    onClick={() => { setTruckDetail(null); handleRelease(t.id, c.id); }}
+                    disabled={actionLoading === t.id}
+                    className="px-4 py-1.5 bg-green-600 text-white text-[11px] font-bold uppercase hover:bg-green-700 disabled:opacity-50">
+                    {actionLoading === t.id ? 'Releasing...' : 'Release Truck'}
+                  </button>
+                )}
+                <button onClick={() => setTruckDetail(null)} className="px-4 py-1.5 bg-slate-200 text-slate-700 text-[11px] font-medium hover:bg-slate-300">Close</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
