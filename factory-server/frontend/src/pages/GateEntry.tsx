@@ -7,7 +7,7 @@ interface Material { id: string; name: string; category?: string }
 interface PO { id: string; po_no: number; vendor_name: string; status: string; lines: POLine[] }
 interface POLine { id: string; description: string; quantity: number; received_qty: number; pending_qty: number; rate: number; unit: string }
 interface Customer { id: string; name: string }
-interface Trader { id: string; name: string; phone?: string; productTypes?: string }
+interface Trader { id: string; name: string; phone?: string; productTypes?: string; category?: string }
 interface EthContract { id: string; contractNo: string; contractType: string; buyerName: string; buyerAddress?: string; omcDepot?: string }
 
 const FUEL_KEYWORDS = ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'firewood', 'biomass'];
@@ -365,8 +365,10 @@ export default function GateEntry() {
                   // Filter materials by trader's product types when TRADER mode
                   const selectedTrader = purchaseType === 'TRADER' ? traders.find(t => t.id === selectedTraderId) : null;
                   const traderTypes = selectedTrader?.productTypes?.split(',').filter(Boolean) || [];
-                  const filtered = traderTypes.length > 0
-                    ? materials.filter(m => m.category && traderTypes.includes(m.category))
+                  // Fallback: if productTypes is empty, use vendor category (FUEL → show fuel items only)
+                  const fallbackTypes = traderTypes.length > 0 ? traderTypes : (selectedTrader?.category ? [selectedTrader.category] : []);
+                  const filtered = fallbackTypes.length > 0
+                    ? materials.filter(m => m.category && fallbackTypes.includes(m.category))
                     : materials;
                   return filtered.map(m => <option key={m.id} value={m.name}>{m.name}{m.category ? ` [${m.category}]` : ''}</option>);
                 })()}

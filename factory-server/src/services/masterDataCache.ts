@@ -21,7 +21,7 @@ interface Supplier { id: string; name: string; gstin: string | null; phone: stri
 interface Material { id: string; name: string; unit: string | null; category: string | null; hsnCode: string | null; gstPercent: number }
 interface POLine { id: string; inventory_item_id: string | null; material_id: string | null; description: string; quantity: number; received_qty: number; pending_qty: number; rate: number; unit: string; hsn_code: string; gst_percent: number }
 interface PO { id: string; po_no: number; vendor_name: string; vendor_id: string; status: string; deal_type: string; lines: POLine[] }
-interface Trader { id: string; name: string; phone: string | null; productTypes: string | null }
+interface Trader { id: string; name: string; phone: string | null; productTypes: string | null; category: string | null }
 interface Customer { id: string; name: string; shortName: string | null; gstNo: string | null }
 interface EthContract { id: string; contractNo: string; contractType: string; buyerName: string; buyerGst: string | null; buyerAddress: string | null; conversionRate: number | null; ethanolRate: number | null; gstPercent: number | null; paymentTermsDays: number | null; omcDepot: string | null }
 
@@ -171,7 +171,7 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
       }),
       cloud.vendor.findMany({
         where: { isActive: true, isAgent: true },
-        select: { id: true, name: true, phone: true, productTypes: true },
+        select: { id: true, name: true, phone: true, productTypes: true, category: true },
         orderBy: { name: 'asc' },
         take: 100,
       }),
@@ -229,7 +229,7 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
           gst_percent: l.gstPercent,
         })),
       })),
-      traders: traderVendors.map(t => ({ id: t.id, name: t.name, phone: t.phone, productTypes: t.productTypes })),
+      traders: traderVendors.map(t => ({ id: t.id, name: t.name, phone: t.phone, productTypes: t.productTypes, category: t.category })),
       customers: customers.map(c => ({ id: c.id, name: c.name, shortName: c.shortName, gstNo: c.gstNo })),
       ethContracts: ethContracts.map(c => ({ id: c.id, contractNo: c.contractNo, contractType: c.contractType, buyerName: c.buyerName, buyerGst: c.buyerGst, buyerAddress: c.buyerAddress, conversionRate: c.conversionRate, ethanolRate: c.ethanolRate, gstPercent: c.gstPercent, paymentTermsDays: c.paymentTermsDays, omcDepot: c.omcDepot })),
       vehicles,

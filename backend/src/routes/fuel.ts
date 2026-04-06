@@ -493,6 +493,8 @@ router.post('/deals', authenticate, validate(openDealSchema), asyncHandler(async
           name: b.vendorName,
           vendorCode: `VND-${String(count + 1).padStart(4, '0')}`,
           category: 'FUEL',
+          productTypes: 'FUEL',
+          isAgent: true,
           phone: b.vendorPhone || '',
           isActive: true,
         },
