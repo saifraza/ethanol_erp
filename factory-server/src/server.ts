@@ -49,6 +49,14 @@ app.get('/api/factory-pcs', (_req, res) => {
   res.json(getAllPCStatus());
 });
 
+// Scale weight proxy — frontend polls this instead of cross-origin to weighbridge PC
+app.get('/api/scale/weight', (_req, res) => {
+  const pcs = getAllPCStatus();
+  const wb = pcs.find(p => p.role === 'WEIGHBRIDGE');
+  if (!wb || !wb.data) return res.json({ connected: false, stable: false, weight: 0 });
+  res.json(wb.data);
+});
+
 // SPA fallback — any non-API route serves the React frontend
 app.get('*', (_req, res) => {
   const indexPath = path.join(__dirname, '..', 'public', 'index.html');

@@ -34,9 +34,13 @@ type ScaleStatus = 'STABLE' | 'READING' | 'DISCONNECTED';
 
 export default function GrossWeighment() {
   const { token } = useAuth();
-  const [scaleIp, setScaleIp] = useState(() => localStorage.getItem('scaleIp') || '');
-  const [showConfig, setShowConfig] = useState(!localStorage.getItem('scaleIp'));
-  const [configInput, setConfigInput] = useState(localStorage.getItem('scaleIp') || '192.168.0.83:8099');
+  const [scaleIp, setScaleIp] = useState(() => {
+    const saved = localStorage.getItem('scaleIp');
+    if (saved?.includes(':8099')) { const fixed = saved.replace(':8099', ':8098'); localStorage.setItem('scaleIp', fixed); return fixed; }
+    return saved || '192.168.0.83:8098';
+  });
+  const [showConfig, setShowConfig] = useState(false);
+  const [configInput, setConfigInput] = useState(localStorage.getItem('scaleIp') || '192.168.0.83:8098');
 
   const [liveWeight, setLiveWeight] = useState(0);
   const [scaleStatus, setScaleStatus] = useState<ScaleStatus>('DISCONNECTED');
@@ -71,7 +75,7 @@ export default function GrossWeighment() {
 
     scaleTimer.current = setInterval(async () => {
       try {
-        const res = await fetch(`http://${scaleIp}/weight`, { signal: AbortSignal.timeout(1000) });
+        const res = await fetch('/api/scale/weight', { signal: AbortSignal.timeout(1000) });
         const data = await res.json();
         const w = parseFloat(data.weight) || 0;
         setLiveWeight(w);
@@ -196,7 +200,7 @@ export default function GrossWeighment() {
               value={configInput}
               onChange={e => setConfigInput(e.target.value)}
               className="w-full border border-slate-300 px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-slate-400 mb-4"
-              placeholder="192.168.0.83:8099"
+              placeholder="192.168.0.83:8098"
               autoFocus
             />
             <button onClick={saveConfig} className="w-full px-4 py-2 bg-blue-600 text-white text-sm font-bold uppercase tracking-widest hover:bg-blue-700">
