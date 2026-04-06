@@ -392,6 +392,28 @@ router.get('/:id/liftings', asyncHandler(async (req: AuthRequest, res: Response)
     res.json({ liftings });
 }));
 
+// PATCH manual EWB number entry (for job work where API generation isn't available)
+router.patch('/:id/liftings/:liftingId/manual-ewb', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { ewbNo } = req.body;
+    if (!ewbNo?.trim()) return res.status(400).json({ error: 'EWB number is required' });
+
+    const lifting = await prisma.ethanolLifting.findFirst({
+      where: { id: req.params.liftingId, contractId: req.params.id },
+      select: { invoiceId: true },
+    });
+    if (!lifting?.invoiceId) return res.status(404).json({ error: 'Lifting or invoice not found' });
+
+    await prisma.invoice.update({
+      where: { id: lifting.invoiceId },
+      data: {
+        ewbNo: ewbNo.trim(),
+        ewbDate: new Date(),
+        ewbStatus: 'GENERATED',
+      } as any,
+    });
+    res.json({ success: true, ewbNo: ewbNo.trim() });
+}));
+
 // PUT update lifting status (delivery confirmation)
 router.put('/liftings/:liftingId', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;

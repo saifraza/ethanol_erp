@@ -194,6 +194,7 @@ const EthanolContracts: React.FC = () => {
   // EWB generation modal
   const [ewbModal, setEwbModal] = useState<{ contractId: string; liftingId: string; vehicleNo: string; destination: string; transporterName: string; distanceKm: number } | null>(null);
   const [ewbForm, setEwbForm] = useState({ distanceKm: '', transporterName: '', transporterGstin: '', vehicleNo: '' });
+  const [manualEwb, setManualEwb] = useState<{ liftingId: string; ewbNo: string } | null>(null);
 
   // Truck detail modal (before release)
   const [truckDetail, setTruckDetail] = useState<{ truck: any; contract: Contract } | null>(null);
@@ -405,6 +406,17 @@ const EthanolContracts: React.FC = () => {
       setEwbModal(null);
       loadSupplyDetail(contractId);
     } catch (err: any) { setError(err?.response?.data?.error || 'Failed to generate e-invoice'); }
+    finally { setActionLoading(null); }
+  };
+
+  const handleSaveManualEwb = async (contractId: string, liftingId: string, ewbNo: string) => {
+    if (!ewbNo.trim()) return;
+    try {
+      setActionLoading(liftingId);
+      await api.patch(`/ethanol-contracts/${contractId}/liftings/${liftingId}/manual-ewb`, { ewbNo: ewbNo.trim() });
+      setManualEwb(null);
+      loadSupplyDetail(contractId);
+    } catch (err: any) { setError(err?.response?.data?.error || 'Failed to save EWB'); }
     finally { setActionLoading(null); }
   };
 
@@ -784,12 +796,32 @@ const EthanolContracts: React.FC = () => {
                                           {l.invoice?.ewbStatus === 'GENERATED' ? (
                                             <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-300 bg-green-50 text-green-700" title={l.invoice.ewbNo || ''}>EWB</span>
                                           ) : l.invoice?.irnStatus === 'GENERATED' && !l.invoice?.ewbNo ? (
-                                            <button
-                                              onClick={(e) => { e.stopPropagation(); openEwbModal(c.id, l); }}
-                                              disabled={actionLoading === l.id}
-                                              className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-50">
-                                              {actionLoading === l.id ? '...' : 'EWB'}
-                                            </button>
+                                            manualEwb?.liftingId === l.id ? (
+                                              <div className="flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
+                                                <input type="text" value={manualEwb.ewbNo} onChange={e => setManualEwb({ ...manualEwb, ewbNo: e.target.value })}
+                                                  placeholder="EWB No" className="border border-slate-300 px-1 py-0.5 text-[9px] w-24 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                                                  onKeyDown={e => { if (e.key === 'Enter') handleSaveManualEwb(c.id, l.id, manualEwb.ewbNo); }} autoFocus />
+                                                <button onClick={() => handleSaveManualEwb(c.id, l.id, manualEwb.ewbNo)}
+                                                  disabled={actionLoading === l.id}
+                                                  className="text-[8px] font-bold px-1 py-0.5 border border-green-400 bg-green-500 text-white hover:bg-green-600 disabled:opacity-50">
+                                                  {actionLoading === l.id ? '...' : 'OK'}</button>
+                                                <button onClick={() => setManualEwb(null)} className="text-[8px] px-0.5 text-slate-400 hover:text-slate-600">X</button>
+                                              </div>
+                                            ) : (
+                                              <div className="flex items-center gap-0.5">
+                                                {c.contractType !== 'JOB_WORK' && (
+                                                  <button onClick={(e) => { e.stopPropagation(); openEwbModal(c.id, l); }}
+                                                    disabled={actionLoading === l.id}
+                                                    className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-50">
+                                                    {actionLoading === l.id ? '...' : 'Gen'}
+                                                  </button>
+                                                )}
+                                                <button onClick={(e) => { e.stopPropagation(); setManualEwb({ liftingId: l.id, ewbNo: '' }); }}
+                                                  className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100">
+                                                  Enter
+                                                </button>
+                                              </div>
+                                            )
                                           ) : (
                                             <span className="text-slate-300">--</span>
                                           )}
