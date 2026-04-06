@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 
@@ -13,6 +13,7 @@ interface WeighmentItem {
   poNumber: string | null;
   supplierName: string | null;
   materialName: string | null;
+  materialCategory: string | null;
   grossWeight: number | null;
   tareWeight: number | null;
   netWeight: number | null;
@@ -28,12 +29,61 @@ interface WeighmentItem {
 interface Stats {
   today: { total: number; completed: number; pending: number };
   unsynced: number;
+  byCategory?: Record<string, number>;
+}
+
+type TabKey = 'ALL' | 'RAW_MATERIAL' | 'FUEL' | 'OUTBOUND' | 'OTHER';
+
+const TABS: { key: TabKey; label: string }[] = [
+  { key: 'ALL', label: 'All' },
+  { key: 'RAW_MATERIAL', label: 'Raw Material' },
+  { key: 'FUEL', label: 'Fuel' },
+  { key: 'OUTBOUND', label: 'Outbound' },
+  { key: 'OTHER', label: 'Other' },
+];
+
+const KNOWN_CATS = new Set(['RAW_MATERIAL', 'FUEL', 'CHEMICAL', 'PACKING']);
+
+function getCategoryForTab(w: WeighmentItem): TabKey {
+  if (w.direction === 'OUTBOUND') return 'OUTBOUND';
+  if (w.materialCategory === 'RAW_MATERIAL') return 'RAW_MATERIAL';
+  if (w.materialCategory === 'FUEL') return 'FUEL';
+  return 'OTHER';
+}
+
+function categoryBorderColor(cat: TabKey): string {
+  switch (cat) {
+    case 'RAW_MATERIAL': return 'border-l-green-500';
+    case 'FUEL': return 'border-l-orange-500';
+    case 'OUTBOUND': return 'border-l-blue-500';
+    default: return 'border-l-slate-300';
+  }
+}
+
+/** Check if a date string is from today (IST) */
+function isToday(dateStr: string): boolean {
+  const d = new Date(dateStr);
+  const now = new Date();
+  // Compare in IST by using locale date string
+  return d.toLocaleDateString('en-IN') === now.toLocaleDateString('en-IN');
+}
+
+function dateBadge(dateStr: string): string | null {
+  if (isToday(dateStr)) return null;
+  const d = new Date(dateStr);
+  const now = new Date();
+  // Check if yesterday
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (d.toLocaleDateString('en-IN') === yesterday.toLocaleDateString('en-IN')) return 'YESTERDAY';
+  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }).toUpperCase();
 }
 
 export default function Weighment() {
   const { token } = useAuth();
   const [weighments, setWeighments] = useState<WeighmentItem[]>([]);
   const [stats, setStats] = useState<Stats>({ today: { total: 0, completed: 0, pending: 0 }, unsynced: 0 });
+  const [activeTab, setActiveTab] = useState<TabKey>('ALL');
   const [lightbox, setLightbox] = useState<{ url: string; weighment: WeighmentItem; type: string } | null>(null);
 
   const api = axios.create({ baseURL: '/api', headers: { Authorization: `Bearer ${token}` } });
@@ -41,7 +91,7 @@ export default function Weighment() {
   const fetchData = useCallback(async () => {
     try {
       const [wRes, sRes] = await Promise.all([
-        api.get('/weighbridge/weighments?limit=50'),
+        api.get('/weighbridge/weighments?limit=100'),
         api.get('/weighbridge/stats'),
       ]);
       setWeighments(wRes.data);
@@ -50,6 +100,21 @@ export default function Weighment() {
   }, [token]);
 
   useEffect(() => { fetchData(); const iv = setInterval(fetchData, 10000); return () => clearInterval(iv); }, [fetchData]);
+
+  // Compute tab counts from loaded data
+  const tabCounts = useMemo(() => {
+    const counts: Record<TabKey, number> = { ALL: weighments.length, RAW_MATERIAL: 0, FUEL: 0, OUTBOUND: 0, OTHER: 0 };
+    for (const w of weighments) {
+      counts[getCategoryForTab(w)]++;
+    }
+    return counts;
+  }, [weighments]);
+
+  // Filter by active tab
+  const filtered = useMemo(() => {
+    if (activeTab === 'ALL') return weighments;
+    return weighments.filter(w => getCategoryForTab(w) === activeTab);
+  }, [weighments, activeTab]);
 
   const fmtKg = (n: number | null) => n == null ? '--' : n.toLocaleString('en-IN') + ' kg';
   const fmtTime = (s: string | null) => s ? new Date(s).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '--';
@@ -88,12 +153,28 @@ export default function Weighment() {
         </div>
       </div>
 
+      {/* Category Tabs */}
+      <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6 flex gap-1 overflow-x-auto">
+        {TABS.map(t => (
+          <button key={t.key} onClick={() => setActiveTab(t.key)}
+            className={`px-3 py-1 text-[11px] font-bold uppercase tracking-widest whitespace-nowrap transition ${
+              activeTab === t.key ? 'border-b-2 border-blue-600 text-blue-700 bg-white' : 'text-slate-500 hover:text-slate-700'
+            }`}>
+            {t.label}
+            <span className={`ml-1 text-[9px] ${activeTab === t.key ? 'text-blue-500' : 'text-slate-400'}`}>
+              ({tabCounts[t.key]})
+            </span>
+          </button>
+        ))}
+      </div>
+
       {/* Table */}
       <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-hidden overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
             <tr className="bg-slate-800 text-white">
               <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Vehicle</th>
+              <th className="text-center px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Dir</th>
               <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Type</th>
               <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Supplier</th>
               <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Material</th>
@@ -102,52 +183,75 @@ export default function Weighment() {
               <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Net</th>
               <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Status</th>
               <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Sync</th>
-              <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">PC</th>
               <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Photos</th>
               <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Time</th>
             </tr>
           </thead>
           <tbody>
-            {weighments.map((w, i) => (
-              <tr key={w.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
-                <td className="px-3 py-1.5 text-slate-800 font-mono font-bold border-r border-slate-100">{w.vehicleNo}</td>
-                <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">{w.purchaseType || '--'}</td>
-                <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">{w.supplierName || '--'}</td>
-                <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">{w.materialName || '--'}</td>
-                <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-700 border-r border-slate-100">{fmtKg(w.grossWeight)}</td>
-                <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-700 border-r border-slate-100">{fmtKg(w.tareWeight)}</td>
-                <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold text-slate-800 border-r border-slate-100">{fmtKg(w.netWeight)}</td>
-                <td className="px-3 py-1.5 text-center border-r border-slate-100">
-                  <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
-                    w.status === 'COMPLETE' ? 'border-green-300 bg-green-50 text-green-700' :
-                    w.status === 'GROSS_DONE' ? 'border-yellow-300 bg-yellow-50 text-yellow-700' :
-                    'border-slate-300 bg-slate-50 text-slate-500'
-                  }`}>
-                    {w.status}
-                  </span>
-                </td>
-                <td className="px-3 py-1.5 text-center border-r border-slate-100">
-                  {w.cloudSynced ? (
-                    <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-300 bg-green-50 text-green-700">OK</span>
-                  ) : (
-                    <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-slate-300 bg-slate-50 text-slate-400">--</span>
-                  )}
-                </td>
-                <td className="px-3 py-1.5 text-slate-500 border-r border-slate-100">{w.pcName || w.pcId}</td>
-                <td className="px-2 py-1.5 text-center border-r border-slate-100">
-                  {(w.grossPhotos || w.tarePhotos) ? (
-                    <div className="flex gap-1 justify-center">
-                      {[...(w.grossPhotos?.split(',') || []).map(p => ({p, type: 'GROSS'})), ...(w.tarePhotos?.split(',') || []).map(p => ({p, type: 'TARE'}))].filter(x => x.p).map((x, j) => (
-                        <img key={j} src={`/snapshots/${x.p}`} alt="" className="w-10 h-8 object-cover cursor-pointer border-2 border-slate-300 hover:border-blue-500 hover:scale-110 transition-transform"
-                          onClick={() => setLightbox({ url: `/snapshots/${x.p}`, weighment: w, type: x.type })} loading="lazy" />
-                      ))}
+            {filtered.map((w, i) => {
+              const cat = getCategoryForTab(w);
+              const badge = dateBadge(w.createdAt);
+              return (
+                <tr key={w.id} className={`border-b border-slate-100 hover:bg-blue-50/60 border-l-4 ${categoryBorderColor(cat)} ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                  <td className="px-3 py-1.5 border-r border-slate-100">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-slate-800 font-mono font-bold">{w.vehicleNo}</span>
+                      {badge && (
+                        <span className="text-[8px] font-bold uppercase px-1 py-0.5 bg-orange-100 text-orange-700 border border-orange-300 whitespace-nowrap">{badge}</span>
+                      )}
                     </div>
-                  ) : <span className="text-[9px] text-slate-300">--</span>}
-                </td>
-                <td className="px-3 py-1.5 text-slate-500 font-mono">{fmtTime(w.createdAt)}</td>
-              </tr>
-            ))}
-            {weighments.length === 0 && (
+                  </td>
+                  <td className="px-2 py-1.5 text-center border-r border-slate-100">
+                    <span className={`text-[9px] font-bold uppercase px-1 py-0.5 border ${
+                      w.direction === 'OUTBOUND' ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-green-300 bg-green-50 text-green-700'
+                    }`}>{w.direction === 'OUTBOUND' ? 'OUT' : 'IN'}</span>
+                  </td>
+                  <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">{w.purchaseType || '--'}</td>
+                  <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">{w.supplierName || '--'}</td>
+                  <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">
+                    <span>{w.materialName || '--'}</span>
+                    {w.materialCategory && activeTab === 'ALL' && (
+                      <span className={`ml-1 text-[8px] font-bold uppercase px-1 py-0.5 border ${
+                        w.materialCategory === 'RAW_MATERIAL' ? 'border-green-200 bg-green-50 text-green-600' :
+                        w.materialCategory === 'FUEL' ? 'border-orange-200 bg-orange-50 text-orange-600' :
+                        'border-slate-200 bg-slate-50 text-slate-500'
+                      }`}>{w.materialCategory === 'RAW_MATERIAL' ? 'RM' : w.materialCategory}</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-700 border-r border-slate-100">{fmtKg(w.grossWeight)}</td>
+                  <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-700 border-r border-slate-100">{fmtKg(w.tareWeight)}</td>
+                  <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold text-slate-800 border-r border-slate-100">{fmtKg(w.netWeight)}</td>
+                  <td className="px-3 py-1.5 text-center border-r border-slate-100">
+                    <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
+                      w.status === 'COMPLETE' ? 'border-green-300 bg-green-50 text-green-700' :
+                      w.status === 'GROSS_DONE' || w.status === 'FIRST_DONE' ? 'border-yellow-300 bg-yellow-50 text-yellow-700' :
+                      'border-slate-300 bg-slate-50 text-slate-500'
+                    }`}>
+                      {w.status}
+                    </span>
+                  </td>
+                  <td className="px-3 py-1.5 text-center border-r border-slate-100">
+                    {w.cloudSynced ? (
+                      <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-300 bg-green-50 text-green-700">OK</span>
+                    ) : (
+                      <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-slate-300 bg-slate-50 text-slate-400">--</span>
+                    )}
+                  </td>
+                  <td className="px-2 py-1.5 text-center border-r border-slate-100">
+                    {(w.grossPhotos || w.tarePhotos) ? (
+                      <div className="flex gap-1 justify-center">
+                        {[...(w.grossPhotos?.split(',') || []).map(p => ({p, type: 'GROSS'})), ...(w.tarePhotos?.split(',') || []).map(p => ({p, type: 'TARE'}))].filter(x => x.p).map((x, j) => (
+                          <img key={j} src={`/snapshots/${x.p}`} alt="" className="w-10 h-8 object-cover cursor-pointer border-2 border-slate-300 hover:border-blue-500 hover:scale-110 transition-transform"
+                            onClick={() => setLightbox({ url: `/snapshots/${x.p}`, weighment: w, type: x.type })} loading="lazy" />
+                        ))}
+                      </div>
+                    ) : <span className="text-[9px] text-slate-300">--</span>}
+                  </td>
+                  <td className="px-3 py-1.5 text-slate-500 font-mono">{fmtTime(w.createdAt)}</td>
+                </tr>
+              );
+            })}
+            {filtered.length === 0 && (
               <tr><td colSpan={12} className="text-center py-8 text-xs text-slate-400 uppercase tracking-widest">No weighments</td></tr>
             )}
           </tbody>

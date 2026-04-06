@@ -6,6 +6,7 @@ import prisma from '../prisma';
 import { getCloudPrisma } from '../cloudPrisma';
 import { asyncHandler, requireWbKey, requireWbKeyOrAuth, requireAuth, requireRole, AuthRequest } from '../middleware';
 import { captureSnapshots } from '../services/cameraCapture';
+import { getMasterData } from '../services/masterDataCache';
 
 const router = Router();
 
@@ -89,6 +90,7 @@ const LIST_SELECT = {
   labStatus: true, labMoisture: true, labRemarks: true,
   grossPhotos: true, tarePhotos: true,
   cloudSynced: true, createdAt: true, updatedAt: true,
+  materialCategory: true,
 };
 
 // ============================================================
@@ -226,14 +228,24 @@ router.get('/weighments', requireAuth, asyncHandler(async (req: AuthRequest, res
 router.get('/stats', requireAuth, asyncHandler(async (_req: AuthRequest, res: Response) => {
   const { start } = istDayRange();
 
-  const [total, completed, pending, unsynced] = await Promise.all([
+  const [total, completed, pending, unsynced, catCounts] = await Promise.all([
     prisma.weighment.count({ where: { createdAt: { gte: start } } }),
     prisma.weighment.count({ where: { createdAt: { gte: start }, status: 'COMPLETE' } }),
     prisma.weighment.count({ where: { createdAt: { gte: start }, status: { not: 'COMPLETE' } } }),
     prisma.weighment.count({ where: { cloudSynced: false, status: 'COMPLETE' } }),
+    prisma.weighment.groupBy({
+      by: ['materialCategory'],
+      where: { createdAt: { gte: start } },
+      _count: true,
+    }),
   ]);
 
-  res.json({ today: { total, completed, pending }, unsynced });
+  const byCategory: Record<string, number> = {};
+  for (const g of catCounts) {
+    byCategory[g.materialCategory || 'OTHER'] = g._count;
+  }
+
+  res.json({ today: { total, completed, pending }, unsynced, byCategory });
 }));
 
 // ============================================================
@@ -869,6 +881,211 @@ ${qrImg(w.localId)}
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(thermalHtml(`Final Slip T-${w.ticketNo}`, body));
+}));
+
+// ============================================================
+// WEIGHBRIDGE PC → FACTORY SERVER RELAY (cloud-format compat)
+// These endpoints accept the same format the weighbridge PC
+// currently sends to cloud, so the PC can push here on LAN
+// instead of going over the internet.
+// ============================================================
+
+/**
+ * POST /api/weighbridge/wb-push
+ * Accepts cloud-format: { weighments: [{ id, vehicle_no, weight_gross, ... }] }
+ * Maps snake_case → camelCase, upserts into factory Weighment, marks for cloud relay.
+ * Returns same shape as cloud: { ok, ids, count }
+ */
+router.post('/wb-push', requireWbKey, asyncHandler(async (req: Request, res: Response) => {
+  const { weighments } = req.body;
+  if (!Array.isArray(weighments) || weighments.length === 0) {
+    return res.status(400).json({ error: 'No weighments provided' });
+  }
+
+  const ids: string[] = [];
+  let processed = 0;
+
+  for (const w of weighments) {
+    if (!w.id || !w.vehicle_no) continue;
+
+    // Map direction: cloud uses IN/OUT, factory uses INBOUND/OUTBOUND
+    const direction = w.direction === 'IN' ? 'INBOUND' : w.direction === 'OUT' ? 'OUTBOUND' : (w.direction || 'INBOUND');
+
+    const data: Record<string, any> = {
+      pcId: w.pc_id || 'weighbridge-1',
+      pcName: w.pc_name || 'Weighbridge',
+      vehicleNo: w.vehicle_no,
+      direction,
+      purchaseType: w.purchase_type || 'PO',
+      poNumber: w.po_number || null,
+      poId: w.po_id || null,
+      poLineId: w.po_line_id || null,
+      supplierName: w.supplier_name || null,
+      supplierId: w.supplier_id || null,
+      materialName: w.material || null,
+      ticketNo: w.ticket_no || null,
+      gateEntryNo: w.gate_entry_no || null,
+      transporter: w.transporter || null,
+      vehicleType: w.vehicle_type || null,
+      driverName: w.driver_name || null,
+      driverPhone: w.driver_mobile || null,
+      grossWeight: w.weight_gross != null ? parseFloat(w.weight_gross) : null,
+      tareWeight: w.weight_tare != null ? parseFloat(w.weight_tare) : null,
+      netWeight: w.weight_net != null ? parseFloat(w.weight_net) : null,
+      weightSource: w.weight_source || 'SERIAL',
+      grossTime: w.first_weight_at ? new Date(w.first_weight_at) : null,
+      tareTime: w.second_weight_at ? new Date(w.second_weight_at) : null,
+      status: w.status || 'GATE_ENTRY',
+      bags: w.bags || null,
+      remarks: w.remarks || null,
+      // Lab fields
+      labStatus: w.lab_status || undefined,
+      labMoisture: w.lab_moisture != null ? parseFloat(w.lab_moisture) : undefined,
+      labStarch: w.lab_starch != null ? parseFloat(w.lab_starch) : undefined,
+      labDamaged: w.lab_damaged != null ? parseFloat(w.lab_damaged) : undefined,
+      labForeignMatter: w.lab_foreign_matter != null ? parseFloat(w.lab_foreign_matter) : undefined,
+      labRemarks: w.lab_remarks || undefined,
+      // Spot purchase fields
+      sellerPhone: w.seller_phone || undefined,
+      sellerVillage: w.seller_village || undefined,
+      sellerAadhaar: w.seller_aadhaar || undefined,
+      rate: w.rate != null ? parseFloat(w.rate) : undefined,
+      deductions: w.deductions != null ? parseFloat(w.deductions) : undefined,
+      deductionReason: w.deduction_reason || undefined,
+      paymentMode: w.payment_mode || undefined,
+      paymentRef: w.payment_ref || undefined,
+      // Ethanol outbound
+      cloudGatePassId: w.cloud_gate_pass_id || undefined,
+      quantityBL: w.quantity_bl != null ? parseFloat(w.quantity_bl) : undefined,
+      strength: w.ethanol_strength != null ? parseFloat(w.ethanol_strength) : undefined,
+      sealNo: w.seal_no || undefined,
+      rstNo: w.rst_no || undefined,
+      driverLicense: w.driver_license || undefined,
+      pesoDate: w.peso_date || undefined,
+    };
+
+    // Remove undefined values so Prisma doesn't error
+    const cleaned: Record<string, any> = {};
+    for (const [k, v] of Object.entries(data)) {
+      if (v !== undefined) cleaned[k] = v;
+    }
+
+    try {
+      const weighment = await prisma.weighment.upsert({
+        where: { localId: w.id },
+        create: {
+          localId: w.id,
+          ...cleaned,
+          cloudSynced: false,
+        },
+        update: {
+          ...cleaned,
+          cloudSynced: false,
+          updatedAt: new Date(),
+        },
+      });
+      ids.push(weighment.id);
+      processed++;
+    } catch (err) {
+      console.error(`[WB-PUSH-RELAY] Failed to upsert ${w.id}:`, err instanceof Error ? err.message : err);
+    }
+  }
+
+  res.json({ ok: true, ids, count: processed });
+}));
+
+/**
+ * GET /api/weighbridge/master-data
+ * Serves master data from factory server's in-memory cache (works offline).
+ * Same format as cloud's /api/weighbridge/master-data.
+ */
+router.get('/master-data', requireWbKey, asyncHandler(async (_req: Request, res: Response) => {
+  const data = getMasterData();
+
+  // Map to cloud-compatible format the weighbridge expects
+  const suppliers = (data.suppliers || []).map(s => ({ id: s.id, name: s.name }));
+  const materials = (data.materials || []).map(m => ({ id: m.id, name: m.name, category: m.category || '' }));
+  const pos = (data.pos || []).map(po => ({
+    id: po.id,
+    po_no: po.po_no,
+    vendor_id: po.vendor_id,
+    vendor_name: po.vendor_name,
+    status: po.status,
+    lines: po.lines || [],
+  }));
+  const customers = (data.customers || []).map(c => ({ id: c.id, name: c.name, short_name: c.shortName || '' }));
+  const vehicles = data.vehicles || [];
+
+  res.json({ suppliers, materials, pos, customers, vehicles });
+}));
+
+/**
+ * POST /api/weighbridge/lab-results
+ * Returns lab results for specified weighment IDs (by localId).
+ * Weighbridge polls this to sync lab status back from factory/cloud.
+ */
+router.post('/lab-results', requireWbKey, asyncHandler(async (req: Request, res: Response) => {
+  const { weighment_ids } = req.body;
+  if (!Array.isArray(weighment_ids) || weighment_ids.length === 0) {
+    return res.json({ results: [] });
+  }
+
+  const weighments = await prisma.weighment.findMany({
+    where: {
+      localId: { in: weighment_ids },
+      labStatus: { not: 'PENDING' },
+    },
+    select: {
+      localId: true, labStatus: true, labMoisture: true,
+      labStarch: true, labDamaged: true, labForeignMatter: true,
+    },
+    take: 100,
+  });
+
+  const results = weighments.map(w => ({
+    weighment_id: w.localId,
+    lab_status: w.labStatus,
+    moisture: w.labMoisture,
+    starch: w.labStarch,
+    damaged: w.labDamaged,
+    foreign_matter: w.labForeignMatter,
+  }));
+
+  res.json({ results });
+}));
+
+/**
+ * POST /api/weighbridge/heartbeat
+ * Receives heartbeat from weighbridge PC, stores in memory.
+ */
+router.post('/heartbeat', requireWbKey, asyncHandler(async (req: Request, res: Response) => {
+  const { pcId, pcName } = req.body;
+  if (!pcId) {
+    return res.status(400).json({ error: 'pcId required' });
+  }
+
+  // Store in the existing pcHeartbeats map (defined at top of file)
+  // The map is already used by the status endpoint
+  const heartbeat: any = {
+    pcId,
+    pcName: pcName || pcId,
+    timestamp: req.body.timestamp || new Date().toISOString(),
+    receivedAt: new Date().toISOString(),
+    uptimeSeconds: req.body.uptimeSeconds,
+    queueDepth: req.body.queueDepth,
+    dbSizeMb: req.body.dbSizeMb,
+    serialProtocol: req.body.serialProtocol,
+    webPort: req.body.webPort,
+    tailscaleIp: req.body.tailscaleIp,
+    localUrl: req.body.localUrl,
+    weightsToday: req.body.weightsToday,
+    lastTicket: req.body.lastTicket,
+    version: req.body.version,
+    system: req.body.system,
+  };
+  pcHeartbeats.set(pcId, heartbeat);
+
+  res.json({ ok: true });
 }));
 
 export default router;
