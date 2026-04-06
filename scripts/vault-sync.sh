@@ -9,7 +9,7 @@
 
 API_URL="${VAULT_API_URL:-https://app.mspil.in}"
 AUTH_TOKEN="${VAULT_AUTH_TOKEN}"
-VAULT_DIR="$HOME/Documents/mspil-brain"
+VAULT_DIR="$HOME/Desktop/distillery-erp/mspil-brain"
 
 if [ -z "$AUTH_TOKEN" ]; then
   echo "Error: VAULT_AUTH_TOKEN not set"

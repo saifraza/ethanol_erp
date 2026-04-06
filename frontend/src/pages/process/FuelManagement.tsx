@@ -57,7 +57,12 @@ interface OpenDeal {
   dealType: string;
   status: string;
   poDate: string;
+  deliveryDate: string | null;
   remarks: string | null;
+  paymentTerms: string | null;
+  truckCap: number | null;
+  transportBy: string | null;
+  deliveryAddress: string | null;
   vendor: { id: string; name: string; phone: string | null };
   lines: Array<{ id: string; description: string; rate: number; unit: string; inventoryItemId: string | null; receivedQty: number; quantity: number }>;
   totalReceived: number;
@@ -306,7 +311,25 @@ export default function FuelManagement() {
         }
       }
       if (editingDealId) {
-        await api.put(`/fuel/deals/${editingDealId}`, { rate: dealForm.rate, remarks: dealForm.remarks });
+        // Build remarks with delivery details (same format as create)
+        const rParts = [(dealForm as Record<string, string>).remarks || ''];
+        if ((dealForm as Record<string, string>).origin) rParts.push(`Origin: ${(dealForm as Record<string, string>).origin}`);
+        if ((dealForm as Record<string, string>).deliveryPoint) rParts.push(`Delivery: ${(dealForm as Record<string, string>).deliveryPoint}`);
+        if ((dealForm as Record<string, string>).transportBy) rParts.push(`Transport: ${(dealForm as Record<string, string>).transportBy}`);
+        if ((dealForm as Record<string, string>).deliverySchedule) rParts.push(`Schedule: ${(dealForm as Record<string, string>).deliverySchedule}`);
+        const isTrucks = (dealForm as Record<string, string>).quantityUnit === 'TRUCKS';
+        if (isTrucks && (dealForm as Record<string, number>).quantity) rParts.push(`FIXED_TRUCKS:${(dealForm as Record<string, number>).quantity}`);
+        await api.put(`/fuel/deals/${editingDealId}`, {
+          rate: dealForm.rate,
+          remarks: rParts.filter(Boolean).join(' | '),
+          vendorId: dealForm.vendorId === '__new' ? undefined : dealForm.vendorId,
+          fuelItemId: dealForm.fuelItemId,
+          paymentTerms: (dealForm as Record<string, string>).paymentTerms,
+          validUntil: (dealForm as Record<string, string>).validUntil || undefined,
+          deliveryPoint: (dealForm as Record<string, string>).deliveryPoint,
+          transportBy: (dealForm as Record<string, string>).transportBy,
+          truckCap: isTrucks && (dealForm as Record<string, number>).quantity ? Math.round((dealForm as Record<string, number>).quantity) : null,
+        });
       } else {
         await api.post('/fuel/deals', payload);
       }
@@ -339,6 +362,16 @@ export default function FuelManagement() {
 
   const editDeal = (d: OpenDeal) => {
     const line = d.lines[0];
+    // Parse origin from remarks (format: "... | Origin: X | Delivery: Y | Transport: Z | Schedule: N")
+    const remarksStr = d.remarks || '';
+    const parts = remarksStr.split(' | ');
+    let origin = '', deliverySchedule = '', cleanRemarks = '';
+    const metaKeys = ['Origin:', 'Delivery:', 'Transport:', 'Schedule:', 'FIXED_TRUCKS:'];
+    cleanRemarks = parts.filter(p => !metaKeys.some(k => p.startsWith(k))).join(' | ').trim();
+    for (const p of parts) {
+      if (p.startsWith('Origin: ')) origin = p.replace('Origin: ', '');
+      if (p.startsWith('Schedule: ')) deliverySchedule = p.replace('Schedule: ', '').replace(' Days', '');
+    }
     setEditingDealId(d.id);
     setDealForm({
       vendorId: d.vendor.id,
@@ -346,10 +379,16 @@ export default function FuelManagement() {
       vendorPhone: d.vendor.phone || '',
       fuelItemId: line?.inventoryItemId || '',
       rate: line?.rate || 0,
-      remarks: d.remarks || '',
+      remarks: cleanRemarks,
       quantityType: d.dealType === 'OPEN' ? 'OPEN' : 'FIXED',
       quantity: line?.quantity === 999999 ? 0 : (line?.quantity || 0),
-      paymentTerms: '',
+      quantityUnit: d.truckCap ? 'TRUCKS' : 'MT',
+      paymentTerms: d.paymentTerms || 'NET15',
+      origin,
+      deliveryPoint: d.deliveryAddress || 'Boiler Warehouse',
+      transportBy: d.transportBy || 'SUPPLIER',
+      validUntil: d.deliveryDate ? d.deliveryDate.slice(0, 10) : '',
+      deliverySchedule,
     } as typeof dealForm);
     setShowDealModal(true);
   };
@@ -686,8 +725,8 @@ export default function FuelManagement() {
                                     </td>
                                     <td className="px-3 py-1.5" onClick={e => e.stopPropagation()}>
                                       <div className="flex gap-1 flex-wrap">
-                                        <button onClick={() => updateRate(d.id)} className="text-[10px] text-blue-600 font-semibold uppercase hover:underline">Rate</button>
-                                        <button onClick={() => closeDeal(d.id)} className="text-[10px] text-orange-500 font-semibold uppercase hover:underline">Close</button>
+                                        <button onClick={() => editDeal(d)} className="text-[10px] text-blue-600 font-semibold uppercase hover:underline">Edit</button>
+                                        {d.status !== 'CLOSED' && <button onClick={() => closeDeal(d.id)} className="text-[10px] text-orange-500 font-semibold uppercase hover:underline">Close</button>}
                                         {isAdmin && d.truckCount === 0 && <button onClick={() => deleteDeal(d.id)} className="text-[10px] text-red-600 font-semibold uppercase hover:underline">Del</button>}
                                       </div>
                                     </td>

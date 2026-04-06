@@ -399,7 +399,7 @@ router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Re
     take: 100,
     orderBy: { poDate: 'desc' },
     select: {
-      id: true, poNo: true, dealType: true, status: true, poDate: true, deliveryDate: true, remarks: true,
+      id: true, poNo: true, dealType: true, status: true, poDate: true, deliveryDate: true, remarks: true, paymentTerms: true, truckCap: true, transportBy: true, deliveryAddress: true,
       vendor: { select: { id: true, name: true, phone: true } },
       lines: {
         select: {
@@ -614,15 +614,42 @@ router.put('/deals/:id', authenticate, asyncHandler(async (req: AuthRequest, res
     });
   }
 
-  // Update PO fields (status, remarks, payment terms)
+  // Update fuel item on PO line (if changed and no GRNs yet)
+  if (b.fuelItemId && b.fuelItemId !== deal.lines[0]?.inventoryItemId) {
+    const grns = await prisma.goodsReceipt.count({ where: { poId: deal.id } });
+    if (grns > 0) {
+      return res.status(400).json({ error: 'Cannot change fuel type — trucks already received' });
+    }
+    const fuelItem = await prisma.inventoryItem.findUnique({
+      where: { id: b.fuelItemId },
+      select: { id: true, name: true, unit: true, hsnCode: true, gstPercent: true, category: true },
+    });
+    if (!fuelItem || fuelItem.category !== 'FUEL') return res.status(400).json({ error: 'Invalid fuel item' });
+    if (deal.lines[0]) {
+      await prisma.pOLine.update({
+        where: { id: deal.lines[0].id },
+        data: { inventoryItemId: fuelItem.id, description: fuelItem.name, unit: fuelItem.unit || 'MT', hsnCode: fuelItem.hsnCode || '', gstPercent: fuelItem.gstPercent ?? 0 },
+      });
+    }
+  }
+
+  // Update vendor (if changed and no GRNs yet)
+  if (b.vendorId && b.vendorId !== deal.vendorId) {
+    const grns = await prisma.goodsReceipt.count({ where: { poId: deal.id } });
+    if (grns > 0) {
+      return res.status(400).json({ error: 'Cannot change vendor — trucks already received' });
+    }
+    const vendor = await prisma.vendor.findUnique({ where: { id: b.vendorId }, select: { id: true } });
+    if (!vendor) return res.status(400).json({ error: 'Vendor not found' });
+  }
+
+  // Update PO fields
   const poUpdate: Record<string, unknown> = {};
   if (b.status) {
-    // Step 11 fix: validate status transitions
     const validStatuses = ['APPROVED', 'PARTIAL_RECEIVED', 'RECEIVED', 'CLOSED'];
     if (!validStatuses.includes(b.status)) {
       return res.status(400).json({ error: `Invalid status: ${b.status}. Allowed: ${validStatuses.join(', ')}` });
     }
-    // Only allow CLOSED if deal has at least one confirmed GRN
     if (b.status === 'CLOSED') {
       const confirmedGrns = await prisma.goodsReceipt.count({ where: { poId: deal.id, status: 'CONFIRMED' } });
       if (confirmedGrns === 0) {
@@ -631,8 +658,20 @@ router.put('/deals/:id', authenticate, asyncHandler(async (req: AuthRequest, res
     }
     poUpdate.status = b.status;
   }
+  if (b.vendorId && b.vendorId !== deal.vendorId) poUpdate.vendorId = b.vendorId;
   if (b.remarks !== undefined) poUpdate.remarks = b.remarks;
-  if (b.paymentTerms) poUpdate.paymentTerms = b.paymentTerms;
+  if (b.paymentTerms) {
+    poUpdate.paymentTerms = b.paymentTerms;
+    const creditDaysMap: Record<string, number> = { ADVANCE: 0, COD: 0, NET2: 2, NET7: 7, NET10: 10, NET15: 15, NET30: 30 };
+    poUpdate.creditDays = creditDaysMap[b.paymentTerms] ?? 15;
+  }
+  if (b.validUntil !== undefined) {
+    poUpdate.deliveryDate = b.validUntil ? new Date(b.validUntil + 'T23:59:00+05:30') : null;
+  }
+  if (b.deliveryPoint !== undefined) poUpdate.deliveryAddress = b.deliveryPoint || 'Factory Gate';
+  if (b.transportBy !== undefined) poUpdate.transportBy = b.transportBy || 'BY_SUPPLIER';
+  if (b.truckCap !== undefined) poUpdate.truckCap = b.truckCap || null;
+
   if (Object.keys(poUpdate).length > 0) {
     await prisma.purchaseOrder.update({ where: { id: req.params.id }, data: poUpdate });
   }
