@@ -53,6 +53,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'customers', label: 'Buyers', to: '/sales/customers', icon: UserCheck, group: 'sales' },
   { key: 'sales-orders', label: 'Sales Pipeline', to: '/sales/pipeline', icon: ClipboardList, group: 'sales' },
   { key: 'ethanol-contracts', label: 'Ethanol Supply', to: '/sales/ethanol-contracts', icon: Handshake, group: 'sales' },
+  { key: 'ddgs-contracts', label: 'DDGS Supply', to: '/sales/ddgs-contracts', icon: Package, group: 'sales' },
 
   // ── LOGISTICS (Transport, Gate, Shipments) ──
   { key: 'gate-register', label: 'Gate & Receipts', to: '/logistics/gate-register', icon: Scale, group: 'logistics' },
