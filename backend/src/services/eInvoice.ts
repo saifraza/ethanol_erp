@@ -648,28 +648,66 @@ export async function generateStandaloneEWB(ewbPayload: any, retryCount = 0): Pr
   const MAX_RETRIES = 3;
   try {
     if (retryCount > 0) {
-      clearSaralAuthCache();
       await delay(3000 * retryCount);
     }
-    const auth = await getSaralAuth();
     const baseUrl = (process.env.EWAY_SARAL_URL || 'https://saralgsp.com').replace(/\/+$/, '');
+    const clientId = process.env.EWAY_NIC_CLIENT_ID || '';
+    const clientSecret = process.env.EWAY_NIC_CLIENT_SECRET || '';
     const gstin = process.env.EWAY_GSTIN || '23AAECM3666P1Z1';
     const ewaybillUsername = process.env.EWAY_EWB_USERNAME || process.env.EWAY_NIC_USERNAME || '';
     const ewaybillPassword = process.env.EWAY_EWB_PASSWORD || process.env.EWAY_NIC_PASSWORD || '';
 
-    // Standalone EWB uses the EWB portal API, not the e-invoice portal
+    // Step 1: GSP auth (same as e-invoice)
+    console.log(`[Standalone EWB] Step 1: GSP auth`);
+    const saralResp = await fetch(`${baseUrl}/authentication/Authenticate`, {
+      method: 'GET',
+      headers: { 'ClientId': clientId, 'ClientSecret': clientSecret },
+    });
+    const saralData: any = await saralResp.json();
+    const saralToken = saralData.authenticationToken || saralData.AuthenticationToken;
+    const subscriptionId = saralData.subscriptionId || saralData.SubscriptionId || '';
+    if (!saralToken) throw new Error(`GSP auth failed`);
+
+    // Step 2: EWB portal auth (separate from e-invoice portal)
+    console.log(`[Standalone EWB] Step 2: EWB portal auth at ${baseUrl}/ewaybillapi/v1.04/authenticate`);
+    const ewbAuthResp = await fetch(`${baseUrl}/ewaybillapi/v1.04/authenticate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'AuthenticationToken': saralToken,
+        'SubscriptionId': subscriptionId,
+        'Gstin': gstin,
+      },
+      body: JSON.stringify({
+        action: 'ACCESSTOKEN',
+        username: ewaybillUsername,
+        password: ewaybillPassword,
+        app_key: clientId,
+      }),
+    });
+    const ewbAuthText = await ewbAuthResp.text();
+    console.log(`[Standalone EWB] Step 2 response status=${ewbAuthResp.status}: ${ewbAuthText.slice(0, 300)}`);
+
+    let ewbAuth: any;
+    try { ewbAuth = JSON.parse(ewbAuthText); } catch { throw new Error(`EWB auth non-JSON (${ewbAuthResp.status}): ${ewbAuthText.slice(0, 200)}`); }
+
+    const ewbData = ewbAuth.data || ewbAuth;
+    const ewbAuthToken = ewbData.authToken || ewbData.AuthToken || ewbData.authtoken || '';
+    const ewbSek = ewbData.sek || ewbData.Sek || '';
+
+    // Step 3: Generate EWB
     const url = `${baseUrl}/ewaybillapi/v1.03/ewayapi`;
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      'AuthenticationToken': auth.saralToken,
-      'SubscriptionId': auth.subscriptionId,
+      'AuthenticationToken': saralToken,
+      'SubscriptionId': subscriptionId,
       'Gstin': gstin,
       'UserName': ewaybillUsername,
     };
     if (ewaybillPassword) headers['Password'] = ewaybillPassword;
-    if (auth.nicAuthToken && auth.nicAuthToken !== auth.saralToken) headers['AuthToken'] = auth.nicAuthToken;
-    if (auth.nicSek) headers['sek'] = auth.nicSek;
+    if (ewbAuthToken) headers['AuthToken'] = ewbAuthToken;
+    if (ewbSek) headers['sek'] = ewbSek;
 
     const bodyStr = JSON.stringify(ewbPayload);
     console.log(`[E-Invoice] Generating standalone EWB at ${url}`);
