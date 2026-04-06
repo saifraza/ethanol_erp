@@ -449,7 +449,7 @@ export default function FuelManagement() {
               {saving ? 'Saving...' : 'Save Entries'}
             </button>
           )}
-          {tab === 'deals' && (
+          {tab === 'deals' && isAdmin && (
             <button onClick={() => { setEditingDealId(null); setDealForm({ vendorId: '', vendorName: '', vendorPhone: '', fuelItemId: '', rate: 0, remarks: '' }); setShowDealModal(true); }} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">
               + New Fuel Deal
             </button>
@@ -725,8 +725,8 @@ export default function FuelManagement() {
                                     </td>
                                     <td className="px-3 py-1.5" onClick={e => e.stopPropagation()}>
                                       <div className="flex gap-1 flex-wrap">
-                                        <button onClick={() => editDeal(d)} className="text-[10px] text-blue-600 font-semibold uppercase hover:underline">Edit</button>
-                                        {d.status !== 'CLOSED' && <button onClick={() => closeDeal(d.id)} className="text-[10px] text-orange-500 font-semibold uppercase hover:underline">Close</button>}
+                                        {isAdmin && <button onClick={() => editDeal(d)} className="text-[10px] text-blue-600 font-semibold uppercase hover:underline">Edit</button>}
+                                        {isAdmin && d.status !== 'CLOSED' && <button onClick={() => closeDeal(d.id)} className="text-[10px] text-orange-500 font-semibold uppercase hover:underline">Close</button>}
                                         {isAdmin && d.truckCount === 0 && <button onClick={() => deleteDeal(d.id)} className="text-[10px] text-red-600 font-semibold uppercase hover:underline">Del</button>}
                                       </div>
                                     </td>
