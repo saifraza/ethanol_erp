@@ -263,7 +263,8 @@ router.get('/:id/delivery-challan-pdf', asyncHandler(async (req: AuthRequest, re
   const productRate = truck.productRatePerLtr || 71.86;
   const productValue = Math.round(truck.quantityBL * productRate);
   const gstRate = 5;
-  const totalValue = Math.round(productValue * (1 + gstRate / 100));
+  const gstAmount = Math.round(productValue * gstRate / 100);
+  const totalValue = productValue + gstAmount;
 
   const { renderDocumentPdf } = await import('../services/documentRenderer');
   const pdfBuffer = await renderDocumentPdf({
@@ -284,7 +285,9 @@ router.get('/:id/delivery-challan-pdf', asyncHandler(async (req: AuthRequest, re
       buyerGst: truck.contract?.buyerGst || '',
       quantityBL: truck.quantityBL,
       productRate,
+      productValue,
       gstRate,
+      gstAmount,
       totalValue,
     },
     verifyId: truck.id,

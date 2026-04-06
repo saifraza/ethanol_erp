@@ -45,8 +45,10 @@
         <th style="width:70px">Quantity</th>
         <th style="width:40px">Unit</th>
         <th class="right" style="width:70px">Rate (Rs.)</th>
-        <th class="right" style="width:100px">Value (inc.{{gstRate}}% GST)</th>
-        <th style="width:100px">Remarks</th>
+        <th class="right" style="width:90px">Base Value</th>
+        <th class="right" style="width:70px">GST {{gstRate}}%</th>
+        <th class="right" style="width:90px">Total Value</th>
+        <th style="width:80px">Remarks</th>
       </tr>
     </thead>
     <tbody>
@@ -56,8 +58,10 @@
         <td class="center">{{formatNum quantityBL}} ltr</td>
         <td class="center">Litres</td>
         <td class="right">{{productRate}}/ltr</td>
+        <td class="right">{{formatINR productValue}}/-</td>
+        <td class="right">{{formatINR gstAmount}}/-</td>
         <td class="right">{{formatINR totalValue}}/-</td>
-        <td>(produced on job work)</td>
+        <td>{{#if isJobWork}}(produced on job work){{/if}}</td>
       </tr>
     </tbody>
   </table>
