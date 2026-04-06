@@ -796,16 +796,15 @@ const EthanolContracts: React.FC = () => {
                                         </td>
                                         {/* Actions */}
                                         <td className="px-2 py-1.5 text-center">
-                                          <div className="flex items-center justify-center gap-1">
+                                          <div className="flex items-center justify-center gap-1 flex-wrap">
                                             {l.invoice && (
                                               <button onClick={async (e) => {
                                                 e.stopPropagation();
                                                 try {
                                                   const res = await api.get(`/invoices/${l.invoice!.id}/pdf`, { responseType: 'blob' });
-                                                  const url = URL.createObjectURL(res.data);
-                                                  window.open(url, '_blank');
+                                                  window.open(URL.createObjectURL(res.data), '_blank');
                                                 } catch { setError('Failed to load invoice PDF'); }
-                                              }} className="text-slate-400 hover:text-slate-700" title="Print Invoice"><FileText size={11} /></button>
+                                              }} className="text-[8px] font-bold uppercase px-1 py-0.5 border border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100" title="Print Invoice">INV</button>
                                             )}
                                             {l.dispatchTruck?.id && (
                                               <>
@@ -815,14 +814,14 @@ const EthanolContracts: React.FC = () => {
                                                     const res = await api.get(`/ethanol-gate-pass/${l.dispatchTruck!.id}/delivery-challan-pdf`, { responseType: 'blob' });
                                                     window.open(URL.createObjectURL(res.data), '_blank');
                                                   } catch { setError('Failed to load Delivery Challan'); }
-                                                }} className="text-blue-400 hover:text-blue-700" title="Delivery Challan"><FileDown size={11} /></button>
+                                                }} className="text-[8px] font-bold uppercase px-1 py-0.5 border border-blue-300 bg-blue-50 text-blue-600 hover:bg-blue-100" title="Delivery Challan">DCH</button>
                                                 <button onClick={async (e) => {
                                                   e.stopPropagation();
                                                   try {
                                                     const res = await api.get(`/ethanol-gate-pass/${l.dispatchTruck!.id}/gate-pass-pdf`, { responseType: 'blob' });
                                                     window.open(URL.createObjectURL(res.data), '_blank');
                                                   } catch { setError('Failed to load Gate Pass'); }
-                                                }} className="text-amber-400 hover:text-amber-700" title="Gate Pass"><Truck size={11} /></button>
+                                                }} className="text-[8px] font-bold uppercase px-1 py-0.5 border border-amber-300 bg-amber-50 text-amber-600 hover:bg-amber-100" title="Gate Pass">GP</button>
                                               </>
                                             )}
                                             {l.invoice?.ewbNo && (
@@ -830,12 +829,11 @@ const EthanolContracts: React.FC = () => {
                                                 e.stopPropagation();
                                                 try {
                                                   const res = await api.get(`/ethanol-contracts/${c.id}/liftings/${l.id}/ewb-pdf`, { responseType: 'blob' });
-                                                  const url = URL.createObjectURL(res.data);
-                                                  window.open(url, '_blank');
+                                                  window.open(URL.createObjectURL(res.data), '_blank');
                                                 } catch { setError('Failed to load E-Way Bill PDF'); }
-                                              }} className="text-green-400 hover:text-green-700" title="E-Way Bill PDF"><Truck size={11} /></button>
+                                              }} className="text-[8px] font-bold uppercase px-1 py-0.5 border border-green-300 bg-green-50 text-green-600 hover:bg-green-100" title="E-Way Bill PDF">EWB</button>
                                             )}
-                                            <button onClick={(e) => { e.stopPropagation(); handleDeleteLifting(l.id); }} className="text-red-400 hover:text-red-600"><Trash2 size={11} /></button>
+                                            <button onClick={(e) => { e.stopPropagation(); handleDeleteLifting(l.id); }} className="text-red-300 hover:text-red-600"><Trash2 size={10} /></button>
                                           </div>
                                         </td>
                                       </tr>
