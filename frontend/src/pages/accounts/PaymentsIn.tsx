@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { IndianRupee, X } from 'lucide-react';
+import { IndianRupee, X, FileText } from 'lucide-react';
 import api from '../../services/api';
 
 // ═══════════════════════════════════════════════
@@ -70,6 +70,38 @@ interface OutstandingCustomer {
   total: number;
 }
 
+interface InvoiceDetail {
+  invoice: {
+    id: string; invoiceNo: number; invoiceDate: string; dueDate: string | null;
+    productName: string; quantity: number; unit: string; rate: number;
+    amount: number; gstAmount: number; totalAmount: number;
+    paidAmount: number; balanceAmount: number; status: string;
+    irn: string | null; irnStatus: string | null;
+    ewbNo: string | null; ewbStatus: string | null;
+    shipmentId: string | null; challanNo: string | null;
+  };
+  customer: { id: string; name: string; gstNo: string | null; state: string | null };
+  order: {
+    id: string; orderNo: number; orderDate: string; status: string;
+    paymentTerms: string; grandTotal: number;
+    lines: Array<{ id: string; productName: string; quantity: number; unit: string; rate: number; amount: number; gstAmount: number }>;
+    dispatchRequests: Array<{ id: string; drNo: number; productName: string; quantity: number; unit: string; status: string; deliveryDate: string | null }>;
+  } | null;
+  shipments: Array<{
+    id: string; shipmentNo: number; productName: string; vehicleNo: string; vehicleType: string | null;
+    weightNet: number | null; quantityKL: number | null; quantityBL: number | null; bags: number | null;
+    challanNo: string | null; challanDate: string | null; status: string; createdAt: string;
+    irn: string | null; irnStatus: string | null; ewayBill: string | null; ewayBillStatus: string | null;
+  }>;
+  payments: Array<{ id: string; paymentNo: number; amount: number; mode: string; reference: string | null; paymentDate: string; remarks: string | null }>;
+  pipeline: {
+    ordered: { orderNo: number; amount: number; qty: number; date: string; status: string } | null;
+    dispatched: { drCount: number; shipmentCount: number; totalQtyKL: number; totalNetKg: number };
+    invoiced: { invoiceNo: number; amount: number; irn: string | null; irnStatus: string | null; ewbNo: string | null; ewbStatus: string | null };
+    collected: { amount: number; balance: number; paymentCount: number };
+  };
+}
+
 // ═══════════════════════════════════════════════
 // Helpers
 // ═══════════════════════════════════════════════
@@ -112,6 +144,11 @@ export default function PaymentsIn() {
   // --- Outstanding ---
   const [outstanding, setOutstanding] = useState<OutstandingCustomer[]>([]);
   const [outstandingTotal, setOutstandingTotal] = useState(0);
+
+  // --- Pipeline expansion ---
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
+  const [invoiceDetail, setInvoiceDetail] = useState<InvoiceDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   // --- Payment modal ---
   const [payModal, setPayModal] = useState<PendingReceivable | null>(null);
@@ -191,6 +228,29 @@ export default function PaymentsIn() {
       console.error('Failed to fetch outstanding:', err);
     }
   }, []);
+
+  const fetchInvoiceDetail = useCallback(async (invoiceId: string) => {
+    try {
+      setDetailLoading(true);
+      const res = await api.get<InvoiceDetail>(`/unified-payments/incoming/invoice-detail/${invoiceId}`);
+      setInvoiceDetail(res.data);
+    } catch (err) {
+      console.error('Failed to fetch invoice detail:', err);
+      setInvoiceDetail(null);
+    } finally {
+      setDetailLoading(false);
+    }
+  }, []);
+
+  const toggleInvoiceExpand = useCallback((invoiceId: string) => {
+    if (selectedInvoiceId === invoiceId) {
+      setSelectedInvoiceId(null);
+      setInvoiceDetail(null);
+    } else {
+      setSelectedInvoiceId(invoiceId);
+      fetchInvoiceDetail(invoiceId);
+    }
+  }, [selectedInvoiceId, fetchInvoiceDetail]);
 
   // ═══════════════════════════════════════════════
   // Effects
@@ -363,8 +423,13 @@ export default function PaymentsIn() {
                         </thead>
                         <tbody>
                           {pendingItems.map((item, i) => (
-                            <tr key={item.invoiceId} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
-                              <td className="px-3 py-1.5 border-r border-slate-100 font-mono font-medium text-blue-700">INV-{item.invoiceNo}</td>
+                            <React.Fragment key={item.invoiceId}>
+                            <tr className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''} ${selectedInvoiceId === item.invoiceId ? 'bg-blue-50' : ''}`}>
+                              <td className="px-3 py-1.5 border-r border-slate-100 font-mono font-medium">
+                                <button onClick={() => toggleInvoiceExpand(item.invoiceId)} className="text-blue-700 hover:text-blue-900 hover:underline">
+                                  INV-{item.invoiceNo}
+                                </button>
+                              </td>
                               <td className="px-3 py-1.5 border-r border-slate-100 font-medium text-slate-800 max-w-[160px] truncate">{item.customerName}</td>
                               <td className="px-3 py-1.5 border-r border-slate-100 text-slate-600">{item.productName}</td>
                               <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">{fmt(item.totalAmount)}</td>
@@ -380,6 +445,180 @@ export default function PaymentsIn() {
                                 </button>
                               </td>
                             </tr>
+                            {/* Pipeline expansion row */}
+                            {selectedInvoiceId === item.invoiceId && (
+                              <tr>
+                                <td colSpan={9} className="p-0 border-b border-slate-300 bg-slate-50">
+                                  {detailLoading ? (
+                                    <div className="p-4 text-center text-xs text-slate-400 uppercase tracking-widest">Loading pipeline...</div>
+                                  ) : invoiceDetail?.pipeline ? (
+                                    <div className="p-4 space-y-3">
+                                      {/* Pipeline Steps */}
+                                      <div className="flex items-center justify-center gap-0">
+                                        {([
+                                          {
+                                            label: 'Ordered',
+                                            done: !!invoiceDetail.pipeline.ordered,
+                                            value: invoiceDetail.pipeline.ordered ? fmt(invoiceDetail.pipeline.ordered.amount) : '--',
+                                            sub: invoiceDetail.pipeline.ordered ? `SO-${invoiceDetail.pipeline.ordered.orderNo} | ${invoiceDetail.pipeline.ordered.qty} qty` : 'No Sales Order',
+                                          },
+                                          {
+                                            label: 'Dispatched',
+                                            done: invoiceDetail.pipeline.dispatched.shipmentCount > 0,
+                                            value: invoiceDetail.pipeline.dispatched.shipmentCount > 0
+                                              ? `${invoiceDetail.pipeline.dispatched.shipmentCount} shipment${invoiceDetail.pipeline.dispatched.shipmentCount !== 1 ? 's' : ''}`
+                                              : '--',
+                                            sub: invoiceDetail.pipeline.dispatched.totalQtyKL > 0
+                                              ? `${invoiceDetail.pipeline.dispatched.totalQtyKL.toFixed(2)} KL`
+                                              : invoiceDetail.pipeline.dispatched.totalNetKg > 0
+                                              ? `${(invoiceDetail.pipeline.dispatched.totalNetKg / 1000).toFixed(2)} MT`
+                                              : invoiceDetail.pipeline.dispatched.drCount > 0 ? `${invoiceDetail.pipeline.dispatched.drCount} DR` : 'No dispatch',
+                                          },
+                                          {
+                                            label: 'Invoiced',
+                                            done: true,
+                                            value: fmt(invoiceDetail.pipeline.invoiced.amount),
+                                            sub: [
+                                              `INV-${invoiceDetail.pipeline.invoiced.invoiceNo}`,
+                                              invoiceDetail.pipeline.invoiced.irn ? 'IRN' : null,
+                                              invoiceDetail.pipeline.invoiced.ewbNo ? 'EWB' : null,
+                                            ].filter(Boolean).join(' | '),
+                                          },
+                                          {
+                                            label: 'Collected',
+                                            done: invoiceDetail.pipeline.collected.amount > 0,
+                                            value: fmt(invoiceDetail.pipeline.collected.amount),
+                                            sub: invoiceDetail.pipeline.collected.amount === 0 ? 'Unpaid'
+                                              : invoiceDetail.pipeline.collected.balance > 0 ? `Bal: ${fmt(invoiceDetail.pipeline.collected.balance)}`
+                                              : 'Settled',
+                                          },
+                                        ]).map((step, si) => (
+                                          <React.Fragment key={step.label}>
+                                            {si > 0 && <div className={`h-0.5 w-8 ${step.done ? 'bg-green-400' : 'bg-slate-300'}`} />}
+                                            <div className={`border px-4 py-2 text-center min-w-[120px] ${step.done ? 'border-green-300 bg-green-50' : 'border-slate-200 bg-white'}`}>
+                                              <div className={`text-[9px] font-bold uppercase tracking-widest ${step.done ? 'text-green-700' : 'text-slate-400'}`}>{step.label}</div>
+                                              <div className={`text-sm font-bold font-mono tabular-nums mt-0.5 ${step.done ? 'text-green-800' : 'text-slate-300'}`}>{step.value}</div>
+                                              <div className={`text-[9px] ${step.done ? 'text-green-600' : 'text-slate-300'}`}>{step.sub}</div>
+                                            </div>
+                                          </React.Fragment>
+                                        ))}
+                                      </div>
+
+                                      {/* Documents Grid */}
+                                      <div className="grid grid-cols-3 gap-3 text-[10px]">
+                                        {/* Sales Order + Dispatches */}
+                                        <div>
+                                          <div className="font-bold text-slate-500 uppercase tracking-widest mb-1">
+                                            Sales Order {invoiceDetail.order ? `(SO-${invoiceDetail.order.orderNo})` : ''}
+                                          </div>
+                                          <div className="max-h-40 overflow-y-auto space-y-1">
+                                            {invoiceDetail.order ? (
+                                              <>
+                                                <div className="bg-white border border-slate-200 px-2 py-1.5">
+                                                  <div className="flex items-center justify-between">
+                                                    <span className="font-mono font-medium text-blue-700">SO-{invoiceDetail.order.orderNo}</span>
+                                                    <span className={`text-[8px] font-bold uppercase px-1 py-0.5 border ${
+                                                      invoiceDetail.order.status === 'COMPLETED' ? 'border-green-300 text-green-700' : 'border-blue-300 text-blue-700'
+                                                    }`}>{invoiceDetail.order.status}</span>
+                                                  </div>
+                                                  <div className="flex items-center justify-between mt-0.5">
+                                                    <span className="text-[9px] text-slate-400">{fmtDate(invoiceDetail.order.orderDate)} | {invoiceDetail.order.paymentTerms}</span>
+                                                    <span className="text-[9px] font-mono tabular-nums text-slate-600">{fmt(invoiceDetail.order.grandTotal)}</span>
+                                                  </div>
+                                                </div>
+                                                {invoiceDetail.order.dispatchRequests.map(dr => (
+                                                  <div key={dr.id} className="bg-white border border-slate-200 px-2 py-1.5">
+                                                    <div className="flex items-center justify-between">
+                                                      <span className="font-mono text-slate-600">DR-{dr.drNo}</span>
+                                                      <span className={`text-[8px] font-bold uppercase px-1 py-0.5 border ${
+                                                        dr.status === 'COMPLETED' || dr.status === 'DISPATCHED' ? 'border-green-300 text-green-700' : 'border-amber-300 text-amber-700'
+                                                      }`}>{dr.status}</span>
+                                                    </div>
+                                                    <div className="text-[9px] text-slate-400 mt-0.5">{dr.productName} | {dr.quantity} {dr.unit}</div>
+                                                  </div>
+                                                ))}
+                                              </>
+                                            ) : (
+                                              <div className="text-slate-400">Standalone invoice (no SO)</div>
+                                            )}
+                                          </div>
+                                        </div>
+
+                                        {/* Shipments */}
+                                        <div>
+                                          <div className="font-bold text-slate-500 uppercase tracking-widest mb-1">Shipments ({invoiceDetail.shipments.length})</div>
+                                          <div className="max-h-40 overflow-y-auto space-y-1">
+                                            {invoiceDetail.shipments.map(sh => (
+                                              <div key={sh.id} className="bg-white border border-slate-200 px-2 py-1.5">
+                                                <div className="flex items-center justify-between">
+                                                  <span className="font-mono font-medium text-blue-700">SHP-{sh.shipmentNo}</span>
+                                                  <span className={`text-[8px] font-bold uppercase px-1 py-0.5 border ${
+                                                    sh.status === 'DELIVERED' ? 'border-green-300 text-green-700' : 'border-blue-300 text-blue-700'
+                                                  }`}>{sh.status}</span>
+                                                </div>
+                                                <div className="flex items-center justify-between mt-0.5">
+                                                  <span className="text-[9px] text-slate-400">{sh.vehicleNo || '--'}</span>
+                                                  <span className="text-[9px] font-mono tabular-nums text-slate-600">
+                                                    {sh.quantityKL ? `${sh.quantityKL.toFixed(2)} KL` : sh.weightNet ? `${(sh.weightNet / 1000).toFixed(2)} MT` : sh.bags ? `${sh.bags} bags` : '--'}
+                                                  </span>
+                                                </div>
+                                                {sh.challanNo && <div className="text-[9px] text-slate-400 mt-0.5">Challan: {sh.challanNo}</div>}
+                                                <div className="flex items-center gap-2 mt-0.5">
+                                                  {sh.irn && <span className="text-[8px] font-bold uppercase px-1 py-0.5 border border-green-300 text-green-700">IRN</span>}
+                                                  {sh.ewayBill && <span className="text-[8px] font-bold uppercase px-1 py-0.5 border border-indigo-300 text-indigo-700">EWB</span>}
+                                                </div>
+                                              </div>
+                                            ))}
+                                            {invoiceDetail.shipments.length === 0 && <div className="text-slate-400">No shipments</div>}
+                                          </div>
+                                        </div>
+
+                                        {/* Payments */}
+                                        <div>
+                                          <div className="font-bold text-slate-500 uppercase tracking-widest mb-1">Payments ({invoiceDetail.payments.length})</div>
+                                          <div className="max-h-40 overflow-y-auto space-y-1">
+                                            {invoiceDetail.payments.map(p => (
+                                              <div key={p.id} className="bg-white border border-slate-200 px-2 py-1.5">
+                                                <div className="flex items-center justify-between">
+                                                  <span>{fmtDate(p.paymentDate)} <span className="text-[8px] uppercase text-slate-400">{p.mode}</span></span>
+                                                  <span className="font-mono tabular-nums text-green-700 font-medium">{fmt(p.amount)}</span>
+                                                </div>
+                                                {p.reference && <div className="text-[9px] text-slate-400 mt-0.5 font-mono">Ref: {p.reference}</div>}
+                                              </div>
+                                            ))}
+                                            {invoiceDetail.payments.length === 0 && <div className="text-slate-400">No payments</div>}
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* Document Downloads */}
+                                      <div className="flex items-center gap-2 pt-2 border-t border-slate-200">
+                                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Documents:</span>
+                                        {invoiceDetail.order && (
+                                          <a href={`/api/sales-orders/${invoiceDetail.order.id}/pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noopener noreferrer"
+                                            className="px-2 py-0.5 bg-slate-700 text-white text-[9px] font-bold uppercase hover:bg-slate-800 inline-flex items-center gap-1">
+                                            <FileText size={9} /> SO
+                                          </a>
+                                        )}
+                                        <a href={`/api/invoices/${invoiceDetail.invoice.id}/pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noopener noreferrer"
+                                          className="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-bold uppercase hover:bg-blue-700 inline-flex items-center gap-1">
+                                          <FileText size={9} /> Invoice
+                                        </a>
+                                        {invoiceDetail.shipments.filter(sh => sh.challanNo).map(sh => (
+                                          <a key={sh.id} href={`/api/shipments/${sh.id}/challan-pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noopener noreferrer"
+                                            className="px-2 py-0.5 bg-indigo-600 text-white text-[9px] font-bold uppercase hover:bg-indigo-700 inline-flex items-center gap-1">
+                                            <FileText size={9} /> Challan
+                                          </a>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="p-4 text-center text-xs text-slate-400">No pipeline data</div>
+                                  )}
+                                </td>
+                              </tr>
+                            )}
+                            </React.Fragment>
                           ))}
                         </tbody>
                         <tfoot>

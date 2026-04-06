@@ -446,6 +446,137 @@ router.get('/incoming/pending-summary', asyncHandler(async (_req: AuthRequest, r
   });
 }));
 
+// ═══════════════════════════════════════════════
+// GET /incoming/invoice-detail/:invoiceId — Full pipeline for a sales invoice
+// ═══════════════════════════════════════════════
+router.get('/incoming/invoice-detail/:invoiceId', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const invoice = await prisma.invoice.findUnique({
+    where: { id: req.params.invoiceId },
+    include: {
+      customer: { select: { id: true, name: true, gstNo: true, state: true } },
+      order: {
+        include: {
+          lines: { select: { id: true, productName: true, quantity: true, unit: true, rate: true, amount: true, gstAmount: true } },
+          dispatchRequests: {
+            orderBy: { createdAt: 'desc' },
+            select: {
+              id: true, drNo: true, productName: true, quantity: true, unit: true, status: true, deliveryDate: true,
+              shipments: {
+                orderBy: { createdAt: 'desc' },
+                select: {
+                  id: true, shipmentNo: true, productName: true, vehicleNo: true, vehicleType: true,
+                  weightNet: true, quantityKL: true, quantityBL: true, bags: true,
+                  challanNo: true, challanDate: true, status: true, createdAt: true,
+                  irn: true, irnStatus: true, ewayBill: true, ewayBillStatus: true,
+                },
+              },
+            },
+          },
+        },
+      },
+      payments: {
+        orderBy: { paymentDate: 'desc' },
+        select: { id: true, paymentNo: true, amount: true, mode: true, reference: true, paymentDate: true, remarks: true },
+      },
+    },
+  });
+
+  if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+
+  // Also fetch shipment directly linked to invoice (if shipmentId is set but no order)
+  let directShipment = null;
+  if (invoice.shipmentId && !invoice.order) {
+    directShipment = await prisma.shipment.findUnique({
+      where: { id: invoice.shipmentId },
+      select: {
+        id: true, shipmentNo: true, productName: true, vehicleNo: true, vehicleType: true,
+        weightNet: true, quantityKL: true, quantityBL: true, bags: true,
+        challanNo: true, challanDate: true, status: true, createdAt: true,
+        irn: true, irnStatus: true, ewayBill: true, ewayBillStatus: true,
+      },
+    });
+  }
+
+  // Collect all shipments from dispatch requests
+  const allShipments = invoice.order
+    ? invoice.order.dispatchRequests.flatMap(dr => dr.shipments)
+    : directShipment ? [directShipment] : [];
+
+  const totalPaid = invoice.payments.reduce((s, p) => s + p.amount, 0);
+
+  // Build pipeline
+  const pipeline = {
+    ordered: invoice.order ? {
+      orderNo: (invoice.order as any).orderNo,
+      amount: invoice.order.grandTotal,
+      qty: invoice.order.lines.reduce((s, l) => s + l.quantity, 0),
+      date: (invoice.order as any).orderDate,
+      status: invoice.order.status,
+    } : null,
+    dispatched: {
+      drCount: invoice.order ? invoice.order.dispatchRequests.length : 0,
+      shipmentCount: allShipments.length,
+      totalQtyKL: allShipments.reduce((s, sh) => s + (sh.quantityKL || 0), 0),
+      totalNetKg: allShipments.reduce((s, sh) => s + (sh.weightNet || 0), 0),
+    },
+    invoiced: {
+      invoiceNo: invoice.invoiceNo,
+      amount: invoice.totalAmount,
+      irn: invoice.irn,
+      irnStatus: invoice.irnStatus,
+      ewbNo: invoice.ewbNo || invoice.ewayBill,
+      ewbStatus: invoice.ewbStatus,
+    },
+    collected: {
+      amount: totalPaid,
+      balance: invoice.balanceAmount,
+      paymentCount: invoice.payments.length,
+    },
+  };
+
+  res.json({
+    invoice: {
+      id: invoice.id,
+      invoiceNo: invoice.invoiceNo,
+      invoiceDate: invoice.invoiceDate,
+      dueDate: invoice.dueDate,
+      productName: invoice.productName,
+      quantity: invoice.quantity,
+      unit: invoice.unit,
+      rate: invoice.rate,
+      amount: invoice.amount,
+      gstAmount: invoice.gstAmount,
+      totalAmount: invoice.totalAmount,
+      paidAmount: invoice.paidAmount,
+      balanceAmount: invoice.balanceAmount,
+      status: invoice.status,
+      irn: invoice.irn,
+      irnStatus: invoice.irnStatus,
+      ewbNo: invoice.ewbNo,
+      ewbStatus: invoice.ewbStatus,
+      shipmentId: invoice.shipmentId,
+      challanNo: invoice.challanNo,
+    },
+    customer: invoice.customer,
+    order: invoice.order ? {
+      id: invoice.order.id,
+      orderNo: (invoice.order as any).orderNo,
+      orderDate: (invoice.order as any).orderDate,
+      status: invoice.order.status,
+      paymentTerms: invoice.order.paymentTerms,
+      grandTotal: invoice.order.grandTotal,
+      lines: invoice.order.lines,
+      dispatchRequests: invoice.order.dispatchRequests.map(dr => ({
+        id: dr.id, drNo: dr.drNo, productName: dr.productName, quantity: dr.quantity,
+        unit: dr.unit, status: dr.status, deliveryDate: dr.deliveryDate,
+      })),
+    } : null,
+    shipments: allShipments,
+    payments: invoice.payments,
+    pipeline,
+  });
+}));
+
 // Parse payment terms string to extract days
 function parsePaymentTermsDays(terms: string | null | undefined): number | null {
   if (!terms) return null;
