@@ -732,68 +732,21 @@ router.post('/:id/liftings/:liftingId/e-invoice', asyncHandler(async (req: AuthR
       const transporterGstin = req.body.transporterGstin || '';
       const transporterName = lifting.transporterName || '';
 
-      let ewbResult: any;
-
-      if (isJobWork) {
-        // Job work: standalone EWB with product value for insurance
-        const productRate = lifting.productRatePerLtr || 71.86;
-        const productValue = Math.round(lifting.quantityBL * productRate);
-        const gstRate = 5; // Ethanol goods GST 5%
-        const isInterstate = getStateCode(MSPIL.state) !== getStateCode(customer.state || '');
-        const invDate = new Date(invoice.invoiceDate || lifting.liftingDate);
-        const dateStr = `${String(invDate.getDate()).padStart(2, '0')}/${String(invDate.getMonth() + 1).padStart(2, '0')}/${invDate.getFullYear()}`;
-
-        const { generateEwayBill } = await import('../services/ewayBill');
-        ewbResult = await generateEwayBill({
-          supplierGstin: MSPIL.gstin,
-          supplierName: MSPIL.name,
-          supplierAddress: MSPIL.address,
-          supplierState: MSPIL.state,
-          supplierPincode: MSPIL.pincode,
-          recipientGstin: customer.gstNo || undefined,
-          recipientName: customer.name,
-          recipientAddress: customer.address || '',
-          recipientState: customer.state || '',
-          recipientPincode: customer.pincode || '',
-          documentType: 'CHL',
-          documentNo: lifting.challanNo || lifting.invoiceNo || `DCH-${lifting.id.slice(0, 8)}`,
-          documentDate: dateStr,
-          items: [{
-            productName: 'Ethanol',
-            hsnCode: '22072000',
-            quantity: lifting.quantityBL,
-            unit: 'LTR',
-            taxableValue: productValue,
-            cgstRate: isInterstate ? 0 : gstRate / 2,
-            sgstRate: isInterstate ? 0 : gstRate / 2,
-            igstRate: isInterstate ? gstRate : 0,
-          }],
-          transportMode: '1',
-          vehicleNo: vehNo,
-          vehicleType: 'R',
-          distanceKm,
-          transporterId: transporterGstin.length === 15 ? transporterGstin : undefined,
-          transporterName: transporterName.length >= 3 ? transporterName : undefined,
-          supplyType: 'O',
-          subType: '3', // Job Work
-        });
-      } else {
-        // Non-job-work: EWB from IRN (value matches e-invoice)
-        const ewbData: Record<string, any> = {
-          Irn: irn,
-          Distance: distanceKm,
-          TransMode: '1',
-          VehNo: vehNo,
-          VehType: 'R',
-        };
-        if (transporterGstin && transporterGstin.length === 15) {
-          ewbData.TransId = transporterGstin;
-        }
-        if (transporterName && transporterName.length >= 3) {
-          ewbData.TransName = transporterName;
-        }
-        ewbResult = await generateEWBByIRN(irn!, ewbData);
+      const ewbData: Record<string, any> = {
+        Irn: irn,
+        Distance: distanceKm,
+        TransMode: '1', // Road
+        VehNo: vehNo,
+        VehType: 'R',
+      };
+      if (transporterGstin && transporterGstin.length === 15) {
+        ewbData.TransId = transporterGstin;
       }
+      if (transporterName && transporterName.length >= 3) {
+        ewbData.TransName = transporterName;
+      }
+
+      const ewbResult = await generateEWBByIRN(irn!, ewbData);
 
       if (ewbResult.success && ewbResult.ewayBillNo) {
         ewayBillNo = ewbResult.ewayBillNo;
