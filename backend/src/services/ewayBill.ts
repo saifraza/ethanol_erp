@@ -667,9 +667,8 @@ export async function saralGenerateEwbFromIrn(irn: string, transportDetails: {
  * For production, use saralGenerateEwbFromIrn() instead
  */
 async function saralGenerateEwb(payload: any): Promise<any> {
-  // In production Saral, standalone EWB is NOT supported — only EWB from IRN
-  // Check if there's an override path configured, otherwise use the sandbox path
-  const ewbPath = process.env.EWAY_SARAL_EWB_PATH || '/eiewb/v1.03/ewaybill';
+  // Standalone EWB uses the EWB portal API, not the e-invoice portal
+  const ewbPath = process.env.EWAY_SARAL_EWB_PATH || '/ewaybillapi/v1.03/ewayapi';
 
   const result = await saralApiCall(ewbPath, payload, 'Generate standalone EWB');
   return parseSaralEwbResponse(result);
