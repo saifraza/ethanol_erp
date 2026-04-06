@@ -126,12 +126,15 @@ export default function RawMaterialPurchase() {
 
   const fetchDeals = useCallback(async () => {
     try {
-      const [dealsRes, vendorsRes] = await Promise.all([
-        api.get<OpenDeal[]>('/raw-material-purchase/deals'),
-        api.get<{ vendors: VendorOption[] } | VendorOption[]>('/vendors', { params: { active: true } }),
-      ]);
-      setDeals(dealsRes.data);
-      const vData = vendorsRes.data;
+      const res = await api.get<OpenDeal[]>('/raw-material-purchase/deals');
+      setDeals(res.data);
+    } catch (err) { console.error(err); }
+  }, []);
+
+  const fetchVendors = useCallback(async () => {
+    try {
+      const res = await api.get<{ vendors: VendorOption[] } | VendorOption[]>('/vendors');
+      const vData = res.data;
       const vList = Array.isArray(vData) ? vData : (vData as { vendors: VendorOption[] }).vendors || [];
       setVendors(vList);
     } catch (err) { console.error(err); }
@@ -139,8 +142,8 @@ export default function RawMaterialPurchase() {
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([fetchMaster(), fetchSummary(), fetchConsumption(), fetchDeals()]).finally(() => setLoading(false));
-  }, [fetchMaster, fetchSummary, fetchConsumption, fetchDeals]);
+    Promise.all([fetchMaster(), fetchSummary(), fetchConsumption(), fetchDeals(), fetchVendors()]).finally(() => setLoading(false));
+  }, [fetchMaster, fetchSummary, fetchConsumption, fetchDeals, fetchVendors]);
 
   // Group deals by material name
   interface MaterialDealLine {
