@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FileText, Plus, X, Pencil, Truck, ChevronDown, ChevronUp, Fuel, Factory, Building2, Landmark, Trash2, Upload, FileDown } from 'lucide-react';
 import api from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 interface Contract {
   id: string;
@@ -166,6 +167,8 @@ const omcOptions = ['IOCL', 'BPCL', 'HPCL', 'JioBP', 'Nayara'];
 
 const EthanolContracts: React.FC = () => {
   const [contracts, setContracts] = useState<Contract[]>([]);
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
   const [stats, setStats] = useState<Stats>({ total: 0, active: 0, jobWork: 0, fixedPrice: 0, omc: 0, totalContractQtyKL: 0, totalSuppliedKL: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -586,7 +589,7 @@ const EthanolContracts: React.FC = () => {
                             className="px-1.5 py-0.5 text-[10px] bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100">
                             <Pencil size={10} />
                           </button>
-                          {c.status === 'DRAFT' && (
+                          {c.status === 'DRAFT' && isSuperAdmin && (
                             <button onClick={(e) => { e.stopPropagation(); handleDelete(c.id); }}
                               className="px-1.5 py-0.5 text-[10px] bg-red-50 text-red-600 border border-red-200 hover:bg-red-100">
                               <Trash2 size={10} />
@@ -877,7 +880,7 @@ const EthanolContracts: React.FC = () => {
                                                 } catch { setError('Failed to load E-Way Bill PDF'); }
                                               }} className="text-[8px] font-bold uppercase px-1 py-0.5 border border-green-300 bg-green-50 text-green-600 hover:bg-green-100" title="E-Way Bill PDF">EWB</button>
                                             )}
-                                            <button onClick={(e) => { e.stopPropagation(); handleDeleteLifting(l.id); }} className="text-red-300 hover:text-red-600"><Trash2 size={10} /></button>
+                                            {isSuperAdmin && <button onClick={(e) => { e.stopPropagation(); handleDeleteLifting(l.id); }} className="text-red-300 hover:text-red-600"><Trash2 size={10} /></button>}
                                           </div>
                                         </td>
                                       </tr>
