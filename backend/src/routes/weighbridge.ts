@@ -235,7 +235,14 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
   const results: Array<{ id: string; type: string; refNo: string; sourceWbId?: string }> = [];
 
   for (const raw of weighments) {
-    const w = weighmentSchema.parse(raw);
+    let w;
+    try {
+    w = weighmentSchema.parse(raw);
+    } catch (e) {
+      console.error(`[WB-PUSH] Schema parse error for ${raw?.id}:`, e instanceof Error ? e.message : e);
+      continue;
+    }
+    try {
     // Lab join key — set on every GrainTruck so lab can find it via uidRst
     const wbUidRst = `WB-${w.ticket_no}`;
 
@@ -1104,6 +1111,10 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
 
       results.push({ id: truck.id, type: isQuarantine ? 'QUARANTINE' : 'GrainTruck', refNo: truck.id, sourceWbId: w.id });
       ids.push(truck.id);
+    }
+    } catch (e) {
+      console.error(`[WB-PUSH] Error processing weighment ${w.id} (${w.vehicle_no}):`, e instanceof Error ? e.message : e);
+      // Continue processing remaining weighments — don't fail the whole batch
     }
   }
 
