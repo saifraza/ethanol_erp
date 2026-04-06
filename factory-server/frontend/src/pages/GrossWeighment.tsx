@@ -149,7 +149,7 @@ export default function GrossWeighment() {
 
   // Fuel quick lab check (moisture + pass/fail at gross WB)
   const [labDone, setLabDone] = useState<'PASS' | 'FAIL' | null>(null);
-  const handleFuelLab = async (result: 'PASS' | 'FAIL') => {
+  const handleFuelLab = async (result: 'PASS' | 'FAIL', starch?: number, damaged?: number, foreign?: number) => {
     if (!scannedRecord || labSaving || labDone) return;
     setLabSaving(true);
     setLabDone(result); // Immediately mark done to prevent double-click
@@ -157,6 +157,9 @@ export default function GrossWeighment() {
       await api.post(`/weighbridge/${scannedRecord.id}/lab`, {
         labStatus: result,
         labMoisture: parseFloat(fuelMoisture) || 0,
+        labStarch: starch ?? null,
+        labDamaged: damaged ?? null,
+        labForeignMatter: foreign ?? null,
       });
       const res = await api.get(`/weighbridge/lookup/${scannedRecord.localId}`);
       setScannedRecord(res.data);
@@ -419,16 +422,84 @@ export default function GrossWeighment() {
             </div>
           )}
           {scannedRecord.direction === 'INBOUND' && scannedRecord.labStatus === 'PENDING' && !isFuel && scannedRecord.materialCategory === 'RAW_MATERIAL' && (
-            <div className="border-t border-yellow-200 bg-yellow-50 p-4">
-              <div className="text-[10px] font-bold text-yellow-700 uppercase tracking-widest">
-                Lab Status: PENDING -- Full lab test required on cloud ERP (app.mspil.in)
+            <div className="border-t border-amber-200 bg-amber-50 p-4">
+              <div className="text-[10px] font-bold text-amber-700 uppercase tracking-widest mb-3">Raw Material Quality Check</div>
+              <div className="flex items-end gap-3 flex-wrap">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-600 uppercase tracking-widest block mb-0.5">Moisture %</label>
+                  <input value={fuelMoisture} onChange={e => setFuelMoisture(e.target.value)} type="number" step="0.1"
+                    className="border border-slate-300 px-2.5 py-2 text-sm w-20 focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="0" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-600 uppercase tracking-widest block mb-0.5">Starch %</label>
+                  <input id="rmLabStarch" type="number" step="0.1" defaultValue=""
+                    className="border border-slate-300 px-2.5 py-2 text-sm w-20 focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="0" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-600 uppercase tracking-widest block mb-0.5">Damaged %</label>
+                  <input id="rmLabDamaged" type="number" step="0.1" defaultValue=""
+                    className="border border-slate-300 px-2.5 py-2 text-sm w-20 focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="0" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-600 uppercase tracking-widest block mb-0.5">Foreign %</label>
+                  <input id="rmLabForeign" type="number" step="0.1" defaultValue=""
+                    className="border border-slate-300 px-2.5 py-2 text-sm w-20 focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="0" />
+                </div>
+                <div className="flex gap-2">
+                  {labDone ? (
+                    <span className={`px-4 py-2 text-sm font-bold uppercase ${labDone === 'PASS' ? 'bg-green-100 text-green-700 border border-green-300' : 'bg-red-100 text-red-700 border border-red-300'}`}>
+                      {labSaving ? 'Saving...' : `${labDone} Saved`}
+                    </span>
+                  ) : (
+                    <>
+                      <button onClick={() => {
+                        const starch = parseFloat((document.getElementById('rmLabStarch') as HTMLInputElement)?.value) || 0;
+                        const damaged = parseFloat((document.getElementById('rmLabDamaged') as HTMLInputElement)?.value) || 0;
+                        const foreign = parseFloat((document.getElementById('rmLabForeign') as HTMLInputElement)?.value) || 0;
+                        handleFuelLab('PASS', starch, damaged, foreign);
+                      }} disabled={labSaving}
+                        className="px-4 py-2 bg-green-600 text-white text-sm font-bold uppercase hover:bg-green-700 disabled:opacity-50">
+                        {labSaving ? '...' : 'PASS'}
+                      </button>
+                      <button onClick={() => {
+                        const starch = parseFloat((document.getElementById('rmLabStarch') as HTMLInputElement)?.value) || 0;
+                        const damaged = parseFloat((document.getElementById('rmLabDamaged') as HTMLInputElement)?.value) || 0;
+                        const foreign = parseFloat((document.getElementById('rmLabForeign') as HTMLInputElement)?.value) || 0;
+                        handleFuelLab('FAIL', starch, damaged, foreign);
+                      }} disabled={labSaving}
+                        className="px-4 py-2 bg-red-600 text-white text-sm font-bold uppercase hover:bg-red-700 disabled:opacity-50">
+                        {labSaving ? '...' : 'FAIL'}
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           )}
           {scannedRecord.direction === 'INBOUND' && scannedRecord.labStatus === 'PENDING' && !isFuel && !scannedRecord.materialCategory && (
             <div className="border-t border-yellow-200 bg-yellow-50 p-4">
-              <div className="text-[10px] font-bold text-yellow-700 uppercase tracking-widest">
-                Lab Status: PENDING
+              <div className="flex items-center justify-between">
+                <div className="text-[10px] font-bold text-yellow-700 uppercase tracking-widest">
+                  Lab Status: PENDING
+                </div>
+                <button
+                  onClick={async () => {
+                    if (!confirm('Pass lab manually?')) return;
+                    try {
+                      await api.post(`/weighbridge/${scannedRecord.id}/lab`, {
+                        labStatus: 'PASS', labMoisture: 0, labStarch: 0, labDamaged: 0, labForeignMatter: 0,
+                        labRemarks: 'Manual pass at gross WB', labTestedBy: 'Gross WB Operator',
+                      });
+                      setScannedRecord({ ...scannedRecord, labStatus: 'PASS', labMoisture: 0 });
+                      loadPending();
+                    } catch (e: unknown) {
+                      alert((e as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Failed');
+                    }
+                  }}
+                  className="px-4 py-1.5 bg-green-600 text-white text-xs font-bold uppercase tracking-widest hover:bg-green-700"
+                >
+                  Pass Lab Manually
+                </button>
               </div>
             </div>
           )}
@@ -583,7 +654,7 @@ export default function GrossWeighment() {
                         className="w-full border border-slate-300 px-2.5 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-green-400" placeholder="e.g. 0089/0085" />
                     </div>
                     <div>
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">DL No</label>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Driving Licence</label>
                       <input value={ethanolDL} onChange={e => setEthanolDL(e.target.value)}
                         className="w-full border border-slate-300 px-2.5 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-green-400" placeholder="Driver license" />
                     </div>
