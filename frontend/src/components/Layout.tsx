@@ -27,16 +27,17 @@ function NavLink({ to, label, icon: Icon, active, onClick }: any) {
 export default function Layout() {
   const { user, logout } = useAuth();
   const location = useLocation();
-  const [processOpen, setProcessOpen] = useState(true);
-  const [salesOpen, setSalesOpen] = useState(false);
-  const [procurementOpen, setProcurementOpen] = useState(false);
-  const [logisticsOpen, setLogisticsOpen] = useState(false);
-  const [tradeOpen, setTradeOpen] = useState(false);
-  const [accountsOpen, setAccountsOpen] = useState(false);
-  const [booksOpen, setBooksOpen] = useState(false);
-  const [inventoryOpen, setInventoryOpen] = useState(false);
-  const [complianceOpen, setComplianceOpen] = useState(false);
-  const [adminOpen, setAdminOpen] = useState(false);
+  const p = location.pathname;
+  const [processOpen, setProcessOpen] = useState(p.startsWith('/process') || p.startsWith('/purchase-requisition'));
+  const [salesOpen, setSalesOpen] = useState(p.startsWith('/sales'));
+  const [procurementOpen, setProcurementOpen] = useState(p.startsWith('/procurement') || p.startsWith('/fuel'));
+  const [logisticsOpen, setLogisticsOpen] = useState(p.startsWith('/logistics'));
+  const [tradeOpen, setTradeOpen] = useState(p.startsWith('/trade'));
+  const [accountsOpen, setAccountsOpen] = useState(p.startsWith('/accounts') || p.startsWith('/payments'));
+  const [booksOpen, setBooksOpen] = useState(p.startsWith('/books'));
+  const [inventoryOpen, setInventoryOpen] = useState(p.startsWith('/inventory'));
+  const [complianceOpen, setComplianceOpen] = useState(p.startsWith('/compliance') || p.startsWith('/admin/documents'));
+  const [adminOpen, setAdminOpen] = useState(p.startsWith('/admin'));
   const [serverUp, setServerUp] = useState(true);
   const [reconnecting, setReconnecting] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
