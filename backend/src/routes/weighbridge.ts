@@ -293,6 +293,7 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
             remarks: `WB:${w.id} | Ticket #${w.ticket_no} | ${w.status} | ${w.remarks || ''}`.trim(),
           },
         });
+        results.push({ id: dupGrain.id, type: 'GrainTruck', refNo: `UPDATED-${dupGrain.id.slice(0, 8)}`, sourceWbId: w.id });
         ids.push(dupGrain.id);
       }
       continue;
