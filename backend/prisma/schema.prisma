@@ -638,10 +638,14 @@ model DDGSDispatchTruck {
   releaseTime     DateTime?
   remarks         String?
   sourceWbId      String?           // Factory weighment ID for dedup
+  customerId      String?
+  customer        Customer?  @relation(fields: [customerId], references: [id])
   userId          String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @default(now()) @updatedAt
+  ddgsContractDispatch DDGSContractDispatch?
   @@index([date])
+  @@index([customerId])
 }
 
 // ═══════════════════════════════════════════════
@@ -1293,6 +1297,8 @@ model Customer {
   invoices        Invoice[]
   payments        Payment[]
   ethanolContracts EthanolContract[]
+  ddgsContracts   DDGSContract[]
+  ddgsDispatchTrucks DDGSDispatchTruck[]
 }
 
 // Master: Product catalogue
@@ -1656,6 +1662,7 @@ model Invoice {
   updatedAt       DateTime   @updatedAt
   payments        Payment[]
   ethanolLiftings EthanolLifting[]
+  ddgsContractDispatches DDGSContractDispatch[]
   @@index([customerId])
   @@index([status])
   @@index([shipmentId])
@@ -2955,4 +2962,80 @@ model ComplianceAction {
   @@index([obligationId])
   @@index([actionType])
   @@index([performedDate])
+}
+
+// ═══════════════════════════════════════════════
+// DDGS CONTRACTS (supply agreements with buyers)
+// ═══════════════════════════════════════════════
+model DDGSContract {
+  id                   String   @id @default(uuid())
+  contractNo           String   @unique
+  status               String   @default("ACTIVE") // DRAFT, ACTIVE, EXPIRED, TERMINATED
+  customerId           String
+  customer             Customer @relation(fields: [customerId], references: [id])
+  buyerName            String
+  buyerAddress         String?
+  buyerGstin           String?
+  buyerState           String?
+  startDate            DateTime
+  endDate              DateTime
+  contractQtyMT        Float    @default(0)
+  rate                 Float    @default(0)          // ₹/MT
+  gstPercent           Float    @default(5)
+  paymentTermsDays     Int?
+  paymentMode          String?
+  logisticsBy          String   @default("BUYER")
+  remarks              String?
+  contractPdf          String?                       // base64
+  contractPdfName      String?
+  autoGenerateEInvoice Boolean  @default(false)
+
+  totalSuppliedMT      Float    @default(0)
+  totalInvoicedAmt     Float    @default(0)
+  totalReceivedAmt     Float    @default(0)
+
+  userId               String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  dispatches           DDGSContractDispatch[]
+
+  @@index([customerId])
+  @@index([status])
+}
+
+model DDGSContractDispatch {
+  id                   String   @id @default(uuid())
+  contractId           String
+  contract             DDGSContract @relation(fields: [contractId], references: [id])
+  dispatchDate         DateTime
+  vehicleNo            String
+  driverName           String?
+  driverPhone          String?
+  transporterName      String?
+  destination          String?
+  bags                 Int      @default(0)
+  weightPerBag         Float    @default(50)
+  weightGrossMT        Float    @default(0)
+  weightTareMT         Float    @default(0)
+  weightNetMT          Float    @default(0)
+  rate                 Float    @default(0)
+  amount               Float    @default(0)
+  distanceKm           Float?
+  challanNo            String?
+  gatePassNo           String?
+
+  invoiceId            String?
+  invoice              Invoice? @relation(fields: [invoiceId], references: [id])
+
+  ddgsDispatchTruckId  String?  @unique
+  ddgsDispatchTruck    DDGSDispatchTruck? @relation(fields: [ddgsDispatchTruckId], references: [id])
+
+  status               String   @default("DISPATCHED")
+  remarks              String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([contractId])
+  @@index([dispatchDate])
 }

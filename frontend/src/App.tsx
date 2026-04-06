@@ -68,6 +68,7 @@ const Invoices = React.lazy(() => import('./pages/sales/Invoices'));
 const Payments = React.lazy(() => import('./pages/sales/Payments'));
 const FreightManagement = React.lazy(() => import('./pages/sales/FreightManagement'));
 const EthanolContracts = React.lazy(() => import('./pages/sales/EthanolContracts'));
+const DDGSContracts = React.lazy(() => import('./pages/sales/DDGSContracts'));
 // Logistics
 const GateAndReceipts = React.lazy(() => import('./pages/logistics/GateAndReceipts'));
 // Procurement (P2P)
@@ -188,6 +189,7 @@ export default function App() {
         <Route path="sales/payments" element={<Payments />} />
         <Route path="sales/freight" element={<Navigate to="/sales/pipeline" replace />} />
         <Route path="sales/ethanol-contracts" element={<EthanolContracts />} />
+        <Route path="sales/ddgs-contracts" element={<DDGSContracts />} />
         {/* Logistics */}
         <Route path="logistics/gate-register" element={<GateAndReceipts />} />
         {/* Procurement (P2P) */}
