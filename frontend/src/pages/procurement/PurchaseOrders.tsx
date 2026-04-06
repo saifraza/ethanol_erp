@@ -63,6 +63,9 @@ interface PurchaseOrder {
   lines: POLine[];
   linesCount: number;
   grnCount: number;
+  totalInvoiced: number;
+  totalPaid: number;
+  paymentStatus: string;
 }
 
 interface APIResponse {
@@ -1038,10 +1041,20 @@ const PurchaseOrders: React.FC = () => {
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-center">{po.linesCount}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums font-bold">{po.grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-center">
-                      {(po as any).paymentStatus === 'PAID' && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-300 bg-green-50 text-green-700">PAID</span>}
-                      {(po as any).paymentStatus === 'PARTIAL' && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-amber-300 bg-amber-50 text-amber-700">PARTIAL</span>}
-                      {(po as any).paymentStatus === 'UNPAID' && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-red-300 bg-red-50 text-red-700">UNPAID</span>}
-                      {(po as any).paymentStatus === 'NO_INVOICE' && <span className="text-[9px] text-slate-400">--</span>}
+                      {po.paymentStatus === 'PAID' && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-300 bg-green-50 text-green-700">PAID</span>}
+                      {po.paymentStatus === 'PARTIAL' && (
+                        <div>
+                          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-amber-300 bg-amber-50 text-amber-700">PARTIAL</span>
+                          <div className="text-[9px] text-slate-500 mt-0.5 font-mono">{po.totalPaid.toLocaleString('en-IN', { maximumFractionDigits: 0 })} / {po.totalInvoiced.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
+                        </div>
+                      )}
+                      {po.paymentStatus === 'UNPAID' && (
+                        <div>
+                          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-red-300 bg-red-50 text-red-700">UNPAID</span>
+                          {po.totalInvoiced > 0 && <div className="text-[9px] text-red-500 mt-0.5 font-mono">{po.totalInvoiced.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>}
+                        </div>
+                      )}
+                      {po.paymentStatus === 'NO_INVOICE' && <span className="text-[9px] text-slate-400">--</span>}
                     </td>
                     <td className="px-3 py-1.5 text-xs">
                       <div className="flex items-center justify-end gap-1">
@@ -1268,11 +1281,37 @@ const PurchaseOrders: React.FC = () => {
                 ))}
               </tbody>
               <tfoot>
-                <tr className="bg-slate-800 text-white font-semibold">
-                  <td colSpan={6} className="px-3 py-2 text-xs text-right uppercase tracking-widest">Total</td>
-                  <td className="px-3 py-2 text-xs text-right font-mono tabular-nums">{filteredPOs.reduce((s, p) => s + p.grandTotal, 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
-                  <td></td>
-                </tr>
+                {(() => {
+                  const allTotal = filteredPOs.reduce((s, p) => s + p.grandTotal, 0);
+                  const receivedPOs = filteredPOs.filter(p => ['PARTIAL_RECEIVED', 'RECEIVED', 'CLOSED'].includes(p.status));
+                  const receivedTotal = receivedPOs.reduce((s, p) => s + p.grandTotal, 0);
+                  const totalPaid = filteredPOs.reduce((s, p) => s + (p.totalPaid || 0), 0);
+                  const totalInvoiced = filteredPOs.reduce((s, p) => s + (p.totalInvoiced || 0), 0);
+                  const balanceToPay = totalInvoiced - totalPaid;
+                  return (
+                    <>
+                      <tr className="bg-slate-700 text-slate-300">
+                        <td colSpan={6} className="px-3 py-1.5 text-[10px] text-right uppercase tracking-widest">All POs Total</td>
+                        <td className="px-3 py-1.5 text-[10px] text-right font-mono tabular-nums">{allTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
+                        <td></td>
+                        <td></td>
+                      </tr>
+                      <tr className="bg-slate-800 text-white font-semibold">
+                        <td colSpan={6} className="px-3 py-1.5 text-[10px] text-right uppercase tracking-widest">Received (Payable)</td>
+                        <td className="px-3 py-1.5 text-xs text-right font-mono tabular-nums text-amber-300">{receivedTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
+                        <td className="px-3 py-1.5 text-[10px] text-right font-mono tabular-nums">
+                          {totalInvoiced > 0 && (
+                            <div>
+                              <span className="text-green-400">Paid: {totalPaid.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+                              {balanceToPay > 0 && <span className="text-red-400 ml-2">Due: {balanceToPay.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>}
+                            </div>
+                          )}
+                        </td>
+                        <td></td>
+                      </tr>
+                    </>
+                  );
+                })()}
               </tfoot>
             </table>
           </div>
