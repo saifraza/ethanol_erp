@@ -25,6 +25,20 @@ router.post('/from-cloud', asyncHandler(async (_req: Request, res: Response) => 
   }
 }));
 
+// POST /api/sync/resync-lab — one-time: re-push all weighments with lab data so cloud gets updated moisture/quarantine
+router.post('/resync-lab', asyncHandler(async (_req: Request, res: Response) => {
+  const result = await prisma.weighment.updateMany({
+    where: {
+      labStatus: { not: 'PENDING' },
+      cloudSynced: true,
+      direction: 'INBOUND',
+    },
+    data: { cloudSynced: false },
+  });
+  console.log(`[SYNC] Resync-lab: marked ${result.count} weighments for re-sync`);
+  res.json({ marked: result.count });
+}));
+
 // GET /api/sync/status — sync overview
 router.get('/status', asyncHandler(async (_req: Request, res: Response) => {
   const [unsyncedWeighments, unsyncedGateEntries, failedQueue] = await Promise.all([

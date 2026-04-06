@@ -21,10 +21,16 @@ let _lastMasterPull = 0;
 
 /** Push unsynced weighments to cloud ERP. Returns { synced, failed }. */
 export async function pushToCloud(): Promise<{ synced: number; failed: number }> {
-  // Only sync GATE_ENTRY (for cloud to create truck record) and COMPLETE (final weights).
-  // FIRST_DONE (partial weighment) is NOT synced — cloud can't process half-weighed outbound trucks.
+  // Sync GATE_ENTRY (cloud creates truck record), COMPLETE (final weights),
+  // and FIRST_DONE inbound with lab results (so cloud lab page updates immediately).
   const unsynced = await prisma.weighment.findMany({
-    where: { cloudSynced: false, status: { in: ['GATE_ENTRY', 'COMPLETE'] } },
+    where: {
+      cloudSynced: false,
+      OR: [
+        { status: { in: ['GATE_ENTRY', 'COMPLETE'] } },
+        { status: 'FIRST_DONE', direction: 'INBOUND', labStatus: { not: 'PENDING' } },
+      ],
+    },
     take: 20,
     orderBy: { createdAt: 'asc' },
   });

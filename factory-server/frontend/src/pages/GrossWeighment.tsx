@@ -491,7 +491,7 @@ export default function GrossWeighment() {
                         labRemarks: 'Manual pass at gross WB', labTestedBy: 'Gross WB Operator',
                       });
                       setScannedRecord({ ...scannedRecord, labStatus: 'PASS', labMoisture: 0 });
-                      loadPending();
+                      fetchPending();
                     } catch (e: unknown) {
                       alert((e as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Failed');
                     }
