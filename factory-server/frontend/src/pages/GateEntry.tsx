@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 
 interface Supplier { id: string; name: string }
 interface Material { id: string; name: string; category?: string }
-interface PO { id: string; po_no: number; vendor_name: string; status: string; lines: POLine[] }
+interface PO { id: string; po_no: number; vendor_name: string; status: string; deal_type?: string; lines: POLine[] }
 interface POLine { id: string; description: string; quantity: number; received_qty: number; pending_qty: number; rate: number; unit: string }
 interface Customer { id: string; name: string }
 interface Trader { id: string; name: string; phone?: string; productTypes?: string; category?: string }
@@ -40,7 +40,7 @@ export default function GateEntry() {
 
   // Form state
   const [direction, setDirection] = useState<'INBOUND' | 'OUTBOUND'>('INBOUND');
-  const [purchaseType, setPurchaseType] = useState<'PO' | 'SPOT' | 'TRADER'>('PO');
+  const [purchaseType, setPurchaseType] = useState<'PO' | 'SPOT' | 'TRADER' | 'JOB_WORK'>('PO');
   const [selectedTraderId, setSelectedTraderId] = useState('');
   const [vehicleNo, setVehicleNo] = useState('');
   const [supplierName, setSupplierName] = useState('');
@@ -60,6 +60,7 @@ export default function GateEntry() {
   const [paymentMode, setPaymentMode] = useState('CASH');
   // Outbound
   const [customerName, setCustomerName] = useState('');
+  const [driverLicense, setDriverLicense] = useState('');
   // Ethanol-specific
   const [ethContracts, setEthContracts] = useState<EthContract[]>([]);
   const [ethContractId, setEthContractId] = useState('');
@@ -115,7 +116,11 @@ export default function GateEntry() {
   // Updated in loadMasterData alongside suppliers, materials, etc.
 
   // Filter POs by selected supplier
-  const filteredPOs = pos.filter(p => !supplierName || p.vendor_name.toLowerCase().includes(supplierName.toLowerCase()));
+  const filteredPOs = pos.filter(p => {
+    if (purchaseType === 'JOB_WORK') return p.deal_type === 'JOB_WORK';
+    if (purchaseType === 'PO') return p.deal_type !== 'JOB_WORK';
+    return true;
+  }).filter(p => !supplierName || p.vendor_name.toLowerCase().includes(supplierName.toLowerCase()));
   const selectedPO = pos.find(p => p.id === selectedPoId);
 
   // Vehicle autocomplete
@@ -150,7 +155,8 @@ export default function GateEntry() {
   };
 
   // Whether fields are locked by PO selection (supplier locked for PO+TRADER, material locked only for PO)
-  const poLocked = direction === 'INBOUND' && purchaseType === 'PO' && !!selectedPoId;
+  const isPOLike = purchaseType === 'PO' || purchaseType === 'JOB_WORK';
+  const poLocked = direction === 'INBOUND' && isPOLike && !!selectedPoId;
   const supplierLocked = poLocked || (direction === 'INBOUND' && purchaseType === 'TRADER' && !!selectedTraderId);
 
   const resetForm = () => {
@@ -177,15 +183,16 @@ export default function GateEntry() {
         purchaseType: direction === 'OUTBOUND' ? 'OUTBOUND' : purchaseType,
         supplierName: direction === 'OUTBOUND' ? customerName : supplierName,
         materialName,
-        transporter, vehicleType, driverPhone,
+        transporter, vehicleType, driverPhone, driverLicense,
         bags: bags ? parseInt(bags) : undefined,
         remarks,
         operatorName: user?.name || user?.username,
       };
-      if (direction === 'INBOUND' && purchaseType === 'PO') {
+      if (direction === 'INBOUND' && isPOLike) {
         body.poId = selectedPoId || undefined;
         body.poLineId = selectedPoLineId || undefined;
         body.poNumber = poNumber || undefined;
+        if (purchaseType === 'JOB_WORK') body.purchaseType = 'JOB_WORK';
       }
       if (direction === 'INBOUND' && purchaseType === 'SPOT') {
         body.sellerPhone = sellerPhone;
@@ -271,6 +278,10 @@ export default function GateEntry() {
               className={`px-3 py-1.5 text-sm font-bold uppercase ${purchaseType === 'TRADER' ? 'bg-purple-600 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
               Trader
             </button>
+            <button onClick={() => setPurchaseType('JOB_WORK')}
+              className={`px-3 py-1.5 text-sm font-bold uppercase ${purchaseType === 'JOB_WORK' ? 'bg-amber-600 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+              Job Work
+            </button>
           </>
         )}
       </div>
@@ -318,12 +329,12 @@ export default function GateEntry() {
             <div>
               <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">
                 {purchaseType === 'SPOT' ? 'Seller Name' : 'Supplier'}
-                {purchaseType === 'PO' && masterLoading && <span className="text-yellow-500 animate-pulse ml-1">searching...</span>}
+                {isPOLike && masterLoading && <span className="text-yellow-500 animate-pulse ml-1">searching...</span>}
               </label>
               {supplierLocked ? (
                 <input value={supplierName} readOnly disabled
                   className="w-full border border-slate-300 px-3 py-2.5 text-sm bg-slate-100 text-slate-600 cursor-not-allowed" />
-              ) : purchaseType === 'PO' && suppliers.length > 0 ? (
+              ) : isPOLike && suppliers.length > 0 ? (
                 <select value={supplierName} onChange={e => { setSupplierName(e.target.value); setSelectedPoId(''); }}
                   className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
                   <option value="">-- Select --</option>
@@ -386,11 +397,13 @@ export default function GateEntry() {
           </div>
 
           {/* PO Selector (only for PO purchase) */}
-          {direction === 'INBOUND' && purchaseType === 'PO' && (
+          {direction === 'INBOUND' && isPOLike && (
             <div className="md:col-span-3">
               <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">
-                Purchase Order {masterLoading && <span className="text-yellow-500 animate-pulse ml-1">searching cloud POs...</span>}
-                {!masterLoading && pos.length === 0 && !masterError && <span className="text-slate-400 ml-1">(no open POs found)</span>}
+                {purchaseType === 'JOB_WORK' ? 'Job Work Contract' : 'Purchase Order'}
+                {purchaseType === 'JOB_WORK' && <span className="ml-2 px-2 py-0.5 bg-amber-500 text-white text-[9px] font-bold uppercase">JOB WORK</span>}
+                {masterLoading && <span className="text-yellow-500 animate-pulse ml-1">searching cloud POs...</span>}
+                {!masterLoading && filteredPOs.length === 0 && !masterError && <span className="text-slate-400 ml-1">(no {purchaseType === 'JOB_WORK' ? 'job work deals' : 'open POs'} found)</span>}
               </label>
               {filteredPOs.length > 0 ? (
                 <select value={selectedPoId} onChange={e => handlePoSelect(e.target.value)}
@@ -518,6 +531,11 @@ export default function GateEntry() {
             <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">Driver Mobile</label>
             <input value={driverPhone} onChange={e => setDriverPhone(e.target.value)}
               className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="9876543210" />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">Driving Licence</label>
+            <input value={driverLicense} onChange={e => setDriverLicense(e.target.value)}
+              className="w-full border border-slate-300 px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g. KA1720110022008" />
           </div>
           {!isEthanol && (
           <div>
