@@ -164,10 +164,9 @@ export function buildIRNPayload(invoice: any): IRNPayload {
   const sgstAmt = isInterstate ? 0 : round2(totalTax / 2);
   const igstAmt = isInterstate ? round2(totalTax) : 0;
 
-  // Invoice number format: prefix with INV- if just a number
-  const invoiceNo = invoice.invoiceNo
-    ? (String(invoice.invoiceNo).startsWith('INV-') ? String(invoice.invoiceNo) : `INV-${invoice.invoiceNo}`)
-    : String(invoice.id);
+  // Invoice number: use as-is if it already has a series prefix (INV/, MSPIL/, etc.), otherwise add INV-
+  const rawInvNo = String(invoice.invoiceNo || invoice.id);
+  const invoiceNo = /^[A-Z]/.test(rawInvNo) ? rawInvNo : `INV-${rawInvNo}`;
 
   const payload: IRNPayload = {
     Version: '1.1',
@@ -206,7 +205,7 @@ export function buildIRNPayload(invoice: any): IRNPayload {
     ItemList: [
       {
         SlNo: '1',
-        IsServc: 'N',  // N = Goods, Y = Service (required)
+        IsServc: getHsnCode(invoice.productName || 'DDGS').startsWith('99') ? 'Y' : 'N',
         HsnCd: getHsnCode(invoice.productName || 'DDGS'),
         Qty: invoice.quantity || 0,
         Unit: getIRNUnit(invoice.unit || 'KL'),
