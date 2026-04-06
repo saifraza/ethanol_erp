@@ -640,12 +640,15 @@ model DDGSDispatchTruck {
   sourceWbId      String?           // Factory weighment ID for dedup
   customerId      String?
   customer        Customer?  @relation(fields: [customerId], references: [id])
+  contractId      String?
+  contract        DDGSContract? @relation(fields: [contractId], references: [id])
   userId          String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @default(now()) @updatedAt
   ddgsContractDispatch DDGSContractDispatch?
   @@index([date])
   @@index([customerId])
+  @@index([contractId])
 }
 
 // ═══════════════════════════════════════════════
@@ -2999,6 +3002,7 @@ model DDGSContract {
   updatedAt            DateTime @updatedAt
 
   dispatches           DDGSContractDispatch[]
+  dispatchTrucks       DDGSDispatchTruck[]
 
   @@index([customerId])
   @@index([status])

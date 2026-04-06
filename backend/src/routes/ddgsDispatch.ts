@@ -174,6 +174,8 @@ router.post('/', async (req: Request, res: Response) => {
         hsnCode: b.hsnCode || '2303',
         gateInTime: now, tareTime, grossTime,
         remarks: b.remarks || null,
+        contractId: b.contractId || null,
+        customerId: b.customerId || null,
         userId: (req as any).user.id,
       }
     });

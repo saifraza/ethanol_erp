@@ -151,6 +151,7 @@ const DDGSContracts: React.FC = () => {
 
   const [detailSummary, setDetailSummary] = useState<SupplySummary | null>(null);
   const [detailDispatches, setDetailDispatches] = useState<Dispatch[]>([]);
+  const [activeTrucks, setActiveTrucks] = useState<any[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [showIrnDetail, setShowIrnDetail] = useState<string | null>(null);
@@ -265,6 +266,7 @@ const DDGSContracts: React.FC = () => {
       const res = await api.get(`/ddgs-contracts/${contractId}/supply-summary`);
       setDetailSummary(res.data.summary);
       setDetailDispatches(res.data.dispatches || []);
+      setActiveTrucks(res.data.activeTrucks || []);
       setDispatchPage(1);
     } catch { setError('Failed to load supply details'); }
     finally { setDetailLoading(false); }
@@ -272,7 +274,7 @@ const DDGSContracts: React.FC = () => {
 
   const handleExpand = (contractId: string) => {
     if (expanded === contractId) {
-      setExpanded(null); setDetailSummary(null); setDetailDispatches([]);
+      setExpanded(null); setDetailSummary(null); setDetailDispatches([]); setActiveTrucks([]);
     } else {
       setExpanded(contractId); loadSupplyDetail(contractId);
     }
@@ -284,6 +286,25 @@ const DDGSContracts: React.FC = () => {
       await api.post(`/ddgs-contracts/${contractId}/dispatches/${dispatchId}/create-invoice`);
       loadSupplyDetail(contractId);
     } catch (err: any) { setError(err?.response?.data?.error || 'Failed to create invoice'); }
+    finally { setActionLoading(null); }
+  };
+
+  const handleRelease = async (truckId: string, contractId: string) => {
+    if (!confirm('Release this truck? This will create the invoice and dispatch record.')) return;
+    try {
+      setActionLoading(truckId);
+      const res = await api.post(`/ddgs-contracts/${contractId}/release-truck/${truckId}`);
+      const d = res.data;
+      // Open invoice PDF
+      if (d.invoiceId) {
+        try {
+          const r = await api.get(`/invoices/${d.invoiceId}/pdf`, { responseType: 'blob' });
+          window.open(URL.createObjectURL(r.data), '_blank');
+        } catch { /* non-critical */ }
+      }
+      loadSupplyDetail(contractId);
+      fetchData();
+    } catch (err: any) { setError(err?.response?.data?.error || 'Failed to release truck'); }
     finally { setActionLoading(null); }
   };
 
@@ -510,7 +531,14 @@ const DDGSContracts: React.FC = () => {
                                 const withEWB = detailDispatches.filter(d => d.invoice?.ewbStatus === 'GENERATED').length;
                                 const pending = detailDispatches.length - withInvoice;
                                 return (
-                                  <div className="grid grid-cols-2 md:grid-cols-5 border-b border-slate-200">
+                                  <div className="grid grid-cols-2 md:grid-cols-6 border-b border-slate-200">
+                                    {activeTrucks.length > 0 && (
+                                    <div className="bg-orange-50 px-4 py-2.5 border-r border-slate-200 border-l-4 border-l-orange-500">
+                                      <div className="text-[10px] font-bold text-orange-600 uppercase tracking-widest">At Weighbridge</div>
+                                      <div className="text-lg font-bold text-orange-700 font-mono tabular-nums mt-0.5">{activeTrucks.length}</div>
+                                      <div className="text-[10px] text-orange-500 font-mono">{activeTrucks.map((t: any) => t.vehicleNo).join(', ')}</div>
+                                    </div>
+                                    )}
                                     <div className="bg-white px-4 py-2.5 border-r border-slate-200 border-l-4 border-l-slate-500">
                                       <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Dispatches</div>
                                       <div className="text-lg font-bold text-slate-800 font-mono tabular-nums mt-0.5">{detailSummary.totalDispatches}</div>
@@ -583,7 +611,37 @@ const DDGSContracts: React.FC = () => {
                                     </tr>
                                   </thead>
                                   <tbody>
-                                    {detailDispatches.length === 0 ? (
+                                    {/* Active trucks at weighbridge (not yet released) */}
+                                    {activeTrucks.map((t: any) => (
+                                      <tr key={`truck-${t.id}`} className={`border-b border-orange-200 ${t.status === 'GROSS_WEIGHED' ? 'bg-green-50/80' : 'bg-orange-50/80'}`}>
+                                        <td className="px-2 py-1.5 border-r border-orange-100 whitespace-nowrap">{t.gateInTime ? new Date(t.gateInTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '-'}</td>
+                                        <td className="px-2 py-1.5 border-r border-orange-100 font-medium">{t.vehicleNo}</td>
+                                        <td className="px-2 py-1.5 border-r border-orange-100 text-right font-mono tabular-nums">{t.bags || '-'}</td>
+                                        <td className="px-2 py-1.5 border-r border-orange-100 text-right font-mono tabular-nums">{t.weightNet > 0 ? t.weightNet.toFixed(2) : '-'}</td>
+                                        <td className="px-2 py-1.5 border-r border-orange-100 text-right font-mono tabular-nums">{t.weightNet > 0 ? fmtINR(t.weightNet * c.rate) : '-'}</td>
+                                        <td className="px-2 py-1.5 border-r border-orange-100 text-center">
+                                          <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
+                                            t.status === 'GROSS_WEIGHED' ? 'border-green-300 bg-green-100 text-green-700' : 'border-orange-300 bg-orange-100 text-orange-700'
+                                          }`}>
+                                            {t.status === 'GATE_IN' ? 'AT GATE' : t.status === 'TARE_WEIGHED' ? 'LOADING' : 'WEIGHED'}
+                                          </span>
+                                        </td>
+                                        <td className="px-2 py-1.5 border-r border-orange-100 text-center">
+                                          {t.status === 'GROSS_WEIGHED' ? (
+                                            <button
+                                              onClick={(e) => { e.stopPropagation(); handleRelease(t.id, c.id); }}
+                                              disabled={actionLoading === t.id}
+                                              className="text-[9px] font-bold uppercase px-2 py-0.5 border border-green-500 bg-green-600 text-white hover:bg-green-700 disabled:opacity-50">
+                                              {actionLoading === t.id ? '...' : 'Release'}
+                                            </button>
+                                          ) : <span className="text-[10px] text-orange-500">--</span>}
+                                        </td>
+                                        <td className="px-2 py-1.5 border-r border-orange-100 text-center">--</td>
+                                        <td className="px-2 py-1.5 border-r border-orange-100 text-center">--</td>
+                                        <td className="px-2 py-1.5 text-center text-[10px] text-orange-500">{t.driverName || '-'}</td>
+                                      </tr>
+                                    ))}
+                                    {detailDispatches.length === 0 && activeTrucks.length === 0 ? (
                                       <tr><td colSpan={10} className="text-center py-6 text-xs text-slate-400 uppercase tracking-widest">No dispatches yet</td></tr>
                                     ) : detailDispatches.slice((dispatchPage - 1) * ITEMS_PER_PAGE, dispatchPage * ITEMS_PER_PAGE).map((d, i) => (
                                       <React.Fragment key={d.id}>

@@ -251,7 +251,20 @@ router.get('/:id/supply-summary', asyncHandler(async (req: AuthRequest, res: Res
     daysRemaining: Math.max(0, Math.ceil((new Date(contract.endDate).getTime() - Date.now()) / 86400000)),
   };
 
-  res.json({ contract: { ...contract, hasPdf: !!contractPdf }, summary, dispatches });
+  // In-progress trucks at weighbridge (not yet released)
+  const activeTrucks = await prisma.dDGSDispatchTruck.findMany({
+    where: { contractId: contract.id, status: { in: ['GATE_IN', 'TARE_WEIGHED', 'GROSS_WEIGHED'] } },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+    select: {
+      id: true, date: true, vehicleNo: true, driverName: true, driverMobile: true,
+      transporterName: true, destination: true, status: true,
+      bags: true, weightPerBag: true, weightGross: true, weightTare: true, weightNet: true,
+      gateInTime: true, tareTime: true, grossTime: true, partyName: true,
+    },
+  });
+
+  res.json({ contract: { ...contract, hasPdf: !!contractPdf }, summary, dispatches, activeTrucks });
 }));
 
 // ── POST dispatch under contract ──
@@ -441,6 +454,105 @@ router.delete('/dispatches/:dispatchId', asyncHandler(async (req: AuthRequest, r
     prisma.dDGSContractDispatch.delete({ where: { id: req.params.dispatchId } }),
   ]);
   res.json({ success: true });
+}));
+
+// ── RELEASE truck from weighbridge (creates DDGSContractDispatch + Invoice) ──
+router.post('/:id/release-truck/:truckId', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const truck = await prisma.dDGSDispatchTruck.findUnique({ where: { id: req.params.truckId } });
+  if (!truck) return res.status(404).json({ error: 'Truck not found' });
+  if (truck.status !== 'GROSS_WEIGHED') return res.status(400).json({ error: `Cannot release in status ${truck.status}` });
+  if (truck.contractId !== req.params.id) return res.status(400).json({ error: 'Truck not linked to this contract' });
+
+  const contract = await prisma.dDGSContract.findUnique({
+    where: { id: req.params.id },
+    include: { customer: true },
+  });
+  if (!contract) return res.status(404).json({ error: 'Contract not found' });
+  const customer = contract.customer;
+  if (!customer) return res.status(400).json({ error: 'Contract has no customer' });
+
+  const weightNetMT = truck.weightNet; // already in MT
+  const rate = contract.rate || 0;
+  const amount = Math.round(weightNetMT * rate * 100) / 100;
+  const gstPercent = contract.gstPercent || DDGS_GST_PCT;
+  const gst = calcGstSplit(amount, gstPercent, customer.state);
+  const totalAmount = Math.round((amount + gst.gstAmount) * 100) / 100;
+
+  const result = await prisma.$transaction(async (tx) => {
+    // Re-check status to prevent double-release race
+    const fresh = await tx.dDGSDispatchTruck.findUnique({ where: { id: truck.id }, select: { status: true } });
+    if (fresh?.status === 'RELEASED') throw new Error('Already released');
+
+    const customInvNo = await nextInvoiceNo(tx, 'DDGS');
+
+    // Create invoice
+    const invoice = await tx.invoice.create({
+      data: {
+        customerId: customer.id,
+        invoiceDate: truck.date,
+        dueDate: contract.paymentTermsDays ? new Date(truck.date.getTime() + contract.paymentTermsDays * 86400000) : null,
+        productName: 'DDGS', quantity: weightNetMT, unit: 'MT', rate, amount,
+        gstPercent, gstAmount: gst.gstAmount, supplyType: gst.supplyType,
+        cgstPercent: gst.cgstPercent, cgstAmount: gst.cgstAmount,
+        sgstPercent: gst.sgstPercent, sgstAmount: gst.sgstAmount,
+        igstPercent: gst.igstPercent, igstAmount: gst.igstAmount,
+        totalAmount, balanceAmount: totalAmount, status: 'UNPAID',
+        remarks: customInvNo,
+        userId: (req as AuthRequest).user?.id || 'system',
+      },
+    });
+
+    // Create DDGSContractDispatch (like EthanolLifting)
+    const dispatch = await tx.dDGSContractDispatch.create({
+      data: {
+        contractId: contract.id,
+        dispatchDate: truck.date,
+        vehicleNo: truck.vehicleNo,
+        driverName: truck.driverName,
+        driverPhone: truck.driverMobile,
+        transporterName: truck.transporterName,
+        destination: truck.destination,
+        bags: truck.bags,
+        weightPerBag: truck.weightPerBag,
+        weightGrossMT: truck.weightGross,
+        weightTareMT: truck.weightTare,
+        weightNetMT: weightNetMT,
+        rate, amount,
+        invoiceId: invoice.id,
+        ddgsDispatchTruckId: truck.id,
+        status: 'DISPATCHED',
+      },
+    });
+
+    // Update truck status
+    await tx.dDGSDispatchTruck.update({
+      where: { id: truck.id },
+      data: { status: 'RELEASED', releaseTime: new Date() },
+    });
+
+    // Update contract totals
+    await tx.dDGSContract.update({
+      where: { id: contract.id },
+      data: { totalSuppliedMT: { increment: weightNetMT } },
+    });
+
+    return { invoice, dispatch, customInvNo };
+  });
+
+  // Fire-and-forget journal entry
+  onSaleInvoiceCreated(prisma, {
+    id: result.invoice.id, invoiceNo: result.invoice.invoiceNo, totalAmount,
+    amount, gstAmount: gst.gstAmount, gstPercent,
+    cgstAmount: gst.cgstAmount, sgstAmount: gst.sgstAmount, igstAmount: gst.igstAmount,
+    supplyType: gst.supplyType, freightCharge: 0,
+    productName: 'DDGS', customerId: customer.id,
+    userId: (req as AuthRequest).user?.id || 'system', invoiceDate: truck.date,
+  }).catch(() => {});
+
+  res.json({
+    success: true, invoiceNo: result.customInvNo,
+    invoiceId: result.invoice.id, dispatchId: result.dispatch.id, truckId: truck.id,
+  });
 }));
 
 // ── CREATE INVOICE from dispatch ──
