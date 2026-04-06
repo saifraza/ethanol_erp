@@ -366,7 +366,7 @@ export default function RawMaterialPurchase() {
       materialItemId: line?.inventoryItemId || '',
       rate: line?.rate || 0,
       remarks: cleanRemarks,
-      quantityType: d.dealType === 'OPEN' ? 'OPEN' : 'FIXED',
+      quantityType: d.dealType === 'JOB_WORK' ? 'JOB_WORK' : (d.dealType === 'OPEN' ? 'OPEN' : 'FIXED'),
       quantity: line?.quantity === 999999 ? 0 : (line?.quantity || 0),
       quantityUnit: d.truckCap ? 'TRUCKS' : 'MT',
       paymentTerms: d.paymentTerms || 'NET15',
@@ -674,11 +674,14 @@ export default function RawMaterialPurchase() {
                                       {d.vendor.phone && <div className="text-[9px] text-slate-400">{d.vendor.phone}</div>}
                                     </td>
                                     <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">
-                                      {fmtCurrency(line.rate)}/{line.unit || 'MT'}
+                                      {d.dealType === 'JOB_WORK' ? <span className="text-[9px] font-bold text-purple-600 uppercase">Job Work</span> : `${fmtCurrency(line.rate)}/${line.unit || 'MT'}`}
                                     </td>
                                     <td className="px-3 py-1.5 text-center border-r border-slate-100">
-                                      <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${d.dealType === 'OPEN' ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-slate-300 bg-slate-50 text-slate-600'}`}>
-                                        {d.dealType}
+                                      <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
+                                        d.dealType === 'OPEN' ? 'border-blue-300 bg-blue-50 text-blue-700' :
+                                        d.dealType === 'JOB_WORK' ? 'border-purple-300 bg-purple-50 text-purple-700' :
+                                        'border-slate-300 bg-slate-50 text-slate-600'}`}>
+                                        {d.dealType === 'JOB_WORK' ? 'JOB WORK' : d.dealType}
                                       </span>
                                     </td>
                                     <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold border-r border-slate-100">
@@ -906,19 +909,25 @@ export default function RawMaterialPurchase() {
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Deal Type</label>
-                  <select value={(dealForm as Record<string, string>).quantityType || 'OPEN'} onChange={e => setDealForm({ ...dealForm, quantityType: e.target.value } as typeof dealForm)}
+                  <select value={(dealForm as Record<string, string>).quantityType || 'OPEN'} onChange={e => {
+                    const v = e.target.value;
+                    setDealForm({ ...dealForm, quantityType: v, rate: v === 'JOB_WORK' ? 0 : dealForm.rate } as typeof dealForm);
+                  }}
                     className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
                     <option value="OPEN">Open (No fixed qty)</option>
                     <option value="FIXED">Fixed Quantity</option>
+                    <option value="JOB_WORK">Job Work</option>
                   </select>
                 </div>
               </div>
               <div className="grid grid-cols-4 gap-3">
+                {(dealForm as Record<string, string>).quantityType !== 'JOB_WORK' && (
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Rate</label>
                   <input type="number" value={dealForm.rate || ''} onChange={e => setDealForm({ ...dealForm, rate: parseFloat(e.target.value) || 0 })}
                     className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., 500" />
                 </div>
+                )}
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Quantity</label>
                   <div className="flex">

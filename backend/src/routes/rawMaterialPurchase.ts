@@ -272,7 +272,7 @@ const dealSchema = z.object({
   vendorPhone: z.string().optional(),
   materialItemId: z.string().min(1),
   rate: z.number().min(0),
-  quantityType: z.enum(['OPEN', 'FIXED']).default('OPEN'),
+  quantityType: z.enum(['OPEN', 'FIXED', 'JOB_WORK']).default('OPEN'),
   quantity: z.number().optional(),
   quantityUnit: z.enum(['MT', 'KG', 'KL', 'LTR', 'NOS', 'TRUCKS']).default('MT'),
   paymentTerms: z.string().optional(),
@@ -288,7 +288,7 @@ const dealSchema = z.object({
 router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const deals = await prisma.purchaseOrder.findMany({
     where: {
-      dealType: { in: ['OPEN', 'STANDARD'] },
+      dealType: { in: ['OPEN', 'STANDARD', 'JOB_WORK'] },
       status: { in: ['APPROVED', 'SENT', 'PARTIAL_RECEIVED', 'RECEIVED', 'CLOSED'] },
       lines: { some: { inventoryItem: { category: { in: [...RAW_CATEGORIES] } } } },
     },
@@ -420,7 +420,8 @@ router.post('/deals', authenticate, validate(dealSchema), asyncHandler(async (re
     return res.status(400).json({ error: `Item "${materialItem.name}" is not a raw material/chemical/packing item (category=${materialItem.category})` });
   }
 
-  const isOpen = b.quantityType !== 'FIXED';
+  const isJobWork = b.quantityType === 'JOB_WORK';
+  const isOpen = b.quantityType !== 'FIXED' || isJobWork;
   const isTrucks = b.quantityUnit === 'TRUCKS';
   if (!isOpen && !isTrucks && (!b.quantity || b.quantity <= 0)) {
     return res.status(400).json({ error: 'Fixed deals require a positive quantity' });
@@ -454,7 +455,7 @@ router.post('/deals', authenticate, validate(dealSchema), asyncHandler(async (re
   const po = await prisma.purchaseOrder.create({
     data: {
       vendorId,
-      dealType: isOpen ? 'OPEN' : 'STANDARD',
+      dealType: isJobWork ? 'JOB_WORK' : (isOpen ? 'OPEN' : 'STANDARD'),
       status: 'APPROVED',
       poDate: new Date(),
       deliveryDate: b.validUntil ? (() => { const d = new Date(b.validUntil + 'T23:59:00+05:30'); return d; })() : null,
@@ -505,7 +506,7 @@ router.put('/deals/:id', authenticate, asyncHandler(async (req: AuthRequest, res
     where: { id: req.params.id },
     include: { lines: true, grns: { select: { id: true }, take: 1 } },
   });
-  if (!deal || !['OPEN', 'STANDARD'].includes(deal.dealType)) return res.status(404).json({ error: 'Deal not found' });
+  if (!deal || !['OPEN', 'STANDARD', 'JOB_WORK'].includes(deal.dealType)) return res.status(404).json({ error: 'Deal not found' });
 
   const b = req.body;
   const hasGrns = deal.grns.length > 0;
