@@ -393,12 +393,14 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
       ewbValidTill: invoice.ewbValidTill || null,
     };
 
-    // Generate QR from IRN if signed QR is missing but IRN exists
-    if (invData.irn && !invData.signedQRCode) {
+    // Convert signedQRCode JWT to actual QR code image, or generate QR from IRN URL
+    if (invData.irn) {
       try {
         const { generateQRCode } = await import('../services/templateEngine');
-        invData.signedQRCode = null; // Will use irnQrDataUrl instead
-        (invData as any).irnQrDataUrl = await generateQRCode(`https://einvoice1.gst.gov.in/Others/VSignQRCode?irn=${invData.irn}`);
+        const qrContent = invData.signedQRCode || `https://einvoice1.gst.gov.in/Others/VSignQRCode?irn=${invData.irn}`;
+        const qrDataUrl = await generateQRCode(qrContent);
+        invData.signedQRCode = null; // Clear raw JWT so template uses irnQrDataUrl
+        (invData as any).irnQrDataUrl = qrDataUrl;
       } catch { /* non-critical */ }
     }
 
