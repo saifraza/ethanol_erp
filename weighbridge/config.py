@@ -49,6 +49,14 @@ SYNC_RETRY_MAX = 5                   # Retry failed syncs
 MASTER_PULL_INTERVAL_SECONDS = 1800  # Pull master data every 30 min
 
 # =============================================================================
+#  FACTORY SERVER (LAN-first sync — avoids internet dependency)
+# =============================================================================
+FACTORY_API_URL = os.environ.get("WB_FACTORY_URL", "")  # e.g. http://192.168.0.10:5000/api/weighbridge
+FACTORY_API_KEY = os.environ.get("WB_FACTORY_KEY", CLOUD_API_KEY)  # Same key by default
+FACTORY_TIMEOUT = int(os.environ.get("WB_FACTORY_TIMEOUT", "3"))   # 3s — fast LAN
+PREFER_FACTORY = os.environ.get("WB_PREFER_FACTORY", "true").lower() == "true"
+
+# =============================================================================
 #  BACKOFF SETTINGS (exponential backoff for cloud failures)
 # =============================================================================
 BACKOFF_INITIAL_SECONDS = 10

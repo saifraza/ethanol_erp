@@ -19,6 +19,7 @@ from config import (
     WEB_PORT, SERIAL_PROTOCOL,
     BACKOFF_INITIAL_SECONDS, BACKOFF_MAX_SECONDS, BACKOFF_MULTIPLIER,
     DB_PATH,
+    FACTORY_API_URL, FACTORY_API_KEY, FACTORY_TIMEOUT, PREFER_FACTORY,
 )
 import local_db as db
 
@@ -26,61 +27,109 @@ log = logging.getLogger("cloud_sync")
 
 
 class CloudSync:
-    """Handles all cloud communication."""
+    """Handles all cloud communication. Tries factory server (LAN) first, falls back to cloud."""
 
     def __init__(self, shutdown_event: threading.Event = None):
         self._shutdown = shutdown_event or threading.Event()
         self._backoff = BACKOFF_INITIAL_SECONDS
         self._last_master_pull = 0
         self._cloud_reachable = False
+        self._factory_reachable = False
+        self._last_target = ""  # "factory" or "cloud" — which one last succeeded
         self._start_time = time.time()
 
     @property
     def is_cloud_reachable(self) -> bool:
         return self._cloud_reachable
 
-    def _post(self, path: str, payload: dict) -> dict | None:
-        """POST JSON to cloud API. Returns parsed response or None on failure."""
-        url = CLOUD_API_URL.rstrip("/") + path
-        body = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(
-            url, data=body,
-            headers={
-                "Content-Type": "application/json",
-                "X-WB-Key": CLOUD_API_KEY,
-            },
-            method="POST",
-        )
-        try:
-            resp = urllib.request.urlopen(req, timeout=15)
-            data = json.loads(resp.read().decode("utf-8"))
-            resp.close()
-            self._cloud_reachable = True
-            self._backoff = BACKOFF_INITIAL_SECONDS  # Reset backoff on success
-            return data
-        except Exception as e:
-            self._cloud_reachable = False
-            log.warning("POST %s failed: %s", path, e)
-            return None
+    @property
+    def is_factory_reachable(self) -> bool:
+        return self._factory_reachable
 
-    def _get(self, path: str) -> dict | None:
-        """GET from cloud API. Returns parsed response or None on failure."""
-        url = CLOUD_API_URL.rstrip("/") + path
-        req = urllib.request.Request(
-            url,
-            headers={"X-WB-Key": CLOUD_API_KEY},
-            method="GET",
-        )
+    @property
+    def last_target(self) -> str:
+        return self._last_target
+
+    def _factory_enabled(self) -> bool:
+        """Check if factory server LAN push is configured and preferred."""
+        return bool(FACTORY_API_URL) and PREFER_FACTORY
+
+    def _do_request(self, method: str, url: str, api_key: str,
+                    payload: dict | None, timeout: int) -> dict | None:
+        """Raw HTTP request. Returns parsed JSON or None."""
+        if method == "POST" and payload is not None:
+            body = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(
+                url, data=body,
+                headers={"Content-Type": "application/json", "X-WB-Key": api_key},
+                method="POST",
+            )
+        else:
+            req = urllib.request.Request(
+                url, headers={"X-WB-Key": api_key}, method="GET",
+            )
+        resp = urllib.request.urlopen(req, timeout=timeout)
+        data = json.loads(resp.read().decode("utf-8"))
+        resp.close()
+        return data
+
+    def _post(self, path: str, payload: dict) -> dict | None:
+        """POST JSON — try factory first (LAN), fall back to cloud."""
+        # Factory push uses /wb-push for weighment pushes, same path for others
+        factory_path = "/wb-push" if path == "/push" else path
+
+        if self._factory_enabled():
+            factory_url = FACTORY_API_URL.rstrip("/") + factory_path
+            try:
+                data = self._do_request("POST", factory_url, FACTORY_API_KEY, payload, FACTORY_TIMEOUT)
+                self._factory_reachable = True
+                self._last_target = "factory"
+                self._backoff = BACKOFF_INITIAL_SECONDS
+                log.debug("POST %s via factory OK", factory_path)
+                return data
+            except Exception as e:
+                self._factory_reachable = False
+                log.debug("Factory POST %s failed (%s), falling back to cloud", factory_path, e)
+
+        # Fall back to cloud
+        cloud_url = CLOUD_API_URL.rstrip("/") + path
         try:
-            resp = urllib.request.urlopen(req, timeout=15)
-            data = json.loads(resp.read().decode("utf-8"))
-            resp.close()
+            data = self._do_request("POST", cloud_url, CLOUD_API_KEY, payload, 15)
             self._cloud_reachable = True
+            self._last_target = "cloud"
             self._backoff = BACKOFF_INITIAL_SECONDS
             return data
         except Exception as e:
             self._cloud_reachable = False
-            log.warning("GET %s failed: %s", path, e)
+            log.warning("POST %s failed (both factory and cloud): %s", path, e)
+            return None
+
+    def _get(self, path: str) -> dict | None:
+        """GET — try factory first (LAN), fall back to cloud."""
+        if self._factory_enabled():
+            factory_url = FACTORY_API_URL.rstrip("/") + path
+            try:
+                data = self._do_request("GET", factory_url, FACTORY_API_KEY, None, FACTORY_TIMEOUT)
+                self._factory_reachable = True
+                self._last_target = "factory"
+                self._backoff = BACKOFF_INITIAL_SECONDS
+                log.debug("GET %s via factory OK", path)
+                return data
+            except Exception as e:
+                self._factory_reachable = False
+                log.debug("Factory GET %s failed (%s), falling back to cloud", path, e)
+
+        # Fall back to cloud
+        cloud_url = CLOUD_API_URL.rstrip("/") + path
+        try:
+            data = self._do_request("GET", cloud_url, CLOUD_API_KEY, None, 15)
+            self._cloud_reachable = True
+            self._last_target = "cloud"
+            self._backoff = BACKOFF_INITIAL_SECONDS
+            return data
+        except Exception as e:
+            self._cloud_reachable = False
+            log.warning("GET %s failed (both factory and cloud): %s", path, e)
             return None
 
     # =====================================================================
@@ -246,6 +295,9 @@ class CloudSync:
             "lastTicket": summary.get("total_trucks", 0),
             "version": SERVICE_VERSION,
             "localUrl": f"http://localhost:{WEB_PORT}",
+            "syncTarget": self._last_target,
+            "factoryReachable": self._factory_reachable,
+            "factoryUrl": FACTORY_API_URL or None,
             "system": {
                 "cpuPercent": cpu,
                 "memoryMb": mem_mb,

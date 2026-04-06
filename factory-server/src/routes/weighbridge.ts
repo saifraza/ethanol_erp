@@ -890,6 +890,14 @@ ${qrImg(w.localId)}
 // instead of going over the internet.
 // ============================================================
 
+// Heartbeat storage for weighbridge PCs (received via /heartbeat)
+const wbHeartbeats = new Map<string, Record<string, unknown>>();
+
+/** GET /api/weighbridge/wb-heartbeats — expose stored heartbeats */
+router.get('/wb-heartbeats', requireAuth, asyncHandler(async (_req: Request, res: Response) => {
+  res.json(Array.from(wbHeartbeats.values()));
+}));
+
 /**
  * POST /api/weighbridge/wb-push
  * Accepts cloud-format: { weighments: [{ id, vehicle_no, weight_gross, ... }] }
@@ -899,7 +907,8 @@ ${qrImg(w.localId)}
 router.post('/wb-push', requireWbKey, asyncHandler(async (req: Request, res: Response) => {
   const { weighments } = req.body;
   if (!Array.isArray(weighments) || weighments.length === 0) {
-    return res.status(400).json({ error: 'No weighments provided' });
+    res.status(400).json({ error: 'No weighments provided' });
+    return;
   }
 
   const ids: string[] = [];
@@ -911,77 +920,82 @@ router.post('/wb-push', requireWbKey, asyncHandler(async (req: Request, res: Res
     // Map direction: cloud uses IN/OUT, factory uses INBOUND/OUTBOUND
     const direction = w.direction === 'IN' ? 'INBOUND' : w.direction === 'OUT' ? 'OUTBOUND' : (w.direction || 'INBOUND');
 
-    const data: Record<string, any> = {
-      pcId: w.pc_id || 'weighbridge-1',
-      pcName: w.pc_name || 'Weighbridge',
-      vehicleNo: w.vehicle_no,
-      direction,
-      purchaseType: w.purchase_type || 'PO',
-      poNumber: w.po_number || null,
-      poId: w.po_id || null,
-      poLineId: w.po_line_id || null,
-      supplierName: w.supplier_name || null,
-      supplierId: w.supplier_id || null,
-      materialName: w.material || null,
-      ticketNo: w.ticket_no || null,
-      gateEntryNo: w.gate_entry_no || null,
-      transporter: w.transporter || null,
-      vehicleType: w.vehicle_type || null,
-      driverName: w.driver_name || null,
-      driverPhone: w.driver_mobile || null,
-      grossWeight: w.weight_gross != null ? parseFloat(w.weight_gross) : null,
-      tareWeight: w.weight_tare != null ? parseFloat(w.weight_tare) : null,
-      netWeight: w.weight_net != null ? parseFloat(w.weight_net) : null,
-      weightSource: w.weight_source || 'SERIAL',
-      grossTime: w.first_weight_at ? new Date(w.first_weight_at) : null,
-      tareTime: w.second_weight_at ? new Date(w.second_weight_at) : null,
-      status: w.status || 'GATE_ENTRY',
-      bags: w.bags || null,
-      remarks: w.remarks || null,
-      // Lab fields
-      labStatus: w.lab_status || undefined,
-      labMoisture: w.lab_moisture != null ? parseFloat(w.lab_moisture) : undefined,
-      labStarch: w.lab_starch != null ? parseFloat(w.lab_starch) : undefined,
-      labDamaged: w.lab_damaged != null ? parseFloat(w.lab_damaged) : undefined,
-      labForeignMatter: w.lab_foreign_matter != null ? parseFloat(w.lab_foreign_matter) : undefined,
-      labRemarks: w.lab_remarks || undefined,
-      // Spot purchase fields
-      sellerPhone: w.seller_phone || undefined,
-      sellerVillage: w.seller_village || undefined,
-      sellerAadhaar: w.seller_aadhaar || undefined,
-      rate: w.rate != null ? parseFloat(w.rate) : undefined,
-      deductions: w.deductions != null ? parseFloat(w.deductions) : undefined,
-      deductionReason: w.deduction_reason || undefined,
-      paymentMode: w.payment_mode || undefined,
-      paymentRef: w.payment_ref || undefined,
-      // Ethanol outbound
-      cloudGatePassId: w.cloud_gate_pass_id || undefined,
-      quantityBL: w.quantity_bl != null ? parseFloat(w.quantity_bl) : undefined,
-      strength: w.ethanol_strength != null ? parseFloat(w.ethanol_strength) : undefined,
-      sealNo: w.seal_no || undefined,
-      rstNo: w.rst_no || undefined,
-      driverLicense: w.driver_license || undefined,
-      pesoDate: w.peso_date || undefined,
-    };
+    // Required fields for Prisma create
+    const pcId = w.pc_id || 'weighbridge-1';
+    const pcName = w.pc_name || 'Weighbridge';
+    const vehicleNo = w.vehicle_no;
+    const status = w.status || 'GATE_ENTRY';
 
-    // Remove undefined values so Prisma doesn't error
-    const cleaned: Record<string, any> = {};
-    for (const [k, v] of Object.entries(data)) {
-      if (v !== undefined) cleaned[k] = v;
-    }
+    // Optional fields — only include if present
+    const optionals: Record<string, unknown> = {};
+    if (w.purchase_type) optionals.purchaseType = w.purchase_type;
+    if (w.po_number) optionals.poNumber = w.po_number;
+    if (w.po_id) optionals.poId = w.po_id;
+    if (w.po_line_id) optionals.poLineId = w.po_line_id;
+    if (w.supplier_name) optionals.supplierName = w.supplier_name;
+    if (w.supplier_id) optionals.supplierId = w.supplier_id;
+    if (w.material) optionals.materialName = w.material;
+    if (w.ticket_no != null) optionals.ticketNo = w.ticket_no;
+    if (w.gate_entry_no) optionals.gateEntryNo = w.gate_entry_no;
+    if (w.transporter) optionals.transporter = w.transporter;
+    if (w.vehicle_type) optionals.vehicleType = w.vehicle_type;
+    if (w.driver_name) optionals.driverName = w.driver_name;
+    if (w.driver_mobile) optionals.driverPhone = w.driver_mobile;
+    if (w.weight_gross != null) optionals.grossWeight = parseFloat(w.weight_gross);
+    if (w.weight_tare != null) optionals.tareWeight = parseFloat(w.weight_tare);
+    if (w.weight_net != null) optionals.netWeight = parseFloat(w.weight_net);
+    if (w.weight_source) optionals.weightSource = w.weight_source;
+    if (w.first_weight_at) optionals.grossTime = new Date(w.first_weight_at);
+    if (w.second_weight_at) optionals.tareTime = new Date(w.second_weight_at);
+    if (w.bags != null) optionals.bags = w.bags;
+    if (w.remarks) optionals.remarks = w.remarks;
+    // Lab fields
+    if (w.lab_status) optionals.labStatus = w.lab_status;
+    if (w.lab_moisture != null) optionals.labMoisture = parseFloat(w.lab_moisture);
+    if (w.lab_starch != null) optionals.labStarch = parseFloat(w.lab_starch);
+    if (w.lab_damaged != null) optionals.labDamaged = parseFloat(w.lab_damaged);
+    if (w.lab_foreign_matter != null) optionals.labForeignMatter = parseFloat(w.lab_foreign_matter);
+    if (w.lab_remarks) optionals.labRemarks = w.lab_remarks;
+    // Spot purchase
+    if (w.seller_phone) optionals.sellerPhone = w.seller_phone;
+    if (w.seller_village) optionals.sellerVillage = w.seller_village;
+    if (w.seller_aadhaar) optionals.sellerAadhaar = w.seller_aadhaar;
+    if (w.rate != null) optionals.rate = parseFloat(w.rate);
+    if (w.deductions != null) optionals.deductions = parseFloat(w.deductions);
+    if (w.deduction_reason) optionals.deductionReason = w.deduction_reason;
+    if (w.payment_mode) optionals.paymentMode = w.payment_mode;
+    if (w.payment_ref) optionals.paymentRef = w.payment_ref;
+    // Ethanol outbound
+    if (w.cloud_gate_pass_id) optionals.cloudGatePassId = w.cloud_gate_pass_id;
+    if (w.quantity_bl != null) optionals.quantityBL = parseFloat(w.quantity_bl);
+    if (w.ethanol_strength != null) optionals.strength = parseFloat(w.ethanol_strength);
+    if (w.seal_no) optionals.sealNo = w.seal_no;
+    if (w.rst_no) optionals.rstNo = w.rst_no;
+    if (w.driver_license) optionals.driverLicense = w.driver_license;
+    if (w.peso_date) optionals.pesoDate = w.peso_date;
 
     try {
       const weighment = await prisma.weighment.upsert({
         where: { localId: w.id },
         create: {
           localId: w.id,
-          ...cleaned,
+          pcId,
+          pcName,
+          vehicleNo,
+          direction,
+          status,
           cloudSynced: false,
+          ...optionals,
         },
         update: {
-          ...cleaned,
+          pcId,
+          pcName,
+          vehicleNo,
+          direction,
+          status,
           cloudSynced: false,
           updatedAt: new Date(),
+          ...optionals,
         },
       });
       ids.push(weighment.id);
@@ -1002,7 +1016,6 @@ router.post('/wb-push', requireWbKey, asyncHandler(async (req: Request, res: Res
 router.get('/master-data', requireWbKey, asyncHandler(async (_req: Request, res: Response) => {
   const data = getMasterData();
 
-  // Map to cloud-compatible format the weighbridge expects
   const suppliers = (data.suppliers || []).map(s => ({ id: s.id, name: s.name }));
   const materials = (data.materials || []).map(m => ({ id: m.id, name: m.name, category: m.category || '' }));
   const pos = (data.pos || []).map(po => ({
@@ -1027,7 +1040,8 @@ router.get('/master-data', requireWbKey, asyncHandler(async (_req: Request, res:
 router.post('/lab-results', requireWbKey, asyncHandler(async (req: Request, res: Response) => {
   const { weighment_ids } = req.body;
   if (!Array.isArray(weighment_ids) || weighment_ids.length === 0) {
-    return res.json({ results: [] });
+    res.json({ results: [] });
+    return;
   }
 
   const weighments = await prisma.weighment.findMany({
@@ -1061,12 +1075,11 @@ router.post('/lab-results', requireWbKey, asyncHandler(async (req: Request, res:
 router.post('/heartbeat', requireWbKey, asyncHandler(async (req: Request, res: Response) => {
   const { pcId, pcName } = req.body;
   if (!pcId) {
-    return res.status(400).json({ error: 'pcId required' });
+    res.status(400).json({ error: 'pcId required' });
+    return;
   }
 
-  // Store in the existing pcHeartbeats map (defined at top of file)
-  // The map is already used by the status endpoint
-  const heartbeat: any = {
+  wbHeartbeats.set(pcId, {
     pcId,
     pcName: pcName || pcId,
     timestamp: req.body.timestamp || new Date().toISOString(),
@@ -1082,8 +1095,9 @@ router.post('/heartbeat', requireWbKey, asyncHandler(async (req: Request, res: R
     lastTicket: req.body.lastTicket,
     version: req.body.version,
     system: req.body.system,
-  };
-  pcHeartbeats.set(pcId, heartbeat);
+    factoryReachable: req.body.factoryReachable,
+    syncTarget: req.body.syncTarget,
+  });
 
   res.json({ ok: true });
 }));
