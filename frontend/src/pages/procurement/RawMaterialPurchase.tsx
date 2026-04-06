@@ -128,7 +128,7 @@ export default function RawMaterialPurchase() {
     try {
       const [dealsRes, vendorsRes] = await Promise.all([
         api.get<OpenDeal[]>('/raw-material-purchase/deals'),
-        api.get<{ vendors: VendorOption[] } | VendorOption[]>('/vendors', { params: { active: true, category: 'RAW_MATERIAL,CHEMICAL,TRADER,GENERAL' } }),
+        api.get<{ vendors: VendorOption[] } | VendorOption[]>('/vendors', { params: { active: true } }),
       ]);
       setDeals(dealsRes.data);
       const vData = vendorsRes.data;
