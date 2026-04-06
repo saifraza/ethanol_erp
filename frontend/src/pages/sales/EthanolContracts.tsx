@@ -755,7 +755,12 @@ const EthanolContracts: React.FC = () => {
                                           {l.invoice ? (
                                             <button onClick={(e) => { e.stopPropagation(); setShowIrnDetail(showIrnDetail === l.id ? null : l.id); }} className="text-[10px] font-medium text-blue-700 underline hover:text-blue-900 cursor-pointer">{l.invoiceNo || `INV-${l.invoice.invoiceNo}`}</button>
                                           ) : (
-                                            <span className="text-slate-300">--</span>
+                                            <button
+                                              onClick={(e) => { e.stopPropagation(); handleCreateInvoice(c.id, l.id); }}
+                                              disabled={actionLoading === l.id}
+                                              className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50">
+                                              {actionLoading === l.id ? '...' : 'Gen Invoice'}
+                                            </button>
                                           )}
                                         </td>
                                         {/* IRN */}
