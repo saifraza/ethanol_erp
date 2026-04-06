@@ -922,7 +922,42 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
             });
           }
 
-          if (!dispatchTruck) return null;
+          // No existing DispatchTruck — auto-create from factory gate entry
+          if (!dispatchTruck) {
+            const newTruck = await tx.dispatchTruck.create({
+              data: {
+                date: dateVal,
+                vehicleNo: w.vehicle_no.toUpperCase(),
+                partyName: partyName,
+                destination: '',
+                driverName: w.driver_name || null,
+                driverPhone: w.driver_mobile || null,
+                transporterName: w.transporter || null,
+                status: 'GATE_IN',
+                gateInTime: gateInVal,
+                sourceWbId: w.id,
+                userId: 'factory-server',
+              },
+            });
+            // If we have weights, update them
+            if (grossKg > 0 && tareKg > 0) {
+              await tx.dispatchTruck.update({
+                where: { id: newTruck.id },
+                data: {
+                  weightTare: tareKg,
+                  weightGross: grossKg,
+                  weightNet: grossKg - tareKg,
+                  tareTime: tareTimeVal,
+                  grossTime: grossTimeVal,
+                  status: 'GROSS_WEIGHED',
+                  ...(w.quantity_bl != null ? { quantityBL: w.quantity_bl } : {}),
+                  ...(w.ethanol_strength != null ? { strength: w.ethanol_strength } : {}),
+                  ...(w.seal_no ? { sealNo: w.seal_no } : {}),
+                },
+              });
+            }
+            return { skipped: false, id: newTruck.id };
+          }
 
           // Guard: never overwrite a RELEASED or already GROSS_WEIGHED truck
           if (dispatchTruck.status === 'RELEASED') return { skipped: true, id: dispatchTruck.id };

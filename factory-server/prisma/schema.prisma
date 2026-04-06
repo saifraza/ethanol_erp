@@ -89,6 +89,9 @@ model Weighment {
   quantityBL      Float?   // Volume in Bulk Litres (ethanol flow meter)
   strength        Float?   // Alcohol strength %
   sealNo          String?  // Seal number on tanker
+  // Camera snapshots (comma-separated relative paths)
+  grossPhotos   String?  // e.g. "{id}/gross_cam1.jpg,{id}/gross_cam2.jpg"
+  tarePhotos    String?
   // Status
   status        String   @default("GATE_ENTRY") // GATE_ENTRY, FIRST_DONE, COMPLETE, CANCELLED
   // Timestamps

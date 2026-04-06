@@ -11,6 +11,7 @@ import syncRoutes from './routes/sync';
 import authRoutes from './routes/auth';
 import cloudProxyRoutes from './routes/cloudProxy';
 import { startPCMonitor, getAllPCStatus } from './services/pcMonitor';
+import { getCameraStatus } from './services/cameraCapture';
 import { startSyncWorker, getSyncWorkerStatus } from './services/syncWorker';
 import { initMasterDataCache, getCacheStats } from './services/masterDataCache';
 
@@ -23,14 +24,19 @@ app.use(express.json({ limit: '10mb' }));
 // Serve React frontend from factory-server/public/
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
+// Serve camera snapshots
+app.use('/snapshots', express.static(path.join(__dirname, '..', 'data', 'snapshots')));
+
 // Health check
-app.get('/api/health', (_req, res) => {
+app.get('/api/health', async (_req, res) => {
+  const cameras = await getCameraStatus().catch(() => []);
   res.json({
     status: 'ok',
     server: 'MSPIL Factory Hub',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     pcs: getAllPCStatus(),
+    cameras,
     sync: getSyncWorkerStatus(),
   });
 });

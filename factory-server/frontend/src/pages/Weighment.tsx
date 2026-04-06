@@ -19,6 +19,8 @@ interface WeighmentItem {
   grossTime: string | null;
   tareTime: string | null;
   status: string;
+  grossPhotos: string | null;
+  tarePhotos: string | null;
   cloudSynced: boolean;
   createdAt: string;
 }
@@ -32,6 +34,7 @@ export default function Weighment() {
   const { token } = useAuth();
   const [weighments, setWeighments] = useState<WeighmentItem[]>([]);
   const [stats, setStats] = useState<Stats>({ today: { total: 0, completed: 0, pending: 0 }, unsynced: 0 });
+  const [lightbox, setLightbox] = useState<string | null>(null);
 
   const api = axios.create({ baseURL: '/api', headers: { Authorization: `Bearer ${token}` } });
 
@@ -100,6 +103,7 @@ export default function Weighment() {
               <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Status</th>
               <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Sync</th>
               <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">PC</th>
+              <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Photos</th>
               <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Time</th>
             </tr>
           </thead>
@@ -130,15 +134,32 @@ export default function Weighment() {
                   )}
                 </td>
                 <td className="px-3 py-1.5 text-slate-500 border-r border-slate-100">{w.pcName || w.pcId}</td>
+                <td className="px-1 py-1 text-center border-r border-slate-100">
+                  {(w.grossPhotos || w.tarePhotos) ? (
+                    <div className="flex gap-0.5 justify-center">
+                      {[...(w.grossPhotos?.split(',') || []), ...(w.tarePhotos?.split(',') || [])].filter(Boolean).map((p, j) => (
+                        <img key={j} src={`/snapshots/${p}`} alt="" className="w-8 h-6 object-cover cursor-pointer border border-slate-200 hover:border-blue-400"
+                          onClick={() => setLightbox(`/snapshots/${p}`)} loading="lazy" />
+                      ))}
+                    </div>
+                  ) : <span className="text-[9px] text-slate-300">--</span>}
+                </td>
                 <td className="px-3 py-1.5 text-slate-500 font-mono">{fmtTime(w.createdAt)}</td>
               </tr>
             ))}
             {weighments.length === 0 && (
-              <tr><td colSpan={11} className="text-center py-8 text-xs text-slate-400 uppercase tracking-widest">No weighments</td></tr>
+              <tr><td colSpan={12} className="text-center py-8 text-xs text-slate-400 uppercase tracking-widest">No weighments</td></tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {/* Lightbox */}
+      {lightbox && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setLightbox(null)}>
+          <img src={lightbox} alt="Weighbridge snapshot" className="max-w-full max-h-full object-contain" />
+        </div>
+      )}
     </div>
   );
 }

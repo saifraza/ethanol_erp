@@ -88,10 +88,21 @@ function HealthBar() {
       {/* WB PCs */}
       {health?.pcs && health.pcs.length > 0 && (
         <div className="mt-1">
-          {health.pcs.map(pc => (
+          {health.pcs.map((pc: { pcId: string; pcName?: string; alive: boolean }) => (
             <div key={pc.pcId} className="flex items-center gap-1.5">
               <span className={`inline-block w-1.5 h-1.5 ${pc.alive ? 'bg-green-500' : 'bg-red-500'}`} />
               <span className="text-[8px] text-slate-600 uppercase tracking-widest">{pc.pcName || pc.pcId}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {/* Cameras */}
+      {health?.cameras && health.cameras.length > 0 && (
+        <div className="mt-1">
+          {health.cameras.map((cam: { id: string; ip: string; name: string; alive: boolean }) => (
+            <div key={cam.id} className="flex items-center gap-1.5">
+              <span className={`inline-block w-1.5 h-1.5 ${cam.alive ? 'bg-green-500' : 'bg-red-500'}`} />
+              <span className="text-[8px] text-slate-600 uppercase tracking-widest">{cam.name} ({cam.ip})</span>
             </div>
           ))}
         </div>

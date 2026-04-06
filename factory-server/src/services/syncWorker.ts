@@ -21,8 +21,10 @@ let _lastMasterPull = 0;
 
 /** Push unsynced weighments to cloud ERP. Returns { synced, failed }. */
 export async function pushToCloud(): Promise<{ synced: number; failed: number }> {
+  // Only sync GATE_ENTRY (for cloud to create truck record) and COMPLETE (final weights).
+  // FIRST_DONE (partial weighment) is NOT synced — cloud can't process half-weighed outbound trucks.
   const unsynced = await prisma.weighment.findMany({
-    where: { cloudSynced: false, status: { in: ['GATE_ENTRY', 'FIRST_DONE', 'COMPLETE'] } },
+    where: { cloudSynced: false, status: { in: ['GATE_ENTRY', 'COMPLETE'] } },
     take: 20,
     orderBy: { createdAt: 'asc' },
   });
@@ -69,7 +71,7 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
     // Driver/transporter (captured at gate entry, needed for cloud Shipment)
     transporter: w.transporter || undefined,
     driver_name: w.driverName || undefined,
-    driver_phone: w.driverPhone || undefined,
+    driver_mobile: w.driverPhone || undefined,
     vehicle_type: w.vehicleType || undefined,
     // Outbound overloads supplierName as customer
     customer_name: w.direction === 'OUTBOUND' ? (w.supplierName || undefined) : undefined,

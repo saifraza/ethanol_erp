@@ -1,8 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import prisma from '../prisma';
 import { getCloudPrisma } from '../cloudPrisma';
 import { asyncHandler, requireWbKey, requireWbKeyOrAuth, requireAuth, requireRole, AuthRequest } from '../middleware';
+import { captureSnapshots } from '../services/cameraCapture';
 
 const router = Router();
 
@@ -84,6 +87,7 @@ const LIST_SELECT = {
   shift: true, operatorName: true, bags: true, remarks: true,
   transporter: true, vehicleType: true, driverName: true, driverPhone: true,
   labStatus: true, labMoisture: true, labRemarks: true,
+  grossPhotos: true, tarePhotos: true,
   cloudSynced: true, createdAt: true, updatedAt: true,
 };
 
@@ -409,6 +413,14 @@ router.post('/:id/gross', requireAuth, requireRole('GROSS_WB', 'ADMIN'), asyncHa
   }
 
   const updated = await prisma.weighment.findUnique({ where: { id } });
+
+  // Fire-and-forget: capture camera snapshots
+  captureSnapshots(id, 'gross').then(paths => {
+    if (paths.length > 0) {
+      prisma.weighment.update({ where: { id }, data: { grossPhotos: paths.join(',') } }).catch(() => {});
+    }
+  });
+
   res.json(updated);
 }));
 
@@ -473,6 +485,14 @@ router.post('/:id/tare', requireAuth, requireRole('TARE_WB', 'ADMIN'), asyncHand
   }
 
   const updated = await prisma.weighment.findUnique({ where: { id } });
+
+  // Fire-and-forget: capture camera snapshots
+  captureSnapshots(id, 'tare').then(paths => {
+    if (paths.length > 0) {
+      prisma.weighment.update({ where: { id }, data: { tarePhotos: paths.join(',') } }).catch(() => {});
+    }
+  });
+
   res.json(updated);
 }));
 
@@ -574,6 +594,17 @@ router.get('/today', requireAuth, asyncHandler(async (_req: AuthRequest, res: Re
     select: LIST_SELECT,
   });
   res.json(weighments);
+}));
+
+// GET /api/weighbridge/:id/photos — List available snapshot files
+router.get('/:id/photos', requireAuth, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const dir = path.join(__dirname, '..', '..', 'data', 'snapshots', req.params.id as string);
+  try {
+    const files = fs.readdirSync(dir).filter(f => f.endsWith('.jpg'));
+    res.json(files.map(f => ({ name: f, url: `/snapshots/${req.params.id}/${f}` })));
+  } catch {
+    res.json([]);
+  }
 }));
 
 // GET /api/weighbridge/summary — Daily KPI stats
