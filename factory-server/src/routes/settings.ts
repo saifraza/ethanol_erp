@@ -62,7 +62,7 @@ router.get('/rules/:key', requireAuth, asyncHandler(async (req: AuthRequest, res
 }));
 
 // PUT /api/settings/rules/:key — update rule (admin only)
-router.put('/rules/:key', requireRole('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.put('/rules/:key', requireAuth, requireRole('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const { value, enabled } = req.body;
   const existing = await prisma.businessRule.findUnique({
     where: { key: req.params.key as string },
@@ -114,7 +114,7 @@ router.post('/verify-pin', asyncHandler(async (req: AuthRequest, res: Response) 
 }));
 
 // GET /api/settings/override-log — view override audit trail (admin only)
-router.get('/override-log', requireRole('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get('/override-log', requireAuth, requireRole('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const take = Math.min(parseInt(req.query.limit as string) || 50, 200);
   const logs = await prisma.ruleOverrideLog.findMany({
     take,

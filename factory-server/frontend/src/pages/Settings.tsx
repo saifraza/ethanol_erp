@@ -71,8 +71,14 @@ export default function Settings() {
   const toggleRule = async (key: string, enabled: boolean) => {
     try {
       await api.put(`/settings/rules/${key}`, { enabled });
-      fetchRules();
-    } catch (err) { console.error(err); }
+      await fetchRules();
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response?.data?.error) {
+        alert(err.response.data.error);
+      } else {
+        alert('Failed to update rule');
+      }
+    }
   };
 
   const categories = [...new Set(rules.map(r => r.category))];
@@ -87,7 +93,7 @@ export default function Settings() {
   return (
     <div className="space-y-0">
       {/* Header */}
-      <div className="bg-slate-800 text-white px-4 py-2.5 -mx-4 -mt-4 flex items-center justify-between">
+      <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-sm font-bold tracking-wide uppercase">Settings</h1>
           <span className="text-[10px] text-slate-400">|</span>
@@ -96,7 +102,7 @@ export default function Settings() {
       </div>
 
       {/* Category Tabs */}
-      <div className="flex border-b border-slate-300 -mx-4 px-4 bg-white">
+      <div className="flex border-b border-slate-300  px-4 bg-white">
         {categories.map(cat => (
           <button
             key={cat}
@@ -113,11 +119,11 @@ export default function Settings() {
       </div>
 
       {/* Rules Table */}
-      <div className="-mx-4 border-x border-b border-slate-300 overflow-hidden">
+      <div className=" border-x border-b border-slate-300 overflow-hidden">
         <table className="w-full text-xs">
           <thead>
             <tr className="bg-slate-800 text-white">
-              <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-8">On</th>
+              <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-16">On</th>
               <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Rule</th>
               <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-40">Value</th>
               <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-32">Last Updated</th>
@@ -135,9 +141,9 @@ export default function Settings() {
                   {rule.key !== 'ADMIN_OVERRIDE_PIN' && (
                     <button
                       onClick={() => toggleRule(rule.key, !rule.enabled)}
-                      className={`w-8 h-4 rounded-full relative transition-colors ${rule.enabled ? 'bg-green-500' : 'bg-slate-300'}`}
+                      className={`w-10 h-5 rounded-full relative transition-colors cursor-pointer ${rule.enabled ? 'bg-green-500' : 'bg-slate-300'}`}
                     >
-                      <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${rule.enabled ? 'left-4' : 'left-0.5'}`} />
+                      <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all pointer-events-none ${rule.enabled ? 'left-5' : 'left-0.5'}`} />
                     </button>
                   )}
                 </td>
