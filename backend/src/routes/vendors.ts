@@ -56,7 +56,10 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const where: Record<string, unknown> = { isActive: true };
     if (req.query.isAgent === 'true') where.isAgent = true;
     if (req.query.isAgent === 'false') where.isAgent = false;
-    if (req.query.category) where.category = req.query.category;
+    if (req.query.category) {
+      const cat = req.query.category as string;
+      where.category = cat.includes(',') ? { in: cat.split(',') } : cat;
+    }
 
     const vendors = await prisma.vendor.findMany({
       where,
