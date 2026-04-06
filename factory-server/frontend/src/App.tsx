@@ -9,6 +9,7 @@ import Weighment from './pages/Weighment';
 import History from './pages/History';
 import AdminDashboard from './pages/AdminDashboard';
 import UserManagement from './pages/UserManagement';
+import Settings from './pages/Settings';
 // EthanolGatePass removed — integrated into GateEntry (OUTBOUND + Ethanol)
 
 // Multi-role: role field can be comma-separated e.g. "GATE_ENTRY,GROSS_WB"
@@ -66,6 +67,9 @@ function AppRoutes() {
         } />
         <Route path="/users" element={
           isAdmin(user.role) ? <UserManagement /> : <Navigate to={homeFor(user.role)} />
+        } />
+        <Route path="/settings" element={
+          isAdmin(user.role) ? <Settings /> : <Navigate to={homeFor(user.role)} />
         } />
       </Route>
       <Route path="*" element={<Navigate to={homeFor(user.role)} />} />

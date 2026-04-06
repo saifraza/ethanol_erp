@@ -250,6 +250,43 @@ model SyncQueue {
   @@index([entityType])
 }
 
+// --- BUSINESS RULES ---
+// Configurable rules enforced during weighbridge operations
+// Managed via admin Settings UI on factory server
+model BusinessRule {
+  id          String   @id @default(uuid())
+  key         String   @unique  // e.g. "MIN_WEIGHT_INTERVAL_MINUTES"
+  label       String             // "Minimum time between two weights"
+  description String?            // Help text for admin UI
+  value       String             // Always stored as string, parsed by valueType
+  valueType   String             // "number", "boolean", "string", "select"
+  category    String   @default("WEIGHMENT")  // WEIGHMENT, GATE_ENTRY, GENERAL
+  enabled     Boolean  @default(true)
+  minValue    String?            // For number type: min allowed in UI
+  maxValue    String?            // For number type: max allowed in UI
+  options     String?            // For select type: JSON array of options
+  updatedAt   DateTime @updatedAt
+  updatedBy   String?            // Who last changed it
+
+  @@index([category])
+  @@index([enabled])
+}
+
+// --- RULE OVERRIDE LOG ---
+// Audit trail when admin overrides a rule violation
+model RuleOverrideLog {
+  id           String   @id @default(uuid())
+  ruleKey      String
+  weighmentId  String
+  action       String   // GROSS, TARE
+  overriddenBy String   // Username or "admin"
+  reason       String?  // Optional reason
+  createdAt    DateTime @default(now())
+
+  @@index([weighmentId])
+  @@index([createdAt])
+}
+
 // --- PRINT QUEUE ---
 // For managing printer jobs across PCs
 model PrintJob {

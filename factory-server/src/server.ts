@@ -10,6 +10,7 @@ import masterDataRoutes from './routes/masterData';
 import syncRoutes from './routes/sync';
 import authRoutes from './routes/auth';
 import cloudProxyRoutes from './routes/cloudProxy';
+import settingsRoutes from './routes/settings';
 import { startPCMonitor, getAllPCStatus } from './services/pcMonitor';
 import { getCameraStatus } from './services/cameraCapture';
 import { startSyncWorker, getSyncWorkerStatus } from './services/syncWorker';
@@ -49,6 +50,7 @@ app.use('/api/heartbeat', heartbeatRoutes);
 app.use('/api/master-data', masterDataRoutes);
 app.use('/api/sync', syncRoutes);
 app.use('/api/cloud', cloudProxyRoutes);
+app.use('/api/settings', settingsRoutes);
 
 // LAN PC status endpoint — factory server polls all PCs
 app.get('/api/factory-pcs', (_req, res) => {

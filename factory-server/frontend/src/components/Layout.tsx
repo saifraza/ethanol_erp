@@ -20,6 +20,7 @@ const NAV_ITEMS = [
   { to: '/history', label: 'Search History', roles: ['ALL'], group: 'operations' },
   { to: '/dashboard', label: 'Dashboard', roles: [], group: 'admin' },
   { to: '/users', label: 'Users', roles: [], group: 'admin' },
+  { to: '/settings', label: 'Settings', roles: [], group: 'admin' },
 ];
 
 interface HealthData {

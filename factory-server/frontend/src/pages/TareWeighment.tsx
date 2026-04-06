@@ -43,6 +43,11 @@ export default function TareWeighment() {
   const [capturing, setCapturing] = useState(false);
   const [manualWeight, setManualWeight] = useState('');
   const [showManual, setShowManual] = useState(false);
+  // Rule violation override
+  const [ruleViolations, setRuleViolations] = useState<Array<{ruleKey: string; ruleLabel: string; message: string}>>([]);
+  const [showOverride, setShowOverride] = useState(false);
+  const [overridePin, setOverridePin] = useState('');
+  const [pendingPayload, setPendingPayload] = useState<Record<string, unknown> | null>(null);
   // Ethanol outbound extra fields
   const [ethanolBL, setEthanolBL] = useState('');
   const [ethanolStrength, setEthanolStrength] = useState('');
@@ -170,7 +175,11 @@ export default function TareWeighment() {
       fetchPending();
       scanRef.current?.focus();
     } catch (err) {
-      if (axios.isAxiosError(err) && err.response?.data?.error) {
+      if (axios.isAxiosError(err) && err.response?.status === 422 && err.response?.data?.error === 'RULE_VIOLATION') {
+        setRuleViolations(err.response.data.violations || []);
+        setPendingPayload({ weight: confirmWeight });
+        setShowOverride(true);
+      } else if (axios.isAxiosError(err) && err.response?.data?.error) {
         alert(err.response.data.error);
       } else {
         alert('Failed to capture tare weight');
@@ -484,6 +493,83 @@ export default function TareWeighment() {
           </div>
         );
       })()}
+
+      {/* Rule Violation Override Modal */}
+      {showOverride && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white w-full max-w-md shadow-2xl">
+            <div className="bg-amber-600 text-white px-4 py-2.5">
+              <h3 className="text-xs font-bold uppercase tracking-widest">Rule Violation</h3>
+            </div>
+            <div className="p-5 space-y-3">
+              {ruleViolations.map((v, i) => (
+                <div key={i} className="bg-amber-50 border border-amber-200 px-3 py-2">
+                  <div className="text-xs font-bold text-amber-800">{v.ruleLabel}</div>
+                  <div className="text-xs text-amber-700 mt-0.5">{v.message}</div>
+                </div>
+              ))}
+              <div className="pt-2">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Admin Override PIN</label>
+                <input
+                  type="password"
+                  value={overridePin}
+                  onChange={e => setOverridePin(e.target.value)}
+                  placeholder="Enter PIN"
+                  className="mt-1 w-full border border-slate-300 px-3 py-2 text-sm text-center tracking-[0.3em] focus:outline-none focus:ring-1 focus:ring-amber-400"
+                  autoFocus
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && overridePin) {
+                      (async () => {
+                        if (!scannedRecord || !pendingPayload) return;
+                        setCapturing(true);
+                        try {
+                          await api.post(`/weighbridge/${scannedRecord.id}/tare`, { ...pendingPayload, overridePin });
+                          setShowOverride(false);
+                          setOverridePin('');
+                          setRuleViolations([]);
+                          setPendingPayload(null);
+                          const slip = scannedRecord.direction === 'OUTBOUND' ? 'gross-slip' : 'final-slip';
+                          window.open(`/api/weighbridge/print/${slip}/${scannedRecord.id}`, '_blank');
+                          setScannedRecord(null);
+                          fetchPending();
+                        } catch (err) {
+                          if (axios.isAxiosError(err) && err.response?.data?.error) alert(err.response.data.error);
+                          else alert('Override failed');
+                        } finally { setCapturing(false); }
+                      })();
+                    }
+                  }}
+                />
+              </div>
+            </div>
+            <div className="border-t border-slate-200 px-5 py-3 flex justify-end gap-2">
+              <button onClick={() => { setShowOverride(false); setOverridePin(''); }} className="px-4 py-2 bg-white border border-slate-300 text-slate-600 text-sm font-medium hover:bg-slate-50">Cancel</button>
+              <button
+                disabled={!overridePin || capturing}
+                onClick={async () => {
+                  if (!scannedRecord || !pendingPayload) return;
+                  setCapturing(true);
+                  try {
+                    await api.post(`/weighbridge/${scannedRecord.id}/tare`, { ...pendingPayload, overridePin });
+                    setShowOverride(false);
+                    setOverridePin('');
+                    setRuleViolations([]);
+                    setPendingPayload(null);
+                    const slip = scannedRecord.direction === 'OUTBOUND' ? 'gross-slip' : 'final-slip';
+                    window.open(`/api/weighbridge/print/${slip}/${scannedRecord.id}`, '_blank');
+                    setScannedRecord(null);
+                    fetchPending();
+                  } catch (err) {
+                    if (axios.isAxiosError(err) && err.response?.data?.error) alert(err.response.data.error);
+                    else alert('Override failed');
+                  } finally { setCapturing(false); }
+                }}
+                className="px-4 py-2 bg-amber-600 text-white text-sm font-bold hover:bg-amber-700 disabled:opacity-50"
+              >{capturing ? 'Saving...' : 'Override & Capture'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

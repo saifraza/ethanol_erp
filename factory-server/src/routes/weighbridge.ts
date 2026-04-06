@@ -7,6 +7,7 @@ import { getCloudPrisma } from '../cloudPrisma';
 import { asyncHandler, requireWbKey, requireWbKeyOrAuth, requireAuth, requireRole, AuthRequest } from '../middleware';
 import { captureSnapshots } from '../services/cameraCapture';
 import { getMasterData } from '../services/masterDataCache';
+import { checkWeighmentRules, verifyOverridePin, logOverride } from '../services/ruleEngine';
 
 const router = Router();
 
@@ -394,6 +395,26 @@ router.post('/:id/gross', requireAuth, requireRole('GROSS_WB', 'ADMIN'), asyncHa
     return;
   }
 
+  // Business rules check (only on 2nd weight — 1st weight has no prior to compare)
+  if (isSecond) {
+    const violations = await checkWeighmentRules(id, 'GROSS');
+    if (violations.length > 0) {
+      const { overridePin, overrideBy } = req.body;
+      if (!overridePin) {
+        res.status(422).json({ error: 'RULE_VIOLATION', violations, canOverride: true });
+        return;
+      }
+      const pinValid = await verifyOverridePin(overridePin);
+      if (!pinValid) {
+        res.status(403).json({ error: 'Invalid override PIN' });
+        return;
+      }
+      for (const v of violations) {
+        await logOverride(v.ruleKey, id, 'GROSS', overrideBy || req.user?.name || 'admin');
+      }
+    }
+  }
+
   let updateData: Record<string, unknown> = {
     grossWeight: weight,
     grossTime: now,
@@ -467,6 +488,26 @@ router.post('/:id/tare', requireAuth, requireRole('TARE_WB', 'ADMIN'), asyncHand
   if (!isFirst && !isSecond) {
     res.status(409).json({ error: `Cannot capture tare — weighment is ${peek.status}` });
     return;
+  }
+
+  // Business rules check (only on 2nd weight — 1st weight has no prior to compare)
+  if (isSecond) {
+    const violations = await checkWeighmentRules(id, 'TARE');
+    if (violations.length > 0) {
+      const { overridePin, overrideBy } = req.body;
+      if (!overridePin) {
+        res.status(422).json({ error: 'RULE_VIOLATION', violations, canOverride: true });
+        return;
+      }
+      const pinValid = await verifyOverridePin(overridePin);
+      if (!pinValid) {
+        res.status(403).json({ error: 'Invalid override PIN' });
+        return;
+      }
+      for (const v of violations) {
+        await logOverride(v.ruleKey, id, 'TARE', overrideBy || req.user?.name || 'admin');
+      }
+    }
   }
 
   let updateData: Record<string, unknown> = {
