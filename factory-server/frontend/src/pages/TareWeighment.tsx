@@ -87,7 +87,7 @@ export default function TareWeighment() {
     return () => { if (scaleTimer.current) clearInterval(scaleTimer.current); };
   }, [scaleIp]);
 
-  // Fetch pending (FIRST_DONE status) weighments
+  // Fetch pending weighments needing tare weight
   const fetchPending = useCallback(async () => {
     try {
       const res = await api.get('/weighbridge/pending-tare');
@@ -102,7 +102,20 @@ export default function TareWeighment() {
     if (!value.trim()) return;
     try {
       const res = await api.get(`/weighbridge/lookup/${encodeURIComponent(value.trim())}`);
-      setScannedRecord(res.data);
+      const w = res.data;
+      // Wrong page check: inbound GATE_ENTRY needs gross first, not tare
+      if (w.direction === 'INBOUND' && w.status === 'GATE_ENTRY') {
+        alert('This is an INBOUND truck — do GROSS weighment first (loaded truck), then come here for TARE.');
+        setScannedRecord(null);
+        return;
+      }
+      // Already complete
+      if (w.status === 'COMPLETE') {
+        alert('This truck is already COMPLETE — both weights captured.');
+        setScannedRecord(null);
+        return;
+      }
+      setScannedRecord(w);
     } catch {
       alert('Not found: ' + value);
       setScannedRecord(null);
@@ -120,7 +133,7 @@ export default function TareWeighment() {
   // Capture tare weight
   const handleCapture = async () => {
     if (!scannedRecord) return;
-    const weightToCapture = showManual ? parseFloat(manualWeight) : liveWeight;
+    const weightToCapture = liveWeight;
     if (!weightToCapture || weightToCapture < 10) {
       alert('Weight must be at least 10 kg');
       return;
@@ -156,8 +169,8 @@ export default function TareWeighment() {
   const fmtTime = (s: string | null) => s ? new Date(s).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '--';
   const fmtKg = (n: number | null) => n == null ? '--' : n.toLocaleString('en-IN') + ' kg';
 
-  // Scale config modal
-  if (showConfig) {
+  // Scale config modal (disabled — weight proxied through factory server)
+  if (false && showConfig) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="w-full max-w-sm">
@@ -179,7 +192,10 @@ export default function TareWeighment() {
     );
   }
 
-  const canCapture = scannedRecord && scannedRecord.status === 'FIRST_DONE' && (showManual ? parseFloat(manualWeight) > 100 : (liveWeight > 100 && scaleStatus === 'STABLE'));
+  const canCapture = scannedRecord && liveWeight > 100 && scaleStatus === 'STABLE' && (
+    (scannedRecord.direction === 'OUTBOUND' && scannedRecord.status === 'GATE_ENTRY') ||
+    (scannedRecord.direction === 'INBOUND' && scannedRecord.status === 'FIRST_DONE')
+  );
 
   return (
     <div className="p-3 md:p-6 space-y-0">
@@ -188,7 +204,7 @@ export default function TareWeighment() {
         <div className="flex items-center gap-3">
           <h1 className="text-base font-bold tracking-wide uppercase">Tare Weighment</h1>
           <span className="text-xs text-slate-500">|</span>
-          <span className="text-xs text-slate-500">Second Weighment Capture</span>
+          <span className="text-xs text-slate-500">Empty truck weight</span>
         </div>
         <div className="flex items-center gap-3">
           <button onClick={() => setShowConfig(true)} className="px-3 py-1 bg-slate-700 text-slate-300 text-[10px] font-medium hover:bg-slate-600">
@@ -314,22 +330,14 @@ export default function TareWeighment() {
             </div>
           )}
 
-          {/* Capture Button */}
-          {scannedRecord.status === 'FIRST_DONE' && (
+          {/* Capture Button — show for outbound GATE_ENTRY (tare 1st) or inbound FIRST_DONE (tare 2nd) */}
+          {(scannedRecord.status === 'FIRST_DONE' || (scannedRecord.direction === 'OUTBOUND' && scannedRecord.status === 'GATE_ENTRY')) && (
             <div className="border-t border-slate-200 p-4">
               <div className="flex items-center gap-3">
                 <button onClick={handleCapture} disabled={!canCapture || capturing}
                   className="px-6 py-3 bg-amber-600 text-white text-sm font-bold uppercase tracking-widest hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed">
-                  {capturing ? 'Capturing...' : scannedRecord.direction === 'OUTBOUND' ? 'CAPTURE GROSS WEIGHT' : 'CAPTURE TARE WEIGHT'}
+                  {capturing ? 'Capturing...' : 'CAPTURE TARE WEIGHT'}
                 </button>
-                <button onClick={() => setShowManual(!showManual)}
-                  className="px-3 py-1.5 bg-white border border-slate-300 text-slate-600 text-xs font-bold uppercase hover:bg-slate-50">
-                  {showManual ? 'Use Scale' : 'Manual Entry'}
-                </button>
-                {showManual && (
-                  <input value={manualWeight} onChange={e => setManualWeight(e.target.value)} type="number"
-                    className="border border-slate-300 px-3 py-2.5 text-sm font-mono w-32 focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="Weight in kg" />
-                )}
                 <button onClick={() => { setScannedRecord(null); scanRef.current?.focus(); }}
                   className="px-3 py-1.5 bg-white border border-slate-300 text-slate-600 text-xs font-bold uppercase hover:bg-slate-50">
                   Clear

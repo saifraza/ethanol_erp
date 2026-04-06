@@ -355,7 +355,8 @@ router.post('/gate-entry', requireAuth, requireRole('GATE_ENTRY', 'ADMIN'), asyn
   res.status(201).json(weighment);
 }));
 
-// POST /api/weighbridge/:id/gross — Capture gross weight (first weight for INBOUND)
+// POST /api/weighbridge/:id/gross — Capture gross weight (loaded truck)
+// Outbound: this is the 2nd weighment. Inbound: this is the 1st weighment.
 router.post('/:id/gross', requireAuth, requireRole('GROSS_WB', 'ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const { weight, weightSource, pcId } = req.body;
 
@@ -365,46 +366,45 @@ router.post('/:id/gross', requireAuth, requireRole('GROSS_WB', 'ADMIN'), asyncHa
   }
 
   const id = req.params.id as string;
+  const peek = await prisma.weighment.findUnique({ where: { id }, select: { direction: true, status: true, tareWeight: true } });
+  if (!peek) { res.status(404).json({ error: 'Weighment not found' }); return; }
 
-  // Peek at direction to decide which field to set (read is safe — direction is immutable)
-  const peek = await prisma.weighment.findUnique({ where: { id }, select: { direction: true } });
-  if (!peek) {
-    res.status(404).json({ error: 'Weighment not found' });
+  const now = new Date();
+  const isFirst = peek.status === 'GATE_ENTRY';
+  const isSecond = peek.status === 'FIRST_DONE';
+
+  if (!isFirst && !isSecond) {
+    res.status(409).json({ error: `Cannot capture gross — weighment is ${peek.status}` });
     return;
   }
 
-  const now = new Date();
-  let updateData: Record<string, unknown>;
+  let updateData: Record<string, unknown> = {
+    grossWeight: weight,
+    grossTime: now,
+    grossPcId: pcId || 'web',
+    weightSource: weightSource || 'SCALE',
+    cloudSynced: false,
+  };
 
-  if (peek.direction === 'OUTBOUND') {
-    // OUTBOUND: tare (empty truck) is captured first
-    updateData = {
-      tareWeight: weight,
-      tareTime: now,
-      tarePcId: pcId || 'web',
-      weightSource: weightSource || 'MANUAL',
-      status: 'FIRST_DONE',
-      firstWeightAt: now,
-    };
+  if (isFirst) {
+    // Inbound: gross is 1st weighment
+    updateData.status = 'FIRST_DONE';
+    updateData.firstWeightAt = now;
   } else {
-    // INBOUND: gross (loaded truck) is captured first
-    updateData = {
-      grossWeight: weight,
-      grossTime: now,
-      grossPcId: pcId || 'web',
-      weightSource: weightSource || 'MANUAL',
-      status: 'FIRST_DONE',
-      firstWeightAt: now,
-    };
+    // Outbound: gross is 2nd weighment (tare already captured)
+    const tareW = peek.tareWeight || 0;
+    if (weight <= tareW) { res.status(400).json({ error: 'Gross weight must exceed tare weight' }); return; }
+    updateData.netWeight = weight - tareW;
+    updateData.status = 'COMPLETE';
+    updateData.secondWeightAt = now;
   }
 
-  // Atomic: only transition if still in GATE_ENTRY (prevents race condition)
   const result = await prisma.weighment.updateMany({
-    where: { id, status: 'GATE_ENTRY' },
-    data: { ...updateData, cloudSynced: false },
+    where: { id, status: peek.status },
+    data: updateData,
   });
   if (result.count === 0) {
-    res.status(409).json({ error: 'Weighment not in expected state (GATE_ENTRY) — may have been updated by another operator' });
+    res.status(409).json({ error: 'Weighment state changed — refresh and try again' });
     return;
   }
 
@@ -412,7 +412,8 @@ router.post('/:id/gross', requireAuth, requireRole('GROSS_WB', 'ADMIN'), asyncHa
   res.json(updated);
 }));
 
-// POST /api/weighbridge/:id/tare — Capture tare weight (second weight)
+// POST /api/weighbridge/:id/tare — Capture tare weight (empty truck)
+// Outbound: this is the 1st weighment. Inbound: this is the 2nd weighment.
 router.post('/:id/tare', requireAuth, requireRole('TARE_WB', 'ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const { weight, weightSource, pcId, quantityBL, strength, sealNo } = req.body;
 
@@ -422,65 +423,52 @@ router.post('/:id/tare', requireAuth, requireRole('TARE_WB', 'ADMIN'), asyncHand
   }
 
   const id = req.params.id as string;
-
-  // Peek at direction + first weight (both immutable after first capture)
   const peek = await prisma.weighment.findUnique({
     where: { id },
-    select: { direction: true, grossWeight: true, tareWeight: true },
+    select: { direction: true, status: true, grossWeight: true },
   });
-  if (!peek) {
-    res.status(404).json({ error: 'Weighment not found' });
-    return;
-  }
+  if (!peek) { res.status(404).json({ error: 'Weighment not found' }); return; }
 
   const now = new Date();
-  let grossW: number;
-  let tareW: number;
-  let updateData: Record<string, unknown>;
+  const isFirst = peek.status === 'GATE_ENTRY';
+  const isSecond = peek.status === 'FIRST_DONE';
 
-  if (peek.direction === 'OUTBOUND') {
-    // OUTBOUND: gross (loaded) is the second weight
-    grossW = weight;
-    tareW = peek.tareWeight || 0;
-    updateData = {
-      grossWeight: grossW,
-      grossTime: now,
-      grossPcId: pcId || 'web',
-      netWeight: grossW - tareW,
-      status: 'COMPLETE',
-      secondWeightAt: now,
-      // Ethanol outbound: volume, strength, seal
-      ...(quantityBL != null ? { quantityBL: parseFloat(quantityBL) } : {}),
-      ...(strength != null ? { strength: parseFloat(strength) } : {}),
-      ...(sealNo ? { sealNo } : {}),
-    };
-  } else {
-    // INBOUND: tare (empty) is the second weight
-    grossW = peek.grossWeight || 0;
-    tareW = weight;
-    updateData = {
-      tareWeight: tareW,
-      tareTime: now,
-      tarePcId: pcId || 'web',
-      netWeight: grossW - tareW,
-      status: 'COMPLETE',
-      secondWeightAt: now,
-    };
-  }
-
-  // F-005: Negative net weight check
-  if (grossW <= tareW) {
-    res.status(400).json({ error: 'Gross weight must exceed tare weight' });
+  if (!isFirst && !isSecond) {
+    res.status(409).json({ error: `Cannot capture tare — weighment is ${peek.status}` });
     return;
   }
 
-  // Atomic: only transition if still in FIRST_DONE (prevents race condition)
+  let updateData: Record<string, unknown> = {
+    tareWeight: weight,
+    tareTime: now,
+    tarePcId: pcId || 'web',
+    weightSource: weightSource || 'SCALE',
+    cloudSynced: false,
+  };
+
+  if (isFirst) {
+    // Outbound: tare is 1st weighment
+    updateData.status = 'FIRST_DONE';
+    updateData.firstWeightAt = now;
+  } else {
+    // Inbound: tare is 2nd weighment (gross already captured)
+    const grossW = peek.grossWeight || 0;
+    if (grossW <= weight) { res.status(400).json({ error: 'Gross weight must exceed tare weight' }); return; }
+    updateData.netWeight = grossW - weight;
+    updateData.status = 'COMPLETE';
+    updateData.secondWeightAt = now;
+    // Ethanol outbound extras (if provided)
+    if (quantityBL != null) updateData.quantityBL = parseFloat(quantityBL);
+    if (strength != null) updateData.strength = parseFloat(strength);
+    if (sealNo) updateData.sealNo = sealNo;
+  }
+
   const result = await prisma.weighment.updateMany({
-    where: { id, status: 'FIRST_DONE' },
-    data: { ...updateData, cloudSynced: false },
+    where: { id, status: peek.status },
+    data: updateData,
   });
   if (result.count === 0) {
-    res.status(409).json({ error: 'Weighment not in expected state (FIRST_DONE) — may have been updated by another operator' });
+    res.status(409).json({ error: 'Weighment state changed — refresh and try again' });
     return;
   }
 
@@ -538,10 +526,16 @@ router.post('/:id/lab', requireAuth, requireRole('GROSS_WB', 'LAB', 'ADMIN'), as
   res.json(updated);
 }));
 
-// GET /api/weighbridge/pending-gross — Awaiting first weight (GATE_ENTRY status)
+// GET /api/weighbridge/pending-gross — Trucks needing gross weight
+// Inbound GATE_ENTRY (gross is 1st) + Outbound FIRST_DONE (gross is 2nd)
 router.get('/pending-gross', requireAuth, asyncHandler(async (_req: AuthRequest, res: Response) => {
   const weighments = await prisma.weighment.findMany({
-    where: { status: 'GATE_ENTRY' },
+    where: {
+      OR: [
+        { direction: 'INBOUND', status: 'GATE_ENTRY' },
+        { direction: 'OUTBOUND', status: 'FIRST_DONE' },
+      ],
+    },
     take: 100,
     orderBy: { createdAt: 'asc' },
     select: LIST_SELECT,
@@ -549,10 +543,16 @@ router.get('/pending-gross', requireAuth, asyncHandler(async (_req: AuthRequest,
   res.json(weighments);
 }));
 
-// GET /api/weighbridge/pending-tare — Awaiting second weight (FIRST_DONE status)
+// GET /api/weighbridge/pending-tare — Trucks needing tare weight
+// Outbound GATE_ENTRY (tare is 1st) + Inbound FIRST_DONE (tare is 2nd)
 router.get('/pending-tare', requireAuth, asyncHandler(async (_req: AuthRequest, res: Response) => {
   const weighments = await prisma.weighment.findMany({
-    where: { status: 'FIRST_DONE' },
+    where: {
+      OR: [
+        { direction: 'OUTBOUND', status: 'GATE_ENTRY' },
+        { direction: 'INBOUND', status: 'FIRST_DONE' },
+      ],
+    },
     take: 100,
     orderBy: { createdAt: 'asc' },
     select: LIST_SELECT,

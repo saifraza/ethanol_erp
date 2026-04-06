@@ -95,13 +95,12 @@ export default function GrossWeighment() {
     return () => { if (scaleTimer.current) clearInterval(scaleTimer.current); };
   }, [scaleIp]);
 
-  // Fetch pending (GATE_ENTRY status) weighments
+  // Fetch pending weighments needing gross weight
   const fetchPending = useCallback(async () => {
     try {
-      const res = await api.get('/weighbridge/weighments?limit=100');
-      const all = res.data as WeighmentRecord[];
-      setPendingList(all.filter((w: WeighmentRecord) => w.status === 'GATE_ENTRY'));
-    } catch (err) { /* ignore */ }
+      const res = await api.get('/weighbridge/pending-gross');
+      setPendingList(res.data as WeighmentRecord[]);
+    } catch { /* ignore */ }
   }, [token]);
 
   useEffect(() => { fetchPending(); const iv = setInterval(fetchPending, 10000); return () => clearInterval(iv); }, [fetchPending]);
@@ -111,8 +110,21 @@ export default function GrossWeighment() {
     if (!value.trim()) return;
     try {
       const res = await api.get(`/weighbridge/lookup/${encodeURIComponent(value.trim())}`);
-      setScannedRecord(res.data);
-      setLabDone(null); // Reset lab state for new scan
+      const w = res.data;
+      // Wrong page check: outbound GATE_ENTRY needs tare first, not gross
+      if (w.direction === 'OUTBOUND' && w.status === 'GATE_ENTRY') {
+        alert('This is an OUTBOUND truck — do TARE weighment first (empty truck), then come here for GROSS.');
+        setScannedRecord(null);
+        return;
+      }
+      // Already complete
+      if (w.status === 'COMPLETE') {
+        alert('This truck is already COMPLETE — both weights captured.');
+        setScannedRecord(null);
+        return;
+      }
+      setScannedRecord(w);
+      setLabDone(null);
     } catch {
       alert('Not found: ' + value);
       setScannedRecord(null);
@@ -152,7 +164,7 @@ export default function GrossWeighment() {
   // Capture gross weight
   const handleCapture = async () => {
     if (!scannedRecord) return;
-    const weightToCapture = showManual ? parseFloat(manualWeight) : liveWeight;
+    const weightToCapture = liveWeight;
     if (!weightToCapture || weightToCapture < 10) {
       alert('Weight must be at least 10 kg');
       return;
@@ -185,8 +197,8 @@ export default function GrossWeighment() {
   const fmtTime = (s: string | null) => s ? new Date(s).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '--';
   const fmtKg = (n: number | null) => n == null ? '--' : n.toLocaleString('en-IN') + ' kg';
 
-  // Scale config modal
-  if (showConfig) {
+  // Scale config modal (disabled — weight proxied through factory server)
+  if (false && showConfig) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="w-full max-w-sm">
@@ -221,7 +233,10 @@ export default function GrossWeighment() {
 
   // Fuel: lab can be done here (not blocked). Raw material: must test on cloud first.
   const labBlocked = scannedRecord && scannedRecord.direction === 'INBOUND' && !isFuel && scannedRecord.labStatus !== 'PASS' && scannedRecord.labStatus !== null;
-  const canCapture = scannedRecord && scannedRecord.status === 'GATE_ENTRY' && !labBlocked && (showManual ? parseFloat(manualWeight) > 100 : (liveWeight > 100 && scaleStatus === 'STABLE'));
+  const canCapture = scannedRecord && !labBlocked && liveWeight > 100 && scaleStatus === 'STABLE' && (
+    (scannedRecord.direction === 'INBOUND' && scannedRecord.status === 'GATE_ENTRY') ||
+    (scannedRecord.direction === 'OUTBOUND' && scannedRecord.status === 'FIRST_DONE')
+  );
   return (
     <div className="p-3 md:p-6 space-y-0">
       {/* Toolbar */}
@@ -229,7 +244,7 @@ export default function GrossWeighment() {
         <div className="flex items-center gap-3">
           <h1 className="text-base font-bold tracking-wide uppercase">Gross Weighment</h1>
           <span className="text-xs text-slate-500">|</span>
-          <span className="text-xs text-slate-500">First Weighment Capture</span>
+          <span className="text-xs text-slate-500">Loaded truck weight</span>
         </div>
         <div className="flex items-center gap-3">
           <button onClick={() => setShowConfig(true)} className="px-3 py-1 bg-slate-700 text-slate-300 text-[10px] font-medium hover:bg-slate-600">
@@ -400,8 +415,8 @@ export default function GrossWeighment() {
             </div>
           )}
 
-          {/* Capture Button */}
-          {scannedRecord.status === 'GATE_ENTRY' && (
+          {/* Capture Button — show for inbound GATE_ENTRY (gross 1st) or outbound FIRST_DONE (gross 2nd) */}
+          {(scannedRecord.status === 'GATE_ENTRY' || (scannedRecord.direction === 'OUTBOUND' && scannedRecord.status === 'FIRST_DONE')) && (
             <div className="border-t border-slate-200 p-4">
               <div className="flex items-center gap-3">
                 <button
@@ -411,14 +426,6 @@ export default function GrossWeighment() {
                 >
                   {capturing ? 'Capturing...' : 'CAPTURE GROSS WEIGHT'}
                 </button>
-                <button onClick={() => setShowManual(!showManual)}
-                  className="px-3 py-1.5 bg-white border border-slate-300 text-slate-600 text-xs font-bold uppercase hover:bg-slate-50">
-                  {showManual ? 'Use Scale' : 'Manual Entry'}
-                </button>
-                {showManual && (
-                  <input value={manualWeight} onChange={e => setManualWeight(e.target.value)} type="number"
-                    className="border border-slate-300 px-3 py-2.5 text-sm font-mono w-32 focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="Weight in kg" />
-                )}
                 <button onClick={() => { setScannedRecord(null); scanRef.current?.focus(); }}
                   className="px-3 py-1.5 bg-white border border-slate-300 text-slate-600 text-xs font-bold uppercase hover:bg-slate-50">
                   Clear
