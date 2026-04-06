@@ -802,7 +802,13 @@ router.post('/:id/liftings/:liftingId/e-invoice', asyncHandler(async (req: AuthR
           }],
         };
 
+        // Try standalone EWB via Saral — may fail if EWB portal API not enabled
         ewbResult = await generateStandaloneEWB(ewbPayload);
+        // If standalone fails, return the payload so user can generate manually
+        if (!ewbResult.success) {
+          ewbResult.ewbPayload = ewbPayload;
+          ewbResult.error = `Standalone EWB not available via API for job work. Generate manually at ewaybillgst.gov.in. Value: ₹${(productValue + (isInterstate ? Math.round(productValue * gstRate / 100) : Math.round(productValue * gstRate / 100))).toLocaleString('en-IN')}, HSN: 22072000, Doc: ${ewbPayload.docNo}`;
+        }
       } else {
         // Non-job-work: EWB from IRN
         const ewbData: Record<string, any> = {
