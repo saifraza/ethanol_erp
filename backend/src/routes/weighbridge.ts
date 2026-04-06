@@ -218,6 +218,9 @@ const weighmentSchema = z.object({
   quantity_bl: z.number().nullable().optional(),
   ethanol_strength: z.number().nullable().optional(),
   seal_no: z.string().nullable().optional(),
+  rst_no: z.string().nullable().optional(),
+  driver_license: z.string().nullable().optional(),
+  peso_date: z.string().nullable().optional(),
 });
 
 router.post('/push', asyncHandler(async (req: Request, res: Response) => {
@@ -992,6 +995,9 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
               ...(bl > 0 ? { quantityBL: bl, quantityKL: kl } : {}),
               ...(w.ethanol_strength != null ? { strength: w.ethanol_strength } : {}),
               ...(w.seal_no ? { sealNo: w.seal_no } : {}),
+              ...(w.rst_no ? { rstNo: w.rst_no } : {}),
+              ...(w.driver_license ? { driverLicense: w.driver_license } : {}),
+              ...(w.peso_date ? { pesoDate: w.peso_date } : {}),
               ...(productRate != null ? { productRatePerLtr: productRate } : {}),
               ...(productValue != null ? { productValue } : {}),
             },

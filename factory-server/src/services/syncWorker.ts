@@ -80,6 +80,9 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
     quantity_bl: w.quantityBL ?? undefined,
     ethanol_strength: w.strength ?? undefined,
     seal_no: w.sealNo || undefined,
+    rst_no: w.rstNo || undefined,
+    driver_license: w.driverLicense || undefined,
+    peso_date: w.pesoDate || undefined,
   }));
 
   try {

@@ -362,13 +362,18 @@ export default function GateEntry() {
                 className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
                 <option value="">-- Select --</option>
                 {(() => {
-                  // Filter materials by trader's product types when TRADER mode
-                  const selectedTrader = purchaseType === 'TRADER' ? traders.find(t => t.id === selectedTraderId) : null;
-                  const traderTypes = selectedTrader?.productTypes?.split(',').filter(Boolean) || [];
-                  // Fallback: if productTypes is empty, use vendor category (FUEL → show fuel items only)
-                  const fallbackTypes = traderTypes.length > 0 ? traderTypes : (selectedTrader?.category ? [selectedTrader.category] : []);
-                  const filtered = fallbackTypes.length > 0
-                    ? materials.filter(m => m.category && fallbackTypes.includes(m.category))
+                  // Filter materials by selected vendor's product types / category
+                  let vendor: Trader | undefined;
+                  if (purchaseType === 'TRADER' && selectedTraderId) {
+                    vendor = traders.find(t => t.id === selectedTraderId);
+                  } else if (supplierName) {
+                    // For PO/SPOT mode, match supplier name against traders list
+                    vendor = traders.find(t => t.name.toLowerCase() === supplierName.toLowerCase());
+                  }
+                  const vendorTypes = vendor?.productTypes?.split(',').filter(Boolean) || [];
+                  const filterTypes = vendorTypes.length > 0 ? vendorTypes : (vendor?.category ? [vendor.category] : []);
+                  const filtered = filterTypes.length > 0
+                    ? materials.filter(m => m.category && filterTypes.includes(m.category))
                     : materials;
                   return filtered.map(m => <option key={m.id} value={m.name}>{m.name}{m.category ? ` [${m.category}]` : ''}</option>);
                 })()}

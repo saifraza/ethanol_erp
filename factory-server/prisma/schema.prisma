@@ -89,6 +89,10 @@ model Weighment {
   quantityBL      Float?   // Volume in Bulk Litres (ethanol flow meter)
   strength        Float?   // Alcohol strength %
   sealNo          String?  // Seal number on tanker
+  // Ethanol dispatch fields (captured at gross weighment for outbound)
+  rstNo           String?
+  driverLicense   String?
+  pesoDate        String?
   // Camera snapshots (comma-separated relative paths)
   grossPhotos   String?  // e.g. "{id}/gross_cam1.jpg,{id}/gross_cam2.jpg"
   tarePhotos    String?

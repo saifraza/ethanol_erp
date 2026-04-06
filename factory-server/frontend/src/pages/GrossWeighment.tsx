@@ -54,6 +54,9 @@ export default function GrossWeighment() {
   const [ethanolBL, setEthanolBL] = useState('');
   const [ethanolStrength, setEthanolStrength] = useState('');
   const [ethanolSeal, setEthanolSeal] = useState('');
+  const [ethanolRST, setEthanolRST] = useState('');
+  const [ethanolDL, setEthanolDL] = useState('');
+  const [ethanolPESO, setEthanolPESO] = useState('');
 
   // Fuel quick lab check (moisture only, done at gross WB)
   const [fuelMoisture, setFuelMoisture] = useState('');
@@ -194,6 +197,9 @@ export default function GrossWeighment() {
         if (ethanolBL) payload.quantityBL = ethanolBL;
         if (ethanolStrength) payload.strength = ethanolStrength;
         if (ethanolSeal) payload.sealNo = ethanolSeal;
+        if (ethanolRST) payload.rstNo = ethanolRST;
+        if (ethanolDL) payload.driverLicense = ethanolDL;
+        if (ethanolPESO) payload.pesoDate = ethanolPESO;
       }
       await api.post(`/weighbridge/${scannedRecord.id}/gross`, payload);
       const slip = scannedRecord?.direction === 'OUTBOUND' ? 'final-slip' : 'gross-slip';
@@ -202,6 +208,7 @@ export default function GrossWeighment() {
       setShowManual(false);
       setManualWeight('');
       setEthanolBL(''); setEthanolStrength(''); setEthanolSeal('');
+      setEthanolRST(''); setEthanolDL(''); setEthanolPESO('');
       fetchPending();
       scanRef.current?.focus();
     } catch (err) {
@@ -573,7 +580,17 @@ export default function GrossWeighment() {
                     <div>
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Seal No</label>
                       <input value={ethanolSeal} onChange={e => setEthanolSeal(e.target.value)}
-                        className="w-full border border-slate-300 px-2.5 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-green-400" placeholder="Seal number" />
+                        className="w-full border border-slate-300 px-2.5 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-green-400" placeholder="e.g. 0089/0085" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">DL No</label>
+                      <input value={ethanolDL} onChange={e => setEthanolDL(e.target.value)}
+                        className="w-full border border-slate-300 px-2.5 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-green-400" placeholder="Driver license" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">PESO Date</label>
+                      <input value={ethanolPESO} onChange={e => setEthanolPESO(e.target.value)}
+                        className="w-full border border-slate-300 px-2.5 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-green-400" placeholder="e.g. 15/11/27" />
                     </div>
                   </div>
                 </div>
