@@ -186,10 +186,16 @@ def api_search():
 
 @app.route('/api/sync-stats')
 def api_sync_stats():
-    """Get sync queue statistics + cloud reachability."""
+    """Get sync queue statistics + reachability."""
     stats = db.get_sync_stats()
-    # Add cloud reachability from sync instance
-    stats["cloud_reachable"] = _cloud_sync.is_cloud_reachable if _cloud_sync else False
+    if _cloud_sync:
+        stats["cloud_reachable"] = _cloud_sync.is_cloud_reachable
+        stats["factory_reachable"] = _cloud_sync.is_factory_reachable
+        stats["sync_target"] = _cloud_sync.last_target  # "factory" or "cloud"
+    else:
+        stats["cloud_reachable"] = False
+        stats["factory_reachable"] = False
+        stats["sync_target"] = ""
     return jsonify(stats)
 
 
