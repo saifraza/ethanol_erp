@@ -92,6 +92,177 @@ router.put('/materials/:id', authenticate, asyncHandler(async (req: AuthRequest,
 
 
 // ==========================================================================
+//  DAILY CONSUMPTION — Opening / Received / Consumed / Closing
+// ==========================================================================
+
+// GET /consumption?date=YYYY-MM-DD
+router.get('/consumption', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const dateStr = req.query.date as string;
+  const date = dateStr ? new Date(dateStr) : new Date();
+  date.setHours(0, 0, 0, 0);
+
+  // Get all RAW_MATERIAL items
+  const items = await prisma.inventoryItem.findMany({
+    where: { category: 'RAW_MATERIAL', isActive: true },
+    select: { id: true, name: true, code: true, unit: true, currentStock: true },
+    orderBy: { name: 'asc' },
+  });
+
+  // Existing entries for this date
+  const entries = await prisma.rawMaterialConsumption.findMany({
+    where: { date },
+    select: { id: true, materialItemId: true, openingStock: true, received: true, consumed: true, closingStock: true, remarks: true },
+  });
+  const entryMap = new Map(entries.map(e => [e.materialItemId, e]));
+
+  // Previous day closing for opening defaults
+  const prevDate = new Date(date);
+  prevDate.setDate(prevDate.getDate() - 1);
+  const prevEntries = await prisma.rawMaterialConsumption.findMany({
+    where: { date: prevDate },
+    select: { materialItemId: true, closingStock: true },
+  });
+  const prevMap = new Map(prevEntries.map(e => [e.materialItemId, e.closingStock]));
+
+  // Today's GRN receipts per item
+  const nextDate = new Date(date);
+  nextDate.setDate(nextDate.getDate() + 1);
+  const todayReceipts = await prisma.stockMovement.groupBy({
+    by: ['itemId'],
+    where: {
+      movementType: 'GRN_RECEIPT',
+      direction: 'IN',
+      date: { gte: date, lt: nextDate },
+      itemId: { in: items.map(f => f.id) },
+    },
+    _sum: { quantity: true },
+  });
+  const receiptMap = new Map(todayReceipts.map(r => [r.itemId, r._sum.quantity || 0]));
+
+  const rows = items.map(item => {
+    const entry = entryMap.get(item.id);
+    const prevClosing = prevMap.get(item.id) ?? item.currentStock;
+    const autoReceived = receiptMap.get(item.id) || 0;
+    const received = entry?.received ?? autoReceived;
+
+    return {
+      materialItemId: item.id,
+      materialName: item.name,
+      materialCode: item.code,
+      unit: item.unit,
+      id: entry?.id || null,
+      openingStock: entry?.openingStock ?? prevClosing,
+      received,
+      autoReceived,
+      consumed: entry?.consumed ?? 0,
+      closingStock: entry?.closingStock ?? (prevClosing - (entry?.consumed ?? 0) + received),
+      remarks: entry?.remarks ?? '',
+    };
+  });
+
+  res.json({ date: date.toISOString().split('T')[0], rows });
+}));
+
+// POST /consumption — save daily entries (upsert)
+router.post('/consumption', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { date: dateStr, rows } = req.body;
+  if (!dateStr || !Array.isArray(rows)) {
+    return res.status(400).json({ error: 'date and rows[] required' });
+  }
+
+  const date = new Date(dateStr);
+  date.setHours(0, 0, 0, 0);
+
+  const results = [];
+
+  for (const row of rows) {
+    const consumed = parseFloat(row.consumed) || 0;
+    const received = parseFloat(row.received) || 0;
+    const openingStock = parseFloat(row.openingStock) || 0;
+    const closingStock = Math.max(0, openingStock + received - consumed);
+
+    const entry = await prisma.rawMaterialConsumption.upsert({
+      where: {
+        date_materialItemId: { date, materialItemId: row.materialItemId },
+      },
+      update: {
+        openingStock, received, consumed, closingStock,
+        remarks: row.remarks || '',
+        userId: req.user!.id,
+      },
+      create: {
+        date,
+        materialItemId: row.materialItemId,
+        openingStock, received, consumed, closingStock,
+        remarks: row.remarks || '',
+        userId: req.user!.id,
+      },
+    });
+
+    // Stock movement for consumption tracking
+    if (consumed > 0) {
+      try {
+        const defaultWh = await prisma.warehouse.findFirst({
+          where: { isActive: true }, orderBy: { createdAt: 'asc' }, select: { id: true },
+        });
+        if (defaultWh) {
+          const existingMv = await prisma.stockMovement.findFirst({
+            where: { refType: 'RM_CONSUMPTION', refId: entry.id, itemId: row.materialItemId },
+          });
+
+          if (existingMv) {
+            const delta = consumed - existingMv.quantity;
+            if (Math.abs(delta) > 0.001) {
+              await prisma.stockMovement.update({
+                where: { id: existingMv.id },
+                data: { quantity: consumed, totalValue: consumed * (existingMv.costRate || 0) },
+              });
+              await prisma.inventoryItem.update({
+                where: { id: row.materialItemId },
+                data: { currentStock: { decrement: delta } },
+              });
+            }
+          } else {
+            const matItem = await prisma.inventoryItem.findUnique({
+              where: { id: row.materialItemId },
+              select: { avgCost: true, unit: true },
+            });
+            await prisma.stockMovement.create({
+              data: {
+                itemId: row.materialItemId,
+                movementType: 'RM_CONSUMPTION',
+                direction: 'OUT',
+                quantity: consumed,
+                unit: matItem?.unit || 'MT',
+                costRate: matItem?.avgCost || 0,
+                totalValue: consumed * (matItem?.avgCost || 0),
+                warehouseId: defaultWh.id,
+                refType: 'RM_CONSUMPTION',
+                refId: entry.id,
+                refNo: `RM-${dateStr}`,
+                narration: 'Daily raw material consumption',
+                userId: req.user!.id,
+              },
+            });
+            await prisma.inventoryItem.update({
+              where: { id: row.materialItemId },
+              data: { currentStock: { decrement: consumed } },
+            });
+          }
+        }
+      } catch (_e) {
+        // Don't fail daily entry if inventory sync fails
+      }
+    }
+
+    results.push(entry);
+  }
+
+  res.json({ ok: true, count: results.length });
+}));
+
+
+// ==========================================================================
 //  DEALS — PurchaseOrders for raw materials
 // ==========================================================================
 
@@ -328,15 +499,24 @@ router.post('/deals', authenticate, validate(dealSchema), asyncHandler(async (re
   res.status(201).json(po);
 }));
 
-// PUT /deals/:id — update rate, remarks, or close deal
+// PUT /deals/:id — full edit: rate, vendor, material, delivery details, close
 router.put('/deals/:id', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const deal = await prisma.purchaseOrder.findUnique({
     where: { id: req.params.id },
-    include: { lines: true },
+    include: { lines: true, grns: { select: { id: true }, take: 1 } },
   });
   if (!deal || !['OPEN', 'STANDARD'].includes(deal.dealType)) return res.status(404).json({ error: 'Deal not found' });
 
   const b = req.body;
+  const hasGrns = deal.grns.length > 0;
+
+  // Block vendor/material change if GRNs already received
+  if (hasGrns && b.vendorId && b.vendorId !== deal.vendorId) {
+    return res.status(400).json({ error: 'Cannot change vendor after receipts have been recorded' });
+  }
+  if (hasGrns && b.materialItemId && deal.lines[0]?.inventoryItemId && b.materialItemId !== deal.lines[0].inventoryItemId) {
+    return res.status(400).json({ error: 'Cannot change material after receipts have been recorded' });
+  }
 
   // Update rate on the PO line
   if (b.rate !== undefined && deal.lines[0]) {
@@ -362,7 +542,19 @@ router.put('/deals/:id', authenticate, asyncHandler(async (req: AuthRequest, res
     poUpdate.status = b.status;
   }
   if (b.remarks !== undefined) poUpdate.remarks = b.remarks;
-  if (b.paymentTerms) poUpdate.paymentTerms = b.paymentTerms;
+  if (b.paymentTerms) {
+    poUpdate.paymentTerms = b.paymentTerms;
+    const creditDaysMap: Record<string, number> = { ADVANCE: 0, COD: 0, NET2: 2, NET7: 7, NET10: 10, NET15: 15, NET30: 30 };
+    poUpdate.creditDays = creditDaysMap[b.paymentTerms] ?? 15;
+  }
+  if (b.validUntil !== undefined) {
+    poUpdate.deliveryDate = b.validUntil ? new Date(b.validUntil + 'T23:59:00+05:30') : null;
+  }
+  if (b.deliveryPoint !== undefined) poUpdate.deliveryAddress = b.deliveryPoint || 'Factory Gate';
+  if (b.transportBy !== undefined) poUpdate.transportBy = b.transportBy || 'BY_SUPPLIER';
+  if (b.truckCap !== undefined) poUpdate.truckCap = b.truckCap ? Math.round(b.truckCap) : null;
+  if (b.vendorId && !hasGrns) poUpdate.vendorId = b.vendorId;
+
   if (Object.keys(poUpdate).length > 0) {
     await prisma.purchaseOrder.update({ where: { id: req.params.id }, data: poUpdate });
   }
@@ -696,11 +888,32 @@ router.get('/summary', authenticate, asyncHandler(async (req: AuthRequest, res: 
     totalOutstanding += Math.max(0, totalValue - totalPaid);
   }
 
+  // Today's consumption
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayEntries = await prisma.rawMaterialConsumption.findMany({
+    where: { date: today },
+    select: { consumed: true, received: true },
+  });
+  const todayConsumed = todayEntries.reduce((s, e) => s + (e.consumed || 0), 0);
+  const todayReceived = todayEntries.reduce((s, e) => s + (e.received || 0), 0);
+
+  // Low stock count (RAW_MATERIAL items below minStock — Prisma can't compare two columns)
+  const allRmItems = await prisma.inventoryItem.findMany({
+    where: { category: 'RAW_MATERIAL', isActive: true },
+    select: { name: true, currentStock: true, minStock: true },
+  });
+  const lowStock = allRmItems.filter(i => i.minStock > 0 && i.currentStock < i.minStock);
+
   res.json({
     activeDeals,
     totalOutstanding: Math.round(totalOutstanding * 100) / 100,
     thisMonthReceived: Math.round(thisMonthReceived * 100) / 100,
     thisMonthPaid: Math.round(thisMonthPaid * 100) / 100,
+    todayConsumed: Math.round(todayConsumed * 100) / 100,
+    todayReceived: Math.round(todayReceived * 100) / 100,
+    lowStockCount: lowStock.length,
+    lowStockItems: lowStock.map(i => i.name),
   });
 }));
 

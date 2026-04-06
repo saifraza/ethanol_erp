@@ -949,6 +949,7 @@ model InventoryItem {
   grnLines        GRNLine[]
   vendorItems     VendorItem[]
   fuelConsumptions FuelConsumption[]
+  rawMaterialConsumptions RawMaterialConsumption[]
   @@index([category])
 }
 
@@ -988,6 +989,25 @@ model FuelConsumption {
   @@unique([date, fuelItemId])
   @@index([date])
   @@index([fuelItemId])
+}
+
+// ── Raw Material Consumption (daily entry per RM item) ──
+model RawMaterialConsumption {
+  id             String        @id @default(uuid())
+  date           DateTime
+  materialItemId String
+  materialItem   InventoryItem @relation(fields: [materialItemId], references: [id])
+  openingStock   Float         @default(0)
+  received       Float         @default(0)
+  consumed       Float         @default(0)
+  closingStock   Float         @default(0)
+  remarks        String?
+  userId         String
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  @@unique([date, materialItemId])
+  @@index([date])
+  @@index([materialItemId])
 }
 
 // ── Department Master ──

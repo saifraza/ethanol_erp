@@ -1,630 +1,513 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import api from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
-/* ───── Types ───── */
-interface Material {
-  id: string; name: string; code: string; category: string; unit: string;
-  currentStock: number; avgCost: number; hsnCode: string; gstPercent: number;
-  defaultRate: number; minStock: number; maxStock: number; isActive: boolean;
+interface MaterialItem {
+  id: string;
+  name: string;
+  code: string;
+  category: string;
+  unit: string;
+  currentStock: number;
+  minStock: number;
+  maxStock: number | null;
+  avgCost: number;
+  defaultRate: number;
+  hsnCode: string | null;
+  gstPercent: number;
+  location: string | null;
+  remarks: string | null;
+  isActive: boolean;
 }
 
-interface DealLine {
-  id: string; description: string; rate: number; unit: string;
-  inventoryItemId: string; receivedQty: number; quantity: number;
-  inventoryItem: { category: string; name: string } | null;
-}
-
-interface DealGrn {
-  id: string; grnNo: number; totalQty: number; totalAmount: number; grnDate: string;
-}
-
-interface Deal {
-  id: string; poNo: number; dealType: string; status: string; poDate: string;
-  deliveryDate: string | null; remarks: string; truckCap: number | null;
-  vendor: { id: string; name: string; phone: string };
-  lines: DealLine[]; grns: DealGrn[];
-  totalReceived: number; totalValue: number; totalPaid: number;
-  outstanding: number; truckCount: number; grainTruckCount: number;
-}
-
-interface Receipt {
-  id: string; grnNo: number; grnDate: string; vehicleNo: string;
-  totalQty: number; totalAmount: number; status: string; remarks: string;
-  po: { poNo: number; vendor: { name: string } };
-  lines: Array<{ receivedQty: number; acceptedQty: number; rate: number; unit: string;
-    inventoryItem: { name: string; category: string } | null }>;
-  grainTruck: { moisture: number | null; starchPercent: number | null;
-    damagedPercent: number | null; foreignMatter: number | null; quarantine: boolean } | null;
+interface ConsumptionRow {
+  materialItemId: string;
+  materialName: string;
+  materialCode: string;
+  unit: string;
+  id: string | null;
+  openingStock: number;
+  received: number;
+  consumed: number;
+  closingStock: number;
+  remarks: string;
 }
 
 interface Summary {
-  activeDeals: number; totalOutstanding: number;
-  thisMonthReceived: number; thisMonthPaid: number;
+  activeDeals: number;
+  totalOutstanding: number;
+  thisMonthReceived: number;
+  thisMonthPaid: number;
+  todayConsumed: number;
+  todayReceived: number;
+  lowStockCount: number;
+  lowStockItems: string[];
 }
 
-interface Vendor { id: string; name: string; phone: string; category: string; }
-
-interface Payment {
-  id: string; paymentNo: number; paymentDate: string; amount: number;
-  mode: string; reference: string; remarks: string; type: string;
+interface OpenDeal {
+  id: string;
+  poNo: number;
+  dealType: string;
+  status: string;
+  poDate: string;
+  deliveryDate: string | null;
+  remarks: string | null;
+  paymentTerms: string | null;
+  truckCap: number | null;
+  transportBy: string | null;
+  deliveryAddress: string | null;
+  vendor: { id: string; name: string; phone: string | null };
+  lines: Array<{ id: string; description: string; rate: number; unit: string; inventoryItemId: string | null; receivedQty: number; quantity: number }>;
+  totalReceived: number;
+  totalValue: number;
+  totalPaid: number;
+  outstanding: number;
+  truckCount: number;
 }
 
-interface TruckRow {
-  id: string; grnNo?: number; vehicleNo?: string; grnDate?: string;
-  totalQty?: number; totalAmount?: number; status?: string;
-  moisture?: number | null; starchPercent?: number | null;
+interface VendorOption {
+  id: string;
+  name: string;
+  phone?: string;
+  address?: string;
+  category?: string;
 }
 
-/* ───── Helpers ───── */
-const fmtCurrency = (n: number) =>
-  n === 0 ? '--' : '\u20B9' + n.toLocaleString('en-IN', { minimumFractionDigits: 2 });
-
-const fmtDate = (d: string) =>
-  new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' });
-
-const statusColor: Record<string, string> = {
-  APPROVED: 'border-green-300 bg-green-50 text-green-700',
-  PARTIAL_RECEIVED: 'border-amber-300 bg-amber-50 text-amber-700',
-  RECEIVED: 'border-blue-300 bg-blue-50 text-blue-700',
-  CLOSED: 'border-slate-300 bg-slate-50 text-slate-600',
-  DRAFT: 'border-slate-300 bg-slate-50 text-slate-500',
-  CANCELLED: 'border-red-300 bg-red-50 text-red-600',
-};
-
-const dealTypeColor: Record<string, string> = {
-  OPEN: 'border-blue-300 bg-blue-50 text-blue-700',
-  STANDARD: 'border-slate-300 bg-slate-50 text-slate-600',
-  TRUCKS: 'border-amber-300 bg-amber-50 text-amber-700',
-};
-
-const UNITS = ['MT', 'KG', 'KL', 'LTR', 'NOS', 'TRUCKS'];
-const PAYMENT_TERMS = ['ADVANCE', 'COD', 'NET7', 'NET15', 'NET30'];
-const PAYMENT_MODES = ['CASH', 'BANK_TRANSFER', 'CHEQUE', 'UPI', 'NEFT', 'RTGS'];
-const TDS_SECTIONS = ['', '194C', '194O', '194Q', '194J', '194H'];
-
-/* ───── Empty forms ───── */
-const EMPTY_DEAL_FORM = {
-  vendorId: '', vendorName: '', vendorPhone: '', newVendor: false,
-  materialId: '', rate: '', quantity: '', unit: 'MT',
-  dealType: 'OPEN' as 'OPEN' | 'FIXED',
-  paymentTerms: 'COD', validUntil: '', origin: '', deliveryPoint: '',
-  transportBy: '', remarks: '',
-};
-
-const EMPTY_PAYMENT_FORM = {
-  amount: '', mode: 'BANK_TRANSFER', reference: '', date: '',
-  tdsAmount: '', tdsSection: '', remarks: '',
-};
-
-const EMPTY_MATERIAL_FORM = {
+const EMPTY_FORM: Partial<MaterialItem> = {
   name: '', code: '', category: 'RAW_MATERIAL', unit: 'MT',
-  hsnCode: '', gstPercent: 5, defaultRate: 0, minStock: 0, maxStock: 0,
+  minStock: 0, maxStock: null, defaultRate: 0, hsnCode: '', gstPercent: 5,
+  location: '', remarks: '',
 };
 
-/* ═══════════════════════ COMPONENT ═══════════════════════ */
 export default function RawMaterialPurchase() {
-  /* ── State ── */
-  const [tab, setTab] = useState<'deals' | 'receipts' | 'materials'>('deals');
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
+  const [tab, setTab] = useState<'master' | 'daily' | 'deals'>('deals');
+  const [materials, setMaterials] = useState<MaterialItem[]>([]);
+  const [rows, setRows] = useState<ConsumptionRow[]>([]);
+  const [summary, setSummary] = useState<Summary | null>(null);
+  const [deals, setDeals] = useState<OpenDeal[]>([]);
+  const [vendors, setVendors] = useState<VendorOption[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // Data
-  const [deals, setDeals] = useState<Deal[]>([]);
-  const [receipts, setReceipts] = useState<Receipt[]>([]);
-  const [materials, setMaterials] = useState<Material[]>([]);
-  const [summary, setSummary] = useState<Summary>({ activeDeals: 0, totalOutstanding: 0, thisMonthReceived: 0, thisMonthPaid: 0 });
-  const [vendors, setVendors] = useState<Vendor[]>([]);
-
-  // Expanded deal
-  const [expandedDeal, setExpandedDeal] = useState<string | null>(null);
-  const [expandedTrucks, setExpandedTrucks] = useState<TruckRow[]>([]);
-  const [expandedPayments, setExpandedPayments] = useState<Payment[]>([]);
-  const [expandLoading, setExpandLoading] = useState(false);
-
-  // Modals
+  const [saving, setSaving] = useState(false);
   const [showDealModal, setShowDealModal] = useState(false);
-  const [dealForm, setDealForm] = useState({ ...EMPTY_DEAL_FORM });
-  const [dealSaving, setDealSaving] = useState(false);
-
+  const [editingDealId, setEditingDealId] = useState<string | null>(null);
+  const [expandedDeals, setExpandedDeals] = useState<Set<string>>(new Set());
+  const [expandedMaterials, setExpandedMaterials] = useState<Set<string>>(new Set());
+  const [dealForm, setDealForm] = useState({ vendorId: '', vendorName: '', vendorPhone: '', materialItemId: '', rate: 0, remarks: '' });
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [showModal, setShowModal] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [form, setForm] = useState(EMPTY_FORM);
   const [showPayModal, setShowPayModal] = useState(false);
-  const [payDealId, setPayDealId] = useState<string | null>(null);
-  const [payForm, setPayForm] = useState({ ...EMPTY_PAYMENT_FORM });
-  const [paySaving, setPaySaving] = useState(false);
+  const [payDeal, setPayDeal] = useState<OpenDeal | null>(null);
+  const [payForm, setPayForm] = useState({ amount: 0, mode: 'CASH', reference: '', date: new Date().toISOString().split('T')[0], tdsAmount: 0, tdsSection: '', remarks: '' });
 
-  const [showMatModal, setShowMatModal] = useState(false);
-  const [matForm, setMatForm] = useState({ ...EMPTY_MATERIAL_FORM });
-  const [editingMatId, setEditingMatId] = useState<string | null>(null);
-  const [matSaving, setMatSaving] = useState(false);
+  const fetchMaster = useCallback(async () => {
+    try {
+      const res = await api.get<MaterialItem[]>('/raw-material-purchase/master');
+      setMaterials(res.data);
+    } catch (err) { console.error(err); }
+  }, []);
 
-  /* ── Fetchers ── */
+  const fetchConsumption = useCallback(async () => {
+    try {
+      const res = await api.get<{ date: string; rows: ConsumptionRow[] }>(`/raw-material-purchase/consumption?date=${date}`);
+      setRows(res.data.rows);
+    } catch (err) { console.error(err); }
+  }, [date]);
+
   const fetchSummary = useCallback(async () => {
     try {
-      const res = await api.get<Summary>('/raw-material-purchase/summary');
+      const res = await api.get<Summary>(`/raw-material-purchase/summary?date=${date}`);
       setSummary(res.data);
-    } catch { /* ignore */ }
-  }, []);
+    } catch (err) { console.error(err); }
+  }, [date]);
 
   const fetchDeals = useCallback(async () => {
     try {
-      setLoading(true);
-      const res = await api.get<Deal[]>('/raw-material-purchase/deals');
-      setDeals(res.data);
-    } catch { /* ignore */ } finally { setLoading(false); }
-  }, []);
-
-  const fetchReceipts = useCallback(async () => {
-    try {
-      setLoading(true);
-      const res = await api.get<Receipt[]>('/raw-material-purchase/receipts');
-      setReceipts(res.data);
-    } catch { /* ignore */ } finally { setLoading(false); }
-  }, []);
-
-  const fetchMaterials = useCallback(async () => {
-    try {
-      setLoading(true);
-      const res = await api.get<Material[]>('/raw-material-purchase/materials');
-      setMaterials(res.data);
-    } catch { /* ignore */ } finally { setLoading(false); }
-  }, []);
-
-  const fetchVendors = useCallback(async () => {
-    try {
-      const res = await api.get<Vendor[]>('/vendors', { params: { category: 'RAW_MATERIAL,CHEMICAL,TRADER,GENERAL' } });
-      setVendors(res.data);
-    } catch { /* ignore */ }
-  }, []);
-
-  useEffect(() => {
-    fetchSummary();
-    fetchVendors();
-    fetchMaterials();
-  }, [fetchSummary, fetchVendors, fetchMaterials]);
-
-  useEffect(() => {
-    if (tab === 'deals') fetchDeals();
-    else if (tab === 'receipts') fetchReceipts();
-    else fetchMaterials();
-  }, [tab, fetchDeals, fetchReceipts, fetchMaterials]);
-
-  /* ── Expand deal row ── */
-  const toggleExpand = useCallback(async (dealId: string) => {
-    if (expandedDeal === dealId) { setExpandedDeal(null); return; }
-    setExpandedDeal(dealId);
-    setExpandLoading(true);
-    try {
-      const [trucksRes, payRes] = await Promise.all([
-        api.get<{ grns: TruckRow[]; grainTrucks: unknown[] }>(`/raw-material-purchase/deals/${dealId}/trucks`),
-        api.get<Payment[]>(`/raw-material-purchase/deals/${dealId}/payments`),
+      const [dealsRes, vendorsRes] = await Promise.all([
+        api.get<OpenDeal[]>('/raw-material-purchase/deals'),
+        api.get<{ vendors: VendorOption[] } | VendorOption[]>('/vendors', { params: { active: true, category: 'RAW_MATERIAL,CHEMICAL,TRADER,GENERAL' } }),
       ]);
-      setExpandedTrucks(trucksRes.data.grns || []);
-      setExpandedPayments(payRes.data);
-    } catch { /* ignore */ }
-    setExpandLoading(false);
-  }, [expandedDeal]);
+      setDeals(dealsRes.data);
+      const vData = vendorsRes.data;
+      const vList = Array.isArray(vData) ? vData : (vData as { vendors: VendorOption[] }).vendors || [];
+      setVendors(vList);
+    } catch (err) { console.error(err); }
+  }, []);
 
-  /* ── Deal CRUD ── */
-  const openNewDeal = () => {
-    setDealForm({ ...EMPTY_DEAL_FORM });
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([fetchMaster(), fetchSummary(), fetchConsumption(), fetchDeals()]).finally(() => setLoading(false));
+  }, [fetchMaster, fetchSummary, fetchConsumption, fetchDeals]);
+
+  // Group deals by material name
+  interface MaterialDealLine {
+    deal: OpenDeal;
+    line: OpenDeal['lines'][0];
+    lineValue: number;
+    lineReceived: number;
+  }
+  interface MaterialGroup {
+    materialName: string;
+    materialItemId: string | null;
+    unit: string;
+    entries: MaterialDealLine[];
+    totalReceived: number;
+    totalValue: number;
+    totalPaid: number;
+    outstanding: number;
+    dealCount: number;
+    truckCount: number;
+  }
+  const materialGroups = useMemo(() => {
+    const map = new Map<string, MaterialGroup>();
+    for (const deal of deals) {
+      const matLines = deal.lines.filter(l => l.inventoryItemId);
+      for (const line of matLines) {
+        const key = line.inventoryItemId || line.description || 'Unknown';
+        if (!map.has(key)) {
+          map.set(key, {
+            materialName: line.description || 'Unknown',
+            materialItemId: line.inventoryItemId,
+            unit: line.unit || 'MT',
+            entries: [],
+            totalReceived: 0,
+            totalValue: 0,
+            totalPaid: 0,
+            outstanding: 0,
+            dealCount: 0,
+            truckCount: 0,
+          });
+        }
+        const grp = map.get(key)!;
+        const lineReceived = line.receivedQty || 0;
+        const lineValue = lineReceived * (line.rate || 0);
+        grp.entries.push({ deal, line, lineValue, lineReceived });
+        grp.totalReceived += lineReceived;
+        grp.totalValue += lineValue;
+      }
+      // Handle deals with no inventoryItemId lines (legacy)
+      if (matLines.length === 0 && deal.lines.length > 0) {
+        const line = deal.lines[0];
+        const key = line.description || 'Other';
+        if (!map.has(key)) {
+          map.set(key, { materialName: key, materialItemId: null, unit: line.unit || 'MT', entries: [], totalReceived: 0, totalValue: 0, totalPaid: 0, outstanding: 0, dealCount: 0, truckCount: 0 });
+        }
+        const grp = map.get(key)!;
+        grp.entries.push({ deal, line, lineValue: deal.totalValue, lineReceived: deal.totalReceived });
+        grp.totalReceived += deal.totalReceived;
+        grp.totalValue += deal.totalValue;
+      }
+    }
+    // Compute dealCount, truckCount, paid/outstanding per group
+    for (const grp of map.values()) {
+      const uniqueDeals = new Set(grp.entries.map(e => e.deal.id));
+      grp.dealCount = uniqueDeals.size;
+      grp.truckCount = grp.entries.reduce((s, e) => {
+        return uniqueDeals.delete(e.deal.id) ? s + e.deal.truckCount : s;
+      }, 0);
+      for (const entry of grp.entries) {
+        const d = entry.deal;
+        const dealTotal = d.totalValue ?? 0;
+        const share = dealTotal > 0
+          ? entry.lineValue / dealTotal
+          : (d.lines.length > 0 ? 1 / d.lines.length : 0);
+        grp.totalPaid += d.totalPaid * share;
+      }
+      grp.totalPaid = Math.round(grp.totalPaid * 100) / 100;
+      grp.outstanding = Math.round((grp.totalValue - grp.totalPaid) * 100) / 100;
+    }
+    return Array.from(map.values()).sort((a, b) => b.totalValue - a.totalValue);
+  }, [deals]);
+
+  const fmtNum = (n: number) => n === 0 ? '--' : n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+
+  // Master CRUD
+  const openAdd = () => { setEditId(null); setForm({ ...EMPTY_FORM }); setShowModal(true); };
+  const openEdit = (m: MaterialItem) => {
+    setEditId(m.id);
+    setForm({ name: m.name, code: m.code, category: m.category, unit: m.unit, minStock: m.minStock, maxStock: m.maxStock, defaultRate: m.defaultRate, hsnCode: m.hsnCode || '', gstPercent: m.gstPercent, location: m.location || '', remarks: m.remarks || '' });
+    setShowModal(true);
+  };
+  const saveMaterial = async () => {
+    setSaving(true);
+    try {
+      if (editId) {
+        await api.put(`/raw-material-purchase/master/${editId}`, form);
+      } else {
+        await api.post('/raw-material-purchase/master', form);
+      }
+      setShowModal(false);
+      fetchMaster();
+      fetchSummary();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Failed to save';
+      alert(msg);
+    } finally { setSaving(false); }
+  };
+  const deleteMaterial = async (id: string) => {
+    if (!confirm('Deactivate this material?')) return;
+    await api.delete(`/raw-material-purchase/master/${id}`);
+    fetchMaster();
+  };
+
+  // Daily consumption
+  const updateRow = (idx: number, field: string, value: string) => {
+    const newRows = [...rows];
+    const row = { ...newRows[idx], [field]: parseFloat(value) || 0 };
+    row.closingStock = row.openingStock + row.received - row.consumed;
+    newRows[idx] = row;
+    setRows(newRows);
+  };
+
+  const saveConsumption = async () => {
+    setSaving(true);
+    try {
+      await api.post('/raw-material-purchase/consumption', { date, rows });
+      fetchConsumption();
+      fetchSummary();
+    } catch (err) { alert('Failed to save'); }
+    finally { setSaving(false); }
+  };
+
+  // Deal CRUD
+  const createDeal = async () => {
+    if (!dealForm.materialItemId || !dealForm.rate) {
+      alert('Select material and enter rate'); return;
+    }
+    if (!dealForm.vendorId && !dealForm.vendorName) {
+      alert('Select a vendor or add a new one'); return;
+    }
+    if (dealForm.vendorId === '__new' && !dealForm.vendorName) {
+      alert('Enter the new vendor name'); return;
+    }
+    setSaving(true);
+    const payload = {
+      ...dealForm,
+      vendorId: dealForm.vendorId === '__new' ? undefined : dealForm.vendorId,
+    };
+    try {
+      const origVendor = vendors.find(v => v.id === dealForm.vendorId);
+      if (origVendor && dealForm.vendorPhone && dealForm.vendorPhone !== origVendor.phone) {
+        if (confirm(`Phone number changed from ${origVendor.phone || 'empty'} to ${dealForm.vendorPhone}. Update vendor master?`)) {
+          try { await api.put(`/vendors/${dealForm.vendorId}`, { phone: dealForm.vendorPhone }); } catch (_e) { /* ok */ }
+        }
+      }
+      if (editingDealId) {
+        const rParts = [(dealForm as Record<string, string>).remarks || ''];
+        if ((dealForm as Record<string, string>).origin) rParts.push(`Origin: ${(dealForm as Record<string, string>).origin}`);
+        if ((dealForm as Record<string, string>).deliveryPoint) rParts.push(`Delivery: ${(dealForm as Record<string, string>).deliveryPoint}`);
+        if ((dealForm as Record<string, string>).transportBy) rParts.push(`Transport: ${(dealForm as Record<string, string>).transportBy}`);
+        if ((dealForm as Record<string, string>).deliverySchedule) rParts.push(`Schedule: ${(dealForm as Record<string, string>).deliverySchedule}`);
+        const isTrucks = (dealForm as Record<string, string>).quantityUnit === 'TRUCKS';
+        if (isTrucks && (dealForm as Record<string, number>).quantity) rParts.push(`FIXED_TRUCKS:${(dealForm as Record<string, number>).quantity}`);
+        await api.put(`/raw-material-purchase/deals/${editingDealId}`, {
+          rate: dealForm.rate,
+          remarks: rParts.filter(Boolean).join(' | '),
+          vendorId: dealForm.vendorId === '__new' ? undefined : dealForm.vendorId,
+          materialItemId: dealForm.materialItemId,
+          paymentTerms: (dealForm as Record<string, string>).paymentTerms,
+          validUntil: (dealForm as Record<string, string>).validUntil || undefined,
+          deliveryPoint: (dealForm as Record<string, string>).deliveryPoint,
+          transportBy: (dealForm as Record<string, string>).transportBy,
+          truckCap: isTrucks && (dealForm as Record<string, number>).quantity ? Math.round((dealForm as Record<string, number>).quantity) : null,
+        });
+      } else {
+        await api.post('/raw-material-purchase/deals', payload);
+      }
+      setShowDealModal(false);
+      setEditingDealId(null);
+      setDealForm({ vendorId: '', vendorName: '', vendorPhone: '', materialItemId: '', rate: 0, remarks: '' });
+      fetchDeals();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Failed';
+      alert(msg);
+    } finally { setSaving(false); }
+  };
+
+  const closeDeal = async (id: string) => {
+    if (!confirm('Close this deal? No more receipts will be accepted.')) return;
+    await api.put(`/raw-material-purchase/deals/${id}`, { status: 'CLOSED' });
+    fetchDeals();
+  };
+
+  const deleteDeal = async (id: string) => {
+    if (!confirm('Delete this deal permanently? This cannot be undone.')) return;
+    try {
+      await api.delete(`/raw-material-purchase/deals/${id}`);
+      fetchDeals();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Failed to delete';
+      alert(msg);
+    }
+  };
+
+  const editDeal = (d: OpenDeal) => {
+    const line = d.lines[0];
+    const remarksStr = d.remarks || '';
+    const parts = remarksStr.split(' | ');
+    let origin = '', deliverySchedule = '', cleanRemarks = '';
+    const metaKeys = ['Origin:', 'Delivery:', 'Transport:', 'Schedule:', 'FIXED_TRUCKS:'];
+    cleanRemarks = parts.filter(p => !metaKeys.some(k => p.startsWith(k))).join(' | ').trim();
+    for (const p of parts) {
+      if (p.startsWith('Origin: ')) origin = p.replace('Origin: ', '');
+      if (p.startsWith('Schedule: ')) deliverySchedule = p.replace('Schedule: ', '').replace(' Days', '');
+    }
+    setEditingDealId(d.id);
+    setDealForm({
+      vendorId: d.vendor.id,
+      vendorName: d.vendor.name,
+      vendorPhone: d.vendor.phone || '',
+      materialItemId: line?.inventoryItemId || '',
+      rate: line?.rate || 0,
+      remarks: cleanRemarks,
+      quantityType: d.dealType === 'OPEN' ? 'OPEN' : 'FIXED',
+      quantity: line?.quantity === 999999 ? 0 : (line?.quantity || 0),
+      quantityUnit: d.truckCap ? 'TRUCKS' : 'MT',
+      paymentTerms: d.paymentTerms || 'NET15',
+      origin,
+      deliveryPoint: d.deliveryAddress || 'Factory Gate',
+      transportBy: d.transportBy || 'SUPPLIER',
+      validUntil: d.deliveryDate ? d.deliveryDate.slice(0, 10) : '',
+      deliverySchedule,
+    } as typeof dealForm);
     setShowDealModal(true);
   };
 
-  const submitDeal = async () => {
-    setDealSaving(true);
-    try {
-      const body: Record<string, unknown> = {
-        materialItemId: dealForm.materialId,
-        rate: parseFloat(dealForm.rate) || 0,
-        quantityType: dealForm.dealType,
-        paymentTerms: dealForm.paymentTerms,
-        origin: dealForm.origin,
-        deliveryPoint: dealForm.deliveryPoint,
-        transportBy: dealForm.transportBy,
-        remarks: dealForm.remarks,
-      };
-      if (dealForm.newVendor) {
-        body.vendorName = dealForm.vendorName;
-        body.vendorPhone = dealForm.vendorPhone;
-      } else {
-        body.vendorId = dealForm.vendorId;
-      }
-      if (dealForm.dealType === 'FIXED') {
-        body.quantity = parseFloat(dealForm.quantity) || 0;
-        body.quantityUnit = dealForm.unit;
-      }
-      if (dealForm.validUntil) body.validUntil = dealForm.validUntil;
+  const fmtCurrency = (n: number) => n === 0 ? '--' : '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 });
 
-      await api.post('/raw-material-purchase/deals', body);
-      setShowDealModal(false);
-      fetchDeals();
-      fetchSummary();
-    } catch { /* ignore */ }
-    setDealSaving(false);
-  };
-
-  /* ── Payment ── */
-  const openPayModal = (dealId: string) => {
-    setPayDealId(dealId);
-    setPayForm({ ...EMPTY_PAYMENT_FORM });
+  const openPayModal = (d: OpenDeal) => {
+    setPayDeal(d);
+    setPayForm({ amount: d.outstanding, mode: 'CASH', reference: '', date: new Date().toISOString().split('T')[0], tdsAmount: 0, tdsSection: '', remarks: `Raw material deal PO-${d.poNo}` });
     setShowPayModal(true);
   };
 
   const submitPayment = async () => {
-    if (!payDealId) return;
-    setPaySaving(true);
+    if (!payDeal || !payForm.amount) return;
+    setSaving(true);
     try {
-      await api.post(`/raw-material-purchase/deals/${payDealId}/payment`, {
-        dealId: payDealId,
-        amount: parseFloat(payForm.amount) || 0,
+      await api.post(`/raw-material-purchase/deals/${payDeal.id}/payment`, {
+        dealId: payDeal.id,
+        amount: payForm.amount,
         mode: payForm.mode,
         reference: payForm.reference,
-        paymentDate: payForm.date || undefined,
-        tdsDeducted: payForm.tdsAmount ? parseFloat(payForm.tdsAmount) : 0,
+        date: payForm.date,
+        tdsAmount: payForm.tdsAmount || undefined,
         tdsSection: payForm.tdsSection || undefined,
         remarks: payForm.remarks,
       });
       setShowPayModal(false);
+      setPayDeal(null);
       fetchDeals();
-      fetchSummary();
-      if (expandedDeal === payDealId) toggleExpand(payDealId);
-    } catch { /* ignore */ }
-    setPaySaving(false);
+    } catch (err) { alert('Payment failed'); }
+    finally { setSaving(false); }
   };
 
-  /* ── Material CRUD ── */
-  const openNewMaterial = () => {
-    setEditingMatId(null);
-    setMatForm({ ...EMPTY_MATERIAL_FORM });
-    setShowMatModal(true);
-  };
-
-  const openEditMaterial = (m: Material) => {
-    setEditingMatId(m.id);
-    setMatForm({
-      name: m.name, code: m.code, category: m.category, unit: m.unit,
-      hsnCode: m.hsnCode || '', gstPercent: m.gstPercent, defaultRate: m.defaultRate,
-      minStock: m.minStock, maxStock: m.maxStock,
-    });
-    setShowMatModal(true);
-  };
-
-  const submitMaterial = async () => {
-    setMatSaving(true);
-    try {
-      if (editingMatId) {
-        await api.put(`/raw-material-purchase/materials/${editingMatId}`, matForm);
-      } else {
-        await api.post('/raw-material-purchase/materials', matForm);
-      }
-      setShowMatModal(false);
-      fetchMaterials();
-    } catch { /* ignore */ }
-    setMatSaving(false);
-  };
-
-  /* ── Render helpers ── */
-  const Badge = ({ text, colors }: { text: string; colors: string }) => (
-    <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${colors}`}>{text}</span>
+  if (loading) return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="text-xs text-slate-400 uppercase tracking-widest">Loading...</div>
+    </div>
   );
 
-  const TabBtn = ({ label, value }: { label: string; value: typeof tab }) => (
-    <button
-      onClick={() => setTab(value)}
-      className={`px-3 py-1 text-[11px] font-bold uppercase tracking-widest border-b-2 ${
-        tab === value ? 'border-blue-400 text-white' : 'border-transparent text-slate-400 hover:text-slate-200'
-      }`}
-    >{label}</button>
-  );
+  const totalConsumed = rows.reduce((s, r) => s + r.consumed, 0);
 
-  /* ═══════════════════════ LOADING ═══════════════════════ */
-  if (loading && deals.length === 0 && receipts.length === 0 && materials.length === 0) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-xs text-slate-400 uppercase tracking-widest">Loading...</div>
-      </div>
-    );
-  }
-
-  /* ═══════════════════════ MAIN RENDER ═══════════════════════ */
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="p-3 md:p-6 space-y-0">
-
-        {/* ─── Toolbar ─── */}
+        {/* Toolbar */}
         <div className="bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h1 className="text-sm font-bold tracking-wide uppercase">Raw Material Purchase</h1>
             <span className="text-[10px] text-slate-400">|</span>
-            <span className="text-[10px] text-slate-400">Deals & Running Balance</span>
+            <span className="text-[10px] text-slate-400">Material Deals, Consumption & Master</span>
           </div>
-          <div className="flex items-center gap-2">
-            <TabBtn label="Deals" value="deals" />
-            <TabBtn label="Receipts" value="receipts" />
-            <TabBtn label="Materials" value="materials" />
-            <div className="w-px h-5 bg-slate-600 mx-1" />
-            {tab === 'deals' && (
-              <button onClick={openNewDeal} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">
-                + New Deal
-              </button>
-            )}
-            {tab === 'materials' && (
-              <button onClick={openNewMaterial} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">
-                + New Material
-              </button>
-            )}
+          {tab === 'master' && (
+            <button onClick={openAdd} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">
+              + Add Material
+            </button>
+          )}
+          {tab === 'daily' && (
+            <button onClick={saveConsumption} disabled={saving} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">
+              {saving ? 'Saving...' : 'Save Entries'}
+            </button>
+          )}
+          {tab === 'deals' && isAdmin && (
+            <button onClick={() => { setEditingDealId(null); setDealForm({ vendorId: '', vendorName: '', vendorPhone: '', materialItemId: '', rate: 0, remarks: '' }); setShowDealModal(true); }} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">
+              + New Deal
+            </button>
+          )}
+        </div>
+
+        {/* Tabs */}
+        <div className="bg-white border-x border-b border-slate-300 -mx-3 md:-mx-6 flex">
+          <button onClick={() => setTab('deals')} className={`px-5 py-2.5 text-[11px] font-bold uppercase tracking-widest border-b-2 ${tab === 'deals' ? 'border-blue-600 text-slate-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+            Deals {deals.length > 0 && <span className="ml-1 bg-orange-500 text-white text-[9px] px-1.5 py-0.5">{deals.length}</span>}
+          </button>
+          <button onClick={() => setTab('daily')} className={`px-5 py-2.5 text-[11px] font-bold uppercase tracking-widest border-b-2 ${tab === 'daily' ? 'border-blue-600 text-slate-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+            Daily Consumption
+          </button>
+          <button onClick={() => setTab('master')} className={`px-5 py-2.5 text-[11px] font-bold uppercase tracking-widest border-b-2 ${tab === 'master' ? 'border-blue-600 text-slate-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+            Materials
+          </button>
+        </div>
+
+        {/* KPI Strip */}
+        <div className="grid grid-cols-4 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+          <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-blue-500">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Active Deals</div>
+            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{summary?.activeDeals || 0}</div>
+          </div>
+          <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-red-500">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Outstanding</div>
+            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmtCurrency(summary?.totalOutstanding || 0)}</div>
+          </div>
+          <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-orange-500">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Consumed Today</div>
+            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmtNum(summary?.todayConsumed || 0)} MT</div>
+          </div>
+          <div className="bg-white px-4 py-3 border-l-4 border-l-green-500">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Received Today</div>
+            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmtNum(summary?.todayReceived || 0)} MT</div>
           </div>
         </div>
 
-        {/* ─── KPI Strip (deals tab only) ─── */}
-        {tab === 'deals' && (
-          <div className="grid grid-cols-2 md:grid-cols-4 border-x border-b border-slate-300 -mx-3 md:-mx-6">
-            <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-blue-500">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Active Deals</div>
-              <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{summary.activeDeals}</div>
-            </div>
-            <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-red-500">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Outstanding</div>
-              <div className="text-xl font-bold text-red-700 mt-1 font-mono tabular-nums">{fmtCurrency(summary.totalOutstanding)}</div>
-            </div>
-            <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-green-500">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">This Month Received</div>
-              <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{summary.thisMonthReceived.toFixed(1)} MT</div>
-            </div>
-            <div className="bg-white px-4 py-3 border-l-4 border-l-amber-500">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">This Month Paid</div>
-              <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmtCurrency(summary.thisMonthPaid)}</div>
-            </div>
-          </div>
-        )}
-
-        {/* ═══════════════ TAB: DEALS ═══════════════ */}
-        {tab === 'deals' && (
-          <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-x-auto">
-            <table className="w-full text-xs min-w-[1100px]">
+        {/* TAB: MATERIALS MASTER */}
+        {tab === 'master' && (
+          <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-hidden">
+            <table className="w-full text-xs">
               <thead>
                 <tr className="bg-slate-800 text-white">
-                  {['PO#', 'Vendor', 'Material', 'Rate', 'Type', 'Received', 'Value', 'Paid', 'Outstanding', 'Trucks', 'Status', ''].map((h, i) => (
-                    <th key={i} className={`text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 ${
-                      ['Rate', 'Received', 'Value', 'Paid', 'Outstanding', 'Trucks'].includes(h) ? 'text-right' : ''
-                    } ${h === '' ? 'border-r-0 w-24' : ''}`}>{h}</th>
-                  ))}
+                  <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Code</th>
+                  <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Name</th>
+                  <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Category</th>
+                  <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Unit</th>
+                  <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Stock</th>
+                  <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Avg Cost</th>
+                  <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">HSN</th>
+                  <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">GST%</th>
+                  <th className="px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {deals.length === 0 && (
-                  <tr><td colSpan={12} className="px-3 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">No deals found</td></tr>
-                )}
-                {deals.map((d, i) => {
-                  const mat = d.lines[0]?.inventoryItem?.name || d.lines[0]?.description || '--';
-                  const rate = d.lines[0]?.rate || 0;
-                  const dtype = d.remarks?.includes('FIXED_TRUCKS') ? 'TRUCKS' : d.dealType;
-                  const isExpanded = expandedDeal === d.id;
-
-                  return (
-                    <React.Fragment key={d.id}>
-                      <tr
-                        className={`border-b border-slate-100 hover:bg-blue-50/60 cursor-pointer ${i % 2 ? 'bg-slate-50/70' : ''}`}
-                        onClick={() => toggleExpand(d.id)}
-                      >
-                        <td className="px-3 py-1.5 text-slate-800 font-medium border-r border-slate-100">PO-{d.poNo}</td>
-                        <td className="px-3 py-1.5 border-r border-slate-100">
-                          <div className="text-slate-800">{d.vendor.name}</div>
-                          {d.vendor.phone && <div className="text-[10px] text-slate-400">{d.vendor.phone}</div>}
-                        </td>
-                        <td className="px-3 py-1.5 border-r border-slate-100 text-slate-700">{mat}</td>
-                        <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums text-slate-700">{fmtCurrency(rate)}</td>
-                        <td className="px-3 py-1.5 border-r border-slate-100">
-                          <Badge text={dtype} colors={dealTypeColor[dtype] || dealTypeColor.STANDARD} />
-                        </td>
-                        <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums text-slate-700">
-                          {d.totalReceived > 0 ? d.totalReceived.toFixed(2) : '--'}
-                        </td>
-                        <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums text-slate-700">{fmtCurrency(d.totalValue)}</td>
-                        <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">
-                          <span className={d.totalPaid > 0 ? 'text-green-700' : 'text-slate-400'}>{fmtCurrency(d.totalPaid)}</span>
-                        </td>
-                        <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">
-                          <span className={d.outstanding > 0 ? 'text-red-700 font-semibold' : 'text-slate-400'}>{fmtCurrency(d.outstanding)}</span>
-                        </td>
-                        <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums text-slate-700">
-                          {d.truckCount}{d.grainTruckCount !== d.truckCount ? ` / ${d.grainTruckCount}` : ''}
-                        </td>
-                        <td className="px-3 py-1.5 border-r border-slate-100">
-                          <Badge text={d.status.replace('_', ' ')} colors={statusColor[d.status] || statusColor.DRAFT} />
-                        </td>
-                        <td className="px-3 py-1.5 text-right">
-                          <div className="flex items-center gap-1 justify-end">
-                            <button
-                              onClick={(e) => { e.stopPropagation(); openPayModal(d.id); }}
-                              className="px-2 py-0.5 bg-blue-600 text-white text-[10px] font-medium hover:bg-blue-700"
-                            >Pay</button>
-                            <span className={`text-slate-400 text-[10px] transition-transform ${isExpanded ? 'rotate-180' : ''}`}>
-                              &#9660;
-                            </span>
-                          </div>
-                        </td>
-                      </tr>
-
-                      {/* ─── Expanded detail ─── */}
-                      {isExpanded && (
-                        <tr>
-                          <td colSpan={12} className="bg-slate-50 border-b border-slate-200 p-0">
-                            {expandLoading ? (
-                              <div className="px-6 py-4 text-xs text-slate-400 uppercase tracking-widest">Loading details...</div>
-                            ) : (
-                              <div className="px-6 py-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                {/* Trucks / GRNs */}
-                                <div>
-                                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">
-                                    Receipts / GRNs ({expandedTrucks.length})
-                                  </div>
-                                  {expandedTrucks.length === 0 ? (
-                                    <div className="text-[10px] text-slate-400 uppercase tracking-widest">No receipts yet</div>
-                                  ) : (
-                                    <table className="w-full text-[11px]">
-                                      <thead>
-                                        <tr className="bg-slate-200 border-b border-slate-300">
-                                          <th className="text-left px-2 py-1 text-[9px] font-bold uppercase tracking-widest">GRN#</th>
-                                          <th className="text-left px-2 py-1 text-[9px] font-bold uppercase tracking-widest">Vehicle</th>
-                                          <th className="text-left px-2 py-1 text-[9px] font-bold uppercase tracking-widest">Date</th>
-                                          <th className="text-right px-2 py-1 text-[9px] font-bold uppercase tracking-widest">Qty</th>
-                                          <th className="text-right px-2 py-1 text-[9px] font-bold uppercase tracking-widest">Amount</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        {expandedTrucks.map((t) => (
-                                          <tr key={t.id} className="border-b border-slate-100">
-                                            <td className="px-2 py-1 font-medium">GRN-{t.grnNo}</td>
-                                            <td className="px-2 py-1">{t.vehicleNo || '--'}</td>
-                                            <td className="px-2 py-1">{t.grnDate ? fmtDate(t.grnDate) : '--'}</td>
-                                            <td className="px-2 py-1 text-right font-mono tabular-nums">{t.totalQty?.toFixed(2) || '--'}</td>
-                                            <td className="px-2 py-1 text-right font-mono tabular-nums">{fmtCurrency(t.totalAmount || 0)}</td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  )}
-                                </div>
-                                {/* Payments */}
-                                <div>
-                                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">
-                                    Payments ({expandedPayments.length})
-                                  </div>
-                                  {expandedPayments.length === 0 ? (
-                                    <div className="text-[10px] text-slate-400 uppercase tracking-widest">No payments yet</div>
-                                  ) : (
-                                    <table className="w-full text-[11px]">
-                                      <thead>
-                                        <tr className="bg-slate-200 border-b border-slate-300">
-                                          <th className="text-left px-2 py-1 text-[9px] font-bold uppercase tracking-widest">Pay#</th>
-                                          <th className="text-left px-2 py-1 text-[9px] font-bold uppercase tracking-widest">Date</th>
-                                          <th className="text-left px-2 py-1 text-[9px] font-bold uppercase tracking-widest">Mode</th>
-                                          <th className="text-right px-2 py-1 text-[9px] font-bold uppercase tracking-widest">Amount</th>
-                                          <th className="text-left px-2 py-1 text-[9px] font-bold uppercase tracking-widest">Ref</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        {expandedPayments.map((p) => (
-                                          <tr key={p.id} className="border-b border-slate-100">
-                                            <td className="px-2 py-1 font-medium">#{p.paymentNo}</td>
-                                            <td className="px-2 py-1">{fmtDate(p.paymentDate)}</td>
-                                            <td className="px-2 py-1">{p.mode.replace('_', ' ')}</td>
-                                            <td className="px-2 py-1 text-right font-mono tabular-nums text-green-700">{fmtCurrency(p.amount)}</td>
-                                            <td className="px-2 py-1 text-slate-500">{p.reference || '--'}</td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* ═══════════════ TAB: RECEIPTS ═══════════════ */}
-        {tab === 'receipts' && (
-          <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-x-auto">
-            <table className="w-full text-xs min-w-[900px]">
-              <thead>
-                <tr className="bg-slate-800 text-white">
-                  {['GRN#', 'Date', 'Vendor', 'Material', 'Vehicle', 'Qty', 'Amount', 'Quality', 'Status'].map((h, i) => (
-                    <th key={i} className={`text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 ${
-                      ['Qty', 'Amount'].includes(h) ? 'text-right' : ''
-                    } ${h === 'Status' ? 'border-r-0' : ''}`}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {receipts.length === 0 && (
-                  <tr><td colSpan={9} className="px-3 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">No receipts found</td></tr>
-                )}
-                {receipts.map((r, i) => {
-                  const matName = r.lines[0]?.inventoryItem?.name || '--';
-                  const gt = r.grainTruck;
-                  return (
-                    <tr key={r.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
-                      <td className="px-3 py-1.5 text-slate-800 font-medium border-r border-slate-100">GRN-{r.grnNo}</td>
-                      <td className="px-3 py-1.5 border-r border-slate-100">{fmtDate(r.grnDate)}</td>
-                      <td className="px-3 py-1.5 border-r border-slate-100 text-slate-700">{r.po.vendor.name}</td>
-                      <td className="px-3 py-1.5 border-r border-slate-100 text-slate-700">{matName}</td>
-                      <td className="px-3 py-1.5 border-r border-slate-100 font-medium text-slate-600">{r.vehicleNo || '--'}</td>
-                      <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums text-slate-700">{r.totalQty.toFixed(2)}</td>
-                      <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums text-slate-700">{fmtCurrency(r.totalAmount)}</td>
-                      <td className="px-3 py-1.5 border-r border-slate-100">
-                        <div className="flex items-center gap-1 flex-wrap">
-                          {gt?.moisture != null && (
-                            <span className="text-[9px] font-bold uppercase px-1 py-0.5 border border-sky-300 bg-sky-50 text-sky-700">
-                              M:{gt.moisture}%
-                            </span>
-                          )}
-                          {gt?.starchPercent != null && (
-                            <span className="text-[9px] font-bold uppercase px-1 py-0.5 border border-violet-300 bg-violet-50 text-violet-700">
-                              S:{gt.starchPercent}%
-                            </span>
-                          )}
-                          {gt?.quarantine && (
-                            <span className="text-[9px] font-bold uppercase px-1 py-0.5 border border-red-300 bg-red-50 text-red-700">Q</span>
-                          )}
-                          {!gt && <span className="text-slate-300">--</span>}
-                        </div>
-                      </td>
-                      <td className="px-3 py-1.5">
-                        <Badge text={r.status} colors={statusColor[r.status] || statusColor.DRAFT} />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* ═══════════════ TAB: MATERIALS ═══════════════ */}
-        {tab === 'materials' && (
-          <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-x-auto">
-            <table className="w-full text-xs min-w-[800px]">
-              <thead>
-                <tr className="bg-slate-800 text-white">
-                  {['Code', 'Name', 'Category', 'Unit', 'Stock', 'Avg Cost', 'HSN', 'GST%', ''].map((h, i) => (
-                    <th key={i} className={`text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 ${
-                      ['Stock', 'Avg Cost', 'GST%'].includes(h) ? 'text-right' : ''
-                    } ${h === '' ? 'border-r-0 w-16' : ''}`}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {materials.length === 0 && (
-                  <tr><td colSpan={9} className="px-3 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">No materials found</td></tr>
-                )}
-                {materials.map((m, i) => (
+                {materials.length === 0 ? (
+                  <tr><td colSpan={9} className="px-3 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">No materials configured. Click + Add Material to start.</td></tr>
+                ) : materials.map((m, i) => (
                   <tr key={m.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
-                    <td className="px-3 py-1.5 text-slate-800 font-medium border-r border-slate-100">{m.code}</td>
-                    <td className="px-3 py-1.5 border-r border-slate-100 text-slate-700">{m.name}</td>
+                    <td className="px-3 py-1.5 font-mono text-slate-500 border-r border-slate-100">{m.code}</td>
+                    <td className="px-3 py-1.5 font-semibold text-slate-800 border-r border-slate-100">{m.name}</td>
                     <td className="px-3 py-1.5 border-r border-slate-100">
-                      <Badge text={m.category.replace('_', ' ')} colors="border-slate-300 bg-slate-50 text-slate-600" />
+                      <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-slate-300 bg-slate-50 text-slate-600">{m.category.replace('_', ' ')}</span>
                     </td>
-                    <td className="px-3 py-1.5 border-r border-slate-100 text-slate-600">{m.unit}</td>
-                    <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums text-slate-700">
-                      <span className={m.currentStock <= m.minStock ? 'text-red-600 font-semibold' : ''}>
-                        {m.currentStock.toFixed(2)}
-                      </span>
-                    </td>
-                    <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums text-slate-700">{fmtCurrency(m.avgCost)}</td>
-                    <td className="px-3 py-1.5 border-r border-slate-100 text-slate-500">{m.hsnCode || '--'}</td>
-                    <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums text-slate-600">{m.gstPercent}%</td>
-                    <td className="px-3 py-1.5 text-right">
-                      <button
-                        onClick={() => openEditMaterial(m)}
-                        className="px-2 py-0.5 bg-white border border-slate-300 text-slate-600 text-[10px] font-medium hover:bg-slate-50"
-                      >Edit</button>
+                    <td className="px-3 py-1.5 border-r border-slate-100">{m.unit}</td>
+                    <td className={`px-3 py-1.5 text-right font-mono tabular-nums font-bold border-r border-slate-100 ${m.currentStock < m.minStock ? 'text-red-600' : 'text-slate-800'}`}>{fmtNum(m.currentStock)}</td>
+                    <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{fmtCurrency(m.avgCost)}</td>
+                    <td className="px-3 py-1.5 text-slate-500 border-r border-slate-100">{m.hsnCode || '--'}</td>
+                    <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{m.gstPercent}%</td>
+                    <td className="px-3 py-1.5">
+                      <button onClick={() => openEdit(m)} className="text-[10px] text-blue-600 font-semibold uppercase hover:underline mr-2">Edit</button>
+                      <button onClick={() => deleteMaterial(m.id)} className="text-[10px] text-red-500 font-semibold uppercase hover:underline">Del</button>
                     </td>
                   </tr>
                 ))}
@@ -632,421 +515,559 @@ export default function RawMaterialPurchase() {
             </table>
           </div>
         )}
+
+        {/* TAB: DAILY CONSUMPTION */}
+        {tab === 'daily' && (
+          <>
+            {/* Date picker */}
+            <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6 flex items-center gap-4">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Date</label>
+              <input type="date" value={date} onChange={e => setDate(e.target.value)}
+                className="border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+            </div>
+
+            <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-slate-800 text-white">
+                    <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Material</th>
+                    <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Opening</th>
+                    <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Received</th>
+                    <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 bg-orange-900/30">Consumed</th>
+                    <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Closing</th>
+                    <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Remarks</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.length === 0 ? (
+                    <tr><td colSpan={6} className="px-3 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">No materials. Add materials in the Materials tab first.</td></tr>
+                  ) : rows.map((r, i) => (
+                    <tr key={r.materialItemId} className={`border-b border-slate-100 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                      <td className="px-3 py-1.5 font-semibold text-slate-800 border-r border-slate-100">{r.materialName}</td>
+                      <td className="px-1 py-0.5 border-r border-slate-100">
+                        <input type="number" value={r.openingStock || ''} onChange={e => updateRow(i, 'openingStock', e.target.value)}
+                          className="w-full text-right font-mono tabular-nums text-xs px-2 py-1 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                      </td>
+                      <td className="px-1 py-0.5 border-r border-slate-100">
+                        <input type="number" value={r.received || ''} onChange={e => updateRow(i, 'received', e.target.value)}
+                          className="w-full text-right font-mono tabular-nums text-xs px-2 py-1 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                      </td>
+                      <td className="px-1 py-0.5 border-r border-slate-100 bg-orange-50/50">
+                        <input type="number" value={r.consumed || ''} onChange={e => updateRow(i, 'consumed', e.target.value)}
+                          className="w-full text-right font-mono tabular-nums text-xs px-2 py-1 border border-orange-300 bg-orange-50 focus:outline-none focus:ring-1 focus:ring-orange-400 font-bold" />
+                      </td>
+                      <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold border-r border-slate-100">
+                        {fmtNum(r.closingStock)}
+                      </td>
+                      <td className="px-1 py-0.5">
+                        <input type="text" value={r.remarks} onChange={e => { const nr = [...rows]; nr[i] = { ...nr[i], remarks: e.target.value }; setRows(nr); }}
+                          className="w-full text-xs px-2 py-1 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="..." />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                {rows.length > 0 && (
+                  <tfoot>
+                    <tr className="bg-slate-800 text-white font-semibold">
+                      <td className="px-3 py-2 text-[10px] uppercase tracking-widest border-r border-slate-700">Total</td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-700">{fmtNum(rows.reduce((s, r) => s + r.openingStock, 0))}</td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-700">{fmtNum(rows.reduce((s, r) => s + r.received, 0))}</td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-700">{fmtNum(totalConsumed)}</td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-700">{fmtNum(rows.reduce((s, r) => s + r.closingStock, 0))}</td>
+                      <td className="px-3 py-2"></td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          </>
+        )}
+
+        {/* TAB: DEALS */}
+        {tab === 'deals' && (
+          <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-hidden">
+            {materialGroups.length === 0 ? (
+              <div className="px-3 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">No open deals. Click + New Deal to create one.</div>
+            ) : (
+              <>
+                {materialGroups.map((grp) => {
+                  const isExpanded = expandedMaterials.has(grp.materialName);
+                  return (
+                    <div key={grp.materialName}>
+                      {/* Material group header row */}
+                      <div
+                        className="bg-slate-200 border-b border-slate-300 px-4 py-2.5 flex items-center justify-between cursor-pointer hover:bg-slate-250"
+                        onClick={() => setExpandedMaterials(prev => { const s = new Set(prev); s.has(grp.materialName) ? s.delete(grp.materialName) : s.add(grp.materialName); return s; })}
+                      >
+                        <div className="flex items-center gap-4">
+                          <span className="text-[9px] text-slate-500">{isExpanded ? '\u25BC' : '\u25B6'}</span>
+                          <span className="text-xs font-bold uppercase tracking-widest text-slate-800">{grp.materialName}</span>
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 border border-slate-400 bg-white text-slate-600">{grp.dealCount} DEAL{grp.dealCount !== 1 ? 'S' : ''}</span>
+                        </div>
+                        <div className="flex items-center gap-6 text-xs">
+                          <div>
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mr-1">Received:</span>
+                            <span className="font-mono tabular-nums font-bold text-slate-800">{fmtNum(grp.totalReceived)} {grp.unit}</span>
+                          </div>
+                          <div>
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mr-1">Value:</span>
+                            <span className="font-mono tabular-nums font-bold text-slate-800">{fmtCurrency(grp.totalValue)}</span>
+                          </div>
+                          <div>
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mr-1">Paid:</span>
+                            <span className="font-mono tabular-nums text-green-700">{fmtCurrency(grp.totalPaid)}</span>
+                          </div>
+                          <div>
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mr-1">Due:</span>
+                            <span className={`font-mono tabular-nums font-bold ${grp.outstanding > 0 ? 'text-red-600' : 'text-slate-500'}`}>{fmtCurrency(grp.outstanding)}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Expanded: deals table for this material */}
+                      {isExpanded && (
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="bg-slate-800 text-white">
+                              <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">PO #</th>
+                              <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Vendor</th>
+                              <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Rate</th>
+                              <th className="text-center px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Type</th>
+                              <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Received</th>
+                              <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Value</th>
+                              <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Paid</th>
+                              <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Outstanding</th>
+                              <th className="text-center px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Status</th>
+                              <th className="px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {grp.entries.map((entry, ei) => {
+                              const { deal: d, line, lineValue, lineReceived } = entry;
+                              const dealTotal = d.totalValue ?? 0;
+                              const share = dealTotal > 0
+                                ? lineValue / dealTotal
+                                : (d.lines.length > 0 ? 1 / d.lines.length : 0);
+                              const linePaid = Math.round(d.totalPaid * share * 100) / 100;
+                              const lineOutstanding = Math.round((lineValue - linePaid) * 100) / 100;
+                              const dealKey = `${d.id}-${line.id}`;
+                              const pipelineSteps = [
+                                { label: 'Deal', done: true, value: `${fmtCurrency(line.rate)}/${line.unit || 'MT'}`, sub: d.vendor.name },
+                                { label: 'Receiving', done: d.truckCount > 0, value: `${fmtNum(lineReceived)} ${line.unit || 'MT'}`, sub: `${d.truckCount} receipt${d.truckCount !== 1 ? 's' : ''}` },
+                                { label: 'Value', done: lineValue > 0, value: fmtCurrency(lineValue), sub: d.truckCount > 0 ? 'Total receivable' : 'No receipts yet' },
+                                { label: 'Paid', done: linePaid > 0, value: fmtCurrency(linePaid), sub: lineOutstanding > 0 ? `${fmtCurrency(lineOutstanding)} due` : 'Cleared' },
+                              ];
+                              return (
+                                <React.Fragment key={dealKey}>
+                                  <tr
+                                    className={`border-b border-slate-100 cursor-pointer hover:bg-blue-50/60 ${ei % 2 ? 'bg-slate-50/70' : ''}`}
+                                    onClick={() => setExpandedDeals(prev => { const s = new Set(prev); s.has(dealKey) ? s.delete(dealKey) : s.add(dealKey); return s; })}
+                                  >
+                                    <td className="px-3 py-1.5 font-mono text-slate-500 border-r border-slate-100">
+                                      <span className="text-[9px] mr-1">{expandedDeals.has(dealKey) ? '\u25BC' : '\u25B6'}</span>PO-{d.poNo}
+                                    </td>
+                                    <td className="px-3 py-1.5 border-r border-slate-100">
+                                      <div className="font-semibold text-slate-800">{d.vendor.name}</div>
+                                      {d.vendor.phone && <div className="text-[9px] text-slate-400">{d.vendor.phone}</div>}
+                                    </td>
+                                    <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">
+                                      {fmtCurrency(line.rate)}/{line.unit || 'MT'}
+                                    </td>
+                                    <td className="px-3 py-1.5 text-center border-r border-slate-100">
+                                      <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${d.dealType === 'OPEN' ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-slate-300 bg-slate-50 text-slate-600'}`}>
+                                        {d.dealType}
+                                      </span>
+                                    </td>
+                                    <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold border-r border-slate-100">
+                                      {fmtNum(lineReceived)} {line.unit || 'MT'}
+                                    </td>
+                                    <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{fmtCurrency(lineValue)}</td>
+                                    <td className="px-3 py-1.5 text-right font-mono tabular-nums text-green-700 border-r border-slate-100">{fmtCurrency(linePaid)}</td>
+                                    <td className={`px-3 py-1.5 text-right font-mono tabular-nums font-bold border-r border-slate-100 ${lineOutstanding > 0 ? 'text-red-600' : 'text-slate-500'}`}>
+                                      {fmtCurrency(lineOutstanding)}
+                                    </td>
+                                    <td className="px-3 py-1.5 text-center border-r border-slate-100">
+                                      <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
+                                        d.status === 'CLOSED' ? 'border-slate-300 bg-slate-100 text-slate-500' :
+                                        d.status === 'RECEIVED' ? 'border-green-300 bg-green-50 text-green-700' :
+                                        d.status === 'PARTIAL_RECEIVED' ? 'border-orange-300 bg-orange-50 text-orange-700' :
+                                        'border-blue-300 bg-blue-50 text-blue-700'
+                                      }`}>{d.status.replace('_', ' ')}</span>
+                                    </td>
+                                    <td className="px-3 py-1.5" onClick={e => e.stopPropagation()}>
+                                      <div className="flex gap-1 flex-wrap">
+                                        {isAdmin && <button onClick={() => editDeal(d)} className="text-[10px] text-blue-600 font-semibold uppercase hover:underline">Edit</button>}
+                                        {d.status !== 'CLOSED' && <button onClick={() => openPayModal(d)} className="text-[10px] text-green-600 font-semibold uppercase hover:underline">Pay</button>}
+                                        {isAdmin && d.status !== 'CLOSED' && <button onClick={() => closeDeal(d.id)} className="text-[10px] text-orange-500 font-semibold uppercase hover:underline">Close</button>}
+                                        {isAdmin && d.truckCount === 0 && <button onClick={() => deleteDeal(d.id)} className="text-[10px] text-red-600 font-semibold uppercase hover:underline">Del</button>}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                  {/* Pipeline detail row */}
+                                  {expandedDeals.has(dealKey) && (
+                                    <tr className="border-b border-slate-200">
+                                      <td colSpan={10} className="px-3 py-2 bg-slate-50/30">
+                                        <div className="flex items-center gap-0">
+                                          {pipelineSteps.map((step, si) => (
+                                            <React.Fragment key={step.label}>
+                                              {si > 0 && <div className={`h-0.5 w-6 ${step.done ? 'bg-green-400' : 'bg-slate-200'}`} />}
+                                              <div className={`flex-1 border ${step.done ? 'border-green-300 bg-green-50' : 'border-slate-200 bg-white'} px-3 py-1.5 text-center`}>
+                                                <div className={`text-[9px] font-bold uppercase tracking-widest ${step.done ? 'text-green-700' : 'text-slate-400'}`}>{step.label}</div>
+                                                <div className="text-xs font-bold text-slate-800 font-mono tabular-nums mt-0.5">{step.value}</div>
+                                                <div className={`text-[9px] mt-0.5 ${step.label === 'Paid' && lineOutstanding > 0 ? 'text-red-500 font-bold' : 'text-slate-400'}`}>{step.sub}</div>
+                                              </div>
+                                            </React.Fragment>
+                                          ))}
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  )}
+                                </React.Fragment>
+                              );
+                            })}
+                          </tbody>
+                          {/* Material group subtotal */}
+                          <tfoot>
+                            <tr className="bg-slate-700 text-white font-semibold">
+                              <td colSpan={4} className="px-3 py-1.5 text-[10px] uppercase tracking-widest border-r border-slate-600">{grp.materialName} Total</td>
+                              <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-600">{fmtNum(grp.totalReceived)} {grp.unit}</td>
+                              <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-600">{fmtCurrency(grp.totalValue)}</td>
+                              <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-600">{fmtCurrency(grp.totalPaid)}</td>
+                              <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-600 text-red-300">{fmtCurrency(grp.outstanding)}</td>
+                              <td colSpan={2} className="px-3 py-1.5"></td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      )}
+                    </div>
+                  );
+                })}
+                {/* Grand total footer */}
+                <div className="bg-slate-800 text-white px-4 py-2 flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-widest">Grand Total</span>
+                  <div className="flex items-center gap-6 text-xs">
+                    <div>
+                      <span className="text-[9px] text-slate-400 mr-1">Value:</span>
+                      <span className="font-mono tabular-nums font-bold">{fmtCurrency(materialGroups.reduce((s, g) => s + g.totalValue, 0))}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-400 mr-1">Paid:</span>
+                      <span className="font-mono tabular-nums text-green-300">{fmtCurrency(materialGroups.reduce((s, g) => s + g.totalPaid, 0))}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-400 mr-1">Due:</span>
+                      <span className="font-mono tabular-nums font-bold text-red-300">{fmtCurrency(materialGroups.reduce((s, g) => s + g.outstanding, 0))}</span>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* ═══════════════ MODAL: NEW DEAL ═══════════════ */}
-      {showDealModal && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 bg-black/40" onClick={() => setShowDealModal(false)}>
-          <div className="bg-white shadow-2xl w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
-            <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-widest">New Deal</span>
-              <button onClick={() => setShowDealModal(false)} className="text-slate-400 hover:text-white text-lg leading-none">&times;</button>
+      {/* ADD/EDIT MATERIAL MODAL */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white w-[520px] max-w-[95vw] shadow-2xl">
+            <div className="bg-slate-800 text-white px-4 py-2.5">
+              <div className="text-xs font-bold uppercase tracking-widest">{editId ? 'Edit Material' : 'Add Material'}</div>
             </div>
-            <div className="p-4 space-y-3 max-h-[70vh] overflow-y-auto">
-              {/* Vendor */}
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Vendor</label>
-                {dealForm.newVendor ? (
-                  <div className="space-y-2">
-                    <input
-                      placeholder="Vendor Name"
-                      value={dealForm.vendorName}
-                      onChange={(e) => setDealForm({ ...dealForm, vendorName: e.target.value })}
-                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-                    />
-                    <input
-                      placeholder="Phone"
-                      value={dealForm.vendorPhone}
-                      onChange={(e) => setDealForm({ ...dealForm, vendorPhone: e.target.value })}
-                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-                    />
-                    <button
-                      onClick={() => setDealForm({ ...dealForm, newVendor: false, vendorName: '', vendorPhone: '' })}
-                      className="text-[10px] text-blue-600 hover:underline"
-                    >Select existing vendor</button>
-                  </div>
-                ) : (
-                  <div className="space-y-1">
-                    <select
-                      value={dealForm.vendorId}
-                      onChange={(e) => setDealForm({ ...dealForm, vendorId: e.target.value })}
-                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-                    >
-                      <option value="">-- Select Vendor --</option>
-                      {vendors.map((v) => (
-                        <option key={v.id} value={v.id}>{v.name} {v.phone ? `(${v.phone})` : ''}</option>
-                      ))}
-                    </select>
-                    <button
-                      onClick={() => setDealForm({ ...dealForm, newVendor: true, vendorId: '' })}
-                      className="text-[10px] text-blue-600 hover:underline"
-                    >+ New Vendor</button>
-                  </div>
-                )}
-              </div>
-
-              {/* Material */}
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Material</label>
-                <select
-                  value={dealForm.materialId}
-                  onChange={(e) => setDealForm({ ...dealForm, materialId: e.target.value })}
-                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-                >
-                  <option value="">-- Select Material --</option>
-                  {materials.map((m) => (
-                    <option key={m.id} value={m.id}>{m.name} ({m.code})</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Rate */}
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Rate (per unit)</label>
-                <input
-                  type="number"
-                  value={dealForm.rate}
-                  onChange={(e) => setDealForm({ ...dealForm, rate: e.target.value })}
-                  placeholder="0.00"
-                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 font-mono"
-                />
-              </div>
-
-              {/* Deal Type */}
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Quantity Type</label>
-                <div className="flex gap-4 mt-1">
-                  <label className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer">
-                    <input type="radio" checked={dealForm.dealType === 'OPEN'} onChange={() => setDealForm({ ...dealForm, dealType: 'OPEN' })} />
-                    Open (no fixed qty)
-                  </label>
-                  <label className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer">
-                    <input type="radio" checked={dealForm.dealType === 'FIXED'} onChange={() => setDealForm({ ...dealForm, dealType: 'FIXED' })} />
-                    Fixed Quantity
-                  </label>
+            <div className="p-4 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Material Name</label>
+                  <input value={form.name || ''} onChange={e => setForm({ ...form, name: e.target.value })}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., Enzyme Alpha" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Category</label>
+                  <select value={form.category || 'RAW_MATERIAL'} onChange={e => setForm({ ...form, category: e.target.value })}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+                    <option value="RAW_MATERIAL">Raw Material</option>
+                    <option value="CHEMICAL">Chemical</option>
+                    <option value="PACKING">Packing</option>
+                  </select>
                 </div>
               </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Unit</label>
+                  <select value={form.unit || 'MT'} onChange={e => setForm({ ...form, unit: e.target.value })}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+                    <option value="MT">MT (Metric Ton)</option>
+                    <option value="KG">KG</option>
+                    <option value="LTR">Litre</option>
+                    <option value="KL">KL (Kilo Litre)</option>
+                    <option value="NOS">Nos</option>
+                    <option value="PKT">Packet</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Min Stock</label>
+                  <input type="number" value={form.minStock ?? ''} onChange={e => setForm({ ...form, minStock: parseFloat(e.target.value) || 0 })}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="0" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Max Stock</label>
+                  <input type="number" value={form.maxStock ?? ''} onChange={e => setForm({ ...form, maxStock: e.target.value ? parseFloat(e.target.value) : null })}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="Optional" />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Default Rate</label>
+                  <input type="number" value={form.defaultRate ?? ''} onChange={e => setForm({ ...form, defaultRate: parseFloat(e.target.value) || 0 })}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="0" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">HSN Code</label>
+                  <input value={form.hsnCode || ''} onChange={e => setForm({ ...form, hsnCode: e.target.value })}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., 3507" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">GST %</label>
+                  <input type="number" value={form.gstPercent ?? 5} onChange={e => setForm({ ...form, gstPercent: parseFloat(e.target.value) || 0 })}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label>
+                <input value={form.remarks || ''} onChange={e => setForm({ ...form, remarks: e.target.value })}
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+              </div>
+            </div>
+            <div className="border-t border-slate-200 px-4 py-3 flex justify-end gap-2">
+              <button onClick={() => setShowModal(false)} className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Cancel</button>
+              <button onClick={saveMaterial} disabled={saving} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">{saving ? 'Saving...' : 'Save'}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
-              {/* Quantity (if fixed) */}
-              {dealForm.dealType === 'FIXED' && (
-                <div className="grid grid-cols-2 gap-2">
+      {/* NEW/EDIT DEAL MODAL */}
+      {showDealModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white w-[600px] max-w-[95vw] shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="bg-slate-800 text-white px-4 py-2.5">
+              <div className="text-xs font-bold uppercase tracking-widest">{editingDealId ? 'Edit Deal' : 'New Material Deal'}</div>
+            </div>
+            <div className="p-4 space-y-3">
+              {/* Section: Vendor */}
+              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-1">Vendor Details</div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Vendor</label>
+                  <select value={dealForm.vendorId} onChange={e => {
+                    const v = vendors.find(v => v.id === e.target.value);
+                    setDealForm({ ...dealForm, vendorId: e.target.value, vendorName: v?.name || '', vendorPhone: v?.phone || dealForm.vendorPhone });
+                  }} className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+                    <option value="">-- Select Vendor --</option>
+                    {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                    <option value="__new">+ Add New Vendor</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Phone</label>
+                  <input value={dealForm.vendorPhone} onChange={e => {
+                    setDealForm({ ...dealForm, vendorPhone: e.target.value });
+                  }}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="Auto-filled from vendor" />
+                </div>
+              </div>
+              {dealForm.vendorId === '__new' && (
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Quantity</label>
-                    <input
-                      type="number"
-                      value={dealForm.quantity}
-                      onChange={(e) => setDealForm({ ...dealForm, quantity: e.target.value })}
-                      placeholder="0"
-                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 font-mono"
-                    />
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">New Vendor Name</label>
+                    <input value={dealForm.vendorName} onChange={e => setDealForm({ ...dealForm, vendorName: e.target.value })}
+                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., ABC Chemicals" />
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Unit</label>
-                    <select
-                      value={dealForm.unit}
-                      onChange={(e) => setDealForm({ ...dealForm, unit: e.target.value })}
-                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-                    >
-                      {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-                    </select>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Address</label>
+                    <input value={(dealForm as Record<string, string>).vendorAddress || ''} onChange={e => setDealForm({ ...dealForm, vendorAddress: e.target.value } as typeof dealForm)}
+                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., Narsinghpur" />
                   </div>
                 </div>
               )}
 
-              {/* Payment Terms + Valid Until */}
-              <div className="grid grid-cols-2 gap-2">
+              {/* Section: Material & Pricing */}
+              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-1 mt-2">Material & Pricing</div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Material</label>
+                  <select value={dealForm.materialItemId} onChange={e => setDealForm({ ...dealForm, materialItemId: e.target.value })}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+                    <option value="">-- Select Material --</option>
+                    {materials.map(m => <option key={m.id} value={m.id}>{m.name} ({m.unit})</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Deal Type</label>
+                  <select value={(dealForm as Record<string, string>).quantityType || 'OPEN'} onChange={e => setDealForm({ ...dealForm, quantityType: e.target.value } as typeof dealForm)}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+                    <option value="OPEN">Open (No fixed qty)</option>
+                    <option value="FIXED">Fixed Quantity</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-4 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Rate</label>
+                  <input type="number" value={dealForm.rate || ''} onChange={e => setDealForm({ ...dealForm, rate: parseFloat(e.target.value) || 0 })}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., 500" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Quantity</label>
+                  <div className="flex">
+                    <input type="number" max={99999} value={(dealForm as Record<string, number>).quantity || ''} onChange={e => setDealForm({ ...dealForm, quantity: parseFloat(e.target.value) || 0 } as typeof dealForm)}
+                      className="w-full border border-slate-300 border-r-0 px-2.5 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., 100" />
+                    <select value={(dealForm as Record<string, string>).quantityUnit || 'MT'} onChange={e => setDealForm({ ...dealForm, quantityUnit: e.target.value } as typeof dealForm)}
+                      className="border border-slate-300 px-1.5 py-1.5 text-[10px] bg-slate-50 text-slate-600 focus:outline-none" style={{ minWidth: '62px' }}>
+                      <option value="MT">MT</option>
+                      <option value="KG">KG</option>
+                      <option value="LTR">LTR</option>
+                      <option value="TRUCKS">Trucks</option>
+                    </select>
+                  </div>
+                </div>
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Payment Terms</label>
-                  <select
-                    value={dealForm.paymentTerms}
-                    onChange={(e) => setDealForm({ ...dealForm, paymentTerms: e.target.value })}
-                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-                  >
-                    {PAYMENT_TERMS.map((t) => <option key={t} value={t}>{t}</option>)}
+                  <select value={(dealForm as Record<string, string>).paymentTerms || 'NET15'} onChange={e => setDealForm({ ...dealForm, paymentTerms: e.target.value } as typeof dealForm)}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+                    <option value="ADVANCE">Advance</option>
+                    <option value="COD">Cash on Delivery</option>
+                    <option value="NET2">Net 2 Days</option>
+                    <option value="NET7">Net 7 Days</option>
+                    <option value="NET10">Net 10 Days</option>
+                    <option value="NET15">Net 15 Days</option>
+                    <option value="NET30">Net 30 Days</option>
                   </select>
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Valid Until</label>
-                  <input
-                    type="date"
-                    value={dealForm.validUntil}
-                    onChange={(e) => setDealForm({ ...dealForm, validUntil: e.target.value })}
-                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-                  />
+                  <input type="date" value={(dealForm as Record<string, string>).validUntil || ''} onChange={e => setDealForm({ ...dealForm, validUntil: e.target.value } as typeof dealForm)}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
                 </div>
               </div>
 
-              {/* Origin, Delivery, Transport */}
-              <div className="grid grid-cols-3 gap-2">
+              {/* Section: Delivery */}
+              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-1 mt-2">Delivery Details</div>
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Origin</label>
-                  <input
-                    value={dealForm.origin}
-                    onChange={(e) => setDealForm({ ...dealForm, origin: e.target.value })}
-                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-                  />
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Origin / Source</label>
+                  <input value={(dealForm as Record<string, string>).origin || ''} onChange={e => { const v = e.target.value; setDealForm({ ...dealForm, origin: v.charAt(0).toUpperCase() + v.slice(1) } as typeof dealForm); }}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs capitalize focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., Mumbai, Indore" />
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Delivery Point</label>
-                  <input
-                    value={dealForm.deliveryPoint}
-                    onChange={(e) => setDealForm({ ...dealForm, deliveryPoint: e.target.value })}
-                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-                  />
+                  <select value={(dealForm as Record<string, string>).deliveryPoint || 'Factory Gate'} onChange={e => setDealForm({ ...dealForm, deliveryPoint: e.target.value } as typeof dealForm)}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+                    <option value="Factory Gate">Factory Gate</option>
+                    <option value="Store Room">Store Room</option>
+                    <option value="Chemical Store">Chemical Store</option>
+                    <option value="Main Warehouse">Main Warehouse</option>
+                  </select>
                 </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Transport By</label>
-                  <input
-                    value={dealForm.transportBy}
-                    onChange={(e) => setDealForm({ ...dealForm, transportBy: e.target.value })}
-                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-                  />
+                  <select value={(dealForm as Record<string, string>).transportBy || 'SUPPLIER'} onChange={e => setDealForm({ ...dealForm, transportBy: e.target.value } as typeof dealForm)}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+                    <option value="SUPPLIER">Supplier</option>
+                    <option value="SELF">Our Transport</option>
+                    <option value="THIRD_PARTY">Third Party</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Expected Delivery (Days)</label>
+                  <input type="number" min="1" value={(dealForm as Record<string, string>).deliverySchedule || ''} onChange={e => setDealForm({ ...dealForm, deliverySchedule: e.target.value } as typeof dealForm)}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., 7" />
                 </div>
               </div>
 
-              {/* Remarks */}
+              {/* Section: Remarks */}
+              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-1 mt-2">Notes</div>
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label>
-                <textarea
-                  value={dealForm.remarks}
-                  onChange={(e) => setDealForm({ ...dealForm, remarks: e.target.value })}
-                  rows={2}
-                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 resize-none"
-                />
+                <input value={dealForm.remarks} onChange={e => { const v = e.target.value; setDealForm({ ...dealForm, remarks: v.charAt(0).toUpperCase() + v.slice(1) }); }}
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs capitalize focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="Any additional notes" />
               </div>
             </div>
-            <div className="px-4 py-3 border-t border-slate-200 flex justify-end gap-2">
-              <button
-                onClick={() => setShowDealModal(false)}
-                className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50"
-              >Cancel</button>
-              <button
-                onClick={submitDeal}
-                disabled={dealSaving}
-                className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50"
-              >{dealSaving ? 'Saving...' : 'Create Deal'}</button>
+            <div className="border-t border-slate-200 px-4 py-3 flex justify-end gap-2">
+              <button onClick={() => setShowDealModal(false)} className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Cancel</button>
+              <button onClick={createDeal} disabled={saving} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">{saving ? 'Saving...' : (editingDealId ? 'Update Deal' : 'Create Deal')}</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ═══════════════ MODAL: PAYMENT ═══════════════ */}
-      {showPayModal && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 bg-black/40" onClick={() => setShowPayModal(false)}>
-          <div className="bg-white shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-            <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-widest">Record Payment</span>
-              <button onClick={() => setShowPayModal(false)} className="text-slate-400 hover:text-white text-lg leading-none">&times;</button>
+      {/* PAYMENT MODAL */}
+      {showPayModal && payDeal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white w-[480px] max-w-[95vw] shadow-2xl">
+            <div className="bg-slate-800 text-white px-4 py-2.5">
+              <div className="text-xs font-bold uppercase tracking-widest">Record Payment</div>
+              <div className="text-[9px] text-slate-400 mt-0.5">PO-{payDeal.poNo} | {payDeal.vendor.name} | Outstanding: {fmtCurrency(payDeal.outstanding)}</div>
             </div>
             <div className="p-4 space-y-3">
-              {/* Amount */}
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Amount</label>
-                <input
-                  type="number"
-                  value={payForm.amount}
-                  onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })}
-                  placeholder="0.00"
-                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 font-mono"
-                />
-              </div>
-
-              {/* Mode + Date */}
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Amount</label>
+                  <input type="number" value={payForm.amount || ''} onChange={e => setPayForm({ ...payForm, amount: parseFloat(e.target.value) || 0 })}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                </div>
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Mode</label>
-                  <select
-                    value={payForm.mode}
-                    onChange={(e) => setPayForm({ ...payForm, mode: e.target.value })}
-                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-                  >
-                    {PAYMENT_MODES.map((m) => <option key={m} value={m}>{m.replace('_', ' ')}</option>)}
+                  <select value={payForm.mode} onChange={e => setPayForm({ ...payForm, mode: e.target.value })}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+                    <option value="CASH">Cash</option>
+                    <option value="UPI">UPI</option>
+                    <option value="BANK_TRANSFER">Bank Transfer</option>
+                    <option value="NEFT">NEFT</option>
+                    <option value="RTGS">RTGS</option>
+                    <option value="CHEQUE">Cheque</option>
                   </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Reference (UTR/Ref)</label>
+                  <input value={payForm.reference} onChange={e => setPayForm({ ...payForm, reference: e.target.value })}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="UTR / Cheque No" />
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Date</label>
-                  <input
-                    type="date"
-                    value={payForm.date}
-                    onChange={(e) => setPayForm({ ...payForm, date: e.target.value })}
-                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-                  />
+                  <input type="date" value={payForm.date} onChange={e => setPayForm({ ...payForm, date: e.target.value })}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
                 </div>
               </div>
-
-              {/* Reference */}
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Reference / UTR</label>
-                <input
-                  value={payForm.reference}
-                  onChange={(e) => setPayForm({ ...payForm, reference: e.target.value })}
-                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-                />
-              </div>
-
-              {/* TDS */}
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">TDS Amount</label>
-                  <input
-                    type="number"
-                    value={payForm.tdsAmount}
-                    onChange={(e) => setPayForm({ ...payForm, tdsAmount: e.target.value })}
-                    placeholder="0.00"
-                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 font-mono"
-                  />
+                  <input type="number" value={payForm.tdsAmount || ''} onChange={e => setPayForm({ ...payForm, tdsAmount: parseFloat(e.target.value) || 0 })}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="0" />
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">TDS Section</label>
-                  <select
-                    value={payForm.tdsSection}
-                    onChange={(e) => setPayForm({ ...payForm, tdsSection: e.target.value })}
-                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-                  >
-                    {TDS_SECTIONS.map((s) => <option key={s} value={s}>{s || '-- None --'}</option>)}
+                  <select value={payForm.tdsSection} onChange={e => setPayForm({ ...payForm, tdsSection: e.target.value })}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+                    <option value="">None</option>
+                    <option value="194C">194C - Contractor</option>
+                    <option value="194Q">194Q - Purchase of Goods</option>
+                    <option value="194J">194J - Professional</option>
                   </select>
                 </div>
               </div>
-
-              {/* Remarks */}
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label>
-                <input
-                  value={payForm.remarks}
-                  onChange={(e) => setPayForm({ ...payForm, remarks: e.target.value })}
-                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-                />
+                <input value={payForm.remarks} onChange={e => setPayForm({ ...payForm, remarks: e.target.value })}
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
               </div>
             </div>
-            <div className="px-4 py-3 border-t border-slate-200 flex justify-end gap-2">
-              <button
-                onClick={() => setShowPayModal(false)}
-                className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50"
-              >Cancel</button>
-              <button
-                onClick={submitPayment}
-                disabled={paySaving}
-                className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50"
-              >{paySaving ? 'Saving...' : 'Record Payment'}</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ═══════════════ MODAL: MATERIAL ═══════════════ */}
-      {showMatModal && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 bg-black/40" onClick={() => setShowMatModal(false)}>
-          <div className="bg-white shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-            <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-widest">{editingMatId ? 'Edit Material' : 'New Material'}</span>
-              <button onClick={() => setShowMatModal(false)} className="text-slate-400 hover:text-white text-lg leading-none">&times;</button>
-            </div>
-            <div className="p-4 space-y-3">
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Name</label>
-                  <input
-                    value={matForm.name}
-                    onChange={(e) => setMatForm({ ...matForm, name: e.target.value })}
-                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Code</label>
-                  <input
-                    value={matForm.code}
-                    onChange={(e) => setMatForm({ ...matForm, code: e.target.value })}
-                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Category</label>
-                  <select
-                    value={matForm.category}
-                    onChange={(e) => setMatForm({ ...matForm, category: e.target.value })}
-                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-                  >
-                    <option value="RAW_MATERIAL">Raw Material</option>
-                    <option value="CHEMICAL">Chemical</option>
-                    <option value="PACKING">Packing</option>
-                    <option value="CONSUMABLE">Consumable</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Unit</label>
-                  <select
-                    value={matForm.unit}
-                    onChange={(e) => setMatForm({ ...matForm, unit: e.target.value })}
-                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-                  >
-                    {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-2">
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">HSN Code</label>
-                  <input
-                    value={matForm.hsnCode}
-                    onChange={(e) => setMatForm({ ...matForm, hsnCode: e.target.value })}
-                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">GST %</label>
-                  <input
-                    type="number"
-                    value={matForm.gstPercent}
-                    onChange={(e) => setMatForm({ ...matForm, gstPercent: parseFloat(e.target.value) || 0 })}
-                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Default Rate</label>
-                  <input
-                    type="number"
-                    value={matForm.defaultRate}
-                    onChange={(e) => setMatForm({ ...matForm, defaultRate: parseFloat(e.target.value) || 0 })}
-                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Min Stock</label>
-                  <input
-                    type="number"
-                    value={matForm.minStock}
-                    onChange={(e) => setMatForm({ ...matForm, minStock: parseFloat(e.target.value) || 0 })}
-                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Max Stock</label>
-                  <input
-                    type="number"
-                    value={matForm.maxStock}
-                    onChange={(e) => setMatForm({ ...matForm, maxStock: parseFloat(e.target.value) || 0 })}
-                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 font-mono"
-                  />
-                </div>
-              </div>
-            </div>
-            <div className="px-4 py-3 border-t border-slate-200 flex justify-end gap-2">
-              <button
-                onClick={() => setShowMatModal(false)}
-                className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50"
-              >Cancel</button>
-              <button
-                onClick={submitMaterial}
-                disabled={matSaving}
-                className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50"
-              >{matSaving ? 'Saving...' : (editingMatId ? 'Update' : 'Create')}</button>
+            <div className="border-t border-slate-200 px-4 py-3 flex justify-end gap-2">
+              <button onClick={() => setShowPayModal(false)} className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Cancel</button>
+              <button onClick={submitPayment} disabled={saving} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">{saving ? 'Saving...' : 'Record Payment'}</button>
             </div>
           </div>
         </div>
