@@ -105,7 +105,7 @@ export default function RawMaterialPurchase() {
 
   const fetchMaster = useCallback(async () => {
     try {
-      const res = await api.get<MaterialItem[]>('/raw-material-purchase/master');
+      const res = await api.get<MaterialItem[]>('/raw-material-purchase/materials');
       setMaterials(res.data);
     } catch (err) { console.error(err); }
   }, []);
@@ -235,9 +235,9 @@ export default function RawMaterialPurchase() {
     setSaving(true);
     try {
       if (editId) {
-        await api.put(`/raw-material-purchase/master/${editId}`, form);
+        await api.put(`/raw-material-purchase/materials/${editId}`, form);
       } else {
-        await api.post('/raw-material-purchase/master', form);
+        await api.post('/raw-material-purchase/materials', form);
       }
       setShowModal(false);
       fetchMaster();
@@ -249,7 +249,7 @@ export default function RawMaterialPurchase() {
   };
   const deleteMaterial = async (id: string) => {
     if (!confirm('Deactivate this material?')) return;
-    await api.delete(`/raw-material-purchase/master/${id}`);
+    await api.delete(`/raw-material-purchase/materials/${id}`);
     fetchMaster();
   };
 
