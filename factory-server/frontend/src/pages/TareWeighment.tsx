@@ -131,17 +131,29 @@ export default function TareWeighment() {
   };
 
   // Capture tare weight
-  const handleCapture = async () => {
+  // Confirmation modal state
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [confirmWeight, setConfirmWeight] = useState(0);
+
+  // Step 1: Show confirmation before saving
+  const handleCapture = () => {
     if (!scannedRecord) return;
-    const weightToCapture = liveWeight;
+    const weightToCapture = showManual ? parseFloat(manualWeight) || 0 : liveWeight;
     if (!weightToCapture || weightToCapture < 10) {
       alert('Weight must be at least 10 kg');
       return;
     }
+    setConfirmWeight(weightToCapture);
+    setShowConfirm(true);
+  };
+
+  // Step 2: Actually save after confirmation
+  const confirmAndSave = async () => {
+    if (!scannedRecord) return;
+    setShowConfirm(false);
     setCapturing(true);
     try {
-      const payload: Record<string, unknown> = { weight: weightToCapture };
-      // Ethanol outbound: include volume, strength, seal
+      const payload: Record<string, unknown> = { weight: confirmWeight };
       const isEthanol = scannedRecord.direction === 'OUTBOUND' && (scannedRecord.materialName || '').toLowerCase().includes('ethanol');
       if (isEthanol) {
         if (ethanolBL) payload.quantityBL = ethanolBL;
@@ -149,7 +161,8 @@ export default function TareWeighment() {
         if (ethanolSeal) payload.sealNo = ethanolSeal;
       }
       await api.post(`/weighbridge/${scannedRecord.id}/tare`, payload);
-      window.open(`/api/weighbridge/print/final-slip/${scannedRecord.id}`, '_blank');
+      const slip = scannedRecord.direction === 'OUTBOUND' ? 'gross-slip' : 'final-slip';
+      window.open(`/api/weighbridge/print/${slip}/${scannedRecord.id}`, '_blank');
       setScannedRecord(null);
       setShowManual(false);
       setManualWeight('');
@@ -366,7 +379,7 @@ export default function TareWeighment() {
                   <div className="text-lg font-bold font-mono text-green-700">{fmtKg(scannedRecord.netWeight)}</div>
                 </div>
               </div>
-              <button onClick={() => window.open(`/api/weighbridge/print/final-slip/${scannedRecord.id}`, '_blank')}
+              <button onClick={() => window.open(`/api/weighbridge/print/${scannedRecord.direction === 'OUTBOUND' ? 'gross-slip' : 'final-slip'}/${scannedRecord.id}`, '_blank')}
                 className="mt-3 px-4 py-1.5 bg-green-600 text-white text-xs font-bold uppercase hover:bg-green-700">
                 Reprint Final Slip
               </button>
@@ -415,6 +428,62 @@ export default function TareWeighment() {
           </tbody>
         </table>
       </div>
+
+      {/* Confirmation Modal */}
+      {showConfirm && scannedRecord && (() => {
+        const isInbound = scannedRecord.direction === 'INBOUND';
+        const otherWeight = scannedRecord.grossWeight;
+        const netWeight = otherWeight != null ? Math.abs(otherWeight - confirmWeight) : null;
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white w-[420px] max-w-[95vw] shadow-2xl">
+              <div className="bg-slate-800 text-white px-5 py-3">
+                <div className="text-xs font-bold uppercase tracking-widest">Confirm Tare Weight</div>
+              </div>
+              <div className="p-5 space-y-3">
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Vehicle</div>
+                    <div className="font-bold text-slate-800 mt-0.5">{scannedRecord.vehicleNo}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Material</div>
+                    <div className="font-bold text-slate-800 mt-0.5">{scannedRecord.materialName || '--'}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Supplier</div>
+                    <div className="text-slate-700 mt-0.5">{scannedRecord.supplierName || '--'}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Direction</div>
+                    <div className="text-slate-700 mt-0.5">{scannedRecord.direction}</div>
+                  </div>
+                </div>
+                <div className="border-t border-slate-200 pt-3">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tare Weight</div>
+                  <div className="text-3xl font-bold text-orange-600 font-mono mt-1">{confirmWeight.toLocaleString('en-IN')} kg</div>
+                </div>
+                {otherWeight != null && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Gross Weight</div>
+                      <div className="text-lg font-bold text-slate-700 font-mono">{otherWeight.toLocaleString('en-IN')} kg</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Net Weight</div>
+                      <div className="text-lg font-bold text-blue-700 font-mono">{netWeight != null ? netWeight.toLocaleString('en-IN') : '--'} kg</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="border-t border-slate-200 px-5 py-3 flex justify-end gap-2">
+                <button onClick={() => setShowConfirm(false)} className="px-4 py-2 bg-white border border-slate-300 text-slate-600 text-sm font-medium hover:bg-slate-50">Cancel</button>
+                <button onClick={confirmAndSave} disabled={capturing} className="px-4 py-2 bg-green-600 text-white text-sm font-bold hover:bg-green-700 disabled:opacity-50">{capturing ? 'Saving...' : 'Confirm & Save'}</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

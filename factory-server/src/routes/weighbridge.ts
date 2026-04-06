@@ -362,7 +362,7 @@ router.post('/gate-entry', requireAuth, requireRole('GATE_ENTRY', 'ADMIN'), asyn
 // POST /api/weighbridge/:id/gross — Capture gross weight (loaded truck)
 // Outbound: this is the 2nd weighment. Inbound: this is the 1st weighment.
 router.post('/:id/gross', requireAuth, requireRole('GROSS_WB', 'ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
-  const { weight, weightSource, pcId } = req.body;
+  const { weight, weightSource, pcId, quantityBL, strength, sealNo } = req.body;
 
   if (!weight || typeof weight !== 'number' || weight <= 0) {
     res.status(400).json({ error: 'weight must be a positive number (KG)' });
@@ -401,6 +401,10 @@ router.post('/:id/gross', requireAuth, requireRole('GROSS_WB', 'ADMIN'), asyncHa
     updateData.netWeight = weight - tareW;
     updateData.status = 'COMPLETE';
     updateData.secondWeightAt = now;
+    // Ethanol outbound extras
+    if (quantityBL != null) updateData.quantityBL = parseFloat(quantityBL);
+    if (strength != null) updateData.strength = parseFloat(strength);
+    if (sealNo) updateData.sealNo = sealNo;
   }
 
   const result = await prisma.weighment.updateMany({

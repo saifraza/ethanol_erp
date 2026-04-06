@@ -50,6 +50,10 @@ export default function GrossWeighment() {
   const [capturing, setCapturing] = useState(false);
   const [manualWeight, setManualWeight] = useState('');
   const [showManual, setShowManual] = useState(false);
+  // Ethanol outbound fields (captured at gross = 2nd weight for outbound)
+  const [ethanolBL, setEthanolBL] = useState('');
+  const [ethanolStrength, setEthanolStrength] = useState('');
+  const [ethanolSeal, setEthanolSeal] = useState('');
 
   // Fuel quick lab check (moisture only, done at gross WB)
   const [fuelMoisture, setFuelMoisture] = useState('');
@@ -161,22 +165,43 @@ export default function GrossWeighment() {
     finally { setLabSaving(false); }
   };
 
-  // Capture gross weight
-  const handleCapture = async () => {
+  // Confirmation modal state
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [confirmWeight, setConfirmWeight] = useState(0);
+
+  // Step 1: Show confirmation before saving
+  const handleCapture = () => {
     if (!scannedRecord) return;
-    const weightToCapture = liveWeight;
+    const weightToCapture = showManual ? parseFloat(manualWeight) || 0 : liveWeight;
     if (!weightToCapture || weightToCapture < 10) {
       alert('Weight must be at least 10 kg');
       return;
     }
+    setConfirmWeight(weightToCapture);
+    setShowConfirm(true);
+  };
+
+  // Step 2: Actually save after confirmation
+  const confirmAndSave = async () => {
+    if (!scannedRecord) return;
+    setShowConfirm(false);
     setCapturing(true);
     try {
-      await api.post(`/weighbridge/${scannedRecord.id}/gross`, { weight: weightToCapture });
-      // Open print window
-      window.open(`/api/weighbridge/print/gross-slip/${scannedRecord.id}`, '_blank');
+      const payload: Record<string, unknown> = { weight: confirmWeight };
+      // Outbound ethanol: include volume, strength, seal
+      const isOutboundEthanol = scannedRecord.direction === 'OUTBOUND' && (scannedRecord.materialName || '').toLowerCase().includes('ethanol');
+      if (isOutboundEthanol) {
+        if (ethanolBL) payload.quantityBL = ethanolBL;
+        if (ethanolStrength) payload.strength = ethanolStrength;
+        if (ethanolSeal) payload.sealNo = ethanolSeal;
+      }
+      await api.post(`/weighbridge/${scannedRecord.id}/gross`, payload);
+      const slip = scannedRecord?.direction === 'OUTBOUND' ? 'final-slip' : 'gross-slip';
+      window.open(`/api/weighbridge/print/${slip}/${scannedRecord.id}`, '_blank');
       setScannedRecord(null);
       setShowManual(false);
       setManualWeight('');
+      setEthanolBL(''); setEthanolStrength(''); setEthanolSeal('');
       fetchPending();
       scanRef.current?.focus();
     } catch (err) {
@@ -487,6 +512,80 @@ export default function GrossWeighment() {
           </tbody>
         </table>
       </div>
+
+      {/* Confirmation Modal */}
+      {showConfirm && scannedRecord && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white w-[420px] max-w-[95vw] shadow-2xl">
+            <div className="bg-slate-800 text-white px-5 py-3">
+              <div className="text-xs font-bold uppercase tracking-widest">Confirm Gross Weight</div>
+            </div>
+            <div className="p-5 space-y-3">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Vehicle</div>
+                  <div className="font-bold text-slate-800 mt-0.5">{scannedRecord.vehicleNo}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Material</div>
+                  <div className="font-bold text-slate-800 mt-0.5">{scannedRecord.materialName || '--'}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Supplier</div>
+                  <div className="text-slate-700 mt-0.5">{scannedRecord.supplierName || '--'}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Direction</div>
+                  <div className="text-slate-700 mt-0.5">{scannedRecord.direction}</div>
+                </div>
+              </div>
+              <div className="border-t border-slate-200 pt-3">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Gross Weight</div>
+                <div className="text-3xl font-bold text-green-700 font-mono mt-1">{confirmWeight.toLocaleString('en-IN')} kg</div>
+              </div>
+              {scannedRecord.tareWeight != null && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tare Weight</div>
+                    <div className="text-lg font-bold text-slate-700 font-mono">{scannedRecord.tareWeight.toLocaleString('en-IN')} kg</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Net Weight</div>
+                    <div className="text-lg font-bold text-blue-700 font-mono">{(confirmWeight - scannedRecord.tareWeight).toLocaleString('en-IN')} kg</div>
+                  </div>
+                </div>
+              )}
+              {/* Ethanol outbound fields — BL, Strength, Seal */}
+              {scannedRecord.direction === 'OUTBOUND' && (scannedRecord.materialName || '').toLowerCase().includes('ethanol') && (
+                <div className="border-t border-slate-200 pt-3">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Ethanol Details</div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Volume (BL)</label>
+                      <input value={ethanolBL} onChange={e => setEthanolBL(e.target.value)} type="number" step="0.01"
+                        className="w-full border border-slate-300 px-2.5 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-green-400" placeholder="e.g. 12000" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Strength (%)</label>
+                      <input value={ethanolStrength} onChange={e => setEthanolStrength(e.target.value)} type="number" step="0.01"
+                        className="w-full border border-slate-300 px-2.5 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-green-400" placeholder="e.g. 99.6" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Seal No</label>
+                      <input value={ethanolSeal} onChange={e => setEthanolSeal(e.target.value)}
+                        className="w-full border border-slate-300 px-2.5 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-green-400" placeholder="Seal number" />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="border-t border-slate-200 px-5 py-3 flex justify-end gap-2">
+              <button onClick={() => setShowConfirm(false)} className="px-4 py-2 bg-white border border-slate-300 text-slate-600 text-sm font-medium hover:bg-slate-50">Cancel</button>
+              <button onClick={confirmAndSave} disabled={capturing} className="px-4 py-2 bg-green-600 text-white text-sm font-bold hover:bg-green-700 disabled:opacity-50">{capturing ? 'Saving...' : 'Confirm & Save'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

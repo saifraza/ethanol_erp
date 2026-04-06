@@ -965,6 +965,19 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
             return { skipped: false, id: dispatchTruck.id }; // idempotent re-sync
           }
 
+          // Calculate KL from BL and amount from contract rate
+          const bl = w.quantity_bl || dispatchTruck.quantityBL || 0;
+          const kl = bl > 0 ? bl / 1000 : 0;
+          let productRate: number | null = null;
+          let productValue: number | null = null;
+          if (dispatchTruck.contractId && bl > 0) {
+            const contract = await tx.ethanolContract.findUnique({ where: { id: dispatchTruck.contractId }, select: { contractType: true, ethanolRate: true, conversionRate: true } });
+            if (contract) {
+              productRate = contract.contractType === 'JOB_WORK' ? contract.conversionRate : contract.ethanolRate;
+              productValue = productRate ? bl * productRate : null;
+            }
+          }
+
           // Atomic update with status guard
           const updated = await tx.dispatchTruck.updateMany({
             where: { id: dispatchTruck.id, status: { in: ['GATE_IN', 'TARE_WEIGHED', 'GROSS_WEIGHED'] }, NOT: { status: 'RELEASED' } },
@@ -976,9 +989,11 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
               grossTime: grossTimeVal,
               status: 'GROSS_WEIGHED',
               sourceWbId: w.id,
-              ...(w.quantity_bl != null ? { quantityBL: w.quantity_bl } : {}),
+              ...(bl > 0 ? { quantityBL: bl, quantityKL: kl } : {}),
               ...(w.ethanol_strength != null ? { strength: w.ethanol_strength } : {}),
               ...(w.seal_no ? { sealNo: w.seal_no } : {}),
+              ...(productRate != null ? { productRatePerLtr: productRate } : {}),
+              ...(productValue != null ? { productValue } : {}),
             },
           });
           return updated.count > 0 ? { skipped: false, id: dispatchTruck.id } : { skipped: true, id: dispatchTruck.id };

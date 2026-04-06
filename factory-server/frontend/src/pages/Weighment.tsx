@@ -34,7 +34,7 @@ export default function Weighment() {
   const { token } = useAuth();
   const [weighments, setWeighments] = useState<WeighmentItem[]>([]);
   const [stats, setStats] = useState<Stats>({ today: { total: 0, completed: 0, pending: 0 }, unsynced: 0 });
-  const [lightbox, setLightbox] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<{ url: string; weighment: WeighmentItem; type: string } | null>(null);
 
   const api = axios.create({ baseURL: '/api', headers: { Authorization: `Bearer ${token}` } });
 
@@ -134,12 +134,12 @@ export default function Weighment() {
                   )}
                 </td>
                 <td className="px-3 py-1.5 text-slate-500 border-r border-slate-100">{w.pcName || w.pcId}</td>
-                <td className="px-1 py-1 text-center border-r border-slate-100">
+                <td className="px-2 py-1.5 text-center border-r border-slate-100">
                   {(w.grossPhotos || w.tarePhotos) ? (
-                    <div className="flex gap-0.5 justify-center">
-                      {[...(w.grossPhotos?.split(',') || []), ...(w.tarePhotos?.split(',') || [])].filter(Boolean).map((p, j) => (
-                        <img key={j} src={`/snapshots/${p}`} alt="" className="w-8 h-6 object-cover cursor-pointer border border-slate-200 hover:border-blue-400"
-                          onClick={() => setLightbox(`/snapshots/${p}`)} loading="lazy" />
+                    <div className="flex gap-1 justify-center">
+                      {[...(w.grossPhotos?.split(',') || []).map(p => ({p, type: 'GROSS'})), ...(w.tarePhotos?.split(',') || []).map(p => ({p, type: 'TARE'}))].filter(x => x.p).map((x, j) => (
+                        <img key={j} src={`/snapshots/${x.p}`} alt="" className="w-10 h-8 object-cover cursor-pointer border-2 border-slate-300 hover:border-blue-500 hover:scale-110 transition-transform"
+                          onClick={() => setLightbox({ url: `/snapshots/${x.p}`, weighment: w, type: x.type })} loading="lazy" />
                       ))}
                     </div>
                   ) : <span className="text-[9px] text-slate-300">--</span>}
@@ -154,10 +154,44 @@ export default function Weighment() {
         </table>
       </div>
 
-      {/* Lightbox */}
+      {/* Lightbox with weighment info overlay */}
       {lightbox && (
-        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setLightbox(null)}>
-          <img src={lightbox} alt="Weighbridge snapshot" className="max-w-full max-h-full object-contain" />
+        <div className="fixed inset-0 bg-black z-50 flex items-center justify-center" onClick={() => setLightbox(null)}>
+          <div className="relative w-full h-full flex items-center justify-center">
+            <img src={lightbox.url} alt="Weighbridge snapshot" className="max-w-full max-h-full object-contain" />
+            {/* Info overlay — top bar */}
+            <div className="absolute top-0 left-0 right-0 bg-black/70 px-4 py-2 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <span className="text-white font-mono font-bold text-lg">{lightbox.weighment.vehicleNo}</span>
+                <span className="text-yellow-400 font-bold text-xs uppercase px-2 py-0.5 border border-yellow-400">{lightbox.type} WEIGHT</span>
+                <span className="text-slate-300 text-xs uppercase">{lightbox.weighment.direction === 'OUTBOUND' ? 'OUT' : 'IN'}</span>
+              </div>
+              <span className="text-slate-400 text-xs font-mono">{lightbox.weighment.supplierName}</span>
+            </div>
+            {/* Info overlay — bottom bar */}
+            <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-4 py-2">
+              <div className="flex items-center justify-between text-white">
+                <div className="flex items-center gap-6">
+                  <div>
+                    <div className="text-[9px] text-slate-400 uppercase">Gross</div>
+                    <div className="font-mono font-bold">{lightbox.weighment.grossWeight ? lightbox.weighment.grossWeight.toLocaleString('en-IN') + ' kg' : '--'}</div>
+                  </div>
+                  <div>
+                    <div className="text-[9px] text-slate-400 uppercase">Tare</div>
+                    <div className="font-mono font-bold">{lightbox.weighment.tareWeight ? lightbox.weighment.tareWeight.toLocaleString('en-IN') + ' kg' : '--'}</div>
+                  </div>
+                  <div>
+                    <div className="text-[9px] text-slate-400 uppercase">Net</div>
+                    <div className="font-mono font-bold text-green-400">{lightbox.weighment.netWeight ? lightbox.weighment.netWeight.toLocaleString('en-IN') + ' kg' : '--'}</div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[9px] text-slate-400 uppercase">Time</div>
+                  <div className="font-mono text-sm">{fmtTime(lightbox.type === 'GROSS' ? lightbox.weighment.grossTime : lightbox.weighment.tareTime)}</div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
