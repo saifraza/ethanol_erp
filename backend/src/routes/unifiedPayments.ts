@@ -346,6 +346,7 @@ router.get('/incoming/pending', asyncHandler(async (_req: AuthRequest, res: Resp
       id: true, invoiceNo: true, invoiceDate: true, dueDate: true,
       productName: true, quantity: true, unit: true,
       totalAmount: true, paidAmount: true, balanceAmount: true, status: true,
+      remarks: true,
       customer: { select: { id: true, name: true } },
     },
   });
@@ -365,6 +366,7 @@ router.get('/incoming/pending', asyncHandler(async (_req: AuthRequest, res: Resp
     return {
       invoiceId: inv.id,
       invoiceNo: inv.invoiceNo,
+      invoiceRef: inv.remarks || `INV-${inv.invoiceNo}`,
       invoiceDate: inv.invoiceDate.toISOString(),
       dueDate: dueDate.toISOString(),
       daysOverdue,
@@ -556,6 +558,7 @@ router.get('/incoming/invoice-detail/:invoiceId', asyncHandler(async (req: AuthR
       ewbStatus: invoice.ewbStatus,
       shipmentId: invoice.shipmentId,
       challanNo: invoice.challanNo,
+      remarks: invoice.remarks,
     },
     customer: invoice.customer,
     order: invoice.order ? {

@@ -9,6 +9,7 @@ import api from '../../services/api';
 interface PendingReceivable {
   invoiceId: string;
   invoiceNo: number;
+  invoiceRef: string;
   invoiceDate: string;
   dueDate: string;
   daysOverdue: number;
@@ -79,6 +80,7 @@ interface InvoiceDetail {
     irn: string | null; irnStatus: string | null;
     ewbNo: string | null; ewbStatus: string | null;
     shipmentId: string | null; challanNo: string | null;
+    remarks: string | null;
   };
   customer: { id: string; name: string; gstNo: string | null; state: string | null };
   order: {
@@ -427,7 +429,7 @@ export default function PaymentsIn() {
                             <tr className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''} ${selectedInvoiceId === item.invoiceId ? 'bg-blue-50' : ''}`}>
                               <td className="px-3 py-1.5 border-r border-slate-100 font-mono font-medium">
                                 <button onClick={() => toggleInvoiceExpand(item.invoiceId)} className="text-blue-700 hover:text-blue-900 hover:underline">
-                                  INV-{item.invoiceNo}
+                                  {item.invoiceRef}
                                 </button>
                               </td>
                               <td className="px-3 py-1.5 border-r border-slate-100 font-medium text-slate-800 max-w-[160px] truncate">{item.customerName}</td>
@@ -479,7 +481,7 @@ export default function PaymentsIn() {
                                             done: true,
                                             value: fmt(invoiceDetail.pipeline.invoiced.amount),
                                             sub: [
-                                              `INV-${invoiceDetail.pipeline.invoiced.invoiceNo}`,
+                                              `${invoiceDetail.invoice.remarks || `INV-${invoiceDetail.pipeline.invoiced.invoiceNo}`}`,
                                               invoiceDetail.pipeline.invoiced.irn ? 'IRN' : null,
                                               invoiceDetail.pipeline.invoiced.ewbNo ? 'EWB' : null,
                                             ].filter(Boolean).join(' | '),
@@ -891,7 +893,7 @@ export default function PaymentsIn() {
               {/* Context strip */}
               <div className="bg-slate-100 px-4 py-2 text-xs border-b border-slate-300 flex gap-6">
                 <span><strong>Customer:</strong> {payModal.customerName}</span>
-                <span><strong>Invoice:</strong> INV-{payModal.invoiceNo}</span>
+                <span><strong>Invoice:</strong> {payModal.invoiceRef}</span>
                 <span><strong>Total:</strong> {fmtDec(payModal.totalAmount)}</span>
                 <span><strong>Balance:</strong> <span className="text-red-600 font-bold">{fmtDec(payModal.balanceAmount)}</span></span>
               </div>
