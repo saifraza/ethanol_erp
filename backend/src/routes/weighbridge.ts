@@ -278,6 +278,12 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
             quarantineReason: w.lab_status === 'FAIL' ? (w.lab_remarks || 'Failed lab test') : w.lab_status === 'PASS' ? '' : undefined,
             bags: w.bags || undefined,
             remarks: `WB:${w.id} | Ticket #${w.ticket_no} | ${w.status} | ${w.remarks || ''}`.trim(),
+            vehicleType: w.vehicle_type || undefined,
+            driverName: w.driver_name || undefined,
+            driverMobile: w.driver_mobile || undefined,
+            transporterName: w.transporter || undefined,
+            materialType: w.material || undefined,
+            ticketNo: w.ticket_no || undefined,
           },
         });
         results.push({ id: truck.id, type: 'GrainTruck', refNo: `PENDING-${truck.id.slice(0, 8)}`, sourceWbId: w.id });
@@ -298,6 +304,13 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
             quarantineWeight: w.lab_status === 'FAIL' ? (w.weight_net || 0) / 1000 : w.lab_status === 'PASS' ? 0 : undefined,
             quarantineReason: w.lab_status === 'FAIL' ? (w.lab_remarks || 'Failed lab test') : w.lab_status === 'PASS' ? '' : undefined,
             remarks: `WB:${w.id} | Ticket #${w.ticket_no} | ${w.status} | ${w.remarks || ''}`.trim(),
+            vehicleType: w.vehicle_type || undefined,
+            driverName: w.driver_name || undefined,
+            driverMobile: w.driver_mobile || undefined,
+            transporterName: w.transporter || undefined,
+            materialType: w.material || undefined,
+            ticketNo: w.ticket_no || undefined,
+            supplier: w.supplier_name || undefined,
           },
         });
         results.push({ id: dupGrain.id, type: 'GrainTruck', refNo: `UPDATED-${dupGrain.id.slice(0, 8)}`, sourceWbId: w.id });
@@ -458,6 +471,12 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
                 remarks: `${wbRef} | QUARANTINE — Lab FAIL | PO-${po.poNo}${labInfo}`,
                 poId: po.id,
                 materialId: poLine.inventoryItemId || undefined,
+                vehicleType: w.vehicle_type || undefined,
+                driverName: w.driver_name || undefined,
+                driverMobile: w.driver_mobile || undefined,
+                transporterName: w.transporter || undefined,
+                materialType: w.material || undefined,
+                ticketNo: w.ticket_no || undefined,
               },
             });
 
@@ -553,6 +572,12 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
                   poId: po.id,
                   grnId: grn.id,
                   materialId: poLine.inventoryItemId || undefined,
+                  vehicleType: w.vehicle_type || undefined,
+                  driverName: w.driver_name || undefined,
+                  driverMobile: w.driver_mobile || undefined,
+                  transporterName: w.transporter || undefined,
+                  materialType: w.material || undefined,
+                  ticketNo: w.ticket_no || undefined,
                 },
               }).catch(() => {}); // best-effort — GRN is the primary record
             }
@@ -1106,6 +1131,12 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
           quarantineReason: isQuarantine ? `QUARANTINE — Lab FAIL${labInfo}` : undefined,
           bags: w.bags ?? undefined,
           remarks: `${wbRef} | ${isQuarantine ? 'QUARANTINE — Lab FAIL | ' : ''}${w.remarks || ''}${labInfo}`.trim(),
+          vehicleType: w.vehicle_type || undefined,
+          driverName: w.driver_name || undefined,
+          driverMobile: w.driver_mobile || undefined,
+          transporterName: w.transporter || undefined,
+          materialType: w.material || undefined,
+          ticketNo: w.ticket_no || undefined,
         },
       });
 

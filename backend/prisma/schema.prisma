@@ -866,10 +866,18 @@ model GrainTruck {
   labSampleId     String?                  // FK → LabSample (lab result)
   labSample       LabSample?     @relation(fields: [labSampleId], references: [id])
   materialId      String?                  // FK → InventoryItem (what was delivered)
+  // Fields from weighbridge push (previously dropped)
+  vehicleType     String?                  // TRUCK_12, TRACTOR, etc.
+  driverName      String?
+  driverMobile    String?
+  transporterName String?
+  materialType    String?                  // BROKEN_RICE, RICE_HUSK, MAIZE etc.
+  ticketNo        Int?                     // weighbridge ticket number
   createdAt       DateTime @default(now())
   @@index([date])
   @@index([poId])
   @@index([grnId])
+  @@index([ticketNo])
 }
 
 // ═══════════════════════════════════════════════
