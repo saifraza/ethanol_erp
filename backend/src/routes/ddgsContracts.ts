@@ -98,6 +98,11 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const customer = await prisma.customer.findUnique({ where: { id: b.customerId } });
   if (!customer) return res.status(404).json({ error: 'Customer not found' });
 
+  const startDate = b.startDate ? new Date(b.startDate) : null;
+  const endDate = b.endDate ? new Date(b.endDate) : null;
+  if (!startDate || isNaN(startDate.getTime())) return res.status(400).json({ error: 'Valid startDate is required' });
+  if (!endDate || isNaN(endDate.getTime())) return res.status(400).json({ error: 'Valid endDate is required' });
+
   const contractNo = (b.contractNo && String(b.contractNo).trim()) || await nextDDGSContractNo();
 
   const contract = await prisma.dDGSContract.create({
@@ -116,8 +121,8 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       buyerPhone: b.buyerPhone || customer.phone || null,
       buyerEmail: b.buyerEmail || customer.email || null,
       supplyType: b.supplyType || null,
-      startDate: new Date(b.startDate),
-      endDate: new Date(b.endDate),
+      startDate,
+      endDate,
       quantityType: b.quantityType === 'OPEN' ? 'OPEN' : 'FIXED',
       contractQtyMT: b.quantityType === 'OPEN' ? 0 : (p(b.contractQtyMT) || 0),
       rate: p(b.rate) || 0,
