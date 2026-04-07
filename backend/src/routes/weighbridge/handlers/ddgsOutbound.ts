@@ -105,6 +105,11 @@ export async function handleDDGSOutbound(w: WeighmentInput, ctx: PushContext): P
         weightTare: tareKg,
         weightNet: netMT,
         grossTime: grossTimeVal,
+        // Promote partial-state stub (GATE_IN/TARE_WEIGHED from pre-phase) to GROSS_WEIGHED.
+        // Status guard at line 84-86 has already bailed for BILLED/RELEASED.
+        ...(existing && (existing.status === 'GATE_IN' || existing.status === 'TARE_WEIGHED')
+          ? { status: 'GROSS_WEIGHED' as const }
+          : {}),
         // Only set contract info if not already set (don't clobber manual links)
         ...(contract && !existing?.contractId
           ? { contractId: contract.id, customerId: contract.customerId, rate: rate > 0 ? rate : null }

@@ -311,6 +311,49 @@ And MUST:
 
 11. **Invoice number generation is not concurrency-safe by default.** `nextInvoiceNo()` uses `findUnique → upsert` which races under parallel auto-invoicing. If your handler can fire multiple invoice creates in parallel, wrap the counter in a `SELECT ... FOR UPDATE` or use a DB sequence. (Known pre-existing issue as of 2026-04 — fix pending.)
 
+12. **Partial-state sync — show in-progress trucks on cloud (the "first weight" rule).** Operators expect a truck to appear on the cloud pipeline page **as soon as it gates in** at the factory, not after BOTH weighments are done. Without this, an outbound truck sitting at `FIRST_DONE` (tare-only) is invisible on cloud and the operator panics. The pattern that makes this work has two halves:
+
+    **Half 1 — factory `syncWorker.ts`** must push partial-state weighments, not just `COMPLETE` ones:
+    ```ts
+    // factory-server/src/services/syncWorker.ts
+    OR: [
+      { status: { in: ['GATE_ENTRY', 'COMPLETE'] } },
+      { status: 'FIRST_DONE', direction: 'INBOUND', labStatus: { not: 'PENDING' } },
+      { status: 'FIRST_DONE', direction: 'OUTBOUND' }, // ← partial sync for DDGS/sugar/etc.
+    ],
+    ```
+
+    **Half 2 — cloud `pre-phase.ts`** must upsert a stub row when the dispatcher's `COMPLETE`-only check would otherwise drop it:
+    ```ts
+    // backend/src/routes/weighbridge/pre-phase.ts
+    if (isGateOrPending && !isInbound && isDdgsOutbound(w, ctx)) {
+      return await createOrUpdateDdgsTruckStub(w, ctx);
+    }
+    ```
+    The stub:
+    - keys off `sourceWbId` (unique) so the COMPLETE handler later updates the same row, no duplicates
+    - sets `status = 'GATE_IN'` if no weights, `'TARE_WEIGHED'` if first weight only
+    - runs the SAME strict contract match as the COMPLETE handler so the truck is contract-linked from first sight (the cloud pipeline page filters `contractId IS NOT NULL`)
+    - returns `shortCircuit: true` so push.ts doesn't fall through to the COMPLETE-only handler
+
+    **And** the COMPLETE handler must promote the stub status:
+    ```ts
+    update: {
+      ...,
+      ...(existing && (existing.status === 'GATE_IN' || existing.status === 'TARE_WEIGHED')
+        ? { status: 'GROSS_WEIGHED' as const }
+        : {}),
+    }
+    ```
+    Without this, the stub stays at `TARE_WEIGHED` forever even after the gross weighment lands, and `BILLED` transition skips it.
+
+    **Existing reference patterns** (copy these, don't reinvent):
+    - **Inbound grain stub**: `pre-phase.ts → createOrUpdateGrainTruckStub` — runs at GATE_ENTRY/FIRST_DONE inbound, builds the GrainTruck with whatever lab/weights exist, dedup'd via `remarks contains "WB:{id}"`. Stub fall-through to PO/SPOT/TRADER handler at COMPLETE.
+    - **Outbound DDGS stub**: `pre-phase.ts → createOrUpdateDdgsTruckStub` (added 2026-04-07) — same pattern but for `DDGSDispatchTruck`, dedup'd via `sourceWbId @unique`.
+    - **Outbound ethanol** uses a different mechanism — a separate cloud "gate pass" API call from the operator UI creates the `DispatchTruck` row at gate-in time, BEFORE any weighbridge sync, and the COMPLETE handler matches by `cloud_gate_pass_id`. This works for ethanol because there's a dedicated gate-pass UI; for DDGS/sugar/scrap there isn't, so use the pre-phase stub pattern instead.
+
+    **When to use this pattern for a new outbound product**: any time the operator wants to see the truck on the cloud dashboard before the gross weighment is captured. For sugar, scrap, animal feed, etc., copy `createOrUpdateDdgsTruckStub` and adapt the table name + status enum.
+
 ---
 
 ## Testing Checklist (Run Every Time)
