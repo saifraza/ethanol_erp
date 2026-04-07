@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../prisma';
 import { asyncHandler, requireWbKey } from '../middleware';
+import { handleHeartbeat } from '../services/pcMonitor';
 
 const router = Router();
 
@@ -14,6 +15,9 @@ router.post('/', requireWbKey, asyncHandler(async (req: Request, res: Response) 
     res.status(400).json({ error: 'pcId required' });
     return;
   }
+
+  // Auto-register in pcMonitor for dashboard visibility
+  handleHeartbeat(pcId, pcName, lanIp || tailscaleIp, undefined, pcRole);
 
   await prisma.pcHeartbeat.upsert({
     where: { pcId },

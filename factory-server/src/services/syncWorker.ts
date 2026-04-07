@@ -53,6 +53,7 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
     supplier_name: w.supplierName || '',
     supplier_id: w.supplierId || null,
     material: w.materialName || '',
+    material_category: w.materialCategory || undefined,
     weight_gross: w.grossWeight,
     weight_tare: w.tareWeight,
     weight_net: w.netWeight,
@@ -109,7 +110,7 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
           if (useLegacyBatchAck || processedIds.has(w.localId) || processedIds.has(w.id)) {
             await prisma.weighment.update({
               where: { id: w.id },
-              data: { cloudSynced: true, cloudSyncedAt: new Date(), syncAttempts: w.syncAttempts + 1 },
+              data: { cloudSynced: true, cloudSyncedAt: new Date(), syncAttempts: w.syncAttempts + 1, cloudError: null },
             });
             synced++;
           } else {

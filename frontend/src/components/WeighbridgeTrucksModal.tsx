@@ -22,6 +22,10 @@ interface Truck {
   bags: number | null;
   remarks: string | null;
   grnId: string | null;
+  entryTime: string | null;
+  exitTime: string | null;
+  gateDate: string | null;
+  gateStatus: string | null;
 }
 
 interface Totals {
@@ -73,17 +77,30 @@ export default function WeighbridgeTrucksModal({ poId, title, subtitle, onClose 
     return `${dd}/${mm}/${yy} ${h}:${m} ${ap}`;
   };
   const fmtNum = (n: number | null | undefined) => (n == null ? '--' : n.toLocaleString('en-IN', { maximumFractionDigits: 3 }));
+  const fmtTime12 = (hhmm: string | null) => {
+    if (!hhmm) return '--';
+    // entryTime/exitTime stored as "HH:MM" 24h — convert to 12h AM/PM
+    const m = hhmm.match(/^(\d{1,2}):(\d{2})/);
+    if (!m) return hhmm;
+    let h = parseInt(m[1], 10);
+    const min = m[2];
+    const ap = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    return `${h}:${min} ${ap}`;
+  };
 
   const downloadExcel = () => {
     const headers = [
-      'Ticket #', 'Date / Time (IST)', 'UID/RST', 'Vehicle No', 'Vehicle Type', 'Material',
+      'Ticket #', 'Weighment Date/Time (IST)', 'Entry Time', 'Exit Time', 'UID/RST', 'Vehicle No', 'Vehicle Type', 'Material',
       'Supplier', 'Transporter', 'Driver', 'Driver Mobile',
       'Gross (MT)', 'Tare (MT)', 'Net (MT)', 'Quarantine (MT)', 'Accepted (MT)',
-      'Moisture %', 'Bags', 'Quarantine Reason', 'Remarks', 'GRN Linked',
+      'Moisture %', 'Bags', 'Quarantine Reason', 'Remarks', 'Gate Status', 'GRN Linked',
     ];
     const rows = trucks.map(t => [
       t.ticketNo ?? '',
       fmtDateTime(t.date),
+      fmtTime12(t.entryTime),
+      fmtTime12(t.exitTime),
       t.uidRst || '',
       t.vehicleNo || '',
       t.vehicleType || '',
@@ -101,15 +118,16 @@ export default function WeighbridgeTrucksModal({ poId, title, subtitle, onClose 
       t.bags ?? '',
       t.quarantineReason || '',
       (t.remarks || '').replace(/\n/g, ' '),
+      t.gateStatus || '',
       t.grnId ? 'Yes' : 'No',
     ]);
     if (totals) {
       rows.push([]);
       rows.push([
-        'TOTAL', '', '', '', '', '', '', '', '', '',
+        'TOTAL', '', '', '', '', '', '', '', '', '', '', '',
         totals.gross.toFixed(3), totals.tare.toFixed(3), totals.net.toFixed(3),
         totals.quarantine.toFixed(3), totals.accepted.toFixed(3),
-        '', '', '', '', '',
+        '', '', '', '', '', '',
       ]);
     }
     const esc = (v: any) => {
@@ -187,7 +205,9 @@ export default function WeighbridgeTrucksModal({ poId, title, subtitle, onClose 
               <thead className="sticky top-0">
                 <tr className="bg-slate-800 text-white">
                   <th className="text-left px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Ticket</th>
-                  <th className="text-left px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Date / Time</th>
+                  <th className="text-left px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Date</th>
+                  <th className="text-left px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Entry</th>
+                  <th className="text-left px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Exit</th>
                   <th className="text-left px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Vehicle</th>
                   <th className="text-left px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Driver</th>
                   <th className="text-left px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Transporter</th>
@@ -203,6 +223,8 @@ export default function WeighbridgeTrucksModal({ poId, title, subtitle, onClose 
                   <tr key={t.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
                     <td className="px-2 py-1.5 font-mono tabular-nums border-r border-slate-100">{t.ticketNo ?? '--'}</td>
                     <td className="px-2 py-1.5 border-r border-slate-100 whitespace-nowrap">{fmtDateTime(t.date)}</td>
+                    <td className="px-2 py-1.5 border-r border-slate-100 font-mono tabular-nums whitespace-nowrap text-blue-700">{fmtTime12(t.entryTime)}</td>
+                    <td className="px-2 py-1.5 border-r border-slate-100 font-mono tabular-nums whitespace-nowrap text-green-700">{fmtTime12(t.exitTime)}</td>
                     <td className="px-2 py-1.5 border-r border-slate-100 font-semibold text-slate-800">{t.vehicleNo || '--'}<div className="text-[9px] text-slate-400">{t.vehicleType || ''}</div></td>
                     <td className="px-2 py-1.5 border-r border-slate-100">{t.driverName || '--'}<div className="text-[9px] text-slate-400">{t.driverMobile || ''}</div></td>
                     <td className="px-2 py-1.5 border-r border-slate-100">{t.transporterName || t.supplier || '--'}</td>
@@ -223,7 +245,7 @@ export default function WeighbridgeTrucksModal({ poId, title, subtitle, onClose 
               {totals && totals.count > 0 && (
                 <tfoot>
                   <tr className="bg-slate-800 text-white font-semibold sticky bottom-0">
-                    <td colSpan={5} className="px-2 py-1.5 text-[10px] uppercase tracking-widest border-r border-slate-700">Total ({totals.count} trucks)</td>
+                    <td colSpan={7} className="px-2 py-1.5 text-[10px] uppercase tracking-widest border-r border-slate-700">Total ({totals.count} trucks)</td>
                     <td className="px-2 py-1.5 text-right font-mono tabular-nums border-r border-slate-700">{fmtNum(totals.gross)}</td>
                     <td className="px-2 py-1.5 text-right font-mono tabular-nums border-r border-slate-700">{fmtNum(totals.tare)}</td>
                     <td className="px-2 py-1.5 text-right font-mono tabular-nums border-r border-slate-700">{fmtNum(totals.net)}</td>

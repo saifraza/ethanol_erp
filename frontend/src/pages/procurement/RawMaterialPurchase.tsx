@@ -208,19 +208,28 @@ export default function RawMaterialPurchase() {
         grp.totalValue += deal.totalValue;
       }
     }
-    // Compute dealCount, truckCount, paid/outstanding per group
+    // Collapse multiple lines of the same deal into a single entry — one PO = one row
     for (const grp of map.values()) {
-      const uniqueDeals = new Set(grp.entries.map(e => e.deal.id));
-      grp.dealCount = uniqueDeals.size;
-      grp.truckCount = grp.entries.reduce((s, e) => {
-        return uniqueDeals.delete(e.deal.id) ? s + e.deal.truckCount : s;
-      }, 0);
+      const byDeal = new Map<string, MaterialDealLine>();
+      for (const e of grp.entries) {
+        const existing = byDeal.get(e.deal.id);
+        if (!existing) {
+          byDeal.set(e.deal.id, { ...e });
+        } else {
+          existing.lineReceived += e.lineReceived;
+          existing.lineValue += e.lineValue;
+          const mergedQty = (existing.line.quantity || 0) + (e.line.quantity || 0);
+          const mergedRate = existing.lineValue / (existing.lineReceived || 1);
+          existing.line = { ...existing.line, quantity: mergedQty, rate: mergedRate, receivedQty: existing.lineReceived };
+        }
+      }
+      grp.entries = Array.from(byDeal.values());
+      grp.dealCount = byDeal.size;
+      grp.truckCount = grp.entries.reduce((s, e) => s + e.deal.truckCount, 0);
       for (const entry of grp.entries) {
         const d = entry.deal;
         const dealTotal = d.totalValue ?? 0;
-        const share = dealTotal > 0
-          ? entry.lineValue / dealTotal
-          : (d.lines.length > 0 ? 1 / d.lines.length : 0);
+        const share = dealTotal > 0 ? entry.lineValue / dealTotal : 1;
         grp.totalPaid += d.totalPaid * share;
       }
       grp.totalPaid = Math.round(grp.totalPaid * 100) / 100;

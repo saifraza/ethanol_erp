@@ -665,6 +665,14 @@ export default function Shipments() {
                   {/* Vehicle rows */}
                   {group.shipments.map(s => {
                     const cfg = STATUS_CFG[s.status];
+                    // All mandatory docs done → show "Dispatched" instead of "Loaded"
+                    const docsDone = DOC_TYPES.filter(d => d.mandatory).every(d => {
+                      const hasField = !!(s as any)[d.field];
+                      const hasUpload = (s.documents || []).some(x => x.docType === d.key);
+                      return hasField || hasUpload;
+                    });
+                    const displayLabel = (s.status === 'GROSS_WEIGHED' && docsDone) ? 'Dispatched' : cfg.label;
+                    const displayBadge = (s.status === 'GROSS_WEIGHED' && docsDone) ? 'bg-emerald-50 text-emerald-700' : cfg.badge;
                     const net = s.weightNet || (s.weightGross && s.weightTare ? s.weightGross - s.weightTare : null);
                     const stepIdx = STATUS_FLOW.indexOf(s.status);
                     const tareTon = fmtTon(s.weightTare);
@@ -683,7 +691,7 @@ export default function Shipments() {
                             <button onClick={() => setExpandedId(isExp ? null : s.id)} className="flex items-center gap-1.5 min-w-0 flex-1 text-left">
                               <Truck size={11} className="text-gray-400 shrink-0" />
                               <span className="font-bold text-[13px] text-gray-900">{s.vehicleNo}</span>
-                              <span className={`text-[8px] font-bold px-1.5 py-px rounded-full ${cfg.badge}`}>{cfg.label}</span>
+                              <span className={`text-[8px] font-bold px-1.5 py-px rounded-full ${displayBadge}`}>{displayLabel}</span>
                               {elapsed && <span className="text-[9px] text-gray-400 flex items-center gap-0.5"><Clock size={8} />{elapsed}</span>}
                               <ChevronDown size={10} className={`text-gray-300 shrink-0 transition-transform ${isExp ? 'rotate-180' : ''}`} />
                             </button>

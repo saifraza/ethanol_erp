@@ -1,4 +1,5 @@
 import { config } from '../config';
+import prisma from '../prisma';
 
 interface FactoryPC {
   pcId: string;
@@ -8,11 +9,9 @@ interface FactoryPC {
   role: string;
 }
 
-// Registry of all factory PCs — add new PCs here
-const FACTORY_PCS: FactoryPC[] = [
+// Seed PCs — always present (even if they don't heartbeat)
+const SEED_PCS: FactoryPC[] = [
   { pcId: 'weighbridge-1', pcName: 'Weighbridge Gate 1', lanIp: '192.168.0.83', port: 8098, role: 'WEIGHBRIDGE' },
-  // { pcId: 'gate-entry-1', pcName: 'Gate Entry 1', lanIp: '192.168.0.xx', port: 8098, role: 'GATE_ENTRY' },
-  // { pcId: 'opc-bridge', pcName: 'Lab Computer (OPC)', lanIp: '192.168.0.xx', port: 8099, role: 'LAB' },
 ];
 
 interface PCHealthData {
@@ -28,8 +27,36 @@ interface PCHealthData {
 
 const pcStatus = new Map<string, PCHealthData>();
 
+// Dynamic PC registry — seed + auto-discovered PCs
+const pcRegistry = new Map<string, FactoryPC>();
+
+/** Register a PC (from heartbeat, wb-push, or seed list). Auto-discovers new PCs. */
+export function registerPC(pc: { pcId: string; pcName?: string; lanIp?: string; port?: number; role?: string }): void {
+  // Skip virtual sources (browser web UI, system processes)
+  if (pc.pcId === 'web' || pc.pcId === 'system' || pc.pcId === 'system-weighbridge') return;
+  const existing = pcRegistry.get(pc.pcId);
+  pcRegistry.set(pc.pcId, {
+    pcId: pc.pcId,
+    pcName: pc.pcName || existing?.pcName || pc.pcId,
+    lanIp: pc.lanIp || existing?.lanIp || 'unknown',
+    port: pc.port || existing?.port || 8098,
+    role: pc.role || existing?.role || 'UNKNOWN',
+  });
+}
+
 // Poll a single PC via its HTTP API
 async function pollPC(pc: FactoryPC): Promise<void> {
+  if (pc.lanIp === 'unknown') {
+    // Can't poll unknown IP — just mark status from last heartbeat
+    const existing = pcStatus.get(pc.pcId);
+    if (existing) {
+      // Mark stale if no heartbeat in 60s
+      const age = Date.now() - existing.lastChecked.getTime();
+      if (age > 60_000) existing.alive = false;
+    }
+    return;
+  }
+
   const url = `http://${pc.lanIp}:${pc.port}/api/weight`;
   try {
     const controller = new AbortController();
@@ -63,9 +90,26 @@ async function pollPC(pc: FactoryPC): Promise<void> {
   }
 }
 
-// Poll all PCs
+/** Called when a PC sends a heartbeat — auto-registers and marks alive */
+export function handleHeartbeat(pcId: string, pcName?: string, lanIp?: string, port?: number, role?: string, data?: Record<string, unknown>): void {
+  registerPC({ pcId, pcName, lanIp, port, role });
+  const pc = pcRegistry.get(pcId)!;
+  pcStatus.set(pcId, {
+    pcId: pc.pcId,
+    pcName: pc.pcName,
+    role: pc.role,
+    lanIp: pc.lanIp,
+    port: pc.port,
+    alive: true,
+    lastChecked: new Date(),
+    data: data || pcStatus.get(pcId)?.data || null,
+  });
+}
+
+// Poll all registered PCs
 async function pollAllPCs(): Promise<void> {
-  await Promise.allSettled(FACTORY_PCS.map(pc => pollPC(pc)));
+  const allPCs = Array.from(pcRegistry.values());
+  await Promise.allSettled(allPCs.map(pc => pollPC(pc)));
 }
 
 // Forward heartbeats to cloud ERP
@@ -98,14 +142,46 @@ async function forwardHeartbeatsToCloud(): Promise<void> {
 
 // Get all PC statuses
 export function getAllPCStatus(): PCHealthData[] {
-  return Array.from(pcStatus.values());
+  // Merge registry + status — ensure all registered PCs appear even if never polled
+  const result: PCHealthData[] = [];
+  for (const pc of pcRegistry.values()) {
+    const status = pcStatus.get(pc.pcId);
+    result.push(status || {
+      pcId: pc.pcId,
+      pcName: pc.pcName,
+      role: pc.role,
+      lanIp: pc.lanIp,
+      port: pc.port,
+      alive: false,
+      lastChecked: new Date(0),
+      data: null,
+    });
+  }
+  return result;
 }
 
 // Start monitoring
 export function startPCMonitor(): void {
-  console.log(`[MONITOR] Monitoring ${FACTORY_PCS.length} factory PCs on LAN`);
+  // Seed known PCs
+  for (const pc of SEED_PCS) registerPC(pc);
 
-  // Poll immediately, then every 30 seconds
+  // Load any previously registered PCs from DB (weighments have pcId/pcName)
+  prisma.weighment.groupBy({
+    by: ['pcId', 'pcName'],
+    _max: { createdAt: true },
+    orderBy: { _max: { createdAt: 'desc' } },
+    take: 20,
+  }).then(groups => {
+    for (const g of groups) {
+      if (g.pcId && !pcRegistry.has(g.pcId)) {
+        registerPC({ pcId: g.pcId, pcName: g.pcName || g.pcId });
+      }
+    }
+  }).catch(() => {}); // best effort
+
+  console.log(`[MONITOR] Monitoring ${pcRegistry.size} factory PCs (auto-discovers new PCs via heartbeat/push)`);
+
+  // Poll immediately, then every 5 seconds
   pollAllPCs();
   setInterval(pollAllPCs, 5000);
 
@@ -116,4 +192,5 @@ export function startPCMonitor(): void {
   }, 15000);
 }
 
-export { FACTORY_PCS };
+// Export for backward compat
+export const FACTORY_PCS = SEED_PCS;

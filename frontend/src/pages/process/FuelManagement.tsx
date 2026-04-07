@@ -216,21 +216,30 @@ export default function FuelManagement() {
         grp.totalValue += deal.totalValue;
       }
     }
-    // Compute dealCount (unique deals), truckCount, and paid/outstanding per group
+    // Collapse multiple lines of the same deal (for same fuel) into a single entry — one PO = one row
     for (const grp of map.values()) {
-      const uniqueDeals = new Set(grp.entries.map(e => e.deal.id));
-      grp.dealCount = uniqueDeals.size;
-      grp.truckCount = grp.entries.reduce((s, e) => {
-        // Only count trucks once per unique deal
-        return uniqueDeals.delete(e.deal.id) ? s + e.deal.truckCount : s;
-      }, 0);
-      // Split deal payments proportionally across lines
+      const byDeal = new Map<string, FuelDealLine>();
+      for (const e of grp.entries) {
+        const existing = byDeal.get(e.deal.id);
+        if (!existing) {
+          byDeal.set(e.deal.id, { ...e });
+        } else {
+          existing.lineReceived += e.lineReceived;
+          existing.lineValue += e.lineValue;
+          // Aggregate ordered quantity and keep weighted-avg rate
+          const mergedQty = (existing.line.quantity || 0) + (e.line.quantity || 0);
+          const mergedRate = existing.lineValue / (existing.lineReceived || 1);
+          existing.line = { ...existing.line, quantity: mergedQty, rate: mergedRate, receivedQty: existing.lineReceived };
+        }
+      }
+      grp.entries = Array.from(byDeal.values());
+      grp.dealCount = byDeal.size;
+      grp.truckCount = grp.entries.reduce((s, e) => s + e.deal.truckCount, 0);
+      // Split deal payments proportionally across lines (now one entry per deal)
       for (const entry of grp.entries) {
         const d = entry.deal;
         const dealTotal = d.totalValue ?? 0;
-        const share = dealTotal > 0
-          ? entry.lineValue / dealTotal
-          : (d.lines.length > 0 ? 1 / d.lines.length : 0);
+        const share = dealTotal > 0 ? entry.lineValue / dealTotal : 1;
         grp.totalPaid += d.totalPaid * share;
       }
       grp.totalPaid = Math.round(grp.totalPaid * 100) / 100;

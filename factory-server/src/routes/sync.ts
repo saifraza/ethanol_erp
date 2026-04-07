@@ -54,4 +54,84 @@ router.get('/status', asyncHandler(async (_req: Request, res: Response) => {
   });
 }));
 
+// GET /api/sync/weighments — recent weighments with sync status (for admin dashboard)
+router.get('/weighments', asyncHandler(async (req: Request, res: Response) => {
+  const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+  const filter = req.query.filter as string; // 'pending', 'failed', 'synced', or 'all'
+
+  const where: Record<string, unknown> = {};
+  if (filter === 'pending') {
+    where.cloudSynced = false;
+    where.status = { in: ['GATE_ENTRY', 'FIRST_DONE', 'COMPLETE'] };
+  } else if (filter === 'failed') {
+    where.cloudError = { not: null };
+  } else if (filter === 'synced') {
+    where.cloudSynced = true;
+  }
+
+  const weighments = await prisma.weighment.findMany({
+    where,
+    select: {
+      id: true,
+      localId: true,
+      vehicleNo: true,
+      materialName: true,
+      materialCategory: true,
+      direction: true,
+      status: true,
+      purchaseType: true,
+      supplierName: true,
+      grossWeight: true,
+      tareWeight: true,
+      netWeight: true,
+      cloudSynced: true,
+      cloudSyncedAt: true,
+      cloudError: true,
+      syncAttempts: true,
+      createdAt: true,
+    },
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+  });
+
+  // Summary counts by category
+  const [totalToday, syncedToday, pendingToday, failedToday] = await Promise.all([
+    prisma.weighment.count({ where: { createdAt: { gte: todayStart() }, status: 'COMPLETE' } }),
+    prisma.weighment.count({ where: { createdAt: { gte: todayStart() }, status: 'COMPLETE', cloudSynced: true } }),
+    prisma.weighment.count({ where: { createdAt: { gte: todayStart() }, status: 'COMPLETE', cloudSynced: false } }),
+    prisma.weighment.count({ where: { createdAt: { gte: todayStart() }, cloudError: { not: null }, cloudSynced: false } }),
+  ]);
+
+  res.json({
+    weighments,
+    summary: { totalToday, syncedToday, pendingToday, failedToday },
+  });
+}));
+
+// POST /api/sync/resync — reset specific weighments for re-sync
+router.post('/resync', asyncHandler(async (req: Request, res: Response) => {
+  const { ids } = req.body; // array of weighment IDs to re-sync
+  if (Array.isArray(ids) && ids.length > 0) {
+    const result = await prisma.weighment.updateMany({
+      where: { id: { in: ids } },
+      data: { cloudSynced: false, cloudError: null, syncAttempts: 0 },
+    });
+    res.json({ reset: result.count });
+  } else {
+    // Reset all failed
+    const result = await prisma.weighment.updateMany({
+      where: { cloudError: { not: null }, cloudSynced: true },
+      data: { cloudSynced: false, cloudError: null, syncAttempts: 0 },
+    });
+    res.json({ reset: result.count });
+  }
+}));
+
+function todayStart(): Date {
+  // IST start of day
+  const now = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+  const y = now.getUTCFullYear(), m = now.getUTCMonth(), d = now.getUTCDate();
+  return new Date(Date.UTC(y, m, d) - 5.5 * 60 * 60 * 1000);
+}
+
 export default router;

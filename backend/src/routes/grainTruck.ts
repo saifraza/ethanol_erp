@@ -301,15 +301,59 @@ router.get('/by-po/:poId', authenticate, async (req: AuthRequest, res: Response)
         grnId: true,
       },
     });
+
+    // Join with GateEntry for entry/exit times — match by grnId first, then vehicleNo within ±1 day window
+    const grnIds = trucks.map(t => t.grnId).filter(Boolean) as string[];
+    const vehicleNos = Array.from(new Set(trucks.map(t => t.vehicleNo).filter(Boolean)));
+    const gateEntries = await prisma.gateEntry.findMany({
+      where: {
+        OR: [
+          ...(grnIds.length ? [{ grnId: { in: grnIds } }] : []),
+          ...(vehicleNos.length ? [{ vehicleNo: { in: vehicleNos } }] : []),
+        ],
+      },
+      select: { id: true, grnId: true, vehicleNo: true, date: true, entryTime: true, exitTime: true, status: true },
+    });
+    const gateByGrn = new Map<string, typeof gateEntries[0]>();
+    for (const g of gateEntries) if (g.grnId) gateByGrn.set(g.grnId, g);
+    const gateByVehicle = new Map<string, typeof gateEntries>();
+    for (const g of gateEntries) {
+      const arr = gateByVehicle.get(g.vehicleNo) || [];
+      arr.push(g);
+      gateByVehicle.set(g.vehicleNo, arr);
+    }
+
+    const enriched = trucks.map(t => {
+      let gate = t.grnId ? gateByGrn.get(t.grnId) : undefined;
+      if (!gate && t.vehicleNo) {
+        // Find the gate entry closest to truck.date (same vehicle, within 24h)
+        const candidates = gateByVehicle.get(t.vehicleNo) || [];
+        let best: typeof gateEntries[0] | undefined;
+        let bestDelta = Infinity;
+        for (const c of candidates) {
+          const delta = Math.abs(c.date.getTime() - t.date.getTime());
+          if (delta < 24 * 3600 * 1000 && delta < bestDelta) { bestDelta = delta; best = c; }
+        }
+        gate = best;
+      }
+      return {
+        ...t,
+        entryTime: gate?.entryTime || null,
+        exitTime: gate?.exitTime || null,
+        gateDate: gate?.date || null,
+        gateStatus: gate?.status || null,
+      };
+    });
+
     const totals = {
-      count: trucks.length,
-      gross: trucks.reduce((s, t) => s + (t.weightGross || 0), 0),
-      tare: trucks.reduce((s, t) => s + (t.weightTare || 0), 0),
-      net: trucks.reduce((s, t) => s + (t.weightNet || 0), 0),
-      quarantine: trucks.reduce((s, t) => s + (t.quarantineWeight || 0), 0),
-      accepted: trucks.reduce((s, t) => s + ((t.weightNet || 0) - (t.quarantineWeight || 0)), 0),
+      count: enriched.length,
+      gross: enriched.reduce((s, t) => s + (t.weightGross || 0), 0),
+      tare: enriched.reduce((s, t) => s + (t.weightTare || 0), 0),
+      net: enriched.reduce((s, t) => s + (t.weightNet || 0), 0),
+      quarantine: enriched.reduce((s, t) => s + (t.quarantineWeight || 0), 0),
+      accepted: enriched.reduce((s, t) => s + ((t.weightNet || 0) - (t.quarantineWeight || 0)), 0),
     };
-    res.json({ trucks, totals });
+    res.json({ trucks: enriched, totals });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
