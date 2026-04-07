@@ -1956,6 +1956,8 @@ model GoodsReceipt {
   inspectedBy     String?
   // Status
   status          String   @default("DRAFT") // DRAFT, CONFIRMED, CANCELLED
+  grnType         String   @default("ACTUAL") // EXPECTED (pre-created from approved PO), ACTUAL (real receipt)
+  expectedDate    DateTime?                    // when EXPECTED type: planned arrival
   archived        Boolean  @default(false)   // hide from active list
   // Totals (from lines)
   totalQty        Float    @default(0)

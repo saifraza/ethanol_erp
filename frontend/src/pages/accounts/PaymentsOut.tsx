@@ -28,7 +28,7 @@ interface PendingPayable {
   daysOverdue: number | null;
   urgency: 'green' | 'amber' | 'red' | 'none';
   invoiceStatus: 'NO_INVOICE' | 'PENDING' | 'PARTIAL_PAID' | 'PAID';
-  paymentStatus: 'NO_GRN' | 'GRN_RECEIVED' | 'INVOICED' | 'PARTIAL_PAID' | 'PAID';
+  paymentStatus: 'PO_APPROVED' | 'NO_GRN' | 'GRN_RECEIVED' | 'INVOICED' | 'PARTIAL_PAID' | 'PAID';
   invoices: Array<{ id: string; vendorInvNo: string | null; netPayable: number; paidAmount: number; balanceAmount: number; status: string }>;
   totalInvoiced: number;
   totalPaid: number;
@@ -929,13 +929,15 @@ export default function PaymentsOut() {
                               <td className={`px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums font-bold ${item.balance > 0 ? 'text-red-600' : 'text-green-600'}`}>{fmtAmt(item.balance)}</td>
                               <td className="px-3 py-1.5 border-r border-slate-100">
                                 <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
+                                  item.paymentStatus === 'PO_APPROVED' ? 'border-slate-400 bg-slate-100 text-slate-600' :
                                   item.paymentStatus === 'NO_GRN' ? 'border-slate-300 bg-slate-50 text-slate-500' :
                                   item.paymentStatus === 'GRN_RECEIVED' ? 'border-amber-400 bg-amber-50 text-amber-700' :
                                   item.paymentStatus === 'INVOICED' ? 'border-blue-400 bg-blue-50 text-blue-700' :
                                   item.paymentStatus === 'PARTIAL_PAID' ? 'border-orange-400 bg-orange-50 text-orange-700' :
                                   'border-green-400 bg-green-50 text-green-700'
                                 }`}>
-                                  {item.paymentStatus === 'NO_GRN' ? 'NO GRN' :
+                                  {item.paymentStatus === 'PO_APPROVED' ? 'NOT DELIVERED' :
+                                   item.paymentStatus === 'NO_GRN' ? 'NO GRN' :
                                    item.paymentStatus === 'GRN_RECEIVED' ? 'AWAITING INV' :
                                    item.paymentStatus === 'INVOICED' ? 'AWAITING PAY' :
                                    item.paymentStatus === 'PARTIAL_PAID' ? 'PARTIAL' :

@@ -90,6 +90,8 @@ interface GRN {
   invoiceNo?: string;
   archived?: boolean;
   status: 'DRAFT' | 'CONFIRMED' | 'CANCELLED';
+  grnType?: 'ACTUAL' | 'EXPECTED';
+  expectedDate?: string | null;
   totalAmount: number;
   totalAccepted: number;
   totalRejected: number;
@@ -131,6 +133,7 @@ interface Stats {
 
 export default function GoodsReceipts() {
   const [grns, setGrns] = useState<GRN[]>([]);
+  const [typeFilter, setTypeFilter] = useState<'ALL' | 'ACTUAL' | 'EXPECTED'>('ALL');
   const [pendingPOs, setPendingPOs] = useState<PO[]>([]);
   const [stats, setStats] = useState<Stats>({ totalGRNs: 0, draftCount: 0, confirmedCount: 0, todayCount: 0 });
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -650,13 +653,24 @@ export default function GoodsReceipts() {
           </div>
         )}
 
+        {/* Type Filter */}
+        {!loading && (
+          <div className="-mx-3 md:-mx-6 bg-slate-100 border-x border-b border-slate-300 px-4 py-1.5 flex items-center gap-1">
+            {(['ALL', 'ACTUAL', 'EXPECTED'] as const).map(t => (
+              <button key={t} onClick={() => setTypeFilter(t)} className={`px-3 py-1 text-[10px] font-bold uppercase tracking-widest ${typeFilter === t ? 'bg-slate-800 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+                {t === 'EXPECTED' ? `Expected (${grns.filter(g => g.grnType === 'EXPECTED').length})` : t === 'ACTUAL' ? `Actual (${grns.filter(g => g.grnType !== 'EXPECTED').length})` : `All (${grns.length})`}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* GRN Table */}
         {loading ? (
           <div className="text-center py-12">
             <Clock size={24} className="animate-spin mx-auto mb-2 text-slate-400" />
             <p className="text-xs text-slate-400 uppercase tracking-widest">Loading GRNs...</p>
           </div>
-        ) : grns.length === 0 ? (
+        ) : grns.filter(g => typeFilter === 'ALL' || (typeFilter === 'EXPECTED' ? g.grnType === 'EXPECTED' : g.grnType !== 'EXPECTED')).length === 0 ? (
           <div className="text-center py-16 border-x border-b border-slate-300 -mx-3 md:-mx-6">
             <p className="text-xs text-slate-400 uppercase tracking-widest">No GRNs found. Create one to get started.</p>
           </div>
@@ -679,7 +693,7 @@ export default function GoodsReceipts() {
                 </tr>
               </thead>
               <tbody>
-                {grns.map((grn, idx) => (
+                {grns.filter(g => typeFilter === 'ALL' || (typeFilter === 'EXPECTED' ? g.grnType === 'EXPECTED' : g.grnType !== 'EXPECTED')).map((grn, idx) => (
                   <React.Fragment key={grn.id}>
                   <tr className={`border-b border-slate-100 hover:bg-blue-50/60 cursor-pointer ${idx % 2 ? 'bg-slate-50/70' : ''} ${expandedGrnId === grn.id ? 'bg-blue-50' : ''}`} onClick={() => toggleGrnDetail(grn.id)}>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100 font-bold text-blue-700">GRN-{grn.grnNo}</td>
@@ -693,6 +707,7 @@ export default function GoodsReceipts() {
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums font-bold">{grn.totalAmount.toFixed(2)}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100">
                       <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${getStatusBadge(grn.status)}`}>{grn.status}</span>
+                      {grn.grnType === 'EXPECTED' && <span className="ml-1 text-[9px] font-bold uppercase px-1.5 py-0.5 border border-amber-400 bg-amber-50 text-amber-700">Expected</span>}
                     </td>
                     <td className="px-3 py-1.5 text-xs text-center" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-center gap-1">

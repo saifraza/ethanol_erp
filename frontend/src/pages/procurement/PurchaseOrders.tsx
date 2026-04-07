@@ -1120,6 +1120,20 @@ const PurchaseOrders: React.FC = () => {
                             Send to Vendor
                           </button>
                         )}
+                        {['APPROVED', 'SENT', 'PARTIAL_RECEIVED'].includes(po.status) && (
+                          <button onClick={async () => {
+                            const d = prompt(`Expected arrival date for PO-${po.poNo} (YYYY-MM-DD), leave blank if unknown:`) || '';
+                            try {
+                              await api.post(`/goods-receipts/expected/${po.id}`, { expectedDate: d || null });
+                              alert('Expected GRN created. Open in GRN page when material arrives.');
+                              fetchData();
+                            } catch (e: any) {
+                              alert(e?.response?.data?.error || 'Failed to create expected GRN');
+                            }
+                          }} className="px-2.5 py-0.5 bg-amber-500 text-white text-[9px] font-bold uppercase hover:bg-amber-600">
+                            + Expected GRN
+                          </button>
+                        )}
                         {po.status === 'SENT' && (
                           po.grnCount > 0
                             ? <button onClick={() => handleStatusChange(po.id, 'RECEIVED')} className="px-2.5 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase hover:bg-green-700">

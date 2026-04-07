@@ -129,10 +129,12 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const status = req.query.status as string | undefined;
 
     const archived = req.query.archived === 'true';
+    const grnType = req.query.grnType as string | undefined;
     const where: any = { archived };
     if (poId) where.poId = poId;
     if (vendorId) where.vendorId = vendorId;
     if (status) where.status = status;
+    if (grnType) where.grnType = grnType;
 
     const grns = await prisma.goodsReceipt.findMany({
       where,
@@ -534,6 +536,57 @@ router.put('/:id/quality', asyncHandler(async (req: AuthRequest, res: Response) 
       include: { lines: true },
     });
     res.json(grn);
+}));
+
+// POST /expected/:poId — create a draft "expected" GRN from an approved PO
+// so receivers know in advance what's coming; actuals filled when material arrives.
+router.post('/expected/:poId', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { expectedDate } = req.body as { expectedDate?: string };
+    const po = await prisma.purchaseOrder.findUnique({
+      where: { id: req.params.poId },
+      include: { lines: true },
+    });
+    if (!po) return res.status(404).json({ error: 'PO not found' });
+    if (!['APPROVED', 'SENT', 'PARTIAL_RECEIVED'].includes(po.status)) {
+      return res.status(400).json({ error: `PO must be APPROVED/SENT to create expected GRN (current: ${po.status})` });
+    }
+
+    // Prevent duplicate open expected GRN for same PO
+    const existing = await prisma.goodsReceipt.findFirst({
+      where: { poId: po.id, grnType: 'EXPECTED', status: 'DRAFT', archived: false },
+    });
+    if (existing) return res.status(400).json({ error: `Expected GRN already exists: GRN-${existing.grnNo}`, grnId: existing.id });
+
+    const grn = await prisma.goodsReceipt.create({
+      data: {
+        poId: po.id,
+        vendorId: po.vendorId,
+        grnDate: new Date(),
+        expectedDate: expectedDate ? new Date(expectedDate) : null,
+        grnType: 'EXPECTED',
+        status: 'DRAFT',
+        qualityStatus: 'PENDING',
+        userId: req.user!.id,
+        totalQty: 0,
+        totalAmount: 0,
+        lines: {
+          create: po.lines.map(l => ({
+            poLineId: l.id,
+            materialId: (l as any).materialId || null,
+            inventoryItemId: (l as any).inventoryItemId || null,
+            description: l.description,
+            receivedQty: 0,
+            acceptedQty: 0,
+            rejectedQty: 0,
+            unit: l.unit || 'KG',
+            rate: l.rate,
+            amount: 0,
+          })),
+        },
+      },
+      include: { lines: true },
+    });
+    res.status(201).json(grn);
 }));
 
 // PUT /:id/status — status transitions

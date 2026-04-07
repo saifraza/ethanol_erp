@@ -736,7 +736,7 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
       vendor: { select: { id: true, name: true, creditDays: true, paymentTerms: true, tdsApplicable: true, tdsPercent: true, tdsSection: true, bankName: true, bankAccount: true, bankIfsc: true, phone: true } },
       lines: { select: { description: true, receivedQty: true, rate: true, gstPercent: true, quantity: true } },
       grns: {
-        where: { status: { not: 'CANCELLED' } },  // Include DRAFT + CONFIRMED (not just CONFIRMED)
+        where: { status: { not: 'CANCELLED' }, grnType: { not: 'EXPECTED' } },  // exclude pre-created expected GRNs
         orderBy: { grnDate: 'desc' },
         select: { id: true, grnNo: true, grnDate: true, totalAmount: true, totalQty: true, status: true },
       },
@@ -774,7 +774,7 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
     daysOverdue: number | null;
     urgency: 'green' | 'amber' | 'red' | 'none';
     invoiceStatus: 'NO_INVOICE' | 'PENDING' | 'PARTIAL_PAID' | 'PAID';
-    paymentStatus: 'NO_GRN' | 'GRN_RECEIVED' | 'INVOICED' | 'PARTIAL_PAID' | 'PAID';
+    paymentStatus: 'PO_APPROVED' | 'NO_GRN' | 'GRN_RECEIVED' | 'INVOICED' | 'PARTIAL_PAID' | 'PAID';
     invoices: Array<{ id: string; vendorInvNo: string | null; netPayable: number; paidAmount: number; balanceAmount: number; status: string }>;
     totalInvoiced: number;
     totalPaid: number;
@@ -839,11 +839,8 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
     const grnTotalValue = grns.reduce((s, g) => s + (g.totalAmount || 0), 0);
     const effectivePoAmount = isOpenDeal ? grnTotalValue : po.grandTotal;
 
-    // Skip POs with no GRNs and no invoices and not OPEN deals
-    if (grns.length === 0 && invoices.length === 0 && !isOpenDeal) {
-      // Standard PO with no goods received and no invoices — not yet payable
-      if (!['PARTIAL_RECEIVED', 'RECEIVED', 'CLOSED'].includes(po.status)) continue;
-    }
+    // Approved PO with no GRN/invoice is still shown as "PO Generated / Not Delivered"
+    // so the payments desk can track expected payables from approval onwards.
 
     const latestGrn = grns[0] || null;
     const creditDays = parsePaymentTermsDays(po.paymentTerms) ?? parsePaymentTermsDays(po.vendor.paymentTerms) ?? 30;
@@ -862,6 +859,11 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
       if (daysOverdue > 0) urgency = 'red';
       else if (daysOverdue >= -7) urgency = 'amber';
       else urgency = 'green';
+    } else {
+      // No GRN yet — tentative due date = PO date + credit days
+      dueDate = new Date(po.poDate);
+      dueDate.setDate(dueDate.getDate() + creditDays);
+      urgency = 'none';
     }
 
     let invoiceStatus: PendingPayable['invoiceStatus'] = 'NO_INVOICE';
@@ -874,8 +876,9 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
     }
 
     // Payment status — clearer lifecycle tracking
-    let paymentStatus: PendingPayable['paymentStatus'] = 'NO_GRN';
-    if (grns.length === 0) paymentStatus = 'NO_GRN';
+    let paymentStatus: PendingPayable['paymentStatus'] = 'PO_APPROVED';
+    if (grns.length === 0 && invoices.length === 0 && totalPaid === 0) paymentStatus = 'PO_APPROVED';
+    else if (grns.length === 0) paymentStatus = 'NO_GRN';
     else if (invoices.length === 0 && totalPaid === 0) paymentStatus = 'GRN_RECEIVED';
     else if (invoices.length === 0 && totalPaid > 0) {
       // Direct PO payments (no invoice): check if fully paid
