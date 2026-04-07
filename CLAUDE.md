@@ -187,6 +187,8 @@ Weighbridge can also push directly to cloud (`CLOUD_API_URL` in config.py) — b
 | OPC/DCS bridge | `.claude/skills/opc-bridge.md` |
 | Factory deploy / SSH / safety | `.claude/skills/factory-architecture.md` |
 | Serial protocol / hardware | `.claude/skills/weighbridge-system.md` |
+| Adding new product to weighbridge (scrap, sugar, animal feed, etc.) | `.claude/skills/weighbridge-add-product.md` |
+| Weighbridge `/push` handlers (cloud-side) | `backend/src/routes/weighbridge/handlers/*.ts` |
 | Sales order → dispatch → invoice | `backend/src/routes/salesOrders.ts`, `shipments.ts`, `invoices.ts` |
 | Procurement PO → GRN → payment | `backend/src/routes/purchaseOrders.ts`, `goodsReceipts.ts`, `vendorPayments.ts` |
 | Accounts / journal / bank | `backend/src/routes/chartOfAccounts.ts`, `journalEntries.ts`, `bankPayments.ts` |
@@ -490,6 +492,7 @@ For detailed guidance on specific modules, see `.claude/skills/`:
 - `ubi-h2h-banking.md` — **CRITICAL** — UBI H2H-STP direct bank payment integration. Full spec: SFTP, AES-256-GCM encryption, Maker-Checker-Releaser security, data models, routes, file format. Bank side LIVE, ERP side pending SFTP credentials.
 - `factory-architecture.md` — Factory server + weighbridge PC: architecture, deploy, SSH, safety rules, troubleshooting
 - `weighbridge-system.md` — Hardware: serial protocol, 3-step workflow, cross-system API contracts
+- `weighbridge-add-product.md` — **READ FIRST** before adding any new product (scrap, sugar, animal feed, etc.) to the weighbridge pipeline. Decision tree, handler contract, race condition rules, testing checklist.
 - `opc-bridge.md` — OPC bridge to ABB 800xA DCS
 - `debt-register.md` — Known tech debt items with severity and fix direction
 
