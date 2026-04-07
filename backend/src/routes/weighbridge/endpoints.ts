@@ -541,6 +541,11 @@ export function registerOtherRoutes(router: Router): void {
       transporter?: string;
       driverName?: string;
       driverPhone?: string;
+      forceStatus?: string; // override target status (RELEASED, GROSS_WEIGHED, etc.)
+      productRatePerLtr?: number; // override rate
+      productValue?: number; // override total value
+      skipWeightUpdate?: boolean; // don't touch weights (already correct)
+      skipRateRecompute?: boolean; // don't recompute rate from current contract
     }> = req.body.items || [];
 
     const results: any[] = [];
@@ -599,12 +604,22 @@ export function registerOtherRoutes(router: Router): void {
           continue;
         }
 
-        const updateData: any = {
-          weightGross: it.grossKg,
-          weightTare: it.tareKg,
-          weightNet: it.grossKg - it.tareKg,
-          status: 'GROSS_WEIGHED',
-        };
+        const updateData: any = {};
+
+        // Weights — only if not skipped
+        if (!it.skipWeightUpdate) {
+          updateData.weightGross = it.grossKg;
+          updateData.weightTare = it.tareKg;
+          updateData.weightNet = it.grossKg - it.tareKg;
+        }
+
+        // Status — DEFAULT: never touch terminal states (RELEASED, BILLED).
+        // Caller can override via forceStatus, but the default is safe.
+        if (it.forceStatus) {
+          updateData.status = it.forceStatus;
+        } else if (target.status !== 'RELEASED' && target.status !== 'BILLED') {
+          updateData.status = 'GROSS_WEIGHED';
+        }
 
         // Ethanol-specific fields from factory
         if (it.quantityBL != null) {
@@ -619,8 +634,15 @@ export function registerOtherRoutes(router: Router): void {
         if (it.driverName) updateData.driverName = it.driverName;
         if (it.driverPhone) updateData.driverPhone = it.driverPhone;
 
-        // Compute productValue from contract if present
-        if (target.contractId && it.quantityBL && it.quantityBL > 0) {
+        // Rate / value — explicit override wins
+        if (it.productRatePerLtr != null) updateData.productRatePerLtr = it.productRatePerLtr;
+        if (it.productValue != null) updateData.productValue = it.productValue;
+
+        // Compute productValue from CURRENT contract — ONLY if no explicit override AND not skipped.
+        // Skip for terminal-state rows to avoid overwriting historical billed value.
+        if (!it.productRatePerLtr && !it.productValue && !it.skipRateRecompute &&
+            target.status !== 'RELEASED' && target.status !== 'BILLED' &&
+            target.contractId && it.quantityBL && it.quantityBL > 0) {
           const contract = await prisma.ethanolContract.findUnique({
             where: { id: target.contractId },
             select: { contractType: true, ethanolRate: true, conversionRate: true },
