@@ -466,6 +466,119 @@ Fuel is NOT a separate handler — fuel-specific behavior (skip GrainTruck, fuel
 
 ---
 
+## Factory Gate Entry — Contract Picker Pattern (For OUTBOUND Products)
+
+When an outbound product is sold against a **contract** (ethanol → OMC contract, DDGS → DDGSContract, sugar → SugarContract, scrap → ScrapContract...), the operator must **pick the contract at gate entry on the factory weighbridge UI**, NOT type a buyer name freehand. Without this, the cloud handler's strict buyer-name match will fail randomly on typos and trucks land with `contractId = null`.
+
+The end-to-end flow has THREE pieces — copy the **DDGS pattern** (added 2026-04-07) for any new contract-based product:
+
+### Piece 1: Cache contracts on factory server (in-memory + disk + smart sync)
+
+`factory-server/src/services/masterDataCache.ts`
+
+- Add an interface: `interface DdgsContract { id, contractNo, dealType, buyerName, buyerGstin, rate, processingChargePerMT, gstPercent, contractQtyMT, totalSuppliedMT, startDate, endDate, ... }`
+- Add `ddgsContracts: DdgsContract[]` to `MasterCache` and `EMPTY_CACHE`
+- Add it to `loadFromDisk()` schema-evolution fallback: `data.ddgsContracts = data.ddgsContracts || []`
+- Add the table to `getCloudTimestamp()` so the 5-second smart sync detects edits:
+  ```sql
+  GREATEST(..., (SELECT MAX("updatedAt") FROM "DDGSContract"))
+  ```
+- Add a separate `try { ... } catch` block in `fullSyncFromCloud()` querying via `cloud.$queryRawUnsafe`. **Use a separate try/catch** so a contract sync failure doesn't break vendor/material/PO sync. Filter to active + within date window:
+  ```sql
+  WHERE status = 'ACTIVE' AND "endDate" >= NOW() AND "startDate" <= NOW()
+  ORDER BY "contractNo" LIMIT 50
+  ```
+- Cast Prisma Decimal/Float fields explicitly with `Number(r.rate)` etc.
+
+### Piece 2: Expose via factory API
+
+`factory-server/src/routes/masterData.ts` — one line in the `/api/master-data` response:
+```ts
+ddgsContracts: data.ddgsContracts,
+```
+
+### Piece 3: Gate entry UI selector + info card
+
+`factory-server/frontend/src/pages/GateEntry.tsx`
+
+- Add `interface DdgsContract { ... }` matching the cached shape
+- `const [ddgsContracts, setDdgsContracts] = useState<DdgsContract[]>([])` and `[ddgsContractId, setDdgsContractId]`
+- In `loadMasterData`: `setDdgsContracts(data.ddgsContracts || [])`
+- Computed flag: `const isDdgsOut = direction === 'OUTBOUND' && materialName === 'DDGS'`
+- Conditional dropdown block (mirrors the ethanol block):
+  ```tsx
+  {isDdgsOut && (
+    <select onChange={e => {
+      setDdgsContractId(e.target.value);
+      const c = ddgsContracts.find(x => x.id === e.target.value);
+      if (c) setCustomerName(c.buyerName); // ← AUTO-FILL is critical
+    }}>
+      ...
+    </select>
+  )}
+  ```
+- **Auto-fill `customerName` with `c.buyerName`** when a contract is picked. This is what makes the cloud handler's exact-match auto-link the truck to the contract on sync — without it, the operator might type a slightly different name and the match fails.
+- Render an **info card** under the dropdown showing buyer / GSTIN / dealType / rate (₹/MT) / GST% / supplied / total / remaining / principal / validity. Operator confirms before they submit. Tier 2 SAP styling, NOT rounded.
+- Display rate from the right field by dealType:
+  ```tsx
+  const r = c.dealType === 'JOB_WORK' ? c.processingChargePerMT : c.rate;
+  ```
+
+### Why all three pieces are mandatory
+
+- Without **caching on factory** → operator can't pick offline; the gate UI breaks the moment cloud is unreachable.
+- Without **API exposure** → frontend can't see the contracts.
+- Without **auto-fill of buyerName** → cloud handler's strict match fails on whitespace/case mismatches and `contractId` ends up null. The truck appears on `/process/ddgs-dispatch` but is invisible on `/sales/ddgs-contracts` (which filters by `contractId IS NOT NULL`).
+
+---
+
+## Contract Data Validation — Common Trap
+
+**Before debugging "the truck isn't billing right", check the contract row itself.** A contract that LOOKS active in the UI can be silently misconfigured in three ways that all break auto-billing:
+
+1. **`dealType` mismatch.** A contract created as `FIXED_RATE` but priced like job work (rate=4.54 ₹/kg = ₹4540/MT) computes wrong because the cloud handler reads `contract.rate` for `FIXED_RATE` and `contract.processingChargePerMT` for `JOB_WORK`. Fix: `dealType=JOB_WORK`, `rate=0`, `processingChargePerMT=4540`.
+2. **Rate stored in wrong unit.** If you see `rate=4.54` and the contract is in MT, the math gives ₹4.54 × 10 MT = ₹45.40 per truck instead of ₹45,400. Always store in **₹/MT** (not ₹/kg).
+3. **`gstPercent` wrong.** DDGS sale is 5% by default; job-work charges (HSN 998817) are 18%. The handler uses `contract.gstPercent` (with 5% fallback). If a job-work contract has 5% saved, the invoice GST will be way too low — small enough to miss in a quick glance.
+
+To check or fix a contract via API (admin token required):
+```bash
+TOKEN="<jwt>"
+curl -s "https://app.mspil.in/api/ddgs-contracts/<id>" -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+curl -s -X PUT "https://app.mspil.in/api/ddgs-contracts/<id>" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"dealType":"JOB_WORK","processingChargePerMT":4540,"rate":0,"principalName":"...","gstPercent":18}'
+```
+
+**Cloud login gotcha** — the auth route reads `username` from the body, NOT `email`, even though it resolves either the email or the name field:
+```bash
+curl -X POST https://app.mspil.in/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin@distillery.com","password":"admin123"}'
+```
+
+---
+
+## Invoice Rendering — Round-Off Line (Tally Style)
+
+The standard `invoice.hbs` template renders a **"Less : BALANCE ROUND OFF A/C"** line when stored `totalAmount` has fractional paise. The endpoint `GET /api/invoices/:id/pdf` computes:
+
+```ts
+roundedTotalAmount: Math.round(invoice.totalAmount || 0),
+roundOff: Math.round((Math.round(invoice.totalAmount || 0) - (invoice.totalAmount || 0)) * 100) / 100,
+```
+
+The template uses these helpers:
+- `{{formatNum (default roundedTotalAmount totalAmount)}}` for the grand total cell
+- `{{numberToWords (default roundedTotalAmount totalAmount)}}` for amount-in-words
+- `{{abs roundOff}}` (helper added in `templateEngine.ts`) for the displayed delta
+- `{{#if roundOff}}` so the row is hidden when total is already a whole rupee
+
+**Stored `totalAmount` is unchanged** — full precision is preserved in the DB; rounding is purely display. Don't write a rounded value back to the row.
+
+For any new product invoice rendering, **reuse `invoice.hbs`** — don't fork it. The template handles ethanol, DDGS, sugar, and future products because all fields are driven by `productName`/`hsnCode`/`unit` injected from the route. The DDGS-specific `ddgs-invoice.hbs` is legacy (only used by `/api/ddgs-dispatch/:id/invoice-pdf`), does NOT have the round-off line, and should be migrated to the unified template eventually.
+
+---
+
 ## ⭐ FRONTEND — The Other Half (Don't Skip This)
 
 A backend handler alone is dead code. Every product type needs a full frontend vertical so operators, sales, and management can actually use it. Use **Ethanol** and **DDGS** as your reference templates — they're the gold standard.
