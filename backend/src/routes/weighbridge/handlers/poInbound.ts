@@ -137,6 +137,16 @@ export async function handlePoInbound(w: WeighmentInput, ctx: PushContext): Prom
           remarks: `${ctx.wbRef} | Auto-GRN from weighbridge${labRemarksSuffix} | Auto-confirmed (weighbridge verified)`,
           totalAmount: Math.round(receivedQty * rate * 100) / 100,
           totalQty: receivedQty,
+          // Weighbridge data — preserved for drill-down view + audit
+          grossWeight: w.weight_gross != null ? w.weight_gross / 1000 : null,
+          tareWeight: w.weight_tare != null ? w.weight_tare / 1000 : null,
+          netWeight: netKg / 1000,
+          firstWeightAt: w.first_weight_at ? new Date(w.first_weight_at) : null,
+          secondWeightAt: w.second_weight_at ? new Date(w.second_weight_at) : null,
+          ticketNo: w.ticket_no || null,
+          driverName: w.driver_name || null,
+          driverMobile: w.driver_mobile || null,
+          transporterName: w.transporter || null,
           status: 'CONFIRMED',
           userId: 'system-weighbridge',
           lines: {

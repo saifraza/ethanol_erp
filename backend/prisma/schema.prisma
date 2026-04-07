@@ -639,9 +639,17 @@ model DDGSDispatchTruck {
   remarks         String?
   sourceWbId      String?  @unique // Factory weighment ID for dedup (CRITICAL for idempotency)
   customerId      String?
-  customer        Customer?  @relation(fields: [customerId], references: [id])
+  customer        Customer?  @relation("DDGSDispatchBillTo", fields: [customerId], references: [id])
   contractId      String?
   contract        DDGSContract? @relation(fields: [contractId], references: [id])
+  // Ship-To (may differ from Bill-To for job work; snapshot at gate entry)
+  shipToCustomerId String?
+  shipToCustomer   Customer? @relation("DDGSDispatchShipTo", fields: [shipToCustomerId], references: [id])
+  shipToName       String?
+  shipToGstin      String?
+  shipToAddress    String?
+  shipToState      String?
+  shipToPincode    String?
   userId          String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @default(now()) @updatedAt
@@ -649,6 +657,7 @@ model DDGSDispatchTruck {
   @@index([date])
   @@index([customerId])
   @@index([contractId])
+  @@index([shipToCustomerId])
 }
 
 // ═══════════════════════════════════════════════
@@ -836,12 +845,21 @@ model DispatchTruck {
   sourceWbId      String?  @unique // link to weighbridge record for dedup (CRITICAL for idempotency)
   productRatePerLtr Float? // Product value rate (e.g. 71.86/Ltr)
   productValue    Float?   // Total product value (qty × productRate)
+  // Ship-To (differs from Bill-To for job work; snapshot at gate entry)
+  shipToCustomerId String?
+  shipToCustomer   Customer? @relation("DispatchTruckShipTo", fields: [shipToCustomerId], references: [id])
+  shipToName       String?
+  shipToGstin      String?
+  shipToAddress    String?
+  shipToState      String?
+  shipToPincode    String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt @default(now())
   @@index([date])
   @@index([entryId])
   @@index([contractId])
   @@index([status])
+  @@index([shipToCustomerId])
 }
 
 // Per-truck grain unloading (real-time)
@@ -1301,7 +1319,10 @@ model Customer {
   payments        Payment[]
   ethanolContracts EthanolContract[]
   ddgsContracts   DDGSContract[]
-  ddgsDispatchTrucks DDGSDispatchTruck[]
+  ddgsDispatchTrucks DDGSDispatchTruck[]  @relation("DDGSDispatchBillTo")
+  ddgsDispatchTrucksShipTo DDGSDispatchTruck[] @relation("DDGSDispatchShipTo")
+  dispatchTrucksShipTo DispatchTruck[] @relation("DispatchTruckShipTo")
+  shipmentsShipTo Shipment[] @relation("ShipmentShipTo")
   sugarContracts  SugarContract[]
   sugarDispatchTrucks SugarDispatchTruck[]
 }
@@ -1505,6 +1526,14 @@ model Shipment {
   totalValue      Float?                   // declared value of goods
   coveringNote    String?                  // authority letter text
   sourceWbId      String?  @unique          // Factory weighment ID for dedup/traceability (CRITICAL for idempotency)
+  // Ship-To (may differ from Bill-To customer for job work)
+  shipToCustomerId String?
+  shipToCustomer   Customer? @relation("ShipmentShipTo", fields: [shipToCustomerId], references: [id])
+  shipToName       String?
+  shipToGstin      String?
+  shipToAddress    String?
+  shipToState      String?
+  shipToPincode    String?
   userId          String?                  // factory user
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -1661,6 +1690,12 @@ model Invoice {
   shipmentId      String?                  // which shipment
   challanNo       String?
   ewayBill        String?                  // legacy field (manual entry)
+  // Ship-To snapshot (Bill-To = customerId; Ship-To may differ for job work)
+  shipToName      String?
+  shipToGstin     String?
+  shipToAddress   String?
+  shipToState     String?
+  shipToPincode   String?
   remarks         String?
   userId          String
   createdAt       DateTime   @default(now())
@@ -1925,6 +1960,16 @@ model GoodsReceipt {
   // Totals (from lines)
   totalQty        Float    @default(0)
   totalAmount     Float    @default(0)
+  // Weighbridge data (populated when GRN is created from a weighbridge ticket)
+  grossWeight     Float?                       // MT — total truck gross
+  tareWeight      Float?                       // MT — empty truck tare
+  netWeight       Float?                       // MT — net delivered
+  firstWeightAt   DateTime?                    // entry / first weighment timestamp
+  secondWeightAt  DateTime?                    // exit / second weighment timestamp
+  ticketNo        Int?                         // weighbridge ticket number
+  driverName      String?
+  driverMobile    String?
+  transporterName String?
   //
   remarks         String?
   userId          String
@@ -1936,6 +1981,7 @@ model GoodsReceipt {
   grainTrucks     GrainTruck[]
   @@index([poId])
   @@index([vendorId])
+  @@index([ticketNo])
 }
 
 // ── GRN Line Item ──

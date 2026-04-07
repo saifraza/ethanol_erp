@@ -299,6 +299,8 @@ router.get('/by-po/:poId', authenticate, async (req: AuthRequest, res: Response)
       select: {
         id: true, grnNo: true, grnDate: true, vehicleNo: true, challanNo: true,
         invoiceNo: true, invoiceDate: true, status: true, qualityStatus: true, totalQty: true,
+        grossWeight: true, tareWeight: true, netWeight: true, firstWeightAt: true,
+        secondWeightAt: true, ticketNo: true, driverName: true, driverMobile: true, transporterName: true,
         lines: { select: { description: true, receivedQty: true, acceptedQty: true, rejectedQty: true, unit: true } },
       },
     });
@@ -362,23 +364,34 @@ router.get('/by-po/:poId', authenticate, async (req: AuthRequest, res: Response)
       const receivedQty = grn.lines.reduce((s, l) => s + (l.receivedQty || 0), 0);
       const acceptedQty = grn.lines.reduce((s, l) => s + (l.acceptedQty || 0), 0);
       const rejectedQty = grn.lines.reduce((s, l) => s + (l.rejectedQty || 0), 0);
-      const weightGross = truck?.weightGross || gate?.grossWeight || 0;
-      const weightTare = truck?.weightTare || ((gate?.grossWeight && gate?.netWeight) ? (gate.grossWeight - gate.netWeight) : 0);
-      const weightNet = truck?.weightNet || gate?.netWeight || receivedQty;
+      // Weights: prefer GRN-stored values (always present for new WB pushes), then truck, then gate
+      const weightGross = grn.grossWeight ?? truck?.weightGross ?? gate?.grossWeight ?? 0;
+      const weightTare = grn.tareWeight ?? truck?.weightTare ?? ((gate?.grossWeight && gate?.netWeight) ? (gate.grossWeight - gate.netWeight) : 0);
+      const weightNet = grn.netWeight ?? truck?.weightNet ?? gate?.netWeight ?? receivedQty;
       const quarantineWeight = truck?.quarantineWeight || 0;
       const description = grn.lines[0]?.description || '';
+      // Entry / exit time: GRN's first/second weighment timestamps preferred, fall back to gate's HH:MM
+      const fmtIstHHmm = (d: Date | null | undefined) => {
+        if (!d) return null;
+        const ist = new Date(d.getTime() + IST_OFFSET_MS);
+        const h = String(ist.getUTCHours()).padStart(2, '0');
+        const m = String(ist.getUTCMinutes()).padStart(2, '0');
+        return `${h}:${m}`;
+      };
+      const entryTime = fmtIstHHmm(grn.firstWeightAt) || gate?.entryTime || null;
+      const exitTime = fmtIstHHmm(grn.secondWeightAt) || gate?.exitTime || null;
       return {
         id: grn.id,
-        date: (truck?.date || grn.grnDate).toISOString(),
+        date: (grn.firstWeightAt || truck?.date || grn.grnDate).toISOString(),
         grnNo: `GRN-${grn.grnNo}`,
-        ticketNo: truck?.ticketNo ?? null,
+        ticketNo: grn.ticketNo ?? truck?.ticketNo ?? null,
         uidRst: truck?.uidRst || grn.challanNo || '',
         vehicleNo: truck?.vehicleNo || grn.vehicleNo || '',
         vehicleType: truck?.vehicleType || null,
         supplier: truck?.supplier || '',
-        driverName: truck?.driverName || null,
-        driverMobile: truck?.driverMobile || null,
-        transporterName: truck?.transporterName || null,
+        driverName: grn.driverName || truck?.driverName || null,
+        driverMobile: grn.driverMobile || truck?.driverMobile || null,
+        transporterName: grn.transporterName || truck?.transporterName || null,
         materialType: truck?.materialType || description,
         weightGross,
         weightTare,
@@ -393,8 +406,8 @@ router.get('/by-po/:poId', authenticate, async (req: AuthRequest, res: Response)
         grnId: grn.id,
         grnStatus: grn.status,
         qualityStatus: grn.qualityStatus,
-        entryTime: gate?.entryTime || null,
-        exitTime: gate?.exitTime || null,
+        entryTime,
+        exitTime,
         gateDate: gate?.date?.toISOString() || null,
         gateStatus: gate?.status || null,
       };
