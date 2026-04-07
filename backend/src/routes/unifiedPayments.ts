@@ -249,6 +249,95 @@ router.get('/outgoing/summary', asyncHandler(async (_req: AuthRequest, res: Resp
 }));
 
 // ═══════════════════════════════════════════════
+// GET /outgoing/outstanding — Unified payables view
+// Returns vendor invoices + contractor bills with balance > 0
+// ═══════════════════════════════════════════════
+router.get('/outgoing/outstanding', asyncHandler(async (_req: AuthRequest, res: Response) => {
+  // Exclude vendor invoices already in active bank batches
+  const activeItems = await prisma.bankPaymentItem.findMany({
+    where: {
+      vendorInvoiceId: { not: null },
+      batch: { status: { in: ['DRAFT', 'APPROVED', 'RELEASED', 'SENT_TO_BANK'] } },
+    },
+    select: { vendorInvoiceId: true },
+  });
+  const excludeInvIds = activeItems.map(i => i.vendorInvoiceId).filter(Boolean) as string[];
+
+  const [vendorInvoices, contractorBills] = await Promise.all([
+    prisma.vendorInvoice.findMany({
+      where: {
+        balanceAmount: { gt: 0 },
+        ...(excludeInvIds.length > 0 ? { id: { notIn: excludeInvIds } } : {}),
+      },
+      include: { vendor: { select: { id: true, name: true } } },
+      take: 500,
+    }),
+    prisma.contractorBill.findMany({
+      where: {
+        balanceAmount: { gt: 0 },
+        status: { in: ['CONFIRMED', 'PARTIAL_PAID'] },
+      },
+      include: { contractor: { select: { id: true, name: true } } },
+      take: 500,
+    }),
+  ]);
+
+  const now = Date.now();
+  const daysSince = (d: Date | null | undefined) =>
+    d ? Math.floor((now - new Date(d).getTime()) / 86400000) : 0;
+
+  const items = [
+    ...vendorInvoices.map(inv => ({
+      id: inv.id,
+      source: 'VENDOR_INVOICE' as const,
+      partyId: inv.vendor.id,
+      partyName: inv.vendor.name,
+      partyType: 'VENDOR' as const,
+      refNo: inv.vendorInvNo || `INV-${inv.invoiceNo}`,
+      date: inv.invoiceDate,
+      dueDate: inv.dueDate,
+      netPayable: inv.netPayable,
+      paidAmount: inv.paidAmount || 0,
+      balanceAmount: inv.balanceAmount || 0,
+      daysOverdue: daysSince(inv.dueDate || inv.invoiceDate),
+    })),
+    ...contractorBills.map(b => ({
+      id: b.id,
+      source: 'CONTRACTOR_BILL' as const,
+      partyId: b.contractor.id,
+      partyName: b.contractor.name,
+      partyType: 'CONTRACTOR' as const,
+      refNo: `BILL-${b.billNo}`,
+      date: b.billDate,
+      dueDate: null as Date | null,
+      netPayable: b.netPayable,
+      paidAmount: b.paidAmount || 0,
+      balanceAmount: b.balanceAmount || 0,
+      daysOverdue: daysSince(b.billDate),
+    })),
+  ];
+
+  // KPI summary
+  const totalOutstanding = items.reduce((s, i) => s + i.balanceAmount, 0);
+  const vendorOutstanding = items.filter(i => i.source === 'VENDOR_INVOICE').reduce((s, i) => s + i.balanceAmount, 0);
+  const contractorOutstanding = items.filter(i => i.source === 'CONTRACTOR_BILL').reduce((s, i) => s + i.balanceAmount, 0);
+  const overdueAmount = items.filter(i => i.daysOverdue > 30).reduce((s, i) => s + i.balanceAmount, 0);
+  const uniqueParties = new Set(items.map(i => i.partyType + ':' + i.partyId)).size;
+
+  res.json({
+    items,
+    summary: {
+      totalOutstanding,
+      vendorOutstanding,
+      contractorOutstanding,
+      overdueAmount,
+      itemCount: items.length,
+      partyCount: uniqueParties,
+    },
+  });
+}));
+
+// ═══════════════════════════════════════════════
 // GET /incoming — All incoming payments merged
 // ═══════════════════════════════════════════════
 router.get('/incoming', asyncHandler(async (req: AuthRequest, res: Response) => {

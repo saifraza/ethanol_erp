@@ -149,19 +149,29 @@ router.get('/ledger/:vendorId', asyncHandler(async (req: AuthRequest, res: Respo
     });
     if (!vendor) return res.status(404).json({ error: 'Vendor not found' });
 
-    // Get invoices and payments
-    const invoices = await prisma.vendorInvoice.findMany({
-      where: { vendorId },
-      orderBy: { invoiceDate: 'asc' },
-    });
-
-    const payments = await prisma.vendorPayment.findMany({
-      where: { vendorId },
-      orderBy: { paymentDate: 'asc' },
-    });
+    // Get invoices, payments, POs, and cash voucher payments by name
+    const [invoices, payments, pos, cashVouchers] = await Promise.all([
+      prisma.vendorInvoice.findMany({ where: { vendorId }, orderBy: { invoiceDate: 'asc' } }),
+      prisma.vendorPayment.findMany({ where: { vendorId }, orderBy: { paymentDate: 'asc' } }),
+      prisma.purchaseOrder.findMany({ where: { vendorId }, orderBy: { poDate: 'asc' } }),
+      prisma.cashVoucher.findMany({
+        where: { type: 'PAYMENT', payeeName: { equals: vendor.name, mode: 'insensitive' } },
+        orderBy: { date: 'asc' },
+      }),
+    ]);
 
     // Combine and sort by date
     const ledgerItems: any[] = [];
+    for (const po of pos) {
+      ledgerItems.push({
+        date: po.poDate,
+        type: 'PO',
+        reference: `PO-${po.poNo}`,
+        debit: 0,
+        credit: 0,
+        info: `Order placed: ₹${(po.grandTotal || 0).toLocaleString('en-IN')}`,
+      });
+    }
     for (const inv of invoices) {
       ledgerItems.push({
         date: inv.invoiceDate,
@@ -180,6 +190,15 @@ router.get('/ledger/:vendorId', asyncHandler(async (req: AuthRequest, res: Respo
         debit: 0,
         credit: pmt.amount,
         payment: pmt,
+      });
+    }
+    for (const cv of cashVouchers) {
+      ledgerItems.push({
+        date: cv.date,
+        type: 'CASH PAYMENT',
+        reference: `CV-${cv.voucherNo}`,
+        debit: 0,
+        credit: cv.amount,
       });
     }
 

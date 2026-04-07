@@ -163,8 +163,33 @@ export default function PaymentsOut() {
   const [selectedVendor, setSelectedVendor] = useState('');
   const [vendorLedger, setVendorLedger] = useState<VendorLedger | null>(null);
 
-  // --- Outstanding tab ---
+  // --- Outstanding tab (unified payables) ---
   const [outstanding, setOutstanding] = useState<Outstanding[]>([]);
+  interface UnifiedPayable {
+    id: string;
+    source: 'VENDOR_INVOICE' | 'CONTRACTOR_BILL';
+    partyId: string;
+    partyName: string;
+    partyType: 'VENDOR' | 'CONTRACTOR';
+    refNo: string;
+    date: string;
+    dueDate: string | null;
+    netPayable: number;
+    paidAmount: number;
+    balanceAmount: number;
+    daysOverdue: number;
+  }
+  interface OutstandingSummary {
+    totalOutstanding: number;
+    vendorOutstanding: number;
+    contractorOutstanding: number;
+    overdueAmount: number;
+    itemCount: number;
+    partyCount: number;
+  }
+  const [unifiedItems, setUnifiedItems] = useState<UnifiedPayable[]>([]);
+  const [outstandingSummary, setOutstandingSummary] = useState<OutstandingSummary | null>(null);
+  const [outstandingFilter, setOutstandingFilter] = useState<'ALL' | 'VENDOR' | 'CONTRACTOR'>('ALL');
 
   // --- Bank File ---
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<string>>(new Set());
@@ -252,6 +277,11 @@ export default function PaymentsOut() {
 
   const fetchOutstanding = useCallback(async () => {
     try {
+      // Unified payables (vendor invoices + contractor bills)
+      const uni = await api.get<{ items: UnifiedPayable[]; summary: OutstandingSummary }>('/unified-payments/outgoing/outstanding');
+      setUnifiedItems((uni.data.items || []).sort((a, b) => b.balanceAmount - a.balanceAmount));
+      setOutstandingSummary(uni.data.summary);
+      // Legacy grouped vendor list (still used by bank-file flow)
       const res = await api.get('/vendor-payments/outstanding');
       setOutstanding((res.data.outstanding || []).sort((a: Outstanding, b: Outstanding) => b.totalOutstanding - a.totalOutstanding));
     } catch (err) {
@@ -1182,7 +1212,7 @@ export default function PaymentsOut() {
                         <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Reference</th>
                         <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Ref Doc</th>
                         <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Remarks</th>
-                        <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest" style="width:40px"></th>
+                        <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest" style={{ width: '40px' }}></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1371,6 +1401,43 @@ export default function PaymentsOut() {
         {/* ═══════════════════════════════════════ */}
         {activeTab === 'outstanding' && (
           <div>
+            {/* KPI Strip */}
+            {outstandingSummary && (
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+                <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-red-500">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Outstanding</div>
+                  <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmt(outstandingSummary.totalOutstanding)}</div>
+                  <div className="text-[10px] text-slate-400">{outstandingSummary.itemCount} items</div>
+                </div>
+                <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-blue-500">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Vendor Invoices</div>
+                  <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmt(outstandingSummary.vendorOutstanding)}</div>
+                </div>
+                <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-purple-500">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contractor Bills</div>
+                  <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmt(outstandingSummary.contractorOutstanding)}</div>
+                </div>
+                <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-orange-500">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Overdue &gt; 30d</div>
+                  <div className="text-xl font-bold text-red-600 mt-1 font-mono tabular-nums">{fmt(outstandingSummary.overdueAmount)}</div>
+                </div>
+                <div className="bg-white px-4 py-3 border-l-4 border-l-slate-500">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Parties</div>
+                  <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{outstandingSummary.partyCount}</div>
+                </div>
+              </div>
+            )}
+
+            {/* Filter Tabs */}
+            <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6 flex items-center gap-3">
+              {(['ALL','VENDOR','CONTRACTOR'] as const).map(f => (
+                <button key={f} onClick={() => setOutstandingFilter(f)}
+                  className={`px-3 py-1 text-[11px] font-bold uppercase tracking-widest ${outstandingFilter === f ? 'bg-slate-800 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+                  {f}
+                </button>
+              ))}
+            </div>
+
             {/* Bank File Action Bar */}
             {outstanding.length > 0 && (
               <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6 flex items-center justify-between">
@@ -1390,49 +1457,68 @@ export default function PaymentsOut() {
             )}
 
             <div className="overflow-x-auto -mx-3 md:-mx-6 border-x border-b border-slate-300">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="bg-slate-800 text-white">
-                    <th className="w-8 px-2 py-2 border-r border-slate-700">
-                      <input type="checkbox" onChange={toggleAllInvoices}
-                        checked={outstanding.length > 0 && selectedInvoiceIds.size === outstanding.flatMap(o => o.invoices).length}
-                        className="w-3 h-3 accent-blue-500" />
-                    </th>
-                    <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Vendor</th>
-                    <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Invoice No</th>
-                    <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Net Payable</th>
-                    <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Balance</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {outstanding.flatMap(item =>
-                    item.invoices.map((inv, j) => (
-                      <tr key={inv.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${selectedInvoiceIds.has(inv.id) ? 'bg-blue-50' : j % 2 ? 'bg-slate-50/70' : ''}`}>
-                        <td className="px-2 py-1.5 border-r border-slate-100 text-center">
-                          <input type="checkbox" checked={selectedInvoiceIds.has(inv.id)}
-                            onChange={() => toggleInvoice(inv.id)} className="w-3 h-3 accent-blue-500" />
-                        </td>
-                        <td className="px-3 py-1.5 border-r border-slate-100 font-medium text-slate-800">{item.vendor.name}</td>
-                        <td className="px-3 py-1.5 border-r border-slate-100 font-mono text-slate-600">{inv.vendorInvNo || `INV-${inv.id.slice(0, 6)}`}</td>
-                        <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">{fmtDec(inv.netPayable)}</td>
-                        <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold text-red-600">{fmtDec(inv.balanceAmount)}</td>
+              {(() => {
+                const filtered = unifiedItems.filter(it => outstandingFilter === 'ALL' || it.partyType === outstandingFilter);
+                const filteredTotal = filtered.reduce((s, i) => s + i.balanceAmount, 0);
+                return (
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-slate-800 text-white">
+                        <th className="w-8 px-2 py-2 border-r border-slate-700">
+                          <input type="checkbox" onChange={toggleAllInvoices}
+                            checked={outstanding.length > 0 && selectedInvoiceIds.size === outstanding.flatMap(o => o.invoices).length}
+                            className="w-3 h-3 accent-blue-500" />
+                        </th>
+                        <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Type</th>
+                        <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Party</th>
+                        <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Ref No</th>
+                        <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Date</th>
+                        <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Net Payable</th>
+                        <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Paid</th>
+                        <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Balance</th>
+                        <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Aging</th>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-                {outstanding.length > 0 && (
-                  <tfoot>
-                    <tr className="bg-slate-800 text-white font-semibold">
-                      <td className="px-2 py-2"></td>
-                      <td className="px-3 py-2 text-[10px] uppercase tracking-widest">Total ({outstanding.reduce((s, i) => s + i.invoices.length, 0)} invoices)</td>
-                      <td className="px-3 py-2"></td>
-                      <td className="px-3 py-2 text-right font-mono tabular-nums">{fmtDec(outstanding.reduce((s, i) => s + i.invoices.reduce((ss, inv) => ss + (inv.netPayable || 0), 0), 0))}</td>
-                      <td className="px-3 py-2 text-right font-mono tabular-nums">{fmtDec(outstanding.reduce((s, i) => s + i.totalOutstanding, 0))}</td>
-                    </tr>
-                  </tfoot>
-                )}
-              </table>
-              {outstanding.length === 0 && (
+                    </thead>
+                    <tbody>
+                      {filtered.map((it, j) => {
+                        const isVendor = it.partyType === 'VENDOR';
+                        const checkable = isVendor;
+                        return (
+                          <tr key={it.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${checkable && selectedInvoiceIds.has(it.id) ? 'bg-blue-50' : j % 2 ? 'bg-slate-50/70' : ''}`}>
+                            <td className="px-2 py-1.5 border-r border-slate-100 text-center">
+                              {checkable && (
+                                <input type="checkbox" checked={selectedInvoiceIds.has(it.id)}
+                                  onChange={() => toggleInvoice(it.id)} className="w-3 h-3 accent-blue-500" />
+                              )}
+                            </td>
+                            <td className="px-3 py-1.5 border-r border-slate-100">
+                              <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${isVendor ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-purple-300 bg-purple-50 text-purple-700'}`}>{it.partyType}</span>
+                            </td>
+                            <td className="px-3 py-1.5 border-r border-slate-100 font-medium text-slate-800">{it.partyName}</td>
+                            <td className="px-3 py-1.5 border-r border-slate-100 font-mono text-slate-600">{it.refNo}</td>
+                            <td className="px-3 py-1.5 border-r border-slate-100 text-slate-600 whitespace-nowrap">{fmtDate(it.date)}</td>
+                            <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">{fmtDec(it.netPayable)}</td>
+                            <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums text-slate-500">{it.paidAmount > 0 ? fmtDec(it.paidAmount) : '--'}</td>
+                            <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums font-bold text-red-600">{fmtDec(it.balanceAmount)}</td>
+                            <td className={`px-3 py-1.5 text-right text-[11px] font-mono ${it.daysOverdue > 30 ? 'text-red-600 font-bold' : 'text-slate-500'}`}>{it.daysOverdue}d</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    {filtered.length > 0 && (
+                      <tfoot>
+                        <tr className="bg-slate-800 text-white font-semibold">
+                          <td className="px-2 py-2"></td>
+                          <td className="px-3 py-2 text-[10px] uppercase tracking-widest" colSpan={6}>Total ({filtered.length} items)</td>
+                          <td className="px-3 py-2 text-right font-mono tabular-nums">{fmtDec(filteredTotal)}</td>
+                          <td></td>
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                );
+              })()}
+              {unifiedItems.length === 0 && (
                 <div className="text-center py-16 border-b border-slate-300 bg-white">
                   <p className="text-xs text-slate-400 uppercase tracking-widest">No outstanding payments</p>
                 </div>
