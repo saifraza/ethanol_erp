@@ -1025,8 +1025,12 @@ const EthanolContracts: React.FC = () => {
                   </select>
                 </div>
                 <div>
-                  <label className={labelCls}>Contract No *</label>
-                  <input type="text" name="contractNo" value={form.contractNo} onChange={handleFormChange} required placeholder="e.g. SMPPL/2025-26/387" className={inputCls} />
+                  <label className={labelCls}>Contract No</label>
+                  {editId ? (
+                    <input type="text" value={form.contractNo} readOnly className={`${inputCls} bg-slate-100 text-slate-600`} />
+                  ) : (
+                    <div className={`${inputCls} bg-slate-50 text-slate-400 italic`}>Auto-generated on save</div>
+                  )}
                 </div>
                 <div>
                   <label className={labelCls}>Status</label>

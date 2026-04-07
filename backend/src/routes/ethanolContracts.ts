@@ -8,6 +8,7 @@ import { generateIRN, generateEWBByIRN, generateStandaloneEWB } from '../service
 import { onSaleInvoiceCreated } from '../services/autoJournal';
 import { getStateCode, getHsnCode, MSPIL } from '../services/ewayBill';
 import { nextInvoiceNo, getInvoiceSeries } from '../utils/invoiceCounter';
+import { nextEthanolContractNo } from '../utils/contractNoGenerator';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -99,9 +100,11 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const p = (v: any) => v !== undefined && v !== null && v !== '' ? parseFloat(v) : null;
     const pInt = (v: any) => v !== undefined && v !== null && v !== '' ? parseInt(v) : null;
 
+    const contractNo = (b.contractNo && String(b.contractNo).trim()) || await nextEthanolContractNo();
+
     const contract = await prisma.ethanolContract.create({
       data: {
-        contractNo: b.contractNo,
+        contractNo,
         contractType: b.contractType,
         status: b.status || 'ACTIVE',
         buyerName: b.buyerName,

@@ -6,6 +6,7 @@ import multer from 'multer';
 import { generateIRN, generateEWBByIRN } from '../services/eInvoice';
 import { onSaleInvoiceCreated } from '../services/autoJournal';
 import { nextInvoiceNo } from '../utils/invoiceCounter';
+import { nextDDGSContractNo } from '../utils/contractNoGenerator';
 
 const COMPANY_STATE = 'Madhya Pradesh';
 const DDGS_HSN = '2303';
@@ -83,10 +84,15 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const customer = await prisma.customer.findUnique({ where: { id: b.customerId } });
   if (!customer) return res.status(404).json({ error: 'Customer not found' });
 
+  const contractNo = (b.contractNo && String(b.contractNo).trim()) || await nextDDGSContractNo();
+
   const contract = await prisma.dDGSContract.create({
     data: {
-      contractNo: b.contractNo,
+      contractNo,
       status: b.status || 'ACTIVE',
+      dealType: b.dealType || 'FIXED_RATE',
+      processingChargePerMT: p(b.processingChargePerMT),
+      principalName: b.principalName || null,
       customerId: customer.id,
       buyerName: b.buyerName || customer.name,
       buyerAddress: b.buyerAddress || customer.address || null,
@@ -144,6 +150,9 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     data: {
       contractNo: b.contractNo ?? existing.contractNo,
       status: b.status ?? existing.status,
+      dealType: b.dealType ?? existing.dealType,
+      processingChargePerMT: b.processingChargePerMT !== undefined ? p(b.processingChargePerMT) : existing.processingChargePerMT,
+      principalName: b.principalName !== undefined ? b.principalName : existing.principalName,
       customerId,
       buyerName,
       buyerAddress,

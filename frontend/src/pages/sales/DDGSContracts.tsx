@@ -59,6 +59,9 @@ interface Contract {
   id: string;
   contractNo: string;
   status: string;
+  dealType: string;
+  processingChargePerMT?: number | null;
+  principalName?: string | null;
   customerId: string;
   buyerName: string;
   buyerAddress?: string;
@@ -113,6 +116,7 @@ interface CustomerOption {
 
 const emptyForm = {
   contractNo: '', status: 'ACTIVE',
+  dealType: 'FIXED_RATE', processingChargePerMT: '', principalName: '',
   customerId: '',
   buyerName: '', buyerAddress: '', buyerGstin: '', buyerState: '', buyerContact: '', buyerPhone: '', buyerEmail: '',
   supplyType: 'INTRA_STATE',
@@ -185,7 +189,8 @@ const DDGSContracts: React.FC = () => {
   const fetchCustomers = async () => {
     try {
       const res = await api.get('/customers');
-      setCustomers((res.data || []).map((c: any) => ({ id: c.id, name: c.name, address: c.address, gstNo: c.gstNo, state: c.state, phone: c.phone, email: c.email })));
+      const list = Array.isArray(res.data) ? res.data : (res.data?.customers || []);
+      setCustomers(list.map((c: any) => ({ id: c.id, name: c.name, address: c.address, gstNo: c.gstNo, state: c.state, phone: c.phone, email: c.email })));
     } catch { /* ignore */ }
   };
 
@@ -211,7 +216,11 @@ const DDGSContracts: React.FC = () => {
   const openEdit = (c: Contract) => {
     setEditId(c.id);
     setForm({
-      contractNo: c.contractNo, status: c.status, customerId: c.customerId,
+      contractNo: c.contractNo, status: c.status,
+      dealType: c.dealType || 'FIXED_RATE',
+      processingChargePerMT: c.processingChargePerMT != null ? String(c.processingChargePerMT) : '',
+      principalName: c.principalName || '',
+      customerId: c.customerId,
       buyerName: c.buyerName || '', buyerAddress: c.buyerAddress || '',
       buyerGstin: c.buyerGstin || '', buyerState: c.buyerState || '',
       buyerContact: (c as any).buyerContact || '', buyerPhone: (c as any).buyerPhone || '', buyerEmail: (c as any).buyerEmail || '',
@@ -884,11 +893,23 @@ const DDGSContracts: React.FC = () => {
               <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-white"><X size={18} /></button>
             </div>
             <div className="p-5 space-y-5 max-h-[75vh] overflow-y-auto">
-              {/* Contract No + Status */}
-              <div className="grid grid-cols-3 gap-4">
+              {/* Contract No + Deal Type + Status */}
+              <div className="grid grid-cols-4 gap-4">
                 <div>
-                  <label className={labelCls}>Contract No *</label>
-                  <input type="text" name="contractNo" value={form.contractNo} onChange={handleFormChange} required placeholder="e.g. DDGS/2025-26/001" className={inputCls} />
+                  <label className={labelCls}>Contract No</label>
+                  {editId ? (
+                    <input type="text" value={form.contractNo} readOnly className={`${inputCls} bg-slate-100 text-slate-600`} />
+                  ) : (
+                    <div className={`${inputCls} bg-slate-50 text-slate-400 italic`}>Auto-generated on save</div>
+                  )}
+                </div>
+                <div>
+                  <label className={labelCls}>Deal Type *</label>
+                  <select name="dealType" value={form.dealType} onChange={handleFormChange} className={inputCls}>
+                    <option value="FIXED_RATE">Fixed Rate</option>
+                    <option value="JOB_WORK">Job Work</option>
+                    <option value="SPOT">Spot Sale</option>
+                  </select>
                 </div>
                 <div>
                   <label className={labelCls}>Status</label>
@@ -907,6 +928,17 @@ const DDGSContracts: React.FC = () => {
                   </select>
                 </div>
               </div>
+
+              {/* Job Work fields (only when dealType = JOB_WORK) */}
+              {form.dealType === 'JOB_WORK' && (
+                <div className="bg-amber-50 p-4 border border-amber-200">
+                  <h3 className="text-[10px] font-bold text-amber-700 uppercase tracking-widest mb-3">Job Work Details</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className={labelCls}>Principal Name *</label><input type="text" name="principalName" value={form.principalName} onChange={handleFormChange} className={inputCls} /></div>
+                    <div><label className={labelCls}>Processing Charge per MT (Rs) *</label><input type="number" name="processingChargePerMT" value={form.processingChargePerMT} onChange={handleFormChange} step="0.01" className={inputCls} /></div>
+                  </div>
+                </div>
+              )}
 
               {/* Buyer Details */}
               <div className="bg-slate-50 p-4 border border-slate-200">

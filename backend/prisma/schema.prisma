@@ -2974,6 +2974,9 @@ model DDGSContract {
   id                   String   @id @default(uuid())
   contractNo           String   @unique
   status               String   @default("ACTIVE") // DRAFT, ACTIVE, EXPIRED, TERMINATED
+  dealType             String   @default("FIXED_RATE") // FIXED_RATE, JOB_WORK, SPOT
+  processingChargePerMT Float?                          // job work only
+  principalName        String?                          // job work only
   customerId           String
   customer             Customer @relation(fields: [customerId], references: [id])
   buyerName            String
