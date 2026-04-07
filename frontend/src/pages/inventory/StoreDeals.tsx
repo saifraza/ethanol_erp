@@ -8,6 +8,10 @@ interface StoreLine {
   unit: string;
   rate: number;
   quantity: number;
+  gstPercent: number;
+  baseValue: number;
+  gstValue: number;
+  totalValue: number;
   receivedQty: number;
   pendingQty: number;
 }
@@ -26,8 +30,12 @@ interface StoreDeal {
   orderedQty: number;
   receivedQty: number;
   pendingQty: number;
-  orderedValue: number;
+  orderedValue: number;     // base (taxable)
   receivedValue: number;
+  orderedGst: number;
+  receivedGst: number;
+  orderedTotal: number;     // base + GST (final)
+  receivedTotal: number;
   grnCount: number;
   lines: StoreLine[];
 }
@@ -39,6 +47,10 @@ interface Summary {
   totalDeals: number;
   totalOrdered: number;
   totalReceived: number;
+  totalOrderedGst: number;
+  totalReceivedGst: number;
+  totalOrderedWithGst: number;
+  totalReceivedWithGst: number;
   totalOutstandingValue: number;
 }
 
@@ -161,11 +173,12 @@ export default function StoreDeals() {
               <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{summary.receivedCount}</div>
             </div>
             <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-slate-500">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Ordered Value</div>
-              <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmtCurrency(summary.totalOrdered)}</div>
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Ordered (Incl. GST)</div>
+              <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmtCurrency(summary.totalOrderedWithGst)}</div>
+              <div className="text-[9px] text-slate-400 font-mono tabular-nums">Base {fmtCurrency(summary.totalOrdered)} + GST {fmtCurrency(summary.totalOrderedGst)}</div>
             </div>
             <div className="bg-white px-4 py-3 border-l-4 border-l-orange-500">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Pending Value</div>
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Pending (Incl. GST)</div>
               <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmtCurrency(summary.totalOutstandingValue)}</div>
             </div>
           </div>
@@ -182,7 +195,9 @@ export default function StoreDeals() {
                 <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Vendor</th>
                 <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Items</th>
                 <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Status</th>
-                <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Ordered</th>
+                <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Base</th>
+                <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">GST</th>
+                <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Total</th>
                 <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Received</th>
                 <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Pending</th>
               </tr>
@@ -190,7 +205,7 @@ export default function StoreDeals() {
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-3 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">
+                  <td colSpan={11} className="px-3 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">
                     No store deals found
                   </td>
                 </tr>
@@ -218,12 +233,14 @@ export default function StoreDeals() {
                         </span>
                       </td>
                       <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-700 border-r border-slate-100">{fmtCurrency(d.orderedValue)}</td>
-                      <td className="px-3 py-1.5 text-right font-mono tabular-nums text-green-700 border-r border-slate-100">{fmtCurrency(d.receivedValue)}</td>
-                      <td className="px-3 py-1.5 text-right font-mono tabular-nums text-orange-700">{fmtCurrency(d.orderedValue - d.receivedValue)}</td>
+                      <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-500 border-r border-slate-100">{fmtCurrency(d.orderedGst)}</td>
+                      <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold text-slate-900 border-r border-slate-100">{fmtCurrency(d.orderedTotal)}</td>
+                      <td className="px-3 py-1.5 text-right font-mono tabular-nums text-green-700 border-r border-slate-100">{fmtCurrency(d.receivedTotal)}</td>
+                      <td className="px-3 py-1.5 text-right font-mono tabular-nums text-orange-700">{fmtCurrency(Math.max(d.orderedTotal - d.receivedTotal, 0))}</td>
                     </tr>
                     {isOpen && (
                       <tr className="bg-slate-50">
-                        <td colSpan={9} className="px-6 py-3 border-b border-slate-200">
+                        <td colSpan={11} className="px-6 py-3 border-b border-slate-200">
                           <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Line items ({d.lineCount}) · GRNs: {d.grnCount}{d.remarks ? ` · ${d.remarks}` : ''}</div>
                           <table className="w-full text-xs border border-slate-300">
                             <thead>
@@ -231,7 +248,11 @@ export default function StoreDeals() {
                                 <th className="text-left px-2 py-1 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-300">Item</th>
                                 <th className="text-left px-2 py-1 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-300">Category</th>
                                 <th className="text-right px-2 py-1 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-300">Rate</th>
-                                <th className="text-right px-2 py-1 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-300">Ordered</th>
+                                <th className="text-right px-2 py-1 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-300">Qty</th>
+                                <th className="text-right px-2 py-1 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-300">Base</th>
+                                <th className="text-right px-2 py-1 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-300">GST%</th>
+                                <th className="text-right px-2 py-1 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-300">GST Amt</th>
+                                <th className="text-right px-2 py-1 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-300">Total</th>
                                 <th className="text-right px-2 py-1 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-300">Received</th>
                                 <th className="text-right px-2 py-1 font-semibold text-[10px] uppercase tracking-widest">Pending</th>
                               </tr>
@@ -243,6 +264,10 @@ export default function StoreDeals() {
                                   <td className="px-2 py-1 text-slate-500 text-[10px] border-r border-slate-200">{l.category || '--'}</td>
                                   <td className="px-2 py-1 text-right font-mono tabular-nums border-r border-slate-200">₹{l.rate}/{l.unit}</td>
                                   <td className="px-2 py-1 text-right font-mono tabular-nums border-r border-slate-200">{l.quantity} {l.unit}</td>
+                                  <td className="px-2 py-1 text-right font-mono tabular-nums border-r border-slate-200">{fmtCurrency(l.baseValue)}</td>
+                                  <td className="px-2 py-1 text-right font-mono tabular-nums text-slate-500 border-r border-slate-200">{l.gstPercent}%</td>
+                                  <td className="px-2 py-1 text-right font-mono tabular-nums text-slate-500 border-r border-slate-200">{fmtCurrency(l.gstValue)}</td>
+                                  <td className="px-2 py-1 text-right font-mono tabular-nums font-bold text-slate-900 border-r border-slate-200">{fmtCurrency(l.totalValue)}</td>
                                   <td className="px-2 py-1 text-right font-mono tabular-nums text-green-700 border-r border-slate-200">{l.receivedQty} {l.unit}</td>
                                   <td className="px-2 py-1 text-right font-mono tabular-nums text-orange-700">{l.pendingQty} {l.unit}</td>
                                 </tr>

@@ -2172,6 +2172,14 @@ export default function PaymentsOut() {
                   <span>Payable Now: <b className="font-mono text-red-600 text-sm">{fmt(Math.max(0, (poReceivedValue || poPayItem.grnTotalValue) - poPayItem.totalPaid - poPendingCash))}</b></span>
                   {poPayItem.dueDate && <span>Due: <b>{fmtDate(poPayItem.dueDate)}</b></span>}
                 </div>
+                <div className="flex gap-6 text-[11px] bg-white border border-slate-200 px-3 py-1.5">
+                  <span className="text-slate-500 uppercase tracking-widest text-[9px] font-bold self-center">PO Breakdown</span>
+                  <span>Base: <b className="font-mono">{fmt(poPayItem.poSubtotal || (poPayItem.poAmount - (poPayItem.poGst || 0)))}</b></span>
+                  <span>+ GST: <b className="font-mono text-blue-700">{fmt(poPayItem.poGst || 0)}</b>
+                    {poPayItem.poGst > 0 && poPayItem.poSubtotal ? <span className="text-[9px] text-slate-400 ml-1">({((poPayItem.poGst / poPayItem.poSubtotal) * 100).toFixed(0)}%)</span> : null}
+                  </span>
+                  <span>= Total: <b className="font-mono">{fmt(poPayItem.poAmount)}</b></span>
+                </div>
                 {poPayItem.vendorBank && (
                   <div className="bg-white border border-slate-200 px-3 py-1.5 flex gap-6">
                     <span>Bank: <b>{poPayItem.vendorBank}</b></span>
@@ -2225,11 +2233,29 @@ export default function PaymentsOut() {
                   </div>
                   <div className="col-span-2">
                     {poPayItem.poGst > 0 ? (
-                      <label className={`flex items-center gap-2 px-3 py-1.5 border cursor-pointer text-xs ${poPayIncludeGst ? 'border-green-500 bg-green-50 text-green-700 font-bold' : 'border-slate-300 bg-white text-slate-500'}`}>
-                        <input type="checkbox" checked={poPayIncludeGst} onChange={e => setPoPayIncludeGst(e.target.checked)} className="w-3.5 h-3.5" />
-                        Include GST in this payment ({((poPayItem.poGst / (poPayItem.poSubtotal || 1)) * 100).toFixed(0)}% = {fmt(poPayItem.poGst)})
-                        <span className="text-[10px] text-slate-400 ml-2">Uncheck to pay base amount now, GST later</span>
-                      </label>
+                      <>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Tax Treatment *</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button type="button" onClick={() => setPoPayIncludeGst(true)}
+                            className={`px-3 py-2 border text-left text-xs ${poPayIncludeGst ? 'border-green-500 bg-green-50 text-green-800' : 'border-slate-300 bg-white text-slate-500 hover:bg-slate-50'}`}>
+                            <div className="font-bold uppercase tracking-widest text-[10px] flex items-center gap-1">
+                              <span className={`inline-block w-2 h-2 rounded-full ${poPayIncludeGst ? 'bg-green-600' : 'bg-slate-300'}`}></span>
+                              Pay Including GST
+                            </div>
+                            <div className="text-[10px] text-slate-500 mt-0.5">Base + GST = full invoice value</div>
+                            <div className="text-[10px] text-slate-400 mt-0.5">GST included: <b className="font-mono">{fmt(poPayItem.poGst)}</b></div>
+                          </button>
+                          <button type="button" onClick={() => setPoPayIncludeGst(false)}
+                            className={`px-3 py-2 border text-left text-xs ${!poPayIncludeGst ? 'border-orange-500 bg-orange-50 text-orange-800' : 'border-slate-300 bg-white text-slate-500 hover:bg-slate-50'}`}>
+                            <div className="font-bold uppercase tracking-widest text-[10px] flex items-center gap-1">
+                              <span className={`inline-block w-2 h-2 rounded-full ${!poPayIncludeGst ? 'bg-orange-600' : 'bg-slate-300'}`}></span>
+                              Pay Without GST
+                            </div>
+                            <div className="text-[10px] text-slate-500 mt-0.5">Base amount only — pay GST separately later</div>
+                            <div className="text-[10px] text-slate-400 mt-0.5">GST deferred: <b className="font-mono">{fmt(poPayItem.poGst)}</b></div>
+                          </button>
+                        </div>
+                      </>
                     ) : (
                       <div className="text-[10px] text-slate-400 bg-slate-50 border border-slate-200 px-3 py-1.5">
                         GST: <b>0% — No GST on this item</b>
@@ -2254,7 +2280,9 @@ export default function PaymentsOut() {
                 )}
                 <button onClick={submitPOPayment} disabled={poPaySaving || !poPayAmount}
                   className="w-full px-4 py-2 bg-green-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-green-700 disabled:opacity-50">
-                  {poPaySaving ? 'Processing...' : `Pay ${poPayAmount ? '\u20B9' + parseFloat(poPayAmount).toLocaleString('en-IN') : ''} via ${poPayMode}`}
+                  {poPaySaving
+                    ? 'Processing...'
+                    : `Pay ${poPayAmount ? '\u20B9' + parseFloat(poPayAmount).toLocaleString('en-IN') : ''} via ${poPayMode}${poPayItem.poGst > 0 ? (poPayIncludeGst ? ' (Incl. GST)' : ' (Ex. GST)') : ''}`}
                 </button>
 
                 {/* Pending bank payment — enter UTR to confirm */}
