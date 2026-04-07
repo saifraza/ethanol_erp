@@ -9,6 +9,7 @@ interface POLine { id: string; description: string; quantity: number; received_q
 interface Customer { id: string; name: string; gstNo?: string | null; address?: string | null; state?: string | null; pincode?: string | null }
 interface Trader { id: string; name: string; phone?: string; productTypes?: string; category?: string }
 interface EthContract { id: string; contractNo: string; contractType: string; buyerName: string; buyerAddress?: string; omcDepot?: string }
+interface DdgsContract { id: string; contractNo: string; dealType: string; buyerName: string; buyerGstin?: string | null; buyerAddress?: string | null; principalName?: string | null; rate?: number | null; processingChargePerMT?: number | null; gstPercent?: number | null; contractQtyMT?: number | null; totalSuppliedMT?: number | null; endDate?: string | null }
 
 const FUEL_KEYWORDS = ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'firewood', 'biomass'];
 const RAW_KEYWORDS = ['maize', 'corn', 'broken rice', 'grain', 'sorghum'];
@@ -67,6 +68,9 @@ export default function GateEntry() {
   // Ethanol-specific
   const [ethContracts, setEthContracts] = useState<EthContract[]>([]);
   const [ethContractId, setEthContractId] = useState('');
+  // DDGS-specific
+  const [ddgsContracts, setDdgsContracts] = useState<DdgsContract[]>([]);
+  const [ddgsContractId, setDdgsContractId] = useState('');
   const [driverName, setDriverName] = useState('');
   const [destination, setDestination] = useState('');
   const [rstNo, setRstNo] = useState('');
@@ -79,6 +83,8 @@ export default function GateEntry() {
   const [masterLoading, setMasterLoading] = useState(true);
   const [masterError, setMasterError] = useState(false);
   const isEthanol = direction === 'OUTBOUND' && materialName === 'Ethanol';
+  const isDdgsOut = direction === 'OUTBOUND' && materialName === 'DDGS';
+  const selectedDdgsContract = ddgsContracts.find(c => c.id === ddgsContractId);
 
   // Load master data (silent=true for background refreshes — no spinner)
   const loadMasterData = useCallback(async (silent = false) => {
@@ -94,6 +100,7 @@ export default function GateEntry() {
       setTraders(data.traders || []);
       setVehicles(data.vehicles || []);
       setEthContracts(data.ethContracts || []);
+      setDdgsContracts(data.ddgsContracts || []);
     } catch {
       setMasterError(true);
     } finally {
@@ -581,6 +588,52 @@ export default function GateEntry() {
                 <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">RST No</label>
                 <input value={rstNo} onChange={e => setRstNo(e.target.value)}
                   className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400" />
+              </div>
+            </>
+          )}
+
+          {/* DDGS-specific fields */}
+          {isDdgsOut && (
+            <>
+              <div className="md:col-span-3">
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">DDGS Contract *</label>
+                <select value={ddgsContractId} onChange={e => {
+                  setDdgsContractId(e.target.value);
+                  const c = ddgsContracts.find(x => x.id === e.target.value);
+                  if (c) setCustomerName(c.buyerName);
+                }} className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
+                  <option value="">-- Select Contract --</option>
+                  {(ddgsContracts || []).map(c => {
+                    const r = c.dealType === 'JOB_WORK' ? c.processingChargePerMT : c.rate;
+                    return <option key={c.id} value={c.id}>{c.contractNo} — {c.buyerName} ({c.dealType === 'JOB_WORK' ? 'JOB WORK' : 'SALE'}) ₹{r ?? '-'}/MT</option>;
+                  })}
+                </select>
+                {selectedDdgsContract && (
+                  <div className="mt-2 border border-slate-300 bg-slate-50 px-3 py-2 text-[11px]">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1">
+                      <div><span className="text-slate-500 uppercase tracking-wider">Buyer:</span> <span className="font-bold text-slate-800">{selectedDdgsContract.buyerName}</span></div>
+                      <div><span className="text-slate-500 uppercase tracking-wider">GSTIN:</span> <span className="font-mono text-slate-800">{selectedDdgsContract.buyerGstin || '—'}</span></div>
+                      <div>
+                        <span className="text-slate-500 uppercase tracking-wider">{selectedDdgsContract.dealType === 'JOB_WORK' ? 'Job Work Rate' : 'Sale Rate'}:</span>{' '}
+                        <span className="font-mono font-bold text-slate-800">₹{(selectedDdgsContract.dealType === 'JOB_WORK' ? selectedDdgsContract.processingChargePerMT : selectedDdgsContract.rate) ?? '—'}/MT</span>
+                      </div>
+                      <div><span className="text-slate-500 uppercase tracking-wider">GST:</span> <span className="font-mono text-slate-800">{selectedDdgsContract.gstPercent ?? '—'}%</span></div>
+                      <div className="col-span-2">
+                        <span className="text-slate-500 uppercase tracking-wider">Supplied / Qty:</span>{' '}
+                        <span className="font-mono text-slate-800">{(selectedDdgsContract.totalSuppliedMT ?? 0).toFixed(2)} / {(selectedDdgsContract.contractQtyMT ?? 0).toFixed(2)} MT</span>
+                        <span className="text-slate-500 ml-2">
+                          ({Math.max(0, (selectedDdgsContract.contractQtyMT ?? 0) - (selectedDdgsContract.totalSuppliedMT ?? 0)).toFixed(2)} MT remaining)
+                        </span>
+                      </div>
+                      {selectedDdgsContract.principalName && (
+                        <div className="col-span-2"><span className="text-slate-500 uppercase tracking-wider">Principal:</span> <span className="text-slate-800">{selectedDdgsContract.principalName}</span></div>
+                      )}
+                      {selectedDdgsContract.endDate && (
+                        <div className="col-span-2"><span className="text-slate-500 uppercase tracking-wider">Valid till:</span> <span className="text-slate-800">{new Date(selectedDdgsContract.endDate).toLocaleDateString('en-IN')}</span></div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </>
           )}

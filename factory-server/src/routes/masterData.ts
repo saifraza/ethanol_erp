@@ -15,6 +15,7 @@ router.get('/', (_req: Request, res: Response) => {
     customers: data.customers,
     vehicles: data.vehicles,
     ethContracts: data.ethContracts,
+    ddgsContracts: data.ddgsContracts,
     source: data.source,
     lastSync: data.lastCloudSync,
   });

@@ -24,6 +24,7 @@ interface PO { id: string; po_no: number; vendor_name: string; vendor_id: string
 interface Trader { id: string; name: string; phone: string | null; productTypes: string | null; category: string | null }
 interface Customer { id: string; name: string; shortName: string | null; gstNo: string | null; address: string | null; state: string | null; pincode: string | null }
 interface EthContract { id: string; contractNo: string; contractType: string; buyerName: string; buyerGst: string | null; buyerAddress: string | null; conversionRate: number | null; ethanolRate: number | null; gstPercent: number | null; paymentTermsDays: number | null; omcDepot: string | null }
+interface DdgsContract { id: string; contractNo: string; status: string; dealType: string; buyerName: string; buyerGstin: string | null; buyerAddress: string | null; buyerState: string | null; principalName: string | null; rate: number | null; processingChargePerMT: number | null; gstPercent: number | null; contractQtyMT: number | null; totalSuppliedMT: number | null; startDate: string | null; endDate: string | null }
 
 interface MasterCache {
   suppliers: Supplier[];
@@ -33,6 +34,7 @@ interface MasterCache {
   customers: Customer[];
   vehicles: string[];
   ethContracts: EthContract[];
+  ddgsContracts: DdgsContract[];
   lastCloudSync: string | null;
   lastCloudCheck: string | null;
   cloudTimestamp: string | null;
@@ -40,7 +42,7 @@ interface MasterCache {
 }
 
 const EMPTY_CACHE: MasterCache = {
-  suppliers: [], materials: [], pos: [], traders: [], customers: [], vehicles: [], ethContracts: [],
+  suppliers: [], materials: [], pos: [], traders: [], customers: [], vehicles: [], ethContracts: [], ddgsContracts: [],
   lastCloudSync: null, lastCloudCheck: null, cloudTimestamp: null, source: 'empty',
 };
 
@@ -95,6 +97,7 @@ function loadFromDisk(): boolean {
       data.customers = data.customers || [];
       data.vehicles = data.vehicles || [];
       data.ethContracts = data.ethContracts || [];
+      data.ddgsContracts = data.ddgsContracts || [];
       cache = { ...data, source: 'disk' };
       console.log(`[CACHE] Loaded from disk: ${cache.suppliers.length} suppliers, ${cache.materials.length} materials, ${cache.pos.length} POs, ${cache.traders.length} traders`);
       return true;
@@ -117,7 +120,8 @@ async function getCloudTimestamp(): Promise<string | null> {
         (SELECT MAX("updatedAt") FROM "Vendor"),
         (SELECT MAX("updatedAt") FROM "InventoryItem"),
         (SELECT MAX("updatedAt") FROM "Customer"),
-        (SELECT MAX("updatedAt") FROM "EthanolContract")
+        (SELECT MAX("updatedAt") FROM "EthanolContract"),
+        (SELECT MAX("updatedAt") FROM "DDGSContract")
       ) as max
     `;
     return result[0]?.max?.toISOString() || null;
@@ -190,6 +194,40 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
       console.error('[CACHE] Ethanol contracts sync failed:', err instanceof Error ? err.message : err);
     }
 
+    // DDGS contracts — separate query with own error handling
+    let ddgsContracts: DdgsContract[] = cache.ddgsContracts; // keep existing on failure
+    try {
+      const rows = await cloud.$queryRawUnsafe<any[]>(
+        `SELECT id, "contractNo", status, "dealType", "buyerName", "buyerGstin", "buyerAddress", "buyerState",
+                "principalName", rate, "processingChargePerMT", "gstPercent", "contractQtyMT", "totalSuppliedMT",
+                "startDate", "endDate"
+         FROM "DDGSContract"
+         WHERE status = 'ACTIVE' AND "endDate" >= NOW() AND "startDate" <= NOW()
+         ORDER BY "contractNo" LIMIT 50`
+      );
+      ddgsContracts = rows.map(r => ({
+        id: r.id,
+        contractNo: r.contractNo,
+        status: r.status,
+        dealType: r.dealType,
+        buyerName: r.buyerName,
+        buyerGstin: r.buyerGstin,
+        buyerAddress: r.buyerAddress,
+        buyerState: r.buyerState,
+        principalName: r.principalName,
+        rate: r.rate != null ? Number(r.rate) : null,
+        processingChargePerMT: r.processingChargePerMT != null ? Number(r.processingChargePerMT) : null,
+        gstPercent: r.gstPercent != null ? Number(r.gstPercent) : null,
+        contractQtyMT: r.contractQtyMT != null ? Number(r.contractQtyMT) : null,
+        totalSuppliedMT: r.totalSuppliedMT != null ? Number(r.totalSuppliedMT) : null,
+        startDate: r.startDate ? new Date(r.startDate).toISOString() : null,
+        endDate: r.endDate ? new Date(r.endDate).toISOString() : null,
+      }));
+      console.log(`[CACHE] DDGS contracts: ${ddgsContracts.length}`);
+    } catch (err) {
+      console.error('[CACHE] DDGS contracts sync failed:', err instanceof Error ? err.message : err);
+    }
+
     // Get recent vehicles from local DB
     let vehicles: string[] = cache.vehicles; // Keep existing if local query fails
     try {
@@ -232,6 +270,7 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
       traders: traderVendors.map(t => ({ id: t.id, name: t.name, phone: t.phone, productTypes: t.productTypes, category: t.category })),
       customers: customers.map(c => ({ id: c.id, name: c.name, shortName: c.shortName, gstNo: c.gstNo, address: c.address, state: c.state, pincode: c.pincode })),
       ethContracts: ethContracts.map(c => ({ id: c.id, contractNo: c.contractNo, contractType: c.contractType, buyerName: c.buyerName, buyerGst: c.buyerGst, buyerAddress: c.buyerAddress, conversionRate: c.conversionRate, ethanolRate: c.ethanolRate, gstPercent: c.gstPercent, paymentTermsDays: c.paymentTermsDays, omcDepot: c.omcDepot })),
+      ddgsContracts,
       vehicles,
       lastCloudSync: now,
       lastCloudCheck: now,
