@@ -172,12 +172,23 @@ async function handleEthanolOutboundInner(w: WeighmentInput, _ctx: PushContext):
       return { skipped: false, id: dispatchTruck.id };
     }
 
-    // Calculate KL from BL and product value from contract rate
+    // Calculate product value from contract rate.
+    //
+    // CRITICAL "first-write-wins" rule for rate/value:
+    //   If dispatchTruck.productRatePerLtr is already set (non-null, non-zero), DO NOT
+    //   overwrite it. The truck was already priced at gate-pass / first sync time, and
+    //   if the contract rate has changed since then (which it does), recomputing would
+    //   silently revalue an already-billed dispatch.
+    //
+    // 2026-04-07 incident postscript: my recover-ethanol endpoint hit this exact bug —
+    // it recomputed rate from current contract on RELEASED rows, overwriting yesterday's
+    // ₹71.86/ltr with today's ₹14/ltr on 3 trucks. Operators caught it. Lesson: rate
+    // is HISTORICAL data once set; never recompute.
     const bl = w.quantity_bl || dispatchTruck.quantityBL || 0;
-    const kl = bl > 0 ? bl / 1000 : 0;
+    const rateAlreadySet = dispatchTruck.productRatePerLtr != null && dispatchTruck.productRatePerLtr > 0;
     let productRate: number | null = null;
     let productValue: number | null = null;
-    if (dispatchTruck.contractId && bl > 0) {
+    if (!rateAlreadySet && dispatchTruck.contractId && bl > 0) {
       const contract = await tx.ethanolContract.findUnique({
         where: { id: dispatchTruck.contractId },
         select: { contractType: true, ethanolRate: true, conversionRate: true },
