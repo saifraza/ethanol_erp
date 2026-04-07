@@ -248,17 +248,19 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
     const wbUidRst = `WB-${w.ticket_no}`;
     const materialCategory = w.material_category || (w.remarks?.includes('| FUEL |') ? 'FUEL' : undefined);
 
-    // Skip fuel weighments — they don't belong in GrainTruck (RM Management)
-    if (materialCategory === 'FUEL') {
-      results.push({ id: w.id, type: 'SKIPPED', refNo: `FUEL-${w.vehicle_no}`, sourceWbId: w.id });
-      ids.push(w.id);
-      continue;
-    }
+    const isFuel = materialCategory === 'FUEL';
 
     // For INBOUND raw material: accept gate entries (for lab testing page)
     // For everything else: only process COMPLETE weighments with weights
+    // FUEL: skip GrainTruck creation (not grain) but let COMPLETE flow to PO→GRN path below
     const isGateOrPending = w.status === 'GATE_ENTRY' || w.status === 'FIRST_DONE';
     const isInbound = w.direction === 'IN';
+    if (isGateOrPending && isInbound && isFuel) {
+      // Fuel gate entries: acknowledge but don't create GrainTruck (not grain)
+      results.push({ id: w.id, type: 'FUEL_GATE', refNo: `FUEL-${w.vehicle_no}`, sourceWbId: w.id });
+      ids.push(w.id);
+      continue;
+    }
     if (isGateOrPending && isInbound) {
       // Create/update a GrainTruck record for lab testing page (no weight yet)
       const dupGrain = await prisma.grainTruck.findFirst({
@@ -453,8 +455,14 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
             }
           }
 
-          // ── LAB FAIL → Quarantine GrainTruck, skip GRN ──
+          // ── LAB FAIL → Quarantine GrainTruck (grain/RM) or reject (fuel), skip GRN ──
           if (w.lab_status === 'FAIL') {
+            if (isFuel) {
+              // Fuel lab fail: reject but don't create GrainTruck (not grain)
+              results.push({ id: w.id, type: 'FUEL_LAB_FAIL', refNo: `PO-${po.poNo} | ${w.vehicle_no} rejected`, sourceWbId: w.id });
+              ids.push(w.id);
+              continue;
+            }
             const grossTon = (w.weight_gross || 0) / 1000;
             const tareTon = (w.weight_tare || 0) / 1000;
             const netTon = netKg / 1000;
@@ -559,7 +567,8 @@ router.post('/push', asyncHandler(async (req: Request, res: Response) => {
             });
 
             // Also create a GrainTruck record with lab quality data (for traceability)
-            if (w.lab_moisture != null || w.lab_starch != null) {
+            // Skip for FUEL — GrainTruck is for grain/RM only
+            if (!isFuel && (w.lab_moisture != null || w.lab_starch != null)) {
               const grossTon = (w.weight_gross || 0) / 1000;
               const tareTon = (w.weight_tare || 0) / 1000;
               const netTon = netKg / 1000;
