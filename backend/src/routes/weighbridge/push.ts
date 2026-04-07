@@ -15,6 +15,7 @@ import { handlePoInbound } from './handlers/poInbound';
 import { handleSpotInbound } from './handlers/spotInbound';
 import { handleTraderInbound } from './handlers/traderInbound';
 import { handleEthanolOutbound } from './handlers/ethanolOutbound';
+import { handleDDGSOutbound } from './handlers/ddgsOutbound';
 import { handleNonEthanolOutbound } from './handlers/nonEthanolOutbound';
 import { handleFallbackInbound } from './handlers/fallbackInbound';
 
@@ -35,8 +36,18 @@ function detectHandler(w: WeighmentInput, ctx: PushContext): PushHandler {
   // Outbound first (simpler — just direction-based)
   if (w.direction === 'OUT') {
     const hasValidGatePassId = w.cloud_gate_pass_id && /^[0-9a-f-]{36}$/i.test(w.cloud_gate_pass_id);
-    const isEthanol = (w.material || '').toLowerCase().includes('ethanol') || !!hasValidGatePassId;
-    return isEthanol ? handleEthanolOutbound : handleNonEthanolOutbound;
+    const lower = (w.material || '').toLowerCase();
+    const isEthanol = lower.includes('ethanol') || !!hasValidGatePassId;
+    if (isEthanol) return handleEthanolOutbound;
+
+    // DDGS family includes both dried (DDGS) and wet (WDGS) variants
+    const isDDGS = w.material_category === 'DDGS' ||
+      lower.includes('ddgs') || lower.includes('wdgs') ||
+      lower.includes('distillers') || lower.includes('dried grain') ||
+      lower.includes('wet grain') || lower.includes('wet distillers');
+    if (isDDGS) return handleDDGSOutbound;
+
+    return handleNonEthanolOutbound;
   }
 
   // Inbound — order matches original behavior

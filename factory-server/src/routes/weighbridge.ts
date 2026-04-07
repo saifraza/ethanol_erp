@@ -8,6 +8,7 @@ import { asyncHandler, requireWbKey, requireWbKeyOrAuth, requireAuth, requireRol
 import { captureSnapshots } from '../services/cameraCapture';
 import { getMasterData } from '../services/masterDataCache';
 import { checkWeighmentRules, verifyOverridePin, logOverride } from '../services/ruleEngine';
+import { registerPC } from '../services/pcMonitor';
 
 const router = Router();
 
@@ -284,11 +285,15 @@ router.post('/gate-entry', requireAuth, requireRole('GATE_ENTRY', 'ADMIN'), asyn
     const lower = trimmedName.toLowerCase();
 
     // 1. Keyword inference (fastest, always works)
+    // DDGS checked BEFORE RAW_MATERIAL — "wet grain" would otherwise match "grain"
     const FUEL_KEYWORDS = ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'firewood', 'biomass'];
+    const DDGS_KEYWORDS = ['ddgs', 'wdgs', 'distillers', 'distiller', 'dried grain', 'wet grain', 'wet distillers'];
     const RAW_MATERIAL_KEYWORDS = ['maize', 'corn', 'broken rice', 'grain', 'sorghum', 'milo'];
     const CHEMICAL_KEYWORDS = ['amylase', 'urea', 'acid', 'antifoam', 'yeast', 'chemical'];
     if (FUEL_KEYWORDS.some(kw => lower.includes(kw))) {
       materialCategory = 'FUEL';
+    } else if (DDGS_KEYWORDS.some(kw => lower.includes(kw))) {
+      materialCategory = 'DDGS';
     } else if (RAW_MATERIAL_KEYWORDS.some(kw => lower.includes(kw))) {
       materialCategory = 'RAW_MATERIAL';
     } else if (CHEMICAL_KEYWORDS.some(kw => lower.includes(kw))) {
@@ -964,6 +969,9 @@ router.post('/wb-push', requireWbKey, asyncHandler(async (req: Request, res: Res
     // Required fields for Prisma create
     const pcId = w.pc_id || 'weighbridge-1';
     const pcName = w.pc_name || 'Weighbridge';
+
+    // Auto-register PC in monitor (discovers new PCs automatically)
+    registerPC({ pcId, pcName, role: 'WEIGHBRIDGE' });
     const vehicleNo = w.vehicle_no;
     const status = w.status || 'GATE_ENTRY';
 
