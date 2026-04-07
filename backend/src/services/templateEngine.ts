@@ -78,6 +78,7 @@ Handlebars.registerHelper('and', (...args: unknown[]) => {
 });
 Handlebars.registerHelper('add', (a: number, b: number) => (a || 0) + (b || 0));
 Handlebars.registerHelper('multiply', (a: number, b: number) => (a || 0) * (b || 0));
+Handlebars.registerHelper('abs', (n: number) => Math.abs(n || 0));
 Handlebars.registerHelper('inc', (n: number) => (n || 0) + 1);
 Handlebars.registerHelper('even', (n: number) => n % 2 === 0);
 Handlebars.registerHelper('ifCond', function (this: unknown, v1: unknown, operator: string, v2: unknown, options: Handlebars.HelperOptions) {

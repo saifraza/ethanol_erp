@@ -390,6 +390,11 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
       igstPercent: invoice.igstPercent || 0,
       freightCharge: invoice.freightCharge,
       totalAmount: invoice.totalAmount,
+      // Round-off display: render the rounded-to-rupee total and the signed delta as a "Less:
+      // BALANCE ROUND OFF A/C" line. Stored totalAmount keeps full precision; this is display-only.
+      // Sample DDGS jobwork invoice: 1,94,627.08 raw → "Less: BALANCE ROUND OFF A/C (-)0.08" → ₹1,94,627.00.
+      roundedTotalAmount: Math.round(invoice.totalAmount || 0),
+      roundOff: Math.round((Math.round(invoice.totalAmount || 0) - (invoice.totalAmount || 0)) * 100) / 100,
       remarks: invoice.remarks,
       // Transport / Dispatch info — pull from ethanol lifting OR ddgs dispatch truck
       vehicleNo: lifting?.vehicleNo || ddgsTruck?.vehicleNo || ddgsLink?.vehicleNo || null,
