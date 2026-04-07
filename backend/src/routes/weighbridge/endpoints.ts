@@ -524,21 +524,41 @@ export function registerOtherRoutes(router: Router): void {
     for (const it of items) {
       const result: any = { vehicleNo: it.vehicleNo, sourceWbId: it.sourceWbId };
       try {
-        const todayStart = new Date(it.createdAt);
-        todayStart.setUTCHours(0, 0, 0, 0);
-        const todayEnd = new Date(it.createdAt);
-        todayEnd.setUTCHours(23, 59, 59, 999);
-
-        // Find candidate trucks: vehicleNo + same day + not RELEASED
-        const candidates = await prisma.dispatchTruck.findMany({
-          where: {
-            vehicleNo: it.vehicleNo.toUpperCase(),
-            date: { gte: todayStart, lte: todayEnd },
-            status: { in: ['GATE_IN', 'TARE_WEIGHED', 'GROSS_WEIGHED'] },
-          },
-          orderBy: { createdAt: 'desc' },
-          select: { id: true, status: true, sourceWbId: true, weightGross: true, weightTare: true, contractId: true, quantityBL: true },
-        });
+        // PRIMARY lookup: by cloudGatePassId (most precise)
+        let candidates: any[] = [];
+        if (it.cloudGatePassId) {
+          const direct = await prisma.dispatchTruck.findUnique({
+            where: { id: it.cloudGatePassId },
+            select: { id: true, status: true, sourceWbId: true, weightGross: true, weightTare: true, contractId: true, quantityBL: true },
+          });
+          if (direct) candidates = [direct];
+        }
+        // FALLBACK: by sourceWbId
+        if (candidates.length === 0) {
+          const bySrc = await prisma.dispatchTruck.findUnique({
+            where: { sourceWbId: it.sourceWbId },
+            select: { id: true, status: true, sourceWbId: true, weightGross: true, weightTare: true, contractId: true, quantityBL: true },
+          });
+          if (bySrc) candidates = [bySrc];
+        }
+        // FALLBACK: vehicleNo + ±2 day window (handles UTC drift, multi-day flows, RELEASED status)
+        if (candidates.length === 0) {
+          const winStart = new Date(it.createdAt);
+          winStart.setUTCDate(winStart.getUTCDate() - 2);
+          winStart.setUTCHours(0, 0, 0, 0);
+          const winEnd = new Date(it.createdAt);
+          winEnd.setUTCDate(winEnd.getUTCDate() + 2);
+          winEnd.setUTCHours(23, 59, 59, 999);
+          candidates = await prisma.dispatchTruck.findMany({
+            where: {
+              vehicleNo: it.vehicleNo.toUpperCase(),
+              date: { gte: winStart, lte: winEnd },
+              status: { in: ['GATE_IN', 'TARE_WEIGHED', 'GROSS_WEIGHED', 'RELEASED'] },
+            },
+            orderBy: { createdAt: 'desc' },
+            select: { id: true, status: true, sourceWbId: true, weightGross: true, weightTare: true, contractId: true, quantityBL: true },
+          });
+        }
 
         result.candidates = candidates.map(c => ({ id: c.id, status: c.status, sourceWbId: c.sourceWbId, gross: c.weightGross, tare: c.weightTare }));
 
