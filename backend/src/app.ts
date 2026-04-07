@@ -84,6 +84,7 @@ import labTestingRoutes from './routes/labTesting';
 import weighbridgeRoutes from './routes/weighbridge';
 import fuelRoutes from './routes/fuel';
 import rawMaterialPurchaseRoutes from './routes/rawMaterialPurchase';
+import storesPurchaseRoutes from './routes/storesPurchase';
 import accountsReportsRoutes from './routes/accountsReports';
 // AI Assistant
 import aiRoutes from './routes/ai';
@@ -245,6 +246,8 @@ app.use('/api/weighbridge', weighbridgeRoutes);
 app.use('/api/fuel', fuelRoutes);
 // Raw Material Purchase (deals, receipts, payments — mirrors fuel pattern)
 app.use('/api/raw-material-purchase', rawMaterialPurchaseRoutes);
+// Stores (chemicals, packing, spares, consumables, etc — anything not fuel/RM)
+app.use('/api/stores', storesPurchaseRoutes);
 // AI Assistant
 app.use('/api/ai', aiRoutes);
 // Process reports

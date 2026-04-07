@@ -42,6 +42,7 @@ const DosingRecipes = React.lazy(() => import('./pages/process/DosingRecipes'));
 const Inventory = React.lazy(() => import('./pages/Inventory'));
 const InventoryMasters = React.lazy(() => import('./pages/inventory/Masters'));
 const StoreIndents = React.lazy(() => import('./pages/inventory/StoreIndents'));
+const StoreDeals = React.lazy(() => import('./pages/inventory/StoreDeals'));
 // Inventory (SAP-style)
 const StockDashboard = React.lazy(() => import('./pages/inventory/StockDashboard'));
 const MaterialMaster = React.lazy(() => import('./pages/inventory/MaterialMaster'));
@@ -165,6 +166,7 @@ export default function App() {
         <Route path="inventory" element={<Inventory />} />
         <Route path="inventory/masters" element={<InventoryMasters />} />
         <Route path="inventory/store-indents" element={<StoreIndents />} />
+        <Route path="inventory/store-deals" element={<StoreDeals />} />
         {/* Inventory (SAP-style) */}
         <Route path="inventory/dashboard" element={<StockDashboard />} />
         <Route path="inventory/items" element={<MaterialMaster />} />
