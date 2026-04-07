@@ -21,8 +21,37 @@ export async function handleEthanolOutbound(w: WeighmentInput, _ctx: PushContext
   // fix manually — but the factory weighment must NOT keep retrying forever.
   try {
     return await handleEthanolOutboundInner(w, _ctx);
-  } catch (err) {
-    console.error(`[WB-PUSH][ETHANOL] FATAL handler error for ${w.vehicle_no} (${w.id}); ACKing weighment anyway to break retry loop. Error:`, err instanceof Error ? err.stack || err.message : err);
+  } catch (err: any) {
+    // Capture Prisma error code/meta + full context so the next failure tells us EXACTLY what's wrong
+    const errCode = err?.code || 'UNKNOWN';
+    const errMeta = err?.meta ? JSON.stringify(err.meta) : '';
+    const errMessage = err instanceof Error ? err.message : String(err);
+    const errStack = err instanceof Error ? err.stack : '';
+    console.error(`[WB-PUSH][ETHANOL] FATAL handler error for ${w.vehicle_no} | weighmentId=${w.id} | gatePassId=${w.cloud_gate_pass_id || 'none'} | code=${errCode} | meta=${errMeta} | message=${errMessage}\nstack=${errStack}`);
+
+    // Persist to PlantIssue table so we can read the error from the cloud DB next time
+    // (no Railway log access needed). Fire-and-forget — we still ack the weighment.
+    setImmediate(async () => {
+      try {
+        const { default: prismaClient } = await import('../../../config/prisma');
+        await prismaClient.plantIssue.create({
+          data: {
+            title: `Ethanol sync handler error: ${w.vehicle_no}`,
+            description: `Vehicle: ${w.vehicle_no}\nWeighment ID: ${w.id}\nGate Pass ID: ${w.cloud_gate_pass_id || 'none'}\nPrisma code: ${errCode}\nMeta: ${errMeta}\nMessage: ${errMessage}\n\nStack:\n${errStack}`,
+            issueType: 'OTHER',
+            severity: 'HIGH',
+            equipment: 'Weighbridge / Ethanol Sync',
+            location: 'Cloud ERP',
+            status: 'OPEN',
+            reportedBy: 'system-weighbridge',
+            userId: 'system-weighbridge',
+          },
+        });
+      } catch (logErr) {
+        console.error(`[WB-PUSH][ETHANOL] Failed to persist error to PlantIssue:`, logErr);
+      }
+    });
+
     const out = emptyOutcome();
     out.results.push({ id: w.id, type: 'EthanolDispatch_HANDLER_ERROR', refNo: w.vehicle_no, sourceWbId: w.id });
     out.ids.push(w.id);
@@ -74,8 +103,19 @@ async function handleEthanolOutboundInner(w: WeighmentInput, _ctx: PushContext):
       });
     }
 
-    // No existing DispatchTruck — auto-create from factory gate entry
+    // No existing DispatchTruck — auto-create from factory gate entry.
+    // BEFORE creating with sourceWbId=w.id, check whether the unique slot is already taken
+    // (orphan from an earlier partial run). If taken, create WITHOUT sourceWbId so we don't
+    // throw on the unique constraint.
     if (!dispatchTruck) {
+      const orphan = await tx.dispatchTruck.findUnique({
+        where: { sourceWbId: w.id },
+        select: { id: true },
+      });
+      const setSrc = orphan == null;
+      if (!setSrc) {
+        console.warn(`[WB-PUSH][ETHANOL] ${w.vehicle_no} auto-create: sourceWbId=${w.id} already owned by ${orphan!.id}; creating new row without sourceWbId.`);
+      }
       const newTruck = await tx.dispatchTruck.create({
         data: {
           date: dateVal,
@@ -87,7 +127,7 @@ async function handleEthanolOutboundInner(w: WeighmentInput, _ctx: PushContext):
           transporterName: w.transporter || null,
           status: 'GATE_IN',
           gateInTime: gateInVal,
-          sourceWbId: w.id,
+          ...(setSrc ? { sourceWbId: w.id } : {}),
           userId: 'factory-server',
           // Ship-To (outbound) — null when Bill-To == Ship-To
           shipToCustomerId: shipToFkValid,
@@ -108,9 +148,13 @@ async function handleEthanolOutboundInner(w: WeighmentInput, _ctx: PushContext):
             tareTime: tareTimeVal,
             grossTime: grossTimeVal,
             status: 'GROSS_WEIGHED',
+            // Codex audit fix: persist all dispatch fields, not just BL/strength/seal
             ...(w.quantity_bl != null ? { quantityBL: w.quantity_bl } : {}),
             ...(w.ethanol_strength != null ? { strength: w.ethanol_strength } : {}),
             ...(w.seal_no ? { sealNo: w.seal_no } : {}),
+            ...(w.rst_no ? { rstNo: w.rst_no } : {}),
+            ...(w.driver_license ? { driverLicense: w.driver_license } : {}),
+            ...(w.peso_date ? { pesoDate: w.peso_date } : {}),
           },
         });
       }
@@ -151,11 +195,26 @@ async function handleEthanolOutboundInner(w: WeighmentInput, _ctx: PushContext):
     // infinite retry loop where the handler silently skipped — see ethanol stuck trucks
     // 2026-04-07 incident.)
     //
-    // CRITICAL: sourceWbId is @unique on DispatchTruck. Do NOT rewrite it if it's already set
-    // to a different value — that can hit the unique constraint if another orphan row owns w.id.
-    // Only set sourceWbId when current value is null. Otherwise leave it and just update weights.
-    const canSetSourceWbId = dispatchTruck.sourceWbId == null;
-    if (!canSetSourceWbId && dispatchTruck.sourceWbId !== w.id) {
+    // CRITICAL: sourceWbId is @unique on DispatchTruck. The real bug from 2026-04-07 incident:
+    //   1. dispatchTruck (matched by cloud_gate_pass_id) has sourceWbId = null
+    //   2. ANOTHER orphan DispatchTruck row already owns sourceWbId = w.id (from a prior
+    //      auto-create branch run)
+    //   3. updateMany tries to set sourceWbId = w.id → P2002 unique violation → tx rollback
+    //
+    // Fix: query inside the tx whether any OTHER row already owns w.id. If yes, skip writing
+    // sourceWbId on this update (still write weights/status), and log a structured warning so
+    // the orphan can be cleaned up later.
+    let canSetSourceWbId = dispatchTruck.sourceWbId == null;
+    if (canSetSourceWbId) {
+      const orphan = await tx.dispatchTruck.findUnique({
+        where: { sourceWbId: w.id },
+        select: { id: true, vehicleNo: true, status: true },
+      });
+      if (orphan && orphan.id !== dispatchTruck.id) {
+        canSetSourceWbId = false;
+        console.warn(`[WB-PUSH][ETHANOL] ${w.vehicle_no} ORPHAN COLLISION: sourceWbId=${w.id} already owned by DispatchTruck ${orphan.id} (vehicle=${orphan.vehicleNo}, status=${orphan.status}). Updating weights on ${dispatchTruck.id} without claiming sourceWbId. Manual cleanup needed for orphan.`);
+      }
+    } else if (dispatchTruck.sourceWbId !== w.id) {
       console.warn(`[WB-PUSH][ETHANOL] ${w.vehicle_no} dispatchTruck.sourceWbId=${dispatchTruck.sourceWbId} (not w.id=${w.id}); updating weights only, leaving sourceWbId untouched.`);
     }
     const updated = await tx.dispatchTruck.updateMany({
