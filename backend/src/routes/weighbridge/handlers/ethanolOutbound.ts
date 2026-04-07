@@ -230,7 +230,12 @@ async function handleEthanolOutboundInner(w: WeighmentInput, _ctx: PushContext):
         grossTime: grossTimeVal,
         status: 'GROSS_WEIGHED',
         ...(canSetSourceWbId ? { sourceWbId: w.id } : {}),
-        ...(bl > 0 ? { quantityBL: bl, quantityKL: kl } : {}),
+        // NOTE: quantityKL was removed here on 2026-04-07 — DispatchTruck schema only has
+        // quantityBL, not quantityKL (those live on EthanolLifting / EthanolContract).
+        // Writing quantityKL caused PrismaClientValidationError → tx rollback → factory
+        // weighment retry loop → 4 trucks stuck for 5 hours. KL can be computed at display
+        // time as quantityBL / 1000.
+        ...(bl > 0 ? { quantityBL: bl } : {}),
         ...(w.ethanol_strength != null ? { strength: w.ethanol_strength } : {}),
         ...(w.seal_no ? { sealNo: w.seal_no } : {}),
         ...(w.rst_no ? { rstNo: w.rst_no } : {}),
