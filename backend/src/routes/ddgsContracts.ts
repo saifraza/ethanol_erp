@@ -35,17 +35,31 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const where: any = {};
   if (status && status !== 'ALL') where.status = status;
 
-  const contracts = await prisma.dDGSContract.findMany({
+  const rows = await prisma.dDGSContract.findMany({
     where,
     take: 500,
-    include: { customer: { select: { id: true, name: true, gstNo: true, state: true } } },
     orderBy: { createdAt: 'desc' },
-  }).then(rows => rows.map(({ contractPdf, ...rest }) => ({ ...rest, hasPdf: !!contractPdf })));
+    select: {
+      id: true, contractNo: true, status: true,
+      dealType: true, processingChargePerMT: true, principalName: true,
+      quantityType: true,
+      customerId: true, buyerName: true, buyerAddress: true, buyerGstin: true,
+      buyerState: true, buyerContact: true, buyerPhone: true, buyerEmail: true,
+      supplyType: true, startDate: true, endDate: true,
+      contractQtyMT: true, rate: true, gstPercent: true,
+      paymentTermsDays: true, paymentMode: true, logisticsBy: true, remarks: true,
+      contractPdfName: true, autoGenerateEInvoice: true,
+      totalSuppliedMT: true, totalInvoicedAmt: true, totalReceivedAmt: true,
+      createdAt: true, updatedAt: true,
+      customer: { select: { id: true, name: true, gstNo: true, state: true } },
+    },
+  });
+  const contracts = rows.map(r => ({ ...r, hasPdf: !!r.contractPdfName }));
 
   const stats = {
     total: contracts.length,
     active: contracts.filter((c: any) => c.status === 'ACTIVE').length,
-    totalContractQtyMT: contracts.reduce((s: number, c: any) => s + (c.contractQtyMT || 0), 0),
+    totalContractQtyMT: contracts.reduce((s: number, c: any) => s + (c.quantityType === 'OPEN' ? 0 : (c.contractQtyMT || 0)), 0),
     totalSuppliedMT: contracts.reduce((s: number, c: any) => s + (c.totalSuppliedMT || 0), 0),
   };
 
@@ -104,7 +118,8 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       supplyType: b.supplyType || null,
       startDate: new Date(b.startDate),
       endDate: new Date(b.endDate),
-      contractQtyMT: p(b.contractQtyMT) || 0,
+      quantityType: b.quantityType === 'OPEN' ? 'OPEN' : 'FIXED',
+      contractQtyMT: b.quantityType === 'OPEN' ? 0 : (p(b.contractQtyMT) || 0),
       rate: p(b.rate) || 0,
       gstPercent: p(b.gstPercent) ?? DDGS_GST_PCT,
       paymentTermsDays: pInt(b.paymentTermsDays),
@@ -164,7 +179,10 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
       supplyType: b.supplyType !== undefined ? b.supplyType : existing.supplyType,
       startDate: b.startDate ? new Date(b.startDate) : existing.startDate,
       endDate: b.endDate ? new Date(b.endDate) : existing.endDate,
-      contractQtyMT: b.contractQtyMT !== undefined ? (p(b.contractQtyMT) || 0) : existing.contractQtyMT,
+      quantityType: b.quantityType !== undefined ? (b.quantityType === 'OPEN' ? 'OPEN' : 'FIXED') : (existing as any).quantityType,
+      contractQtyMT: b.quantityType === 'OPEN'
+        ? 0
+        : (b.contractQtyMT !== undefined ? (p(b.contractQtyMT) || 0) : existing.contractQtyMT),
       rate: b.rate !== undefined ? (p(b.rate) || 0) : existing.rate,
       gstPercent: b.gstPercent !== undefined ? (p(b.gstPercent) ?? DDGS_GST_PCT) : existing.gstPercent,
       paymentTermsDays: b.paymentTermsDays !== undefined ? pInt(b.paymentTermsDays) : existing.paymentTermsDays,
@@ -261,11 +279,13 @@ router.get('/:id/supply-summary', asyncHandler(async (req: AuthRequest, res: Res
     }
   }
 
+  const isOpen = (contract as any).quantityType === 'OPEN';
   const summary = {
+    quantityType: (contract as any).quantityType || 'FIXED',
     contractQtyMT: contract.contractQtyMT || 0,
     suppliedMT: contract.totalSuppliedMT || 0,
-    remainingMT: Math.max(0, (contract.contractQtyMT || 0) - (contract.totalSuppliedMT || 0)),
-    progressPct: contract.contractQtyMT ? Math.round(((contract.totalSuppliedMT || 0) / contract.contractQtyMT) * 100) : 0,
+    remainingMT: isOpen ? null : Math.max(0, (contract.contractQtyMT || 0) - (contract.totalSuppliedMT || 0)),
+    progressPct: isOpen ? null : (contract.contractQtyMT ? Math.round(((contract.totalSuppliedMT || 0) / contract.contractQtyMT) * 100) : 0),
     invoicedAmount: totalInvoiceAmount,
     receivedAmount: totalPaid,
     outstanding: Math.round((totalInvoiceAmount - totalPaid) * 100) / 100,

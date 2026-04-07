@@ -69,6 +69,7 @@ interface Contract {
   buyerState?: string;
   startDate: string;
   endDate: string;
+  quantityType?: 'FIXED' | 'OPEN';
   contractQtyMT: number;
   rate: number;
   gstPercent: number;
@@ -86,10 +87,11 @@ interface Contract {
 }
 
 interface SupplySummary {
+  quantityType?: 'FIXED' | 'OPEN';
   contractQtyMT: number;
   suppliedMT: number;
-  remainingMT: number;
-  progressPct: number;
+  remainingMT: number | null;
+  progressPct: number | null;
   invoicedAmount: number;
   receivedAmount: number;
   outstanding: number;
@@ -121,6 +123,7 @@ const emptyForm = {
   buyerName: '', buyerAddress: '', buyerGstin: '', buyerState: '', buyerContact: '', buyerPhone: '', buyerEmail: '',
   supplyType: 'INTRA_STATE',
   startDate: '', endDate: '',
+  quantityType: 'FIXED',
   contractQtyMT: '', rate: '', gstPercent: '5',
   paymentTermsDays: '', paymentMode: 'RTGS', logisticsBy: 'BUYER', remarks: '',
 };
@@ -226,6 +229,7 @@ const DDGSContracts: React.FC = () => {
       buyerContact: (c as any).buyerContact || '', buyerPhone: (c as any).buyerPhone || '', buyerEmail: (c as any).buyerEmail || '',
       supplyType: (c as any).supplyType || 'INTRA_STATE',
       startDate: c.startDate?.slice(0, 10) || '', endDate: c.endDate?.slice(0, 10) || '',
+      quantityType: (c.quantityType === 'OPEN' ? 'OPEN' : 'FIXED'),
       contractQtyMT: String(c.contractQtyMT || ''), rate: String(c.rate || ''),
       gstPercent: String(c.gstPercent || '5'),
       paymentTermsDays: String(c.paymentTermsDays || ''), paymentMode: c.paymentMode || 'RTGS',
@@ -487,8 +491,12 @@ const DDGSContracts: React.FC = () => {
                         {fmtINR(c.rate)}
                       </td>
                       <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right hidden md:table-cell">
-                        <div className="font-mono tabular-nums">{c.totalSuppliedMT.toFixed(0)} / {c.contractQtyMT.toFixed(0)} MT</div>
-                        {c.contractQtyMT > 0 && (
+                        <div className="font-mono tabular-nums">
+                          {c.quantityType === 'OPEN'
+                            ? `${c.totalSuppliedMT.toFixed(0)} MT / Open`
+                            : `${c.totalSuppliedMT.toFixed(0)} / ${c.contractQtyMT.toFixed(0)} MT`}
+                        </div>
+                        {c.quantityType !== 'OPEN' && c.contractQtyMT > 0 && (
                           <div className="w-full h-1.5 bg-slate-200 mt-1 overflow-hidden">
                             <div className={`h-full transition-all ${pct >= 90 ? 'bg-green-500' : pct >= 50 ? 'bg-blue-500' : 'bg-amber-500'}`}
                               style={{ width: `${Math.min(pct, 100)}%` }} />
@@ -537,21 +545,36 @@ const DDGSContracts: React.FC = () => {
                             <div className="space-y-0">
                               {/* Supply Progress Bar */}
                               <div className="px-4 py-3 border-b border-slate-200 bg-white">
-                                <div className="flex items-center justify-between mb-1.5">
-                                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Supply Progress</span>
-                                  <span className="text-xs font-bold font-mono tabular-nums text-slate-700">
-                                    {fmtMT(detailSummary.suppliedMT)} / {detailSummary.contractQtyMT.toFixed(0)} MT
-                                    <span className="text-slate-400 ml-1">({detailSummary.progressPct}%)</span>
-                                  </span>
-                                </div>
-                                <div className="w-full h-2.5 bg-slate-200 overflow-hidden">
-                                  <div className={`h-full transition-all ${detailSummary.progressPct >= 90 ? 'bg-green-500' : detailSummary.progressPct >= 50 ? 'bg-blue-500' : 'bg-amber-500'}`}
-                                    style={{ width: `${Math.min(detailSummary.progressPct, 100)}%` }} />
-                                </div>
-                                <div className="flex justify-between mt-1 text-[10px] text-slate-400">
-                                  <span>{fmtMT(detailSummary.remainingMT)} MT remaining</span>
-                                  <span>{detailSummary.daysRemaining}d left</span>
-                                </div>
+                                {detailSummary.quantityType === 'OPEN' ? (
+                                  <>
+                                    <div className="flex items-center justify-between mb-1.5">
+                                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Supply (Open Contract)</span>
+                                      <span className="text-xs font-bold font-mono tabular-nums text-slate-700">{fmtMT(detailSummary.suppliedMT)} MT supplied</span>
+                                    </div>
+                                    <div className="flex justify-between mt-1 text-[10px] text-slate-400">
+                                      <span>No quantity limit</span>
+                                      <span>{detailSummary.daysRemaining}d left</span>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <>
+                                    <div className="flex items-center justify-between mb-1.5">
+                                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Supply Progress</span>
+                                      <span className="text-xs font-bold font-mono tabular-nums text-slate-700">
+                                        {fmtMT(detailSummary.suppliedMT)} / {detailSummary.contractQtyMT.toFixed(0)} MT
+                                        <span className="text-slate-400 ml-1">({detailSummary.progressPct}%)</span>
+                                      </span>
+                                    </div>
+                                    <div className="w-full h-2.5 bg-slate-200 overflow-hidden">
+                                      <div className={`h-full transition-all ${(detailSummary.progressPct ?? 0) >= 90 ? 'bg-green-500' : (detailSummary.progressPct ?? 0) >= 50 ? 'bg-blue-500' : 'bg-amber-500'}`}
+                                        style={{ width: `${Math.min(detailSummary.progressPct ?? 0, 100)}%` }} />
+                                    </div>
+                                    <div className="flex justify-between mt-1 text-[10px] text-slate-400">
+                                      <span>{fmtMT(detailSummary.remainingMT ?? 0)} MT remaining</span>
+                                      <span>{detailSummary.daysRemaining}d left</span>
+                                    </div>
+                                  </>
+                                )}
                               </div>
 
                               {/* Document Pipeline KPIs */}
@@ -973,7 +996,20 @@ const DDGSContracts: React.FC = () => {
               <div className="grid grid-cols-4 gap-3">
                 <div><label className={labelCls}>Start Date *</label><input type="date" name="startDate" value={form.startDate} onChange={handleFormChange} required className={inputCls} /></div>
                 <div><label className={labelCls}>End Date *</label><input type="date" name="endDate" value={form.endDate} onChange={handleFormChange} required className={inputCls} /></div>
-                <div><label className={labelCls}>Total Qty (MT) *</label><input type="number" name="contractQtyMT" value={form.contractQtyMT} onChange={handleFormChange} step="0.01" className={inputCls} /></div>
+                <div>
+                  <label className={labelCls}>Quantity Type</label>
+                  <select name="quantityType" value={form.quantityType} onChange={handleFormChange} className={inputCls}>
+                    <option value="FIXED">Fixed Qty</option>
+                    <option value="OPEN">Open / No Limit</option>
+                  </select>
+                </div>
+                {form.quantityType === 'OPEN' ? (
+                  <div><label className={labelCls}>Total Qty (MT)</label><input type="text" value="— Open —" disabled className={inputCls + ' bg-slate-100 text-slate-400'} /></div>
+                ) : (
+                  <div><label className={labelCls}>Total Qty (MT) *</label><input type="number" name="contractQtyMT" value={form.contractQtyMT} onChange={handleFormChange} step="0.01" className={inputCls} /></div>
+                )}
+              </div>
+              <div className="grid grid-cols-4 gap-3">
                 <div><label className={labelCls}>Payment Terms (Days)</label><input type="number" name="paymentTermsDays" value={form.paymentTermsDays} onChange={handleFormChange} className={inputCls} /></div>
               </div>
               <div className="grid grid-cols-4 gap-3">
