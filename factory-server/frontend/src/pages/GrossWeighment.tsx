@@ -202,12 +202,23 @@ export default function GrossWeighment() {
       // Outbound ethanol: include volume, strength, seal
       const isOutboundEthanol = scannedRecord.direction === 'OUTBOUND' && (scannedRecord.materialName || '').toLowerCase().includes('ethanol');
       if (isOutboundEthanol) {
-        if (ethanolBL) payload.quantityBL = ethanolBL;
+        // Mandatory fields: BL, sealNo, pesoDate (must match backend validation in /gross route)
+        const missing: string[] = [];
+        if (!ethanolBL) missing.push('Volume (BL)');
+        if (!ethanolSeal) missing.push('Seal No');
+        if (!ethanolPESO) missing.push('PESO Date');
+        if (missing.length > 0) {
+          alert(`Cannot save — these fields are required for the invoice/challan:\n\n• ${missing.join('\n• ')}`);
+          setCapturing(false);
+          setShowConfirm(true);
+          return;
+        }
+        payload.quantityBL = ethanolBL;
+        payload.sealNo = ethanolSeal;
+        payload.pesoDate = ethanolPESO;
         if (ethanolStrength) payload.strength = ethanolStrength;
-        if (ethanolSeal) payload.sealNo = ethanolSeal;
         if (ethanolRST) payload.rstNo = ethanolRST;
         if (ethanolDL) payload.driverLicense = ethanolDL;
-        if (ethanolPESO) payload.pesoDate = ethanolPESO;
       }
       await api.post(`/weighbridge/${scannedRecord.id}/gross`, payload);
       const slip = scannedRecord?.direction === 'OUTBOUND' ? 'final-slip' : 'gross-slip';
