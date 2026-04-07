@@ -361,9 +361,216 @@ Fuel is NOT a separate handler — fuel-specific behavior (skip GrainTruck, fuel
 
 ---
 
+## ⭐ FRONTEND — The Other Half (Don't Skip This)
+
+A backend handler alone is dead code. Every product type needs a full frontend vertical so operators, sales, and management can actually use it. Use **Ethanol** and **DDGS** as your reference templates — they're the gold standard.
+
+### The Ethanol Frontend Vertical (reference pattern)
+
+| Layer | Files | Purpose |
+|-------|-------|---------|
+| **Backend route** | `backend/src/routes/ethanolProduct.ts`, `ethanolContracts.ts`, `dispatch.ts` | CRUD APIs |
+| **Process page (operator)** | `frontend/src/pages/process/EthanolProduct.tsx` | Daily ethanol production stock |
+| **Dispatch page (operator)** | `frontend/src/pages/process/EthanolDispatch.tsx` | Truck dispatch tracking |
+| **Sales page (commercial)** | `frontend/src/pages/sales/EthanolContracts.tsx` | OMC contracts, allocations, supply tracking |
+| **Module config** | `frontend/src/config/modules.ts` | Sidebar entries: `ethanol-dispatch`, `ethanol-contracts` |
+| **Routing** | `frontend/src/App.tsx` | Lazy import + `<Route>` |
+| **Layout group** | `frontend/src/components/Layout.tsx` | Sidebar grouping (which collapsible section) |
+| **Backend router registration** | `backend/src/app.ts` | `app.use('/api/ethanol-product', ...)` |
+
+### The DDGS Frontend Vertical (mirror pattern)
+
+DDGS has the exact same structure as ethanol — use it as a second reference:
+
+| Layer | File |
+|-------|------|
+| Process | `frontend/src/pages/process/DDGSStock.tsx`, `DDGSDispatch.tsx` |
+| Sales | `frontend/src/pages/sales/DDGSContracts.tsx` |
+| Backend | `backend/src/routes/ddgsStock.ts`, `ddgsDispatch.ts`, `ddgsContracts.ts` |
+
+**Pattern**: every sellable product gets at minimum a Process page (operator stock view), a Sales page (contracts/orders), and a Dispatch page (truck tracking). Existing modules (Sales Orders, Customers, Invoices, Payments) handle the rest of the order-to-cash workflow.
+
+---
+
+## Full Vertical Checklist for a New Product (e.g., Scrap)
+
+When adding a new product, you need ALL of these. Skipping any one leaves a half-built system.
+
+### Backend (cloud ERP)
+
+```
+□ Prisma model (if dedicated table needed)        backend/prisma/schema.prisma
+□ Migration                                        npx prisma migrate dev --name add_scrap
+□ Route file (CRUD APIs)                           backend/src/routes/scrap.ts  (or scrapDispatch.ts)
+□ Register in app.ts                               import scrapRoutes from './routes/scrap';
+                                                   app.use('/api/scrap', scrapRoutes);
+□ Weighbridge handler (if dedicated)               backend/src/routes/weighbridge/handlers/scrapOutbound.ts
+□ Add to push.ts dispatcher                       detectHandler() routing
+□ Material category in factory server              factory-server/src/routes/weighbridge.ts (SCRAP_KEYWORDS)
+□ InventoryItem in cloud DB                        category='SCRAP', unit, HSN, GST
+```
+
+### Frontend (operator + sales views)
+
+```
+□ Process page (operator stock view)               frontend/src/pages/process/ScrapStock.tsx
+□ Process dispatch page (operator)                 frontend/src/pages/process/ScrapDispatch.tsx
+□ Sales page (commercial contracts)                frontend/src/pages/sales/ScrapContracts.tsx
+□ Lazy import in App.tsx                           const ScrapStock = React.lazy(() => import(...))
+□ Routes in App.tsx                                <Route path="process/scrap-stock" ... />
+□ Module entries in modules.ts                     { key: 'scrap-stock', label: 'Scrap Stock', to: '/process/scrap-stock', group: 'process' }
+□ Sidebar group mapping in Layout.tsx              'scrap-stock': 'scrap'  (or existing group)
+□ Permission check (if role-gated)                 modules.ts permission field
+```
+
+### Sales workflow (reuse existing modules)
+
+```
+□ Customer master                                  /procurement/customers (no new code, just data)
+□ Sales Order template                             /sales/sales-orders (existing UI handles all products)
+□ Invoice generation                               /sales/invoices (existing handles HSN/GST per item)
+□ Payment receipt                                  /sales/payments (existing)
+□ E-invoice/e-way bill                             Auto via sales-module, requires HSN on InventoryItem
+□ Telegram notification (optional)                 backend/src/services/messaging.ts (add scrap dispatch hook)
+```
+
+### Documents (PDF/Print)
+
+```
+□ Delivery challan template                        backend/templates/scrap-challan.hbs (if custom)
+□ Invoice template                                 reuses existing invoice.hbs (driven by InventoryItem.hsnCode)
+□ Weighment slip                                   reuses existing weighbridge slip
+□ Print endpoint in route file                     scrap.ts → renderDocumentPdf() (see CLAUDE.md PDF rule)
+```
+
+### Reporting / Analytics
+
+```
+□ Add to Sales Dashboard                           frontend/src/pages/sales/SalesDashboard.tsx (KPI tile)
+□ Add to Stock Dashboard                           frontend/src/pages/inventory/StockDashboard.tsx
+□ Add to Reports module                            frontend/src/pages/Reports.tsx
+□ Recharts compliance                              follow .claude/skills/charts-graphs.md
+```
+
+---
+
+## Frontend File Templates (Copy from Existing)
+
+### ScrapStock.tsx — base on `EthanolProduct.tsx`
+Read first: `frontend/src/pages/process/EthanolProduct.tsx`
+Replace:
+- `ethanol` → `scrap`
+- `Ethanol` → `Scrap`
+- API endpoint `/api/ethanol-product` → `/api/scrap-stock`
+- Tank/storage fields → bin/heap fields (whatever scrap uses)
+- Keep the same Tier 1 plant UI style (rounded, friendly)
+
+### ScrapDispatch.tsx — base on `DDGSDispatch.tsx`
+Read first: `frontend/src/pages/process/DDGSDispatch.tsx`
+Replace:
+- `ddgs` → `scrap`
+- API endpoint `/api/ddgs-dispatch` → `/api/scrap-dispatch`
+- Adjust units (KG/MT)
+
+### ScrapContracts.tsx — base on `DDGSContracts.tsx` (NOT EthanolContracts — too OMC-specific)
+Read first: `frontend/src/pages/sales/DDGSContracts.tsx`
+This is **Tier 2 SAP-style** (square edges, dense, professional). Follow the SAP design tokens in CLAUDE.md.
+Replace:
+- `ddgs` → `scrap`
+- `DDGS` → `Scrap`
+- API endpoint `/api/ddgs-contracts` → `/api/scrap-contracts`
+- Buyer fields might be different (scrap dealer vs. food customer)
+
+---
+
+## Sidebar Integration Walkthrough
+
+`frontend/src/config/modules.ts` — add the new entries:
+```typescript
+// Process group
+{ key: 'scrap-stock', label: 'Scrap Stock', to: '/process/scrap-stock', icon: Package, group: 'process' },
+{ key: 'scrap-dispatch', label: 'Scrap Dispatch', to: '/process/scrap-dispatch', icon: Truck, group: 'process' },
+
+// Sales group
+{ key: 'scrap-contracts', label: 'Scrap Sales', to: '/sales/scrap-contracts', icon: Handshake, group: 'sales' },
+```
+
+`frontend/src/components/Layout.tsx` — add group mapping if you want it under a new collapsible section:
+```typescript
+const moduleToGroup = {
+  // ... existing
+  'scrap-stock': 'scrap',
+  'scrap-dispatch': 'scrap',
+};
+```
+
+`frontend/src/App.tsx` — lazy import + routes:
+```typescript
+const ScrapStock = React.lazy(() => import('./pages/process/ScrapStock'));
+const ScrapDispatch = React.lazy(() => import('./pages/process/ScrapDispatch'));
+const ScrapContracts = React.lazy(() => import('./pages/sales/ScrapContracts'));
+
+// In <Routes>:
+<Route path="process/scrap-stock" element={<ScrapStock />} />
+<Route path="process/scrap-dispatch" element={<ScrapDispatch />} />
+<Route path="sales/scrap-contracts" element={<ScrapContracts />} />
+```
+
+---
+
+## End-to-End Test Plan (the only test that matters)
+
+After all backend + frontend work is done, run through this on production:
+
+```
+1. Master data:
+   □ InventoryItem 'Iron Scrap' created with category=SCRAP, unit=KG, HSN=7204, GST=18%
+   □ Customer 'Scrap Dealer Pvt Ltd' created with GSTIN
+   □ Vendor (if buying scrap from someone) created
+2. Frontend smoke test:
+   □ Sidebar shows: Scrap Stock, Scrap Dispatch, Scrap Sales
+   □ All 3 pages load without errors
+   □ Browser console: 0 errors
+3. Sales side:
+   □ Create a Scrap Sales contract / Sales Order via UI
+   □ Verify it appears in Sales Orders list
+4. Operator (factory):
+   □ Gate entry on factory server: select 'Iron Scrap' material, vehicle in
+   □ Tare weighment captured
+   □ Loader fills truck
+   □ Gross weighment captured
+   □ Factory server pushes to cloud
+5. Cloud verification:
+   □ Check factory admin dashboard: weighment shows SYNCED (not ERROR)
+   □ Cloud Shipment / ScrapDispatch created with correct weights
+   □ Inventory decremented (check StockMovement and StockLevel)
+   □ Journal entry posted (debit COGS-Scrap, credit Inventory-Scrap)
+6. Sales completion:
+   □ Generate invoice from sales/invoices
+   □ E-way bill auto-generated (if eligible)
+   □ Send invoice to customer
+   □ Mark payment received
+7. Reports:
+   □ Sales Dashboard shows scrap revenue
+   □ Stock Dashboard shows scrap stock movement
+   □ P&L includes scrap revenue/COGS
+```
+
+---
+
+## Why This Matters
+
+The weighbridge handler is only ~10% of the work. If you only build the handler, the operator has nowhere to enter gate data, sales has nowhere to track contracts, accounts has no invoice trail, and the data sits in a database table no one looks at.
+
+**Always build the full vertical**: backend handler + process page + sales page + dispatch page + reports integration. Use ethanol/DDGS as your template — they show every layer working together.
+
+---
+
 ## When in Doubt
 
 1. Read this skill again
-2. Look at the existing handlers in `backend/src/routes/weighbridge/handlers/` — they're all small enough to read in 5 minutes
-3. Check the plan: `.claude/plans/optimized-whistling-hopcroft.md`
-4. Run the Codex audit on your new handler before deploying — it catches race conditions
+2. Open ALL the ethanol files side by side: route, process page, sales page, dispatch page — see how they connect
+3. Look at the existing handlers in `backend/src/routes/weighbridge/handlers/` — they're all small enough to read in 5 minutes
+4. Check the plan: `.claude/plans/optimized-whistling-hopcroft.md`
+5. Run the Codex audit on your new handler before deploying — it catches race conditions
+6. **Test the whole vertical end-to-end on production with one real truck before announcing it's done**
