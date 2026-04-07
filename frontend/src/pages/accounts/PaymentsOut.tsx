@@ -971,16 +971,22 @@ export default function PaymentsOut() {
                                       </button>
                                     </>
                                   )}
-                                  {/* Direct PAY against PO — only when no invoices exist (running account) */}
-                                  {item.grnCount > 0 && item.invoices.length === 0 && item.balance >= 1 && (
-                                    <button onClick={() => { setPoPayItem(item); setPoPayAmount(''); setPoPayMode('NEFT'); setPoPayRef(''); setPoPayRemarks(''); setPoPayIncludeGst(false); setBankPendingPayment(null); fetchPOPayments(item.poId); }}
-                                      className="px-2 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase hover:bg-green-700 flex items-center gap-1" title="Pay against PO">
-                                      <CreditCard size={10} /> PAY
-                                    </button>
-                                  )}
-                                  {item.grnCount === 0 && (
-                                    <span className="text-[9px] text-slate-400 uppercase">No GRN</span>
-                                  )}
+                                  {/* Direct PAY against PO — running account (after GRN) OR advance (before delivery) */}
+                                  {(() => {
+                                    const isAdvance = /ADVANCE|PREPAY/i.test(item.paymentTerms || '');
+                                    const canRunningPay = item.grnCount > 0 && item.invoices.length === 0 && item.balance >= 1;
+                                    const canAdvancePay = item.grnCount === 0 && item.invoices.length === 0 && isAdvance;
+                                    if (canRunningPay || canAdvancePay) {
+                                      return (
+                                        <button onClick={() => { setPoPayItem(item); setPoPayAmount(canAdvancePay ? String(item.poAmount || '') : ''); setPoPayMode('NEFT'); setPoPayRef(''); setPoPayRemarks(canAdvancePay ? 'Advance payment' : ''); setPoPayIncludeGst(false); setBankPendingPayment(null); fetchPOPayments(item.poId); }}
+                                          className="px-2 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase hover:bg-green-700 flex items-center gap-1" title={canAdvancePay ? 'Pay in advance' : 'Pay against PO'}>
+                                          <CreditCard size={10} /> {canAdvancePay ? 'ADV PAY' : 'PAY'}
+                                        </button>
+                                      );
+                                    }
+                                    if (item.grnCount === 0) return <span className="text-[9px] text-slate-400 uppercase">No GRN</span>;
+                                    return null;
+                                  })()}
                                 </div>
                               </td>
                             </tr>
