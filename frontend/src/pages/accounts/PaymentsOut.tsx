@@ -808,37 +808,63 @@ export default function PaymentsOut() {
               <div className="p-8 text-center text-xs text-slate-400 uppercase tracking-widest border-x border-b border-slate-300 -mx-3 md:-mx-6 bg-white">Loading...</div>
             ) : (
               <>
-                {/* KPI Strip */}
-                {pendingSummary && (
+                {/* KPI Strip — derived from pendingItems so they always match the table */}
+                {(() => {
+                  const totalPayable = pendingItems.reduce((s, it) => s + (it.balance || 0), 0);
+                  const overdueAmount = pendingItems
+                    .filter(it => (it.daysOverdue ?? 0) > 0)
+                    .reduce((s, it) => s + (it.balance || 0), 0);
+                  const dueThisWeek = pendingItems
+                    .filter(it => {
+                      const d = it.daysOverdue ?? 0;
+                      return d <= 0 && d >= -7;
+                    })
+                    .reduce((s, it) => s + (it.balance || 0), 0);
+                  const buckets = {
+                    overdue:  { val: 0, cnt: 0 },
+                    thisWeek: { val: 0, cnt: 0 },
+                    d7_15:    { val: 0, cnt: 0 },
+                    d15_30:   { val: 0, cnt: 0 },
+                    d30plus:  { val: 0, cnt: 0 },
+                  };
+                  for (const it of pendingItems) {
+                    const bal = it.balance || 0;
+                    const d = it.daysOverdue ?? 0;
+                    if (d > 0)         { buckets.overdue.val  += bal; buckets.overdue.cnt++; }
+                    else if (d >= -7)  { buckets.thisWeek.val += bal; buckets.thisWeek.cnt++; }
+                    else if (d >= -15) { buckets.d7_15.val    += bal; buckets.d7_15.cnt++; }
+                    else if (d >= -30) { buckets.d15_30.val   += bal; buckets.d15_30.cnt++; }
+                    else               { buckets.d30plus.val  += bal; buckets.d30plus.cnt++; }
+                  }
+                  return (
+                  <>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
                     <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-red-500">
                       <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Payable</div>
-                      <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmt(pendingSummary.totalPayable)}</div>
+                      <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmt(totalPayable)}</div>
                     </div>
                     <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-orange-500">
                       <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Overdue</div>
-                      <div className="text-xl font-bold text-red-600 mt-1 font-mono tabular-nums">{fmt(pendingSummary.overdueAmount)}</div>
+                      <div className="text-xl font-bold text-red-600 mt-1 font-mono tabular-nums">{fmt(overdueAmount)}</div>
                     </div>
                     <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-amber-500">
                       <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Due This Week</div>
-                      <div className="text-xl font-bold text-amber-600 mt-1 font-mono tabular-nums">{fmt(pendingSummary.dueThisWeek)}</div>
+                      <div className="text-xl font-bold text-amber-600 mt-1 font-mono tabular-nums">{fmt(dueThisWeek)}</div>
                     </div>
                     <div className="bg-white px-4 py-3 border-l-4 border-l-green-500">
                       <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Paid This Month</div>
-                      <div className="text-xl font-bold text-green-600 mt-1 font-mono tabular-nums">{fmt(pendingSummary.paidThisMonth)}</div>
+                      <div className="text-xl font-bold text-green-600 mt-1 font-mono tabular-nums">{fmt(pendingSummary?.paidThisMonth || 0)}</div>
                     </div>
                   </div>
-                )}
 
-                {/* Aging Buckets */}
-                {pendingSummary && (
+                  {/* Aging Buckets — also derived from pendingItems */}
                   <div className="grid grid-cols-5 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
                     {([
-                      { label: 'Overdue', val: pendingSummary.aging.overdue, cnt: pendingSummary.agingCount.overdue, color: 'text-red-700' },
-                      { label: 'This Week', val: pendingSummary.aging.thisWeek, cnt: pendingSummary.agingCount.thisWeek, color: 'text-amber-600' },
-                      { label: 'In 7-15 Days', val: pendingSummary.aging.d7_15, cnt: pendingSummary.agingCount.d7_15, color: 'text-orange-500' },
-                      { label: 'In 15-30 Days', val: pendingSummary.aging.d15_30, cnt: pendingSummary.agingCount.d15_30, color: 'text-blue-600' },
-                      { label: '30+ Days', val: pendingSummary.aging.d30plus, cnt: pendingSummary.agingCount.d30plus, color: 'text-green-600' },
+                      { label: 'Overdue', val: buckets.overdue.val, cnt: buckets.overdue.cnt, color: 'text-red-700' },
+                      { label: 'This Week', val: buckets.thisWeek.val, cnt: buckets.thisWeek.cnt, color: 'text-amber-600' },
+                      { label: 'In 7-15 Days', val: buckets.d7_15.val, cnt: buckets.d7_15.cnt, color: 'text-orange-500' },
+                      { label: 'In 15-30 Days', val: buckets.d15_30.val, cnt: buckets.d15_30.cnt, color: 'text-blue-600' },
+                      { label: '30+ Days', val: buckets.d30plus.val, cnt: buckets.d30plus.cnt, color: 'text-green-600' },
                     ]).map((b, i) => (
                       <div key={b.label} className={`bg-white px-3 py-2 ${i < 4 ? 'border-r border-slate-300' : ''}`}>
                         <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{b.label}</div>
@@ -847,7 +873,9 @@ export default function PaymentsOut() {
                       </div>
                     ))}
                   </div>
-                )}
+                  </>
+                  );
+                })()}
 
                 {/* Search + Category Filter */}
                 <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 bg-slate-100 px-4 py-2 flex items-center gap-3 flex-wrap">
@@ -898,7 +926,7 @@ export default function PaymentsOut() {
                             <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">PO#</th>
                             <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Vendor</th>
                             <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Terms</th>
-                            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Receivable</th>
+                            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Payable</th>
                             <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Invoiced</th>
                             <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Paid</th>
                             <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Balance</th>
