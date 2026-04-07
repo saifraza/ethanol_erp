@@ -507,6 +507,16 @@ export function registerOtherRoutes(router: Router): void {
       tareKg: number;
       sourceWbId: string;
       createdAt: string;
+      cloudGatePassId?: string;
+      quantityBL?: number;
+      strength?: number;
+      sealNo?: string;
+      rstNo?: string;
+      driverLicense?: string;
+      pesoDate?: string;
+      transporter?: string;
+      driverName?: string;
+      driverPhone?: string;
     }> = req.body.items || [];
 
     const results: any[] = [];
@@ -532,10 +542,12 @@ export function registerOtherRoutes(router: Router): void {
 
         result.candidates = candidates.map(c => ({ id: c.id, status: c.status, sourceWbId: c.sourceWbId, gross: c.weightGross, tare: c.weightTare }));
 
-        // Pick the one matching sourceWbId, else the first GATE_IN/TARE_WEIGHED, else first GROSS_WEIGHED with no weights
-        let target = candidates.find(c => c.sourceWbId === it.sourceWbId);
+        // Pick the matching truck: prefer cloudGatePassId match, else sourceWbId, else any active row
+        let target = it.cloudGatePassId ? candidates.find(c => c.id === it.cloudGatePassId) : undefined;
+        if (!target) target = candidates.find(c => c.sourceWbId === it.sourceWbId);
         if (!target) target = candidates.find(c => c.status === 'GATE_IN' || c.status === 'TARE_WEIGHED');
         if (!target) target = candidates.find(c => c.status === 'GROSS_WEIGHED' && (c.weightGross == null || c.weightGross === 0));
+        if (!target) target = candidates[0];
 
         if (!target) {
           result.action = 'no-target';
@@ -543,14 +555,40 @@ export function registerOtherRoutes(router: Router): void {
           continue;
         }
 
-        // Compute KL/productValue if contract present
-        const bl = it.grossKg && it.tareKg ? (target.quantityBL || 0) : 0;
         const updateData: any = {
           weightGross: it.grossKg,
           weightTare: it.tareKg,
           weightNet: it.grossKg - it.tareKg,
           status: 'GROSS_WEIGHED',
         };
+
+        // Ethanol-specific fields from factory
+        if (it.quantityBL != null) {
+          updateData.quantityBL = it.quantityBL;
+        }
+        if (it.strength != null) updateData.strength = it.strength;
+        if (it.sealNo) updateData.sealNo = it.sealNo;
+        if (it.rstNo) updateData.rstNo = it.rstNo;
+        if (it.driverLicense) updateData.driverLicense = it.driverLicense;
+        if (it.pesoDate) updateData.pesoDate = it.pesoDate;
+        if (it.transporter) updateData.transporterName = it.transporter;
+        if (it.driverName) updateData.driverName = it.driverName;
+        if (it.driverPhone) updateData.driverPhone = it.driverPhone;
+
+        // Compute productValue from contract if present
+        if (target.contractId && it.quantityBL && it.quantityBL > 0) {
+          const contract = await prisma.ethanolContract.findUnique({
+            where: { id: target.contractId },
+            select: { contractType: true, ethanolRate: true, conversionRate: true },
+          });
+          if (contract) {
+            const rate = contract.contractType === 'JOB_WORK' ? contract.conversionRate : contract.ethanolRate;
+            if (rate && rate > 0) {
+              updateData.productRatePerLtr = rate;
+              updateData.productValue = Math.round(it.quantityBL * rate);
+            }
+          }
+        }
 
         // Only set sourceWbId if currently null (avoid unique-constraint conflict)
         if (target.sourceWbId == null) {
