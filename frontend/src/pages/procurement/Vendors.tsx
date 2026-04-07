@@ -376,8 +376,8 @@ export default function Vendors() {
       const res = await api.get(`/vendors/gstin-lookup/${g}`);
       const d = res.data;
       if (d.success) {
-        if (d.legalName && !name) setName(d.legalName);
-        if (d.tradeName) setTradeName(d.tradeName);
+        if (d.tradeName && !name) setName(d.tradeName);
+        if (d.legalName) setTradeName(d.legalName);
         if (d.pan) setPan(d.pan);
         if (d.address) setAddress(d.address);
         if (d.city) setCity(d.city);
