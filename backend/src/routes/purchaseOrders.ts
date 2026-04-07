@@ -326,6 +326,26 @@ router.put('/:id/status', asyncHandler(async (req: AuthRequest, res: Response) =
 }));
 
 // PUT /:id — update PO details and lines (only if DRAFT)
+// PATCH /:id/payment-terms — narrow update allowed even on approved POs
+router.patch('/:id/payment-terms', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { paymentTerms, creditDays } = req.body as { paymentTerms?: string; creditDays?: number };
+    const po = await prisma.purchaseOrder.findUnique({ where: { id: req.params.id } });
+    if (!po) return res.status(404).json({ error: 'PO not found' });
+    if (po.status === 'CANCELLED' || po.status === 'ARCHIVED') {
+      return res.status(400).json({ error: `Cannot update payment terms on ${po.status} PO` });
+    }
+    const termDays: Record<string, number> = { 'Advance 100%': 0, 'Advance 50% + Balance on Delivery': 0, 'Against Delivery': 0, 'Net 7': 7, 'Net 15': 15, 'Net 30': 30, 'Net 45': 45, 'Net 60': 60, 'Net 90': 90 };
+    const updated = await prisma.purchaseOrder.update({
+      where: { id: po.id },
+      data: {
+        paymentTerms: paymentTerms ?? po.paymentTerms,
+        creditDays: creditDays ?? (paymentTerms && termDays[paymentTerms] !== undefined ? termDays[paymentTerms] : po.creditDays),
+      },
+      select: { id: true, poNo: true, paymentTerms: true, creditDays: true, status: true },
+    });
+    res.json(updated);
+}));
+
 router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const po = await prisma.purchaseOrder.findUnique({
       where: { id: req.params.id },

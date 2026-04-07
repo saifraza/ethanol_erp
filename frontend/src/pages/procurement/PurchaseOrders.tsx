@@ -1134,6 +1134,23 @@ const PurchaseOrders: React.FC = () => {
                             + Expected GRN
                           </button>
                         )}
+                        {['APPROVED', 'SENT', 'PARTIAL_RECEIVED', 'DRAFT'].includes(po.status) && (
+                          <button onClick={async () => {
+                            const options = ['Advance 100%', 'Advance 50% + Balance on Delivery', 'Against Delivery', 'Net 7', 'Net 15', 'Net 30', 'Net 45', 'Net 60', 'Net 90'];
+                            const choice = prompt(`Change payment terms for PO-${po.poNo}. Current: ${po.paymentTerms || '—'}\n\nType one:\n${options.map((o, i) => `${i + 1}. ${o}`).join('\n')}\n\nEnter number (1-${options.length}):`);
+                            if (!choice) return;
+                            const idx = parseInt(choice, 10) - 1;
+                            if (isNaN(idx) || idx < 0 || idx >= options.length) { alert('Invalid choice'); return; }
+                            try {
+                              await api.patch(`/purchase-orders/${po.id}/payment-terms`, { paymentTerms: options[idx] });
+                              fetchData();
+                            } catch (e: any) {
+                              alert(e?.response?.data?.error || 'Failed to update terms');
+                            }
+                          }} className="px-2.5 py-0.5 bg-slate-600 text-white text-[9px] font-bold uppercase hover:bg-slate-700">
+                            Terms
+                          </button>
+                        )}
                         {po.status === 'SENT' && (
                           po.grnCount > 0
                             ? <button onClick={() => handleStatusChange(po.id, 'RECEIVED')} className="px-2.5 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase hover:bg-green-700">
