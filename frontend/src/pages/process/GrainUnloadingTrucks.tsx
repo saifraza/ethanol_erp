@@ -430,7 +430,7 @@ export default function GrainUnloadingTrucks() {
                     </span>
                   )}
                   <span className="text-xs text-gray-400">
-                    {new Date(t.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                    {new Date(t.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
                   </span>
                 </div>
                 <div className="text-xs text-gray-600">

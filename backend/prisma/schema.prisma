@@ -2980,6 +2980,10 @@ model DDGSContract {
   buyerAddress         String?
   buyerGstin           String?
   buyerState           String?
+  buyerContact         String?
+  buyerPhone           String?
+  buyerEmail           String?
+  supplyType           String?  // INTRA_STATE, INTER_STATE
   startDate            DateTime
   endDate              DateTime
   contractQtyMT        Float    @default(0)

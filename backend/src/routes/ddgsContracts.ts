@@ -88,10 +88,14 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       contractNo: b.contractNo,
       status: b.status || 'ACTIVE',
       customerId: customer.id,
-      buyerName: customer.name,
-      buyerAddress: customer.address || null,
-      buyerGstin: customer.gstNo || null,
-      buyerState: customer.state || null,
+      buyerName: b.buyerName || customer.name,
+      buyerAddress: b.buyerAddress || customer.address || null,
+      buyerGstin: b.buyerGstin || customer.gstNo || null,
+      buyerState: b.buyerState || customer.state || null,
+      buyerContact: b.buyerContact || null,
+      buyerPhone: b.buyerPhone || customer.phone || null,
+      buyerEmail: b.buyerEmail || customer.email || null,
+      supplyType: b.supplyType || null,
       startDate: new Date(b.startDate),
       endDate: new Date(b.endDate),
       contractQtyMT: p(b.contractQtyMT) || 0,
@@ -124,10 +128,15 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const cust = await prisma.customer.findUnique({ where: { id: b.customerId } });
     if (!cust) return res.status(404).json({ error: 'Customer not found' });
     customerId = cust.id;
-    buyerName = cust.name;
-    buyerAddress = cust.address || null;
-    buyerGstin = cust.gstNo || null;
-    buyerState = cust.state || null;
+    buyerName = b.buyerName || cust.name;
+    buyerAddress = b.buyerAddress ?? cust.address ?? null;
+    buyerGstin = b.buyerGstin ?? cust.gstNo ?? null;
+    buyerState = b.buyerState ?? cust.state ?? null;
+  } else {
+    if (b.buyerName !== undefined) buyerName = b.buyerName;
+    if (b.buyerAddress !== undefined) buyerAddress = b.buyerAddress;
+    if (b.buyerGstin !== undefined) buyerGstin = b.buyerGstin;
+    if (b.buyerState !== undefined) buyerState = b.buyerState;
   }
 
   const contract = await prisma.dDGSContract.update({
@@ -140,6 +149,10 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
       buyerAddress,
       buyerGstin,
       buyerState,
+      buyerContact: b.buyerContact !== undefined ? b.buyerContact : existing.buyerContact,
+      buyerPhone: b.buyerPhone !== undefined ? b.buyerPhone : existing.buyerPhone,
+      buyerEmail: b.buyerEmail !== undefined ? b.buyerEmail : existing.buyerEmail,
+      supplyType: b.supplyType !== undefined ? b.supplyType : existing.supplyType,
       startDate: b.startDate ? new Date(b.startDate) : existing.startDate,
       endDate: b.endDate ? new Date(b.endDate) : existing.endDate,
       contractQtyMT: b.contractQtyMT !== undefined ? (p(b.contractQtyMT) || 0) : existing.contractQtyMT,

@@ -107,11 +107,16 @@ interface CustomerOption {
   address?: string;
   gstNo?: string;
   state?: string;
+  phone?: string;
+  email?: string;
 }
 
 const emptyForm = {
   contractNo: '', status: 'ACTIVE',
-  customerId: '', startDate: '', endDate: '',
+  customerId: '',
+  buyerName: '', buyerAddress: '', buyerGstin: '', buyerState: '', buyerContact: '', buyerPhone: '', buyerEmail: '',
+  supplyType: 'INTRA_STATE',
+  startDate: '', endDate: '',
   contractQtyMT: '', rate: '', gstPercent: '5',
   paymentTermsDays: '', paymentMode: 'RTGS', logisticsBy: 'BUYER', remarks: '',
 };
@@ -180,12 +185,24 @@ const DDGSContracts: React.FC = () => {
   const fetchCustomers = async () => {
     try {
       const res = await api.get('/customers');
-      setCustomers((res.data || []).map((c: any) => ({ id: c.id, name: c.name, address: c.address, gstNo: c.gstNo, state: c.state })));
+      setCustomers((res.data || []).map((c: any) => ({ id: c.id, name: c.name, address: c.address, gstNo: c.gstNo, state: c.state, phone: c.phone, email: c.email })));
     } catch { /* ignore */ }
   };
 
   const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
+    if (name === 'customerId') {
+      const cust = customers.find(c => c.id === value);
+      if (cust) {
+        setForm(p => ({
+          ...p, customerId: value,
+          buyerName: cust.name || '', buyerAddress: cust.address || '',
+          buyerGstin: cust.gstNo || '', buyerState: cust.state || '',
+          buyerPhone: cust.phone || '', buyerEmail: cust.email || '',
+        }));
+        return;
+      }
+    }
     setForm(p => ({ ...p, [name]: value }));
   };
 
@@ -195,6 +212,10 @@ const DDGSContracts: React.FC = () => {
     setEditId(c.id);
     setForm({
       contractNo: c.contractNo, status: c.status, customerId: c.customerId,
+      buyerName: c.buyerName || '', buyerAddress: c.buyerAddress || '',
+      buyerGstin: c.buyerGstin || '', buyerState: c.buyerState || '',
+      buyerContact: (c as any).buyerContact || '', buyerPhone: (c as any).buyerPhone || '', buyerEmail: (c as any).buyerEmail || '',
+      supplyType: (c as any).supplyType || 'INTRA_STATE',
       startDate: c.startDate?.slice(0, 10) || '', endDate: c.endDate?.slice(0, 10) || '',
       contractQtyMT: String(c.contractQtyMT || ''), rate: String(c.rate || ''),
       gstPercent: String(c.gstPercent || '5'),
@@ -857,7 +878,7 @@ const DDGSContracts: React.FC = () => {
       {/* CREATE/EDIT CONTRACT MODAL */}
       {showForm && (
         <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 overflow-y-auto py-6">
-          <div className="bg-white shadow-2xl w-full max-w-3xl mx-4">
+          <div className="bg-white shadow-2xl w-full max-w-4xl mx-4">
             <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
               <h2 className="text-sm font-bold tracking-wide uppercase">{editId ? 'Edit Contract' : 'New DDGS Contract'}</h2>
               <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-white"><X size={18} /></button>
@@ -879,46 +900,52 @@ const DDGSContracts: React.FC = () => {
                   </select>
                 </div>
                 <div>
-                  <label className={labelCls}>Buyer *</label>
+                  <label className={labelCls}>Select from Customer Master</label>
                   <select name="customerId" value={form.customerId} onChange={handleFormChange} className={inputCls}>
-                    <option value="">Select Buyer</option>
+                    <option value="">Select Buyer (auto-fills below)</option>
                     {customers.map(c => <option key={c.id} value={c.id}>{c.name}{c.gstNo ? ` (${c.gstNo})` : ''}</option>)}
                   </select>
                 </div>
               </div>
 
-              {/* Contract Period */}
-              <div className="grid grid-cols-4 gap-4">
-                <div>
-                  <label className={labelCls}>Start Date *</label>
-                  <input type="date" name="startDate" value={form.startDate} onChange={handleFormChange} className={inputCls} />
-                </div>
-                <div>
-                  <label className={labelCls}>End Date *</label>
-                  <input type="date" name="endDate" value={form.endDate} onChange={handleFormChange} className={inputCls} />
-                </div>
-                <div>
-                  <label className={labelCls}>Contract Qty (MT) *</label>
-                  <input type="number" name="contractQtyMT" value={form.contractQtyMT} onChange={handleFormChange} step="0.01" className={inputCls} />
-                </div>
-                <div>
-                  <label className={labelCls}>Rate per MT *</label>
-                  <input type="number" name="rate" value={form.rate} onChange={handleFormChange} step="0.01" className={inputCls} />
+              {/* Buyer Details */}
+              <div className="bg-slate-50 p-4 border border-slate-200">
+                <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Buyer Details</h3>
+                <div className="grid grid-cols-3 gap-3">
+                  <div><label className={labelCls}>Name *</label><input type="text" name="buyerName" value={form.buyerName} onChange={handleFormChange} required className={inputCls} /></div>
+                  <div><label className={labelCls}>GSTIN</label><input type="text" name="buyerGstin" value={form.buyerGstin} onChange={handleFormChange} maxLength={15} className={inputCls} /></div>
+                  <div><label className={labelCls}>Contact Person</label><input type="text" name="buyerContact" value={form.buyerContact} onChange={handleFormChange} className={inputCls} /></div>
+                  <div><label className={labelCls}>Phone</label><input type="text" name="buyerPhone" value={form.buyerPhone} onChange={handleFormChange} className={inputCls} /></div>
+                  <div><label className={labelCls}>Email</label><input type="text" name="buyerEmail" value={form.buyerEmail} onChange={handleFormChange} className={inputCls} /></div>
+                  <div><label className={labelCls}>State</label><input type="text" name="buyerState" value={form.buyerState} onChange={handleFormChange} className={inputCls} /></div>
+                  <div className="col-span-3"><label className={labelCls}>Address</label><input type="text" name="buyerAddress" value={form.buyerAddress} onChange={handleFormChange} className={inputCls} /></div>
                 </div>
               </div>
 
-              {/* Terms */}
-              <div className="grid grid-cols-4 gap-4">
-                <div>
-                  <label className={labelCls}>GST %</label>
-                  <input type="number" name="gstPercent" value={form.gstPercent} onChange={handleFormChange} step="0.01" className={inputCls} />
+              {/* Pricing */}
+              <div className="bg-emerald-50 p-4 border border-emerald-200">
+                <h3 className="text-[10px] font-bold text-emerald-700 uppercase tracking-widest mb-3">Pricing</h3>
+                <div className="grid grid-cols-3 gap-3">
+                  <div><label className={labelCls}>Rate per MT (Rs) *</label><input type="number" name="rate" value={form.rate} onChange={handleFormChange} step="0.01" className={inputCls} /></div>
+                  <div><label className={labelCls}>GST %</label><input type="number" name="gstPercent" value={form.gstPercent} onChange={handleFormChange} step="0.01" className={inputCls} /></div>
+                  <div><label className={labelCls}>Supply Type</label>
+                    <select name="supplyType" value={form.supplyType} onChange={handleFormChange} className={inputCls}>
+                      <option value="INTRA_STATE">Intra State</option>
+                      <option value="INTER_STATE">Inter State</option>
+                    </select>
+                  </div>
                 </div>
-                <div>
-                  <label className={labelCls}>Payment Terms (Days)</label>
-                  <input type="number" name="paymentTermsDays" value={form.paymentTermsDays} onChange={handleFormChange} className={inputCls} />
-                </div>
-                <div>
-                  <label className={labelCls}>Payment Mode</label>
+              </div>
+
+              {/* Duration, Qty, Logistics */}
+              <div className="grid grid-cols-4 gap-3">
+                <div><label className={labelCls}>Start Date *</label><input type="date" name="startDate" value={form.startDate} onChange={handleFormChange} required className={inputCls} /></div>
+                <div><label className={labelCls}>End Date *</label><input type="date" name="endDate" value={form.endDate} onChange={handleFormChange} required className={inputCls} /></div>
+                <div><label className={labelCls}>Total Qty (MT) *</label><input type="number" name="contractQtyMT" value={form.contractQtyMT} onChange={handleFormChange} step="0.01" className={inputCls} /></div>
+                <div><label className={labelCls}>Payment Terms (Days)</label><input type="number" name="paymentTermsDays" value={form.paymentTermsDays} onChange={handleFormChange} className={inputCls} /></div>
+              </div>
+              <div className="grid grid-cols-4 gap-3">
+                <div><label className={labelCls}>Payment Mode</label>
                   <select name="paymentMode" value={form.paymentMode} onChange={handleFormChange} className={inputCls}>
                     <option value="RTGS">RTGS</option>
                     <option value="NEFT">NEFT</option>
@@ -927,27 +954,21 @@ const DDGSContracts: React.FC = () => {
                     <option value="CASH">Cash</option>
                   </select>
                 </div>
-                <div>
-                  <label className={labelCls}>Logistics By</label>
+                <div><label className={labelCls}>Logistics By</label>
                   <select name="logisticsBy" value={form.logisticsBy} onChange={handleFormChange} className={inputCls}>
                     <option value="BUYER">Buyer</option>
-                    <option value="SELLER">Seller</option>
+                    <option value="SELLER">Seller (Us)</option>
                   </select>
                 </div>
-              </div>
-
-              {/* Remarks */}
-              <div>
-                <label className={labelCls}>Remarks</label>
-                <textarea name="remarks" value={form.remarks} onChange={handleFormChange} rows={2} className={inputCls} />
+                <div className="col-span-2"><label className={labelCls}>Remarks</label><textarea name="remarks" value={form.remarks} onChange={handleFormChange} rows={2} className={inputCls} /></div>
               </div>
             </div>
-            <div className="bg-slate-50 px-5 py-3 flex items-center justify-end gap-2 border-t border-slate-200">
-              <button onClick={() => setShowForm(false)} className="px-4 py-1.5 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Cancel</button>
+            <div className="flex gap-3 p-5 border-t border-slate-200">
               <button onClick={handleSave} disabled={saving}
-                className="px-4 py-1.5 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">
-                {saving ? 'Saving...' : editId ? 'Update' : 'Create Contract'}
+                className="px-6 py-2 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">
+                {saving ? 'Saving...' : editId ? 'Update Contract' : 'Create Contract'}
               </button>
+              <button onClick={() => setShowForm(false)} className="px-6 py-2 bg-slate-200 text-slate-800 text-[11px] font-medium hover:bg-slate-300">Cancel</button>
             </div>
           </div>
         </div>

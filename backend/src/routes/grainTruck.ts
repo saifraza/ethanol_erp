@@ -275,7 +275,9 @@ router.get('/history', authenticate, async (req: AuthRequest, res: Response) => 
 
     const grouped: Record<string, any[]> = {};
     for (const t of trucks) {
-      const key = t.date.toISOString().split('T')[0];
+      // Use IST date for grouping (UTC+5:30), not UTC
+      const istDate = new Date(t.date.getTime() + IST_OFFSET_MS);
+      const key = istDate.toISOString().split('T')[0];
       if (!grouped[key]) grouped[key] = [];
       grouped[key].push(t);
     }

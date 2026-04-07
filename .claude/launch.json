@@ -4,8 +4,8 @@
     {
       "name": "dev",
       "runtimeExecutable": "bash",
-      "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && cd backend && PORT=5050 npx tsx src/server.ts"],
-      "port": 5050
+      "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && cd backend && PORT=3001 npx tsx src/server.ts"],
+      "port": 3001
     },
     {
       "name": "frontend",
