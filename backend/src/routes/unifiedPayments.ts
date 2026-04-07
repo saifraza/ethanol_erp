@@ -734,7 +734,7 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
       id: true, poNo: true, poDate: true, grandTotal: true, subtotal: true, totalGst: true, status: true, paymentTerms: true, creditDays: true,
       dealType: true,
       vendor: { select: { id: true, name: true, creditDays: true, paymentTerms: true, tdsApplicable: true, tdsPercent: true, tdsSection: true, bankName: true, bankAccount: true, bankIfsc: true, phone: true } },
-      lines: { select: { description: true, receivedQty: true, rate: true, gstPercent: true, quantity: true } },
+      lines: { select: { description: true, receivedQty: true, rate: true, gstPercent: true, quantity: true, inventoryItem: { select: { category: true } }, material: { select: { category: true } } } },
       grns: {
         where: { status: { not: 'CANCELLED' }, grnType: { not: 'EXPECTED' } },  // exclude pre-created expected GRNs
         orderBy: { grnDate: 'desc' },
@@ -783,6 +783,7 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
     tdsPercent: number;
     tdsSection: string | null;
     material: string | null;
+    category: string | null;
     vendorBank: string | null;
     vendorAccount: string | null;
     vendorIfsc: string | null;
@@ -949,6 +950,7 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
       tdsPercent: po.vendor.tdsPercent,
       tdsSection: po.vendor.tdsSection || null,
       material: (po as any).lines?.[0]?.description || null,
+      category: (po as any).lines?.[0]?.inventoryItem?.category || (po as any).lines?.[0]?.material?.category || null,
       vendorBank: po.vendor.bankName || null,
       vendorAccount: po.vendor.bankAccount || null,
       vendorIfsc: po.vendor.bankIfsc || null,

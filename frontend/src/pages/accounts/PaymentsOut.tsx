@@ -37,6 +37,7 @@ interface PendingPayable {
   tdsPercent: number;
   tdsSection: string | null;
   material: string | null;
+  category: string | null;
   vendorBank: string | null;
   vendorAccount: string | null;
   vendorIfsc: string | null;
@@ -867,10 +868,11 @@ export default function PaymentsOut() {
                     .filter(item => {
                       if (search && !`PO-${item.poNo} ${item.vendorName} ${item.material || ''}`.toLowerCase().includes(search)) return false;
                       if (pendingCategory !== 'ALL') {
+                        const cat = (item.category || '').toUpperCase();
                         const mat = (item.material || '').toLowerCase();
-                        const isFuel = ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'biomass'].some(kw => mat.includes(kw));
-                        const isRaw = ['maize', 'corn', 'broken rice', 'grain', 'sorghum', 'molasses'].some(kw => mat.includes(kw));
-                        const isChem = ['amylase', 'urea', 'acid', 'antifoam', 'yeast', 'chemical', 'caustic'].some(kw => mat.includes(kw));
+                        const isFuel = cat === 'FUEL' || ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'biomass'].some(kw => mat.includes(kw));
+                        const isRaw = cat === 'RAW_MATERIAL' || ['maize', 'corn', 'broken rice', 'grain', 'sorghum', 'molasses'].some(kw => mat.includes(kw));
+                        const isChem = cat === 'CHEMICAL' || ['amylase', 'urea', 'acid', 'antifoam', 'yeast', 'chemical', 'caustic', 'soda', 'sulph', 'phosph'].some(kw => mat.includes(kw));
                         if (pendingCategory === 'FUEL' && !isFuel) return false;
                         if (pendingCategory === 'RAW_MATERIAL' && !isRaw) return false;
                         if (pendingCategory === 'CHEMICAL' && !isChem) return false;
