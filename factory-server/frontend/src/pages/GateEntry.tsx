@@ -222,7 +222,11 @@ export default function GateEntry() {
         body.rate = rate ? parseFloat(rate) : undefined;
         // supplierName is already set from trader selection
       }
-      // For ethanol: create DispatchTruck on cloud ERP FIRST (blocking — must succeed)
+      // For ethanol: create DispatchTruck on cloud ERP FIRST (blocking — must succeed).
+      // If the local factory POST fails afterwards, roll back the cloud record so we
+      // never end up with an orphan DispatchTruck on cloud (caused dupes during the
+      // 2026-04-07 prisma client incident).
+      let cloudCreatedId: string | null = null;
       if (isEthanol) {
         body.driverName = driverName;
         body.destination = destination;
@@ -234,10 +238,21 @@ export default function GateEntry() {
           transporterName: transporter,
           destination, rstNo, sealNo,
         });
-        body.cloudGatePassId = cloudRes.data?.id;
+        cloudCreatedId = cloudRes.data?.id || null;
+        body.cloudGatePassId = cloudCreatedId;
       }
-      const res = await api.post('/weighbridge/gate-entry', body);
-      const created = res.data;
+      let created;
+      try {
+        const res = await api.post('/weighbridge/gate-entry', body);
+        created = res.data;
+      } catch (factoryErr) {
+        // Factory write failed — roll back the cloud DispatchTruck so it isn't orphaned
+        if (cloudCreatedId) {
+          try { await cloudApi.delete(`/ethanol-gate-pass/${cloudCreatedId}`); }
+          catch { /* best-effort rollback; manual cleanup if this also fails */ }
+        }
+        throw factoryErr;
+      }
       window.open(`/api/weighbridge/print/gate-pass/${created.id}`, '_blank');
       resetForm();
       loadCount();

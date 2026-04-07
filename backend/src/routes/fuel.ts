@@ -619,7 +619,7 @@ router.put('/deals/:id', authenticate, asyncHandler(async (req: AuthRequest, res
         lineUpdate.quantity = 999999;
         lineUpdate.pendingQty = 999999;
       } else if (b.quantityType === 'FIXED') {
-        const grns = await prisma.goodsReceipt.count({ where: { poId: deal.id } });
+        const grns = await prisma.goodsReceipt.count({ where: { poId: deal.id, status: { not: 'DRAFT' } } });
         if (grns > 0) {
           return res.status(400).json({ error: 'Cannot switch to FIXED — trucks already received. Close this deal and create a new FIXED PO.' });
         }
@@ -648,7 +648,7 @@ router.put('/deals/:id', authenticate, asyncHandler(async (req: AuthRequest, res
 
   // Update fuel item on PO line (if changed and no GRNs yet)
   if (b.fuelItemId && b.fuelItemId !== deal.lines[0]?.inventoryItemId) {
-    const grns = await prisma.goodsReceipt.count({ where: { poId: deal.id } });
+    const grns = await prisma.goodsReceipt.count({ where: { poId: deal.id, status: { not: 'DRAFT' } } });
     if (grns > 0) {
       return res.status(400).json({ error: 'Cannot change fuel type — trucks already received' });
     }
@@ -667,7 +667,7 @@ router.put('/deals/:id', authenticate, asyncHandler(async (req: AuthRequest, res
 
   // Update vendor (if changed and no GRNs yet)
   if (b.vendorId && b.vendorId !== deal.vendorId) {
-    const grns = await prisma.goodsReceipt.count({ where: { poId: deal.id } });
+    const grns = await prisma.goodsReceipt.count({ where: { poId: deal.id, status: { not: 'DRAFT' } } });
     if (grns > 0) {
       return res.status(400).json({ error: 'Cannot change vendor — trucks already received' });
     }
@@ -724,10 +724,13 @@ router.put('/deals/:id', authenticate, asyncHandler(async (req: AuthRequest, res
 router.delete('/deals/:id', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const deal = await prisma.purchaseOrder.findUnique({
     where: { id: req.params.id },
-    include: { grns: { select: { id: true }, take: 1 }, lines: { select: { id: true } } },
+    include: { grns: { select: { id: true, status: true } }, lines: { select: { id: true } } },
   });
   if (!deal) return res.status(404).json({ error: 'Deal not found' });
-  if (deal.grns.length > 0) return res.status(400).json({ error: 'Cannot delete — trucks already received against this deal' });
+  const realGrns = deal.grns.filter(g => g.status !== 'DRAFT');
+  if (realGrns.length > 0) return res.status(400).json({ error: 'Cannot delete — trucks already received against this deal' });
+  // Clean up any leftover DRAFT (expected) GRNs so the cascade delete works
+  if (deal.grns.length > 0) await prisma.goodsReceipt.deleteMany({ where: { poId: deal.id, status: 'DRAFT' } });
 
   await prisma.$transaction([
     prisma.pOLine.deleteMany({ where: { poId: deal.id } }),
