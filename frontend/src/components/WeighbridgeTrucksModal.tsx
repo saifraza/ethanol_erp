@@ -4,6 +4,7 @@ import api from '../services/api';
 interface Truck {
   id: string;
   date: string;
+  grnNo?: string;
   ticketNo: number | null;
   uidRst: string;
   vehicleNo: string;
@@ -22,6 +23,8 @@ interface Truck {
   bags: number | null;
   remarks: string | null;
   grnId: string | null;
+  grnStatus?: string | null;
+  qualityStatus?: string | null;
   entryTime: string | null;
   exitTime: string | null;
   gateDate: string | null;
@@ -91,12 +94,13 @@ export default function WeighbridgeTrucksModal({ poId, title, subtitle, onClose 
 
   const downloadExcel = () => {
     const headers = [
-      'Ticket #', 'Weighment Date/Time (IST)', 'Entry Time', 'Exit Time', 'UID/RST', 'Vehicle No', 'Vehicle Type', 'Material',
+      'GRN #', 'Ticket #', 'Weighment Date/Time (IST)', 'Entry Time', 'Exit Time', 'UID/RST', 'Vehicle No', 'Vehicle Type', 'Material',
       'Supplier', 'Transporter', 'Driver', 'Driver Mobile',
       'Gross (MT)', 'Tare (MT)', 'Net (MT)', 'Quarantine (MT)', 'Accepted (MT)',
       'Moisture %', 'Bags', 'Quarantine Reason', 'Remarks', 'Gate Status', 'GRN Linked',
     ];
     const rows = trucks.map(t => [
+      t.grnNo || '',
       t.ticketNo ?? '',
       fmtDateTime(t.date),
       fmtTime12(t.entryTime),
@@ -124,7 +128,7 @@ export default function WeighbridgeTrucksModal({ poId, title, subtitle, onClose 
     if (totals) {
       rows.push([]);
       rows.push([
-        'TOTAL', '', '', '', '', '', '', '', '', '', '', '',
+        'TOTAL', '', '', '', '', '', '', '', '', '', '', '', '',
         totals.gross.toFixed(3), totals.tare.toFixed(3), totals.net.toFixed(3),
         totals.quarantine.toFixed(3), totals.accepted.toFixed(3),
         '', '', '', '', '', '',
@@ -199,11 +203,12 @@ export default function WeighbridgeTrucksModal({ poId, title, subtitle, onClose 
           {loading ? (
             <div className="p-10 text-center text-xs text-slate-400 uppercase tracking-widest">Loading trucks...</div>
           ) : trucks.length === 0 ? (
-            <div className="p-10 text-center text-xs text-slate-400 uppercase tracking-widest">No weighbridge entries linked to this PO</div>
+            <div className="p-10 text-center text-xs text-slate-400 uppercase tracking-widest">No receipts (GRNs) posted against this PO yet</div>
           ) : (
             <table className="w-full text-xs">
               <thead className="sticky top-0">
                 <tr className="bg-slate-800 text-white">
+                  <th className="text-left px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">GRN</th>
                   <th className="text-left px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Ticket</th>
                   <th className="text-left px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Date</th>
                   <th className="text-left px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Entry</th>
@@ -221,6 +226,7 @@ export default function WeighbridgeTrucksModal({ poId, title, subtitle, onClose 
               <tbody>
                 {trucks.map((t, i) => (
                   <tr key={t.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                    <td className="px-2 py-1.5 font-mono text-slate-600 border-r border-slate-100 whitespace-nowrap">{t.grnNo || '--'}</td>
                     <td className="px-2 py-1.5 font-mono tabular-nums border-r border-slate-100">{t.ticketNo ?? '--'}</td>
                     <td className="px-2 py-1.5 border-r border-slate-100 whitespace-nowrap">{fmtDateTime(t.date)}</td>
                     <td className="px-2 py-1.5 border-r border-slate-100 font-mono tabular-nums whitespace-nowrap text-blue-700">{fmtTime12(t.entryTime)}</td>
@@ -245,7 +251,7 @@ export default function WeighbridgeTrucksModal({ poId, title, subtitle, onClose 
               {totals && totals.count > 0 && (
                 <tfoot>
                   <tr className="bg-slate-800 text-white font-semibold sticky bottom-0">
-                    <td colSpan={7} className="px-2 py-1.5 text-[10px] uppercase tracking-widest border-r border-slate-700">Total ({totals.count} trucks)</td>
+                    <td colSpan={8} className="px-2 py-1.5 text-[10px] uppercase tracking-widest border-r border-slate-700">Total ({totals.count} receipts)</td>
                     <td className="px-2 py-1.5 text-right font-mono tabular-nums border-r border-slate-700">{fmtNum(totals.gross)}</td>
                     <td className="px-2 py-1.5 text-right font-mono tabular-nums border-r border-slate-700">{fmtNum(totals.tare)}</td>
                     <td className="px-2 py-1.5 text-right font-mono tabular-nums border-r border-slate-700">{fmtNum(totals.net)}</td>

@@ -286,34 +286,54 @@ router.get('/history', authenticate, async (req: AuthRequest, res: Response) => 
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-// GET /api/grain-truck/by-po/:poId — all trucks delivered against a PO (for weighbridge drilldown)
+// GET /api/grain-truck/by-po/:poId — unified weighbridge drilldown: GRN-based rows
+// enriched with GrainTruck (weighbridge) + GateEntry (entry/exit time) where available
 router.get('/by-po/:poId', authenticate, async (req: AuthRequest, res: Response) => {
   try {
+    const poId = req.params.poId;
+
+    // 1. All GRNs for this PO (excludes cancelled)
+    const grns = await prisma.goodsReceipt.findMany({
+      where: { poId, status: { not: 'CANCELLED' } },
+      orderBy: { grnDate: 'desc' },
+      select: {
+        id: true, grnNo: true, grnDate: true, vehicleNo: true, challanNo: true,
+        invoiceNo: true, invoiceDate: true, status: true, qualityStatus: true, totalQty: true,
+        lines: { select: { description: true, receivedQty: true, acceptedQty: true, rejectedQty: true, unit: true } },
+      },
+    });
+
+    // 2. GrainTrucks linked either by poId or by grnId (covers both paths)
+    const grnIds = grns.map(g => g.id);
     const trucks = await prisma.grainTruck.findMany({
-      where: { poId: req.params.poId },
-      orderBy: { date: 'desc' },
+      where: { OR: [{ poId }, ...(grnIds.length ? [{ grnId: { in: grnIds } }] : [])] },
       select: {
         id: true, date: true, ticketNo: true, uidRst: true, vehicleNo: true, vehicleType: true,
         supplier: true, driverName: true, driverMobile: true, transporterName: true,
         materialType: true, weightGross: true, weightTare: true, weightNet: true,
-        quarantineWeight: true, quarantineReason: true, moisture: true, starchPercent: true,
-        damagedPercent: true, foreignMatter: true, bags: true, remarks: true, photoUrl: true,
-        grnId: true,
+        quarantineWeight: true, quarantineReason: true, moisture: true, bags: true, remarks: true,
+        grnId: true, poId: true,
       },
     });
+    const truckByGrn = new Map<string, typeof trucks[0]>();
+    for (const t of trucks) if (t.grnId) truckByGrn.set(t.grnId, t);
 
-    // Join with GateEntry for entry/exit times — match by grnId first, then vehicleNo within ±1 day window
-    const grnIds = trucks.map(t => t.grnId).filter(Boolean) as string[];
-    const vehicleNos = Array.from(new Set(trucks.map(t => t.vehicleNo).filter(Boolean)));
-    const gateEntries = await prisma.gateEntry.findMany({
-      where: {
-        OR: [
-          ...(grnIds.length ? [{ grnId: { in: grnIds } }] : []),
-          ...(vehicleNos.length ? [{ vehicleNo: { in: vehicleNos } }] : []),
-        ],
-      },
-      select: { id: true, grnId: true, vehicleNo: true, date: true, entryTime: true, exitTime: true, status: true },
-    });
+    // 3. GateEntries — match by grnId first, fallback to vehicleNo
+    const vehicleNos = Array.from(new Set([
+      ...grns.map(g => g.vehicleNo).filter(Boolean) as string[],
+      ...trucks.map(t => t.vehicleNo).filter(Boolean),
+    ]));
+    const gateEntries = vehicleNos.length || grnIds.length
+      ? await prisma.gateEntry.findMany({
+          where: {
+            OR: [
+              ...(grnIds.length ? [{ grnId: { in: grnIds } }] : []),
+              ...(vehicleNos.length ? [{ vehicleNo: { in: vehicleNos } }] : []),
+            ],
+          },
+          select: { id: true, grnId: true, vehicleNo: true, date: true, entryTime: true, exitTime: true, status: true, netWeight: true, grossWeight: true },
+        })
+      : [];
     const gateByGrn = new Map<string, typeof gateEntries[0]>();
     for (const g of gateEntries) if (g.grnId) gateByGrn.set(g.grnId, g);
     const gateByVehicle = new Map<string, typeof gateEntries>();
@@ -323,37 +343,72 @@ router.get('/by-po/:poId', authenticate, async (req: AuthRequest, res: Response)
       gateByVehicle.set(g.vehicleNo, arr);
     }
 
-    const enriched = trucks.map(t => {
-      let gate = t.grnId ? gateByGrn.get(t.grnId) : undefined;
-      if (!gate && t.vehicleNo) {
-        // Find the gate entry closest to truck.date (same vehicle, within 24h)
-        const candidates = gateByVehicle.get(t.vehicleNo) || [];
+    // 4. Build one row per GRN, enriched with truck + gate data
+    const rows = grns.map(grn => {
+      const truck = truckByGrn.get(grn.id);
+      let gate = gateByGrn.get(grn.id);
+      if (!gate) {
+        const vNo = truck?.vehicleNo || grn.vehicleNo || '';
+        const refDate = truck?.date || grn.grnDate;
+        const candidates = vNo ? (gateByVehicle.get(vNo) || []) : [];
         let best: typeof gateEntries[0] | undefined;
         let bestDelta = Infinity;
         for (const c of candidates) {
-          const delta = Math.abs(c.date.getTime() - t.date.getTime());
-          if (delta < 24 * 3600 * 1000 && delta < bestDelta) { bestDelta = delta; best = c; }
+          const delta = Math.abs(c.date.getTime() - refDate.getTime());
+          if (delta < 48 * 3600 * 1000 && delta < bestDelta) { bestDelta = delta; best = c; }
         }
         gate = best;
       }
+      const receivedQty = grn.lines.reduce((s, l) => s + (l.receivedQty || 0), 0);
+      const acceptedQty = grn.lines.reduce((s, l) => s + (l.acceptedQty || 0), 0);
+      const rejectedQty = grn.lines.reduce((s, l) => s + (l.rejectedQty || 0), 0);
+      const weightGross = truck?.weightGross || gate?.grossWeight || 0;
+      const weightTare = truck?.weightTare || ((gate?.grossWeight && gate?.netWeight) ? (gate.grossWeight - gate.netWeight) : 0);
+      const weightNet = truck?.weightNet || gate?.netWeight || receivedQty;
+      const quarantineWeight = truck?.quarantineWeight || 0;
+      const description = grn.lines[0]?.description || '';
       return {
-        ...t,
+        id: grn.id,
+        date: (truck?.date || grn.grnDate).toISOString(),
+        grnNo: `GRN-${grn.grnNo}`,
+        ticketNo: truck?.ticketNo ?? null,
+        uidRst: truck?.uidRst || grn.challanNo || '',
+        vehicleNo: truck?.vehicleNo || grn.vehicleNo || '',
+        vehicleType: truck?.vehicleType || null,
+        supplier: truck?.supplier || '',
+        driverName: truck?.driverName || null,
+        driverMobile: truck?.driverMobile || null,
+        transporterName: truck?.transporterName || null,
+        materialType: truck?.materialType || description,
+        weightGross,
+        weightTare,
+        weightNet,
+        quarantineWeight,
+        quarantineReason: truck?.quarantineReason || null,
+        acceptedQty,
+        rejectedQty,
+        moisture: truck?.moisture || null,
+        bags: truck?.bags || null,
+        remarks: truck?.remarks || null,
+        grnId: grn.id,
+        grnStatus: grn.status,
+        qualityStatus: grn.qualityStatus,
         entryTime: gate?.entryTime || null,
         exitTime: gate?.exitTime || null,
-        gateDate: gate?.date || null,
+        gateDate: gate?.date?.toISOString() || null,
         gateStatus: gate?.status || null,
       };
     });
 
     const totals = {
-      count: enriched.length,
-      gross: enriched.reduce((s, t) => s + (t.weightGross || 0), 0),
-      tare: enriched.reduce((s, t) => s + (t.weightTare || 0), 0),
-      net: enriched.reduce((s, t) => s + (t.weightNet || 0), 0),
-      quarantine: enriched.reduce((s, t) => s + (t.quarantineWeight || 0), 0),
-      accepted: enriched.reduce((s, t) => s + ((t.weightNet || 0) - (t.quarantineWeight || 0)), 0),
+      count: rows.length,
+      gross: rows.reduce((s, r) => s + (r.weightGross || 0), 0),
+      tare: rows.reduce((s, r) => s + (r.weightTare || 0), 0),
+      net: rows.reduce((s, r) => s + (r.weightNet || 0), 0),
+      quarantine: rows.reduce((s, r) => s + (r.quarantineWeight || 0), 0),
+      accepted: rows.reduce((s, r) => s + ((r.weightNet || 0) - (r.quarantineWeight || 0)), 0),
     };
-    res.json({ trucks: enriched, totals });
+    res.json({ trucks: rows, totals });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
