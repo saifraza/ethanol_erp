@@ -7,7 +7,9 @@ import prisma from '../config/prisma';
 
 const router = Router();
 
-const RAW_CATEGORIES = ['RAW_MATERIAL', 'CHEMICAL', 'PACKING'] as const;
+// RM Deals page is for actual raw materials only (maize, broken rice, molasses, etc).
+// Chemicals, packing, spares, consumables → Stores Deals page.
+const RAW_CATEGORIES = ['RAW_MATERIAL'] as const;
 
 // ==========================================================================
 //  MATERIALS MASTER — InventoryItem with category IN RAW_MATERIAL, CHEMICAL, PACKING

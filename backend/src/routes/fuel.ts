@@ -422,7 +422,15 @@ router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Re
     const fuelLines = deal.lines.filter(l => l.inventoryItem?.category === 'FUEL');
     const linesToSum = fuelLines.length > 0 ? fuelLines : deal.lines; // fallback for legacy
     const totalReceived = linesToSum.reduce((s, l) => s + (l.receivedQty || 0), 0);
-    const totalValue = linesToSum.reduce((s, l) => s + (l.receivedQty || 0) * (l.rate || 0), 0);
+    const receivedValue = linesToSum.reduce((s, l) => s + (l.receivedQty || 0) * (l.rate || 0), 0);
+    // For OPEN deals the committed value is indefinite, so show received value.
+    // For FIXED deals, show the planned PO committed value (qty × rate) even before receipts.
+    const isOpenDeal = deal.dealType === 'OPEN';
+    const plannedValue = isOpenDeal ? 0 : linesToSum.reduce((s, l) => {
+      const q = l.quantity >= 900000 ? (l.receivedQty || 0) : l.quantity;
+      return s + q * (l.rate || 0);
+    }, 0);
+    const totalValue = isOpenDeal ? receivedValue : Math.max(plannedValue, receivedValue);
 
     // Get total payments: direct VendorPayments referencing this deal + invoice payments
     // Step 8 fix: Count direct payments (fuel page Pay button) and invoice payments separately
