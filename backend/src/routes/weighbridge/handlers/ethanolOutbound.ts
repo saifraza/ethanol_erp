@@ -15,6 +15,22 @@ import { prisma, WeighmentInput, PushContext, PushOutcome, emptyOutcome } from '
  *   second weighment from overwriting an existing GROSS_WEIGHED record.
  */
 export async function handleEthanolOutbound(w: WeighmentInput, _ctx: PushContext): Promise<PushOutcome> {
+  // Top-level safety net: NEVER let an unexpected error cause an infinite retry loop.
+  // If anything inside throws, log it loudly and ack the weighment anyway. The cloud
+  // DispatchTruck may stay in GATE_IN/TARE_WEIGHED state — that's a separate issue we
+  // fix manually — but the factory weighment must NOT keep retrying forever.
+  try {
+    return await handleEthanolOutboundInner(w, _ctx);
+  } catch (err) {
+    console.error(`[WB-PUSH][ETHANOL] FATAL handler error for ${w.vehicle_no} (${w.id}); ACKing weighment anyway to break retry loop. Error:`, err instanceof Error ? err.stack || err.message : err);
+    const out = emptyOutcome();
+    out.results.push({ id: w.id, type: 'EthanolDispatch_HANDLER_ERROR', refNo: w.vehicle_no, sourceWbId: w.id });
+    out.ids.push(w.id);
+    return out;
+  }
+}
+
+async function handleEthanolOutboundInner(w: WeighmentInput, _ctx: PushContext): Promise<PushOutcome> {
   const out = emptyOutcome();
   const grossKg = w.weight_gross || 0;
   const tareKg = w.weight_tare || 0;
