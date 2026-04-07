@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { asyncHandler } from '../../shared/middleware';
+import prisma from '../../config/prisma';
 import {
   checkWBKey,
   weighmentSchema,
@@ -117,9 +118,57 @@ export function registerPushRoutes(router: Router): void {
         const outcome = await handler(w, ctx);
         ids.push(...outcome.ids);
         results.push(...outcome.results);
-      } catch (err) {
-        // Per-item error isolation — one bad record doesn't fail the whole batch
-        console.error(`[WB-PUSH] Error processing weighment ${w.id} (${w.vehicle_no}):`, err instanceof Error ? err.message : err);
+      } catch (err: any) {
+        // Per-item error isolation — one bad record doesn't fail the whole batch.
+        //
+        // CRITICAL: ALWAYS ACK the weighment even on handler error. Without this,
+        // syncWorker on the factory side never sees the wbId in processedWbIds and
+        // retries the weighment forever — that's the 2026-04-07 incident pattern
+        // (4 ethanol trucks, sync attempts 60+, exponential backoff, fuel/grain delayed).
+        //
+        // The cloud DispatchTruck/Shipment may be left orphaned at GATE_IN — that's
+        // a separate cleanup, but the factory queue must drain.
+        const errCode = err?.code || 'UNKNOWN';
+        const errMeta = err?.meta ? JSON.stringify(err.meta) : '';
+        const errMessage = err instanceof Error ? err.message : String(err);
+        const errStack = err instanceof Error ? err.stack || '' : '';
+        const handlerName = (err?.handlerName as string) || 'unknown';
+        console.error(
+          `[WB-PUSH] FATAL handler error | vehicle=${w.vehicle_no} | wbId=${w.id} | dir=${w.direction} | mat=${w.material} | code=${errCode} | meta=${errMeta} | message=${errMessage}\nstack=${errStack}`,
+        );
+
+        // Persist to PlantIssue so we can read the error from cloud DB next time
+        // (no Railway log access needed). Fire-and-forget — we still ack the weighment.
+        setImmediate(async () => {
+          try {
+            await prisma.plantIssue.create({
+              data: {
+                title: `Weighbridge sync handler error: ${w.vehicle_no} (${w.direction})`,
+                description: `Vehicle: ${w.vehicle_no}\nDirection: ${w.direction}\nMaterial: ${w.material}\nCategory: ${w.material_category || 'none'}\nWeighment ID: ${w.id}\nGate Pass ID: ${w.cloud_gate_pass_id || 'none'}\nHandler: ${handlerName}\nPrisma code: ${errCode}\nMeta: ${errMeta}\nMessage: ${errMessage}\n\nStack:\n${errStack}`,
+                issueType: 'OTHER',
+                severity: 'HIGH',
+                equipment: 'Weighbridge / Cloud Sync',
+                location: 'Cloud ERP',
+                status: 'OPEN',
+                reportedBy: 'system-weighbridge',
+                userId: 'system-weighbridge',
+              },
+            });
+          } catch (logErr) {
+            console.error('[WB-PUSH] Failed to persist error to PlantIssue:', logErr);
+          }
+        });
+
+        // ACK the weighment so factory stops retrying.
+        // The handler couldn't create a normal entity, so we synthesize a marker
+        // result with the wbId itself so processedWbIds includes it.
+        results.push({
+          id: w.id,
+          type: 'WB_PUSH_HANDLER_ERROR',
+          refNo: w.vehicle_no,
+          sourceWbId: w.id,
+        });
+        ids.push(w.id);
       }
     }
 
