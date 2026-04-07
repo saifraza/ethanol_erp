@@ -1302,6 +1302,8 @@ model Customer {
   ethanolContracts EthanolContract[]
   ddgsContracts   DDGSContract[]
   ddgsDispatchTrucks DDGSDispatchTruck[]
+  sugarContracts  SugarContract[]
+  sugarDispatchTrucks SugarDispatchTruck[]
 }
 
 // Master: Product catalogue
@@ -1666,6 +1668,7 @@ model Invoice {
   payments        Payment[]
   ethanolLiftings EthanolLifting[]
   ddgsContractDispatches DDGSContractDispatch[]
+  sugarContractDispatches SugarContractDispatch[]
   @@index([customerId])
   @@index([status])
   @@index([shipmentId])
@@ -3041,6 +3044,153 @@ model DDGSContractDispatch {
 
   ddgsDispatchTruckId  String?  @unique
   ddgsDispatchTruck    DDGSDispatchTruck? @relation(fields: [ddgsDispatchTruckId], references: [id])
+
+  status               String   @default("DISPATCHED")
+  remarks              String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([contractId])
+  @@index([dispatchDate])
+}
+
+// ═══════════════════════════════════════════════
+// SUGAR (received from sister sugar mill, sold via ERP)
+// ═══════════════════════════════════════════════
+
+model SugarStockEntry {
+  id                   String   @id @default(uuid())
+  date                 DateTime
+  yearStart            Int
+  openingStock         Float    @default(0)   // MT
+  receiptFromMillToday Float    @default(0)   // MT received from sister mill
+  dispatchToday        Float    @default(0)   // MT dispatched out
+  closingStock         Float    @default(0)   // opening + receipt - dispatch
+  bags                 Int      @default(0)
+  weightPerBag         Float    @default(50)  // kg per bag
+  remarks              String?
+  userId               String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@unique([date, yearStart])
+  @@index([date])
+}
+
+model SugarDispatchTruck {
+  id              String   @id @default(uuid())
+  date            DateTime @default(now())
+  status          String   @default("GATE_IN") // GATE_IN → TARE_WEIGHED → LOADING → GROSS_WEIGHED → BILLED → RELEASED
+  rstNo           Int?
+  vehicleNo       String   @default("")
+  partyName       String   @default("")
+  partyAddress    String?
+  partyGstin      String?
+  destination     String   @default("")
+  driverName      String?
+  driverMobile    String?
+  transporterName String?
+  bags            Int      @default(0)
+  weightPerBag    Float    @default(50)
+  weightGross     Float    @default(0)
+  weightTare      Float    @default(0)
+  weightNet       Float    @default(0)
+  rate            Float?                      // ₹ per MT
+  invoiceNo       String?
+  invoiceAmount   Float?
+  gatePassNo      String?
+  ewayBillNo      String?
+  hsnCode         String   @default("1701")   // Sugar HSN
+  gateInTime      DateTime?
+  tareTime        DateTime?
+  grossTime       DateTime?
+  releaseTime     DateTime?
+  remarks         String?
+  sourceWbId      String?  @unique // Factory weighment ID for dedup (CRITICAL for idempotency)
+  customerId      String?
+  customer        Customer? @relation(fields: [customerId], references: [id])
+  contractId      String?
+  contract        SugarContract? @relation(fields: [contractId], references: [id])
+  userId          String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now()) @updatedAt
+  sugarContractDispatch SugarContractDispatch?
+
+  @@index([date])
+  @@index([customerId])
+  @@index([contractId])
+  @@index([status])
+}
+
+model SugarContract {
+  id                   String   @id @default(uuid())
+  contractNo           String   @unique
+  status               String   @default("ACTIVE") // DRAFT, ACTIVE, EXPIRED, TERMINATED
+  dealType             String   @default("FIXED_RATE") // FIXED_RATE, SPOT
+  customerId           String
+  customer             Customer @relation(fields: [customerId], references: [id])
+  buyerName            String
+  buyerAddress         String?
+  buyerGstin           String?
+  buyerState           String?
+  buyerContact         String?
+  buyerPhone           String?
+  buyerEmail           String?
+  supplyType           String?  // INTRA_STATE, INTER_STATE
+  startDate            DateTime
+  endDate              DateTime
+  contractQtyMT        Float    @default(0)
+  rate                 Float    @default(0)   // ₹/MT
+  gstPercent           Float    @default(5)
+  paymentTermsDays     Int?
+  paymentMode          String?
+  logisticsBy          String   @default("BUYER")
+  remarks              String?
+  contractPdf          String?                // base64
+  contractPdfName      String?
+  autoGenerateEInvoice Boolean  @default(false)
+
+  totalSuppliedMT      Float    @default(0)
+  totalInvoicedAmt     Float    @default(0)
+  totalReceivedAmt     Float    @default(0)
+
+  userId               String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  dispatches           SugarContractDispatch[]
+  dispatchTrucks       SugarDispatchTruck[]
+
+  @@index([customerId])
+  @@index([status])
+}
+
+model SugarContractDispatch {
+  id                   String   @id @default(uuid())
+  contractId           String
+  contract             SugarContract @relation(fields: [contractId], references: [id])
+  dispatchDate         DateTime
+  vehicleNo            String
+  driverName           String?
+  driverPhone          String?
+  transporterName      String?
+  destination          String?
+  bags                 Int      @default(0)
+  weightPerBag         Float    @default(50)
+  weightGrossMT        Float    @default(0)
+  weightTareMT         Float    @default(0)
+  weightNetMT          Float    @default(0)
+  rate                 Float    @default(0)
+  amount               Float    @default(0)
+  distanceKm           Float?
+  challanNo            String?
+  gatePassNo           String?
+
+  invoiceId            String?
+  invoice              Invoice? @relation(fields: [invoiceId], references: [id])
+
+  sugarDispatchTruckId String?  @unique
+  sugarDispatchTruck   SugarDispatchTruck? @relation(fields: [sugarDispatchTruckId], references: [id])
 
   status               String   @default("DISPATCHED")
   remarks              String?

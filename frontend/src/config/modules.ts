@@ -44,6 +44,8 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'ethanol-dispatch', label: 'Ethanol Dispatch', to: '/process/ethanol-dispatch', icon: Truck, group: 'process' },
   { key: 'ddgs-stock', label: 'DDGS Godown', to: '/process/ddgs-stock', icon: Package, group: 'process' },
   { key: 'ddgs-dispatch', label: 'DDGS Dispatch', to: '/process/ddgs-dispatch', icon: Truck, group: 'process' },
+  { key: 'sugar-stock', label: 'Sugar Godown', to: '/process/sugar-stock', icon: Package, group: 'process' },
+  { key: 'sugar-dispatch', label: 'Sugar Dispatch', to: '/process/sugar-dispatch', icon: Truck, group: 'process' },
   { key: 'water-utility', label: 'Utilities', to: '/process/water-utility', icon: Waves, group: 'process' },
   { key: 'fuel', label: 'Fuel', to: '/process/fuel', icon: Flame, group: 'procurement' },
   { key: 'opc-live', label: 'OPC Live', to: '/process/opc', icon: Radio, group: 'process' },
@@ -54,6 +56,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'sales-orders', label: 'Sales Pipeline', to: '/sales/pipeline', icon: ClipboardList, group: 'sales' },
   { key: 'ethanol-contracts', label: 'Ethanol Supply', to: '/sales/ethanol-contracts', icon: Handshake, group: 'sales' },
   { key: 'ddgs-contracts', label: 'DDGS Supply', to: '/sales/ddgs-contracts', icon: Package, group: 'sales' },
+  { key: 'sugar-contracts', label: 'Sugar Supply', to: '/sales/sugar-contracts', icon: Package, group: 'sales' },
 
   // ── LOGISTICS (Transport, Gate, Shipments) ──
   { key: 'gate-register', label: 'Gate & Receipts', to: '/logistics/gate-register', icon: Scale, group: 'logistics' },

@@ -164,6 +164,12 @@ export async function checkWbDuplicate(w: WeighmentInput): Promise<{ id: string 
   });
   if (dupDDGS) return dupDDGS;
 
+  const dupSugar = await prisma.sugarDispatchTruck.findFirst({
+    where: { remarks: { contains: wbMarker } },
+    select: { id: true },
+  });
+  if (dupSugar) return dupSugar;
+
   const dupGRN = await prisma.goodsReceipt.findFirst({
     where: { remarks: { contains: wbMarker } },
     select: { id: true },

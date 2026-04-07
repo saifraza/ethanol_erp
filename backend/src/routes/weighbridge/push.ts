@@ -16,6 +16,7 @@ import { handleSpotInbound } from './handlers/spotInbound';
 import { handleTraderInbound } from './handlers/traderInbound';
 import { handleEthanolOutbound } from './handlers/ethanolOutbound';
 import { handleDDGSOutbound } from './handlers/ddgsOutbound';
+import { handleSugarOutbound } from './handlers/sugarOutbound';
 import { handleNonEthanolOutbound } from './handlers/nonEthanolOutbound';
 import { handleFallbackInbound } from './handlers/fallbackInbound';
 
@@ -39,6 +40,10 @@ function detectHandler(w: WeighmentInput, ctx: PushContext): PushHandler {
     const lower = (w.material || '').toLowerCase();
     const isEthanol = lower.includes('ethanol') || !!hasValidGatePassId;
     if (isEthanol) return handleEthanolOutbound;
+
+    // Sugar — checked BEFORE DDGS so 'sugar' material doesn't fall through to non-ethanol catch-all
+    const isSugar = w.material_category === 'SUGAR' || /sugar/i.test(w.material || '');
+    if (isSugar) return handleSugarOutbound;
 
     // DDGS family includes both dried (DDGS) and wet (WDGS) variants
     const isDDGS = w.material_category === 'DDGS' ||

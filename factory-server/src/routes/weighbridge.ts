@@ -288,12 +288,15 @@ router.post('/gate-entry', requireAuth, requireRole('GATE_ENTRY', 'ADMIN'), asyn
     // DDGS checked BEFORE RAW_MATERIAL — "wet grain" would otherwise match "grain"
     const FUEL_KEYWORDS = ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'firewood', 'biomass'];
     const DDGS_KEYWORDS = ['ddgs', 'wdgs', 'distillers', 'distiller', 'dried grain', 'wet grain', 'wet distillers'];
+    const SUGAR_KEYWORDS = ['sugar', 'refined sugar', 'white sugar', 'crystal sugar'];
     const RAW_MATERIAL_KEYWORDS = ['maize', 'corn', 'broken rice', 'grain', 'sorghum', 'milo'];
     const CHEMICAL_KEYWORDS = ['amylase', 'urea', 'acid', 'antifoam', 'yeast', 'chemical'];
     if (FUEL_KEYWORDS.some(kw => lower.includes(kw))) {
       materialCategory = 'FUEL';
     } else if (DDGS_KEYWORDS.some(kw => lower.includes(kw))) {
       materialCategory = 'DDGS';
+    } else if (SUGAR_KEYWORDS.some(kw => lower.includes(kw))) {
+      materialCategory = 'SUGAR';
     } else if (RAW_MATERIAL_KEYWORDS.some(kw => lower.includes(kw))) {
       materialCategory = 'RAW_MATERIAL';
     } else if (CHEMICAL_KEYWORDS.some(kw => lower.includes(kw))) {

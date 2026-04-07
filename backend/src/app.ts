@@ -29,6 +29,8 @@ import labSampleRoutes from './routes/labSample';
 import ddgsStockRoutes from './routes/ddgsStock';
 import ddgsDispatchRoutes from './routes/ddgsDispatch';
 import ddgsProductionRoutes from './routes/ddgsProduction';
+import sugarStockRoutes from './routes/sugarStock';
+import sugarDispatchRoutes from './routes/sugarDispatch';
 import dosingRecipeRoutes from './routes/dosingRecipes';
 import inventoryRoutes from './routes/inventory';
 import issueRoutes from './routes/issues';
@@ -67,6 +69,7 @@ import directSaleRoutes from './routes/directSales';
 import ethanolContractRoutes from './routes/ethanolContracts';
 import ethanolGatePassRoutes from './routes/ethanolGatePass';
 import ddgsContractRoutes from './routes/ddgsContracts';
+import sugarContractRoutes from './routes/sugarContracts';
 // Accounts (Payment Desk)
 import accountsRoutes from './routes/accounts';
 // Accounts (Bookkeeping — Chart of Accounts, Journal Entries, Ledger, Reports)
@@ -169,6 +172,8 @@ app.use('/api/lab-sample', labSampleRoutes);
 app.use('/api/ddgs-stock', ddgsStockRoutes);
 app.use('/api/ddgs-dispatch', ddgsDispatchRoutes);
 app.use('/api/ddgs-production', ddgsProductionRoutes);
+app.use('/api/sugar-stock', sugarStockRoutes);
+app.use('/api/sugar-dispatch', sugarDispatchRoutes);
 app.use('/api/dosing-recipes', dosingRecipeRoutes);
 app.use('/api/inventory', inventoryRoutes);
 // Inventory (SAP-style)
@@ -214,6 +219,7 @@ app.use('/api/direct-sales', directSaleRoutes);
 app.use('/api/ethanol-contracts', ethanolContractRoutes);
 app.use('/api/ethanol-gate-pass', ethanolGatePassRoutes);
 app.use('/api/ddgs-contracts', ddgsContractRoutes);
+app.use('/api/sugar-contracts', sugarContractRoutes);
 // Accounts (Payment Desk)
 app.use('/api/accounts', accountsRoutes);
 // Accounts (Bookkeeping)

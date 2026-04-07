@@ -35,6 +35,8 @@ const WaterUtility = React.lazy(() => import('./pages/process/WaterUtility'));
 const LabSampling = React.lazy(() => import('./pages/process/LabSampling'));
 const DDGSStock = React.lazy(() => import('./pages/process/DDGSStock'));
 const DDGSDispatch = React.lazy(() => import('./pages/process/DDGSDispatch'));
+const SugarStock = React.lazy(() => import('./pages/process/SugarStock'));
+const SugarDispatch = React.lazy(() => import('./pages/process/SugarDispatch'));
 const DosingRecipes = React.lazy(() => import('./pages/process/DosingRecipes'));
 // RawMaterialTesting merged into RawMaterial.tsx
 const Inventory = React.lazy(() => import('./pages/Inventory'));
@@ -69,6 +71,7 @@ const Payments = React.lazy(() => import('./pages/sales/Payments'));
 const FreightManagement = React.lazy(() => import('./pages/sales/FreightManagement'));
 const EthanolContracts = React.lazy(() => import('./pages/sales/EthanolContracts'));
 const DDGSContracts = React.lazy(() => import('./pages/sales/DDGSContracts'));
+const SugarContracts = React.lazy(() => import('./pages/sales/SugarContracts'));
 // Logistics
 const GateAndReceipts = React.lazy(() => import('./pages/logistics/GateAndReceipts'));
 // Procurement (P2P)
@@ -146,6 +149,8 @@ export default function App() {
         <Route path="process/evaporation" element={<Evaporation />} />
         <Route path="process/ddgs-stock" element={<DDGSStock />} />
         <Route path="process/ddgs-dispatch" element={<DDGSDispatch />} />
+        <Route path="process/sugar-stock" element={<SugarStock />} />
+        <Route path="process/sugar-dispatch" element={<SugarDispatch />} />
         <Route path="process/dryer" element={<DryerMonitor />} />
         <Route path="process/decanter" element={<Decanter />} />
         <Route path="process/fuel" element={<FuelManagement />} />
@@ -190,6 +195,7 @@ export default function App() {
         <Route path="sales/freight" element={<Navigate to="/sales/pipeline" replace />} />
         <Route path="sales/ethanol-contracts" element={<EthanolContracts />} />
         <Route path="sales/ddgs-contracts" element={<DDGSContracts />} />
+        <Route path="sales/sugar-contracts" element={<SugarContracts />} />
         {/* Logistics */}
         <Route path="logistics/gate-register" element={<GateAndReceipts />} />
         {/* Procurement (P2P) */}
