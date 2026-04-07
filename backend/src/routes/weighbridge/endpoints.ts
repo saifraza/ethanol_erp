@@ -497,6 +497,30 @@ export function registerOtherRoutes(router: Router): void {
     });
   }));
 
+  // ── GET /admin/diagnose-ethanol — TEMP: dump orphan dispatch trucks + recent ethanol PlantIssues
+  router.get('/admin/diagnose-ethanol', asyncHandler(async (req: Request, res: Response) => {
+    if (!checkWBKey(req, res)) return;
+    const sourceWbIds = (req.query.sourceWbIds as string || '').split(',').filter(Boolean);
+    const orphans = sourceWbIds.length > 0
+      ? await prisma.dispatchTruck.findMany({
+          where: { sourceWbId: { in: sourceWbIds } },
+          select: { id: true, vehicleNo: true, status: true, sourceWbId: true, weightGross: true, createdAt: true, gateInTime: true },
+        })
+      : [];
+    const recentIssues = await prisma.plantIssue.findMany({
+      where: {
+        OR: [
+          { title: { contains: 'Ethanol sync', mode: 'insensitive' } },
+          { title: { contains: 'Weighbridge sync', mode: 'insensitive' } },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+      select: { id: true, title: true, description: true, createdAt: true, status: true },
+    });
+    res.json({ orphans, recentIssues });
+  }));
+
   // ── POST /admin/recover-ethanol — TEMP one-off: fix stuck ethanol DispatchTrucks
   // and capture root-cause exception. Protected by WB key. Remove after use.
   router.post('/admin/recover-ethanol', asyncHandler(async (req: Request, res: Response) => {
