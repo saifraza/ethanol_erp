@@ -497,6 +497,79 @@ export function registerOtherRoutes(router: Router): void {
     });
   }));
 
+  // ── POST /admin/recover-ethanol — TEMP one-off: fix stuck ethanol DispatchTrucks
+  // and capture root-cause exception. Protected by WB key. Remove after use.
+  router.post('/admin/recover-ethanol', asyncHandler(async (req: Request, res: Response) => {
+    if (!checkWBKey(req, res)) return;
+    const items: Array<{
+      vehicleNo: string;
+      grossKg: number;
+      tareKg: number;
+      sourceWbId: string;
+      createdAt: string;
+    }> = req.body.items || [];
+
+    const results: any[] = [];
+
+    for (const it of items) {
+      const result: any = { vehicleNo: it.vehicleNo, sourceWbId: it.sourceWbId };
+      try {
+        const todayStart = new Date(it.createdAt);
+        todayStart.setUTCHours(0, 0, 0, 0);
+        const todayEnd = new Date(it.createdAt);
+        todayEnd.setUTCHours(23, 59, 59, 999);
+
+        // Find candidate trucks: vehicleNo + same day + not RELEASED
+        const candidates = await prisma.dispatchTruck.findMany({
+          where: {
+            vehicleNo: it.vehicleNo.toUpperCase(),
+            date: { gte: todayStart, lte: todayEnd },
+            status: { in: ['GATE_IN', 'TARE_WEIGHED', 'GROSS_WEIGHED'] },
+          },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, status: true, sourceWbId: true, weightGross: true, weightTare: true, contractId: true, quantityBL: true },
+        });
+
+        result.candidates = candidates.map(c => ({ id: c.id, status: c.status, sourceWbId: c.sourceWbId, gross: c.weightGross, tare: c.weightTare }));
+
+        // Pick the one matching sourceWbId, else the first GATE_IN/TARE_WEIGHED, else first GROSS_WEIGHED with no weights
+        let target = candidates.find(c => c.sourceWbId === it.sourceWbId);
+        if (!target) target = candidates.find(c => c.status === 'GATE_IN' || c.status === 'TARE_WEIGHED');
+        if (!target) target = candidates.find(c => c.status === 'GROSS_WEIGHED' && (c.weightGross == null || c.weightGross === 0));
+
+        if (!target) {
+          result.action = 'no-target';
+          results.push(result);
+          continue;
+        }
+
+        // Compute KL/productValue if contract present
+        const bl = it.grossKg && it.tareKg ? (target.quantityBL || 0) : 0;
+        const updateData: any = {
+          weightGross: it.grossKg,
+          weightTare: it.tareKg,
+          weightNet: it.grossKg - it.tareKg,
+          status: 'GROSS_WEIGHED',
+        };
+
+        // Only set sourceWbId if currently null (avoid unique-constraint conflict)
+        if (target.sourceWbId == null) {
+          updateData.sourceWbId = it.sourceWbId;
+        }
+
+        await prisma.dispatchTruck.update({ where: { id: target.id }, data: updateData });
+        result.action = 'updated';
+        result.targetId = target.id;
+        result.previousStatus = target.status;
+      } catch (err) {
+        result.error = err instanceof Error ? (err.stack || err.message) : String(err);
+      }
+      results.push(result);
+    }
+
+    res.json({ ok: true, results });
+  }));
+
   // ── POST /heartbeat — receive PC heartbeat ──
   router.post('/heartbeat', asyncHandler(async (req: Request, res: Response) => {
     if (!checkWBKey(req, res)) return;
