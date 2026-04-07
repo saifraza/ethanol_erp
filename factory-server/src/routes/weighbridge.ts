@@ -474,6 +474,32 @@ router.post('/:id/gross', requireAuth, requireRole('GROSS_WB', 'ADMIN'), asyncHa
     // Outbound: gross is 2nd weighment (tare already captured)
     const tareW = peek.tareWeight || 0;
     if (weight <= tareW) { res.status(400).json({ error: 'Gross weight must exceed tare weight' }); return; }
+
+    // MANDATORY for ethanol outbound: BL + sealNo. Reject if missing.
+    // (These are the fields the invoice/challan templates print as required —
+    // backend/src/templates/documents/ethanol-challan.hbs prints quantityBL and sealNo.
+    // rstNo, strength, pesoDate, DL are nice-to-have and stay optional.)
+    const wbRow = await prisma.weighment.findUnique({
+      where: { id },
+      select: { materialName: true, cloudGatePassId: true },
+    });
+    const matLower = (wbRow?.materialName || '').toLowerCase();
+    const isEthanol = matLower.includes('ethanol') || !!wbRow?.cloudGatePassId;
+    if (isEthanol) {
+      const missing: string[] = [];
+      if (quantityBL == null || quantityBL === '' || isNaN(parseFloat(quantityBL))) missing.push('quantityBL');
+      if (!sealNo) missing.push('sealNo');
+      if (!pesoDate) missing.push('pesoDate');
+      if (missing.length > 0) {
+        res.status(400).json({
+          error: 'ETHANOL_FIELDS_REQUIRED',
+          message: `Cannot complete gross weighment — these fields are required for invoice/challan: ${missing.join(', ')}`,
+          missing,
+        });
+        return;
+      }
+    }
+
     updateData.netWeight = weight - tareW;
     updateData.status = 'COMPLETE';
     updateData.secondWeightAt = now;
