@@ -255,9 +255,11 @@ And MUST:
    remarks: `${ctx.wbRef} | ...`  // wbRef already contains "WB:{id} | Ticket #{n} | {source}"
    ```
 
-4. **Handle idempotency** — same weighment may be pushed twice (network retry)
+4. **Handle idempotency** — same weighment may be pushed twice (network retry, concurrent workers)
    - Inbound: dedup is handled by `checkWbDuplicate()` in dispatcher
-   - Outbound: check by `sourceWbId` first (ethanol/DDGS pattern)
+   - Outbound: **schema-level uniqueness is MANDATORY.** Every table keyed off a weighment must have `sourceWbId String? @unique` in `schema.prisma`. Without it, `findFirst→create` is a race: two concurrent pushes both miss the find and both insert. Seen in the wild: DDGS audit 2026-04 — missing unique constraint would have created duplicate trucks, duplicate invoices, and double-counted contract totals in production.
+   - **Use `prisma.upsert({ where: { sourceWbId: w.id } })` instead of `findFirst→create`.** Upsert is atomic at the DB level; find-then-create is not, even inside a `$transaction`.
+   - **Never trust `findFirst` inside a tx for dedup** — Prisma transactions are `READ COMMITTED` by default, not `SERIALIZABLE`. Two tx can both see "no existing row" and both insert.
 
 5. **Use atomic increment/decrement** for counters
    ```typescript
@@ -266,12 +268,42 @@ And MUST:
    // BAD (race condition)
    data: { receivedQty: oldQty + qty }
    ```
+   **And only increment ONCE per weighment.** If the handler can be re-entered (upsert path), gate the increment behind a "was this the first time we billed this truck?" check — use the truck's status transition (`GROSS_WEIGHED → BILLED`) as the guard, not the presence of `invoiceId` alone.
 
-6. **Post-commit best-effort side effects** outside the main transaction
+6. **Status guard — never overwrite terminal states.** Once a dispatch is `BILLED` or `RELEASED`, the handler must NOT rewrite weights, times, or amounts. Retries and late-arriving pushes must be no-ops. Pattern from `ethanolOutbound.ts`:
+   ```typescript
+   if (existing.status === 'RELEASED' || existing.status === 'BILLED') {
+     return { skipped: true, id: existing.id };
+   }
+   ```
+   Without this, a retry can desync the physical record from already-posted billing.
+
+7. **Post-commit best-effort side effects** outside the main transaction
    - GrainTruck traceability records
    - `syncToInventory()` calls
    - `prisma.approval.create()` for approvals
    - These can fail without rolling back the main GRN/Shipment
+
+8. **BUT: anything that creates revenue (invoice, journal, GST) must be retriable.** If you put invoice creation behind `setImmediate` + fire-and-forget, a crash between the main tx commit and the billing callback will silently lose the invoice, and `checkWbDuplicate` will block re-entry. Options:
+   - **Preferred**: create the invoice inside the same `$transaction` as the dispatch, accepting the longer lock.
+   - **Alternative**: persist a `needsInvoicing: true` flag on the truck, and run a reconciliation worker that retries pending rows. This also fixes the `rate=0/null` case where billing is skipped at push time.
+   - **Not acceptable**: silent `catch` that only logs to stderr with no persistent retry path.
+
+9. **Contract / PO matching must be STRICT, not fuzzy.** Auto-matching a dispatch to a contract by fuzzy buyer-name `contains` is an accounting error waiting to happen — two customers with similar names ("XYZ Feeds" vs "XYZ Feeds Pvt Ltd") bill to the wrong party at the wrong rate. Required matching criteria for auto-link:
+   - **Exact** `buyerName` match (case-insensitive) OR exact GSTIN match
+   - Contract is `ACTIVE` AND `startDate ≤ today ≤ endDate`
+   - Contract has remaining quantity (`totalSuppliedMT < contractQtyMT`)
+   - Only ONE contract matches (if >1, bail out and leave `contractId = null`)
+
+   If any of these fail, create the dispatch with `contractId = null` and let the operator link from UI. Silent wrong-match is worse than no match.
+
+10. **Rate validation before billing.** If the resolved rate is `0` or `null`:
+    - Do NOT auto-invoice
+    - Do NOT return success as if billing happened
+    - Either: set a `needsInvoicing` flag for later reconciliation, OR return the handler result with a clear "PENDING_RATE" marker so the operator sees it in the UI
+    - The weighment can still be marked synced (physical event is real), but the billing must not be silently skipped with no trace.
+
+11. **Invoice number generation is not concurrency-safe by default.** `nextInvoiceNo()` uses `findUnique → upsert` which races under parallel auto-invoicing. If your handler can fire multiple invoice creates in parallel, wrap the counter in a `SELECT ... FOR UPDATE` or use a DB sequence. (Known pre-existing issue as of 2026-04 — fix pending.)
 
 ---
 
@@ -282,14 +314,24 @@ Before pushing a new handler:
 ```
 □ Backend compiles: cd backend && npx tsc --noEmit
 □ Frontend builds: cd frontend && npx vite build
+□ Schema: every new table keyed off weighment has sourceWbId @unique
+□ Handler uses prisma.upsert (not findFirst→create) for dispatch + shipment
+□ Handler has status guard — does NOT overwrite BILLED/RELEASED records
+□ Contract/PO match is STRICT (exact name or GSTIN, active dates, has remaining qty, single match)
+□ Ambiguous match (>1 contract) → contractId=null, not silently wrong
+□ Rate=0/null path does NOT silently return success — either flag for retry or surface to operator
+□ Invoice creation is either in-transaction OR has a persistent retry path (needsInvoicing flag + reconciler)
+□ Contract totals increment gated behind status transition (not just invoiceId presence)
 □ Master data added (InventoryItem with right category, vendor/customer)
 □ Test happy path: full gate→tare→gross→cloud flow
-□ Test idempotency: push same weighment twice, only 1 record created
+□ Test idempotency: push same weighment twice CONCURRENTLY (not just sequentially) — only 1 record, 1 invoice, 1 increment
 □ Test PO race: 2 simultaneous trucks against same PO line
+□ Test fuzzy-match trap: create 2 customers with similar names, push a weighment — verify no silent wrong-match
 □ Test invoice link: GRN/Shipment creates correct invoice trail
 □ Test inventory: stock level updated, journal entry posted
 □ Verify factory dashboard: weighment shows as SYNCED (not ERROR)
 □ Verify Recharts dashboard: new product shows in totals
+□ Run /codex:rescue audit on the new handler (see Deploy Steps)
 ```
 
 ---
@@ -308,7 +350,17 @@ Before pushing a new handler:
 
 6. **Don't forget to update the `detectHandler()` function in `push.ts`** — it's the routing table. If the handler exists but isn't in the dispatcher, it's dead code.
 
-7. **Don't deploy without testing all 7 existing types still work** — the dispatcher is shared, and a bad detection condition can break everything.
+7. **Don't deploy without testing all 8 existing types still work** — the dispatcher is shared, and a bad detection condition can break everything.
+
+8. **Don't use `findFirst → create` for dedup.** This is a race, not an idempotency pattern. Two concurrent pushes both miss the `findFirst` and both `create`. Use `prisma.upsert({ where: { sourceWbId } })` + `@unique` on the column. Discovered in DDGS audit 2026-04 — would have caused duplicate billing in production.
+
+9. **Don't auto-match contracts/POs by fuzzy `contains`.** "XYZ Feeds" matches "XYZ Feeds Pvt Ltd" matches "XYZ Feeds & Chemicals" — and now you're billing the wrong customer at the wrong rate. Require exact name OR exact GSTIN match, plus active-date and remaining-qty filters, plus single-match guard. Ambiguous → `contractId = null`, not silent wrong-match.
+
+10. **Don't put revenue creation behind `setImmediate` with only stderr logging.** If the process crashes between tx commit and billing callback, the invoice is silently lost AND `checkWbDuplicate` blocks re-entry. Either bill inside the main tx, or persist a `needsInvoicing` flag + reconciliation worker. Fire-and-forget is fine for journal/IRN/EWB (those can be retried from the invoice record), NOT for invoice creation itself.
+
+11. **Don't overwrite `BILLED`/`RELEASED` records on retry.** A late-arriving weighment push must be a no-op, not a silent weight rewrite. Check status at the top of the upsert and bail if terminal. See `ethanolOutbound.ts` compare-and-set pattern.
+
+12. **Don't return success when billing was silently skipped.** If `rate=0` or contract match failed, the push can still be marked synced (the physical event is real), but the handler result MUST indicate pending billing — either a different `type` in `PushOutcome.results[]` (like `DDGSDispatch_PENDING_RATE`) or a persisted flag. Otherwise the operator has no way to know billing never happened.
 
 ---
 
@@ -336,16 +388,17 @@ Before pushing a new handler:
 1. `cd backend && npx tsc --noEmit` — must pass
 2. `cd frontend && npx vite build` — must pass
 3. Test handler in isolation locally if possible
-4. `git add backend/src/routes/weighbridge/ factory-server/src/routes/weighbridge.ts`
-5. `git commit -m "feat: scrap outbound handler"`
-6. `git push origin main` — Railway auto-deploys cloud
-7. Build + deploy factory server (see CLAUDE.md "Factory Server Deploy")
-8. Test with a real truck end-to-end
-9. Monitor factory admin dashboard for sync errors
+4. **Run Codex audit** — `/codex:rescue` on the new handler file. Ask Codex to look for: race conditions, idempotency holes, missing `$transaction` boundaries, hardcoded rates, missing `syncToInventory()` calls, dedup gaps, and incorrect `PushOutcome` shapes. Fix anything Codex flags before pushing — this is the cheapest insurance against a silent production break.
+5. `git add backend/src/routes/weighbridge/ factory-server/src/routes/weighbridge.ts`
+6. `git commit -m "feat: scrap outbound handler"`
+7. `git push origin main` — Railway auto-deploys cloud
+8. Build + deploy factory server (see CLAUDE.md "Factory Server Deploy")
+9. Test with a real truck end-to-end
+10. Monitor factory admin dashboard for sync errors
 
 ---
 
-## Reference: The 7 Existing Handlers
+## Reference: The 8 Existing Handlers
 
 | Handler | Triggers When | Creates |
 |---------|--------------|---------|
@@ -354,7 +407,8 @@ Before pushing a new handler:
 | `handleTraderInbound` | INBOUND + TRADER + supplier_id | Running monthly PO + GRN |
 | `handleFallbackInbound` | INBOUND, no PO/SPOT/TRADER | GrainTruck only (last resort) |
 | `handleEthanolOutbound` | OUTBOUND + (material has 'ethanol' OR cloud_gate_pass_id is UUID) | DispatchTruck update |
-| `handleNonEthanolOutbound` | OUTBOUND, not ethanol | DDGSDispatchTruck + Shipment |
+| `handleDDGSOutbound` | OUTBOUND + (material_category='DDGS' OR material has 'ddgs'/'distillers'/'dried grain') | DDGSDispatchTruck + Shipment + auto-match DDGSContract + auto Invoice via `ddgsInvoiceService` |
+| `handleNonEthanolOutbound` | OUTBOUND, not ethanol, not DDGS (catch-all: scrap, sugar, etc.) | DDGSDispatchTruck + Shipment (no contract link) |
 | Pre-phase: `runPrePhase` | GATE_ENTRY/FIRST_DONE inbound, OR COMPLETE inbound with existing GrainTruck stub | GrainTruck stub for lab page |
 
 Fuel is NOT a separate handler — fuel-specific behavior (skip GrainTruck, fuel lab fail rejection) is inside `handlePoInbound` and pre-phase, gated on `ctx.isFuel`.

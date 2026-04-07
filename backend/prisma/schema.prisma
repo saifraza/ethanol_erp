@@ -637,7 +637,7 @@ model DDGSDispatchTruck {
   grossTime       DateTime?
   releaseTime     DateTime?
   remarks         String?
-  sourceWbId      String?           // Factory weighment ID for dedup
+  sourceWbId      String?  @unique // Factory weighment ID for dedup (CRITICAL for idempotency)
   customerId      String?
   customer        Customer?  @relation(fields: [customerId], references: [id])
   contractId      String?
@@ -833,7 +833,7 @@ model DispatchTruck {
   releaseTime     DateTime?
   gatePassNo      String?
   challanNo       String?  // Delivery challan number
-  sourceWbId      String?  // link to weighbridge record for dedup
+  sourceWbId      String?  @unique // link to weighbridge record for dedup (CRITICAL for idempotency)
   productRatePerLtr Float? // Product value rate (e.g. 71.86/Ltr)
   productValue    Float?   // Total product value (qty × productRate)
   createdAt       DateTime @default(now())
@@ -1502,7 +1502,7 @@ model Shipment {
   gatePassItems   String?                  // JSON array of items [{desc, hsnCode, qty, unit, value}]
   totalValue      Float?                   // declared value of goods
   coveringNote    String?                  // authority letter text
-  sourceWbId      String?                   // Factory weighment ID for dedup/traceability
+  sourceWbId      String?  @unique          // Factory weighment ID for dedup/traceability (CRITICAL for idempotency)
   userId          String?                  // factory user
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
