@@ -6,7 +6,7 @@ interface Supplier { id: string; name: string }
 interface Material { id: string; name: string; category?: string }
 interface PO { id: string; po_no: number; vendor_name: string; status: string; deal_type?: string; lines: POLine[] }
 interface POLine { id: string; description: string; quantity: number; received_qty: number; pending_qty: number; rate: number; unit: string }
-interface Customer { id: string; name: string }
+interface Customer { id: string; name: string; gstNo?: string | null; address?: string | null; state?: string | null; pincode?: string | null }
 interface Trader { id: string; name: string; phone?: string; productTypes?: string; category?: string }
 interface EthContract { id: string; contractNo: string; contractType: string; buyerName: string; buyerAddress?: string; omcDepot?: string }
 
@@ -61,6 +61,9 @@ export default function GateEntry() {
   // Outbound
   const [customerName, setCustomerName] = useState('');
   const [driverLicense, setDriverLicense] = useState('');
+  // Outbound Ship-To (optional; null = same as Bill-To customer)
+  const [shipToMode, setShipToMode] = useState<'SAME' | 'DIFFERENT'>('SAME');
+  const [shipToCustomerId, setShipToCustomerId] = useState('');
   // Ethanol-specific
   const [ethContracts, setEthContracts] = useState<EthContract[]>([]);
   const [ethContractId, setEthContractId] = useState('');
@@ -167,6 +170,7 @@ export default function GateEntry() {
     setSellerPhone(''); setSellerVillage(''); setRate(''); setPaymentMode('CASH');
     setCustomerName(''); setSelectedTraderId('');
     setEthContractId(''); setDriverName(''); setDestination(''); setRstNo(''); setSealNo('');
+    setShipToMode('SAME'); setShipToCustomerId('');
   };
 
   const handleSubmit = async () => {
@@ -188,6 +192,18 @@ export default function GateEntry() {
         remarks,
         operatorName: user?.name || user?.username,
       };
+      // Outbound: Ship-To (only when "different party" picked)
+      if (direction === 'OUTBOUND' && shipToMode === 'DIFFERENT' && shipToCustomerId) {
+        const st = customers.find(c => c.id === shipToCustomerId);
+        if (st) {
+          body.shipToCustomerId = st.id;
+          body.shipToName = st.name;
+          body.shipToGstin = st.gstNo || null;
+          body.shipToAddress = st.address || null;
+          body.shipToState = st.state || null;
+          body.shipToPincode = st.pincode || null;
+        }
+      }
       if (direction === 'INBOUND' && isPOLike) {
         body.poId = selectedPoId || undefined;
         body.poLineId = selectedPoLineId || undefined;
@@ -309,22 +325,63 @@ export default function GateEntry() {
 
           {/* Supplier / Customer */}
           {direction === 'OUTBOUND' ? (
-            <div>
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">
-                Customer {masterLoading && <span className="text-yellow-500 animate-pulse">searching...</span>}
-              </label>
-              {customers.length > 0 ? (
-                <select value={customerName} onChange={e => setCustomerName(e.target.value)}
-                  className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
-                  <option value="">-- Select --</option>
-                  {customers.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                </select>
-              ) : (
-                <input value={customerName} onChange={e => setCustomerName(e.target.value)}
-                  className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400"
-                  placeholder={masterLoading ? 'Loading from cloud...' : 'Type customer name'} />
-              )}
-            </div>
+            <>
+              <div>
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">
+                  Bill-To (Customer) {masterLoading && <span className="text-yellow-500 animate-pulse">searching...</span>}
+                </label>
+                {customers.length > 0 ? (
+                  <select value={customerName} onChange={e => setCustomerName(e.target.value)}
+                    className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
+                    <option value="">-- Select --</option>
+                    {customers.map(c => <option key={c.id} value={c.name}>{c.name}{c.gstNo ? ` (${c.gstNo})` : ''}</option>)}
+                  </select>
+                ) : (
+                  <input value={customerName} onChange={e => setCustomerName(e.target.value)}
+                    className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400"
+                    placeholder={masterLoading ? 'Loading from cloud...' : 'Type customer name'} />
+                )}
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">
+                  Ship-To <span className="text-[10px] font-normal text-slate-500 normal-case">(delivery address on e-way bill)</span>
+                </label>
+                <div className="flex gap-3 text-xs mb-2">
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input type="radio" name="shipToMode" value="SAME"
+                      checked={shipToMode === 'SAME'}
+                      onChange={() => { setShipToMode('SAME'); setShipToCustomerId(''); }} />
+                    Same as Bill-To
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input type="radio" name="shipToMode" value="DIFFERENT"
+                      checked={shipToMode === 'DIFFERENT'}
+                      onChange={() => setShipToMode('DIFFERENT')} />
+                    Different party
+                  </label>
+                </div>
+                {shipToMode === 'DIFFERENT' && (
+                  <>
+                    <select value={shipToCustomerId} onChange={e => setShipToCustomerId(e.target.value)}
+                      className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
+                      <option value="">-- Select Ship-To Customer --</option>
+                      {customers.map(c => <option key={c.id} value={c.id}>{c.name}{c.gstNo ? ` (${c.gstNo})` : ''}</option>)}
+                    </select>
+                    {shipToCustomerId && (() => {
+                      const c = customers.find(x => x.id === shipToCustomerId);
+                      if (!c) return null;
+                      return (
+                        <div className="mt-1.5 text-[11px] text-slate-600 bg-slate-50 border border-slate-200 px-2 py-1.5 leading-tight">
+                          {c.gstNo && <div>GSTIN: <span className="font-mono">{c.gstNo}</span></div>}
+                          {c.address && <div>{c.address}</div>}
+                          {(c.state || c.pincode) && <div>{c.state}{c.pincode ? ` - ${c.pincode}` : ''}</div>}
+                        </div>
+                      );
+                    })()}
+                  </>
+                )}
+              </div>
+            </>
           ) : (
             <div>
               <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">

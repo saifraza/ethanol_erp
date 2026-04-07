@@ -316,13 +316,27 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
   try {
     const invoice = await prisma.invoice.findUnique({
       where: { id: req.params.id },
-      include: { customer: true, ethanolLiftings: { take: 1, include: { contract: { select: { paymentTermsDays: true, paymentMode: true } } } } },
+      include: {
+        customer: true,
+        ethanolLiftings: { take: 1, include: { contract: { select: { paymentTermsDays: true, paymentMode: true } } } },
+        ddgsContractDispatches: {
+          take: 1,
+          include: {
+            ddgsDispatchTruck: true,
+            contract: { select: { paymentTermsDays: true, paymentMode: true, dealType: true } },
+          },
+        },
+      },
     });
 
     if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
 
     const isIntraState = invoice.customer.state?.toLowerCase().includes('madhya pradesh');
     const lifting = invoice.ethanolLiftings?.[0] || null;
+    const ddgsLink = invoice.ddgsContractDispatches?.[0] || null;
+    const ddgsTruck = ddgsLink?.ddgsDispatchTruck || null;
+    const ddgsContract = ddgsLink?.contract || null;
+    const isDDGSInvoice = !!ddgsLink || invoice.productName?.toUpperCase().includes('DDGS');
     const stateCode = invoice.customer.gstNo ? invoice.customer.gstNo.substring(0, 2) : '';
 
     const customInvNo = lifting?.invoiceNo || invoice.remarks; // custom invoice no stored on lifting or in remarks
@@ -331,9 +345,14 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
       customInvoiceNo: customInvNo || null,
       invoiceDate: invoice.invoiceDate,
       dueDate: invoice.dueDate,
-      challanNo: lifting?.challanNo || invoice.challanNo,
+      challanNo: lifting?.challanNo || invoice.challanNo || ddgsLink?.challanNo || ddgsLink?.gatePassNo || null,
       ewayBill: invoice.ewayBill,
-      paymentMode: lifting?.contract?.paymentTermsDays ? `${lifting.contract.paymentTermsDays} Days` : (lifting?.contract?.paymentMode || null),
+      paymentMode: lifting?.contract?.paymentTermsDays
+        ? `${lifting.contract.paymentTermsDays} Days`
+        : (lifting?.contract?.paymentMode
+            || (ddgsContract?.paymentTermsDays ? `${ddgsContract.paymentTermsDays} Days` : null)
+            || ddgsContract?.paymentMode
+            || null),
       supplyType: isIntraState ? 'INTRA_STATE' : 'INTER_STATE',
       customer: {
         name: invoice.customer.name,
@@ -346,10 +365,19 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
         pincode: invoice.customer.pincode,
       },
       productName: invoice.productName,
-      hsnCode: invoice.productName?.toUpperCase().includes('JOB WORK') ? (invoice.productName?.toUpperCase().includes('DDGS') ? '998817' : '998842') : invoice.productName?.toUpperCase().includes('ETHANOL') ? '22072000' : invoice.productName?.toUpperCase().includes('DDGS') ? '23033000' : '998817',
-      quantity: invoice.quantity,
-      unit: invoice.unit,
-      rate: invoice.rate,
+      hsnCode: (() => {
+        const p = (invoice.productName || '').toUpperCase();
+        if (p.includes('JOBWORK') || p.includes('JOB WORK')) return p.includes('DDGS') ? '998817' : '998842';
+        if (p.includes('ETHANOL')) return '22072000';
+        if (p.includes('DDGS')) return '23033000';
+        return '998817';
+      })(),
+      // DDGS invoices render quantity in KG and rate in ₹/kg (matches reference Mash invoice).
+      // Schema stores MT and ₹/MT — convert at print time. Keep 4 decimals on rate so qty×rate
+      // round-trips back to the stored amount (Mash uses ₹4.54/kg = ₹4540/MT, but other rates may need more precision).
+      quantity: isDDGSInvoice ? Math.round((invoice.quantity || 0) * 1000) : invoice.quantity,
+      unit: isDDGSInvoice ? 'KG' : invoice.unit,
+      rate: isDDGSInvoice ? Math.round(((invoice.rate || 0) / 1000) * 10000) / 10000 : invoice.rate,
       amount: invoice.amount,
       gstPercent: invoice.gstPercent,
       gstAmount: invoice.gstAmount,
@@ -363,26 +391,43 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
       freightCharge: invoice.freightCharge,
       totalAmount: invoice.totalAmount,
       remarks: invoice.remarks,
-      // Transport / Dispatch info (from ethanol lifting if linked)
-      vehicleNo: lifting?.vehicleNo || null,
-      driverName: lifting?.driverName || null,
-      transporterName: lifting?.transporterName || null,
-      destination: lifting?.destination || null,
-      distanceKm: lifting?.distanceKm || null,
+      // Transport / Dispatch info — pull from ethanol lifting OR ddgs dispatch truck
+      vehicleNo: lifting?.vehicleNo || ddgsTruck?.vehicleNo || ddgsLink?.vehicleNo || null,
+      driverName: lifting?.driverName || ddgsTruck?.driverName || ddgsLink?.driverName || null,
+      transporterName: lifting?.transporterName || ddgsTruck?.transporterName || ddgsLink?.transporterName || null,
+      destination: lifting?.destination || ddgsTruck?.destination || ddgsLink?.destination || null,
+      distanceKm: lifting?.distanceKm || ddgsLink?.distanceKm || null,
       strength: lifting?.strength || null,
-      rstNo: lifting?.rstNo || null,
-      dispatchMode: lifting?.dispatchMode || 'TANKER',
+      rstNo: lifting?.rstNo || (ddgsTruck?.rstNo ? String(ddgsTruck.rstNo) : null),
+      dispatchMode: lifting?.dispatchMode || (isDDGSInvoice ? 'TRUCK' : 'TANKER'),
       productRatePerLtr: lifting?.productRatePerLtr || null,
       productValue: lifting?.productValue || null,
-      // Consignee (Ship To) — if different from buyer
-      consignee: lifting?.consigneeName ? {
-        name: lifting.consigneeName,
-        gstin: lifting.consigneeGstin || null,
-        address: lifting.consigneeAddress || null,
-        state: lifting.consigneeState || null,
-        stateCode: lifting.consigneeGstin ? lifting.consigneeGstin.substring(0, 2) : null,
-        pincode: lifting.consigneePincode || null,
-      } : null,
+      // Consignee (Ship To) — for DDGS pulled from invoice.shipTo* snapshot;
+      // for ethanol legacy from lifting.consignee*. Always render the block when set.
+      consignee: (() => {
+        if (lifting?.consigneeName) {
+          return {
+            name: lifting.consigneeName,
+            gstin: lifting.consigneeGstin || null,
+            address: lifting.consigneeAddress || null,
+            state: lifting.consigneeState || null,
+            stateCode: lifting.consigneeGstin ? lifting.consigneeGstin.substring(0, 2) : null,
+            pincode: lifting.consigneePincode || null,
+          };
+        }
+        if ((invoice as any).shipToName) {
+          const inv = invoice as any;
+          return {
+            name: inv.shipToName,
+            gstin: inv.shipToGstin || null,
+            address: inv.shipToAddress || null,
+            state: inv.shipToState || null,
+            stateCode: inv.shipToGstin ? inv.shipToGstin.substring(0, 2) : null,
+            pincode: inv.shipToPincode || null,
+          };
+        }
+        return null;
+      })(),
       // E-Invoice / E-Way Bill data
       irn: invoice.irn || null,
       irnDate: invoice.irnDate || null,

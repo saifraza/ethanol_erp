@@ -93,6 +93,13 @@ model Weighment {
   rstNo           String?
   driverLicense   String?
   pesoDate        String?
+  // Ship-To (outbound only, snapshot at gate entry; when null Bill-To == Ship-To)
+  shipToCustomerId String?
+  shipToName       String?
+  shipToGstin      String?
+  shipToAddress    String?
+  shipToState      String?
+  shipToPincode    String?
   // Camera snapshots (comma-separated relative paths)
   grossPhotos   String?  // e.g. "{id}/gross_cam1.jpg,{id}/gross_cam2.jpg"
   tarePhotos    String?

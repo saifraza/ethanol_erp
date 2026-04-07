@@ -263,6 +263,8 @@ router.post('/gate-entry', requireAuth, requireRole('GATE_ENTRY', 'ADMIN'), asyn
     sellerPhone, sellerVillage, sellerAadhaar,
     rate, deductions, deductionReason, paymentMode, paymentRef,
     cloudGatePassId,
+    // Ship-To (outbound only; omit = Bill-To == Ship-To)
+    shipToCustomerId, shipToName, shipToGstin, shipToAddress, shipToState, shipToPincode,
   } = req.body;
 
   if (!vehicleNo) {
@@ -336,6 +338,32 @@ router.post('/gate-entry', requireAuth, requireRole('GATE_ENTRY', 'ADMIN'), asyn
   const needsLab = isInbound && (materialCategory === 'RAW_MATERIAL' || materialCategory === 'FUEL');
   const labStatus = needsLab ? 'PENDING' : null;
 
+  // Ship-To resolution (outbound only). If client sent customerId but no snapshot,
+  // hydrate from cloud master so we save a frozen copy that's immune to later edits.
+  let resolvedShipToName: string | null = shipToName || null;
+  let resolvedShipToGstin: string | null = shipToGstin || null;
+  let resolvedShipToAddress: string | null = shipToAddress || null;
+  let resolvedShipToState: string | null = shipToState || null;
+  let resolvedShipToPincode: string | null = shipToPincode || null;
+  if (!isInbound && shipToCustomerId && !resolvedShipToName) {
+    try {
+      const cloud = getCloudPrisma();
+      if (cloud) {
+        const cust = await cloud.customer.findUnique({
+          where: { id: shipToCustomerId },
+          select: { name: true, gstNo: true, address: true, state: true, pincode: true },
+        });
+        if (cust) {
+          resolvedShipToName = cust.name;
+          resolvedShipToGstin = cust.gstNo;
+          resolvedShipToAddress = cust.address;
+          resolvedShipToState = cust.state;
+          resolvedShipToPincode = cust.pincode;
+        }
+      }
+    } catch { /* cloud unreachable — operator-supplied values are still valid */ }
+  }
+
   const weighment = await prisma.weighment.create({
     data: {
       localId,
@@ -374,6 +402,13 @@ router.post('/gate-entry', requireAuth, requireRole('GATE_ENTRY', 'ADMIN'), asyn
       labStatus,
       // Ethanol outbound: link to cloud DispatchTruck
       cloudGatePassId: cloudGatePassId || null,
+      // Ship-To (outbound; null = Bill-To == Ship-To)
+      shipToCustomerId: !isInbound ? (shipToCustomerId || null) : null,
+      shipToName: !isInbound ? resolvedShipToName : null,
+      shipToGstin: !isInbound ? resolvedShipToGstin : null,
+      shipToAddress: !isInbound ? resolvedShipToAddress : null,
+      shipToState: !isInbound ? resolvedShipToState : null,
+      shipToPincode: !isInbound ? resolvedShipToPincode : null,
     },
   });
 

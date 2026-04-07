@@ -62,6 +62,14 @@ export async function handleDDGSOutbound(w: WeighmentInput, ctx: PushContext): P
     }
   }
 
+  // ── 1b. Validate Ship-To FK exists (or null it out, keep snapshot) ──
+  // Customer master may have been deleted between gate-entry and sync.
+  let shipToFkValid: string | null = null;
+  if (w.ship_to_customer_id) {
+    const exists = await prisma.customer.findUnique({ where: { id: w.ship_to_customer_id }, select: { id: true } });
+    shipToFkValid = exists?.id || null;
+  }
+
   // ── 2. Rate by dealType (null-safe) ──
   let rate = 0;
   if (contract) {
@@ -79,6 +87,17 @@ export async function handleDDGSOutbound(w: WeighmentInput, ctx: PushContext): P
     }
 
     // Upsert DDGSDispatchTruck (atomic via @unique sourceWbId)
+    // Ship-To snapshot from weighment (null = same as Bill-To).
+    // If the customer was deleted from master after gate entry, keep the snapshot but null the FK.
+    const shipToFields = {
+      shipToCustomerId: shipToFkValid,
+      shipToName: w.ship_to_name || null,
+      shipToGstin: w.ship_to_gstin || null,
+      shipToAddress: w.ship_to_address || null,
+      shipToState: w.ship_to_state || null,
+      shipToPincode: w.ship_to_pincode || null,
+    };
+
     const dispatch = await tx.dDGSDispatchTruck.upsert({
       where: { sourceWbId: w.id },
       update: {
@@ -90,6 +109,8 @@ export async function handleDDGSOutbound(w: WeighmentInput, ctx: PushContext): P
         ...(contract && !existing?.contractId
           ? { contractId: contract.id, customerId: contract.customerId, rate: rate > 0 ? rate : null }
           : {}),
+        // Only set ship-to on first push (don't clobber later edits)
+        ...(w.ship_to_customer_id && !existing?.shipToCustomerId ? shipToFields : {}),
       },
       create: {
         sourceWbId: w.id,
@@ -115,6 +136,7 @@ export async function handleDDGSOutbound(w: WeighmentInput, ctx: PushContext): P
         customerId: contract?.customerId || null,
         rate: rate > 0 ? rate : null,
         userId: 'factory-server',
+        ...shipToFields,
       },
     });
 
@@ -147,6 +169,7 @@ export async function handleDDGSOutbound(w: WeighmentInput, ctx: PushContext): P
         grossTime: grossTimeVal ? grossTimeVal.toISOString() : null,
         paymentStatus: 'NOT_REQUIRED',
         remarks: `WB:${w.id}`,
+        ...shipToFields,
       },
     });
 
@@ -173,13 +196,19 @@ export async function handleDDGSOutbound(w: WeighmentInput, ctx: PushContext): P
     const gst = calcDDGSGstSplit(amount, gstPercent, customer.state);
     const total = Math.round((amount + gst.gstAmount) * 100) / 100;
 
+    // MSPIL/DDGS/NNN counter (atomic increment via ON CONFLICT)
     const customInvNo = await nextInvoiceNo(tx, 'DDGS');
+
+    // Product line description: job work uses descriptive line; otherwise plain DDGS
+    const isJobWork = contract.dealType === 'JOB_WORK';
+    const productName = isJobWork ? 'JOBWORK CHARGES FOR DDGS PRODUCTION' : 'DDGS';
+    const formattedCustomInvNo = `MSPIL/DDGS/${String(customInvNo.split('/').pop() || '').padStart(3, '0')}`;
 
     const invoice = await tx.invoice.create({
       data: {
         customerId: customer.id,
         invoiceDate: grossTimeVal || dateVal,
-        productName: 'DDGS',
+        productName,
         quantity: netMT,
         unit: 'MT',
         rate,
@@ -196,8 +225,15 @@ export async function handleDDGSOutbound(w: WeighmentInput, ctx: PushContext): P
         totalAmount: total,
         balanceAmount: total,
         status: 'UNPAID',
-        remarks: customInvNo,
+        remarks: formattedCustomInvNo,
         userId: 'system-weighbridge',
+        // Ship-To snapshot onto the invoice — read from the just-upserted dispatch row
+        // (so a retry without ship_to_* doesn't lose the snapshot from the first push).
+        shipToName: dispatch.shipToName,
+        shipToGstin: dispatch.shipToGstin,
+        shipToAddress: dispatch.shipToAddress,
+        shipToState: dispatch.shipToState,
+        shipToPincode: dispatch.shipToPincode,
       },
     });
 
@@ -287,11 +323,24 @@ export async function handleDDGSOutbound(w: WeighmentInput, ctx: PushContext): P
         try {
           const cust = txResult.customer!;
           const inv = txResult.invoice!;
+          // DDGS service-side: render qty in KG and rate ₹/kg for GST e-invoice (matches printed invoice).
+          // Keep 4 decimals so qty×rate round-trips back to the stored amount precisely.
+          const qtyKg = Math.round((inv.quantity || 0) * 1000);
+          const ratePerKg = Math.round(((inv.rate || 0) / 1000) * 10000) / 10000;
           const irnRes = await generateIRN({
             invoiceNo: inv.remarks || `INV-${inv.invoiceNo}`,
             invoiceDate: inv.invoiceDate,
-            productName: 'DDGS', quantity: inv.quantity, unit: 'MT', rate: inv.rate, amount: inv.amount, gstPercent: inv.gstPercent,
+            productName: contract?.dealType === 'JOB_WORK' ? 'JOBWORK CHARGES FOR DDGS PRODUCTION' : 'DDGS',
+            quantity: qtyKg, unit: 'KG', rate: ratePerKg, amount: inv.amount, gstPercent: inv.gstPercent,
             customer: { gstin: cust.gstNo!, name: cust.name, address: cust.address!, city: cust.city || '', pincode: cust.pincode!, state: cust.state!, phone: cust.phone || '', email: cust.email || '' },
+            // Ship-To snapshot — read from persisted dispatch (not w) so retries are stable
+            ...(txResult.dispatch.shipToName ? {
+              shipToName: txResult.dispatch.shipToName,
+              shipToGstin: txResult.dispatch.shipToGstin,
+              shipToAddress: txResult.dispatch.shipToAddress,
+              shipToState: txResult.dispatch.shipToState,
+              shipToPincode: txResult.dispatch.shipToPincode,
+            } : {}),
           } as any);
           if (irnRes.success && irnRes.irn) {
             await prisma.invoice.update({

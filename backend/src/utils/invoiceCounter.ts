@@ -43,8 +43,19 @@ export async function currentCounter(prisma: any, series: InvoiceSeries): Promis
 }
 
 /**
- * Determine invoice series from contract type
+ * Determine invoice series from contract type and product.
+ * - Ethanol (any contract type) → ETH
+ * - DDGS (any deal type, incl. job work) → DDGS — series MSPIL/DDGS/NNN
+ * - Sugar → SUG
+ * - Falls back to ETH for unknown.
  */
-export function getInvoiceSeries(_contractType: string, _productName?: string): InvoiceSeries {
+export function getInvoiceSeries(contractType?: string, productName?: string): InvoiceSeries {
+  const p = (productName || '').toUpperCase();
+  if (p.includes('DDGS') || p.includes('DISTILLERS') || p.includes('DRIED GRAIN') || p.includes('WET GRAIN')) return 'DDGS';
+  if (p.includes('SUGAR')) return 'SUG';
+  if (p.includes('LFO')) return 'LFO';
+  if (p.includes('HFO')) return 'HFO';
+  if (p.includes('RECTIFIED')) return 'RS';
+  if (p.includes('ENA')) return 'ENA';
   return 'ETH';
 }

@@ -13,7 +13,7 @@
  *   EWAY_GSTIN=23AAECM3666P1Z1
  */
 
-import { getSaralAuth, clearSaralAuthCache } from './ewayBill';
+import { getSaralAuth, clearSaralAuthCache, getStateCode } from './ewayBill';
 
 export interface IRNPayload {
   Version: string;
@@ -202,6 +202,27 @@ export function buildIRNPayload(invoice: any): IRNPayload {
       Ph: (invoice.customer?.phone && invoice.customer.phone.length >= 6) ? invoice.customer.phone : '0000000000',
       Em: (invoice.customer?.email && invoice.customer.email.length >= 6) ? invoice.customer.email : 'na@na.com',
     },
+    // ShipDtls — Ship-To party (only when different from Buyer). Snapshot from invoice.
+    ...((invoice.shipToName || invoice.shipto?.name) ? (() => {
+      const shipName = invoice.shipToName || invoice.shipto?.name;
+      const shipGstin = invoice.shipToGstin || invoice.shipto?.gstin;
+      const shipAddr = invoice.shipToAddress || invoice.shipto?.address;
+      const shipPin = invoice.shipToPincode || invoice.shipto?.pincode;
+      const shipState = invoice.shipToState || invoice.shipto?.state;
+      // State code priority: GSTIN prefix → state name lookup → buyer state fallback
+      const shipStcd = shipGstin?.substring(0, 2) || (shipState ? getStateCode(shipState) : buyerStateCode);
+      return {
+        ShipDtls: {
+          Gstin: shipGstin || undefined,
+          Lglnm: shipName,
+          Trdnm: shipName,
+          Addr1: shipAddr || 'NA',
+          Loc: shipAddr?.split(',').pop()?.trim() || 'NA',
+          Pin: shipPin ? parseInt(shipPin) : undefined,
+          Stcd: shipStcd,
+        },
+      };
+    })() : {}),
     ItemList: [
       {
         SlNo: '1',
@@ -241,7 +262,9 @@ function getHsnCode(productName: string): string {
     'DDGS': '23033000',         // Ch 23: Residues of starch/distilling — DDGS for animal feed, 5% GST
     'ETHANOL': '22072000',      // Ch 22: Denatured ethyl alcohol (fuel ethanol), 18% GST
     'JOB WORK CHARGES FOR ETHANOL PRODUCTION': '998842',  // SAC: Manufacturing services on physical inputs
+    'JOBWORK CHARGES FOR ETHANOL PRODUCTION': '998842',   // alt spelling (no space)
     'JOB WORK CHARGES FOR DDGS PRODUCTION': '998817',     // SAC: Maintenance and repair services
+    'JOBWORK CHARGES FOR DDGS PRODUCTION': '998817',      // alt spelling (no space) — matches printed Mash invoice
     'ENA': '22071090',          // Ch 22: Undenatured ethyl alcohol ≥80% (Extra Neutral Alcohol)
     'RS': '22071019',           // Ch 22: Rectified spirit (other rectified spirit)
     'LFO': '27101960',          // Ch 27: Light diesel oil / light furnace oil

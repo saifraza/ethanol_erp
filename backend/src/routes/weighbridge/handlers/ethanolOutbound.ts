@@ -26,6 +26,13 @@ export async function handleEthanolOutbound(w: WeighmentInput, _ctx: PushContext
 
   const hasValidGatePassId = w.cloud_gate_pass_id && /^[0-9a-f-]{36}$/i.test(w.cloud_gate_pass_id);
 
+  // Validate Ship-To FK before tx (customer master may have been deleted after gate entry)
+  let shipToFkValid: string | null = null;
+  if (w.ship_to_customer_id) {
+    const exists = await prisma.customer.findUnique({ where: { id: w.ship_to_customer_id }, select: { id: true } });
+    shipToFkValid = exists?.id || null;
+  }
+
   const ethResult = await prisma.$transaction(async (tx) => {
     // Find DispatchTruck: cloudGatePassId → sourceWbId → vehicleNo+date
     let dispatchTruck = hasValidGatePassId
@@ -66,6 +73,13 @@ export async function handleEthanolOutbound(w: WeighmentInput, _ctx: PushContext
           gateInTime: gateInVal,
           sourceWbId: w.id,
           userId: 'factory-server',
+          // Ship-To (outbound) — null when Bill-To == Ship-To
+          shipToCustomerId: shipToFkValid,
+          shipToName: w.ship_to_name || null,
+          shipToGstin: w.ship_to_gstin || null,
+          shipToAddress: w.ship_to_address || null,
+          shipToState: w.ship_to_state || null,
+          shipToPincode: w.ship_to_pincode || null,
         },
       });
       if (grossKg > 0 && tareKg > 0) {
@@ -134,6 +148,17 @@ export async function handleEthanolOutbound(w: WeighmentInput, _ctx: PushContext
         ...(w.peso_date ? { pesoDate: w.peso_date } : {}),
         ...(productRate != null ? { productRatePerLtr: productRate } : {}),
         ...(productValue != null ? { productValue } : {}),
+        // Ship-To — only set on first sync (don't clobber later edits)
+        ...(w.ship_to_customer_id && !dispatchTruck.shipToCustomerId
+          ? {
+              shipToCustomerId: shipToFkValid,
+              shipToName: w.ship_to_name || null,
+              shipToGstin: w.ship_to_gstin || null,
+              shipToAddress: w.ship_to_address || null,
+              shipToState: w.ship_to_state || null,
+              shipToPincode: w.ship_to_pincode || null,
+            }
+          : {}),
       },
     });
     return updated.count > 0 ? { skipped: false, id: dispatchTruck.id } : { skipped: true, id: dispatchTruck.id };

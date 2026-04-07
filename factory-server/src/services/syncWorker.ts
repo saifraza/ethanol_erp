@@ -90,6 +90,13 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
     rst_no: w.rstNo || undefined,
     driver_license: w.driverLicense || undefined,
     peso_date: w.pesoDate || undefined,
+    // Ship-To snapshot (outbound only; null = same as Bill-To)
+    ship_to_customer_id: w.shipToCustomerId || undefined,
+    ship_to_name: w.shipToName || undefined,
+    ship_to_gstin: w.shipToGstin || undefined,
+    ship_to_address: w.shipToAddress || undefined,
+    ship_to_state: w.shipToState || undefined,
+    ship_to_pincode: w.shipToPincode || undefined,
   }));
 
   try {

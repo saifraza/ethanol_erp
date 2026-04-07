@@ -19,6 +19,13 @@ export async function handleNonEthanolOutbound(w: WeighmentInput, ctx: PushConte
   const tareTimeVal = w.first_weight_at ? new Date(w.first_weight_at) : undefined;
   const grossTimeVal = w.second_weight_at ? new Date(w.second_weight_at) : undefined;
 
+  // Validate Ship-To FK before tx (customer master may have been deleted after gate entry)
+  let shipToFkValid: string | null = null;
+  if (w.ship_to_customer_id) {
+    const exists = await prisma.customer.findUnique({ where: { id: w.ship_to_customer_id }, select: { id: true } });
+    shipToFkValid = exists?.id || null;
+  }
+
   const txResult = await prisma.$transaction(async (tx) => {
     // 1. Find or create DDGSDispatchTruck by sourceWbId
     const existingDispatch = await tx.dDGSDispatchTruck.findFirst({ where: { sourceWbId: w.id } });
@@ -36,6 +43,12 @@ export async function handleNonEthanolOutbound(w: WeighmentInput, ctx: PushConte
             bags: w.bags || 0, status: 'GROSS_WEIGHED',
             gateInTime: gateInVal, tareTime: tareTimeVal, grossTime: grossTimeVal,
             remarks: `${ctx.wbRef} | ${w.remarks || ''}`.trim(),
+            shipToCustomerId: shipToFkValid,
+            shipToName: w.ship_to_name || null,
+            shipToGstin: w.ship_to_gstin || null,
+            shipToAddress: w.ship_to_address || null,
+            shipToState: w.ship_to_state || null,
+            shipToPincode: w.ship_to_pincode || null,
           },
         });
 
@@ -56,6 +69,12 @@ export async function handleNonEthanolOutbound(w: WeighmentInput, ctx: PushConte
             gateInTime: gateInVal.toISOString(), tareTime: tareTimeVal ? tareTimeVal.toISOString() : null,
             grossTime: grossTimeVal ? grossTimeVal.toISOString() : null,
             paymentStatus: 'NOT_REQUIRED', remarks: `WB:${w.id}`,
+            shipToCustomerId: w.ship_to_customer_id || null,
+            shipToName: w.ship_to_name || null,
+            shipToGstin: w.ship_to_gstin || null,
+            shipToAddress: w.ship_to_address || null,
+            shipToState: w.ship_to_state || null,
+            shipToPincode: w.ship_to_pincode || null,
           },
         });
 

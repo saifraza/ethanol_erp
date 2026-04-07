@@ -81,6 +81,13 @@ export const weighmentSchema = z.object({
   driver_license: z.string().nullable().optional(),
   peso_date: z.string().nullable().optional(),
   material_category: z.string().nullable().optional(),
+  // Ship-To (outbound only; when omitted, Bill-To == Ship-To)
+  ship_to_customer_id: z.string().nullable().optional(),
+  ship_to_name: z.string().nullable().optional(),
+  ship_to_gstin: z.string().nullable().optional(),
+  ship_to_address: z.string().nullable().optional(),
+  ship_to_state: z.string().nullable().optional(),
+  ship_to_pincode: z.string().nullable().optional(),
 });
 
 export type WeighmentInput = z.infer<typeof weighmentSchema>;
