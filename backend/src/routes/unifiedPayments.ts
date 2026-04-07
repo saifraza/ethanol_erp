@@ -162,7 +162,8 @@ router.get('/outgoing', asyncHandler(async (req: AuthRequest, res: Response) => 
   // 4. Cash Vouchers (type=PAYMENT only, not receipts)
   if (!type || type === 'CASH') {
     try {
-      let cvQuery = `SELECT id, date, amount, "paymentMode", "paymentRef", "payeeName", purpose, category, status, "createdAt" FROM "CashVoucher" WHERE type = 'PAYMENT'`;
+      // Exclude CANCELLED. Show ACTIVE and SETTLED both — frontend can tell from status field.
+      let cvQuery = `SELECT id, date, amount, "paymentMode", "paymentRef", "payeeName", purpose, category, status, "createdAt" FROM "CashVoucher" WHERE type = 'PAYMENT' AND status <> 'CANCELLED'`;
       const cvParams: unknown[] = [];
       let paramIdx = 1;
       if (from) { cvQuery += ` AND date >= $${paramIdx++}`; cvParams.push(new Date(from)); }
@@ -226,7 +227,7 @@ router.get('/outgoing/summary', asyncHandler(async (_req: AuthRequest, res: Resp
       _count: true,
     }),
     prisma.$queryRawUnsafe(
-      `SELECT COALESCE(SUM(amount), 0) as total, COUNT(*)::int as count FROM "CashVoucher" WHERE type = 'PAYMENT' AND date >= $1`,
+      `SELECT COALESCE(SUM(amount), 0) as total, COUNT(*)::int as count FROM "CashVoucher" WHERE type = 'PAYMENT' AND status = 'SETTLED' AND date >= $1`,
       monthStart
     ).then((rows: unknown) => {
       const r = (rows as Array<{ total: number; count: number }>)[0];
@@ -802,10 +803,16 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
     // For non-invoiced POs (esp. fuel deals): also count direct VendorPayments
     // These are matched by remarks containing "PO-{poNo}" (same pattern as fuel.ts)
     if (invoices.length === 0) {
+      // Only CONFIRMED bank payments count as paid. INITIATED = bank file built
+      // but UTR not yet entered, CANCELLED = reversed.
+      // SETTLED cash vouchers are already represented here because cashVouchers.ts
+      // creates a VendorPayment with reference "CV-{voucherNo}" on settle, so we
+      // do NOT add cash voucher amounts again (would double-count).
       const directPayments = await prisma.vendorPayment.findMany({
         where: {
           vendorId: po.vendor.id,
           invoiceId: null,
+          paymentStatus: 'CONFIRMED',
           OR: [
             { remarks: { contains: `PO-${po.poNo} ` } },
             { remarks: { endsWith: `PO-${po.poNo}` } },
@@ -815,17 +822,6 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
         select: { amount: true },
       });
       totalPaid += directPayments.reduce((s, p) => s + p.amount, 0);
-
-      // Also count cash vouchers linked to this deal — ONLY SETTLED ones
-      // ACTIVE = committed but cash not yet handed over → not paid yet
-      // CANCELLED = should never count
-      try {
-        const cashPaid = await prisma.$queryRawUnsafe(
-          `SELECT COALESCE(SUM(amount), 0) as total FROM "CashVoucher" WHERE type = 'PAYMENT' AND status = 'SETTLED' AND "payeeName" = $1 AND purpose LIKE $2`,
-          po.vendor.name, `%PO-${po.poNo}%`
-        ) as Array<{ total: number }>;
-        totalPaid += Number(cashPaid[0]?.total) || 0; // $queryRawUnsafe returns numeric as string
-      } catch { /* CashVoucher table may not exist */ }
     }
 
     // Skip if fully paid

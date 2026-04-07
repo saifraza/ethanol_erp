@@ -50,7 +50,7 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
   if (poNo) {
     try {
       const cashVouchers = await prisma.$queryRawUnsafe(
-        `SELECT amount, "paymentRef", date, "paymentMode" FROM "CashVoucher" WHERE type = 'PAYMENT' AND "payeeName" = $1 AND purpose LIKE $2 ORDER BY date`,
+        `SELECT amount, "paymentRef", date, "paymentMode" FROM "CashVoucher" WHERE type = 'PAYMENT' AND status = 'SETTLED' AND "payeeName" = $1 AND purpose LIKE $2 ORDER BY date`,
         payment.vendor.name, `%PO-${poNo}%`
       ) as Array<{ amount: number; paymentRef: string; date: Date; paymentMode: string }>;
       for (const cv of cashVouchers) {
@@ -155,7 +155,7 @@ router.get('/ledger/:vendorId', asyncHandler(async (req: AuthRequest, res: Respo
       prisma.vendorPayment.findMany({ where: { vendorId }, orderBy: { paymentDate: 'asc' } }),
       prisma.purchaseOrder.findMany({ where: { vendorId }, orderBy: { poDate: 'asc' } }),
       prisma.cashVoucher.findMany({
-        where: { type: 'PAYMENT', payeeName: { equals: vendor.name, mode: 'insensitive' } },
+        where: { type: 'PAYMENT', status: { not: 'CANCELLED' }, payeeName: { equals: vendor.name, mode: 'insensitive' } },
         orderBy: { date: 'asc' },
       }),
     ]);
@@ -411,24 +411,33 @@ router.post('/split-payment', asyncHandler(async (req: AuthRequest, res: Respons
         }
       }
 
-      // Update invoice balance if linked
+      // Update invoice balance if linked — only the BANK portion counts as paid
+      // immediately. CASH portion is held in an ACTIVE voucher and reduces the
+      // invoice balance only when the voucher is settled (cashVouchers.ts settle
+      // route creates a VendorPayment then).
       if (invoiceId) {
-        const invoice = await tx.vendorInvoice.findUnique({ where: { id: invoiceId } });
-        if (invoice) {
-          const newPaidAmount = (invoice.paidAmount || 0) + totalAmount;
-          const newBalanceAmount = (invoice.netPayable || 0) - newPaidAmount;
-          let newStatus = invoice.status;
-          if (newBalanceAmount <= 0) newStatus = 'PAID';
-          else if (newPaidAmount > 0) newStatus = 'PARTIAL_PAID';
+        const bankPaidNow = splits
+          .filter(s => s.mode !== 'CASH')
+          .reduce((s, sp) => s + (parseFloat(String(sp.amount)) || 0), 0);
 
-          await tx.vendorInvoice.update({
-            where: { id: invoiceId },
-            data: {
-              paidAmount: newPaidAmount,
-              balanceAmount: Math.max(0, newBalanceAmount),
-              status: newStatus,
-            },
-          });
+        if (bankPaidNow > 0) {
+          const invoice = await tx.vendorInvoice.findUnique({ where: { id: invoiceId } });
+          if (invoice) {
+            const newPaidAmount = (invoice.paidAmount || 0) + bankPaidNow;
+            const newBalanceAmount = (invoice.netPayable || 0) - newPaidAmount;
+            let newStatus = invoice.status;
+            if (newBalanceAmount <= 0) newStatus = 'PAID';
+            else if (newPaidAmount > 0) newStatus = 'PARTIAL_PAID';
+
+            await tx.vendorInvoice.update({
+              where: { id: invoiceId },
+              data: {
+                paidAmount: newPaidAmount,
+                balanceAmount: Math.max(0, newBalanceAmount),
+                status: newStatus,
+              },
+            });
+          }
         }
       }
 

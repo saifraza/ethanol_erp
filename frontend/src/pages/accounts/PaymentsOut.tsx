@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { X, CreditCard, FileText, Upload, Download } from 'lucide-react';
 import api from '../../services/api';
 
@@ -129,6 +129,35 @@ export default function PaymentsOut() {
   const [pendingLoading, setPendingLoading] = useState(true);
   const [pendingSearch, setPendingSearch] = useState('');
   const [pendingCategory, setPendingCategory] = useState<string>('ALL');
+
+  // Single source of truth: KPIs and table both render from this filtered list
+  const filteredPending = useMemo(() => {
+    const search = pendingSearch.toLowerCase();
+    const FUEL_KW = ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'biomass'];
+    const RAW_KW = ['maize', 'corn', 'broken rice', 'grain', 'sorghum', 'molasses'];
+    const CHEM_KW = ['amylase', 'urea', 'acid', 'antifoam', 'yeast', 'chemical', 'caustic', 'soda', 'sulph', 'phosph'];
+    return pendingItems
+      .filter(item => {
+        if (search && !`PO-${item.poNo} ${item.vendorName} ${item.material || ''}`.toLowerCase().includes(search)) return false;
+        if (pendingCategory !== 'ALL') {
+          const cat = (item.category || '').toUpperCase();
+          const mat = (item.material || '').toLowerCase();
+          const isFuel = cat === 'FUEL' || FUEL_KW.some(kw => mat.includes(kw));
+          const isRaw = cat === 'RAW_MATERIAL' || RAW_KW.some(kw => mat.includes(kw));
+          const isChem = cat === 'CHEMICAL' || CHEM_KW.some(kw => mat.includes(kw));
+          if (pendingCategory === 'FUEL' && !isFuel) return false;
+          if (pendingCategory === 'RAW_MATERIAL' && !isRaw) return false;
+          if (pendingCategory === 'CHEMICAL' && !isChem) return false;
+          if (pendingCategory === 'OTHER' && (isFuel || isRaw || isChem)) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const aFuel = FUEL_KW.some(kw => (a.material || '').toLowerCase().includes(kw)) ? 0 : 1;
+        const bFuel = FUEL_KW.some(kw => (b.material || '').toLowerCase().includes(kw)) ? 0 : 1;
+        return aFuel - bFuel;
+      });
+  }, [pendingItems, pendingSearch, pendingCategory]);
 
   // --- PO Pay modal ---
   const [poPayItem, setPoPayItem] = useState<PendingPayable | null>(null);
@@ -808,14 +837,18 @@ export default function PaymentsOut() {
               <div className="p-8 text-center text-xs text-slate-400 uppercase tracking-widest border-x border-b border-slate-300 -mx-3 md:-mx-6 bg-white">Loading...</div>
             ) : (
               <>
-                {/* KPI Strip — derived from pendingItems so they always match the table */}
+                {/* KPI Strip — derived from filteredPending so they always match the table */}
                 {(() => {
-                  const totalPayable = pendingItems.reduce((s, it) => s + (it.balance || 0), 0);
-                  const overdueAmount = pendingItems
-                    .filter(it => (it.daysOverdue ?? 0) > 0)
+                  // KPIs use filteredPending (defined at component scope) so search/category
+                  // filters are reflected. Rows with daysOverdue=null (no GRN, table shows "--")
+                  // are excluded from time-based buckets and shown separately.
+                  const totalPayable = filteredPending.reduce((s, it) => s + (it.balance || 0), 0);
+                  const overdueAmount = filteredPending
+                    .filter(it => it.daysOverdue !== null && (it.daysOverdue ?? 0) > 0)
                     .reduce((s, it) => s + (it.balance || 0), 0);
-                  const dueThisWeek = pendingItems
+                  const dueThisWeek = filteredPending
                     .filter(it => {
+                      if (it.daysOverdue === null) return false;
                       const d = it.daysOverdue ?? 0;
                       return d <= 0 && d >= -7;
                     })
@@ -826,9 +859,11 @@ export default function PaymentsOut() {
                     d7_15:    { val: 0, cnt: 0 },
                     d15_30:   { val: 0, cnt: 0 },
                     d30plus:  { val: 0, cnt: 0 },
+                    noGrn:    { val: 0, cnt: 0 },
                   };
-                  for (const it of pendingItems) {
+                  for (const it of filteredPending) {
                     const bal = it.balance || 0;
+                    if (it.daysOverdue === null) { buckets.noGrn.val += bal; buckets.noGrn.cnt++; continue; }
                     const d = it.daysOverdue ?? 0;
                     if (d > 0)         { buckets.overdue.val  += bal; buckets.overdue.cnt++; }
                     else if (d >= -7)  { buckets.thisWeek.val += bal; buckets.thisWeek.cnt++; }
@@ -857,16 +892,17 @@ export default function PaymentsOut() {
                     </div>
                   </div>
 
-                  {/* Aging Buckets — also derived from pendingItems */}
-                  <div className="grid grid-cols-5 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+                  {/* Aging Buckets — also derived from filteredPending */}
+                  <div className="grid grid-cols-6 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
                     {([
                       { label: 'Overdue', val: buckets.overdue.val, cnt: buckets.overdue.cnt, color: 'text-red-700' },
                       { label: 'This Week', val: buckets.thisWeek.val, cnt: buckets.thisWeek.cnt, color: 'text-amber-600' },
                       { label: 'In 7-15 Days', val: buckets.d7_15.val, cnt: buckets.d7_15.cnt, color: 'text-orange-500' },
                       { label: 'In 15-30 Days', val: buckets.d15_30.val, cnt: buckets.d15_30.cnt, color: 'text-blue-600' },
                       { label: '30+ Days', val: buckets.d30plus.val, cnt: buckets.d30plus.cnt, color: 'text-green-600' },
+                      { label: 'No GRN', val: buckets.noGrn.val, cnt: buckets.noGrn.cnt, color: 'text-slate-500' },
                     ]).map((b, i) => (
-                      <div key={b.label} className={`bg-white px-3 py-2 ${i < 4 ? 'border-r border-slate-300' : ''}`}>
+                      <div key={b.label} className={`bg-white px-3 py-2 ${i < 5 ? 'border-r border-slate-300' : ''}`}>
                         <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{b.label}</div>
                         <div className={`text-sm font-bold mt-0.5 font-mono tabular-nums ${b.color}`}>{fmt(b.val)}</div>
                         <div className="text-[9px] text-slate-400">{b.cnt} PO{b.cnt !== 1 ? 's' : ''}</div>
@@ -889,31 +925,9 @@ export default function PaymentsOut() {
                   ))}
                 </div>
 
-                {/* Pending Table */}
+                {/* Pending Table — same filteredPending used by KPIs above */}
                 {(() => {
-                  const search = pendingSearch.toLowerCase();
-                  const filtered = pendingItems
-                    .filter(item => {
-                      if (search && !`PO-${item.poNo} ${item.vendorName} ${item.material || ''}`.toLowerCase().includes(search)) return false;
-                      if (pendingCategory !== 'ALL') {
-                        const cat = (item.category || '').toUpperCase();
-                        const mat = (item.material || '').toLowerCase();
-                        const isFuel = cat === 'FUEL' || ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'biomass'].some(kw => mat.includes(kw));
-                        const isRaw = cat === 'RAW_MATERIAL' || ['maize', 'corn', 'broken rice', 'grain', 'sorghum', 'molasses'].some(kw => mat.includes(kw));
-                        const isChem = cat === 'CHEMICAL' || ['amylase', 'urea', 'acid', 'antifoam', 'yeast', 'chemical', 'caustic', 'soda', 'sulph', 'phosph'].some(kw => mat.includes(kw));
-                        if (pendingCategory === 'FUEL' && !isFuel) return false;
-                        if (pendingCategory === 'RAW_MATERIAL' && !isRaw) return false;
-                        if (pendingCategory === 'CHEMICAL' && !isChem) return false;
-                        if (pendingCategory === 'OTHER' && (isFuel || isRaw || isChem)) return false;
-                      }
-                      return true;
-                    })
-                    // Sort: fuel POs first
-                    .sort((a, b) => {
-                      const aFuel = ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'biomass'].some(kw => (a.material || '').toLowerCase().includes(kw)) ? 0 : 1;
-                      const bFuel = ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'biomass'].some(kw => (b.material || '').toLowerCase().includes(kw)) ? 0 : 1;
-                      return aFuel - bFuel;
-                    });
+                  const filtered = filteredPending;
                   return (
                 <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-hidden">
                   {filtered.length === 0 ? (

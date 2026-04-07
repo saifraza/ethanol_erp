@@ -718,7 +718,7 @@ router.get('/deals/:id/payments', authenticate, asyncHandler(async (req: AuthReq
   let cashPayments: Array<Record<string, unknown>> = [];
   try {
     cashPayments = await prisma.$queryRawUnsafe(
-      `SELECT id, "voucherNo" as "paymentNo", date as "paymentDate", amount, 'CASH' as mode, "paymentRef" as reference, remarks FROM "CashVoucher" WHERE type = 'PAYMENT' AND "payeeName" = $1 AND (purpose LIKE $2 OR remarks LIKE $2) ORDER BY date DESC LIMIT 100`,
+      `SELECT id, "voucherNo" as "paymentNo", date as "paymentDate", amount, 'CASH' as mode, "paymentRef" as reference, remarks, status FROM "CashVoucher" WHERE type = 'PAYMENT' AND status <> 'CANCELLED' AND "payeeName" = $1 AND (purpose LIKE $2 OR remarks LIKE $2) ORDER BY date DESC LIMIT 100`,
       deal.vendor.name, `%PO-${deal.poNo}%`
     ) as Array<Record<string, unknown>>;
   } catch { /* CashVoucher table may not exist */ }
