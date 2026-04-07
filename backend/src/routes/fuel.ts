@@ -608,12 +608,42 @@ router.put('/deals/:id', authenticate, asyncHandler(async (req: AuthRequest, res
 
   const b = req.body;
 
-  // Update rate on the PO line
-  if (b.rate !== undefined && deal.lines[0]) {
-    await prisma.pOLine.update({
-      where: { id: deal.lines[0].id },
-      data: { rate: b.rate },
-    });
+  // Update rate / quantity / quantityType (OPEN ↔ FIXED) on the PO line
+  if (deal.lines[0]) {
+    const line = deal.lines[0];
+    const lineUpdate: Record<string, unknown> = {};
+    if (b.rate !== undefined) lineUpdate.rate = b.rate;
+
+    if (b.quantityType !== undefined) {
+      if (b.quantityType === 'OPEN') {
+        lineUpdate.quantity = 999999;
+        lineUpdate.pendingQty = 999999;
+      } else if (b.quantityType === 'FIXED') {
+        const grns = await prisma.goodsReceipt.count({ where: { poId: deal.id } });
+        if (grns > 0) {
+          return res.status(400).json({ error: 'Cannot switch to FIXED — trucks already received. Close this deal and create a new FIXED PO.' });
+        }
+        const qty = Number(b.quantity);
+        if (!qty || qty <= 0) return res.status(400).json({ error: 'Enter a valid fixed quantity' });
+        lineUpdate.quantity = qty;
+        lineUpdate.pendingQty = qty;
+      }
+    } else if (b.quantity !== undefined) {
+      const qty = Number(b.quantity);
+      if (qty > 0) { lineUpdate.quantity = qty; lineUpdate.pendingQty = qty; }
+    }
+
+    if (Object.keys(lineUpdate).length > 0) {
+      const rate = (lineUpdate.rate as number | undefined) ?? line.rate;
+      const quantity = (lineUpdate.quantity as number | undefined) ?? line.quantity;
+      const amount = quantity >= 900000 ? 0 : quantity * rate;
+      const gstAmt = amount * (line.gstPercent || 0) / 100;
+      lineUpdate.amount = amount;
+      lineUpdate.taxableAmount = amount;
+      lineUpdate.totalGst = gstAmt;
+      lineUpdate.lineTotal = amount + gstAmt;
+      await prisma.pOLine.update({ where: { id: line.id }, data: lineUpdate });
+    }
   }
 
   // Update fuel item on PO line (if changed and no GRNs yet)
@@ -659,6 +689,15 @@ router.put('/deals/:id', authenticate, asyncHandler(async (req: AuthRequest, res
       }
     }
     poUpdate.status = b.status;
+  }
+  if (b.quantityType === 'OPEN') { poUpdate.dealType = 'OPEN'; poUpdate.subtotal = 0; poUpdate.totalGst = 0; poUpdate.grandTotal = 0; }
+  else if (b.quantityType === 'FIXED') {
+    poUpdate.dealType = 'STANDARD';
+    const qty = Number(b.quantity) || 0;
+    const rate = Number(b.rate) || deal.lines[0]?.rate || 0;
+    const base = qty * rate;
+    const gst = base * ((deal.lines[0]?.gstPercent || 0) / 100);
+    poUpdate.subtotal = base; poUpdate.totalGst = gst; poUpdate.grandTotal = base + gst;
   }
   if (b.vendorId && b.vendorId !== deal.vendorId) poUpdate.vendorId = b.vendorId;
   if (b.remarks !== undefined) poUpdate.remarks = b.remarks;

@@ -534,15 +534,16 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
         };
       }),
       // Calculate totals from lines if DB values are 0 (e.g., open fuel deals)
+      // For open deals (sentinel qty), use receivedQty (0 if nothing delivered yet)
       subtotal: po.subtotal > 0 ? po.subtotal : (() => {
         return Math.round(po.lines.reduce((s: number, l: any) => {
-          const qty = l.quantity >= 900000 ? (l.receivedQty || l.quantity) : l.quantity;
+          const qty = l.quantity >= 900000 ? (l.receivedQty || 0) : l.quantity;
           return s + qty * l.rate;
         }, 0) * 100) / 100;
       })(),
       totalGst: po.totalGst > 0 ? po.totalGst : (() => {
         return Math.round(po.lines.reduce((s: number, l: any) => {
-          const qty = l.quantity >= 900000 ? (l.receivedQty || l.quantity) : l.quantity;
+          const qty = l.quantity >= 900000 ? (l.receivedQty || 0) : l.quantity;
           return s + qty * l.rate * (l.gstPercent || 0) / 100;
         }, 0) * 100) / 100;
       })(),
@@ -551,7 +552,7 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
       roundOff: po.roundOff,
       grandTotal: po.grandTotal > 0 ? po.grandTotal : (() => {
         return Math.round(po.lines.reduce((s: number, l: any) => {
-          const qty = l.quantity >= 900000 ? (l.receivedQty || l.quantity) : l.quantity;
+          const qty = l.quantity >= 900000 ? (l.receivedQty || 0) : l.quantity;
           const base = qty * l.rate;
           return s + base + base * (l.gstPercent || 0) / 100;
         }, 0) * 100) / 100;

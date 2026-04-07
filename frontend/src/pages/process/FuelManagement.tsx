@@ -337,6 +337,8 @@ export default function FuelManagement() {
           remarks: rParts.filter(Boolean).join(' | '),
           vendorId: dealForm.vendorId === '__new' ? undefined : dealForm.vendorId,
           fuelItemId: dealForm.fuelItemId,
+          quantityType: (dealForm as Record<string, string>).quantityType || undefined,
+          quantity: (dealForm as Record<string, number>).quantity || undefined,
           paymentTerms: (dealForm as Record<string, string>).paymentTerms,
           validUntil: (dealForm as Record<string, string>).validUntil || undefined,
           deliveryPoint: (dealForm as Record<string, string>).deliveryPoint,
