@@ -39,7 +39,7 @@ export default function EthanolGatePass() {
   const [releaseConfirm, setReleaseConfirm] = useState<EthDispatch | null>(null);
   const [gateForm, setGateForm] = useState({ contractId: '', vehicleNo: '', driverName: '', driverPhone: '', transporterName: '', distanceKm: '', rstNo: '', sealNo: '', destination: '' });
   const [tareWeight, setTareWeight] = useState('');
-  const [grossForm, setGrossForm] = useState({ weightGross: '', quantityBL: '', strength: '', productRatePerLtr: '71.86' });
+  const [grossForm, setGrossForm] = useState({ weightGross: '', quantityBL: '', strength: '' });
   const [saving, setSaving] = useState(false);
 
   const fetchData = useCallback(async () => {
@@ -93,10 +93,9 @@ export default function EthanolGatePass() {
         weightGross: parseFloat(grossForm.weightGross),
         quantityBL: parseFloat(grossForm.quantityBL),
         strength: grossForm.strength ? parseFloat(grossForm.strength) : undefined,
-        productRatePerLtr: grossForm.productRatePerLtr ? parseFloat(grossForm.productRatePerLtr) : undefined,
       });
       setGrossModal(null);
-      setGrossForm({ weightGross: '', quantityBL: '', strength: '', productRatePerLtr: '71.86' });
+      setGrossForm({ weightGross: '', quantityBL: '', strength: '' });
       fetchData();
     } catch (err: any) { setError(err?.response?.data?.error || 'Failed'); }
     finally { setSaving(false); }
@@ -207,7 +206,7 @@ export default function EthanolGatePass() {
                 <td className="px-3 py-2 text-center">
                   <div className="flex items-center justify-center gap-1">
                     {t.status === 'GATE_IN' && <button onClick={() => { setTareModal(t.id); setTareWeight(''); }} className="bg-amber-100 text-amber-700 rounded-lg px-3 py-1 text-xs font-medium hover:bg-amber-200"><Scale size={12} className="inline mr-1" />Tare</button>}
-                    {t.status === 'TARE_WEIGHED' && <button onClick={() => { setGrossModal(t.id); setGrossForm({ weightGross: '', quantityBL: '', strength: '', productRatePerLtr: '71.86' }); }} className="bg-orange-100 text-orange-700 rounded-lg px-3 py-1 text-xs font-medium hover:bg-orange-200"><Scale size={12} className="inline mr-1" />Gross</button>}
+                    {t.status === 'TARE_WEIGHED' && <button onClick={() => { setGrossModal(t.id); setGrossForm({ weightGross: '', quantityBL: '', strength: '' }); }} className="bg-orange-100 text-orange-700 rounded-lg px-3 py-1 text-xs font-medium hover:bg-orange-200"><Scale size={12} className="inline mr-1" />Gross</button>}
                     {t.status === 'GROSS_WEIGHED' && <>
                       <button onClick={() => window.open(`/api/cloud/ethanol-gate-pass/${t.id}/delivery-challan-pdf`, '_blank')} className="bg-purple-100 text-purple-700 rounded-lg px-2 py-1 text-xs font-medium hover:bg-purple-200" title="Delivery Challan"><FileText size={12} /></button>
                       <button onClick={() => setReleaseConfirm(t)} className="bg-green-600 text-white rounded-lg px-3 py-1 text-xs font-medium hover:bg-green-700">Release</button>
@@ -291,10 +290,7 @@ export default function EthanolGatePass() {
                 <div className="bg-gray-50 rounded-lg p-3 text-sm"><span className="text-gray-500">Tare:</span> <span className="font-mono font-bold">{tareKG.toLocaleString('en-IN')} KG</span></div>
                 <div><label className="block text-xs font-medium text-gray-500 mb-1">Gross Weight (KG)</label><input type="number" value={grossForm.weightGross} onChange={e => setGrossForm(p => ({ ...p, weightGross: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-lg font-mono" /></div>
                 <div><label className="block text-xs font-medium text-gray-500 mb-1">Volume (BL) — from flow meter</label><input type="number" value={grossForm.quantityBL} onChange={e => setGrossForm(p => ({ ...p, quantityBL: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-lg font-mono" /></div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div><label className="block text-xs font-medium text-gray-500 mb-1">Strength (%)</label><input type="number" value={grossForm.strength} onChange={e => setGrossForm(p => ({ ...p, strength: e.target.value }))} step="0.1" className="w-full border rounded-lg px-3 py-2 text-sm" /></div>
-                  <div><label className="block text-xs font-medium text-gray-500 mb-1">Product Rate (per Ltr)</label><input type="number" value={grossForm.productRatePerLtr} onChange={e => setGrossForm(p => ({ ...p, productRatePerLtr: e.target.value }))} step="0.01" className="w-full border rounded-lg px-3 py-2 text-sm" /></div>
-                </div>
+                <div><label className="block text-xs font-medium text-gray-500 mb-1">Strength (%)</label><input type="number" value={grossForm.strength} onChange={e => setGrossForm(p => ({ ...p, strength: e.target.value }))} step="0.1" className="w-full border rounded-lg px-3 py-2 text-sm" /></div>
                 {grossKG > 0 && volBL > 0 && (
                   <div className={`rounded-lg p-3 text-sm ${weightOk ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
                     <div className="flex items-center gap-2">{weightOk ? <CheckCircle size={16} className="text-green-600" /> : <AlertTriangle size={16} className="text-red-600" />}<span className="font-medium">Net: {netKG.toLocaleString('en-IN')} KG | Expected: {expectedKG.toLocaleString('en-IN')} KG ({diffPct.toFixed(1)}% {netKG > expectedKG ? 'over' : 'under'})</span></div>

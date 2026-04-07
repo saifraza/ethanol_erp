@@ -104,7 +104,7 @@ export async function handleEthanolOutbound(w: WeighmentInput, _ctx: PushContext
         select: { contractType: true, ethanolRate: true, conversionRate: true },
       });
       if (contract) {
-        productRate = contract.contractType === 'JOB_WORK' ? 71.86 : (contract.ethanolRate || null);
+        productRate = contract.contractType === 'JOB_WORK' ? (contract.conversionRate || null) : (contract.ethanolRate || null);
         productValue = productRate && bl > 0 ? Math.round(bl * productRate) : null;
       }
     }

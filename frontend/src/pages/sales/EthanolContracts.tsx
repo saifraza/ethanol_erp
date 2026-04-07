@@ -763,12 +763,18 @@ const EthanolContracts: React.FC = () => {
                                         <td className="px-2 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">{l.quantityKL.toFixed(2)}</td>
                                         <td className="px-2 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">{(l.amount || 0).toLocaleString('en-IN')}</td>
                                         <td className="px-2 py-1.5 border-r border-slate-100 text-center">
-                                          <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
-                                            l.status === 'DELIVERED' ? 'bg-green-50 text-green-700 border-green-200' :
-                                            l.status === 'SHORTAGE' ? 'bg-red-50 text-red-700 border-red-200' :
-                                            l.status === 'IN_TRANSIT' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                                            'bg-blue-50 text-blue-700 border-blue-200'
-                                          }`}>{l.status}</span>
+                                          {(() => {
+                                            const allDocsReady = !!(l.invoice && l.invoice.irn && l.invoice.ewbNo);
+                                            const effectiveStatus = l.status === 'DELIVERED' ? 'DELIVERED' : (allDocsReady ? 'DELIVERED' : l.status);
+                                            return (
+                                              <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
+                                                effectiveStatus === 'DELIVERED' ? 'bg-green-50 text-green-700 border-green-200' :
+                                                effectiveStatus === 'SHORTAGE' ? 'bg-red-50 text-red-700 border-red-200' :
+                                                effectiveStatus === 'IN_TRANSIT' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                                'bg-blue-50 text-blue-700 border-blue-200'
+                                              }`}>{effectiveStatus}</span>
+                                            );
+                                          })()}
                                         </td>
                                         {/* Invoice */}
                                         <td className="px-2 py-1.5 border-r border-slate-100 text-center">
@@ -880,7 +886,6 @@ const EthanolContracts: React.FC = () => {
                                                 } catch { setError('Failed to load E-Way Bill PDF'); }
                                               }} className="text-[8px] font-bold uppercase px-1 py-0.5 border border-green-300 bg-green-50 text-green-600 hover:bg-green-100" title="E-Way Bill PDF">EWB</button>
                                             )}
-                                            {isSuperAdmin && <button onClick={(e) => { e.stopPropagation(); handleDeleteLifting(l.id); }} className="text-red-300 hover:text-red-600"><Trash2 size={10} /></button>}
                                           </div>
                                         </td>
                                       </tr>

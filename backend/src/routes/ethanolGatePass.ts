@@ -93,7 +93,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       rstNo: b.rstNo || null,
       sealNo: b.sealNo || null,
       status: 'GATE_IN',
-      gateInTime: ist,
+      gateInTime: new Date(),
       userId: req.user?.id || null,
     },
   });
@@ -108,21 +108,26 @@ router.post('/:id/tare', asyncHandler(async (req: AuthRequest, res: Response) =>
 
   const updated = await prisma.dispatchTruck.update({
     where: { id: req.params.id },
-    data: { weightTare: parseFloat(req.body.weightTare), status: 'TARE_WEIGHED', tareTime: nowIST() },
+    data: { weightTare: parseFloat(req.body.weightTare), status: 'TARE_WEIGHED', tareTime: new Date() },
   });
   res.json(updated);
 }));
 
 // ── POST /:id/gross ──
 router.post('/:id/gross', asyncHandler(async (req: AuthRequest, res: Response) => {
-  const truck = await prisma.dispatchTruck.findUnique({ where: { id: req.params.id } });
+  const truck = await prisma.dispatchTruck.findUnique({ where: { id: req.params.id }, include: { contract: { select: { contractType: true, ethanolRate: true, conversionRate: true } } } });
   if (!truck) return res.status(404).json({ error: 'Not found' });
   if (truck.status !== 'TARE_WEIGHED') return res.status(400).json({ error: `Cannot record gross in status ${truck.status}` });
 
   const weightGross = parseFloat(req.body.weightGross);
   const quantityBL = parseFloat(req.body.quantityBL);
   const strength = req.body.strength ? parseFloat(req.body.strength) : null;
-  const productRatePerLtr = req.body.productRatePerLtr ? parseFloat(req.body.productRatePerLtr) : null;
+  // Auto-resolve product rate from contract (no hardcodes — rate lives on cloud contract)
+  const productRatePerLtr = truck.contract
+    ? (truck.contract.contractType === 'JOB_WORK'
+        ? (truck.contract.conversionRate || null)
+        : (truck.contract.ethanolRate || null))
+    : null;
   const weightNet = weightGross - (truck.weightTare || 0);
   const densityCheck = quantityBL > 0 ? weightNet / quantityBL : 0;
   const productValue = productRatePerLtr && quantityBL ? Math.round(quantityBL * productRatePerLtr) : null;
@@ -134,7 +139,7 @@ router.post('/:id/gross', asyncHandler(async (req: AuthRequest, res: Response) =
       productRatePerLtr: productRatePerLtr || undefined,
       productValue: productValue || undefined,
       status: 'GROSS_WEIGHED',
-      grossTime: nowIST(),
+      grossTime: new Date(),
     },
   });
   res.json({ ...updated, densityCheck });
@@ -169,7 +174,7 @@ router.post('/:id/release', asyncHandler(async (req: AuthRequest, res: Response)
   const gstPercent = contract.gstPercent || 18;
   const gst = calcGstSplit(amount, gstPercent, customer.state);
   const totalAmount = Math.round(amount + gst.gstAmount);
-  const ist = nowIST();
+  const ist = new Date();
 
   const result = await prisma.$transaction(async (tx: any) => {
     // Re-check status inside transaction to prevent double-release race
