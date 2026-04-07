@@ -273,10 +273,16 @@ And MUST:
 6. **Status guard — never overwrite terminal states.** Once a dispatch is `BILLED` or `RELEASED`, the handler must NOT rewrite weights, times, or amounts. Retries and late-arriving pushes must be no-ops. Pattern from `ethanolOutbound.ts`:
    ```typescript
    if (existing.status === 'RELEASED' || existing.status === 'BILLED') {
-     return { skipped: true, id: existing.id };
+     return { skipped: false, id: existing.id }; // ACK, don't rewrite
    }
    ```
-   Without this, a retry can desync the physical record from already-posted billing.
+   Without this, a retry can desync the physical record from already-posted billing. **CRITICAL — see rule 6a: "skipped" means "don't write", NOT "don't ack".** Even when bailing on a terminal state, the handler MUST still push to `out.ids[]` so syncWorker stops retrying.
+
+6a. **NEVER let a handler refuse to ack a weighment.** A handler that returns without pushing to `out.ids[]` causes the syncWorker to mark the weighment as failed with `"Not in cloud response (X/Y processed)"` and retry it forever. This is a silent failure mode — the operator sees nothing wrong on factory side, but the cloud record is frozen at gate-in. **Incident 2026-04-07**: ethanolOutbound used a compare-and-set guard `OR: [{ sourceWbId: null }, { sourceWbId: w.id }]` that failed when cloud DispatchTruck had a stale `sourceWbId` from a deleted+recreated factory weighment. `updateMany.count` returned 0, handler returned `skipped: true`, weighment never ack'd, retry counter hit 60+ on 4 ethanol trucks while cloud showed them all "still at gate". **Rules to prevent recurrence:**
+   - **Always push to `out.ids[]`** at the end of every handler path, including bail-outs and skips. The only acceptable reason to NOT ack is a transient infrastructure error (DB connection lost) — and that should throw, not return.
+   - **Don't add a `sourceWbId` equality guard to compare-and-set updates.** Status alone is the right guard. If the truck is still `GATE_IN`/`TARE_WEIGHED`, take over the `sourceWbId` — factory is the source of truth for this physical event.
+   - **If `updateMany.count === 0`, re-read the row, log the actual current state, and ack anyway.** Never silent-skip.
+   - **When matching "GROSS_WEIGHED but different sourceWbId"** — log a warning, keep the cloud record as-is (don't overwrite), and ack. The factory weighment is a duplicate physical event for an already-processed truck; retrying won't fix it.
 
 7. **Post-commit best-effort side effects** outside the main transaction
    - GrainTruck traceability records
@@ -361,6 +367,8 @@ Before pushing a new handler:
 11. **Don't overwrite `BILLED`/`RELEASED` records on retry.** A late-arriving weighment push must be a no-op, not a silent weight rewrite. Check status at the top of the upsert and bail if terminal. See `ethanolOutbound.ts` compare-and-set pattern.
 
 12. **Don't return success when billing was silently skipped.** If `rate=0` or contract match failed, the push can still be marked synced (the physical event is real), but the handler result MUST indicate pending billing — either a different `type` in `PushOutcome.results[]` (like `DDGSDispatch_PENDING_RATE`) or a persisted flag. Otherwise the operator has no way to know billing never happened.
+
+13. **Don't return `skipped: true` without acking.** The single worst pattern in the whole pipeline. Returning `skipped: true` means "I didn't write anything" but the syncWorker reads it as "this weighment failed, retry forever." **Incident 2026-04-07** — 4 ethanol trucks (KA01AM2614, KA01AM3386, KA01AM2956, KA01AN0767) stuck at gate on cloud for 6+ hours, sync attempts 25–61, because `ethanolOutbound.ts` had a compare-and-set guard with `OR: [sourceWbId null, sourceWbId = w.id]` that failed against stale `sourceWbId` values from deleted factory weighments. Fix: removed the sourceWbId guard, always ack at the end of the handler, branch on actual cloud state when updateMany matches 0 rows. **Rule of thumb: if your handler can return without pushing to `out.ids[]`, it's a bug.**
 
 ---
 

@@ -101,10 +101,15 @@ export async function handleEthanolOutbound(w: WeighmentInput, _ctx: PushContext
       return { skipped: false, id: newTruck.id };
     }
 
-    // Guard: never overwrite RELEASED; idempotent re-sync if same sourceWbId
-    if (dispatchTruck.status === 'RELEASED') return { skipped: true, id: dispatchTruck.id };
-    if (dispatchTruck.status === 'GROSS_WEIGHED' && dispatchTruck.sourceWbId === w.id) {
-      return { skipped: false, id: dispatchTruck.id }; // idempotent
+    // Guard: never overwrite RELEASED (already gone). Always ACK so syncWorker stops retrying.
+    if (dispatchTruck.status === 'RELEASED') return { skipped: false, id: dispatchTruck.id };
+    // Idempotent re-sync if already GROSS_WEIGHED — ack and move on regardless of sourceWbId.
+    // (Stale sourceWbId from a deleted+recreated factory weighment must NOT cause infinite retry.)
+    if (dispatchTruck.status === 'GROSS_WEIGHED') {
+      if (dispatchTruck.sourceWbId !== w.id) {
+        console.warn(`[WB-PUSH][ETHANOL] ${w.vehicle_no} cloud GROSS_WEIGHED has sourceWbId=${dispatchTruck.sourceWbId} but factory pushed ${w.id} — keeping cloud record, acking factory.`);
+      }
+      return { skipped: false, id: dispatchTruck.id };
     }
 
     // Calculate KL from BL and product value from contract rate
@@ -123,14 +128,16 @@ export async function handleEthanolOutbound(w: WeighmentInput, _ctx: PushContext
       }
     }
 
-    // RACE FIX 4: Compare-and-set — only update if status is GATE_IN/TARE_WEIGHED
-    // AND (sourceWbId is null OR matches our weighment ID)
-    // This prevents a second weighment from overwriting an already-GROSS_WEIGHED record
+    // Compare-and-set on STATUS only — only update if still GATE_IN/TARE_WEIGHED.
+    // (Status guards against overwriting an already-GROSS_WEIGHED record; the GROSS_WEIGHED
+    // branch above handles that case explicitly. We deliberately do NOT guard on sourceWbId
+    // because stale sourceWbId from a deleted+recreated factory weighment used to cause an
+    // infinite retry loop where the handler silently skipped — see ethanol stuck trucks
+    // 2026-04-07 incident. Factory is source of truth: take over the sourceWbId.)
     const updated = await tx.dispatchTruck.updateMany({
       where: {
         id: dispatchTruck.id,
         status: { in: ['GATE_IN', 'TARE_WEIGHED'] },
-        OR: [{ sourceWbId: null }, { sourceWbId: w.id }],
       },
       data: {
         weightTare: tareKg,
@@ -161,20 +168,18 @@ export async function handleEthanolOutbound(w: WeighmentInput, _ctx: PushContext
           : {}),
       },
     });
-    return updated.count > 0 ? { skipped: false, id: dispatchTruck.id } : { skipped: true, id: dispatchTruck.id };
+    if (updated.count === 0) {
+      // Race: status changed between findFirst and updateMany (e.g. operator clicked Release).
+      // Re-read once to log accurate state, then ACK so factory stops retrying.
+      const fresh = await tx.dispatchTruck.findUnique({ where: { id: dispatchTruck.id }, select: { status: true } });
+      console.warn(`[WB-PUSH][ETHANOL] ${w.vehicle_no} updateMany matched 0 rows; current cloud status=${fresh?.status}; acking anyway to avoid retry loop.`);
+    }
+    return { skipped: false, id: dispatchTruck.id };
   });
 
-  if (ethResult && !ethResult.skipped) {
-    out.results.push({ id: ethResult.id, type: 'EthanolDispatch', refNo: ethResult.id, sourceWbId: w.id });
-    out.ids.push(ethResult.id);
-  } else if (!ethResult) {
-    // Should be unreachable — transaction always returns an object
-    console.warn(`[WB-PUSH] Ethanol outbound for ${w.vehicle_no} — no DispatchTruck found, will retry`);
-    out.results.push({ id: w.id, type: 'EthanolDispatch_SKIPPED', refNo: w.vehicle_no, sourceWbId: w.id });
-    // NOT pushing to ids[] — syncWorker won't mark this as synced
-  } else {
-    out.results.push({ id: ethResult.id, type: 'EthanolDispatch', refNo: ethResult.id, sourceWbId: w.id });
-    out.ids.push(ethResult.id);
-  }
+  // ALWAYS ack to syncWorker — prevents the infinite-retry pattern that stuck 4 ethanol trucks
+  // on 2026-04-07 (handler returned skipped=true → not in processedWbIds → factory retried 60+ times).
+  out.results.push({ id: ethResult.id, type: 'EthanolDispatch', refNo: ethResult.id, sourceWbId: w.id });
+  out.ids.push(ethResult.id);
   return out;
 }
