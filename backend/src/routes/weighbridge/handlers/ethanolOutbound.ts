@@ -133,7 +133,15 @@ export async function handleEthanolOutbound(w: WeighmentInput, _ctx: PushContext
     // branch above handles that case explicitly. We deliberately do NOT guard on sourceWbId
     // because stale sourceWbId from a deleted+recreated factory weighment used to cause an
     // infinite retry loop where the handler silently skipped — see ethanol stuck trucks
-    // 2026-04-07 incident. Factory is source of truth: take over the sourceWbId.)
+    // 2026-04-07 incident.)
+    //
+    // CRITICAL: sourceWbId is @unique on DispatchTruck. Do NOT rewrite it if it's already set
+    // to a different value — that can hit the unique constraint if another orphan row owns w.id.
+    // Only set sourceWbId when current value is null. Otherwise leave it and just update weights.
+    const canSetSourceWbId = dispatchTruck.sourceWbId == null;
+    if (!canSetSourceWbId && dispatchTruck.sourceWbId !== w.id) {
+      console.warn(`[WB-PUSH][ETHANOL] ${w.vehicle_no} dispatchTruck.sourceWbId=${dispatchTruck.sourceWbId} (not w.id=${w.id}); updating weights only, leaving sourceWbId untouched.`);
+    }
     const updated = await tx.dispatchTruck.updateMany({
       where: {
         id: dispatchTruck.id,
@@ -146,7 +154,7 @@ export async function handleEthanolOutbound(w: WeighmentInput, _ctx: PushContext
         tareTime: tareTimeVal,
         grossTime: grossTimeVal,
         status: 'GROSS_WEIGHED',
-        sourceWbId: w.id,
+        ...(canSetSourceWbId ? { sourceWbId: w.id } : {}),
         ...(bl > 0 ? { quantityBL: bl, quantityKL: kl } : {}),
         ...(w.ethanol_strength != null ? { strength: w.ethanol_strength } : {}),
         ...(w.seal_no ? { sealNo: w.seal_no } : {}),
