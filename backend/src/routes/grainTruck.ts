@@ -286,6 +286,33 @@ router.get('/history', authenticate, async (req: AuthRequest, res: Response) => 
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
+// GET /api/grain-truck/by-po/:poId — all trucks delivered against a PO (for weighbridge drilldown)
+router.get('/by-po/:poId', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const trucks = await prisma.grainTruck.findMany({
+      where: { poId: req.params.poId },
+      orderBy: { date: 'desc' },
+      select: {
+        id: true, date: true, ticketNo: true, uidRst: true, vehicleNo: true, vehicleType: true,
+        supplier: true, driverName: true, driverMobile: true, transporterName: true,
+        materialType: true, weightGross: true, weightTare: true, weightNet: true,
+        quarantineWeight: true, quarantineReason: true, moisture: true, starchPercent: true,
+        damagedPercent: true, foreignMatter: true, bags: true, remarks: true, photoUrl: true,
+        grnId: true,
+      },
+    });
+    const totals = {
+      count: trucks.length,
+      gross: trucks.reduce((s, t) => s + (t.weightGross || 0), 0),
+      tare: trucks.reduce((s, t) => s + (t.weightTare || 0), 0),
+      net: trucks.reduce((s, t) => s + (t.weightNet || 0), 0),
+      quarantine: trucks.reduce((s, t) => s + (t.quarantineWeight || 0), 0),
+      accepted: trucks.reduce((s, t) => s + ((t.weightNet || 0) - (t.quarantineWeight || 0)), 0),
+    };
+    res.json({ trucks, totals });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
 // POST /api/grain-truck — create truck entry with optional photo
 router.post('/', authenticate, upload.single('photo'), async (req: AuthRequest, res: Response) => {
   try {

@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import WeighbridgeTrucksModal from '../../components/WeighbridgeTrucksModal';
+import VendorLedgerModal from '../../components/VendorLedgerModal';
 
 interface Warehouse {
   id: string;
@@ -101,6 +103,8 @@ export default function FuelManagement() {
   const [showDealModal, setShowDealModal] = useState(false);
   const [editingDealId, setEditingDealId] = useState<string | null>(null);
   const [expandedDeals, setExpandedDeals] = useState<Set<string>>(new Set());
+  const [trucksModal, setTrucksModal] = useState<{ poId: string; title: string; subtitle?: string } | null>(null);
+  const [ledgerModal, setLedgerModal] = useState<{ vendorId: string; vendorName: string } | null>(null);
   const [expandedFuels, setExpandedFuels] = useState<Set<string>>(new Set());
   const [dealForm, setDealForm] = useState({ vendorId: '', vendorName: '', vendorPhone: '', fuelItemId: '', rate: 0, remarks: '' });
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -726,6 +730,8 @@ export default function FuelManagement() {
                                     <td className="px-3 py-1.5" onClick={e => e.stopPropagation()}>
                                       <div className="flex gap-1 flex-wrap">
                                         {isAdmin && <button onClick={() => editDeal(d)} className="text-[10px] text-blue-600 font-semibold uppercase hover:underline">Edit</button>}
+                                        {d.truckCount > 0 && <button onClick={() => setTrucksModal({ poId: d.id, title: `PO-${d.poNo}`, subtitle: `${d.vendor?.name || ''} · ${grp.fuelName}` })} className="text-[10px] text-purple-600 font-semibold uppercase hover:underline">Trucks</button>}
+                                        <button onClick={() => setLedgerModal({ vendorId: d.vendor.id, vendorName: d.vendor.name })} className="text-[10px] text-indigo-600 font-semibold uppercase hover:underline">Ledger</button>
                                         {isAdmin && d.status !== 'CLOSED' && <button onClick={() => closeDeal(d.id)} className="text-[10px] text-orange-500 font-semibold uppercase hover:underline">Close</button>}
                                         {isAdmin && d.truckCount === 0 && <button onClick={() => deleteDeal(d.id)} className="text-[10px] text-red-600 font-semibold uppercase hover:underline">Del</button>}
                                       </div>
@@ -1044,6 +1050,23 @@ export default function FuelManagement() {
             </div>
           </div>
         </div>
+      )}
+
+      {trucksModal && (
+        <WeighbridgeTrucksModal
+          poId={trucksModal.poId}
+          title={trucksModal.title}
+          subtitle={trucksModal.subtitle}
+          onClose={() => setTrucksModal(null)}
+        />
+      )}
+
+      {ledgerModal && (
+        <VendorLedgerModal
+          vendorId={ledgerModal.vendorId}
+          vendorName={ledgerModal.vendorName}
+          onClose={() => setLedgerModal(null)}
+        />
       )}
     </div>
   );
