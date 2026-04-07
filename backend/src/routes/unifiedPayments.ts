@@ -816,10 +816,12 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
       });
       totalPaid += directPayments.reduce((s, p) => s + p.amount, 0);
 
-      // Also count cash vouchers linked to this deal
+      // Also count cash vouchers linked to this deal — ONLY SETTLED ones
+      // ACTIVE = committed but cash not yet handed over → not paid yet
+      // CANCELLED = should never count
       try {
         const cashPaid = await prisma.$queryRawUnsafe(
-          `SELECT COALESCE(SUM(amount), 0) as total FROM "CashVoucher" WHERE type = 'PAYMENT' AND "payeeName" = $1 AND purpose LIKE $2`,
+          `SELECT COALESCE(SUM(amount), 0) as total FROM "CashVoucher" WHERE type = 'PAYMENT' AND status = 'SETTLED' AND "payeeName" = $1 AND purpose LIKE $2`,
           po.vendor.name, `%PO-${po.poNo}%`
         ) as Array<{ total: number }>;
         totalPaid += Number(cashPaid[0]?.total) || 0; // $queryRawUnsafe returns numeric as string
@@ -898,19 +900,13 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
       return s + base + base * (l.gstPercent || 0) / 100;
     }, 0) * 100) / 100 || grnTotalValue;
 
-    // Count pending cash vouchers (committed but not confirmed)
-    let pendingCash = 0;
-    try {
-      const pendingCVs = await prisma.cashVoucher.findMany({
-        where: { status: 'ACTIVE', purpose: { contains: `PO-${po.poNo}` } },
-        select: { amount: true },
-      });
-      pendingCash = pendingCVs.reduce((s, v) => s + v.amount, 0);
-    } catch { /* ignore */ }
+    // Note: ACTIVE cash vouchers (committed but cash not yet handed over) are
+    // intentionally NOT subtracted from balance. Row stays pending with full
+    // payable until cash voucher is SETTLED. Detail panel shows pending cash separately.
 
-    // Balance: payable = received value - paid - pending cash (NOT full PO amount)
+    // Balance: received value - paid (only SETTLED payments count)
     const payableBase = invoices.length > 0 ? invoiceBalance : receivedValue;
-    const balance = invoices.length > 0 ? invoiceBalance : Math.max(0, payableBase - totalPaid - pendingCash);
+    const balance = invoices.length > 0 ? invoiceBalance : Math.max(0, payableBase - totalPaid);
 
     pending.push({
       poId: po.id,
