@@ -28,6 +28,22 @@ interface Summary {
   settledCount: number;
 }
 
+interface PendingPO {
+  poId: string;
+  poNo: number;
+  poDate: string;
+  vendorId: string;
+  vendorName: string;
+  material: string | null;
+  category: string | null;
+  dealType: string;
+  balance: number;
+  pendingCash: number;
+  dueDate: string | null;
+  daysOverdue: number | null;
+  paymentTerms: string | null;
+}
+
 const CATEGORIES: { value: string; label: string }[] = [
   { value: 'LABOUR', label: 'Labour' },
   { value: 'TRANSPORT', label: 'Transport / Freight' },
@@ -105,6 +121,73 @@ export default function CashVouchers() {
     });
   }, [vouchers, purposeFilter]);
 
+  // Pending POs awaiting cash (Fuel/RM/Contractor only)
+  const [pendingPOs, setPendingPOs] = useState<PendingPO[]>([]);
+  const [pendingLoading, setPendingLoading] = useState(true);
+
+  const fetchPendingPOs = useCallback(async () => {
+    try {
+      setPendingLoading(true);
+      const res = await api.get<{ items: PendingPO[] }>('/unified-payments/outgoing/pending');
+      const FUEL_KW = ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'biomass'];
+      const RM_KW = ['maize', 'corn', 'broken rice', 'grain', 'sorghum', 'molasses', 'rice'];
+      const filtered = (res.data.items || []).filter((p) => {
+        if (p.dealType === 'CONTRACTOR') return true;
+        const cat = (p.category || '').toUpperCase();
+        const mat = (p.material || '').toLowerCase();
+        if (cat === 'FUEL' || FUEL_KW.some(k => mat.includes(k))) return true;
+        if (cat === 'RAW_MATERIAL' || RM_KW.some(k => mat.includes(k))) return true;
+        return false;
+      });
+      setPendingPOs(filtered);
+    } catch (err) {
+      console.error('Failed to fetch pending POs:', err);
+    } finally {
+      setPendingLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchPendingPOs(); }, [fetchPendingPOs]);
+
+  // Filtered pending POs by purpose chip
+  const filteredPendingPOs = useMemo(() => {
+    if (purposeFilter === 'ALL') return pendingPOs;
+    const FUEL_KW = ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'biomass'];
+    const RM_KW = ['maize', 'corn', 'broken rice', 'grain', 'sorghum', 'molasses', 'rice'];
+    return pendingPOs.filter((p) => {
+      const cat = (p.category || '').toUpperCase();
+      const mat = (p.material || '').toLowerCase();
+      if (purposeFilter === 'CONTRACTOR') return p.dealType === 'CONTRACTOR';
+      if (purposeFilter === 'FUEL') return cat === 'FUEL' || FUEL_KW.some(k => mat.includes(k));
+      if (purposeFilter === 'RAW_MATERIAL') return cat === 'RAW_MATERIAL' || RM_KW.some(k => mat.includes(k));
+      return true;
+    });
+  }, [pendingPOs, purposeFilter]);
+
+  // Open create modal pre-filled from a pending PO
+  const issueCashFor = (po: PendingPO) => {
+    const cat: string = po.dealType === 'CONTRACTOR'
+      ? 'LABOUR'
+      : (() => {
+          const c = (po.category || '').toUpperCase();
+          const mat = (po.material || '').toLowerCase();
+          if (c === 'FUEL' || ['coal','husk','diesel','hsd','lfo','hfo','furnace','biomass','bagasse','mustard'].some(k => mat.includes(k))) return 'FUEL';
+          return 'MATERIAL';
+        })();
+    const refNo = po.dealType === 'CONTRACTOR' ? `BILL-${po.poNo}` : `PO-${po.poNo}`;
+    setForm({
+      ...emptyForm,
+      payeeName: po.vendorName,
+      amount: String(Math.max(0, po.balance - (po.pendingCash || 0))),
+      purpose: `Cash for ${refNo}${po.material ? ' - ' + po.material : ''}`,
+      category: cat,
+      paymentMode: 'CASH',
+      type: 'PAYMENT',
+      authorizedBy: '',
+    });
+    setShowCreateModal(true);
+  };
+
   // Form state
   const [form, setForm] = useState(emptyForm);
   const [settleNote, setSettleNote] = useState('');
@@ -164,6 +247,7 @@ export default function CashVouchers() {
       setShowCreateModal(false);
       setForm(emptyForm);
       fetchData();
+      fetchPendingPOs();
     } catch (err) {
       console.error('Failed to create voucher:', err);
     } finally {
@@ -185,6 +269,7 @@ export default function CashVouchers() {
       setLinkedInvoiceId('');
       setSelectedVoucher(null);
       fetchData();
+      fetchPendingPOs();
     } catch (err) {
       console.error('Failed to settle voucher:', err);
     } finally {
@@ -347,6 +432,85 @@ export default function CashVouchers() {
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Settled Count</div>
             <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{summary.settledCount}</div>
           </div>
+        </div>
+
+        {/* ═══ Pending Cash Requests — POs awaiting cash payment ═══ */}
+        <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300">
+          <div className="bg-amber-100 border-b border-amber-300 px-4 py-1.5 flex items-center justify-between">
+            <span className="text-[10px] font-bold text-amber-800 uppercase tracking-widest">
+              Pending Cash Requests {purposeFilter !== 'ALL' ? `(${purposeFilter === 'RAW_MATERIAL' ? 'RM' : purposeFilter})` : '(Fuel / RM / Contractor)'}
+            </span>
+            <span className="text-[10px] font-bold text-amber-800 uppercase tracking-widest font-mono tabular-nums">
+              {filteredPendingPOs.length} PO{filteredPendingPOs.length !== 1 ? 's' : ''} | Total Bal: {fmtCurrency(filteredPendingPOs.reduce((s, p) => s + Math.max(0, p.balance - (p.pendingCash || 0)), 0))}
+            </span>
+          </div>
+          {pendingLoading ? (
+            <div className="p-4 text-center text-xs text-slate-400 uppercase tracking-widest bg-white">Loading pending POs...</div>
+          ) : filteredPendingPOs.length === 0 ? (
+            <div className="p-4 text-center text-xs text-slate-400 uppercase tracking-widest bg-white">No pending cash requests</div>
+          ) : (
+            <div className="overflow-x-auto bg-white">
+              <table className="w-full text-xs min-w-[900px]">
+                <thead>
+                  <tr className="bg-slate-700 text-white">
+                    <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">PO#</th>
+                    <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">Vendor</th>
+                    <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">Material</th>
+                    <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">For</th>
+                    <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">Balance</th>
+                    <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">Cash Issued</th>
+                    <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">To Pay</th>
+                    <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">Due</th>
+                    <th className="text-center px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredPendingPOs.map((p, i) => {
+                    const toPay = Math.max(0, p.balance - (p.pendingCash || 0));
+                    const FUEL_KW = ['coal','husk','diesel','hsd','lfo','hfo','furnace','biomass','bagasse','mustard'];
+                    const cat = (p.category || '').toUpperCase();
+                    const mat = (p.material || '').toLowerCase();
+                    const tag = p.dealType === 'CONTRACTOR' ? 'CONTRACTOR'
+                      : (cat === 'FUEL' || FUEL_KW.some(k => mat.includes(k))) ? 'FUEL'
+                      : 'RM';
+                    const tagColor = tag === 'FUEL' ? 'border-orange-300 bg-orange-50 text-orange-700'
+                      : tag === 'RM' ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                      : 'border-violet-300 bg-violet-50 text-violet-700';
+                    return (
+                      <tr key={p.poId} className={`border-b border-slate-100 hover:bg-amber-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                        <td className="px-3 py-1.5 font-mono font-medium text-blue-700 border-r border-slate-100">
+                          {p.dealType === 'CONTRACTOR' ? `BILL-${p.poNo}` : `PO-${p.poNo}`}
+                        </td>
+                        <td className="px-3 py-1.5 text-slate-800 font-medium border-r border-slate-100 max-w-[180px] truncate">{p.vendorName}</td>
+                        <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100 max-w-[180px] truncate">{p.material || '--'}</td>
+                        <td className="px-3 py-1.5 border-r border-slate-100">
+                          <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${tagColor}`}>{tag}</span>
+                        </td>
+                        <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-700 border-r border-slate-100">{fmtCurrency(p.balance)}</td>
+                        <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">
+                          {(p.pendingCash || 0) > 0 ? <span className="text-yellow-700">{fmtCurrency(p.pendingCash)}</span> : <span className="text-slate-300">--</span>}
+                        </td>
+                        <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold text-red-600 border-r border-slate-100">{fmtCurrency(toPay)}</td>
+                        <td className={`px-3 py-1.5 border-r border-slate-100 whitespace-nowrap ${p.daysOverdue !== null && p.daysOverdue > 0 ? 'text-red-600 font-medium' : 'text-slate-500'}`}>
+                          {p.dueDate ? fmtDate(p.dueDate) : '--'}
+                          {p.daysOverdue !== null && p.daysOverdue > 0 && <span className="ml-1 text-[9px]">+{p.daysOverdue}d</span>}
+                        </td>
+                        <td className="px-3 py-1.5 text-center">
+                          <button
+                            onClick={() => issueCashFor(p)}
+                            disabled={toPay <= 0}
+                            className="px-2 py-0.5 bg-amber-600 text-white text-[10px] font-bold uppercase hover:bg-amber-700 disabled:bg-slate-300 disabled:cursor-not-allowed"
+                          >
+                            Issue Cash
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         {/* Data Table */}
