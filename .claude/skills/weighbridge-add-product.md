@@ -311,19 +311,39 @@ And MUST:
 
 11. **Invoice number generation is not concurrency-safe by default.** `nextInvoiceNo()` uses `findUnique → upsert` which races under parallel auto-invoicing. If your handler can fire multiple invoice creates in parallel, wrap the counter in a `SELECT ... FOR UPDATE` or use a DB sequence. (Known pre-existing issue as of 2026-04 — fix pending.)
 
-12. **Partial-state sync — show in-progress trucks on cloud (the "first weight" rule).** Operators expect a truck to appear on the cloud pipeline page **as soon as it gates in** at the factory, not after BOTH weighments are done. Without this, an outbound truck sitting at `FIRST_DONE` (tare-only) is invisible on cloud and the operator panics. The pattern that makes this work has two halves:
+12. **Partial-state sync — show in-progress trucks on cloud (the "first weight" rule).** Operators expect a truck to appear on the cloud pipeline page **as soon as it gates in** at the factory, not after BOTH weighments are done. Without this, an outbound truck sitting at `FIRST_DONE` (tare-only) is invisible on cloud and the operator panics. The pattern has **FIVE** moving parts that must all be in place — adding any one without the others breaks billing or clogs sync. (Source: 2026-04-07/08 DDGS partial-sync rollout — got it wrong twice before getting it right.)
 
-    **Half 1 — factory `syncWorker.ts`** must push partial-state weighments, not just `COMPLETE` ones:
+    **Part 1 — factory `syncWorker.ts`** pushes partial-state weighments. **Filter to the products that have a cloud stub handler** — pushing FIRST_DONE outbound for a product whose cloud pre-phase doesn't handle it will clog the sync queue with `Not in cloud response` failures forever.
     ```ts
     // factory-server/src/services/syncWorker.ts
     OR: [
       { status: { in: ['GATE_ENTRY', 'COMPLETE'] } },
       { status: 'FIRST_DONE', direction: 'INBOUND', labStatus: { not: 'PENDING' } },
-      { status: 'FIRST_DONE', direction: 'OUTBOUND' }, // ← partial sync for DDGS/sugar/etc.
+      {
+        status: 'FIRST_DONE',
+        direction: 'OUTBOUND',
+        // ⚠ Must match the products that have a cloud pre-phase stub. DDGS only today.
+        // Add sugar/scrap material keywords here ONLY after their cloud handler grows
+        // a createOrUpdate*TruckStub function.
+        OR: [
+          { materialCategory: 'DDGS' },
+          { materialName: { contains: 'ddgs', mode: 'insensitive' } },
+          { materialName: { contains: 'wdgs', mode: 'insensitive' } },
+          { materialName: { contains: 'distillers', mode: 'insensitive' } },
+        ],
+      },
     ],
     ```
 
-    **Half 2 — cloud `pre-phase.ts`** must upsert a stub row when the dispatcher's `COMPLETE`-only check would otherwise drop it:
+    **Part 2 — factory `syncWorker.ts` direction-aware timestamps.** The original mapping `first_weight_at: w.grossTime, second_weight_at: w.tareTime` is correct for INBOUND (gross is the first weighment of a loaded truck) but **inverted for OUTBOUND** (tare is the first weighment of an empty truck). The cloud DDGS handler trusts `first_weight_at` as the tare time and uses `second_weight_at` as the invoice date. Use the direction-agnostic columns:
+    ```ts
+    first_weight_at: (w.firstWeightAt
+      ?? (w.direction === 'OUTBOUND' ? w.tareTime : w.grossTime))?.toISOString(),
+    second_weight_at: (w.secondWeightAt
+      ?? (w.direction === 'OUTBOUND' ? w.grossTime : w.tareTime))?.toISOString(),
+    ```
+
+    **Part 3 — cloud `pre-phase.ts`** must upsert a stub row when the dispatcher's `COMPLETE`-only check would otherwise drop it:
     ```ts
     // backend/src/routes/weighbridge/pre-phase.ts
     if (isGateOrPending && !isInbound && isDdgsOutbound(w, ctx)) {
@@ -336,7 +356,19 @@ And MUST:
     - runs the SAME strict contract match as the COMPLETE handler so the truck is contract-linked from first sight (the cloud pipeline page filters `contractId IS NOT NULL`)
     - returns `shortCircuit: true` so push.ts doesn't fall through to the COMPLETE-only handler
 
-    **And** the COMPLETE handler must promote the stub status:
+    **Part 4 — `checkWbDuplicate` (`shared.ts`) MUST exclude stubs.** This is the trap that broke DDGS billing on 2026-04-07. The stub writes `WB:{id}` into `remarks`, and the generic duplicate check at the top of every COMPLETE handler matches it and short-circuits before the dispatcher ever calls `handleDDGSOutbound`. Result: stub stays at `TARE_WEIGHED` forever, never bills. **Filter the dedup query by status** so partial-state stubs are not treated as already-processed:
+    ```ts
+    const dupDDGS = await prisma.dDGSDispatchTruck.findFirst({
+      where: {
+        remarks: { contains: wbMarker },
+        status: { notIn: ['GATE_IN', 'TARE_WEIGHED'] }, // ← critical
+      },
+      select: { id: true },
+    });
+    ```
+    Same filter for sugar / any new outbound product table that uses both pre-phase stubs and the generic dedup gate.
+
+    **Part 5 — COMPLETE handler must promote the stub status:**
     ```ts
     update: {
       ...,
@@ -345,14 +377,14 @@ And MUST:
         : {}),
     }
     ```
-    Without this, the stub stays at `TARE_WEIGHED` forever even after the gross weighment lands, and `BILLED` transition skips it.
+    Without this, the stub stays at `TARE_WEIGHED` forever even after the gross weighment lands, and the `BILLED` transition `updateMany({status: { notIn: ['BILLED','RELEASED']}})` keeps re-firing (technically harmless, but the row never reaches `BILLED` state on the pipeline page).
 
     **Existing reference patterns** (copy these, don't reinvent):
     - **Inbound grain stub**: `pre-phase.ts → createOrUpdateGrainTruckStub` — runs at GATE_ENTRY/FIRST_DONE inbound, builds the GrainTruck with whatever lab/weights exist, dedup'd via `remarks contains "WB:{id}"`. Stub fall-through to PO/SPOT/TRADER handler at COMPLETE.
-    - **Outbound DDGS stub**: `pre-phase.ts → createOrUpdateDdgsTruckStub` (added 2026-04-07) — same pattern but for `DDGSDispatchTruck`, dedup'd via `sourceWbId @unique`.
+    - **Outbound DDGS stub**: `pre-phase.ts → createOrUpdateDdgsTruckStub` (added 2026-04-07) — same pattern but for `DDGSDispatchTruck`, dedup'd via `sourceWbId @unique`. Status filter on `checkWbDuplicate` is mandatory.
     - **Outbound ethanol** uses a different mechanism — a separate cloud "gate pass" API call from the operator UI creates the `DispatchTruck` row at gate-in time, BEFORE any weighbridge sync, and the COMPLETE handler matches by `cloud_gate_pass_id`. This works for ethanol because there's a dedicated gate-pass UI; for DDGS/sugar/scrap there isn't, so use the pre-phase stub pattern instead.
 
-    **When to use this pattern for a new outbound product**: any time the operator wants to see the truck on the cloud dashboard before the gross weighment is captured. For sugar, scrap, animal feed, etc., copy `createOrUpdateDdgsTruckStub` and adapt the table name + status enum.
+    **When to use this pattern for a new outbound product**: any time the operator wants to see the truck on the cloud dashboard before the gross weighment is captured. For sugar, scrap, animal feed, etc., implement ALL FIVE parts. Skipping any one breaks the flow silently.
 
 ---
 
@@ -458,9 +490,11 @@ Before pushing a new handler:
 | `handleTraderInbound` | INBOUND + TRADER + supplier_id | Running monthly PO + GRN |
 | `handleFallbackInbound` | INBOUND, no PO/SPOT/TRADER | GrainTruck only (last resort) |
 | `handleEthanolOutbound` | OUTBOUND + (material has 'ethanol' OR cloud_gate_pass_id is UUID) | DispatchTruck update |
-| `handleDDGSOutbound` | OUTBOUND + (material_category='DDGS' OR material has 'ddgs'/'distillers'/'dried grain') | DDGSDispatchTruck + Shipment + auto-match DDGSContract + auto Invoice via `ddgsInvoiceService` |
-| `handleNonEthanolOutbound` | OUTBOUND, not ethanol, not DDGS (catch-all: scrap, sugar, etc.) | DDGSDispatchTruck + Shipment (no contract link) |
-| Pre-phase: `runPrePhase` | GATE_ENTRY/FIRST_DONE inbound, OR COMPLETE inbound with existing GrainTruck stub | GrainTruck stub for lab page |
+| `handleDDGSOutbound` | OUTBOUND + (material_category='DDGS' OR material has 'ddgs'/'wdgs'/'distillers'/'dried grain'/'wet grain') | DDGSDispatchTruck + Shipment + auto-match DDGSContract + auto Invoice (inline in handler tx, NOT `ddgsInvoiceService`) + DDGSContractDispatch link |
+| `handleSugarOutbound` | OUTBOUND + (material_category='SUGAR' OR material matches /sugar/i) — checked BEFORE DDGS in dispatcher | SugarDispatchTruck + Shipment + auto-match SugarContract |
+| `handleNonEthanolOutbound` | OUTBOUND, not ethanol, not sugar, not DDGS (final catch-all: scrap, press mud, ash, etc.) | Shipment only (no dedicated table, no contract link) |
+| Pre-phase: `createOrUpdateGrainTruckStub` | GATE_ENTRY/FIRST_DONE inbound, OR COMPLETE inbound with existing GrainTruck stub | GrainTruck stub for lab page |
+| Pre-phase: `createOrUpdateDdgsTruckStub` | GATE_ENTRY/FIRST_DONE outbound + DDGS material | DDGSDispatchTruck stub at GATE_IN/TARE_WEIGHED, contract auto-linked. Sugar/scrap have NO partial-state stub yet — they only sync at COMPLETE. |
 
 Fuel is NOT a separate handler — fuel-specific behavior (skip GrainTruck, fuel lab fail rejection) is inside `handlePoInbound` and pre-phase, gated on `ctx.isFuel`.
 
@@ -792,3 +826,34 @@ The weighbridge handler is only ~10% of the work. If you only build the handler,
 4. Check the plan: `.claude/plans/optimized-whistling-hopcroft.md`
 5. Run the Codex audit on your new handler before deploying — it catches race conditions
 6. **Test the whole vertical end-to-end on production with one real truck before announcing it's done**
+
+---
+
+## Known Issues / Deferred Fixes (as of 2026-04-08)
+
+These were flagged by a Codex audit of the DDGS partial-sync rollout. Some are fixed in code, some are documented here as traps to watch for. Skim this list before adding any new sellable product.
+
+### FIXED (already in main)
+- ✅ **Stub blocked by `checkWbDuplicate`** — `shared.ts` now filters by `status NOT IN ('GATE_IN','TARE_WEIGHED')` for DDGS and Sugar tables. Without this filter the dispatcher dedup'd partial-state stubs and never billed them. (Rule #12 Part 4.)
+- ✅ **`FIRST_DONE` outbound clogging non-DDGS sync queue** — `factory-server/src/services/syncWorker.ts` now restricts the FIRST_DONE outbound branch to DDGS material category only. Sugar/scrap operators don't see the sync queue blocked.
+- ✅ **Outbound tare/gross timestamps inverted** — `syncWorker.ts` now uses `firstWeightAt` / `secondWeightAt` (direction-agnostic) with a per-direction fallback for legacy rows. Cloud invoice date matches the actual gross-weighment time.
+- ✅ **DDGS contract oversubscription race** — `handlers/ddgsOutbound.ts` re-fetches the contract inside the tx and runs `updateMany` with a `WHERE` on `totalSuppliedMT` so two concurrent trucks cannot blow past `contractQtyMT`. Throws on overflow → safety net rolls back invoice + writes a PlantIssue.
+
+### KNOWN — fix next session
+- 🟡 **DDGS contract picker is not authoritative** (`GateEntry.tsx`). The factory only persists `customerName` (from the picker auto-fill); `contractId` is NOT sent to cloud. The cloud handler re-resolves the contract by exact buyer name at sync time. If the contract is edited or deleted between gate entry and sync, the truck silently relinks or lands with `contractId = null`. **Fix direction**: add `contractId String?` to `factory-server/prisma/schema.prisma → Weighment`, plumb through `gate-entry` POST → `syncWorker` payload → cloud `weighmentSchema`, then have `ddgsOutbound.ts` and `pre-phase.ts` prefer the explicit ID over name matching. Requires a factory `prisma db push`.
+
+- 🟡 **`/api/invoices/:id/pdf` recomputes `supplyType` and uses a hardcoded HSN map** (`backend/src/routes/invoices.ts:334-374`). It detects intra-state from the CURRENT customer state and only knows JOBWORK/ETHANOL/DDGS HSN codes. Two consequences: (1) editing a customer's state retroactively flips the GST split on every old invoice PDF; (2) adding sugar/scrap will render with the wrong HSN even though the stored amounts are right. **Fix direction**: render from persisted `invoice.supplyType` and store `hsnCode` as a snapshot column on `Invoice`, populated at write time by the handler.
+
+- 🟡 **Factory cache staleness has no upper bound** (`factory-server/src/services/masterDataCache.ts:293-306`). On first failed cloud poll, `smartSync` returns early and the cache stays as-is forever. No "served stale for >X minutes" warning bubbles up to the gate-entry UI. **Fix direction**: track `lastSuccessfulSync`, surface staleness >5 min on `/api/master-data/status`, and show a banner in `GateEntry.tsx` when stale.
+
+- 🟡 **Non-DDGS outbound has no partial-state stub.** `handleSugarOutbound` and `handleNonEthanolOutbound` only run at COMPLETE, and the factory `syncWorker` deliberately filters them out of the FIRST_DONE outbound push. So sugar/scrap operators are back to "truck invisible until both weighments done." When you add a new sellable product, decide up-front whether it needs partial-state visibility — if yes, follow Rule #12 (all 5 parts) for that product before turning on FIRST_DONE outbound sync.
+
+- 🟡 **`handleNonEthanolOutbound` still does `findFirst → create`** instead of `prisma.upsert({where: {sourceWbId}})`. Two concurrent retries can race and create duplicate truck rows. Rule #4 in this skill says "schema-level uniqueness is mandatory" — non-ethanol catch-all violates it. Add `sourceWbId @unique` to whatever table that handler writes to and switch to `upsert`.
+
+- 🟢 **Invoice counter race is FIXED** (`backend/src/utils/invoiceCounter.ts:21-30`) — atomic `INSERT ... ON CONFLICT ... RETURNING`. Earlier rule warning is no longer accurate; left here so future readers know the historical concern.
+
+- 🟢 **DDGS `$transaction({timeout: 15000})`** — under high concurrency on slow Railway DB, the full bill path (truck upsert + shipment upsert + contract re-check + invoice create + DDGSContractDispatch upsert + status flip + contract increment) could approach 15s. Not seen in production but watch for `P2028` errors. Mitigation: batch invoice IRN/EWB calls outside the tx (already done).
+
+### Always Run Codex Before Pushing
+
+Every time you touch a weighbridge handler, the dispatcher, pre-phase, syncWorker, or any contract-billing path, run `/codex:rescue` with the diff before committing. The 2026-04-07/08 DDGS rollout shipped THREE bugs in two days because the audit only happened after deploy. Audit-then-deploy is cheaper than deploy-then-postmortem.
