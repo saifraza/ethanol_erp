@@ -667,10 +667,13 @@ model DDGSDispatchTruck {
   updatedAt            DateTime              @default(now()) @updatedAt
   ddgsContractDispatch DDGSContractDispatch?
 
+  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+
   @@index([date])
   @@index([customerId])
   @@index([contractId])
   @@index([shipToCustomerId])
+  @@index([division])
 }
 
 // ═══════════════════════════════════════════════
@@ -870,11 +873,14 @@ model DispatchTruck {
   createdAt         DateTime             @default(now())
   updatedAt         DateTime             @default(now()) @updatedAt
 
+  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+
   @@index([date])
   @@index([entryId])
   @@index([contractId])
   @@index([status])
   @@index([shipToCustomerId])
+  @@index([division])
 }
 
 // Per-truck grain unloading (real-time)
@@ -915,10 +921,13 @@ model GrainTruck {
   ticketNo         Int? // weighbridge ticket number
   createdAt        DateTime       @default(now())
 
+  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+
   @@index([date])
   @@index([poId])
   @@index([grnId])
   @@index([ticketNo])
+  @@index([division])
 }
 
 // ═══════════════════════════════════════════════
@@ -1001,7 +1010,10 @@ model InventoryItem {
   fuelConsumptions        FuelConsumption[]
   rawMaterialConsumptions RawMaterialConsumption[]
 
+  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+
   @@index([category])
+  @@index([division])
 }
 
 model InventoryTransaction {
@@ -1175,11 +1187,14 @@ model StockMovement {
   date          DateTime      @default(now())
   createdAt     DateTime      @default(now())
 
+  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+
   @@index([itemId, date])
   @@index([warehouseId])
   @@index([movementType])
   @@index([refType, refId])
   @@index([date])
+  @@index([division])
 }
 
 // ── Stock Count / Physical Inventory ──
@@ -1263,7 +1278,10 @@ model PlantIssue {
   updatedAt     DateTime       @updatedAt
   comments      IssueComment[]
 
+  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+
   @@index([status])
+  @@index([division])
 }
 
 model IssueComment {
@@ -1354,6 +1372,8 @@ model Customer {
   shipmentsShipTo          Shipment[]           @relation("ShipmentShipTo")
   sugarContracts           SugarContract[]
   sugarDispatchTrucks      SugarDispatchTruck[]
+
+  divisions  String[] @default([]) // empty = available to all divisions
 }
 
 // Master: Product catalogue
@@ -1383,6 +1403,8 @@ model Transporter {
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  divisions  String[] @default([]) // empty = available to all divisions
 }
 
 // ── Sales Order (HQ creates) ──
@@ -1412,8 +1434,11 @@ model SalesOrder {
   dispatchRequests DispatchRequest[]
   invoices         Invoice[]
 
+  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+
   @@index([customerId])
   @@index([status])
+  @@index([division])
 }
 
 // ── Sales Order Line Items ──
@@ -1570,10 +1595,13 @@ model Shipment {
   documents           ShipmentDocument[]
   transporterPayments TransporterPayment[]
 
+  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+
   @@index([date])
   @@index([status])
   @@index([paymentStatus])
   @@index([dispatchRequestId])
+  @@index([division])
 }
 
 // ── Shipment Documents (uploaded files: GR, Bilty, POD, Insurance, etc.) ──
@@ -1736,9 +1764,12 @@ model Invoice {
   ddgsContractDispatches  DDGSContractDispatch[]
   sugarContractDispatches SugarContractDispatch[]
 
+  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+
   @@index([customerId])
   @@index([status])
   @@index([shipmentId])
+  @@index([division])
 }
 
 // ── Payment (against invoices) ──
@@ -1759,6 +1790,10 @@ model Payment {
   userId      String
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+
+  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+
+  @@index([division])
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1818,6 +1853,8 @@ model Vendor {
   vendorPayments VendorPayment[]
   vendorItems    VendorItem[]
 
+  divisions  String[] @default([]) // empty = available to all divisions
+
   @@index([isAgent])
 }
 
@@ -1863,6 +1900,8 @@ model Material {
 
   poLines  POLine[]
   grnLines GRNLine[]
+
+  divisions  String[] @default([]) // empty = available to all divisions
 }
 
 // ── Purchase Order (HQ creates, sent to vendor) ──
@@ -1918,10 +1957,13 @@ model PurchaseOrder {
   vendorInvoices VendorInvoice[]
   grainTrucks    GrainTruck[]
 
+  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+
   @@index([vendorId])
   @@index([status])
   @@index([vendorId, dealType, status])
   @@index([requisitionId])
+  @@index([division])
 }
 
 // ── PO Line Item ──
@@ -2020,9 +2062,12 @@ model GoodsReceipt {
   vendorInvoices VendorInvoice[]
   grainTrucks    GrainTruck[]
 
+  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+
   @@index([poId])
   @@index([vendorId])
   @@index([ticketNo])
+  @@index([division])
 }
 
 // ── GRN Line Item ──
@@ -2121,10 +2166,13 @@ model VendorInvoice {
 
   payments VendorPayment[]
 
+  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+
   @@index([vendorId])
   @@index([poId])
   @@index([status])
   @@index([invoiceDate])
+  @@index([division])
 }
 
 // ── Vendor Payment ──
@@ -2157,11 +2205,14 @@ model VendorPayment {
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
+  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+
   @@index([vendorId])
   @@index([invoiceId])
   @@index([paymentDate])
   @@index([paymentStatus])
   @@index([bankFileBatch])
+  @@index([division])
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -2195,6 +2246,8 @@ model Contractor {
 
   bills    ContractorBill[]
   payments ContractorPayment[]
+
+  divisions  String[] @default([]) // empty = available to all divisions
 
   @@index([pan])
   @@index([isActive])
@@ -2242,9 +2295,12 @@ model ContractorBill {
   lines    ContractorBillLine[]
   payments ContractorPayment[]
 
+  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+
   @@index([contractorId])
   @@index([status])
   @@index([billDate])
+  @@index([division])
 }
 
 model ContractorBillLine {
@@ -2323,8 +2379,11 @@ model DirectPurchase {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
+  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+
   @@index([date])
   @@index([isPaid])
+  @@index([division])
 }
 
 model DirectSale {
@@ -2357,8 +2416,11 @@ model DirectSale {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+
   @@index([date])
   @@index([isPaid])
+  @@index([division])
 }
 
 // ── ETHANOL SUPPLY / CONTRACTS ──
@@ -2535,9 +2597,12 @@ model JournalEntry {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
+  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+
   @@index([date])
   @@index([refType, refId])
   @@index([userId])
+  @@index([division])
 }
 
 model JournalLine {
@@ -2550,9 +2615,11 @@ model JournalLine {
   credit     Float        @default(0)
   narration  String?
   costCenter String? // DISTILLERY, BOILER, DDGS, ADMIN, TRANSPORT, MAINTENANCE
+  division   String? // SUGAR | POWER | ETHANOL | COMMON
 
   @@index([journalId])
   @@index([accountId])
+  @@index([division])
 }
 
 model BankTransaction {
@@ -2570,8 +2637,11 @@ model BankTransaction {
   importBatch    String? // batch ID for CSV imports
   createdAt      DateTime @default(now())
 
+  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+
   @@index([accountId, date])
   @@index([isReconciled])
+  @@index([division])
 }
 
 // ── Gate Entry (Vehicle In/Out Register) ──
@@ -2599,9 +2669,12 @@ model GateEntry {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
+  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+
   @@index([date])
   @@index([status])
   @@index([vehicleNo])
+  @@index([division])
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -2631,10 +2704,13 @@ model CashVoucher {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
+  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+
   @@index([date])
   @@index([status])
   @@index([type])
   @@index([userId])
+  @@index([division])
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -3205,10 +3281,13 @@ model SugarDispatchTruck {
   updatedAt             DateTime               @default(now()) @updatedAt
   sugarContractDispatch SugarContractDispatch?
 
+  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+
   @@index([date])
   @@index([customerId])
   @@index([contractId])
   @@index([status])
+  @@index([division])
 }
 
 model SugarContract {
