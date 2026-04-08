@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import api from '../../services/api';
+import { useHotkeys } from '../../hooks/useHotkeys';
+import { TipBanner, HelpModal, FilterLabel } from '../../components/accounts/BooksShell';
 
 interface Account {
   id: string;
@@ -48,6 +50,9 @@ export default function ChartOfAccounts() {
   const [showForm, setShowForm] = useState(false);
   const [editAccount, setEditAccount] = useState<Account | null>(null);
   const [seeding, setSeeding] = useState(false);
+  const [search, setSearch] = useState('');
+  const [showHelp, setShowHelp] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   const [form, setForm] = useState({
     code: '', name: '', type: 'ASSET', subType: '', parentId: '', openingBalance: 0,
@@ -132,7 +137,32 @@ export default function ChartOfAccounts() {
     }
   };
 
-  const filtered = filterType ? accounts.filter(a => a.type === filterType) : accounts;
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return accounts.filter(a => {
+      if (filterType && a.type !== filterType) return false;
+      if (q && !(`${a.code} ${a.name} ${a.subType || ''}`.toLowerCase().includes(q))) return false;
+      return true;
+    });
+  }, [accounts, filterType, search]);
+
+  useHotkeys([
+    { key: 'f', ctrl: true, handler: e => { e.preventDefault(); searchRef.current?.focus(); } },
+    { key: 'n', handler: e => {
+      if (showForm) return;
+      e.preventDefault();
+      setEditAccount(null);
+      setForm({ code: '', name: '', type: 'ASSET', subType: '', parentId: '', openingBalance: 0 });
+      setShowForm(true);
+    } },
+    { key: '?', shift: true, handler: e => { e.preventDefault(); setShowHelp(h => !h); } },
+    { key: 'Escape', allowInInputs: true, handler: () => {
+      if (showHelp) { setShowHelp(false); return; }
+      if (showForm) return;
+      setSearch('');
+      setFilterType('');
+    } },
+  ]);
 
   const fmtCurrency = (n: number): string => {
     if (n === 0) return '--';
@@ -185,10 +215,17 @@ export default function ChartOfAccounts() {
           <button
             onClick={() => { setShowForm(true); setEditAccount(null); setForm({ code: '', name: '', type: 'ASSET', subType: '', parentId: '', openingBalance: 0 }); }}
             className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">
-            + New Account
+            + New Account (N)
           </button>
+          <button onClick={() => setShowHelp(true)} className="w-6 h-6 border border-slate-600 text-slate-300 text-xs font-bold hover:bg-slate-700" title="Shortcuts (?)">?</button>
         </div>
       </div>
+
+      <TipBanner storageKey="coa_tip_dismissed">
+        Tip: press <kbd className="px-1 bg-white border border-amber-300 font-mono">Ctrl+F</kbd> to search accounts,
+        <kbd className="ml-1 px-1 bg-white border border-amber-300 font-mono">N</kbd> for new account,
+        click a KPI tile to filter by type.
+      </TipBanner>
 
       {/* ===== KPI STRIP ===== */}
       <div className="grid grid-cols-5 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
@@ -211,7 +248,7 @@ export default function ChartOfAccounts() {
       </div>
 
       {/* ===== SECONDARY TOOLBAR ===== */}
-      <div className="flex items-center gap-3 bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6">
+      <div className="flex items-center gap-3 bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6 flex-wrap">
         <div className="flex border border-slate-400 overflow-hidden">
           <button onClick={() => setViewMode('flat')}
             className={`px-3 py-1 text-[11px] font-medium ${viewMode === 'flat' ? 'bg-slate-700 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
@@ -222,9 +259,15 @@ export default function ChartOfAccounts() {
             Tree View
           </button>
         </div>
+        <div className="flex-1 min-w-[200px] max-w-md">
+          <FilterLabel>Search (Ctrl+F)</FilterLabel>
+          <input ref={searchRef} type="text" value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search by code, name, or sub-type…"
+            className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+        </div>
         {filterType && (
           <span className="text-[11px] text-slate-500">
-            Filtered: <strong className="text-slate-700">{filterType}</strong>
+            Type: <strong className="text-slate-700">{filterType}</strong>
             <button onClick={() => setFilterType('')} className="ml-1 text-red-500 hover:underline text-[11px]">[clear]</button>
           </span>
         )}
@@ -260,7 +303,7 @@ export default function ChartOfAccounts() {
               </thead>
               <tbody>
                 {filtered.map((a, i) => (
-                  <tr key={a.id} className={`border-b border-slate-200 hover:bg-blue-50/60 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50/70'} ${a.currentStock <= a.minStock ? '' : ''}`}>
+                  <tr key={a.id} className={`border-b border-slate-200 hover:bg-blue-50/60 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50/70'}`}>
                     <td className="px-3 py-1.5 font-mono text-[11px] text-slate-600 border-r border-slate-100">{a.code}</td>
                     <td className="px-3 py-1.5 text-slate-800 border-r border-slate-100">
                       {a.name}
@@ -369,6 +412,18 @@ export default function ChartOfAccounts() {
           </div>
         </div>
       )}
+
+      <HelpModal
+        open={showHelp}
+        onClose={() => setShowHelp(false)}
+        entries={[
+          ['Ctrl+F', 'Focus account search'],
+          ['N', 'New account'],
+          ['Click KPI', 'Filter by account type'],
+          ['Esc', 'Clear filters / close modal'],
+          ['?', 'Show this help'],
+        ]}
+      />
     </div>
   );
 }

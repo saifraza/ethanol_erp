@@ -1,5 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../../services/api';
+import { useHotkeys } from '../../hooks/useHotkeys';
+import {
+  PageToolbar, TipBanner, FilterBar, PresetButtons, DateRangeInputs,
+  KpiStrip, KpiTile, HelpModal, TableContainer, Th, computePreset, fmtINR,
+} from '../../components/accounts/BooksShell';
 
 interface PLAccount {
   id: string;
@@ -20,8 +25,11 @@ interface PLData {
 
 export default function ProfitLoss() {
   const [data, setData] = useState<PLData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [dateRange, setDateRange] = useState({ from: '', to: '' });
+  const [showHelp, setShowHelp] = useState(false);
+
+  useEffect(() => { setDateRange(computePreset('fy')); }, []);
 
   const fetchData = useCallback(async () => {
     try {
@@ -31,194 +39,153 @@ export default function ProfitLoss() {
       if (dateRange.to) params.to = dateRange.to;
       const res = await api.get<PLData>('/journal-entries/profit-loss', { params });
       setData(res.data);
-    } catch (err) {
-      console.error('Failed to fetch P&L:', err);
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) { console.error('Failed to fetch P&L:', err); }
+    finally { setLoading(false); }
   }, [dateRange]);
-
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const fmtCurrency = (n: number): string =>
-    '\u20B9' + Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  useHotkeys([
+    { key: 't', handler: e => { e.preventDefault(); setDateRange(computePreset('today')); } },
+    { key: 'm', handler: e => { e.preventDefault(); setDateRange(computePreset('month')); } },
+    { key: '?', shift: true, handler: e => { e.preventDefault(); setShowHelp(h => !h); } },
+    { key: 'Escape', allowInInputs: true, handler: () => { if (showHelp) setShowHelp(false); } },
+  ]);
 
-  // Financial year defaults (April 1 to March 31)
-  const setFY = () => {
-    const now = new Date();
-    const year = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
-    setDateRange({ from: `${year}-04-01`, to: `${year + 1}-03-31` });
+  // Group accounts by subType (if set), else "Other"
+  const group = (accs: PLAccount[]) => {
+    const m: Record<string, { accs: PLAccount[]; total: number }> = {};
+    for (const a of accs) {
+      const key = a.subType || 'Other';
+      if (!m[key]) m[key] = { accs: [], total: 0 };
+      m[key].accs.push(a);
+      m[key].total += a.amount;
+    }
+    return m;
   };
 
-  const setCurrentMonth = () => {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    const lastDay = new Date(y, now.getMonth() + 1, 0).getDate();
-    setDateRange({ from: `${y}-${m}-01`, to: `${y}-${m}-${lastDay}` });
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-xs text-slate-400 uppercase tracking-widest">Loading...</div>
-      </div>
-    );
-  }
-  if (!data) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-xs text-slate-400 uppercase tracking-widest">Failed to load data</div>
-      </div>
-    );
-  }
-
-  // Group income/expenses by subType
-  const groupBySubType = (items: PLAccount[]): Record<string, PLAccount[]> => {
-    const groups: Record<string, PLAccount[]> = {};
-    items.forEach(item => {
-      const key = item.subType || 'Other';
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(item);
-    });
-    return groups;
-  };
-
-  const incomeGroups = groupBySubType(data.income);
-  const expenseGroups = groupBySubType(data.expenses);
+  const margin = data && data.totalIncome > 0 ? (data.netProfitLoss / data.totalIncome) * 100 : 0;
 
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="p-3 md:p-6 space-y-0">
-        {/* Page Toolbar */}
-        <div className="bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h1 className="text-sm font-bold tracking-wide uppercase">Profit & Loss Statement</h1>
-            <span className="text-[10px] text-slate-400">|</span>
-            <span className="text-[10px] text-slate-400">Income and expenditure summary for the period</span>
-          </div>
-          <div className="flex items-center gap-2">
+        <PageToolbar
+          title="Profit & Loss"
+          subtitle="Income \u2212 Expenses = Net Profit/Loss"
+          statusBadge={data && (
             <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${data.isProfit ? 'border-emerald-400/50 bg-emerald-500/20 text-emerald-200' : 'border-red-400/50 bg-red-500/20 text-red-200'}`}>
-              {data.isProfit ? 'Net Profit' : 'Net Loss'}: {fmtCurrency(data.netProfitLoss)}
+              {data.isProfit ? 'Profit' : 'Loss'}
             </span>
-          </div>
-        </div>
+          )}
+        >
+          <button onClick={() => setShowHelp(true)} className="w-6 h-6 border border-slate-600 text-slate-300 text-xs font-bold hover:bg-slate-700" title="Shortcuts (?)">?</button>
+        </PageToolbar>
 
-        {/* Filter Toolbar */}
-        <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6 flex items-center gap-4 flex-wrap">
-          <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">From Date</label>
-            <input
-              type="date"
-              value={dateRange.from}
-              onChange={e => setDateRange(f => ({ ...f, from: e.target.value }))}
-              className="border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-slate-400 focus:border-slate-400"
-            />
-          </div>
-          <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">To Date</label>
-            <input
-              type="date"
-              value={dateRange.to}
-              onChange={e => setDateRange(f => ({ ...f, to: e.target.value }))}
-              className="border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-slate-400 focus:border-slate-400"
-            />
-          </div>
-          <div className="flex items-end gap-2">
-            <button onClick={setCurrentMonth} className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">
-              This Month
-            </button>
-            <button onClick={setFY} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">
-              Current FY
-            </button>
-          </div>
-          <div className="flex items-end gap-2 ml-auto">
-            <div className="bg-white border border-slate-300 px-4 py-2 border-l-4 border-l-emerald-500">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Income</div>
-              <div className="text-lg font-bold text-slate-800 font-mono tabular-nums">{fmtCurrency(data.totalIncome)}</div>
-            </div>
-            <div className="bg-white border border-slate-300 px-4 py-2 border-l-4 border-l-red-500">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Expense</div>
-              <div className="text-lg font-bold text-slate-800 font-mono tabular-nums">{fmtCurrency(data.totalExpense)}</div>
-            </div>
-          </div>
-        </div>
+        <TipBanner storageKey="pl_tip_dismissed">
+          Press <kbd className="px-1 bg-white border border-amber-300 font-mono">T</kbd>/<kbd className="px-1 bg-white border border-amber-300 font-mono">M</kbd> for presets, <kbd className="px-1 bg-white border border-amber-300 font-mono">?</kbd> for all shortcuts.
+        </TipBanner>
 
-        {/* Two Column Layout */}
-        <div className="grid grid-cols-2 -mx-3 md:-mx-6">
-          {/* Income Side */}
-          <div className="border-x border-b border-slate-300 overflow-hidden">
-            <div className="bg-slate-800 text-white px-4 py-2">
-              <h2 className="text-xs font-bold uppercase tracking-wide">Income</h2>
-            </div>
-            <div>
-              {Object.entries(incomeGroups).map(([subType, accs]) => (
-                <React.Fragment key={subType}>
-                  {/* Sub-type group header */}
-                  <div className="bg-slate-200 px-3 py-1 border-b border-slate-300">
-                    <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">{subType.replace(/_/g, ' ')}</span>
-                  </div>
-                  {/* Account rows */}
-                  {accs.map(a => (
-                    <div key={a.id} className="flex justify-between px-3 py-1.5 text-xs hover:bg-blue-50 border-b border-slate-100">
-                      <span className="text-slate-700">{a.name}</span>
-                      <span className="font-mono tabular-nums text-slate-800">{fmtCurrency(a.amount)}</span>
-                    </div>
+        <FilterBar>
+          <PresetButtons onPreset={p => setDateRange(computePreset(p))} />
+          <DateRangeInputs from={dateRange.from} to={dateRange.to} onChange={setDateRange} />
+        </FilterBar>
+
+        {loading && <div className="text-xs text-slate-400 uppercase tracking-widest py-4 px-4">Loading P&L...</div>}
+
+        {data && !loading && (
+          <>
+            <KpiStrip cols={4}>
+              <KpiTile label="Revenue" value={fmtINR(data.totalIncome) || '\u20B90.00'} sub={`${data.income.length} accounts`} color="emerald" valueClass="text-emerald-700" />
+              <KpiTile label="Expenses" value={fmtINR(data.totalExpense) || '\u20B90.00'} sub={`${data.expenses.length} accounts`} color="rose" valueClass="text-rose-700" />
+              <KpiTile label={data.isProfit ? 'Net Profit' : 'Net Loss'} value={fmtINR(Math.abs(data.netProfitLoss)) || '\u20B90.00'} color={data.isProfit ? 'emerald' : 'red'} valueClass={data.isProfit ? 'text-emerald-700' : 'text-red-700'} />
+              <KpiTile label="Margin %" value={`${margin.toFixed(2)}%`} color="indigo" valueClass={margin >= 0 ? 'text-slate-800' : 'text-red-700'} last />
+            </KpiStrip>
+
+            <TableContainer>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-slate-800 text-white">
+                    <Th>Code</Th>
+                    <Th>Account</Th>
+                    <Th>Category</Th>
+                    <Th align="right" last>Amount</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* REVENUE */}
+                  <tr className="bg-emerald-100 border-b border-emerald-200">
+                    <td colSpan={4} className="px-3 py-1.5 text-[10px] font-bold text-emerald-900 uppercase tracking-widest">Revenue</td>
+                  </tr>
+                  {Object.entries(group(data.income)).map(([cat, g]) => (
+                    <React.Fragment key={`in-${cat}`}>
+                      <tr className="bg-slate-200/60 border-b border-slate-300">
+                        <td colSpan={3} className="px-3 py-1 pl-6 text-[10px] font-bold text-slate-700 uppercase tracking-widest">{cat}</td>
+                        <td className="px-3 py-1 text-right font-mono tabular-nums text-slate-700 font-bold">{fmtINR(g.total)}</td>
+                      </tr>
+                      {g.accs.map((a, i) => (
+                        <tr key={a.id} className={`border-b border-slate-100 hover:bg-blue-50 ${i % 2 ? 'bg-slate-50/50' : ''}`}>
+                          <td className="px-3 py-1.5 pl-8 font-mono text-[10px] text-slate-500 border-r border-slate-100">{a.code}</td>
+                          <td className="px-3 py-1.5 text-slate-700 border-r border-slate-100">{a.name}</td>
+                          <td className="px-3 py-1.5 text-[10px] text-slate-500 border-r border-slate-100">{a.subType || '--'}</td>
+                          <td className="px-3 py-1.5 text-right font-mono tabular-nums text-emerald-700">{fmtINR(a.amount)}</td>
+                        </tr>
+                      ))}
+                    </React.Fragment>
                   ))}
-                </React.Fragment>
-              ))}
-              {data.income.length === 0 && (
-                <div className="px-3 py-6 text-xs text-slate-400 text-center uppercase tracking-widest">No income entries</div>
-              )}
-            </div>
-            <div className="bg-slate-800 text-white px-3 py-2 flex justify-between font-semibold text-xs">
-              <span>Total Income</span>
-              <span className="font-mono tabular-nums">{fmtCurrency(data.totalIncome)}</span>
-            </div>
-          </div>
+                  <tr className="bg-emerald-50 border-b-2 border-emerald-600 font-bold">
+                    <td colSpan={3} className="px-3 py-2 text-right text-[11px] uppercase tracking-widest text-emerald-900">Total Revenue</td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums text-emerald-700">{fmtINR(data.totalIncome)}</td>
+                  </tr>
 
-          {/* Expense Side */}
-          <div className="border-r border-b border-slate-300 overflow-hidden">
-            <div className="bg-slate-800 text-white px-4 py-2">
-              <h2 className="text-xs font-bold uppercase tracking-wide">Expenses</h2>
-            </div>
-            <div>
-              {Object.entries(expenseGroups).map(([subType, accs]) => (
-                <React.Fragment key={subType}>
-                  {/* Sub-type group header */}
-                  <div className="bg-slate-200 px-3 py-1 border-b border-slate-300">
-                    <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">{subType.replace(/_/g, ' ')}</span>
-                  </div>
-                  {/* Account rows */}
-                  {accs.map(a => (
-                    <div key={a.id} className="flex justify-between px-3 py-1.5 text-xs hover:bg-blue-50 border-b border-slate-100">
-                      <span className="text-slate-700">{a.name}</span>
-                      <span className="font-mono tabular-nums text-slate-800">{fmtCurrency(a.amount)}</span>
-                    </div>
+                  {/* EXPENSES */}
+                  <tr className="bg-rose-100 border-b border-rose-200">
+                    <td colSpan={4} className="px-3 py-1.5 text-[10px] font-bold text-rose-900 uppercase tracking-widest">Expenses</td>
+                  </tr>
+                  {Object.entries(group(data.expenses)).map(([cat, g]) => (
+                    <React.Fragment key={`ex-${cat}`}>
+                      <tr className="bg-slate-200/60 border-b border-slate-300">
+                        <td colSpan={3} className="px-3 py-1 pl-6 text-[10px] font-bold text-slate-700 uppercase tracking-widest">{cat}</td>
+                        <td className="px-3 py-1 text-right font-mono tabular-nums text-slate-700 font-bold">{fmtINR(g.total)}</td>
+                      </tr>
+                      {g.accs.map((a, i) => (
+                        <tr key={a.id} className={`border-b border-slate-100 hover:bg-blue-50 ${i % 2 ? 'bg-slate-50/50' : ''}`}>
+                          <td className="px-3 py-1.5 pl-8 font-mono text-[10px] text-slate-500 border-r border-slate-100">{a.code}</td>
+                          <td className="px-3 py-1.5 text-slate-700 border-r border-slate-100">{a.name}</td>
+                          <td className="px-3 py-1.5 text-[10px] text-slate-500 border-r border-slate-100">{a.subType || '--'}</td>
+                          <td className="px-3 py-1.5 text-right font-mono tabular-nums text-rose-700">{fmtINR(a.amount)}</td>
+                        </tr>
+                      ))}
+                    </React.Fragment>
                   ))}
-                </React.Fragment>
-              ))}
-              {data.expenses.length === 0 && (
-                <div className="px-3 py-6 text-xs text-slate-400 text-center uppercase tracking-widest">No expense entries</div>
-              )}
-            </div>
-            <div className="bg-slate-800 text-white px-3 py-2 flex justify-between font-semibold text-xs">
-              <span>Total Expenses</span>
-              <span className="font-mono tabular-nums">{fmtCurrency(data.totalExpense)}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Net Result Summary Bar */}
-        <div className="bg-slate-800 -mx-3 md:-mx-6 overflow-hidden border-x border-b border-slate-300">
-          <div className="px-6 py-4 flex justify-between items-center">
-            <span className="text-xs font-bold text-white uppercase tracking-widest">{data.isProfit ? 'Net Profit' : 'Net Loss'}</span>
-            <span className={`text-2xl font-bold font-mono tabular-nums ${data.isProfit ? 'text-emerald-300' : 'text-red-300'}`}>
-              {fmtCurrency(data.netProfitLoss)}
-            </span>
-          </div>
-        </div>
+                  <tr className="bg-rose-50 border-b-2 border-rose-600 font-bold">
+                    <td colSpan={3} className="px-3 py-2 text-right text-[11px] uppercase tracking-widest text-rose-900">Total Expenses</td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums text-rose-700">{fmtINR(data.totalExpense)}</td>
+                  </tr>
+                </tbody>
+                <tfoot>
+                  <tr className="bg-slate-800 text-white font-semibold text-xs">
+                    <td colSpan={3} className="px-3 py-2.5 text-right uppercase tracking-widest border-r border-slate-700">
+                      {data.isProfit ? 'Net Profit' : 'Net Loss'}
+                    </td>
+                    <td className={`px-3 py-2.5 text-right font-mono tabular-nums font-bold text-sm ${data.isProfit ? 'text-emerald-300' : 'text-red-300'}`}>
+                      {data.isProfit ? '' : '-'}{fmtINR(Math.abs(data.netProfitLoss)) || '\u20B90.00'}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </TableContainer>
+          </>
+        )}
       </div>
+
+      <HelpModal
+        open={showHelp}
+        onClose={() => setShowHelp(false)}
+        entries={[
+          ['T / M', 'Today / This month'],
+          ['Esc', 'Close modal'],
+          ['?', 'Show this help'],
+        ]}
+      />
     </div>
   );
 }

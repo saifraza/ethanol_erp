@@ -84,6 +84,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
             credit: true,
             narration: true,
             costCenter: true,
+            division: true,
           },
         },
       },
@@ -94,22 +95,41 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   res.json({ entries, total, take, skip });
 }));
 
-// ── GET /daybook — All entries for a specific date ──
+// ── GET /daybook — Entries for a day OR a range, optional division filter ──
+// Back-compat: `?date=YYYY-MM-DD` still works (single day).
+// New: `?from=YYYY-MM-DD&to=YYYY-MM-DD&division=SUGAR|POWER|ETHANOL|COMMON`.
 router.get('/daybook', asyncHandler(async (req: AuthRequest, res: Response) => {
-  const dateStr = req.query.date as string;
-  if (!dateStr) {
-    res.status(400).json({ error: 'date query parameter is required (YYYY-MM-DD)' });
+  const dateStr = req.query.date as string | undefined;
+  const fromStr = req.query.from as string | undefined;
+  const toStr = req.query.to as string | undefined;
+  const divisionStr = req.query.division as string | undefined;
+
+  let rangeStart: Date;
+  let rangeEnd: Date;
+
+  if (dateStr) {
+    rangeStart = new Date(dateStr);
+    rangeStart.setHours(0, 0, 0, 0);
+    rangeEnd = new Date(dateStr);
+    rangeEnd.setHours(23, 59, 59, 999);
+  } else if (fromStr && toStr) {
+    rangeStart = new Date(fromStr);
+    rangeStart.setHours(0, 0, 0, 0);
+    rangeEnd = new Date(toStr);
+    rangeEnd.setHours(23, 59, 59, 999);
+  } else {
+    res.status(400).json({ error: 'Provide either ?date=YYYY-MM-DD or ?from=&to=' });
     return;
   }
 
-  const dayStart = new Date(dateStr);
-  dayStart.setHours(0, 0, 0, 0);
-  const dayEnd = new Date(dateStr);
-  dayEnd.setHours(23, 59, 59, 999);
+  const where: Record<string, unknown> = { date: { gte: rangeStart, lte: rangeEnd } };
+  if (divisionStr && (DIVISIONS as readonly string[]).includes(divisionStr)) {
+    where.lines = { some: { division: divisionStr } };
+  }
 
   const entries = await prisma.journalEntry.findMany({
-    where: { date: { gte: dayStart, lte: dayEnd } },
-    orderBy: { entryNo: 'asc' },
+    where,
+    orderBy: [{ date: 'asc' }, { entryNo: 'asc' }],
     take: 500,
     select: {
       id: true,
@@ -125,6 +145,7 @@ router.get('/daybook', asyncHandler(async (req: AuthRequest, res: Response) => {
           debit: true,
           credit: true,
           costCenter: true,
+          division: true,
         },
       },
     },
@@ -133,7 +154,15 @@ router.get('/daybook', asyncHandler(async (req: AuthRequest, res: Response) => {
   const totalDebit = entries.reduce((s: number, e: { lines: JL[] }) => s + e.lines.reduce((ls: number, l: JL) => ls + l.debit, 0), 0);
   const totalCredit = entries.reduce((s: number, e: { lines: JL[] }) => s + e.lines.reduce((ls: number, l: JL) => ls + l.credit, 0), 0);
 
-  res.json({ date: dateStr, entries, count: entries.length, totalDebit, totalCredit });
+  res.json({
+    date: dateStr || null,
+    from: fromStr || null,
+    to: toStr || null,
+    entries,
+    count: entries.length,
+    totalDebit,
+    totalCredit,
+  });
 }));
 
 // ── GET /ledger/:accountId — Ledger for a specific account ──
