@@ -261,11 +261,15 @@ router.get('/:id/invoice-pdf', asyncHandler(async (req: AuthRequest, res: Respon
 router.get('/:id/delivery-challan-pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
   const truck = await prisma.dispatchTruck.findUnique({
     where: { id: req.params.id },
-    include: { contract: { select: { buyerName: true, buyerAddress: true, buyerGst: true, contractType: true } } },
+    include: { contract: { select: { buyerName: true, buyerAddress: true, buyerGst: true, contractType: true, ethanolRate: true } } },
   });
   if (!truck) return res.status(404).json({ error: 'Not found' });
 
-  const productRate = truck.productRatePerLtr || 71.86;
+  // Challan rate logic — read live, never use frozen truck.productRatePerLtr:
+  // - JOB_WORK: fixed company-wide ₹71.86/BL × 5% GST (ethanol HSN 22072000 movement value)
+  // - OMC sale: contract.ethanolRate live + 5% GST
+  const isJobWork = truck.contract?.contractType === 'JOB_WORK';
+  const productRate = isJobWork ? 71.86 : (truck.contract?.ethanolRate || 71.86);
   const productValue = Math.round(truck.quantityBL * productRate);
   const gstRate = 5;
   const gstAmount = Math.round(productValue * gstRate / 100);
@@ -311,7 +315,10 @@ router.get('/:id/gate-pass-pdf', asyncHandler(async (req: AuthRequest, res: Resp
   if (!truck) return res.status(404).json({ error: 'Not found' });
 
   const isJobWork = truck.contract?.contractType === 'JOB_WORK';
-  const rate = truck.contract?.conversionRate || truck.contract?.ethanolRate || 14;
+  // Read live from contract — no fallback. If rate is missing the contract is misconfigured.
+  const rate = isJobWork
+    ? (truck.contract?.conversionRate || 0)
+    : (truck.contract?.ethanolRate || 0);
   const amount = Math.round(truck.quantityBL * rate);
 
   const { renderDocumentPdf } = await import('../services/documentRenderer');

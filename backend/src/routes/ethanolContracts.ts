@@ -470,6 +470,114 @@ router.put('/liftings/:liftingId', asyncHandler(async (req: AuthRequest, res: Re
     res.json({ lifting });
 }));
 
+// ── PATCH /liftings/:liftingId/rate ──
+// Re-rate an existing lifting and cascade to:
+//   - linked Invoice (rate, amount, gst split, total, balance)
+//   - linked DispatchTruck (productRatePerLtr, productValue)
+//   - Contract.totalInvoicedAmt (recomputed from sum)
+//   - Journal Entry: mark old as reversed, post new via onSaleInvoiceCreated
+// Hard-blocked if invoice has IRN generated or any payment received — those need a credit note flow.
+router.patch('/liftings/:liftingId/rate', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const liftingId = req.params.liftingId;
+  const newRate = parseFloat(req.body.rate);
+  if (!newRate || newRate <= 0) return res.status(400).json({ error: 'rate must be > 0' });
+
+  const lifting = await prisma.ethanolLifting.findUnique({
+    where: { id: liftingId },
+    include: { contract: true, invoice: { include: { customer: { select: { state: true } } } } },
+  });
+  if (!lifting) return res.status(404).json({ error: 'Lifting not found' });
+  if (!lifting.invoice) return res.status(400).json({ error: 'Lifting has no linked invoice' });
+
+  const inv = lifting.invoice;
+  if (inv.irn || inv.irnStatus === 'GENERATED') {
+    return res.status(409).json({ error: 'Cannot re-rate: IRN already generated. Issue a credit note instead.' });
+  }
+  if ((inv.paidAmount || 0) > 0) {
+    return res.status(409).json({ error: 'Cannot re-rate: payment already received against this invoice. Issue a credit note instead.' });
+  }
+
+  const qtyBL = lifting.quantityBL;
+  const newAmount = Math.round(qtyBL * newRate * 100) / 100;
+  const gstPercent = inv.gstPercent || lifting.contract.gstPercent || 18;
+  const gst = calcGstSplit(newAmount, gstPercent, inv.customer?.state);
+  const newTotal = Math.round((newAmount + gst.gstAmount) * 100) / 100;
+
+  const result = await prisma.$transaction(async (tx: any) => {
+    // 1. Update invoice
+    await tx.invoice.update({
+      where: { id: inv.id },
+      data: {
+        rate: newRate,
+        amount: newAmount,
+        gstAmount: gst.gstAmount,
+        cgstPercent: gst.cgstPercent,
+        cgstAmount: gst.cgstAmount,
+        sgstPercent: gst.sgstPercent,
+        sgstAmount: gst.sgstAmount,
+        igstPercent: gst.igstPercent,
+        igstAmount: gst.igstAmount,
+        supplyType: gst.supplyType,
+        totalAmount: newTotal,
+        balanceAmount: newTotal,
+      },
+    });
+
+    // 2. Update lifting
+    await tx.ethanolLifting.update({
+      where: { id: liftingId },
+      data: { rate: newRate, amount: newAmount },
+    });
+
+    // 3. Update DispatchTruck (so any future re-fetches don't show stale snapshot)
+    await tx.dispatchTruck.updateMany({
+      where: { liftingId },
+      data: { productRatePerLtr: newRate, productValue: newAmount },
+    });
+
+    // 4. Reverse old journal entry
+    await tx.journalEntry.updateMany({
+      where: { refType: 'SALE', refId: inv.id, isReversed: false },
+      data: { isReversed: true },
+    });
+
+    // 5. Recompute contract totals from scratch (drift-safe)
+    const liftings = await tx.ethanolLifting.findMany({
+      where: { contractId: lifting.contractId },
+      select: { quantityKL: true, amount: true },
+    });
+    const totalKL = liftings.reduce((s: number, l: any) => s + (l.quantityKL || 0), 0);
+    const totalAmt = liftings.reduce((s: number, l: any) => s + (l.amount || 0), 0);
+    await tx.ethanolContract.update({
+      where: { id: lifting.contractId },
+      data: { totalSuppliedKL: totalKL, totalInvoicedAmt: totalAmt },
+    });
+
+    return { invoiceId: inv.id, newAmount, newTotal };
+  }, { timeout: 30000, maxWait: 10000 });
+
+  // 6. Post new journal entry (outside tx — onSaleInvoiceCreated has its own tx)
+  await onSaleInvoiceCreated(prisma, {
+    id: inv.id,
+    invoiceNo: inv.invoiceNo,
+    totalAmount: newTotal,
+    amount: newAmount,
+    gstAmount: gst.gstAmount,
+    gstPercent,
+    cgstAmount: gst.cgstAmount,
+    sgstAmount: gst.sgstAmount,
+    igstAmount: gst.igstAmount,
+    supplyType: gst.supplyType,
+    productName: inv.productName,
+    customerId: inv.customerId,
+    userId: 'system',
+    invoiceDate: inv.invoiceDate,
+    customer: { state: inv.customer?.state },
+  });
+
+  res.json({ success: true, ...result });
+}));
+
 // DELETE lifting
 router.delete('/liftings/:liftingId', asyncHandler(async (req: AuthRequest, res: Response) => {
     const lifting = await prisma.ethanolLifting.findUnique({ where: { id: req.params.liftingId } });
