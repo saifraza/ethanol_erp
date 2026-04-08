@@ -165,14 +165,25 @@ export async function checkWbDuplicate(w: WeighmentInput): Promise<{ id: string 
   });
   if (dupDP) return dupDP;
 
+  // CRITICAL: exclude partial-state stubs (GATE_IN / TARE_WEIGHED). Those are
+  // pre-phase placeholders awaiting promotion by the COMPLETE handler — they
+  // are NOT "already processed" duplicates. Without this filter, the COMPLETE
+  // weighment dedup-skips the stub and the truck never gets billed.
+  // (See pre-phase.ts createOrUpdateDdgsTruckStub.)
   const dupDDGS = await prisma.dDGSDispatchTruck.findFirst({
-    where: { remarks: { contains: wbMarker } },
+    where: {
+      remarks: { contains: wbMarker },
+      status: { notIn: ['GATE_IN', 'TARE_WEIGHED'] },
+    },
     select: { id: true },
   });
   if (dupDDGS) return dupDDGS;
 
   const dupSugar = await prisma.sugarDispatchTruck.findFirst({
-    where: { remarks: { contains: wbMarker } },
+    where: {
+      remarks: { contains: wbMarker },
+      status: { notIn: ['GATE_IN', 'TARE_WEIGHED'] },
+    },
     select: { id: true },
   });
   if (dupSugar) return dupSugar;

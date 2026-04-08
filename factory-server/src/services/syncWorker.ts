@@ -23,17 +23,28 @@ let _lastMasterPull = 0;
 export async function pushToCloud(): Promise<{ synced: number; failed: number }> {
   // Sync GATE_ENTRY (cloud creates truck record), COMPLETE (final weights),
   // FIRST_DONE inbound with lab results (so cloud lab page updates immediately),
-  // and FIRST_DONE OUTBOUND (so cloud DDGS/sugar/non-ethanol pipeline pages show
-  // the truck after the first weighment, mirroring how ethanol shows it via the
-  // separate gate-pass workflow). The cloud pre-phase upserts a stub row at this
-  // point and the COMPLETE handler later fills in the second weight + invoice.
+  // and FIRST_DONE OUTBOUND **for DDGS only** — the cloud pre-phase has a stub
+  // upsert path for DDGS (createOrUpdateDdgsTruckStub) but NOT for sugar / scrap
+  // / other outbound products. Pushing non-DDGS partial states would clog the
+  // sync queue with `Not in cloud response` failures because push.ts hits the
+  // `status !== COMPLETE` skip and never acks them. Add new product categories
+  // to this OR clause once their cloud handler grows a pre-phase stub.
   const unsynced = await prisma.weighment.findMany({
     where: {
       cloudSynced: false,
       OR: [
         { status: { in: ['GATE_ENTRY', 'COMPLETE'] } },
         { status: 'FIRST_DONE', direction: 'INBOUND', labStatus: { not: 'PENDING' } },
-        { status: 'FIRST_DONE', direction: 'OUTBOUND' },
+        {
+          status: 'FIRST_DONE',
+          direction: 'OUTBOUND',
+          OR: [
+            { materialCategory: 'DDGS' },
+            { materialName: { contains: 'ddgs', mode: 'insensitive' } },
+            { materialName: { contains: 'wdgs', mode: 'insensitive' } },
+            { materialName: { contains: 'distillers', mode: 'insensitive' } },
+          ],
+        },
       ],
     },
     take: 20,
@@ -63,8 +74,18 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
     weight_tare: w.tareWeight,
     weight_net: w.netWeight,
     weight_source: 'factory-server',
-    first_weight_at: w.grossTime?.toISOString(),
-    second_weight_at: w.tareTime?.toISOString(),
+    // Direction-agnostic timestamps. The factory captures whichever weighment
+    // happens first (gross for inbound, tare for outbound) into firstWeightAt
+    // and the second into secondWeightAt. The cloud DDGS handler maps
+    // first_weight_at → tareTime and second_weight_at → grossTime, which is
+    // correct for OUTBOUND. The previous mapping (grossTime → first_weight_at,
+    // tareTime → second_weight_at) was inverted for outbound and produced the
+    // wrong invoice date. Fall back to grossTime/tareTime per direction for
+    // legacy rows that pre-date the firstWeightAt/secondWeightAt columns.
+    first_weight_at: (w.firstWeightAt
+      ?? (w.direction === 'OUTBOUND' ? w.tareTime : w.grossTime))?.toISOString(),
+    second_weight_at: (w.secondWeightAt
+      ?? (w.direction === 'OUTBOUND' ? w.grossTime : w.tareTime))?.toISOString(),
     status: w.status,
     bags: w.bags ?? null,
     remarks: [w.materialName, w.materialCategory, w.remarks].filter(Boolean).join(' | '),
