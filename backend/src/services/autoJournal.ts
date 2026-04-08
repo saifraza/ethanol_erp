@@ -14,6 +14,11 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { DEFAULT_DIVISION } from '../shared/config/divisions';
+
+// TODO: Currently the plant is ethanol-only, so all auto-generated entries are
+// tagged ETHANOL. When Sugar/Power modules come online, route per-module.
+const AUTO_DIVISION = DEFAULT_DIVISION;
 
 // Account codes — must match seeded Chart of Accounts
 const ACCT = {
@@ -146,6 +151,7 @@ async function createJournalEntry(
           credit: Math.round(l.credit * 100) / 100,
           narration: l.narration,
           costCenter: l.costCenter || 'DISTILLERY',
+          division: AUTO_DIVISION,
         })),
       },
     },
