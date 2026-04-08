@@ -44,6 +44,14 @@ interface ConsumptionRow {
   remarks: string;
 }
 
+interface FuelDaysLeft {
+  id: string;
+  name: string;
+  currentStock: number;
+  avgDaily: number;
+  daysLeft: number | null;
+}
+
 interface Summary {
   fuelTypes: number;
   lowStockCount: number;
@@ -51,6 +59,10 @@ interface Summary {
   todayConsumed: number;
   todayReceived: number;
   todaySteam: number;
+  yesterdayEthanolKL: number;
+  steamRequired: number;
+  steamBalance: number;
+  fuelDaysLeft: FuelDaysLeft[];
 }
 
 interface OpenDeal {
@@ -485,7 +497,7 @@ export default function FuelManagement() {
         </div>
 
         {/* KPI Strip */}
-        <div className="grid grid-cols-4 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+        <div className="grid grid-cols-6 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
           <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-blue-500">
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Fuel Types</div>
             <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{summary?.fuelTypes || 0}</div>
@@ -494,15 +506,48 @@ export default function FuelManagement() {
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Low Stock</div>
             <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{summary?.lowStockCount || 0}</div>
           </div>
-          <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-orange-500">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Consumed Today</div>
-            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmtNum(summary?.todayConsumed || 0)} MT</div>
+          <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-purple-500">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Yest. Ethanol</div>
+            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmtNum(summary?.yesterdayEthanolKL || 0)} KL</div>
           </div>
-          <div className="bg-white px-4 py-3 border-l-4 border-l-green-500">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Steam Today</div>
+          <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-amber-500">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Steam Req (4×KL)</div>
+            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmtNum(summary?.steamRequired || 0)} MT</div>
+          </div>
+          <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-green-500">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Steam Generated</div>
             <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmtNum(summary?.todaySteam || 0)} MT</div>
           </div>
+          <div className={`bg-white px-4 py-3 border-l-4 ${(summary?.steamBalance || 0) >= 0 ? 'border-l-emerald-500' : 'border-l-red-600'}`}>
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Steam Balance</div>
+            <div className={`text-xl font-bold mt-1 font-mono tabular-nums ${(summary?.steamBalance || 0) >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+              {(summary?.steamBalance || 0) >= 0 ? '+' : ''}{fmtNum(summary?.steamBalance || 0)} MT
+            </div>
+          </div>
         </div>
+
+        {/* Fuel Days-Left strip — stock runway based on last 7d avg consumption */}
+        {summary?.fuelDaysLeft && summary.fuelDaysLeft.length > 0 && (
+          <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Fuel Runway (Stock ÷ 7-day Avg)</div>
+            <div className="flex flex-wrap gap-3">
+              {summary.fuelDaysLeft.map(f => {
+                const critical = f.daysLeft !== null && f.daysLeft <= 3;
+                const warn = f.daysLeft !== null && f.daysLeft <= 7 && !critical;
+                const cls = critical ? 'border-red-500 bg-red-50 text-red-700' : warn ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-300 bg-white text-slate-700';
+                return (
+                  <div key={f.id} className={`border ${cls} px-3 py-1.5`}>
+                    <div className="text-[9px] font-bold uppercase tracking-widest opacity-70">{f.name}</div>
+                    <div className="text-xs font-mono tabular-nums">
+                      {fmtNum(f.currentStock)} MT · {f.avgDaily > 0 ? `${fmtNum(f.avgDaily)}/day` : 'no data'} ·{' '}
+                      <span className="font-bold">{f.daysLeft !== null ? `${f.daysLeft}d left` : '--'}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* ═══ TAB: FUEL MASTER ═══ */}
         {tab === 'master' && (

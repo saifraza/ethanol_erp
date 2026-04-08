@@ -355,6 +355,41 @@ router.get('/summary', authenticate, asyncHandler(async (req: AuthRequest, res: 
   const totalSteam = todayEntries.reduce((s, e) => s + e.steamGenerated, 0);
   const totalReceived = todayEntries.reduce((s, e) => s + e.received, 0);
 
+  // Steam requirement = 4 × yesterday's ethanol production (KL)
+  // Rule: 1 KL ethanol → 4 MT steam (plant benchmark)
+  const STEAM_PER_KL_ETHANOL = 4;
+  const yesterday = new Date(date);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yStart = new Date(yesterday); yStart.setHours(0, 0, 0, 0);
+  const yEnd = new Date(yesterday); yEnd.setHours(23, 59, 59, 999);
+  const yEthanol = await prisma.ethanolProductEntry.findFirst({
+    where: { date: { gte: yStart, lte: yEnd } },
+    select: { productionBL: true },
+    orderBy: { date: 'desc' },
+  });
+  const yesterdayEthanolKL = Math.round(((yEthanol?.productionBL || 0) / 1000) * 100) / 100;
+  const steamRequired = Math.round(yesterdayEthanolKL * STEAM_PER_KL_ETHANOL * 100) / 100;
+  const steamBalance = Math.round((totalSteam - steamRequired) * 100) / 100;
+
+  // Days of fuel left — based on last 7d avg consumption per fuel
+  const sevenDaysAgo = new Date(date); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const recent = await prisma.fuelConsumption.findMany({
+    where: { date: { gte: sevenDaysAgo, lte: date } },
+    select: { fuelItemId: true, consumed: true },
+  });
+  const avgByFuel = new Map<string, number>();
+  for (const f of fuelItems) {
+    const rows = recent.filter(r => r.fuelItemId === f.id);
+    const sum = rows.reduce((s, r) => s + r.consumed, 0);
+    const days = Math.max(rows.length, 1);
+    avgByFuel.set(f.id, sum / days);
+  }
+  const fuelDaysLeft = fuelItems.map(f => {
+    const avg = avgByFuel.get(f.id) || 0;
+    const days = avg > 0 ? Math.floor(f.currentStock / avg) : null;
+    return { id: f.id, name: f.name, currentStock: f.currentStock, avgDaily: Math.round(avg * 100) / 100, daysLeft: days };
+  });
+
   res.json({
     fuelTypes: fuelItems.length,
     lowStockCount: lowStock.length,
@@ -362,6 +397,10 @@ router.get('/summary', authenticate, asyncHandler(async (req: AuthRequest, res: 
     todayConsumed: Math.round(totalConsumed * 100) / 100,
     todayReceived: Math.round(totalReceived * 100) / 100,
     todaySteam: Math.round(totalSteam * 100) / 100,
+    yesterdayEthanolKL,
+    steamRequired,
+    steamBalance,
+    fuelDaysLeft,
   });
 }));
 
