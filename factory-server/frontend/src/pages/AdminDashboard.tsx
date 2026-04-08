@@ -52,6 +52,14 @@ export default function AdminDashboard() {
   const [summary, setSummary] = useState<SyncSummary>({ totalToday: 0, syncedToday: 0, pendingToday: 0, failedToday: 0 });
   const [filter, setFilter] = useState<'all' | 'pending' | 'failed' | 'synced'>('all');
   const [resyncingIds, setResyncingIds] = useState<Set<string>>(new Set());
+  const [date, setDate] = useState<string>(() => {
+    // default = today IST as YYYY-MM-DD
+    const ist = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+    return ist.toISOString().slice(0, 10);
+  });
+  const [page, setPage] = useState(0);
+  const [total, setTotal] = useState(0);
+  const PAGE_SIZE = 50;
 
   const api = axios.create({ baseURL: '/api', headers: { Authorization: `Bearer ${token}` } });
 
@@ -60,16 +68,18 @@ export default function AdminDashboard() {
       const [pcRes, syncRes, wRes] = await Promise.all([
         api.get('/factory-pcs'),
         api.get('/sync/status'),
-        api.get(`/sync/weighments?filter=${filter}&limit=50`),
+        api.get(`/sync/weighments?filter=${filter}&date=${date}&limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`),
       ]);
       setPcs(pcRes.data);
       setSync(syncRes.data);
       setWeighments(wRes.data.weighments || []);
+      setTotal(wRes.data.total || 0);
       setSummary(wRes.data.summary || { totalToday: 0, syncedToday: 0, pendingToday: 0, failedToday: 0 });
     } catch (err) { console.error(err); }
-  }, [token, filter]);
+  }, [token, filter, date, page]);
 
   useEffect(() => { fetchData(); const iv = setInterval(fetchData, 15000); return () => clearInterval(iv); }, [fetchData]);
+  useEffect(() => { setPage(0); }, [filter, date]);
 
   const triggerSync = async (type: 'to-cloud' | 'from-cloud') => {
     setSyncing(type);
@@ -203,7 +213,26 @@ export default function AdminDashboard() {
       {/* Cloud Sync Detail */}
       <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-hidden">
         <div className="bg-slate-200 px-4 py-1.5 border-b border-slate-300 flex items-center justify-between">
-          <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Cloud Sync — Today</span>
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Cloud Sync</span>
+            <span className="text-[10px] text-slate-400">|</span>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Date</label>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="border border-slate-300 px-2 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-slate-400"
+            />
+            <button
+              onClick={() => {
+                const ist = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+                setDate(ist.toISOString().slice(0, 10));
+              }}
+              className="px-2 py-0.5 bg-white border border-slate-300 text-slate-600 text-[10px] font-medium hover:bg-slate-50"
+            >
+              Today
+            </button>
+          </div>
           <div className="flex gap-1 items-center">
             {sync.worker?.lastPush && (
               <span className="text-[9px] text-slate-400 mr-3">
@@ -304,11 +333,38 @@ export default function AdminDashboard() {
             ))}
             {weighments.length === 0 && (
               <tr><td colSpan={9} className="text-center py-8 text-xs text-slate-400 uppercase tracking-widest">
-                {filter === 'all' ? 'No weighments yet' : `No ${filter} weighments`}
+                {filter === 'all' ? `No weighments for ${date}` : `No ${filter} weighments for ${date}`}
               </td></tr>
             )}
           </tbody>
         </table>
+        {/* Pagination footer */}
+        <div className="bg-slate-100 border-t border-slate-300 px-4 py-1.5 flex items-center justify-between">
+          <span className="text-[10px] text-slate-500 uppercase tracking-widest">
+            {total === 0
+              ? 'No rows'
+              : `Showing ${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, total)} of ${total} for ${date}`}
+          </span>
+          <div className="flex gap-1 items-center">
+            <button
+              onClick={() => setPage(p => Math.max(0, p - 1))}
+              disabled={page === 0}
+              className="px-2 py-0.5 bg-white border border-slate-300 text-slate-600 text-[10px] font-medium hover:bg-slate-50 disabled:opacity-30"
+            >
+              Prev
+            </button>
+            <span className="text-[10px] text-slate-500 font-mono tabular-nums px-2">
+              Page {page + 1} of {Math.max(1, Math.ceil(total / PAGE_SIZE))}
+            </span>
+            <button
+              onClick={() => setPage(p => ((p + 1) * PAGE_SIZE < total ? p + 1 : p))}
+              disabled={(page + 1) * PAGE_SIZE >= total}
+              className="px-2 py-0.5 bg-white border border-slate-300 text-slate-600 text-[10px] font-medium hover:bg-slate-50 disabled:opacity-30"
+            >
+              Next
+            </button>
+          </div>
+        </div>
         {weighments.length > 0 && weighments.some(w => w.cloudError) && (
           <div className="border-t border-slate-200 bg-red-50/50 p-3">
             <div className="text-[10px] font-bold text-red-600 uppercase tracking-widest mb-2">Error Details</div>

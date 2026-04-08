@@ -85,21 +85,30 @@ export default function Weighment() {
   const [stats, setStats] = useState<Stats>({ today: { total: 0, completed: 0, pending: 0 }, unsynced: 0 });
   const [activeTab, setActiveTab] = useState<TabKey>('ALL');
   const [lightbox, setLightbox] = useState<{ url: string; weighment: WeighmentItem; type: string } | null>(null);
+  const [date, setDate] = useState<string>(() => {
+    const ist = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+    return ist.toISOString().slice(0, 10);
+  });
+  const [page, setPage] = useState(0);
+  const [total, setTotal] = useState(0);
+  const PAGE_SIZE = 50;
 
   const api = axios.create({ baseURL: '/api', headers: { Authorization: `Bearer ${token}` } });
 
   const fetchData = useCallback(async () => {
     try {
       const [wRes, sRes] = await Promise.all([
-        api.get('/weighbridge/weighments?limit=100'),
+        api.get(`/weighbridge/weighments?date=${date}&limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`),
         api.get('/weighbridge/stats'),
       ]);
-      setWeighments(wRes.data);
+      setWeighments(wRes.data.weighments || []);
+      setTotal(wRes.data.total || 0);
       setStats(sRes.data);
     } catch (err) { console.error(err); }
-  }, [token]);
+  }, [token, date, page]);
 
   useEffect(() => { fetchData(); const iv = setInterval(fetchData, 10000); return () => clearInterval(iv); }, [fetchData]);
+  useEffect(() => { setPage(0); }, [date]);
 
   // Compute tab counts from loaded data
   const tabCounts = useMemo(() => {
@@ -128,9 +137,27 @@ export default function Weighment() {
           <span className="text-[10px] text-slate-400">|</span>
           <span className="text-[10px] text-slate-400">Weighbridge Records</span>
         </div>
-        <button onClick={fetchData} className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Date</label>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="border border-slate-600 bg-slate-700 text-white px-2 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-blue-400"
+          />
+          <button
+            onClick={() => {
+              const ist = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+              setDate(ist.toISOString().slice(0, 10));
+            }}
+            className="px-2 py-0.5 bg-slate-700 border border-slate-600 text-slate-200 text-[10px] font-medium hover:bg-slate-600"
+          >
+            Today
+          </button>
+          <button onClick={fetchData} className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* KPI Strip */}
@@ -252,10 +279,37 @@ export default function Weighment() {
               );
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={12} className="text-center py-8 text-xs text-slate-400 uppercase tracking-widest">No weighments</td></tr>
+              <tr><td colSpan={12} className="text-center py-8 text-xs text-slate-400 uppercase tracking-widest">No weighments for {date}</td></tr>
             )}
           </tbody>
         </table>
+        {/* Pagination footer */}
+        <div className="bg-slate-100 border-t border-slate-300 px-4 py-1.5 flex items-center justify-between">
+          <span className="text-[10px] text-slate-500 uppercase tracking-widest">
+            {total === 0
+              ? `No rows for ${date}`
+              : `Showing ${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, total)} of ${total} for ${date}`}
+          </span>
+          <div className="flex gap-1 items-center">
+            <button
+              onClick={() => setPage(p => Math.max(0, p - 1))}
+              disabled={page === 0}
+              className="px-2 py-0.5 bg-white border border-slate-300 text-slate-600 text-[10px] font-medium hover:bg-slate-50 disabled:opacity-30"
+            >
+              Prev
+            </button>
+            <span className="text-[10px] text-slate-500 font-mono tabular-nums px-2">
+              Page {page + 1} of {Math.max(1, Math.ceil(total / PAGE_SIZE))}
+            </span>
+            <button
+              onClick={() => setPage(p => ((p + 1) * PAGE_SIZE < total ? p + 1 : p))}
+              disabled={(page + 1) * PAGE_SIZE >= total}
+              className="px-2 py-0.5 bg-white border border-slate-300 text-slate-600 text-[10px] font-medium hover:bg-slate-50 disabled:opacity-30"
+            >
+              Next
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Lightbox with weighment info overlay */}

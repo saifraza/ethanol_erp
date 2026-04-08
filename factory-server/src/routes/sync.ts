@@ -57,7 +57,9 @@ router.get('/status', asyncHandler(async (_req: Request, res: Response) => {
 // GET /api/sync/weighments — recent weighments with sync status (for admin dashboard)
 router.get('/weighments', asyncHandler(async (req: Request, res: Response) => {
   const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+  const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
   const filter = req.query.filter as string; // 'pending', 'failed', 'synced', or 'all'
+  const dateStr = (req.query.date as string) || ''; // IST YYYY-MM-DD, default = today
 
   const where: Record<string, unknown> = {};
   if (filter === 'pending') {
@@ -69,7 +71,12 @@ router.get('/weighments', asyncHandler(async (req: Request, res: Response) => {
     where.cloudSynced = true;
   }
 
-  const weighments = await prisma.weighment.findMany({
+  // Date range (IST day) — default to today IST
+  const { gte, lt } = istDayRange(dateStr);
+  where.createdAt = { gte, lt };
+
+  const [weighments, total] = await Promise.all([
+    prisma.weighment.findMany({
     where,
     select: {
       id: true,
@@ -104,7 +111,10 @@ router.get('/weighments', asyncHandler(async (req: Request, res: Response) => {
     },
     orderBy: { createdAt: 'desc' },
     take: limit,
-  });
+    skip: offset,
+    }),
+    prisma.weighment.count({ where }),
+  ]);
 
   // Summary counts by category
   const [totalToday, syncedToday, pendingToday, failedToday] = await Promise.all([
@@ -116,6 +126,9 @@ router.get('/weighments', asyncHandler(async (req: Request, res: Response) => {
 
   res.json({
     weighments,
+    total,
+    limit,
+    offset,
     summary: { totalToday, syncedToday, pendingToday, failedToday },
   });
 }));
@@ -138,6 +151,24 @@ router.post('/resync', asyncHandler(async (req: Request, res: Response) => {
     res.json({ reset: result.count });
   }
 }));
+
+function istDayRange(dateStr?: string): { gte: Date; lt: Date } {
+  // dateStr = 'YYYY-MM-DD' interpreted as IST day. Empty = today IST.
+  let y: number, m: number, d: number;
+  if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    [y, m, d] = dateStr.split('-').map(Number) as [number, number, number];
+    m -= 1;
+  } else {
+    const nowIst = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+    y = nowIst.getUTCFullYear();
+    m = nowIst.getUTCMonth();
+    d = nowIst.getUTCDate();
+  }
+  const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+  const gte = new Date(Date.UTC(y, m, d) - IST_OFFSET_MS);
+  const lt = new Date(Date.UTC(y, m, d + 1) - IST_OFFSET_MS);
+  return { gte, lt };
+}
 
 function todayStart(): Date {
   // IST start of day
