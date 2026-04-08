@@ -306,14 +306,36 @@ router.post('/gate-entry', requireAuth, requireRole('GATE_ENTRY', 'ADMIN'), asyn
     // 1+2. Cached InventoryItem lookup (exact name OR alias)
     const { getMasterData } = await import('../services/masterDataCache');
     const cached = getMasterData();
-    const matchedItem = cached.materials.find(m => {
+    const allMatches = cached.materials.filter(m => {
       if (m.name && m.name.toLowerCase() === lower) return true;
       if (Array.isArray(m.aliases) && m.aliases.some(a => a.toLowerCase() === lower)) return true;
       return false;
     });
+    // Deterministic pick when master has duplicates. If the name hints at a fuel,
+    // prefer a FUEL-categorized match; otherwise take the first non-null category.
+    const _hintFuel = /husk|coal|bagasse|firewood|briquette/.test(lower);
+    const _hintDdgs = /ddgs|wdgs|distillers/.test(lower);
+    let matchedItem = null as (typeof allMatches)[number] | null;
+    if (_hintFuel) matchedItem = allMatches.find(m => m.category === 'FUEL') || null;
+    if (!matchedItem && _hintDdgs) matchedItem = allMatches.find(m => m.category === 'DDGS') || null;
+    if (!matchedItem) matchedItem = allMatches.find(m => !!m.category) || allMatches[0] || null;
     if (matchedItem?.category) {
       materialCategory = matchedItem.category;
       matchedItemNeedsLab = matchedItem.needsLabTest === true;
+    }
+
+    // Sanity check: the master data is human-edited and can be wrong (e.g. "Rice Husk"
+    // wrongly flagged RAW_MATERIAL instead of FUEL). If a strong fuel keyword is present
+    // in the material name but the master says it's NOT fuel, override to FUEL and log.
+    // Same for DDGS — strongly named items should never be anything else.
+    const STRONG_FUEL = ['husk', 'coal', 'bagasse', 'firewood', 'briquette'];
+    const STRONG_DDGS = ['ddgs', 'wdgs', 'distillers grain'];
+    if (materialCategory && materialCategory !== 'FUEL' && STRONG_FUEL.some(kw => lower.includes(kw))) {
+      console.warn(`[CATEGORY-OVERRIDE] "${trimmedName}" master category=${materialCategory} but name contains fuel keyword → forcing FUEL. Fix master data.`);
+      materialCategory = 'FUEL';
+    } else if (materialCategory && materialCategory !== 'DDGS' && STRONG_DDGS.some(kw => lower.includes(kw))) {
+      console.warn(`[CATEGORY-OVERRIDE] "${trimmedName}" master category=${materialCategory} but name contains DDGS keyword → forcing DDGS. Fix master data.`);
+      materialCategory = 'DDGS';
     }
 
     // 3. Legacy keyword fallback — only if item is not in master data yet.
@@ -475,9 +497,10 @@ router.post('/:id/gross', requireAuth, requireRole('GROSS_WB', 'ADMIN'), asyncHa
     return;
   }
 
-  // Business rules check (only on 2nd weight — 1st weight has no prior to compare)
-  if (isSecond) {
-    const violations = await checkWeighmentRules(id, 'GROSS');
+  // Business rules check — runs on 1st and 2nd weight.
+  // Duplicate-weight check applies on 1st weight too (frozen digitizer case).
+  {
+    const violations = await checkWeighmentRules(id, 'GROSS', weight, pcId || 'web');
     if (violations.length > 0) {
       const { overridePin, overrideBy } = req.body;
       if (!overridePin) {
@@ -596,9 +619,9 @@ router.post('/:id/tare', requireAuth, requireRole('TARE_WB', 'ADMIN'), asyncHand
     return;
   }
 
-  // Business rules check (only on 2nd weight — 1st weight has no prior to compare)
-  if (isSecond) {
-    const violations = await checkWeighmentRules(id, 'TARE');
+  // Business rules check — runs on 1st and 2nd weight.
+  {
+    const violations = await checkWeighmentRules(id, 'TARE', weight, pcId || 'web');
     if (violations.length > 0) {
       const { overridePin, overrideBy } = req.body;
       if (!overridePin) {
@@ -664,7 +687,7 @@ router.post('/:id/tare', requireAuth, requireRole('TARE_WB', 'ADMIN'), asyncHand
 
 // POST /api/weighbridge/:id/lab — Record lab test result
 router.post('/:id/lab', requireAuth, requireRole('GROSS_WB', 'LAB', 'ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
-  const { labStatus, labMoisture, labStarch, labDamaged, labForeignMatter, labRemarks, labTestedBy } = req.body;
+  const { labStatus, labMoisture, labStarch, labForeignMatter, labRemarks, labTestedBy } = req.body;
 
   if (!labStatus || !['PASS', 'FAIL'].includes(labStatus)) {
     res.status(400).json({ error: 'labStatus must be PASS or FAIL' });
@@ -700,7 +723,6 @@ router.post('/:id/lab', requireAuth, requireRole('GROSS_WB', 'LAB', 'ADMIN'), as
       labStatus,
       labMoisture: labMoisture != null ? parseFloat(labMoisture) : null,
       labStarch: labStarch != null ? parseFloat(labStarch) : null,
-      labDamaged: labDamaged != null ? parseFloat(labDamaged) : null,
       labForeignMatter: labForeignMatter != null ? parseFloat(labForeignMatter) : null,
       labRemarks: labRemarks || null,
       labTestedBy: labTestedBy || req.user?.name || null,
@@ -976,7 +998,6 @@ router.get('/print/final-slip/:id', asyncHandler(async (req: AuthRequest, res: R
 ${row('Status', w.labStatus)}
 ${w.labMoisture != null ? row('Moisture %', w.labMoisture.toFixed(1)) : ''}
 ${w.labStarch != null ? row('Starch %', w.labStarch.toFixed(1)) : ''}
-${w.labDamaged != null ? row('Damaged %', w.labDamaged.toFixed(1)) : ''}
 ${w.labForeignMatter != null ? row('FM %', w.labForeignMatter.toFixed(1)) : ''}
 ${w.labRemarks ? row('Lab Remarks', w.labRemarks) : ''}
 ${row('Tested By', w.labTestedBy)}
@@ -1103,7 +1124,6 @@ router.post('/wb-push', requireWbKey, asyncHandler(async (req: Request, res: Res
     if (w.lab_status) optionals.labStatus = w.lab_status;
     if (w.lab_moisture != null) optionals.labMoisture = parseFloat(w.lab_moisture);
     if (w.lab_starch != null) optionals.labStarch = parseFloat(w.lab_starch);
-    if (w.lab_damaged != null) optionals.labDamaged = parseFloat(w.lab_damaged);
     if (w.lab_foreign_matter != null) optionals.labForeignMatter = parseFloat(w.lab_foreign_matter);
     if (w.lab_remarks) optionals.labRemarks = w.lab_remarks;
     // Spot purchase
@@ -1201,7 +1221,7 @@ router.post('/lab-results', requireWbKey, asyncHandler(async (req: Request, res:
     },
     select: {
       localId: true, labStatus: true, labMoisture: true,
-      labStarch: true, labDamaged: true, labForeignMatter: true,
+      labStarch: true, labForeignMatter: true,
     },
     take: 100,
   });
@@ -1211,7 +1231,6 @@ router.post('/lab-results', requireWbKey, asyncHandler(async (req: Request, res:
     lab_status: w.labStatus,
     moisture: w.labMoisture,
     starch: w.labStarch,
-    damaged: w.labDamaged,
     foreign_matter: w.labForeignMatter,
   }));
 
@@ -1250,6 +1269,122 @@ router.post('/heartbeat', requireWbKey, asyncHandler(async (req: Request, res: R
   });
 
   res.json({ ok: true });
+}));
+
+// ============================================================================
+// POST /api/weighbridge/correction
+// Receive a cloud-initiated correction and apply it to the local Weighment.
+// Cloud is the authoritative source for admin edits — factory mirrors.
+// See .claude/skills/weighment-corrections.md for the full contract.
+//
+// Idempotent: if any of the correctionIds is already in WeighmentCorrectionLog,
+// the corresponding change is skipped. Returns 200 with per-id status.
+// ============================================================================
+router.post('/correction', requireWbKey, asyncHandler(async (req: Request, res: Response) => {
+  const body = req.body as {
+    correctionIds: string[];
+    factoryLocalId: string;
+    ticketNo?: number | null;
+    vehicleNo?: string;
+    fields?: Record<string, unknown>;
+    cancel?: boolean;
+    cancelReason?: string;
+  };
+
+  if (!body.factoryLocalId) {
+    res.status(400).json({ error: 'factoryLocalId is required' });
+    return;
+  }
+  if (!Array.isArray(body.correctionIds) || body.correctionIds.length === 0) {
+    res.status(400).json({ error: 'correctionIds must be a non-empty array' });
+    return;
+  }
+
+  // Look up the local weighment by factory's localId (stable across DB copies)
+  const weighment = await prisma.weighment.findFirst({
+    where: { localId: body.factoryLocalId },
+  });
+  if (!weighment) {
+    res.status(404).json({
+      error: 'WEIGHMENT_NOT_FOUND',
+      message: `No local weighment with factoryLocalId=${body.factoryLocalId}`,
+    });
+    return;
+  }
+
+  // Check which correctionIds are already applied (dedup)
+  const existing = await prisma.weighmentCorrectionLog.findMany({
+    where: { correctionId: { in: body.correctionIds } },
+    select: { correctionId: true },
+  });
+  const alreadyApplied = new Set(existing.map(e => e.correctionId));
+  const toApply = body.correctionIds.filter(id => !alreadyApplied.has(id));
+
+  if (toApply.length === 0) {
+    res.json({
+      ok: true,
+      status: 'ALREADY_APPLIED',
+      skipped: body.correctionIds.length,
+      weighmentId: weighment.id,
+    });
+    return;
+  }
+
+  // Map cloud field names → factory field names
+  // (see field mapping table in weighment-corrections.md skill)
+  const updateData: Record<string, unknown> = {};
+  const f = body.fields || {};
+  if ('materialType' in f) updateData.materialName = f.materialType;
+  if ('materialCategory' in f) updateData.materialCategory = f.materialCategory;
+  if ('supplier' in f) updateData.supplierName = f.supplier;
+  if ('poId' in f) updateData.cloudPurchaseOrderId = f.poId; // factory stores the cloud poId
+  if ('vehicleNo' in f) updateData.vehicleNo = f.vehicleNo;
+  if ('driverName' in f) updateData.driverName = f.driverName;
+  if ('driverMobile' in f) updateData.driverPhone = f.driverMobile;
+  if ('transporterName' in f) updateData.transporter = f.transporterName;
+  if ('remarks' in f) updateData.remarks = f.remarks;
+  if ('bags' in f) updateData.bags = f.bags;
+
+  if (body.cancel) {
+    updateData.status = 'CANCELLED';
+    updateData.remarks = body.cancelReason
+      ? `CANCELLED (admin): ${body.cancelReason}${weighment.remarks ? ' | ' + weighment.remarks : ''}`
+      : (weighment.remarks || 'CANCELLED by admin');
+  }
+
+  // Apply in a single transaction: update weighment + insert log rows (one per correctionId)
+  await prisma.$transaction(async (tx) => {
+    if (Object.keys(updateData).length > 0) {
+      await tx.weighment.update({
+        where: { id: weighment.id },
+        data: { ...updateData, cloudSynced: false },
+      });
+    }
+    for (const correctionId of toApply) {
+      await tx.weighmentCorrectionLog.create({
+        data: {
+          correctionId,
+          weighmentId: weighment.id,
+          ticketNo: body.ticketNo ?? weighment.ticketNo,
+          vehicleNo: body.vehicleNo ?? weighment.vehicleNo,
+          fieldName: body.cancel ? 'cancel' : (Object.keys(f)[0] || 'unknown'),
+          oldValueJson: null, // factory doesn't keep pre-snapshot — cloud has it
+          newValueJson: JSON.stringify(body.cancel ? { cancelled: true } : f),
+        },
+      });
+    }
+  });
+
+  console.log(`[WB-CORRECTION] applied ${toApply.length} corrections to weighment ${weighment.id} (ticket #${weighment.ticketNo}, ${weighment.vehicleNo})`);
+
+  res.json({
+    ok: true,
+    status: 'APPLIED',
+    applied: toApply.length,
+    skipped: alreadyApplied.size,
+    weighmentId: weighment.id,
+    ticketNo: weighment.ticketNo,
+  });
 }));
 
 export default router;

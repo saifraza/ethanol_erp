@@ -82,6 +82,7 @@ import opcBridgeRoutes from './routes/opcBridge';
 import labTestingRoutes from './routes/labTesting';
 // Weighbridge (local service at factory gate)
 import weighbridgeRoutes from './routes/weighbridge';
+import weighbridgeAdminRoutes from './routes/weighbridgeAdmin';
 import fuelRoutes from './routes/fuel';
 import rawMaterialPurchaseRoutes from './routes/rawMaterialPurchase';
 import storesPurchaseRoutes from './routes/storesPurchase';
@@ -242,6 +243,10 @@ app.use('/api/opc', opcBridgeRoutes);
 app.use('/api/lab-testing', labTestingRoutes);
 // Weighbridge (local service at factory gate — push weighments, pull master data)
 app.use('/api/weighbridge', weighbridgeRoutes);
+// Weighbridge admin corrections (edit/cancel GrainTruck records with audit)
+// NOTE: mounted AFTER the main weighbridge routes so its /admin/* subpaths
+// don't collide with anything existing. See .claude/skills/weighment-corrections.md
+app.use('/api/weighbridge/admin', weighbridgeAdminRoutes);
 // Fuel Management (master + daily consumption)
 app.use('/api/fuel', fuelRoutes);
 // Raw Material Purchase (deals, receipts, payments — mirrors fuel pattern)

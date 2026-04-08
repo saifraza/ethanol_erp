@@ -107,6 +107,16 @@ say "Regenerating Prisma client — cloud schema..."
 $SSH "cd ${REMOTE_DIR} && npx prisma generate --schema=prisma/cloud/schema.prisma" 2>&1 | tail -5 || die "prisma generate (cloud) FAILED"
 ok "Prisma clients regenerated (local + cloud)"
 
+# ---------- 6b. Apply local schema changes to factory SQLite ----------
+# `prisma db push` on SQLite is additive-safe: new tables/columns are created,
+# nothing is dropped. We skip --accept-data-loss so that if the schema ever
+# contains a destructive change, the deploy aborts loudly instead of silently
+# wiping production data. New tables (WeighmentCorrectionLog added 2026-04-08)
+# require this step to exist in the live DB.
+say "Applying local schema to factory SQLite (db push, additive only)..."
+$SSH "cd ${REMOTE_DIR} && npx prisma db push --skip-generate" 2>&1 | tail -10 || die "prisma db push FAILED — check for destructive schema changes"
+ok "local schema synced"
+
 # ---------- 7. Restart via schtasks ----------
 say "Relaunching FactoryServer scheduled task..."
 $SSH 'schtasks /run /tn FactoryServer' || die "schtasks /run failed — SSH in manually and investigate"

@@ -22,9 +22,9 @@ SERIAL_PROTOCOL = os.environ.get("WB_PROTOCOL", "serial")  # 'serial' (direct CO
 WEIGHT_FILE_PATH = os.environ.get("WB_WEIGHT_FILE", r"D:\WT\new weight.txt")
 
 # Weight reading settings
-WEIGHT_POLL_INTERVAL = 0.1    # Read serial every 100ms (fast response)
-WEIGHT_STABLE_COUNT = 3       # Readings must match N times to be "stable"
-WEIGHT_STABLE_TOLERANCE = 20  # KG — readings within this range = stable
+WEIGHT_POLL_INTERVAL = 0.05   # Read serial every 50ms (fast response)
+WEIGHT_STABLE_COUNT = 4       # Readings must match N times to be "stable"
+WEIGHT_STABLE_TOLERANCE = 10  # KG — readings within this range = stable (cell resolution ≈ 10 kg)
 
 # =============================================================================
 #  LOCAL DATABASE (SQLite)

@@ -25,12 +25,11 @@ interface WeighmentRecord {
   labStatus: string | null;
   labMoisture: number | null;
   labStarch: number | null;
-  labDamaged: number | null;
   labForeignMatter: number | null;
   createdAt: string;
 }
 
-type ScaleStatus = 'STABLE' | 'READING' | 'DISCONNECTED';
+type ScaleStatus = 'STABLE' | 'READING' | 'DISCONNECTED' | 'FROZEN' | 'NO_SIGNAL';
 
 export default function GrossWeighment() {
   const { token } = useAuth();
@@ -44,6 +43,9 @@ export default function GrossWeighment() {
 
   const [liveWeight, setLiveWeight] = useState(0);
   const [scaleStatus, setScaleStatus] = useState<ScaleStatus>('DISCONNECTED');
+  const [scaleFrozen, setScaleFrozen] = useState(false);
+  const [scaleStale, setScaleStale] = useState(false);
+  const [scalePort, setScalePort] = useState<string | null>(null);
   const [scanInput, setScanInput] = useState('');
   const [scannedRecord, setScannedRecord] = useState<WeighmentRecord | null>(null);
   const [pendingList, setPendingList] = useState<WeighmentRecord[]>([]);
@@ -90,15 +92,22 @@ export default function GrossWeighment() {
         const res = await fetch('/api/scale/weight', { signal: AbortSignal.timeout(1000) });
         const data = await res.json();
         const w = parseFloat(data.weight) || 0;
-        setLiveWeight(w);
+        const frozen = !!data.frozen;
+        const stale = !!data.stale;
+        setLiveWeight(stale ? 0 : w);
+        setScaleFrozen(frozen);
+        setScaleStale(stale);
+        setScalePort(data.port || null);
 
-        if (Math.abs(w - lastWeight) < 20) {
+        if (Math.abs(w - lastWeight) < 10) {
           consecutiveStable++;
         } else {
           consecutiveStable = 0;
         }
         lastWeight = w;
-        setScaleStatus(consecutiveStable >= 3 ? 'STABLE' : 'READING');
+        if (stale) setScaleStatus('NO_SIGNAL' as ScaleStatus);
+        else if (data.stable) setScaleStatus('STABLE');
+        else setScaleStatus(consecutiveStable >= 3 ? 'STABLE' : 'READING');
       } catch {
         setScaleStatus('DISCONNECTED');
       }
@@ -154,7 +163,7 @@ export default function GrossWeighment() {
 
   // Fuel quick lab check (moisture + pass/fail at gross WB)
   const [labDone, setLabDone] = useState<'PASS' | 'FAIL' | null>(null);
-  const handleFuelLab = async (result: 'PASS' | 'FAIL', starch?: number, damaged?: number, foreign?: number) => {
+  const handleFuelLab = async (result: 'PASS' | 'FAIL', starch?: number, foreign?: number) => {
     if (!scannedRecord || labSaving || labDone) return;
     setLabSaving(true);
     setLabDone(result); // Immediately mark done to prevent double-click
@@ -163,7 +172,6 @@ export default function GrossWeighment() {
         labStatus: result,
         labMoisture: parseFloat(fuelMoisture) || 0,
         labStarch: starch ?? null,
-        labDamaged: damaged ?? null,
         labForeignMatter: foreign ?? null,
       });
       const res = await api.get(`/weighbridge/lookup/${scannedRecord.localId}`);
@@ -288,7 +296,7 @@ export default function GrossWeighment() {
 
   // Fuel: lab can be done here (not blocked). Raw material: must test on cloud first.
   const labBlocked = scannedRecord && scannedRecord.direction === 'INBOUND' && !isFuel && scannedRecord.labStatus !== 'PASS' && scannedRecord.labStatus !== null;
-  const canCapture = scannedRecord && !labBlocked && liveWeight > 100 && scaleStatus === 'STABLE' && (
+  const canCapture = scannedRecord && scannedRecord.status !== 'CANCELLED' && !labBlocked && !scaleStale && liveWeight > 100 && scaleStatus === 'STABLE' && (
     (scannedRecord.direction === 'INBOUND' && scannedRecord.status === 'GATE_ENTRY') ||
     (scannedRecord.direction === 'OUTBOUND' && scannedRecord.status === 'FIRST_DONE')
   );
@@ -352,6 +360,24 @@ export default function GrossWeighment() {
       {/* Scanned Record Card */}
       {scannedRecord && (
         <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 bg-white">
+          {/* Cancelled banner — blocks any further action, operator must scan a new QR */}
+          {scannedRecord.status === 'CANCELLED' && (
+            <div className="bg-red-600 text-white px-4 py-3 flex items-center gap-3">
+              <span className="text-xl">⚠</span>
+              <div className="flex-1">
+                <div className="text-sm font-bold uppercase tracking-widest">This Weighment is Cancelled</div>
+                <div className="text-[11px] mt-0.5">
+                  This slip/QR is no longer valid. Scan the new QR slip for this truck, or go back to Gate Entry to re-enter it.
+                </div>
+              </div>
+              <button
+                onClick={() => { setScannedRecord(null); scanRef.current?.focus(); }}
+                className="px-3 py-1.5 bg-white text-red-700 text-xs font-bold uppercase hover:bg-red-50"
+              >
+                Clear
+              </button>
+            </div>
+          )}
           <div className="bg-slate-200 px-4 py-1.5 border-b border-slate-300 flex items-center justify-between">
             <span className="text-xs font-bold text-slate-800 uppercase tracking-widest">
               Scanned Entry -- {scannedRecord.localId.substring(0, 8)}
@@ -360,6 +386,7 @@ export default function GrossWeighment() {
               scannedRecord.status === 'GATE_ENTRY' ? 'border-blue-300 bg-blue-50 text-blue-700' :
               scannedRecord.status === 'FIRST_DONE' ? 'border-yellow-300 bg-yellow-50 text-yellow-700' :
               scannedRecord.status === 'COMPLETE' ? 'border-green-300 bg-green-50 text-green-700' :
+              scannedRecord.status === 'CANCELLED' ? 'border-red-300 bg-red-50 text-red-700' :
               'border-slate-300 bg-slate-50 text-slate-500'
             }`}>
               {scannedRecord.status}
@@ -456,11 +483,6 @@ export default function GrossWeighment() {
                     className="border border-slate-300 px-2.5 py-2 text-sm w-20 focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="0" />
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold text-slate-600 uppercase tracking-widest block mb-0.5">Damaged %</label>
-                  <input id="rmLabDamaged" type="number" step="0.1" defaultValue=""
-                    className="border border-slate-300 px-2.5 py-2 text-sm w-20 focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="0" />
-                </div>
-                <div>
                   <label className="text-[10px] font-bold text-slate-600 uppercase tracking-widest block mb-0.5">Foreign %</label>
                   <input id="rmLabForeign" type="number" step="0.1" defaultValue=""
                     className="border border-slate-300 px-2.5 py-2 text-sm w-20 focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="0" />
@@ -474,18 +496,16 @@ export default function GrossWeighment() {
                     <>
                       <button onClick={() => {
                         const starch = parseFloat((document.getElementById('rmLabStarch') as HTMLInputElement)?.value) || 0;
-                        const damaged = parseFloat((document.getElementById('rmLabDamaged') as HTMLInputElement)?.value) || 0;
                         const foreign = parseFloat((document.getElementById('rmLabForeign') as HTMLInputElement)?.value) || 0;
-                        handleFuelLab('PASS', starch, damaged, foreign);
+                        handleFuelLab('PASS', starch, foreign);
                       }} disabled={labSaving}
                         className="px-4 py-2 bg-green-600 text-white text-sm font-bold uppercase hover:bg-green-700 disabled:opacity-50">
                         {labSaving ? '...' : 'PASS'}
                       </button>
                       <button onClick={() => {
                         const starch = parseFloat((document.getElementById('rmLabStarch') as HTMLInputElement)?.value) || 0;
-                        const damaged = parseFloat((document.getElementById('rmLabDamaged') as HTMLInputElement)?.value) || 0;
                         const foreign = parseFloat((document.getElementById('rmLabForeign') as HTMLInputElement)?.value) || 0;
-                        handleFuelLab('FAIL', starch, damaged, foreign);
+                        handleFuelLab('FAIL', starch, foreign);
                       }} disabled={labSaving}
                         className="px-4 py-2 bg-red-600 text-white text-sm font-bold uppercase hover:bg-red-700 disabled:opacity-50">
                         {labSaving ? '...' : 'FAIL'}
@@ -507,7 +527,7 @@ export default function GrossWeighment() {
                     if (!confirm('Pass lab manually?')) return;
                     try {
                       await api.post(`/weighbridge/${scannedRecord.id}/lab`, {
-                        labStatus: 'PASS', labMoisture: 0, labStarch: 0, labDamaged: 0, labForeignMatter: 0,
+                        labStatus: 'PASS', labMoisture: 0, labStarch: 0, labForeignMatter: 0,
                         labRemarks: 'Manual pass at gross WB', labTestedBy: 'Gross WB Operator',
                       });
                       setScannedRecord({ ...scannedRecord, labStatus: 'PASS', labMoisture: 0 });
@@ -554,7 +574,23 @@ export default function GrossWeighment() {
                   Clear
                 </button>
               </div>
-              {!showManual && scaleStatus !== 'STABLE' && liveWeight > 0 && (
+              {!showManual && scaleStale && (
+                <div className="mt-2 px-3 py-2 bg-red-100 border-2 border-red-600 text-red-800">
+                  <div className="text-[12px] font-bold uppercase tracking-widest">⛔ No Signal From Scale</div>
+                  <div className="text-[10px] mt-0.5">
+                    Python reader is not receiving any serial frames{scalePort ? ` on ${scalePort}` : ''}.
+                    Check the RS-232 cable between the digitizer and the PC — unplug and reseat both ends.
+                    The system will auto-reconnect within 2 seconds of a good connection.
+                  </div>
+                </div>
+              )}
+              {!showManual && !scaleStale && scaleFrozen && (
+                <div className="mt-2 px-3 py-2 bg-amber-50 border border-amber-400 text-amber-800">
+                  <div className="text-[11px] font-bold uppercase tracking-widest">⚠ Weight hasn't changed in 60+ seconds</div>
+                  <div className="text-[10px] mt-0.5">Advisory only — verify the reading looks right before capturing. Digitizer may be stuck.</div>
+                </div>
+              )}
+              {!showManual && !scaleStale && !scaleFrozen && scaleStatus !== 'STABLE' && liveWeight > 0 && (
                 <div className="text-[10px] text-yellow-600 mt-2 uppercase tracking-widest">Waiting for stable reading...</div>
               )}
             </div>

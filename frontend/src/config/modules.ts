@@ -118,6 +118,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'weighment-system', label: 'Factory Linkage', to: '/weighment-system', icon: Radio, group: 'admin' },
   { key: 'company-documents', label: 'Document Vault', to: '/admin/documents', icon: FolderArchive, group: 'admin' },
   { key: 'document-search', label: 'Doc Search (AI)', to: '/admin/document-search', icon: Search, group: 'admin' },
+  { key: 'weighment-corrections', label: 'Weighment Corrections', to: '/admin/weighment-corrections', icon: ClipboardCheck, group: 'admin', adminOnly: true },
 ];
 
 // For UsersPage — unique module keys for permission assignment (excludes adminOnly)

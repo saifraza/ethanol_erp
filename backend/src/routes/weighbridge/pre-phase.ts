@@ -125,6 +125,7 @@ async function createOrUpdateGrainTruckStub(w: WeighmentInput, _ctx: PushContext
         transporterName: w.transporter || undefined,
         materialType: w.material || undefined,
         ticketNo: w.ticket_no || undefined,
+        factoryLocalId: w.id,
       },
     });
     return {

@@ -23,7 +23,7 @@ interface WeighmentRecord {
   createdAt: string;
 }
 
-type ScaleStatus = 'STABLE' | 'READING' | 'DISCONNECTED';
+type ScaleStatus = 'STABLE' | 'READING' | 'DISCONNECTED' | 'FROZEN' | 'NO_SIGNAL';
 
 export default function TareWeighment() {
   const { token } = useAuth();
@@ -37,6 +37,9 @@ export default function TareWeighment() {
 
   const [liveWeight, setLiveWeight] = useState(0);
   const [scaleStatus, setScaleStatus] = useState<ScaleStatus>('DISCONNECTED');
+  const [scaleFrozen, setScaleFrozen] = useState(false);
+  const [scaleStale, setScaleStale] = useState(false);
+  const [scalePort, setScalePort] = useState<string | null>(null);
   const [scanInput, setScanInput] = useState('');
   const [scannedRecord, setScannedRecord] = useState<WeighmentRecord | null>(null);
   const [pendingList, setPendingList] = useState<WeighmentRecord[]>([]);
@@ -75,15 +78,22 @@ export default function TareWeighment() {
         const res = await fetch('/api/scale/weight', { signal: AbortSignal.timeout(1000) });
         const data = await res.json();
         const w = parseFloat(data.weight) || 0;
-        setLiveWeight(w);
+        const frozen = !!data.frozen;
+        const stale = !!data.stale;
+        setLiveWeight(stale ? 0 : w);
+        setScaleFrozen(frozen);
+        setScaleStale(stale);
+        setScalePort(data.port || null);
 
-        if (Math.abs(w - lastWeight) < 20) {
+        if (Math.abs(w - lastWeight) < 10) {
           consecutiveStable++;
         } else {
           consecutiveStable = 0;
         }
         lastWeight = w;
-        setScaleStatus(consecutiveStable >= 3 ? 'STABLE' : 'READING');
+        if (stale) setScaleStatus('NO_SIGNAL');
+        else if (data.stable) setScaleStatus('STABLE');
+        else setScaleStatus(consecutiveStable >= 3 ? 'STABLE' : 'READING');
       } catch {
         setScaleStatus('DISCONNECTED');
       }
@@ -214,7 +224,7 @@ export default function TareWeighment() {
     );
   }
 
-  const canCapture = scannedRecord && liveWeight > 100 && scaleStatus === 'STABLE' && (
+  const canCapture = scannedRecord && scannedRecord.status !== 'CANCELLED' && !scaleStale && liveWeight > 100 && scaleStatus === 'STABLE' && (
     (scannedRecord.direction === 'OUTBOUND' && scannedRecord.status === 'GATE_ENTRY') ||
     (scannedRecord.direction === 'INBOUND' && scannedRecord.status === 'FIRST_DONE')
   );
@@ -273,6 +283,23 @@ export default function TareWeighment() {
       {/* Scanned Record Card */}
       {scannedRecord && (
         <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 bg-white">
+          {scannedRecord.status === 'CANCELLED' && (
+            <div className="bg-red-600 text-white px-4 py-3 flex items-center gap-3">
+              <span className="text-xl">⚠</span>
+              <div className="flex-1">
+                <div className="text-sm font-bold uppercase tracking-widest">This Weighment is Cancelled</div>
+                <div className="text-[11px] mt-0.5">
+                  This slip/QR is no longer valid. Scan the new QR slip for this truck, or go back to Gate Entry to re-enter it.
+                </div>
+              </div>
+              <button
+                onClick={() => { setScannedRecord(null); scanRef.current?.focus(); }}
+                className="px-3 py-1.5 bg-white text-red-700 text-xs font-bold uppercase hover:bg-red-50"
+              >
+                Clear
+              </button>
+            </div>
+          )}
           <div className="bg-slate-200 px-4 py-1.5 border-b border-slate-300 flex items-center justify-between">
             <span className="text-xs font-bold text-slate-800 uppercase tracking-widest">
               Scanned Entry -- Ticket #{scannedRecord.ticketNo || scannedRecord.localId.substring(0, 8)}
@@ -280,6 +307,7 @@ export default function TareWeighment() {
             <span className={`text-sm font-bold uppercase px-1.5 py-0.5 border ${
               scannedRecord.status === 'FIRST_DONE' ? 'border-yellow-300 bg-yellow-50 text-yellow-700' :
               scannedRecord.status === 'COMPLETE' ? 'border-green-300 bg-green-50 text-green-700' :
+              scannedRecord.status === 'CANCELLED' ? 'border-red-300 bg-red-50 text-red-700' :
               'border-slate-300 bg-slate-50 text-slate-500'
             }`}>
               {scannedRecord.status}
@@ -365,7 +393,23 @@ export default function TareWeighment() {
                   Clear
                 </button>
               </div>
-              {!showManual && scaleStatus !== 'STABLE' && liveWeight > 0 && (
+              {!showManual && scaleStale && (
+                <div className="mt-2 px-3 py-2 bg-red-100 border-2 border-red-600 text-red-800">
+                  <div className="text-[12px] font-bold uppercase tracking-widest">⛔ No Signal From Scale</div>
+                  <div className="text-[10px] mt-0.5">
+                    Python reader is not receiving any serial frames{scalePort ? ` on ${scalePort}` : ''}.
+                    Check the RS-232 cable between the digitizer and the PC — unplug and reseat both ends.
+                    The system will auto-reconnect within 2 seconds of a good connection.
+                  </div>
+                </div>
+              )}
+              {!showManual && !scaleStale && scaleFrozen && (
+                <div className="mt-2 px-3 py-2 bg-amber-50 border border-amber-400 text-amber-800">
+                  <div className="text-[11px] font-bold uppercase tracking-widest">⚠ Weight hasn't changed in 60+ seconds</div>
+                  <div className="text-[10px] mt-0.5">Advisory only — verify the reading looks right before capturing.</div>
+                </div>
+              )}
+              {!showManual && !scaleStale && !scaleFrozen && scaleStatus !== 'STABLE' && liveWeight > 0 && (
                 <div className="text-xs text-yellow-600 mt-2 uppercase tracking-widest">Waiting for stable reading...</div>
               )}
             </div>

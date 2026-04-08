@@ -100,6 +100,7 @@ export async function handlePoInbound(w: WeighmentInput, ctx: PushContext): Prom
         transporterName: w.transporter || undefined,
         materialType: w.material || undefined,
         ticketNo: w.ticket_no || undefined,
+        factoryLocalId: w.id,
       },
     });
 
@@ -303,6 +304,7 @@ export async function handlePoInbound(w: WeighmentInput, ctx: PushContext): Prom
         transporterName: w.transporter || undefined,
         materialType: w.material || undefined,
         ticketNo: w.ticket_no || undefined,
+        factoryLocalId: w.id,
       },
     }).catch(() => {});
   }

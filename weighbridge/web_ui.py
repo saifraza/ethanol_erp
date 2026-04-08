@@ -145,13 +145,17 @@ def api_me():
 def api_get_weight():
     """Get current live weight from scale. Polled by AJAX every 500ms."""
     if _weight_reader:
-        weight, stable, connected = _weight_reader.get_weight()
-        return jsonify({
-            "weight": round(weight, 0),
-            "stable": stable,
-            "connected": connected,
-        })
-    return jsonify({"weight": 0, "stable": False, "connected": False})
+        # get_status() already applies staleness gating: if no serial frame
+        # arrived in the last STALE_THRESHOLD_S seconds, weight is forced to
+        # 0 and stable to False so the UI cannot show a ghost reading.
+        status = _weight_reader.get_status()
+        status["weight"] = round(status.get("weight") or 0, 0)
+        return jsonify(status)
+    return jsonify({
+        "weight": 0, "stable": False, "connected": False,
+        "stale": True, "frozen": False,
+        "lastFrameAgeMs": None, "frameCount": 0, "port": None,
+    })
 
 
 @app.route('/api/weighments/today')

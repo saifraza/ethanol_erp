@@ -61,7 +61,7 @@ app.get('/api/factory-pcs', (_req, res) => {
 app.get('/api/scale/weight', (_req, res) => {
   const pcs = getAllPCStatus();
   const wb = pcs.find(p => p.role === 'WEIGHBRIDGE');
-  if (!wb || !wb.data) return res.json({ connected: false, stable: false, weight: 0 });
+  if (!wb || !wb.data) return res.json({ connected: false, stable: false, weight: 0, frozen: false });
   res.json(wb.data);
 });
 

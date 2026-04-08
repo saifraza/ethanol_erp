@@ -333,6 +333,27 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
       source: 'cloud',
     };
 
+    // Integrity check: detect duplicate material names with conflicting categories.
+    // A human editing the cloud master can create two rows for the same material
+    // (e.g. "Rice Husk" as RAW_MATERIAL and "RICE HUSK" as FUEL). Case-insensitive
+    // name lookup is non-deterministic — operators would get the wrong category
+    // roulette-style. We log loud so the wrong row gets fixed before it causes damage.
+    const byName = new Map<string, { name: string; category: string | null }[]>();
+    for (const m of cache.materials) {
+      const k = (m.name || '').trim().toLowerCase();
+      if (!k) continue;
+      if (!byName.has(k)) byName.set(k, []);
+      byName.get(k)!.push({ name: m.name, category: m.category });
+    }
+    for (const [k, items] of byName.entries()) {
+      if (items.length > 1) {
+        const cats = new Set(items.map(i => i.category));
+        if (cats.size > 1) {
+          console.error(`[CACHE] ⚠ DUPLICATE MATERIAL NAME WITH CONFLICTING CATEGORIES: "${k}" → ${items.map(i => `${i.name} [${i.category}]`).join(' | ')}. Fix in cloud InventoryItem master — weighbridge category routing is non-deterministic until resolved.`);
+        }
+      }
+    }
+
     saveToDisk();
     return true;
   } catch (err) {

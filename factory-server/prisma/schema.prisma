@@ -285,6 +285,26 @@ model BusinessRule {
   @@index([enabled])
 }
 
+// --- WEIGHMENT CORRECTION LOG ---
+// Local mirror of cloud-initiated corrections. Cloud is the master for
+// admin edits (see .claude/skills/weighment-corrections.md). Factory receives
+// corrections via POST /api/weighbridge/correction and records each applied
+// change here. Primary key is the cloud-assigned correctionId, so duplicate
+// deliveries (cloud retries) are idempotent.
+model WeighmentCorrectionLog {
+  correctionId  String   @id // UUID from cloud WeighmentCorrection.id
+  weighmentId   String   // local Weighment.id (resolved from factoryLocalId)
+  ticketNo      Int?
+  vehicleNo     String?
+  fieldName     String   // "materialName" | "supplier" | "cancel" | ...
+  oldValueJson  String?
+  newValueJson  String?
+  appliedAt     DateTime @default(now())
+
+  @@index([weighmentId])
+  @@index([appliedAt])
+}
+
 // --- RULE OVERRIDE LOG ---
 // Audit trail when admin overrides a rule violation
 model RuleOverrideLog {

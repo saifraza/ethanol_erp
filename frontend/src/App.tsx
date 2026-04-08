@@ -56,6 +56,7 @@ const PlantIssues = React.lazy(() => import('./pages/PlantIssues'));
 const Approvals = React.lazy(() => import('./pages/admin/Approvals'));
 const CompanyDocuments = React.lazy(() => import('./pages/admin/CompanyDocuments'));
 const DocumentSearch = React.lazy(() => import('./pages/admin/DocumentSearch'));
+const WeighmentCorrections = React.lazy(() => import('./pages/admin/WeighmentCorrections'));
 // Compliance
 const ComplianceDashboard = React.lazy(() => import('./pages/compliance/ComplianceDashboard'));
 const ComplianceRegister = React.lazy(() => import('./pages/compliance/ComplianceRegister'));
@@ -180,6 +181,7 @@ export default function App() {
         <Route path="admin/approvals" element={<Approvals />} />
         <Route path="admin/documents" element={<CompanyDocuments />} />
         <Route path="admin/document-search" element={<DocumentSearch />} />
+        <Route path="admin/weighment-corrections" element={<WeighmentCorrections />} />
         {/* Compliance */}
         <Route path="compliance" element={<ComplianceDashboard />} />
         <Route path="compliance/register" element={<ComplianceRegister />} />

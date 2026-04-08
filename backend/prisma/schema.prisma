@@ -100,6 +100,7 @@ model Settings {
   telegramPrivateChatIds String? // Comma-separated private chat IDs
   telegramModuleRouting  String? // JSON: { "module": "group1"|"group2"|"private" }
   opcAlarmsEnabled       Boolean  @default(true) // OPC alarm toggle (persists across deploys)
+  opcWatchdogState       String? // JSON state for opcHealthWatchdog (survives Railway restarts) — added 2026-04-08
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 }
@@ -919,15 +920,51 @@ model GrainTruck {
   transporterName  String?
   materialType     String? // BROKEN_RICE, RICE_HUSK, MAIZE etc.
   ticketNo         Int? // weighbridge ticket number
+  factoryLocalId   String?  // factory-server Weighment.localId (for correction push back)
+  cancelled        Boolean  @default(false) // soft-cancel flag set by admin correction
+  cancelledReason  String?
+  cancelledAt      DateTime?
+  cancelledBy      String?
   createdAt        DateTime       @default(now())
 
   division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  corrections WeighmentCorrection[]
 
   @@index([date])
   @@index([poId])
   @@index([grnId])
   @@index([ticketNo])
   @@index([division])
+  @@index([factoryLocalId])
+}
+
+// ═══════════════════════════════════════════════
+// WEIGHMENT CORRECTIONS — Admin audit trail
+// See .claude/skills/weighment-corrections.md for full spec.
+// ═══════════════════════════════════════════════
+model WeighmentCorrection {
+  id              String      @id @default(uuid())
+  weighmentKind   String      // "GrainTruck" | "DispatchTruck"
+  weighmentId     String      // FK-like to GrainTruck.id or DispatchTruck.id
+  grainTruck      GrainTruck? @relation(fields: [weighmentId], references: [id], map: "WeighmentCorrection_grainTruck_fkey")
+  ticketNo        Int?        // snapshot for readability
+  vehicleNo       String?     // snapshot
+  fieldName       String      // "materialType" | "supplier" | "poId" | "cancel" | ...
+  oldValue        String?     // JSON stringified
+  newValue        String?     // JSON stringified
+  reason          String      // mandatory, min 10 chars enforced at API
+  correctedBy     String      // user.name
+  correctedByRole String      // user.role
+  adminPinUsed    Boolean     @default(false)
+  factorySynced   Boolean     @default(false)
+  factorySyncedAt DateTime?
+  factoryError    String?
+  createdAt       DateTime    @default(now())
+
+  @@index([weighmentId])
+  @@index([createdAt])
+  @@index([ticketNo])
+  @@index([factorySynced])
 }
 
 // ═══════════════════════════════════════════════

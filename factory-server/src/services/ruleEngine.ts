@@ -76,6 +76,65 @@ interface WeighmentContext {
   materialCategory: string | null;
 }
 
+async function checkDuplicateWeight(
+  ctx: WeighmentContext,
+  action: 'GROSS' | 'TARE',
+  newWeight: number,
+  pcId: string,
+): Promise<RuleResult | null> {
+  const rules = await loadRules();
+  // Master switch = the enabled flag on DUPLICATE_WEIGHT_WINDOW_MINUTES rule.
+  // loadRules() only returns enabled rules, so absence = disabled.
+  const windowRule = rules.find(r => r.key === 'DUPLICATE_WEIGHT_WINDOW_MINUTES');
+  if (!windowRule) return null;
+
+  const windowMin = parseFloat(windowRule.value) || 30;
+  const lookback = Math.max(1, Math.min(20, await getNumericRule('DUPLICATE_WEIGHT_LOOKBACK', 3)));
+  const toleranceKg = await getNumericRule('DUPLICATE_WEIGHT_TOLERANCE_KG', 0);
+
+  const since = new Date(Date.now() - windowMin * 60_000);
+  // Scope: same PC (weighbridge station). We compare against whichever field this action writes.
+  const weightField = action === 'GROSS' ? 'grossWeight' : 'tareWeight';
+  const timeField = action === 'GROSS' ? 'grossTime' : 'tareTime';
+  const pcField = action === 'GROSS' ? 'grossPcId' : 'tarePcId';
+
+  const recent = await prisma.weighment.findMany({
+    where: {
+      id: { not: ctx.id },
+      [pcField]: pcId,
+      [timeField]: { gte: since },
+      [weightField]: { not: null },
+    },
+    orderBy: { [timeField]: 'desc' },
+    take: lookback,
+    select: { ticketNo: true, vehicleNo: true, [weightField]: true, [timeField]: true } as Record<string, true>,
+  });
+
+  const match = (recent as Array<Record<string, unknown>>).find(r => {
+    const w = r[weightField] as number | null;
+    if (w == null) return false;
+    return Math.abs(w - newWeight) <= toleranceKg;
+  });
+
+  if (!match) {
+    return { passed: true, ruleKey: windowRule.key, ruleLabel: windowRule.label, message: '', canOverride: false };
+  }
+
+  const prevWt = match[weightField] as number;
+  const prevTicket = match.ticketNo as number | null;
+  const prevVeh = match.vehicleNo as string;
+  const prevTime = match[timeField] as Date;
+  const minsAgo = Math.round((Date.now() - new Date(prevTime).getTime()) / 60_000);
+
+  return {
+    passed: false,
+    ruleKey: windowRule.key,
+    ruleLabel: windowRule.label,
+    message: `Weight ${newWeight.toLocaleString('en-IN')} kg is identical to previous weighment T-${prevTicket} (${prevVeh}, ${prevWt.toLocaleString('en-IN')} kg, ${minsAgo} min ago). Digitizer may be frozen — press ESC on digitizer and re-weigh.`,
+    canOverride: true,
+  };
+}
+
 async function checkMinWeightInterval(ctx: WeighmentContext, action: 'GROSS' | 'TARE'): Promise<RuleResult | null> {
   const rules = await loadRules();
   const rule = rules.find(r => r.key === 'MIN_WEIGHT_INTERVAL_MINUTES');
@@ -122,6 +181,8 @@ async function checkMinWeightInterval(ctx: WeighmentContext, action: 'GROSS' | '
 export async function checkWeighmentRules(
   weighmentId: string,
   action: 'GROSS' | 'TARE',
+  newWeight?: number,
+  pcId?: string,
 ): Promise<RuleResult[]> {
   // Load weighment context
   const w = await prisma.weighment.findUnique({
@@ -147,6 +208,7 @@ export async function checkWeighmentRules(
   // Run all rule checks
   const checks = [
     checkMinWeightInterval(ctx, action),
+    newWeight != null ? checkDuplicateWeight(ctx, action, newWeight, pcId || 'web') : Promise.resolve(null),
     // Future rules added here:
     // checkMaxWeightLimit(ctx, action),
     // checkAllowedHours(ctx, action),
