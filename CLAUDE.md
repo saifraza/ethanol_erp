@@ -157,6 +157,24 @@ The ERP has two distinct UI styles:
 
 ---
 
+## ⚠ Factory Work — Mandatory Pre-Flight
+
+**Before making ANY change that touches `factory-server/`, `weighbridge/`, or anything that will be deployed to the factory PC, you MUST:**
+
+1. **Read `.claude/skills/factory-incidents-postmortem.md`** — the full incident timeline + permanent rules. The factory has been burned 7 times (2026-03-31 → 2026-04-08). Every rule in that file is written in blood. Do not guess — read the file.
+2. **Read `.claude/skills/factory-architecture.md`** — the architecture + deploy runbook.
+3. **Never deploy manually.** Always use `./factory-server/scripts/deploy.sh` — the script enforces prisma generate (local + cloud), service safety checks, and startup log scanning. Manual SCP is how incidents happen.
+4. **Check uncommitted state before touching factory files**: `git status factory-server/` — if there are uncommitted changes you don't recognize, investigate before editing, don't assume they're stale.
+5. **If you see Prisma `Unknown argument` or `Unknown field` errors** anywhere — the fix is ALWAYS: kill node → `prisma generate` (both schemas!) → restart via schtasks. Never a code change. This bug has shipped twice in one day (2026-04-08 gate entry + 2026-04-08 master-data cache).
+6. **If adding a field to any Prisma model** (factory, cloud, or weighbridge), grep for where it's referenced across systems — see `.claude/skills/weighbridge-add-product.md` for the cross-system field-mirroring contract.
+7. **When in doubt, ask the user before touching factory.** This is production and there are no maintenance windows. A wrong move = trucks piled up at the gate and a phone call from the plant manager.
+
+Routine checks when doing factory work:
+- Oracle + WtService must be RUNNING (deploy.sh verifies this)
+- Factory has TWO Prisma schemas: `prisma/schema.prisma` (local SQLite) + `prisma/cloud/schema.prisma` (cloud Postgres). Both must be kept in sync AND both must be regenerated on deploy.
+- Error handler in `factory-server/src/server.ts` surfaces Prisma error classes with actionable messages — if you find a new error class that operators hit, add a branch for it.
+- `run.bat` writes stdout/stderr to `logs/server-YYYYMMDD_HHMMSS.log` — always tail the newest log before guessing what's broken.
+
 ## Multi-System Architecture
 
 This ERP runs across 3 systems. When the user mentions a topic, use this table to route to the right codebase.

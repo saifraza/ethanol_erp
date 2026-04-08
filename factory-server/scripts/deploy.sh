@@ -70,8 +70,9 @@ $SCP -r factory-server/dist/* ${FACTORY_USER}@${FACTORY_HOST}:${REMOTE_DIR}/dist
 say "Copying public/ (frontend build) to server..."
 $SCP -r factory-server/public/* ${FACTORY_USER}@${FACTORY_HOST}:${REMOTE_DIR}/public/ || die "public SCP failed"
 
-say "Copying prisma/ schema..."
-$SCP -r factory-server/prisma/schema.prisma ${FACTORY_USER}@${FACTORY_HOST}:${REMOTE_DIR}/prisma/schema.prisma || die "prisma SCP failed"
+say "Copying prisma/ schemas (local + cloud)..."
+$SCP factory-server/prisma/schema.prisma ${FACTORY_USER}@${FACTORY_HOST}:${REMOTE_DIR}/prisma/schema.prisma || die "prisma local SCP failed"
+$SCP factory-server/prisma/cloud/schema.prisma ${FACTORY_USER}@${FACTORY_HOST}:${REMOTE_DIR}/prisma/cloud/schema.prisma || die "prisma cloud SCP failed"
 
 # Copy package.json + lock so we can detect dep drift
 say "Copying package.json + package-lock.json..."
@@ -90,12 +91,21 @@ ok "node stopped"
 # say "Reinstalling deps..."
 # $SSH "cd ${REMOTE_DIR} && npm ci --omit=dev" || die "npm ci failed"
 
-# ---------- 6. Prisma generate — MANDATORY ----------
+# ---------- 6. Prisma generate — MANDATORY, BOTH schemas ----------
 # This is the bug that killed gate entry for the entire day 2026-04-08.
 # Prisma client in node_modules/.prisma/client is stale after schema changes.
-say "Regenerating Prisma client (MANDATORY — do not skip)..."
-$SSH "cd ${REMOTE_DIR} && npx prisma generate" 2>&1 | tail -5 || die "prisma generate FAILED — server will not start cleanly. Investigate on the PC."
-ok "Prisma client regenerated"
+#
+# IMPORTANT: factory-server has TWO Prisma schemas:
+#   1. prisma/schema.prisma          → local SQLite (factory's own data)
+#   2. prisma/cloud/schema.prisma    → cloud Postgres (master data puller)
+# Both MUST be regenerated. Missing the cloud client caused a second silent
+# failure on 2026-04-08 (master-data cache couldn't select `division` from
+# cloud InventoryItem) — fixed by always running both.
+say "Regenerating Prisma client — local schema..."
+$SSH "cd ${REMOTE_DIR} && npx prisma generate" 2>&1 | tail -5 || die "prisma generate (local) FAILED"
+say "Regenerating Prisma client — cloud schema..."
+$SSH "cd ${REMOTE_DIR} && npx prisma generate --schema=prisma/cloud/schema.prisma" 2>&1 | tail -5 || die "prisma generate (cloud) FAILED"
+ok "Prisma clients regenerated (local + cloud)"
 
 # ---------- 7. Restart via schtasks ----------
 say "Relaunching FactoryServer scheduled task..."
@@ -117,13 +127,14 @@ if [[ "$STATUS" != "ok" ]]; then
 fi
 ok "health OK (status=${STATUS}, uptime=${UPTIME}s)"
 
-say "Checking /api/weighbridge/summary (requires DB)..."
-SUM=$(curl -s --max-time 10 "$SUMMARY_URL" || echo '{}')
-if ! echo "$SUM" | grep -q '"totalTrucks"'; then
-  warn "Summary endpoint response unexpected: $SUM"
-  warn "DB connection may be down. CHECK MANUALLY before leaving the machine."
+say "Checking /api/master-data/status (verifies cloud Prisma client is healthy)..."
+MD=$(curl -s --max-time 10 "http://${FACTORY_HOST}:5000/api/master-data/status" || echo '{}')
+if ! echo "$MD" | grep -q '"source"'; then
+  warn "master-data/status response unexpected: $MD"
+  warn "Cloud Prisma client may be broken. CHECK MANUALLY."
 else
-  ok "DB query OK"
+  STALE=$(echo "$MD" | python3 -c "import json,sys; print(json.load(sys.stdin).get('isStale'))" 2>/dev/null || echo "?")
+  ok "master-data reachable (isStale=${STALE})"
 fi
 
 # ---------- 9. Tail server log for startup errors ----------
@@ -133,8 +144,21 @@ if [[ -n "$LATEST_LOG" ]]; then
   echo "--- tail $LATEST_LOG ---"
   $SSH "powershell -Command \"Get-Content C:\\mspil\\factory-server\\logs\\${LATEST_LOG} -Tail 30\"" 2>&1
   echo "--- end log ---"
-  # Fail if any [ERROR] appeared during startup
-  if $SSH "powershell -Command \"Get-Content C:\\mspil\\factory-server\\logs\\${LATEST_LOG} | Select-String -Pattern '\\[ERROR\\]|PrismaClientKnown|Unknown argument' -SimpleMatch:\$false\"" 2>&1 | grep -q .; then
+  # Fail if any error signature appeared during startup.
+  # These patterns catch the known classes of silent-failure bugs:
+  #   [ERROR]                      — anything we explicitly logged as error
+  #   PrismaClientKnown            — any Prisma runtime violation
+  #   Unknown argument             — field on schema that Prisma client doesn't know (2026-04-08 gate entry)
+  #   Unknown field                — select on field that Prisma client doesn't know (2026-04-08 cloud puller)
+  #   Invalid .* invocation        — Prisma create/update/findMany with bad shape
+  #   EADDRINUSE                   — port already bound (didn't start cleanly)
+  #   Cannot find module           — missing dependency
+  ERROR_PATTERNS='\[ERROR\]|PrismaClientKnown|Unknown argument|Unknown field|Invalid `.*` invocation|EADDRINUSE|Cannot find module'
+  if $SSH "powershell -Command \"Get-Content C:\\mspil\\factory-server\\logs\\${LATEST_LOG} | Select-String -Pattern '${ERROR_PATTERNS}'\"" 2>&1 | grep -q .; then
+    echo
+    echo -e "${R}--- matching error lines ---${N}"
+    $SSH "powershell -Command \"Get-Content C:\\mspil\\factory-server\\logs\\${LATEST_LOG} | Select-String -Pattern '${ERROR_PATTERNS}'\"" 2>&1
+    echo -e "${R}--- end ---${N}"
     die "Errors detected in startup log. Deploy NOT successful — investigate immediately."
   fi
   ok "no startup errors"

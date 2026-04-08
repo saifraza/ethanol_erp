@@ -80,10 +80,126 @@ app.get('*', (_req, res) => {
   });
 });
 
-// Error handler
-app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error('[ERROR]', err.message);
-  res.status(500).json({ error: 'Internal server error' });
+// ── Error Handler ───────────────────────────────────────────────────────────
+// This is the last line of defense. Three jobs:
+//   1. Always log the FULL error (stack, message, all metadata) to stdout so
+//      run.bat captures it in logs/server-*.log. Never swallow detail.
+//   2. Surface ACTIONABLE messages to the operator. "Internal server error"
+//      is useless — "PO #61 is closed" or "vehicle already inside the gate"
+//      lets the operator fix the problem without calling the developer.
+//   3. Classify Prisma errors specifically. These are the #1 cause of factory
+//      outages (gate entry 2026-04-08, ethanol sync 2026-04-07) and every
+//      minute of operator confusion costs trucks at the gate.
+app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  const route = `${req.method} ${req.path}`;
+
+  // ALWAYS log the full error — this is what makes incidents debuggable later.
+  console.error(`[ERROR] ${route}:`, err.message);
+  if (err.stack) console.error(err.stack);
+
+  // Try to classify the error and give the operator something useful.
+  const errName = err.constructor?.name || '';
+  const errMsg = err.message || '';
+
+  // ── Prisma: field/argument mismatch (schema drift) ───────────────────────
+  // Signature: "Unknown argument `foo`" or "Unknown field `foo`"
+  // Cause: deployed code writes a field the Prisma client doesn't know about.
+  // Fix: `npx prisma generate` + restart (see factory-incidents-postmortem.md).
+  // We tell the operator it's a server problem, not their fault.
+  if (/Unknown argument|Unknown field/.test(errMsg)) {
+    const field = errMsg.match(/`([^`]+)`/)?.[1] || 'unknown';
+    res.status(500).json({
+      error: 'server_schema_drift',
+      message: `Server has a schema mismatch (field: ${field}). This is a deployment bug, not your input. Please call support.`,
+      field,
+      route,
+    });
+    return;
+  }
+
+  // ── Prisma: unique constraint violation ──────────────────────────────────
+  // Signature: "Unique constraint failed on the fields: (`foo`)"
+  // Operator cause: submitting a duplicate (vehicle already inside, ticket
+  // number conflict, localId collision). Tell them what's duplicate.
+  if (errName.includes('PrismaClientKnownRequestError') && /P2002|Unique constraint/.test(errMsg)) {
+    const field = errMsg.match(/fields: \(`([^`]+)`\)/)?.[1] || 'value';
+    res.status(409).json({
+      error: 'duplicate',
+      message: `This ${field} already exists. Check if the vehicle or ticket is already in the system.`,
+      field,
+      route,
+    });
+    return;
+  }
+
+  // ── Prisma: foreign key violation ────────────────────────────────────────
+  // Signature: "Foreign key constraint failed" (P2003)
+  // Operator cause: picking a PO / material / supplier that no longer exists
+  // (deleted or not yet synced from cloud).
+  if (errName.includes('PrismaClientKnownRequestError') && /P2003|Foreign key/.test(errMsg)) {
+    res.status(400).json({
+      error: 'invalid_reference',
+      message: 'The PO, supplier, or material you picked is no longer valid. Refresh the page and try again.',
+      route,
+    });
+    return;
+  }
+
+  // ── Prisma: record not found ─────────────────────────────────────────────
+  // Signature: P2025 "Record to update not found"
+  if (errName.includes('PrismaClientKnownRequestError') && /P2025/.test(errMsg)) {
+    res.status(404).json({
+      error: 'not_found',
+      message: 'The record you tried to update no longer exists. Refresh and try again.',
+      route,
+    });
+    return;
+  }
+
+  // ── Prisma: initialization / connection error ───────────────────────────
+  // Signature: PrismaClientInitializationError — DB connection failed.
+  if (errName.includes('PrismaClientInitializationError')) {
+    res.status(503).json({
+      error: 'db_unreachable',
+      message: 'Database is unreachable. This is a server problem — please wait 30 seconds and try again, or call support if it persists.',
+      route,
+    });
+    return;
+  }
+
+  // ── Prisma: validation error (bad input type) ────────────────────────────
+  if (errName.includes('PrismaClientValidationError')) {
+    res.status(400).json({
+      error: 'bad_input',
+      message: 'Invalid data sent to server. Check that all required fields are filled and numbers are not empty.',
+      route,
+      detail: errMsg.split('\n')[0], // first line only, no stack
+    });
+    return;
+  }
+
+  // ── HTTP errors thrown by our own code (AppError pattern) ───────────────
+  // If someone threw with a .status property, honor it.
+  const status = (err as Error & { status?: number }).status;
+  if (typeof status === 'number' && status >= 400 && status < 600) {
+    res.status(status).json({
+      error: errName || 'error',
+      message: errMsg,
+      route,
+    });
+    return;
+  }
+
+  // ── Generic fallback ─────────────────────────────────────────────────────
+  // Last resort — still better than the old "Internal server error". Include
+  // the error class name so a quick glance at the browser console tells the
+  // developer what kind of failure it was without needing to SSH into the PC.
+  res.status(500).json({
+    error: 'server_error',
+    message: 'Something went wrong on the server. Please try again or call support.',
+    errorClass: errName || 'Error',
+    route,
+  });
 });
 
 // Send factory server's own heartbeat to cloud ERP
