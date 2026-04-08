@@ -36,11 +36,23 @@ export async function handleDDGSOutbound(w: WeighmentInput, ctx: PushContext): P
   const tareTimeVal = w.first_weight_at ? new Date(w.first_weight_at) : undefined;
   const grossTimeVal = w.second_weight_at ? new Date(w.second_weight_at) : undefined;
 
-  // ── 1. STRICT contract match (before tx — read only) ──
-  // Exact buyerName (case-insensitive) OR exact GSTIN, ACTIVE, within dates, has remaining qty
+  // ── 1. Contract resolution ──
+  // PREFERRED: explicit cloud_contract_id picked at gate entry. Immune to
+  // mid-flight buyer name edits and ambiguous-name false-matches. Set on the
+  // factory Weighment via the gate-entry POST and forwarded by syncWorker.
+  // FALLBACK (legacy / no picker): STRICT name match — exact buyerName
+  // (case-insensitive), ACTIVE, within dates, has remaining qty, single match.
   let contract: any = null;
   let matchAmbiguous = false;
-  if (partyName) {
+  if (w.cloud_contract_id) {
+    contract = await prisma.dDGSContract.findUnique({
+      where: { id: w.cloud_contract_id },
+    });
+    // If the picked contract was deleted between gate entry and sync, leave
+    // contract = null and the truck flows through with contractId=null
+    // (operator will see it on the unlinked panel and link it manually).
+  }
+  if (!contract && partyName) {
     const now = new Date();
     const candidates = await prisma.dDGSContract.findMany({
       where: {

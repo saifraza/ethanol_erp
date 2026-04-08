@@ -86,6 +86,12 @@ model Weighment {
   labTestedBy     String?
   // Ethanol outbound fields
   cloudGatePassId String?  // DispatchTruck UUID on cloud ERP (set at gate entry for ethanol)
+  // DDGS outbound: cloud DDGSContract UUID picked at gate entry (operator selects from
+  // contract dropdown). Persisted so the cloud handler binds the truck to the EXPLICIT
+  // contract instead of re-resolving by buyer name at sync time. Without this, a
+  // contract edit/delete between gate entry and sync silently relinks or nulls the
+  // truck. (Codex audit 2026-04-08, finding #1.)
+  cloudContractId String?
   quantityBL      Float?   // Volume in Bulk Litres (ethanol flow meter)
   strength        Float?   // Alcohol strength %
   sealNo          String?  // Seal number on tanker

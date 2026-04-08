@@ -27,56 +27,82 @@ export async function handleNonEthanolOutbound(w: WeighmentInput, ctx: PushConte
   }
 
   const txResult = await prisma.$transaction(async (tx) => {
-    // 1. Find or create DDGSDispatchTruck by sourceWbId
-    const existingDispatch = await tx.dDGSDispatchTruck.findFirst({ where: { sourceWbId: w.id } });
-    const dispatch = existingDispatch
-      ? await tx.dDGSDispatchTruck.update({
-          where: { id: existingDispatch.id },
-          data: { weightGross: grossKg, weightTare: tareKg, weightNet: netMT, status: 'GROSS_WEIGHED', grossTime: grossTimeVal },
-        })
-      : await tx.dDGSDispatchTruck.create({
-          data: {
-            sourceWbId: w.id, date: dateVal, vehicleNo: w.vehicle_no, partyName,
-            driverName: w.driver_name || null, driverMobile: w.driver_mobile || null,
-            transporterName: w.transporter || null,
-            weightGross: grossKg, weightTare: tareKg, weightNet: netMT,
-            bags: w.bags || 0, status: 'GROSS_WEIGHED',
-            gateInTime: gateInVal, tareTime: tareTimeVal, grossTime: grossTimeVal,
-            remarks: `${ctx.wbRef} | ${w.remarks || ''}`.trim(),
-            shipToCustomerId: shipToFkValid,
-            shipToName: w.ship_to_name || null,
-            shipToGstin: w.ship_to_gstin || null,
-            shipToAddress: w.ship_to_address || null,
-            shipToState: w.ship_to_state || null,
-            shipToPincode: w.ship_to_pincode || null,
-          },
-        });
+    // 1. Atomic upsert DDGSDispatchTruck by sourceWbId @unique.
+    // (Old findFirst→create was a TOCTOU race — two concurrent retries
+    //  could both miss the find and both insert, even inside a tx.)
+    const dispatch = await tx.dDGSDispatchTruck.upsert({
+      where: { sourceWbId: w.id },
+      update: {
+        weightGross: grossKg,
+        weightTare: tareKg,
+        weightNet: netMT,
+        grossTime: grossTimeVal,
+        // Promote partial-state stub if one exists; never regress terminal states.
+        status: 'GROSS_WEIGHED',
+      },
+      create: {
+        sourceWbId: w.id,
+        date: dateVal,
+        vehicleNo: w.vehicle_no,
+        partyName,
+        driverName: w.driver_name || null,
+        driverMobile: w.driver_mobile || null,
+        transporterName: w.transporter || null,
+        weightGross: grossKg,
+        weightTare: tareKg,
+        weightNet: netMT,
+        bags: w.bags || 0,
+        status: 'GROSS_WEIGHED',
+        gateInTime: gateInVal,
+        tareTime: tareTimeVal,
+        grossTime: grossTimeVal,
+        remarks: `${ctx.wbRef} | ${w.remarks || ''}`.trim(),
+        shipToCustomerId: shipToFkValid,
+        shipToName: w.ship_to_name || null,
+        shipToGstin: w.ship_to_gstin || null,
+        shipToAddress: w.ship_to_address || null,
+        shipToState: w.ship_to_state || null,
+        shipToPincode: w.ship_to_pincode || null,
+      },
+    });
 
-    // 2. Find or create Shipment by sourceWbId
-    const existingShipment = await tx.shipment.findFirst({ where: { sourceWbId: w.id } });
-    const shipment = existingShipment
-      ? await tx.shipment.update({
-          where: { id: existingShipment.id },
-          data: { weightTare: tareKg, weightGross: grossKg, weightNet: netKg, status: 'GROSS_WEIGHED', grossTime: grossTimeVal ? grossTimeVal.toISOString() : undefined },
-        })
-      : await tx.shipment.create({
-          data: {
-            sourceWbId: w.id, productName: w.material || 'DDGS', customerName: partyName,
-            vehicleNo: w.vehicle_no, driverName: w.driver_name || null, driverMobile: w.driver_mobile || null,
-            transporterName: w.transporter || null, vehicleType: w.vehicle_type || null,
-            weightTare: tareKg, weightGross: grossKg, weightNet: netKg,
-            bags: w.bags || null, status: 'GROSS_WEIGHED',
-            gateInTime: gateInVal.toISOString(), tareTime: tareTimeVal ? tareTimeVal.toISOString() : null,
-            grossTime: grossTimeVal ? grossTimeVal.toISOString() : null,
-            paymentStatus: 'NOT_REQUIRED', remarks: `WB:${w.id}`,
-            shipToCustomerId: w.ship_to_customer_id || null,
-            shipToName: w.ship_to_name || null,
-            shipToGstin: w.ship_to_gstin || null,
-            shipToAddress: w.ship_to_address || null,
-            shipToState: w.ship_to_state || null,
-            shipToPincode: w.ship_to_pincode || null,
-          },
-        });
+    // 2. Atomic upsert Shipment by sourceWbId @unique
+    const shipment = await tx.shipment.upsert({
+      where: { sourceWbId: w.id },
+      update: {
+        weightTare: tareKg,
+        weightGross: grossKg,
+        weightNet: netKg,
+        status: 'GROSS_WEIGHED',
+        grossTime: grossTimeVal ? grossTimeVal.toISOString() : undefined,
+      },
+      create: {
+        sourceWbId: w.id,
+        productName: w.material || 'DDGS',
+        customerName: partyName,
+        vehicleNo: w.vehicle_no,
+        driverName: w.driver_name || null,
+        driverMobile: w.driver_mobile || null,
+        transporterName: w.transporter || null,
+        vehicleType: w.vehicle_type || null,
+        weightTare: tareKg,
+        weightGross: grossKg,
+        weightNet: netKg,
+        bags: w.bags || null,
+        status: 'GROSS_WEIGHED',
+        gateInTime: gateInVal.toISOString(),
+        tareTime: tareTimeVal ? tareTimeVal.toISOString() : null,
+        grossTime: grossTimeVal ? grossTimeVal.toISOString() : null,
+        paymentStatus: 'NOT_REQUIRED',
+        remarks: `WB:${w.id}`,
+        shipToCustomerId: w.ship_to_customer_id || null,
+        shipToName: w.ship_to_name || null,
+        shipToGstin: w.ship_to_gstin || null,
+        shipToAddress: w.ship_to_address || null,
+        shipToState: w.ship_to_state || null,
+        shipToPincode: w.ship_to_pincode || null,
+      },
+    });
 
     return { dispatch, shipment };
   });

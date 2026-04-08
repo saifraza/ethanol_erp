@@ -56,8 +56,14 @@ export function getMasterData(): MasterCache {
   return cache;
 }
 
-/** Get cache stats */
+/** Cache is considered stale if the last successful sync is older than this. */
+const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
+/** Get cache stats including staleness */
 export function getCacheStats() {
+  const lastSyncMs = cache.lastCloudSync ? new Date(cache.lastCloudSync).getTime() : 0;
+  const ageMs = lastSyncMs > 0 ? Date.now() - lastSyncMs : null;
+  const isStale = ageMs == null || ageMs > STALE_THRESHOLD_MS;
   return {
     source: cache.source,
     suppliers: cache.suppliers.length,
@@ -68,6 +74,10 @@ export function getCacheStats() {
     vehicles: cache.vehicles.length,
     lastCloudSync: cache.lastCloudSync,
     lastCloudCheck: cache.lastCloudCheck,
+    ageMs,
+    ageMinutes: ageMs != null ? Math.floor(ageMs / 60000) : null,
+    isStale,
+    staleThresholdMs: STALE_THRESHOLD_MS,
   };
 }
 

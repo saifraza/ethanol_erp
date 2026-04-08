@@ -110,6 +110,9 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
     customer_name: w.direction === 'OUTBOUND' ? (w.supplierName || undefined) : undefined,
     // Ethanol outbound: cloud DispatchTruck link + tanker data
     cloud_gate_pass_id: w.cloudGatePassId || undefined,
+    // DDGS outbound: cloud DDGSContract picked at gate entry — cloud handler
+    // prefers this over name-based contract resolution.
+    cloud_contract_id: w.cloudContractId || undefined,
     quantity_bl: w.quantityBL ?? undefined,
     ethanol_strength: w.strength ?? undefined,
     seal_no: w.sealNo || undefined,

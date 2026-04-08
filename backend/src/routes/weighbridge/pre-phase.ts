@@ -190,12 +190,18 @@ async function createOrUpdateDdgsTruckStub(w: WeighmentInput, ctx: PushContext):
   const partyName = (w.customer_name || w.supplier_name || '').trim();
   const wbRef = `WB:${w.id} | Ticket #${w.ticket_no} | ${w.weight_source}`;
 
-  // Strict contract match — same logic as handleDDGSOutbound, so the truck is
-  // contract-linked from first sight (the cloud DDGS contracts page filters by
-  // contractId IS NOT NULL). Match-fail leaves contractId null and the truck
-  // appears on /process/ddgs-dispatch instead.
+  // Contract resolution — prefer the EXPLICIT cloud_contract_id picked by
+  // the operator at gate entry (immune to mid-flight buyer name edits).
+  // Fall back to STRICT name match for legacy weighments without the field.
   let contract: any = null;
-  if (partyName) {
+  if (w.cloud_contract_id) {
+    contract = await prisma.dDGSContract.findUnique({
+      where: { id: w.cloud_contract_id },
+    });
+    // If the chosen contract was deleted between gate entry and sync, leave
+    // contract = null so the truck still gets a stub (operator links manually).
+  }
+  if (!contract && partyName) {
     const now = new Date();
     const candidates = await prisma.dDGSContract.findMany({
       where: {

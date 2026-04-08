@@ -331,7 +331,15 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
 
     if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
 
-    const isIntraState = invoice.customer.state?.toLowerCase().includes('madhya pradesh');
+    // Prefer the stored invoice.supplyType (snapshot at write time) over
+    // recomputing from the customer's CURRENT state. Editing a customer's
+    // state must NOT retroactively flip the GST split on historical PDFs.
+    // Fall back to current-state computation only for legacy rows where
+    // supplyType wasn't populated by the writing handler.
+    const storedSupplyType = invoice.supplyType;
+    const isIntraState = storedSupplyType
+      ? storedSupplyType === 'INTRA_STATE'
+      : !!invoice.customer.state?.toLowerCase().includes('madhya pradesh');
     const lifting = invoice.ethanolLiftings?.[0] || null;
     const ddgsLink = invoice.ddgsContractDispatches?.[0] || null;
     const ddgsTruck = ddgsLink?.ddgsDispatchTruck || null;
@@ -353,7 +361,7 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
             || (ddgsContract?.paymentTermsDays ? `${ddgsContract.paymentTermsDays} Days` : null)
             || ddgsContract?.paymentMode
             || null),
-      supplyType: isIntraState ? 'INTRA_STATE' : 'INTER_STATE',
+      supplyType: storedSupplyType || (isIntraState ? 'INTRA_STATE' : 'INTER_STATE'),
       customer: {
         name: invoice.customer.name,
         shortName: invoice.customer.shortName,
@@ -366,10 +374,23 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
       },
       productName: invoice.productName,
       hsnCode: (() => {
+        // TODO(deferred): persist hsnCode as a snapshot column on Invoice at
+        // write time so this map only handles legacy rows. Until then, derive
+        // from productName. Order matters: jobwork checks come BEFORE product
+        // checks because "JOBWORK CHARGES FOR DDGS" must yield 998817, not 2303.
         const p = (invoice.productName || '').toUpperCase();
-        if (p.includes('JOBWORK') || p.includes('JOB WORK')) return p.includes('DDGS') ? '998817' : '998842';
+        if (p.includes('JOBWORK') || p.includes('JOB WORK')) {
+          if (p.includes('DDGS')) return '998817';
+          if (p.includes('SUGAR')) return '998817';
+          return '998842'; // ethanol jobwork
+        }
         if (p.includes('ETHANOL')) return '22072000';
         if (p.includes('DDGS')) return '23033000';
+        if (p.includes('SUGAR')) return '17019990';
+        if (p.includes('PRESS MUD') || p.includes('PRESSMUD')) return '23031000';
+        if (p.includes('SCRAP')) return '7204';
+        if (p.includes('FLY ASH') || p.includes('ASH')) return '26219000';
+        // Unknown product — fall back to generic services SAC; flag in remarks for review.
         return '998817';
       })(),
       // DDGS invoices render quantity in KG and rate in ₹/kg (matches reference Mash invoice).

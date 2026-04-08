@@ -74,6 +74,10 @@ export const weighmentSchema = z.object({
   lab_foreign_matter: z.number().nullable().optional(),
   lab_remarks: z.string().nullable().optional(),
   cloud_gate_pass_id: z.string().nullable().optional(),
+  // DDGS outbound: cloud DDGSContract UUID picked at gate entry. When set, the
+  // DDGS handler binds the truck to this contract directly instead of
+  // re-resolving by buyer name (which can race against contract edits).
+  cloud_contract_id: z.string().nullable().optional(),
   quantity_bl: z.number().nullable().optional(),
   ethanol_strength: z.number().nullable().optional(),
   seal_no: z.string().nullable().optional(),

@@ -59,7 +59,12 @@ function fmtIST(d: Date | null | undefined): string {
   return `${dd}/${mm}/${yy} ${hh}:${mi}`;
 }
 
-/** Atomic ticket number from Counter table */
+/** Atomic ticket number from Counter table.
+ *  NOTE: this burns a number on any downstream failure → gaps in the sequence.
+ *  For new code that creates a Weighment, prefer wrapping the counter upsert
+ *  AND the create() in a single prisma.$transaction so the number rolls back
+ *  if the create fails.
+ */
 async function nextTicketNo(): Promise<number> {
   const counter = await prisma.counter.upsert({
     where: { id: 'ticket_no' },
@@ -208,6 +213,7 @@ router.get('/weighments', requireAuth, asyncHandler(async (req: AuthRequest, res
   const date = req.query.date as string;
   const pcId = req.query.pcId as string;
   const take = Math.min(parseInt(req.query.limit as string) || 50, 500);
+  const skip = Math.max(parseInt(req.query.offset as string) || 0, 0);
 
   const where: Record<string, unknown> = {};
   if (date) {
@@ -216,14 +222,18 @@ router.get('/weighments', requireAuth, asyncHandler(async (req: AuthRequest, res
   }
   if (pcId) where.pcId = pcId;
 
-  const weighments = await prisma.weighment.findMany({
-    where,
-    take,
-    orderBy: { createdAt: 'desc' },
-    select: LIST_SELECT,
-  });
+  const [weighments, total] = await Promise.all([
+    prisma.weighment.findMany({
+      where,
+      take,
+      skip,
+      orderBy: { createdAt: 'desc' },
+      select: LIST_SELECT,
+    }),
+    prisma.weighment.count({ where }),
+  ]);
 
-  res.json(weighments);
+  res.json({ weighments, total, limit: take, offset: skip });
 }));
 
 // GET /api/weighbridge/stats — today's summary (legacy)
@@ -263,6 +273,8 @@ router.post('/gate-entry', requireAuth, requireRole('GATE_ENTRY', 'ADMIN'), asyn
     sellerPhone, sellerVillage, sellerAadhaar,
     rate, deductions, deductionReason, paymentMode, paymentRef,
     cloudGatePassId,
+    // DDGS outbound: cloud DDGSContract UUID selected at gate entry
+    cloudContractId,
     // Ship-To (outbound only; omit = Bill-To == Ship-To)
     shipToCustomerId, shipToName, shipToGstin, shipToAddress, shipToState, shipToPincode,
   } = req.body;
@@ -273,7 +285,8 @@ router.post('/gate-entry', requireAuth, requireRole('GATE_ENTRY', 'ADMIN'), asyn
   }
 
   const localId = randomUUID();
-  const ticketNo = await nextTicketNo();
+  // ticketNo is assigned inside the create transaction below so the counter
+  // only commits when the create succeeds (no gaps from validation/DB errors).
   const shift = getShift();
   const gateEntryAt = new Date();
 
@@ -364,10 +377,16 @@ router.post('/gate-entry', requireAuth, requireRole('GATE_ENTRY', 'ADMIN'), asyn
     } catch { /* cloud unreachable — operator-supplied values are still valid */ }
   }
 
-  const weighment = await prisma.weighment.create({
+  const weighment = await prisma.$transaction(async (tx) => {
+    const counter = await tx.counter.upsert({
+      where: { id: 'ticket_no' },
+      create: { id: 'ticket_no', value: 1 },
+      update: { value: { increment: 1 } },
+    });
+    return tx.weighment.create({
     data: {
       localId,
-      ticketNo,
+      ticketNo: counter.value,
       pcId: 'web',
       pcName: 'Web UI',
       vehicleNo: vehicleNo.toUpperCase().trim(),
@@ -402,6 +421,8 @@ router.post('/gate-entry', requireAuth, requireRole('GATE_ENTRY', 'ADMIN'), asyn
       labStatus,
       // Ethanol outbound: link to cloud DispatchTruck
       cloudGatePassId: cloudGatePassId || null,
+      // DDGS outbound: link to cloud DDGSContract picked at gate entry
+      cloudContractId: cloudContractId || null,
       // Ship-To (outbound; null = Bill-To == Ship-To)
       shipToCustomerId: !isInbound ? (shipToCustomerId || null) : null,
       shipToName: !isInbound ? resolvedShipToName : null,
@@ -410,6 +431,7 @@ router.post('/gate-entry', requireAuth, requireRole('GATE_ENTRY', 'ADMIN'), asyn
       shipToState: !isInbound ? resolvedShipToState : null,
       shipToPincode: !isInbound ? resolvedShipToPincode : null,
     },
+    });
   });
 
   res.status(201).json(weighment);

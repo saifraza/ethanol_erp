@@ -82,6 +82,7 @@ export default function GateEntry() {
   const [showVehicleSuggestions, setShowVehicleSuggestions] = useState(false);
   const [masterLoading, setMasterLoading] = useState(true);
   const [masterError, setMasterError] = useState(false);
+  const [masterStaleMin, setMasterStaleMin] = useState<number | null>(null);
   const isEthanol = direction === 'OUTBOUND' && materialName === 'Ethanol';
   const isDdgsOut = direction === 'OUTBOUND' && materialName === 'DDGS';
   const selectedDdgsContract = ddgsContracts.find(c => c.id === ddgsContractId);
@@ -101,6 +102,15 @@ export default function GateEntry() {
       setVehicles(data.vehicles || []);
       setEthContracts(data.ethContracts || []);
       setDdgsContracts(data.ddgsContracts || []);
+      // Check staleness from /api/master-data/status (separate call, cheap)
+      try {
+        const stat = await api.get('/master-data/status');
+        if (stat.data?.isStale && typeof stat.data.ageMinutes === 'number') {
+          setMasterStaleMin(stat.data.ageMinutes);
+        } else {
+          setMasterStaleMin(null);
+        }
+      } catch { setMasterStaleMin(null); }
     } catch {
       setMasterError(true);
     } finally {
@@ -183,6 +193,7 @@ export default function GateEntry() {
   const handleSubmit = async () => {
     if (!vehicleNo) { alert('Vehicle number is required'); return; }
     if (isEthanol && !ethContractId) { alert('Select an ethanol contract'); return; }
+    if (isDdgsOut && !ddgsContractId) { alert('Select a DDGS contract'); return; }
     if (purchaseType === 'TRADER' && !selectedTraderId) { alert('Select a trader'); return; }
     if (purchaseType === 'TRADER' && (!rate || parseFloat(rate) <= 0)) { alert('Rate is required for trader purchases'); return; }
     if (purchaseType === 'TRADER' && !materialName) { alert('Select a material/product'); return; }
@@ -228,6 +239,12 @@ export default function GateEntry() {
         body.supplierId = selectedTraderId || undefined;
         body.rate = rate ? parseFloat(rate) : undefined;
         // supplierName is already set from trader selection
+      }
+      // DDGS outbound: persist the explicit contract id so the cloud handler binds
+      // the truck to THIS contract instead of re-resolving by buyer name (which
+      // races against contract edits/deletes between gate entry and sync).
+      if (isDdgsOut && ddgsContractId) {
+        body.cloudContractId = ddgsContractId;
       }
       // For ethanol: create DispatchTruck on cloud ERP FIRST (blocking — must succeed).
       // If the local factory POST fails afterwards, roll back the cloud record so we
@@ -284,7 +301,10 @@ export default function GateEntry() {
         <div className="flex items-center gap-3">
           {masterLoading && <span className="text-xs text-yellow-400 uppercase tracking-widest animate-pulse">Syncing cloud data...</span>}
           {masterError && <span className="text-xs text-red-400 uppercase tracking-widest">Cloud data unavailable — manual entry enabled</span>}
-          {!masterLoading && !masterError && <span className="text-xs text-green-400 uppercase tracking-widest">Cloud data loaded</span>}
+          {!masterLoading && !masterError && masterStaleMin != null && (
+            <span className="text-xs text-orange-400 uppercase tracking-widest font-bold">⚠ Cloud data stale ({masterStaleMin} min) — verify before submitting</span>
+          )}
+          {!masterLoading && !masterError && masterStaleMin == null && <span className="text-xs text-green-400 uppercase tracking-widest">Cloud data loaded</span>}
           <span className="text-xs text-slate-500 uppercase tracking-widest">Today: {todayCount} trucks</span>
         </div>
       </div>
