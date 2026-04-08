@@ -107,19 +107,22 @@ export default function CashVouchers() {
   // Client-side purpose bucket filter (Fuel/RM/Contractor) — keyword based since
   // CashVoucher has no FK to vendor/contractor; we infer from category + purpose text.
   const filteredVouchers = useMemo(() => {
-    if (purposeFilter === 'ALL') return vouchers;
     const FUEL_KW = ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'biomass', 'fuel'];
     const RM_KW = ['maize', 'corn', 'broken rice', 'grain', 'sorghum', 'molasses', 'rice'];
     const CONTRACT_KW = ['contractor', 'contract', 'labour', 'labor', 'civil', 'manpower'];
     return vouchers.filter((v) => {
-      const text = `${v.purpose || ''} ${v.payeeName || ''}`.toLowerCase();
-      const cat = (v.category || '').toUpperCase();
-      if (purposeFilter === 'FUEL') return cat === 'FUEL' || FUEL_KW.some(k => text.includes(k));
-      if (purposeFilter === 'RAW_MATERIAL') return cat === 'MATERIAL' || RM_KW.some(k => text.includes(k));
-      if (purposeFilter === 'CONTRACTOR') return cat === 'LABOUR' || CONTRACT_KW.some(k => text.includes(k));
+      if (statusFilter !== 'ALL' && v.status !== statusFilter) return false;
+      if (typeFilter !== 'ALL' && v.type !== typeFilter) return false;
+      if (purposeFilter !== 'ALL') {
+        const text = `${v.purpose || ''} ${v.payeeName || ''}`.toLowerCase();
+        const cat = (v.category || '').toUpperCase();
+        if (purposeFilter === 'FUEL' && !(cat === 'FUEL' || FUEL_KW.some(k => text.includes(k)))) return false;
+        if (purposeFilter === 'RAW_MATERIAL' && !(cat === 'MATERIAL' || RM_KW.some(k => text.includes(k)))) return false;
+        if (purposeFilter === 'CONTRACTOR' && !(cat === 'LABOUR' || CONTRACT_KW.some(k => text.includes(k)))) return false;
+      }
       return true;
     });
-  }, [vouchers, purposeFilter]);
+  }, [vouchers, statusFilter, typeFilter, purposeFilter]);
 
   // Pending POs awaiting cash (Fuel/RM/Contractor only)
   const [pendingPOs, setPendingPOs] = useState<PendingPO[]>([]);
@@ -197,9 +200,9 @@ export default function CashVouchers() {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const params: Record<string, string> = { limit: '200' };
-      if (statusFilter !== 'ALL') params.status = statusFilter;
-      if (typeFilter !== 'ALL') params.type = typeFilter;
+      // Fetch all vouchers once; status/type/purpose filters are applied client-side
+      // for instant response. Only date range triggers a refetch.
+      const params: Record<string, string> = { limit: '500' };
       if (dateFrom) params.from = dateFrom;
       if (dateTo) params.to = dateTo;
 
@@ -214,7 +217,7 @@ export default function CashVouchers() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, typeFilter, dateFrom, dateTo]);
+  }, [dateFrom, dateTo]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
