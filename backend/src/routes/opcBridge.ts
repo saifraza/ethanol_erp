@@ -851,6 +851,9 @@ let _latestHeartbeat: {
   health: { scannerAlive: boolean; syncAlive: boolean; apiAlive: boolean; threadRestarts: Record<string, number> };
   system: { cpuPercent: number; memoryMb: number; diskFreeGb: number; sleepDisabled: boolean };
   version: string;
+  // 2026-04-08 hardening: liveness proof from scanner thread itself (not just is_alive())
+  lastScanCompletedAt?: string | null;
+  lastScanAgeSeconds?: number | null;
 } | null = null;
 
 const heartbeatSchema = z.object({
@@ -872,6 +875,9 @@ const heartbeatSchema = z.object({
     sleepDisabled: z.boolean(),
   }),
   version: z.string().default('unknown'),
+  // Optional, older bridges won't send these
+  lastScanCompletedAt: z.string().nullable().optional(),
+  lastScanAgeSeconds: z.number().nullable().optional(),
 });
 
 // Track alert state to avoid spamming
