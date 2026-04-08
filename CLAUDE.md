@@ -186,6 +186,7 @@ Weighbridge can also push directly to cloud (`CLOUD_API_URL` in config.py) — b
 | Print slips (gate pass, weighment) | `weighbridge/templates/` (Flask) or factory-server print endpoints (being built) |
 | OPC/DCS bridge | `.claude/skills/opc-bridge.md` |
 | Factory deploy / SSH / safety | `.claude/skills/factory-architecture.md` |
+| Factory incidents / postmortems / permanent rules | `.claude/skills/factory-incidents-postmortem.md` — **READ FIRST** before touching factory |
 | Serial protocol / hardware | `.claude/skills/weighbridge-system.md` |
 | Adding new product to weighbridge (scrap, sugar, animal feed, etc.) | `.claude/skills/weighbridge-add-product.md` |
 | Weighbridge `/push` handlers (cloud-side) | `backend/src/routes/weighbridge/handlers/*.ts` |
@@ -491,6 +492,7 @@ For detailed guidance on specific modules, see `.claude/skills/`:
 - `charts-graphs.md` — Standard chart design system (OPC Live pattern) — colors, axes, tooltips, containers, Brush, reference lines. ALL charts must follow this.
 - `ubi-h2h-banking.md` — **CRITICAL** — UBI H2H-STP direct bank payment integration. Full spec: SFTP, AES-256-GCM encryption, Maker-Checker-Releaser security, data models, routes, file format. Bank side LIVE, ERP side pending SFTP credentials.
 - `factory-architecture.md` — Factory server + weighbridge PC: architecture, deploy, SSH, safety rules, troubleshooting
+- `factory-incidents-postmortem.md` — **READ BEFORE ANY FACTORY WORK.** All 7 factory incidents (2026-03-31 → 2026-04-08) with root cause, fix, and permanent rules. This is where the scars live.
 - `weighbridge-system.md` — Hardware: serial protocol, 3-step workflow, cross-system API contracts
 - `weighbridge-add-product.md` — **READ FIRST** before adding any new product (scrap, sugar, animal feed, etc.) to the weighbridge pipeline. Decision tree, handler contract, race condition rules, testing checklist.
 - `opc-bridge.md` — OPC bridge to ABB 800xA DCS

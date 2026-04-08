@@ -56,13 +56,34 @@ export function getMasterData(): MasterCache {
   return cache;
 }
 
-/** Cache is considered stale if the last successful sync is older than this. */
-const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+/**
+ * Cache is considered stale if the last successful CLOUD CHECK is older than this.
+ *
+ * IMPORTANT: staleness is based on `lastCloudCheck`, NOT `lastCloudSync`.
+ *
+ *   lastCloudCheck = most recent successful ping to cloud (every 5s via smartSync).
+ *   lastCloudSync  = most recent time cloud data ACTUALLY CHANGED and we pulled it.
+ *
+ * If nothing has been edited on cloud for 10 minutes, `lastCloudSync` is 10 min old
+ * but the system is perfectly healthy — sync is still running, cache is still
+ * authoritative. Using `lastCloudSync` here produced false-positive "stale" banners
+ * during quiet periods (incident: 2026-04-08 — operators ignored the warning because
+ * it showed up constantly, defeating the purpose of the alert).
+ *
+ * We use `lastCloudCheck` so the banner only fires when the cloud ping itself has
+ * been failing — which is the actual condition operators need to know about.
+ *
+ * Threshold is 2 minutes (not 5) because the sync runs every 5 seconds. 2 minutes
+ * of failed checks = ~24 consecutive failures = definitely a real problem.
+ */
+const STALE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes of failed cloud checks
 
 /** Get cache stats including staleness */
 export function getCacheStats() {
-  const lastSyncMs = cache.lastCloudSync ? new Date(cache.lastCloudSync).getTime() : 0;
-  const ageMs = lastSyncMs > 0 ? Date.now() - lastSyncMs : null;
+  // Use lastCloudCheck (ping success), NOT lastCloudSync (data change).
+  // See STALE_THRESHOLD_MS comment above.
+  const lastCheckMs = cache.lastCloudCheck ? new Date(cache.lastCloudCheck).getTime() : 0;
+  const ageMs = lastCheckMs > 0 ? Date.now() - lastCheckMs : null;
   const isStale = ageMs == null || ageMs > STALE_THRESHOLD_MS;
   return {
     source: cache.source,
@@ -320,6 +341,10 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
   }
 }
 
+// Track consecutive ping failures so we can alert loud when it's real.
+let consecutiveCheckFailures = 0;
+const ALERT_AFTER_FAILURES = 24; // ~2 min at 5s intervals
+
 async function smartSync() {
   if (syncing) return;
   syncing = true;
@@ -327,15 +352,27 @@ async function smartSync() {
   try {
     // Quick ping: has anything changed?
     const cloudTs = await getCloudTimestamp();
-    cache.lastCloudCheck = new Date().toISOString();
 
     if (cloudTs === null) {
-      // Cloud unreachable — cache stays as-is (offline mode)
+      // Cloud unreachable — ping failed. DO NOT update lastCloudCheck.
+      // Staleness check depends on lastCloudCheck; updating it on failure
+      // would silently paper over real outages.
+      consecutiveCheckFailures++;
+      if (consecutiveCheckFailures === ALERT_AFTER_FAILURES) {
+        console.error(`[CACHE] ⚠ CLOUD PING FAILED ${ALERT_AFTER_FAILURES} TIMES IN A ROW (~2 min). Master-data cache is going stale. Check cloud reachability.`);
+      }
       return;
     }
 
+    // Ping succeeded — update check timestamp and reset failure counter.
+    cache.lastCloudCheck = new Date().toISOString();
+    if (consecutiveCheckFailures > 0) {
+      console.log(`[CACHE] ✓ Cloud ping recovered after ${consecutiveCheckFailures} failures`);
+      consecutiveCheckFailures = 0;
+    }
+
     if (cloudTs === cache.cloudTimestamp) {
-      // Nothing changed — skip full sync
+      // Nothing changed on cloud — skip full sync. This is HEALTHY, not stale.
       return;
     }
 
@@ -350,6 +387,11 @@ async function smartSync() {
   } finally {
     syncing = false;
   }
+}
+
+/** Expose failure count for monitoring endpoints */
+export function getConsecutiveCheckFailures(): number {
+  return consecutiveCheckFailures;
 }
 
 // ── Lifecycle ──

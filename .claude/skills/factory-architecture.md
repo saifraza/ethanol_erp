@@ -340,22 +340,51 @@ sshpass -p 'acer@123' ssh -o StrictHostKeyChecking=no abc@100.91.152.57
 sshpass -p '123' ssh -o StrictHostKeyChecking=no abc@100.74.209.72
 ```
 
-### Deploy Factory Server
+### Deploy Factory Server — USE THE SCRIPT, DO NOT DO IT MANUALLY
+
+**One command, always:**
 ```bash
-cd ~/Desktop/distillery-erp/factory-server
-npx tsc --outDir dist
-cd frontend && npx vite build && cd ..
-# SCP files:
-sshpass -p 'Mspil@1212' scp -r -o StrictHostKeyChecking=no dist/* Administrator@100.126.101.7:C:/mspil/factory-server/dist/
-sshpass -p 'Mspil@1212' scp -r -o StrictHostKeyChecking=no public/* Administrator@100.126.101.7:C:/mspil/factory-server/public/
-sshpass -p 'Mspil@1212' scp -o StrictHostKeyChecking=no prisma/schema.prisma Administrator@100.126.101.7:C:/mspil/factory-server/prisma/
-# If schema changed:
-sshpass -p 'Mspil@1212' ssh Administrator@100.126.101.7 "cd C:\mspil\factory-server && npx prisma db push"
-# Restart via pm2 (NEVER use bare node — process must auto-restart on crash/reboot):
-sshpass -p 'Mspil@1212' ssh Administrator@100.126.101.7 "pm2 restart factory-server && pm2 save"
-# Verify:
-sshpass -p 'Mspil@1212' ssh Administrator@100.126.101.7 "pm2 list"
+./factory-server/scripts/deploy.sh
 ```
+
+This is the **only** sanctioned deploy path after 2026-04-08. Manual SCP deploys are forbidden because the plant has been burned twice by human error: once by missing `prisma generate` (2026-04-08, gate entry broke silently for hours) and once by a stale Prisma field in cloud sync (2026-04-07, 5-hour outage). The script encodes every lesson learned.
+
+**What the script does (never skip, never shortcut):**
+
+1. **Local preflight** — runs `tsc` + `vite build` locally first. If the code doesn't compile on your Mac it never reaches the factory PC. No "I'll fix it after deploy" gaps.
+2. **Safety verification** — SSHs in and confirms `OracleServiceXE`, `OracleXETNSListener`, `WtService` are all `RUNNING` **before** touching anything. If any service is sick, the script aborts — you investigate the underlying problem, not layer new code on top of broken infrastructure.
+3. **SCP artifacts** — `dist/`, `public/`, `prisma/schema.prisma`, `package.json`, `package-lock.json`. Sending the schema and package files lets the next step detect any drift.
+4. **Kill our node only** — `taskkill /F /IM node.exe`. This is safe because the factory PC runs no other Node.js processes. **Absolutely never** `taskkill` anything else on the box.
+5. **`npx prisma generate`** — **MANDATORY**. Runs after node is dead (Windows holds the query engine DLL open otherwise — generate will EPERM if node is alive). This step regenerates `node_modules/.prisma/client` against the schema you just uploaded. Skipping it means: any new field in the schema throws `Unknown argument` at runtime. This is the exact bug that killed gate entry for a full work day on 2026-04-08.
+6. **`schtasks /run /tn FactoryServer`** — relaunches via scheduled task. (We don't use `pm2` — on Windows, pm2's daemon doesn't persist across reboots reliably. schtasks is the survivable path.)
+7. **Health check** — hits `/api/health` and `/api/weighbridge/summary`. Fails the deploy if either is bad. Doesn't leave you guessing whether the server came back clean.
+8. **Startup log scan** — tails the newest `logs/server-*.log` and searches for `[ERROR]`, `PrismaClientKnown`, `Unknown argument`. If any of those appear, the deploy is marked FAILED — you get the error in your terminal, not from an operator calling you an hour later.
+
+**`run.bat` on the factory PC (committed at `factory-server/run.bat`):**
+```bat
+@echo off
+cd /d C:\mspil\factory-server
+if not exist logs mkdir logs
+for /f "tokens=2 delims==" %%a in ('wmic OS Get localdatetime /value') do set dt=%%a
+set stamp=%dt:~0,8%_%dt:~8,6%
+"C:\Program Files\nodejs\node.exe" dist\server.js >> logs\server-%stamp%.log 2>&1
+```
+
+Every restart creates a fresh timestamped log. **Nothing** vanishes into the void anymore. Before 2026-04-08, `run.bat` had no redirection and every error the node process emitted was thrown away — which is how gate entry could fail for hours without anyone knowing why.
+
+**Rollback procedure (manual, if deploy.sh can't self-heal):**
+```bash
+git log --oneline factory-server/ | head -5   # pick last good sha
+git checkout <sha> -- factory-server/
+./factory-server/scripts/deploy.sh             # redeploy the old code
+```
+
+**When manual intervention IS ok:**
+- Reading logs (`ssh ... type C:\mspil\factory-server\logs\server-*.log`)
+- `prisma generate` + `schtasks /run /tn FactoryServer` as emergency fix if the script itself is broken and you need a fast patch
+- Editing `.env` on the server (not tracked in git)
+
+Everything else — go through `deploy.sh`.
 
 ### Deploy Weighbridge PC
 ```bash
