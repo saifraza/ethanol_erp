@@ -113,10 +113,18 @@ export default function WeighmentCorrections() {
       if (search) params.set('search', search);
       if (fromDate) params.set('from', fromDate);
       if (toDate) params.set('to', toDate);
-      const res = await api.get<CorrectableRow[]>(`/weighbridge/admin/correctable?${params.toString()}`);
-      setRows(res.data);
+      const res = await api.get(`/weighbridge/admin/correctable?${params.toString()}`);
+      // Defensive: API may return array OR { items: [] } OR error object
+      const data = res.data;
+      const list = Array.isArray(data)
+        ? data
+        : Array.isArray((data as { items?: CorrectableRow[] })?.items)
+        ? (data as { items: CorrectableRow[] }).items
+        : [];
+      setRows(list);
     } catch (err) {
       console.error('Failed to load weighments:', err);
+      setRows([]);
     } finally {
       setLoading(false);
     }
@@ -361,10 +369,42 @@ function EditModal({ row, onClose, onSaved }: EditModalProps) {
   const [vendors, setVendors] = useState<VendorLite[]>([]);
 
   useEffect(() => {
-    // Load dropdown data
-    api.get('/inventory/items?active=true').then((r) => setMaterials(r.data || [])).catch(() => {});
-    api.get('/purchase-orders?status=APPROVED,PARTIALLY_RECEIVED').then((r) => setPos(r.data?.items || r.data || [])).catch(() => {});
-    api.get('/vendors').then((r) => setVendors(r.data || [])).catch(() => {});
+    // Load dropdown data — coerce every response to an array.
+    // Different routes return different shapes: some return [...], some {items:[]},
+    // some {data:[]}, some an error object. Always end up with an array.
+    const asArray = (d: unknown): unknown[] => {
+      if (Array.isArray(d)) return d;
+      if (d && typeof d === 'object') {
+        const o = d as Record<string, unknown>;
+        if (Array.isArray(o.items)) return o.items as unknown[];
+        if (Array.isArray(o.data)) return o.data as unknown[];
+        if (Array.isArray(o.results)) return o.results as unknown[];
+      }
+      return [];
+    };
+    api.get('/inventory/items?active=true')
+      .then((r) => setMaterials(asArray(r.data) as InventoryItem[]))
+      .catch(() => setMaterials([]));
+    api.get('/purchase-orders?status=APPROVED,PARTIALLY_RECEIVED')
+      .then((r) => {
+        const list = asArray(r.data) as Array<{
+          id: string;
+          poNo?: string;
+          status?: string;
+          vendor?: { name?: string };
+          vendorName?: string;
+        }>;
+        setPos(list.map((p) => ({
+          id: p.id,
+          poNo: p.poNo || '--',
+          status: p.status || '',
+          vendorName: p.vendor?.name || p.vendorName || '',
+        })));
+      })
+      .catch(() => setPos([]));
+    api.get('/vendors')
+      .then((r) => setVendors(asArray(r.data) as VendorLite[]))
+      .catch(() => setVendors([]));
   }, []);
 
   const submit = async () => {
@@ -646,8 +686,11 @@ function HistoryModal({ row, onClose }: { row: CorrectableRow; onClose: () => vo
 
   useEffect(() => {
     api
-      .get<CorrectionAudit[]>(`/weighbridge/admin/corrections/${row.id}`)
-      .then((r) => setHistory(r.data))
+      .get(`/weighbridge/admin/corrections/${row.id}`)
+      .then((r) => {
+        const d = r.data;
+        setHistory(Array.isArray(d) ? (d as CorrectionAudit[]) : []);
+      })
       .catch(() => setHistory([]))
       .finally(() => setLoading(false));
   }, [row.id]);
