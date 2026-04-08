@@ -175,6 +175,82 @@ Routine checks when doing factory work:
 - Error handler in `factory-server/src/server.ts` surfaces Prisma error classes with actionable messages — if you find a new error class that operators hit, add a branch for it.
 - `run.bat` writes stdout/stderr to `logs/server-YYYYMMDD_HHMMSS.log` — always tail the newest log before guessing what's broken.
 
+### Factory Connection Cheat Sheet
+
+**Factory Server (Windows, Tailscale):**
+- Tailscale IP: `100.126.101.7` | LAN IP: `192.168.0.10`
+- User: `Administrator` | Password: `Mspil@1212`
+- API: `http://100.126.101.7:5000`
+- Path on PC: `C:\mspil\factory-server\`
+- SSH:
+  ```bash
+  sshpass -p 'Mspil@1212' ssh -o StrictHostKeyChecking=no Administrator@100.126.101.7
+  ```
+- SCP:
+  ```bash
+  sshpass -p 'Mspil@1212' scp -o StrictHostKeyChecking=no <local> Administrator@100.126.101.7:C:/mspil/factory-server/<path>
+  ```
+- Health check (no auth):
+  ```bash
+  curl -s http://100.126.101.7:5000/api/health | python3 -m json.tool
+  curl -s http://100.126.101.7:5000/api/master-data/status | python3 -m json.tool
+  ```
+- Tail newest server log:
+  ```bash
+  sshpass -p 'Mspil@1212' ssh Administrator@100.126.101.7 \
+    'powershell -Command "Get-ChildItem C:\mspil\factory-server\logs\server-*.log | Sort LastWriteTime -Descending | Select -First 1 | Get-Content -Tail 100"'
+  ```
+- Restart node only (NEVER touch Oracle/WtService):
+  ```bash
+  sshpass -p 'Mspil@1212' ssh Administrator@100.126.101.7 \
+    'taskkill /F /IM node.exe & timeout /t 3 /nobreak >nul & schtasks /run /tn FactoryServer'
+  ```
+
+**Weighbridge PC (Windows, Tailscale):**
+- Tailscale IP: `100.91.152.57` | LAN IP: `192.168.0.83`
+- User: `abc` | Password: `acer@123`
+- Flask API: `http://100.91.152.57:8098`
+- Path on PC: `C:\mspil\weighbridge\`
+- SSH:
+  ```bash
+  sshpass -p 'acer@123' ssh -o StrictHostKeyChecking=no abc@100.91.152.57
+  ```
+- Live weight check:
+  ```bash
+  curl -s http://100.91.152.57:8098/api/weight
+  ```
+- **NEVER** rapidly retry SSH — 5 wrong passwords = 30-minute account lockout. Slow down on each attempt.
+
+**Cloud Database (Railway PostgreSQL — used by both ERP and factory cloud puller):**
+- Connection string lives in env var `DATABASE_URL` on Railway. Never hardcode.
+- Local access: read it from `backend/.env` (DATABASE_URL line). DO NOT commit `.env`.
+- Web tools: `npx prisma studio` from `backend/` opens a GUI.
+- Direct query (dev machine):
+  ```bash
+  cd backend && npx prisma db pull   # introspect
+  cd backend && npx prisma studio    # GUI
+  ```
+- Run a one-off SQL:
+  ```bash
+  node scripts/run_sql_on_railway.js "SELECT count(*) FROM \"Weighment\";"
+  ```
+
+**OPC Database (separate Railway Postgres for DCS data):**
+- Connection string in env var `DATABASE_URL_OPC` on Railway
+- Schema: `backend/prisma/opc/schema.prisma`
+- Host (from memory file `reference_opc_db.md`): `gondola.proxy.rlwy.net:12413`
+
+**Oracle ERP on Factory PC (legacy, NOT ours):**
+- We DO NOT touch this. Oracle XE on the factory PC is used by the old plant ERP and the weighbridge desktop reader.
+- Required services: `OracleServiceXE`, `OracleXETNSListener`, `WtService` — must always be `RUNNING`.
+- Verify before any deploy:
+  ```bash
+  sshpass -p 'Mspil@1212' ssh Administrator@100.126.101.7 \
+    'sc query OracleServiceXE & sc query OracleXETNSListener & sc query WtService'
+  ```
+
+**Tailscale gotcha:** if `100.126.101.7` is unreachable, your Tailscale is down (not the factory). Check `tailscale status` on your Mac first before assuming the server is dead.
+
 ## Multi-System Architecture
 
 This ERP runs across 3 systems. When the user mentions a topic, use this table to route to the right codebase.
