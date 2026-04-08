@@ -126,7 +126,72 @@ export async function handlePoInbound(w: WeighmentInput, ctx: PushContext): Prom
         }
       }
 
-      const grn = await tx.goodsReceipt.create({
+      // If a PARTIAL GRN already exists for this PO ("paid & awaiting"),
+      // fill it with received qty and flip to CONFIRMED instead of creating a new row.
+      const partial = await tx.goodsReceipt.findFirst({
+        where: { poId: po.id, status: 'PARTIAL', archived: false },
+        include: { lines: true },
+      });
+
+      let grn;
+      if (partial) {
+        // Find or create the line for this poLine
+        const matchingLine = partial.lines.find(l => l.poLineId === poLine.id);
+        if (matchingLine) {
+          await tx.gRNLine.update({
+            where: { id: matchingLine.id },
+            data: {
+              receivedQty,
+              acceptedQty: receivedQty,
+              rejectedQty: 0,
+              rate,
+              amount: Math.round(receivedQty * rate * 100) / 100,
+              remarks: `Vehicle: ${w.vehicle_no}${labRemarksSuffix}`,
+            },
+          });
+        } else {
+          await tx.gRNLine.create({
+            data: {
+              grnId: partial.id,
+              poLineId: poLine.id,
+              inventoryItemId: poLine.inventoryItemId || null,
+              description: poLine.description || w.material || '',
+              receivedQty,
+              acceptedQty: receivedQty,
+              rejectedQty: 0,
+              unit: poLine.unit || 'KG',
+              rate,
+              amount: Math.round(receivedQty * rate * 100) / 100,
+              storageLocation: '',
+              batchNo: '',
+              remarks: `Vehicle: ${w.vehicle_no}${labRemarksSuffix}`,
+            },
+          });
+        }
+
+        grn = await tx.goodsReceipt.update({
+          where: { id: partial.id },
+          data: {
+            status: 'CONFIRMED',
+            grnDate,
+            vehicleNo: w.vehicle_no,
+            remarks: `${ctx.wbRef} | Filled from PARTIAL via weighbridge${labRemarksSuffix}`,
+            totalAmount: Math.round(receivedQty * rate * 100) / 100,
+            totalQty: receivedQty,
+            grossWeight: w.weight_gross != null ? w.weight_gross / 1000 : null,
+            tareWeight: w.weight_tare != null ? w.weight_tare / 1000 : null,
+            netWeight: netKg / 1000,
+            firstWeightAt: w.first_weight_at ? new Date(w.first_weight_at) : null,
+            secondWeightAt: w.second_weight_at ? new Date(w.second_weight_at) : null,
+            ticketNo: w.ticket_no || null,
+            driverName: w.driver_name || null,
+            driverMobile: w.driver_mobile || null,
+            transporterName: w.transporter || null,
+          },
+          include: { lines: true },
+        });
+      } else {
+        grn = await tx.goodsReceipt.create({
         data: {
           poId: po.id,
           vendorId: po.vendorId,
@@ -168,6 +233,7 @@ export async function handlePoInbound(w: WeighmentInput, ctx: PushContext): Prom
         },
         include: { lines: true },
       });
+      }
 
       // RACE FIX 2: Atomic increment/decrement on PO line (not stale read+write)
       await tx.pOLine.update({

@@ -12,6 +12,7 @@ import fs from 'fs';
 import axios from 'axios';
 // RAG indexing removed — only compliance docs go to RAG
 import { generateVaultNote } from '../services/vaultWriter';
+import { recomputeGrnPaidStateForPO } from '../services/grnPaidState';
 
 const router = Router();
 router.use(authenticate as any);
@@ -309,6 +310,7 @@ router.post('/', async (req: Request, res: Response) => {
       },
     });
 
+    if (invoice.poId) recomputeGrnPaidStateForPO(invoice.poId).catch(() => {});
     res.status(201).json(invoice);
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });

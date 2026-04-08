@@ -3,6 +3,7 @@ import prisma from '../config/prisma';
 import { authenticate, AuthRequest, authorize } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { onVendorPaymentMade } from '../services/autoJournal';
+import { recomputeGrnPaidStateForPO } from '../services/grnPaidState';
 import { renderDocumentPdf } from '../services/documentRenderer';
 import PDFDocument from 'pdfkit';
 import { sendEmail } from '../services/messaging';
@@ -329,6 +330,12 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       userId: req.user!.id,
       paymentDate: b.paymentDate ? new Date(b.paymentDate) : new Date(),
     }).catch(() => {});
+
+    // Recompute GRN paid state on linked PO (auto-flips DRAFT → PARTIAL when fullyPaid)
+    if (b.invoiceId) {
+      const inv = await prisma.vendorInvoice.findUnique({ where: { id: b.invoiceId }, select: { poId: true } });
+      if (inv?.poId) recomputeGrnPaidStateForPO(inv.poId).catch(() => {});
+    }
 
     res.status(201).json(payment);
 }));

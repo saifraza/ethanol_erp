@@ -1,6 +1,57 @@
-import React, { useState, useEffect } from 'react';
-import { PackageCheck, Plus, X, AlertCircle, CheckCircle, Clock, Upload, Sparkles } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { PackageCheck, Plus, X, AlertCircle, CheckCircle, Clock, Upload, Sparkles, Truck, Fuel, Wheat, Package, FileText } from 'lucide-react';
 import api from '../../services/api';
+
+// ── Arrivals types ──
+type Source = 'FUEL' | 'GRAIN' | 'STORE';
+type PaidStatus = 'UNPAID' | 'ADVANCE' | 'FULL';
+interface ArrivalRow {
+  source: Source;
+  poId: string;
+  poNo: number;
+  vendor: string;
+  vendorId: string;
+  dealType: string | null;
+  truckCap: number | null;
+  pendingQty: number;
+  pendingValue: number;
+  paidStatus: PaidStatus;
+  hasOpenGrn: boolean;
+  expectedDate: string | null;
+  items: Array<{ name: string; pending: number; unit: string; rate: number }>;
+}
+interface PRRow {
+  id: string; reqNo: string; itemName: string; quantity: number; unit: string;
+  estimatedCost: number; urgency: string; requestedByPerson: string; department: string; createdAt: string;
+}
+interface PartialGrnRow {
+  id: string; grnNo: number; grnDate: string; expectedDate: string | null;
+  fullyPaid: boolean; paymentLinkedAt: string | null; totalAmount: number;
+  po: { id: string; poNo: number; grandTotal: number };
+  vendor: { id: string; name: string };
+  lines: Array<{ description: string; receivedQty: number; unit: string; rate: number }>;
+}
+interface GrainTruckInFlight {
+  id: string; date: string; vehicleNo: string; supplier: string; weightNet: number; ticketNo: number | null;
+  purchaseOrder: { id: string; poNo: number } | null;
+}
+interface ArrivalsPayload {
+  fuel: ArrivalRow[];
+  grain: { pos: ArrivalRow[]; trucksInFlight: GrainTruckInFlight[] };
+  store: ArrivalRow[];
+  pr: PRRow[];
+  partial: PartialGrnRow[];
+  summary: {
+    expectedValue: number;
+    expectedLines: number;
+    paidAwaiting: number;
+    partialCount: number;
+    todayReceived: number;
+  };
+}
+
+type MainTab = 'EXPECTED' | 'PARTIAL' | 'RECEIVED' | 'ALL';
+type SourceChip = 'ALL' | 'FUEL' | 'GRAIN' | 'STORE' | 'PR';
 
 interface GRNLine {
   poLineId: string;
@@ -133,6 +184,11 @@ interface Stats {
 
 export default function GoodsReceipts() {
   const [grns, setGrns] = useState<GRN[]>([]);
+  const [mainTab, setMainTab] = useState<MainTab>('EXPECTED');
+  const [sourceChip, setSourceChip] = useState<SourceChip>('ALL');
+  const [paidOnly, setPaidOnly] = useState(false);
+  const [arrivals, setArrivals] = useState<ArrivalsPayload | null>(null);
+  const [arrivalsLoading, setArrivalsLoading] = useState(false);
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'ACTUAL' | 'EXPECTED'>('ALL');
   const [pendingPOs, setPendingPOs] = useState<PO[]>([]);
   const [stats, setStats] = useState<Stats>({ totalGRNs: 0, draftCount: 0, confirmedCount: 0, todayCount: 0 });
@@ -273,6 +329,29 @@ export default function GoodsReceipts() {
     }
   };
 
+  const fetchArrivals = useCallback(async () => {
+    try {
+      setArrivalsLoading(true);
+      const res = await api.get<ArrivalsPayload>('/goods-receipts/arrivals');
+      setArrivals(res.data);
+    } catch (err) {
+      console.error('Failed to load arrivals:', err);
+    } finally {
+      setArrivalsLoading(false);
+    }
+  }, []);
+
+  const handleCreatePartial = async (poId: string) => {
+    try {
+      await api.post(`/goods-receipts/partial/${poId}`);
+      setSuccessMessage('Partial GRN created (paid & awaiting)');
+      await Promise.all([fetchArrivals(), fetchGRNs()]);
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err: any) {
+      setError(err?.response?.data?.error || 'Failed to create partial GRN');
+    }
+  };
+
   const calculateStats = (grnList: GRN[]) => {
     const today = new Date().toISOString().split('T')[0];
     setStats({
@@ -287,7 +366,8 @@ export default function GoodsReceipts() {
     fetchGRNs();
     fetchPendingPOs();
     fetchWarehouses();
-  }, []);
+    fetchArrivals();
+  }, [fetchArrivals]);
 
   const handlePOChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const poId = e.target.value;
@@ -403,28 +483,50 @@ export default function GoodsReceipts() {
           </div>
         )}
 
-        {/* KPI Strip */}
-        <div className="grid grid-cols-4 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
-          <div className="border-l-4 border-l-indigo-500 border-r border-slate-300 bg-white px-4 py-3">
-            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total GRNs</div>
-            <div className="text-2xl font-bold text-slate-900 mt-1">{stats.totalGRNs}</div>
+        {/* KPI Strip — Arrivals oriented */}
+        <div className="grid grid-cols-5 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+          <div className="border-l-4 border-l-blue-500 border-r border-slate-300 bg-white px-4 py-3">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Expected Value</div>
+            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">₹{((arrivals?.summary.expectedValue || 0) / 100000).toFixed(2)}L</div>
           </div>
-          <div className="border-l-4 border-l-yellow-500 border-r border-slate-300 bg-white px-4 py-3">
-            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Draft</div>
-            <div className="text-2xl font-bold text-slate-900 mt-1">{stats.draftCount}</div>
+          <div className="border-l-4 border-l-amber-500 border-r border-slate-300 bg-white px-4 py-3">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Expected Lines</div>
+            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{arrivals?.summary.expectedLines || 0}</div>
           </div>
-          <div className="border-l-4 border-l-green-500 border-r border-slate-300 bg-white px-4 py-3">
-            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Confirmed</div>
-            <div className="text-2xl font-bold text-green-600 mt-1">{stats.confirmedCount}</div>
+          <div className="border-l-4 border-l-emerald-500 border-r border-slate-300 bg-white px-4 py-3">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Paid &amp; Awaiting</div>
+            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{arrivals?.summary.paidAwaiting || 0}</div>
           </div>
-          <div className="border-l-4 border-l-blue-500 bg-white px-4 py-3">
-            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Today</div>
-            <div className="text-2xl font-bold text-blue-600 mt-1">{stats.todayCount}</div>
+          <div className="border-l-4 border-l-rose-500 border-r border-slate-300 bg-white px-4 py-3">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Partial GRNs</div>
+            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{arrivals?.summary.partialCount || 0}</div>
+          </div>
+          <div className="border-l-4 border-l-slate-500 bg-white px-4 py-3">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Today Received</div>
+            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{arrivals?.summary.todayReceived || 0}</div>
           </div>
         </div>
 
-        {/* Pending POs — Approved POs awaiting goods receipt */}
-        {pendingPOs.length > 0 && !showCreateForm && (
+        {/* Main Tab Bar */}
+        <div className="-mx-3 md:-mx-6 bg-white border-x border-b border-slate-300 px-4 flex items-center gap-0">
+          {([
+            { id: 'EXPECTED' as MainTab, label: 'Expected to Arrive' },
+            { id: 'PARTIAL' as MainTab, label: `Partial GRNs (${arrivals?.summary.partialCount || 0})` },
+            { id: 'RECEIVED' as MainTab, label: 'Received' },
+            { id: 'ALL' as MainTab, label: 'All' },
+          ]).map(t => (
+            <button
+              key={t.id}
+              onClick={() => setMainTab(t.id)}
+              className={`px-4 py-2 text-[11px] font-bold uppercase tracking-widest border-b-2 -mb-px ${mainTab === t.id ? 'border-blue-600 text-slate-800' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Pending POs — legacy amber callout, kept hidden (replaced by Expected tab) */}
+        {false && pendingPOs.length > 0 && !showCreateForm && (
           <div className="-mx-3 md:-mx-6">
             <div className="bg-amber-50 border-x border-b border-amber-300 px-4 py-2">
               <span className="text-[10px] font-bold text-amber-700 uppercase tracking-widest">Pending Purchase Orders — Awaiting Goods Receipt ({pendingPOs.length})</span>
@@ -653,8 +755,52 @@ export default function GoodsReceipts() {
           </div>
         )}
 
-        {/* Type Filter */}
-        {!loading && (
+        {/* ─── EXPECTED TO ARRIVE TAB ─── */}
+        {mainTab === 'EXPECTED' && (
+          <ExpectedArrivalsView
+            arrivals={arrivals}
+            loading={arrivalsLoading}
+            sourceChip={sourceChip}
+            setSourceChip={setSourceChip}
+            paidOnly={paidOnly}
+            setPaidOnly={setPaidOnly}
+            onCreateGrn={(po) => {
+              setShowCreateForm(true);
+              const fullPo = pendingPOs.find(p => p.id === po.poId);
+              if (fullPo) {
+                setSelectedPO(fullPo);
+                const lines = fullPo.lines.map((line) => ({
+                  poLineId: line.id, inventoryItemId: line.inventoryItemId || line.materialId || '', description: line.description,
+                  receivedQty: line.pendingQty, acceptedQty: line.pendingQty, rejectedQty: 0,
+                  unit: line.unit, rate: line.rate, storageLocation: '', warehouseCode: '', batchNo: '', remarks: '',
+                }));
+                setFormData((prev) => ({ ...prev, poId: po.poId, lines }));
+              }
+            }}
+            onCreatePartial={handleCreatePartial}
+          />
+        )}
+
+        {/* ─── PARTIAL GRNs TAB ─── */}
+        {mainTab === 'PARTIAL' && (
+          <PartialGrnsView
+            partials={arrivals?.partial || []}
+            loading={arrivalsLoading}
+            onComplete={async (grnId) => {
+              try {
+                await api.put(`/goods-receipts/${grnId}/status`, { newStatus: 'CONFIRMED' });
+                setSuccessMessage('GRN confirmed');
+                await Promise.all([fetchArrivals(), fetchGRNs()]);
+                setTimeout(() => setSuccessMessage(null), 3000);
+              } catch (err: any) {
+                setError(err?.response?.data?.error || 'Failed to confirm GRN');
+              }
+            }}
+          />
+        )}
+
+        {/* ─── RECEIVED / ALL TAB — secondary type filter ─── */}
+        {(mainTab === 'RECEIVED' || mainTab === 'ALL') && !loading && (
           <div className="-mx-3 md:-mx-6 bg-slate-100 border-x border-b border-slate-300 px-4 py-1.5 flex items-center gap-1">
             {(['ALL', 'ACTUAL', 'EXPECTED'] as const).map(t => (
               <button key={t} onClick={() => setTypeFilter(t)} className={`px-3 py-1 text-[10px] font-bold uppercase tracking-widest ${typeFilter === t ? 'bg-slate-800 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
@@ -664,13 +810,15 @@ export default function GoodsReceipts() {
           </div>
         )}
 
-        {/* GRN Table */}
+        {/* GRN Table — only on RECEIVED / ALL tabs */}
+        {(mainTab === 'RECEIVED' || mainTab === 'ALL') && (
+        <>
         {loading ? (
           <div className="text-center py-12">
             <Clock size={24} className="animate-spin mx-auto mb-2 text-slate-400" />
             <p className="text-xs text-slate-400 uppercase tracking-widest">Loading GRNs...</p>
           </div>
-        ) : grns.filter(g => typeFilter === 'ALL' || (typeFilter === 'EXPECTED' ? g.grnType === 'EXPECTED' : g.grnType !== 'EXPECTED')).length === 0 ? (
+        ) : grns.filter(g => (mainTab === 'RECEIVED' ? g.status === 'CONFIRMED' : true) && (typeFilter === 'ALL' || (typeFilter === 'EXPECTED' ? g.grnType === 'EXPECTED' : g.grnType !== 'EXPECTED'))).length === 0 ? (
           <div className="text-center py-16 border-x border-b border-slate-300 -mx-3 md:-mx-6">
             <p className="text-xs text-slate-400 uppercase tracking-widest">No GRNs found. Create one to get started.</p>
           </div>
@@ -693,7 +841,7 @@ export default function GoodsReceipts() {
                 </tr>
               </thead>
               <tbody>
-                {grns.filter(g => typeFilter === 'ALL' || (typeFilter === 'EXPECTED' ? g.grnType === 'EXPECTED' : g.grnType !== 'EXPECTED')).map((grn, idx) => (
+                {grns.filter(g => (mainTab === 'RECEIVED' ? g.status === 'CONFIRMED' : true) && (typeFilter === 'ALL' || (typeFilter === 'EXPECTED' ? g.grnType === 'EXPECTED' : g.grnType !== 'EXPECTED'))).map((grn, idx) => (
                   <React.Fragment key={grn.id}>
                   <tr className={`border-b border-slate-100 hover:bg-blue-50/60 cursor-pointer ${idx % 2 ? 'bg-slate-50/70' : ''} ${expandedGrnId === grn.id ? 'bg-blue-50' : ''}`} onClick={() => toggleGrnDetail(grn.id)}>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100 font-bold text-blue-700">GRN-{grn.grnNo}</td>
@@ -833,7 +981,249 @@ export default function GoodsReceipts() {
             </table>
           </div>
         )}
+        </>
+        )}
       </div>
+    </div>
+  );
+}
+
+// ─── Expected to Arrive view ───
+function ExpectedArrivalsView({
+  arrivals, loading, sourceChip, setSourceChip, paidOnly, setPaidOnly, onCreateGrn, onCreatePartial,
+}: {
+  arrivals: ArrivalsPayload | null;
+  loading: boolean;
+  sourceChip: SourceChip;
+  setSourceChip: (s: SourceChip) => void;
+  paidOnly: boolean;
+  setPaidOnly: (p: boolean) => void;
+  onCreateGrn: (row: ArrivalRow) => void;
+  onCreatePartial: (poId: string) => void;
+}) {
+  if (loading && !arrivals) {
+    return <div className="text-center py-12 text-xs text-slate-400 uppercase tracking-widest">Loading arrivals...</div>;
+  }
+  if (!arrivals) {
+    return <div className="text-center py-12 text-xs text-slate-400 uppercase tracking-widest">No arrivals data</div>;
+  }
+
+  const fmtINR = (n: number) => '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+  const filterRow = (r: ArrivalRow) => !paidOnly || r.paidStatus !== 'UNPAID';
+  const fuel = arrivals.fuel.filter(filterRow);
+  const grain = arrivals.grain.pos.filter(filterRow);
+  const store = arrivals.store.filter(filterRow);
+
+  const showFuel = sourceChip === 'ALL' || sourceChip === 'FUEL';
+  const showGrain = sourceChip === 'ALL' || sourceChip === 'GRAIN';
+  const showStore = sourceChip === 'ALL' || sourceChip === 'STORE';
+  const showPR = sourceChip === 'ALL' || sourceChip === 'PR';
+
+  const PaidBadge = ({ s }: { s: PaidStatus }) => {
+    const cls = s === 'FULL' ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
+      : s === 'ADVANCE' ? 'border-amber-400 bg-amber-50 text-amber-700'
+      : 'border-slate-300 bg-slate-50 text-slate-500';
+    return <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${cls}`}>{s}</span>;
+  };
+
+  const renderGroup = (label: string, icon: React.ReactNode, rows: ArrivalRow[]) => {
+    if (rows.length === 0) return null;
+    const total = rows.reduce((s, r) => s + r.pendingValue, 0);
+    return (
+      <React.Fragment>
+        <tr className="bg-slate-200 border-b border-slate-300">
+          <td colSpan={9} className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-700">
+            <div className="flex items-center gap-2">{icon} {label} ({rows.length}) <span className="ml-auto font-mono">{fmtINR(total)}</span></div>
+          </td>
+        </tr>
+        {rows.map((r, i) => (
+          <tr key={r.poId} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+            <td className="px-3 py-1.5 text-xs border-r border-slate-100 font-bold text-blue-700">PO-{r.poNo}</td>
+            <td className="px-3 py-1.5 text-xs border-r border-slate-100">{r.vendor}</td>
+            <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-slate-600">{r.items.map(i => i.name).slice(0, 2).join(', ')}{r.items.length > 2 ? ` +${r.items.length - 2}` : ''}</td>
+            <td className="px-3 py-1.5 text-xs border-r border-slate-100">{r.dealType || '--'}{r.truckCap ? ` (${r.truckCap}T)` : ''}</td>
+            <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums">{r.pendingQty.toFixed(2)}</td>
+            <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums font-semibold">{fmtINR(r.pendingValue)}</td>
+            <td className="px-3 py-1.5 text-xs border-r border-slate-100"><PaidBadge s={r.paidStatus} /></td>
+            <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-slate-500">{r.expectedDate ? new Date(r.expectedDate).toLocaleDateString() : '--'}</td>
+            <td className="px-3 py-1.5 text-xs text-center">
+              <div className="flex items-center justify-center gap-1">
+                <button onClick={() => onCreateGrn(r)} className="px-2 py-0.5 bg-blue-600 text-white text-[10px] font-medium hover:bg-blue-700">CREATE GRN</button>
+                {!r.hasOpenGrn && r.paidStatus !== 'UNPAID' && (
+                  <button onClick={() => onCreatePartial(r.poId)} className="px-2 py-0.5 bg-emerald-600 text-white text-[10px] font-medium hover:bg-emerald-700" title="Mark as paid & awaiting goods">PARTIAL</button>
+                )}
+              </div>
+            </td>
+          </tr>
+        ))}
+      </React.Fragment>
+    );
+  };
+
+  return (
+    <>
+      {/* Filter toolbar */}
+      <div className="-mx-3 md:-mx-6 bg-slate-100 border-x border-b border-slate-300 px-4 py-2 flex items-center gap-2">
+        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Source:</span>
+        {(['ALL', 'FUEL', 'GRAIN', 'STORE', 'PR'] as SourceChip[]).map(c => (
+          <button
+            key={c}
+            onClick={() => setSourceChip(c)}
+            className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest border ${sourceChip === c ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}
+          >
+            {c}
+          </button>
+        ))}
+        <label className="ml-auto flex items-center gap-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest cursor-pointer">
+          <input type="checkbox" checked={paidOnly} onChange={e => setPaidOnly(e.target.checked)} className="h-3 w-3" />
+          Paid Only
+        </label>
+      </div>
+
+      {/* Grouped table */}
+      <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="bg-slate-800 text-white">
+              <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">PO #</th>
+              <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Vendor</th>
+              <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Items</th>
+              <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Deal</th>
+              <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Pending Qty</th>
+              <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Value</th>
+              <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Paid</th>
+              <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Expected</th>
+              <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {showFuel && renderGroup('Fuel Arrivals', <Fuel size={12} />, fuel)}
+            {showGrain && renderGroup('Raw Material / Grain', <Wheat size={12} />, grain)}
+            {showStore && renderGroup('Store / Spares / Consumables', <Package size={12} />, store)}
+            {showPR && arrivals.pr.length > 0 && (
+              <React.Fragment>
+                <tr className="bg-slate-200 border-b border-slate-300">
+                  <td colSpan={9} className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-700">
+                    <div className="flex items-center gap-2"><FileText size={12} /> PR Generated — No PO Yet ({arrivals.pr.length})</div>
+                  </td>
+                </tr>
+                {arrivals.pr.map((p, i) => {
+                  const days = Math.floor((Date.now() - new Date(p.createdAt).getTime()) / 86400000);
+                  return (
+                    <tr key={p.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                      <td className="px-3 py-1.5 text-xs border-r border-slate-100 font-bold text-amber-700">{p.reqNo}</td>
+                      <td className="px-3 py-1.5 text-xs border-r border-slate-100">{p.requestedByPerson || p.department || '--'}</td>
+                      <td className="px-3 py-1.5 text-xs border-r border-slate-100">{p.itemName}</td>
+                      <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-slate-500">{p.urgency || '--'}</td>
+                      <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums">{p.quantity} {p.unit}</td>
+                      <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums">{fmtINR(p.estimatedCost || 0)}</td>
+                      <td className="px-3 py-1.5 text-xs border-r border-slate-100"><span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-amber-400 bg-amber-50 text-amber-700">PR</span></td>
+                      <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-slate-500">{days}d waiting</td>
+                      <td className="px-3 py-1.5 text-xs text-center">
+                        <a href={`/procurement/purchase-orders?prId=${p.id}`} className="px-2 py-0.5 bg-amber-600 text-white text-[10px] font-medium hover:bg-amber-700">CREATE PO</a>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </React.Fragment>
+            )}
+            {fuel.length === 0 && grain.length === 0 && store.length === 0 && arrivals.pr.length === 0 && (
+              <tr><td colSpan={9} className="text-center py-12 text-xs text-slate-400 uppercase tracking-widest">No expected arrivals</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Grain trucks in flight (weighbridge but no GRN yet) */}
+      {arrivals.grain.trucksInFlight.length > 0 && (sourceChip === 'ALL' || sourceChip === 'GRAIN') && (
+        <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 mt-0">
+          <div className="bg-slate-100 px-4 py-1.5 border-b border-slate-300">
+            <span className="text-[10px] font-bold text-slate-700 uppercase tracking-widest flex items-center gap-2"><Truck size={12} /> Grain Trucks At Weighbridge — Awaiting GRN ({arrivals.grain.trucksInFlight.length})</span>
+          </div>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="bg-slate-700 text-white">
+                <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">Ticket</th>
+                <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">Vehicle</th>
+                <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">Supplier</th>
+                <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">PO</th>
+                <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">Net (T)</th>
+                <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest">Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {arrivals.grain.trucksInFlight.map((t, i) => (
+                <tr key={t.id} className={`border-b border-slate-100 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                  <td className="px-3 py-1.5 text-xs border-r border-slate-100">{t.ticketNo || '--'}</td>
+                  <td className="px-3 py-1.5 text-xs border-r border-slate-100">{t.vehicleNo}</td>
+                  <td className="px-3 py-1.5 text-xs border-r border-slate-100">{t.supplier}</td>
+                  <td className="px-3 py-1.5 text-xs border-r border-slate-100">{t.purchaseOrder ? `PO-${t.purchaseOrder.poNo}` : '--'}</td>
+                  <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums">{(t.weightNet || 0).toFixed(2)}</td>
+                  <td className="px-3 py-1.5 text-xs text-slate-500">{new Date(t.date).toLocaleDateString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─── Partial GRNs view ───
+function PartialGrnsView({
+  partials, loading, onComplete,
+}: {
+  partials: PartialGrnRow[];
+  loading: boolean;
+  onComplete: (grnId: string) => void;
+}) {
+  if (loading) return <div className="text-center py-12 text-xs text-slate-400 uppercase tracking-widest">Loading...</div>;
+  if (partials.length === 0) {
+    return (
+      <div className="text-center py-16 -mx-3 md:-mx-6 border-x border-b border-slate-300">
+        <p className="text-xs text-slate-400 uppercase tracking-widest">No partial GRNs — paid &amp; awaiting goods will appear here</p>
+      </div>
+    );
+  }
+  const fmtINR = (n: number) => '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  return (
+    <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="bg-slate-800 text-white">
+            <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">GRN #</th>
+            <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">PO #</th>
+            <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Vendor</th>
+            <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Created</th>
+            <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Paid On</th>
+            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">PO Value</th>
+            <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Status</th>
+            <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {partials.map((g, i) => (
+            <tr key={g.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+              <td className="px-3 py-1.5 text-xs border-r border-slate-100 font-bold text-blue-700">GRN-{g.grnNo}</td>
+              <td className="px-3 py-1.5 text-xs border-r border-slate-100">PO-{g.po.poNo}</td>
+              <td className="px-3 py-1.5 text-xs border-r border-slate-100">{g.vendor.name}</td>
+              <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-slate-500">{new Date(g.grnDate).toLocaleDateString()}</td>
+              <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-slate-500">{g.paymentLinkedAt ? new Date(g.paymentLinkedAt).toLocaleDateString() : '--'}</td>
+              <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums">{fmtINR(g.po.grandTotal || 0)}</td>
+              <td className="px-3 py-1.5 text-xs border-r border-slate-100">
+                <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${g.fullyPaid ? 'border-emerald-400 bg-emerald-50 text-emerald-700' : 'border-amber-400 bg-amber-50 text-amber-700'}`}>
+                  {g.fullyPaid ? 'PAID · AWAITING' : 'PARTIAL'}
+                </span>
+              </td>
+              <td className="px-3 py-1.5 text-xs text-center">
+                <button onClick={() => onComplete(g.id)} className="px-2 py-0.5 bg-emerald-600 text-white text-[10px] font-medium hover:bg-emerald-700">MARK RECEIVED</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

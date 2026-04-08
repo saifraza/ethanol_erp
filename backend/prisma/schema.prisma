@@ -1990,10 +1990,13 @@ model GoodsReceipt {
   qualityRemarks   String?
   inspectedBy      String?
   // Status
-  status           String        @default("DRAFT") // DRAFT, CONFIRMED, CANCELLED
+  status           String        @default("DRAFT") // DRAFT, PARTIAL, CONFIRMED, CANCELLED
   grnType          String        @default("ACTUAL") // EXPECTED (pre-created from approved PO), ACTUAL (real receipt)
   expectedDate     DateTime? // when EXPECTED type: planned arrival
   archived         Boolean       @default(false) // hide from active list
+  // Payment linkage (denormalized for "paid & awaiting" filter)
+  paymentLinkedAt  DateTime?
+  fullyPaid        Boolean       @default(false)
   // Totals (from lines)
   totalQty         Float         @default(0)
   totalAmount      Float         @default(0)

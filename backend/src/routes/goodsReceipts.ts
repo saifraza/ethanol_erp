@@ -150,7 +150,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     res.json({ grns });
 }));
 
-// GET /pending-pos — list POs with pending quantities
+// GET /pending-pos — list POs with pending quantities (extended with source classification)
 router.get('/pending-pos', asyncHandler(async (req: AuthRequest, res: Response) => {
     const pos = await prisma.purchaseOrder.findMany({
       where: {
@@ -161,18 +161,167 @@ router.get('/pending-pos', asyncHandler(async (req: AuthRequest, res: Response) 
       include: {
         vendor: true,
         lines: {
-          where: {
-            pendingQty: {
-              gt: 0,
-            },
-          },
+          where: { pendingQty: { gt: 0 } },
+          include: { inventoryItem: { select: { id: true, name: true, category: true } } },
         },
       },
-      take: 200,
+      take: 500,
     });
 
-    const filtered = pos.filter(po => po.lines.length > 0);
+    const filtered = pos
+      .filter(po => po.lines.length > 0)
+      .map(po => ({
+        ...po,
+        source: classifyPOSource(po.lines.map(l => l.inventoryItem?.category || null)),
+      }));
     res.json({ pos: filtered });
+}));
+
+// Helper: classify PO source from line item categories
+function classifyPOSource(categories: Array<string | null>): 'FUEL' | 'GRAIN' | 'STORE' {
+  if (categories.some(c => c === 'FUEL')) return 'FUEL';
+  if (categories.some(c => c === 'RAW_MATERIAL')) return 'GRAIN';
+  return 'STORE';
+}
+
+// GET /arrivals — unified "Expected to Arrive" aggregator across sources
+router.get('/arrivals', asyncHandler(async (_req: AuthRequest, res: Response) => {
+  const [pendingPOs, grainTrucksInFlight, pendingPRs, partialGRNs, todayCount] = await Promise.all([
+    prisma.purchaseOrder.findMany({
+      where: { status: { in: ['APPROVED', 'SENT', 'PARTIAL_RECEIVED'] } },
+      select: {
+        id: true, poNo: true, poDate: true, status: true, dealType: true, truckCap: true,
+        grandTotal: true,
+        vendor: { select: { id: true, name: true } },
+        lines: {
+          where: { pendingQty: { gt: 0 } },
+          select: {
+            id: true, description: true, pendingQty: true, quantity: true, receivedQty: true,
+            unit: true, rate: true,
+            inventoryItem: { select: { id: true, name: true, category: true } },
+          },
+        },
+        grns: { select: { id: true, status: true, fullyPaid: true } },
+        vendorInvoices: { select: { paidAmount: true, netPayable: true, totalAmount: true } },
+      },
+      take: 500,
+      orderBy: { poDate: 'desc' },
+    }),
+    prisma.grainTruck.findMany({
+      where: { grnId: null, quarantine: false },
+      select: {
+        id: true, date: true, vehicleNo: true, supplier: true, weightNet: true, ticketNo: true,
+        purchaseOrder: { select: { id: true, poNo: true } },
+      },
+      orderBy: { date: 'desc' },
+      take: 100,
+    }),
+    prisma.purchaseRequisition.findMany({
+      where: {
+        status: { in: ['APPROVED', 'PO_PENDING'] },
+        purchaseOrders: { none: {} },
+      },
+      select: {
+        id: true, reqNo: true, itemName: true, quantity: true, unit: true, estimatedCost: true,
+        urgency: true, requestedByPerson: true, department: true, createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    }),
+    prisma.goodsReceipt.findMany({
+      where: { status: 'PARTIAL', archived: false },
+      select: {
+        id: true, grnNo: true, grnDate: true, expectedDate: true, fullyPaid: true,
+        paymentLinkedAt: true, totalAmount: true,
+        po: { select: { id: true, poNo: true, grandTotal: true } },
+        vendor: { select: { id: true, name: true } },
+        lines: { select: { description: true, receivedQty: true, unit: true, rate: true } },
+      },
+      orderBy: { grnDate: 'desc' },
+      take: 200,
+    }),
+    prisma.goodsReceipt.count({
+      where: {
+        status: 'CONFIRMED',
+        grnDate: { gte: new Date(new Date().setHours(0, 0, 0, 0)) },
+      },
+    }),
+  ]);
+
+  type Row = {
+    source: 'FUEL' | 'GRAIN' | 'STORE';
+    poId: string; poNo: number; vendor: string; vendorId: string;
+    dealType: string | null; truckCap: number | null;
+    pendingQty: number; pendingValue: number;
+    paidStatus: 'UNPAID' | 'ADVANCE' | 'FULL';
+    hasOpenGrn: boolean;
+    expectedDate: Date | null;
+    items: Array<{ name: string; pending: number; unit: string; rate: number }>;
+  };
+
+  const derivePaid = (
+    invoices: Array<{ paidAmount: number; netPayable: number; totalAmount: number }>,
+    grandTotal: number,
+  ): Row['paidStatus'] => {
+    const paid = invoices.reduce((s, i) => s + (i.paidAmount || 0), 0);
+    if (paid <= 0) return 'UNPAID';
+    if (grandTotal > 0 && paid + 0.01 >= grandTotal) return 'FULL';
+    return 'ADVANCE';
+  };
+
+  const fuel: Row[] = [];
+  const grain: Row[] = [];
+  const store: Row[] = [];
+
+  for (const po of pendingPOs) {
+    const cats = po.lines.map(l => l.inventoryItem?.category || null);
+    const source = classifyPOSource(cats);
+    const pendingQty = po.lines.reduce((s, l) => s + (l.pendingQty || 0), 0);
+    const pendingValue = po.lines.reduce((s, l) => s + (l.pendingQty || 0) * (l.rate || 0), 0);
+    const row: Row = {
+      source,
+      poId: po.id,
+      poNo: po.poNo,
+      vendor: po.vendor.name,
+      vendorId: po.vendor.id,
+      dealType: po.dealType || null,
+      truckCap: po.truckCap || null,
+      pendingQty,
+      pendingValue: Math.round(pendingValue * 100) / 100,
+      paidStatus: derivePaid(po.vendorInvoices, po.grandTotal || 0),
+      hasOpenGrn: po.grns.some(g => ['DRAFT', 'PARTIAL'].includes(g.status)),
+      expectedDate: null,
+      items: po.lines.map(l => ({
+        name: l.inventoryItem?.name || l.description,
+        pending: l.pendingQty,
+        unit: l.unit,
+        rate: l.rate,
+      })),
+    };
+    if (source === 'FUEL') fuel.push(row);
+    else if (source === 'GRAIN') grain.push(row);
+    else store.push(row);
+  }
+
+  const expectedValue =
+    [...fuel, ...grain, ...store].reduce((s, r) => s + r.pendingValue, 0);
+  const expectedLines = [...fuel, ...grain, ...store].reduce((s, r) => s + r.items.length, 0);
+  const paidAwaiting = [...fuel, ...grain, ...store].filter(r => r.paidStatus !== 'UNPAID').length;
+
+  res.json({
+    fuel,
+    grain: { pos: grain, trucksInFlight: grainTrucksInFlight },
+    store,
+    pr: pendingPRs,
+    partial: partialGRNs,
+    summary: {
+      expectedValue: Math.round(expectedValue * 100) / 100,
+      expectedLines,
+      paidAwaiting,
+      partialCount: partialGRNs.length,
+      todayReceived: todayCount,
+    },
+  });
 }));
 
 // GET /:id — single GRN with lines, po, vendor
@@ -589,6 +738,68 @@ router.post('/expected/:poId', asyncHandler(async (req: AuthRequest, res: Respon
     res.status(201).json(grn);
 }));
 
+// POST /partial/:poId — create a PARTIAL GRN (paid, awaiting physical goods).
+// Same shape as /expected but starts in PARTIAL status so it shows in the
+// "Paid & Awaiting" tab on the receiving desk.
+router.post('/partial/:poId', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { expectedDate } = req.body as { expectedDate?: string };
+  const po = await prisma.purchaseOrder.findUnique({
+    where: { id: req.params.poId },
+    include: { lines: true },
+  });
+  if (!po) return res.status(404).json({ error: 'PO not found' });
+  if (!['APPROVED', 'SENT', 'PARTIAL_RECEIVED'].includes(po.status)) {
+    return res.status(400).json({ error: `PO must be APPROVED/SENT to create partial GRN (current: ${po.status})` });
+  }
+
+  // Prevent duplicate open DRAFT/PARTIAL GRN
+  const existing = await prisma.goodsReceipt.findFirst({
+    where: { poId: po.id, status: { in: ['DRAFT', 'PARTIAL'] }, archived: false },
+    select: { id: true, grnNo: true, status: true },
+  });
+  if (existing) {
+    return res.status(400).json({
+      error: `Open ${existing.status} GRN already exists: GRN-${existing.grnNo}`,
+      grnId: existing.id,
+    });
+  }
+
+  const grn = await prisma.goodsReceipt.create({
+    data: {
+      poId: po.id,
+      vendorId: po.vendorId,
+      grnDate: new Date(),
+      expectedDate: expectedDate ? new Date(expectedDate) : null,
+      grnType: 'EXPECTED',
+      status: 'PARTIAL',
+      qualityStatus: 'PENDING',
+      userId: req.user!.id,
+      totalQty: 0,
+      totalAmount: 0,
+      lines: {
+        create: po.lines.map(l => ({
+          poLineId: l.id,
+          inventoryItemId: (l as any).inventoryItemId || null,
+          description: l.description,
+          receivedQty: 0,
+          acceptedQty: 0,
+          rejectedQty: 0,
+          unit: l.unit || 'KG',
+          rate: l.rate,
+          amount: 0,
+        })),
+      },
+    },
+    include: { lines: true },
+  });
+
+  // Recompute paid flag immediately (in case payments already exist for this PO)
+  const { recomputeGrnPaidStateForPO } = await import('../services/grnPaidState');
+  await recomputeGrnPaidStateForPO(po.id).catch(() => {});
+
+  res.status(201).json(grn);
+}));
+
 // PUT /:id/status — status transitions
 router.put('/:id/status', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { newStatus } = req.body;
@@ -598,7 +809,8 @@ router.put('/:id/status', asyncHandler(async (req: AuthRequest, res: Response) =
     if (!grn) return res.status(404).json({ error: 'GRN not found' });
 
     const validTransitions: Record<string, string[]> = {
-      'DRAFT': ['CONFIRMED', 'CANCELLED'],
+      'DRAFT': ['PARTIAL', 'CONFIRMED', 'CANCELLED'],
+      'PARTIAL': ['DRAFT', 'CONFIRMED', 'CANCELLED'],
       'CONFIRMED': [],
       'CANCELLED': [],
     };
