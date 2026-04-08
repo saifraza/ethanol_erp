@@ -369,41 +369,51 @@ function EditModal({ row, onClose, onSaved }: EditModalProps) {
   const [vendors, setVendors] = useState<VendorLite[]>([]);
 
   useEffect(() => {
-    // Load dropdown data — coerce every response to an array.
-    // Different routes return different shapes: some return [...], some {items:[]},
-    // some {data:[]}, some an error object. Always end up with an array.
-    const asArray = (d: unknown): unknown[] => {
+    // Load dropdown data. Every route here has a different response shape:
+    //   /inventory/items     → { items: [...] }
+    //   /vendors             → { vendors: [...] }
+    //   /purchase-orders     → { pos: [...], total, page, limit }
+    // We extract the first array-valued property from each.
+    const firstArray = (d: unknown): unknown[] => {
       if (Array.isArray(d)) return d;
       if (d && typeof d === 'object') {
-        const o = d as Record<string, unknown>;
-        if (Array.isArray(o.items)) return o.items as unknown[];
-        if (Array.isArray(o.data)) return o.data as unknown[];
-        if (Array.isArray(o.results)) return o.results as unknown[];
+        for (const v of Object.values(d as Record<string, unknown>)) {
+          if (Array.isArray(v)) return v;
+        }
       }
       return [];
     };
-    api.get('/inventory/items?active=true')
-      .then((r) => setMaterials(asArray(r.data) as InventoryItem[]))
+
+    api.get('/inventory/items')
+      .then((r) => setMaterials(firstArray(r.data) as InventoryItem[]))
       .catch(() => setMaterials([]));
-    api.get('/purchase-orders?status=APPROVED,PARTIALLY_RECEIVED')
+
+    // PO backend does exact-match on status, so we can't pass comma-separated.
+    // Fetch all open POs and filter client-side.
+    api.get('/purchase-orders?limit=500')
       .then((r) => {
-        const list = asArray(r.data) as Array<{
+        type PoRaw = {
           id: string;
-          poNo?: string;
+          poNo?: string | number;
           status?: string;
           vendor?: { name?: string };
           vendorName?: string;
-        }>;
-        setPos(list.map((p) => ({
+        };
+        const list = firstArray(r.data) as PoRaw[];
+        const open = list.filter((p) =>
+          ['APPROVED', 'PARTIALLY_RECEIVED'].includes((p.status || '').toUpperCase()),
+        );
+        setPos(open.map((p) => ({
           id: p.id,
-          poNo: p.poNo || '--',
+          poNo: String(p.poNo ?? '--'),
           status: p.status || '',
           vendorName: p.vendor?.name || p.vendorName || '',
         })));
       })
       .catch(() => setPos([]));
+
     api.get('/vendors')
-      .then((r) => setVendors(asArray(r.data) as VendorLite[]))
+      .then((r) => setVendors(firstArray(r.data) as VendorLite[]))
       .catch(() => setVendors([]));
   }, []);
 
