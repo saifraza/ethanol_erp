@@ -35,6 +35,19 @@ import { handleFallbackInbound } from './handlers/fallbackInbound';
  * handlePoInbound (skips GrainTruck creation, fuel lab fail rejection).
  */
 function detectHandler(w: WeighmentInput, ctx: PushContext): PushHandler {
+  // Stage 2: explicit handler override from InventoryItem.handlerKey wins over auto-detect.
+  // Set this on the cloud item via /inventory/items UI; factory passes it through on push.
+  if (w.handler_key) {
+    switch (w.handler_key) {
+      case 'ETHANOL_OUTBOUND': return handleEthanolOutbound;
+      case 'DDGS_OUTBOUND': return handleDDGSOutbound;
+      case 'SUGAR_OUTBOUND': return handleSugarOutbound;
+      case 'PO_INBOUND': return handlePoInbound;
+      case 'SPOT_INBOUND': return handleSpotInbound;
+      // Unknown handlerKey → fall through to auto-detect rather than crash
+    }
+  }
+
   // Outbound first (simpler — just direction-based)
   if (w.direction === 'OUT') {
     const hasValidGatePassId = w.cloud_gate_pass_id && /^[0-9a-f-]{36}$/i.test(w.cloud_gate_pass_id);

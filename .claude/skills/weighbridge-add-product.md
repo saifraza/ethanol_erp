@@ -6,6 +6,48 @@ This is the playbook to follow every time. Don't improvise — these systems are
 
 ---
 
+## ⭐ Stage 2 (2026-04-08): UI-Driven Product Master
+
+**For 95% of new products you NEVER edit code.** Just create the InventoryItem in the UI:
+
+1. Go to **Inventory → Material Master → New Item**
+2. Fill in:
+   - **Name** (e.g., "Iron Scrap", "Pressmud", "Brown Sugar")
+   - **Category** — pick from RAW_MATERIAL / FUEL / CHEMICAL / FINISHED_GOOD / BYPRODUCT / SCRAP / PACKAGING / SPARE_PART / CONSUMABLE
+   - **Division** — ETHANOL / SUGAR / POWER / COMMON (scrap/spares are usually COMMON)
+   - **HSN Code, GST %, Unit** — standard
+   - **Aliases** — comma-separated alternate names operators may type at gate entry (e.g., "DI, ductile iron, MS scrap")
+   - **Handler Override** — leave on **Auto** unless this product needs special weighbridge handling. Auto routes by category + division. Override only when you need a specific cloud handler (e.g., contract auto-link).
+   - **Contract-based** — check if gate entry must pick a contract (like DDGS / Sugar / Ethanol)
+   - **Needs lab test** — check if factory should block gross weighment until lab passes
+3. Save.
+
+The factory server picks up the new item within ~5s (smart sync) and the operator sees it in the gate entry dropdown immediately. **No code change. No deploy. No skill update needed.**
+
+### When you DO need code (the 5% case)
+Only if the product needs:
+- A dedicated cloud handler (custom dispatch table, contract auto-link logic, special invoice generation) → see "When You Need a NEW Handler" section below
+- A new partial-state stub for the cloud pipeline page (see rule #12 below)
+- New Stage 4 contract model with its own picker UI
+
+For everything else (scrap variants, byproducts, packaging, new fuels, new chemicals, new finished goods) → just add the InventoryItem.
+
+### Routing rules (auto, when handlerKey is null)
+| material direction | category / hint | handler |
+|---|---|---|
+| OUT | (handler_key = ETHANOL_OUTBOUND OR cloud_gate_pass_id is uuid OR material includes 'ethanol') | handleEthanolOutbound |
+| OUT | category=SUGAR OR material matches /sugar/i | handleSugarOutbound |
+| OUT | category=DDGS OR material matches DDGS family | handleDDGSOutbound |
+| OUT | anything else (scrap, pressmud, byproducts) | handleNonEthanolOutbound (Shipment only) |
+| IN | po_id + (PO/JOB_WORK) | handlePoInbound |
+| IN | SPOT | handleSpotInbound |
+| IN | TRADER + supplier_id | handleTraderInbound |
+| IN | nothing matches | handleFallbackInbound |
+
+The legacy hardcoded keyword arrays in `factory-server/src/routes/weighbridge.ts` are now a **last-resort fallback** for items not yet in the InventoryItem master. They will be removed once master data is complete.
+
+---
+
 ## TL;DR Decision Tree
 
 **Is the product coming IN or going OUT?**

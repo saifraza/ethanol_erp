@@ -997,6 +997,11 @@ model InventoryItem {
   // Fuel-specific fields (only used when category = 'FUEL')
   steamRate               Float? // tons of steam per ton of fuel (e.g., 3.0 for rice husk)
   calorificValue          Float? // kcal/kg (optional reference)
+  // Multi-division routing (Stage 2): drives factory gate-entry dropdown + cloud detectHandler
+  aliases                 String[]                 @default([]) // alternate names operators may type ("DI", "ductile iron", "ms", "iron scrap")
+  handlerKey              String? // optional override for cloud detectHandler — null = route by category/division
+  isContractBased         Boolean                  @default(false) // if true, gate entry must pick a contract
+  needsLabTest            Boolean                  @default(false) // if true, factory blocks gross weighment until lab passes
   createdAt               DateTime                 @default(now())
   updatedAt               DateTime                 @updatedAt
   transactions            InventoryTransaction[]

@@ -290,49 +290,65 @@ router.post('/gate-entry', requireAuth, requireRole('GATE_ENTRY', 'ADMIN'), asyn
   const shift = getShift();
   const gateEntryAt = new Date();
 
-  // Look up material category to determine lab behavior
-  // 1. Try keyword inference first (instant, no DB needed)
-  // 2. Then cloud DB (InventoryItem) for exact match
-  // 3. Then local cache fallback
+  // Stage 2: Material routing is DB-driven, not keyword-driven.
+  // Source of truth = cached InventoryItem (synced from cloud every 5s).
+  // Lookup order:
+  //   1. Cached InventoryItem by exact name (case-insensitive)
+  //   2. Cached InventoryItem by alias match
+  //   3. Legacy keyword inference (last-resort fallback for items not yet in master)
+  //   4. Local cachedMaterial table (legacy fallback)
   let materialCategory: string | null = null;
+  let matchedItemNeedsLab = false;
   if (materialName) {
     const trimmedName = materialName.trim();
     const lower = trimmedName.toLowerCase();
 
-    // 1. Keyword inference (fastest, always works)
-    // DDGS checked BEFORE RAW_MATERIAL — "wet grain" would otherwise match "grain"
-    const FUEL_KEYWORDS = ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'firewood', 'biomass'];
-    const DDGS_KEYWORDS = ['ddgs', 'wdgs', 'distillers', 'distiller', 'dried grain', 'wet grain', 'wet distillers'];
-    const SUGAR_KEYWORDS = ['sugar', 'refined sugar', 'white sugar', 'crystal sugar'];
-    const RAW_MATERIAL_KEYWORDS = ['maize', 'corn', 'broken rice', 'grain', 'sorghum', 'milo'];
-    const CHEMICAL_KEYWORDS = ['amylase', 'urea', 'acid', 'antifoam', 'yeast', 'chemical'];
-    if (FUEL_KEYWORDS.some(kw => lower.includes(kw))) {
-      materialCategory = 'FUEL';
-    } else if (DDGS_KEYWORDS.some(kw => lower.includes(kw))) {
-      materialCategory = 'DDGS';
-    } else if (SUGAR_KEYWORDS.some(kw => lower.includes(kw))) {
-      materialCategory = 'SUGAR';
-    } else if (RAW_MATERIAL_KEYWORDS.some(kw => lower.includes(kw))) {
-      materialCategory = 'RAW_MATERIAL';
-    } else if (CHEMICAL_KEYWORDS.some(kw => lower.includes(kw))) {
-      materialCategory = 'CHEMICAL';
+    // 1+2. Cached InventoryItem lookup (exact name OR alias)
+    const { getMasterData } = await import('../services/masterDataCache');
+    const cached = getMasterData();
+    const matchedItem = cached.materials.find(m => {
+      if (m.name && m.name.toLowerCase() === lower) return true;
+      if (Array.isArray(m.aliases) && m.aliases.some(a => a.toLowerCase() === lower)) return true;
+      return false;
+    });
+    if (matchedItem?.category) {
+      materialCategory = matchedItem.category;
+      matchedItemNeedsLab = matchedItem.needsLabTest === true;
     }
 
-    // 2. Cloud DB lookup if keyword didn't match
+    // 3. Legacy keyword fallback — only if item is not in master data yet.
+    // Kept narrow for backward compat. Will be removed once all materials are in InventoryItem.
+    if (!materialCategory) {
+      const FUEL_KEYWORDS = ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'firewood', 'biomass'];
+      const DDGS_KEYWORDS = ['ddgs', 'wdgs', 'distillers', 'distiller', 'dried grain', 'wet grain', 'wet distillers'];
+      const SUGAR_KEYWORDS = ['sugar', 'refined sugar', 'white sugar', 'crystal sugar'];
+      const RAW_MATERIAL_KEYWORDS = ['maize', 'corn', 'broken rice', 'grain', 'sorghum', 'milo'];
+      const CHEMICAL_KEYWORDS = ['amylase', 'urea', 'acid', 'antifoam', 'yeast', 'chemical'];
+      if (FUEL_KEYWORDS.some(kw => lower.includes(kw))) materialCategory = 'FUEL';
+      else if (DDGS_KEYWORDS.some(kw => lower.includes(kw))) materialCategory = 'DDGS';
+      else if (SUGAR_KEYWORDS.some(kw => lower.includes(kw))) materialCategory = 'SUGAR';
+      else if (RAW_MATERIAL_KEYWORDS.some(kw => lower.includes(kw))) materialCategory = 'RAW_MATERIAL';
+      else if (CHEMICAL_KEYWORDS.some(kw => lower.includes(kw))) materialCategory = 'CHEMICAL';
+    }
+
+    // 4. Cloud DB live lookup (last resort if cache is empty/stale)
     if (!materialCategory) {
       const cloud = getCloudPrisma();
       if (cloud) {
         try {
           const item = await cloud.inventoryItem.findFirst({
             where: { name: { equals: trimmedName, mode: 'insensitive' }, isActive: true },
-            select: { category: true },
+            select: { category: true, needsLabTest: true },
           });
-          if (item?.category) materialCategory = item.category;
+          if (item?.category) {
+            materialCategory = item.category;
+            matchedItemNeedsLab = item.needsLabTest === true;
+          }
         } catch { /* cloud DB unreachable */ }
       }
     }
 
-    // 3. Local cache fallback
+    // 5. Local cachedMaterial fallback (legacy)
     if (!materialCategory) {
       const mat = await prisma.cachedMaterial.findFirst({
         where: { name: { equals: trimmedName, mode: 'insensitive' } },
@@ -343,12 +359,11 @@ router.post('/gate-entry', requireAuth, requireRole('GATE_ENTRY', 'ADMIN'), asyn
   }
 
   // Lab status rules:
-  // - OUTBOUND: no lab
-  // - RAW_MATERIAL (maize, broken rice): full lab on cloud ERP (PENDING)
-  // - FUEL (coal, rice husk, bagasse): quick moisture check at gross WB (PENDING)
-  // - CHEMICAL/PACKING/other: no lab
+  // - OUTBOUND: never needs lab
+  // - InventoryItem.needsLabTest=true: explicit per-item override (preferred path)
+  // - Fallback for items not in master: RAW_MATERIAL + FUEL get PENDING (legacy behavior)
   const isInbound = (direction || 'INBOUND') === 'INBOUND';
-  const needsLab = isInbound && (materialCategory === 'RAW_MATERIAL' || materialCategory === 'FUEL');
+  const needsLab = isInbound && (matchedItemNeedsLab || materialCategory === 'RAW_MATERIAL' || materialCategory === 'FUEL');
   const labStatus = needsLab ? 'PENDING' : null;
 
   // Ship-To resolution (outbound only). If client sent customerId but no snapshot,

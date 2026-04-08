@@ -85,6 +85,8 @@ export const weighmentSchema = z.object({
   driver_license: z.string().nullable().optional(),
   peso_date: z.string().nullable().optional(),
   material_category: z.string().nullable().optional(),
+  handler_key: z.string().nullable().optional(), // Stage 2: explicit handler override from InventoryItem.handlerKey
+  division: z.string().nullable().optional(), // Stage 2: SUGAR | POWER | ETHANOL | COMMON
   // Ship-To (outbound only; when omitted, Bill-To == Ship-To)
   ship_to_customer_id: z.string().nullable().optional(),
   ship_to_name: z.string().nullable().optional(),

@@ -32,8 +32,10 @@ router.get('/item-lookup', asyncHandler(async (req: AuthRequest, res: Response) 
 // GET /items — list all items (with optional category filter)
 router.get('/items', asyncHandler(async (req: AuthRequest, res: Response) => {
   const category = req.query.category as string | undefined;
+  const division = req.query.division as string | undefined;
   const where: any = {};
   if (category) where.category = category;
+  if (division) where.division = division;
   const items = await prisma.inventoryItem.findMany({
     where,
     take: 500,
@@ -150,6 +152,11 @@ router.post('/items', authorize('ADMIN') as any, asyncHandler(async (req: AuthRe
       supplier: b.supplier || null,
       leadTimeDays: b.leadTimeDays ? parseInt(b.leadTimeDays) : null,
       remarks: b.remarks || null,
+      division: b.division || 'ETHANOL',
+      aliases: Array.isArray(b.aliases) ? b.aliases.filter((a: unknown): a is string => typeof a === 'string' && a.trim().length > 0).map((a: string) => a.trim()) : [],
+      handlerKey: b.handlerKey || null,
+      isContractBased: b.isContractBased === true,
+      needsLabTest: b.needsLabTest === true,
     },
   });
   res.status(201).json(item);
@@ -177,6 +184,11 @@ router.put('/items/:id', authorize('ADMIN') as any, asyncHandler(async (req: Aut
       leadTimeDays: b.leadTimeDays !== undefined ? parseInt(b.leadTimeDays) : undefined,
       remarks: b.remarks,
       isActive: b.isActive,
+      division: b.division,
+      aliases: Array.isArray(b.aliases) ? b.aliases.filter((a: unknown): a is string => typeof a === 'string' && a.trim().length > 0).map((a: string) => a.trim()) : undefined,
+      handlerKey: b.handlerKey === undefined ? undefined : (b.handlerKey || null),
+      isContractBased: b.isContractBased === undefined ? undefined : b.isContractBased === true,
+      needsLabTest: b.needsLabTest === undefined ? undefined : b.needsLabTest === true,
     },
   });
   res.json(item);

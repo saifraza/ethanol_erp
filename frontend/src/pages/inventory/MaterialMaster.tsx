@@ -31,6 +31,11 @@ interface InventoryItem {
   gstPercent: number;
   valuationMethod: string;
   batchTracked: boolean;
+  division?: string;
+  aliases?: string[];
+  handlerKey?: string | null;
+  isContractBased?: boolean;
+  needsLabTest?: boolean;
 }
 
 interface StockLevel {
@@ -63,7 +68,27 @@ const CATEGORIES = [
   { value: 'SPARE_PART', label: 'Spare Part' },
   { value: 'CONSUMABLE', label: 'Consumable' },
   { value: 'CHEMICAL', label: 'Chemical' },
+  { value: 'FUEL', label: 'Fuel' },
   { value: 'FINISHED_GOOD', label: 'Finished Good' },
+  { value: 'BYPRODUCT', label: 'By-product' },
+  { value: 'SCRAP', label: 'Scrap' },
+  { value: 'PACKAGING', label: 'Packaging' },
+];
+
+const DIVISIONS = [
+  { value: 'ETHANOL', label: 'Ethanol' },
+  { value: 'SUGAR', label: 'Sugar' },
+  { value: 'POWER', label: 'Power' },
+  { value: 'COMMON', label: 'Common (all divisions)' },
+];
+
+const HANDLER_KEYS = [
+  { value: '', label: 'Auto (route by category + division)' },
+  { value: 'ETHANOL_OUTBOUND', label: 'Ethanol Outbound (OMC gate-pass flow)' },
+  { value: 'DDGS_OUTBOUND', label: 'DDGS Outbound (contract auto-link)' },
+  { value: 'SUGAR_OUTBOUND', label: 'Sugar Outbound (contract auto-link)' },
+  { value: 'PO_INBOUND', label: 'PO Inbound (procurement GRN)' },
+  { value: 'SPOT_INBOUND', label: 'Spot Inbound (direct purchase)' },
 ];
 
 const UNITS = ['KG', 'LTR', 'MT', 'NOS', 'PCS', 'SET', 'BOX', 'BAG', 'DRUM', 'PKT'];
@@ -73,6 +98,8 @@ const emptyForm = {
   code: '', name: '', category: 'RAW_MATERIAL', unit: 'KG',
   minStock: '', maxStock: '', costPerUnit: '', hsnCode: '',
   gstPercent: '', valuationMethod: 'WEIGHTED_AVG', batchTracked: false,
+  division: 'ETHANOL', aliases: '', handlerKey: '',
+  isContractBased: false, needsLabTest: false,
 };
 
 export default function MaterialMaster() {
@@ -143,6 +170,11 @@ export default function MaterialMaster() {
       gstPercent: String(item.gstPercent ?? ''),
       valuationMethod: item.valuationMethod ?? 'WEIGHTED_AVG',
       batchTracked: item.batchTracked ?? false,
+      division: item.division ?? 'ETHANOL',
+      aliases: Array.isArray(item.aliases) ? item.aliases.join(', ') : '',
+      handlerKey: item.handlerKey ?? '',
+      isContractBased: item.isContractBased ?? false,
+      needsLabTest: item.needsLabTest ?? false,
     });
     setShowForm(true);
   };
@@ -160,6 +192,8 @@ export default function MaterialMaster() {
         maxStock: form.maxStock ? parseFloat(form.maxStock) : undefined,
         costPerUnit: form.costPerUnit ? parseFloat(form.costPerUnit) : undefined,
         gstPercent: form.gstPercent ? parseFloat(form.gstPercent) : undefined,
+        aliases: form.aliases.split(',').map(s => s.trim()).filter(Boolean),
+        handlerKey: form.handlerKey || null,
       };
       if (editId) {
         await api.put(`/inventory/items/${editId}`, payload);
@@ -375,6 +409,41 @@ export default function MaterialMaster() {
                   className="rounded border-gray-300" />
                 Batch Tracked
               </label>
+
+              {/* Multi-Division Routing (Stage 2) */}
+              <div className="border-t pt-4 mt-2">
+                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Routing & Division</div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Division</label>
+                  <select value={form.division} onChange={(e) => setForm({ ...form, division: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    {DIVISIONS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">Which plant division owns this item</p>
+                </div>
+                <div className="mt-3">
+                  <FormField label="Aliases (comma-separated)" value={form.aliases} onChange={(v) => setForm({ ...form, aliases: v })} placeholder="e.g. DI, ductile iron, MS scrap" />
+                  <p className="text-xs text-gray-500 mt-1">Alternate names operators may type at gate entry</p>
+                </div>
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Handler Override</label>
+                  <select value={form.handlerKey} onChange={(e) => setForm({ ...form, handlerKey: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    {HANDLER_KEYS.map(h => <option key={h.value} value={h.value}>{h.label}</option>)}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">Leave on Auto unless this product needs special weighbridge handling</p>
+                </div>
+                <label className="flex items-center gap-2 text-sm mt-3">
+                  <input type="checkbox" checked={form.isContractBased} onChange={(e) => setForm({ ...form, isContractBased: e.target.checked })}
+                    className="rounded border-gray-300" />
+                  Contract-based (gate entry must pick a contract)
+                </label>
+                <label className="flex items-center gap-2 text-sm mt-2">
+                  <input type="checkbox" checked={form.needsLabTest} onChange={(e) => setForm({ ...form, needsLabTest: e.target.checked })}
+                    className="rounded border-gray-300" />
+                  Needs lab test before gross weighment
+                </label>
+              </div>
             </div>
             <div className="sticky bottom-0 bg-white border-t px-6 py-4 flex justify-end gap-3">
               <button onClick={() => setShowForm(false)} className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">Cancel</button>

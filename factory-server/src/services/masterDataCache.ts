@@ -18,7 +18,7 @@ let syncTimer: ReturnType<typeof setInterval> | null = null;
 
 // ── The Cache ──
 interface Supplier { id: string; name: string; gstin: string | null; phone: string | null }
-interface Material { id: string; name: string; unit: string | null; category: string | null; hsnCode: string | null; gstPercent: number }
+interface Material { id: string; name: string; unit: string | null; category: string | null; hsnCode: string | null; gstPercent: number; division: string | null; aliases: string[]; handlerKey: string | null; isContractBased: boolean; needsLabTest: boolean }
 interface POLine { id: string; inventory_item_id: string | null; material_id: string | null; description: string; quantity: number; received_qty: number; pending_qty: number; rate: number; unit: string; hsn_code: string; gst_percent: number }
 interface PO { id: string; po_no: number; vendor_name: string; vendor_id: string; status: string; deal_type: string; lines: POLine[] }
 interface Trader { id: string; name: string; phone: string | null; productTypes: string | null; category: string | null }
@@ -108,6 +108,15 @@ function loadFromDisk(): boolean {
       data.vehicles = data.vehicles || [];
       data.ethContracts = data.ethContracts || [];
       data.ddgsContracts = data.ddgsContracts || [];
+      // Stage 2 schema evolution: backfill new Material fields on cached entries
+      data.materials = (data.materials || []).map(m => ({
+        ...m,
+        division: (m as any).division ?? null,
+        aliases: Array.isArray((m as any).aliases) ? (m as any).aliases : [],
+        handlerKey: (m as any).handlerKey ?? null,
+        isContractBased: (m as any).isContractBased ?? false,
+        needsLabTest: (m as any).needsLabTest ?? false,
+      }));
       cache = { ...data, source: 'disk' };
       console.log(`[CACHE] Loaded from disk: ${cache.suppliers.length} suppliers, ${cache.materials.length} materials, ${cache.pos.length} POs, ${cache.traders.length} traders`);
       return true;
@@ -154,7 +163,10 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
       }),
       cloud.inventoryItem.findMany({
         where: { isActive: true },
-        select: { id: true, name: true, unit: true, category: true, hsnCode: true, gstPercent: true },
+        select: {
+          id: true, name: true, unit: true, category: true, hsnCode: true, gstPercent: true,
+          division: true, aliases: true, handlerKey: true, isContractBased: true, needsLabTest: true,
+        },
         orderBy: { name: 'asc' },
         take: 500,
       }),
@@ -255,7 +267,19 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
 
     cache = {
       suppliers: vendors.map(v => ({ id: v.id, name: v.name, gstin: v.gstin, phone: v.phone })),
-      materials: inventoryItems.map(m => ({ id: m.id, name: m.name, unit: m.unit, category: m.category, hsnCode: m.hsnCode, gstPercent: m.gstPercent })),
+      materials: inventoryItems.map(m => ({
+        id: m.id,
+        name: m.name,
+        unit: m.unit,
+        category: m.category,
+        hsnCode: m.hsnCode,
+        gstPercent: m.gstPercent,
+        division: m.division ?? null,
+        aliases: Array.isArray(m.aliases) ? m.aliases : [],
+        handlerKey: m.handlerKey ?? null,
+        isContractBased: m.isContractBased ?? false,
+        needsLabTest: m.needsLabTest ?? false,
+      })),
       pos: purchaseOrders.map(po => ({
         id: po.id,
         po_no: po.poNo,

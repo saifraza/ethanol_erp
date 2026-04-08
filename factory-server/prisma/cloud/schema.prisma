@@ -108,6 +108,12 @@ model InventoryItem {
   defaultRate     Float    @default(0)
   steamRate       Float?
   calorificValue  Float?
+  // Stage 2: multi-division routing
+  division        String?  @default("ETHANOL")
+  aliases         String[] @default([])
+  handlerKey      String?
+  isContractBased Boolean  @default(false)
+  needsLabTest    Boolean  @default(false)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
