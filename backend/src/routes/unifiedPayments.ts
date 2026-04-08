@@ -789,6 +789,8 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
     vendorAccount: string | null;
     vendorIfsc: string | null;
     vendorPhone: string | null;
+    pendingCash: number;
+    pendingCashVouchers: Array<{ id: string; voucherNo: number; amount: number; payeeName: string; date: string }>;
   }
 
   const pending: PendingPayable[] = [];
@@ -947,7 +949,52 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
       vendorAccount: po.vendor.bankAccount || null,
       vendorIfsc: po.vendor.bankIfsc || null,
       vendorPhone: po.vendor.phone || null,
+      pendingCash: 0,
+      pendingCashVouchers: [],
     });
+  }
+
+  // ── Batch fetch ACTIVE cash vouchers for all pending POs in one query ──
+  // (Instead of N+1 per PO.) Match by purpose containing "PO-{poNo}".
+  if (pending.length > 0) {
+    const poNumbers = pending
+      .filter(p => p.dealType !== 'CONTRACTOR')
+      .map(p => p.poNo);
+    if (poNumbers.length > 0) {
+      try {
+        const cvs = await prisma.cashVoucher.findMany({
+          where: {
+            status: 'ACTIVE',
+            type: 'PAYMENT',
+            OR: poNumbers.map(n => ({ purpose: { contains: `PO-${n}` } })),
+          },
+          select: { id: true, voucherNo: true, amount: true, purpose: true, payeeName: true, date: true },
+        });
+        // Group by PO number — exact match on "PO-{n}" to avoid PO-12 matching PO-123
+        const byPoNo = new Map<number, Array<{ id: string; voucherNo: number; amount: number; payeeName: string; date: string }>>();
+        for (const cv of cvs) {
+          const m = cv.purpose.match(/PO-(\d+)/);
+          if (!m) continue;
+          const n = parseInt(m[1]);
+          if (!byPoNo.has(n)) byPoNo.set(n, []);
+          byPoNo.get(n)!.push({
+            id: cv.id,
+            voucherNo: cv.voucherNo,
+            amount: cv.amount,
+            payeeName: cv.payeeName,
+            date: cv.date.toISOString(),
+          });
+        }
+        for (const row of pending) {
+          if (row.dealType === 'CONTRACTOR') continue;
+          const list = byPoNo.get(row.poNo) || [];
+          row.pendingCashVouchers = list;
+          row.pendingCash = Math.round(list.reduce((s, v) => s + v.amount, 0) * 100) / 100;
+        }
+      } catch (err) {
+        console.error('[outgoing/pending] cash voucher batch fetch failed:', err);
+      }
+    }
   }
 
   // ── Contractor bills (confirmed, unpaid) ──
@@ -1007,10 +1054,13 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
       tdsPercent: cb.contractor.tdsPercent,
       tdsSection: cb.contractor.tdsSection || '194C',
       material: cb.description,
+      category: null,
       vendorBank: cb.contractor.bankName || null,
       vendorAccount: cb.contractor.bankAccount || null,
       vendorIfsc: cb.contractor.bankIfsc || null,
       vendorPhone: cb.contractor.phone || null,
+      pendingCash: 0,
+      pendingCashVouchers: [],
     } as PendingPayable);
   }
 

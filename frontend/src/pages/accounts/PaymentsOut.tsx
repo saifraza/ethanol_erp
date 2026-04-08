@@ -42,6 +42,8 @@ interface PendingPayable {
   vendorAccount: string | null;
   vendorIfsc: string | null;
   vendorPhone: string | null;
+  pendingCash?: number;
+  pendingCashVouchers?: Array<{ id: string; voucherNo: number; amount: number; payeeName: string; date: string }>;
 }
 
 interface PendingSummary {
@@ -943,6 +945,7 @@ export default function PaymentsOut() {
                             <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Payable</th>
                             <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Invoiced</th>
                             <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Paid</th>
+                            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700" title="Cash issued to team but not yet settled">Cash Out</th>
                             <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Balance</th>
                             <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Status</th>
                             <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Due Date</th>
@@ -970,6 +973,17 @@ export default function PaymentsOut() {
                               </td>
                               <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">{fmtAmt(item.totalInvoiced)}</td>
                               <td className={`px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums ${item.totalPaid > 0 ? 'text-green-700 font-medium' : 'text-slate-400'}`}>{fmtAmt(item.totalPaid)}</td>
+                              <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">
+                                {(item.pendingCash || 0) > 0 ? (
+                                  <div className="flex flex-col items-end gap-0.5">
+                                    <span className="text-yellow-700 font-medium">{fmtAmt(item.pendingCash || 0)}</span>
+                                    <span className="text-[8px] font-bold uppercase px-1 py-0.5 border border-yellow-400 bg-yellow-50 text-yellow-700"
+                                      title={(item.pendingCashVouchers || []).map(v => `CV#${v.voucherNo} ${v.payeeName} ₹${v.amount.toLocaleString('en-IN')}`).join('\n')}>
+                                      {(item.pendingCashVouchers || []).length} CV
+                                    </span>
+                                  </div>
+                                ) : <span className="text-slate-300">--</span>}
+                              </td>
                               <td className={`px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums font-bold ${item.balance > 0 ? 'text-red-600' : 'text-green-600'}`}>{fmtAmt(item.balance)}</td>
                               <td className="px-3 py-1.5 border-r border-slate-100">
                                 <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
@@ -1035,7 +1049,7 @@ export default function PaymentsOut() {
                             {/* Pipeline expansion row */}
                             {selectedPOId === item.poId && (
                               <tr>
-                                <td colSpan={11} className="p-0 border-b border-slate-300 bg-slate-50">
+                                <td colSpan={12} className="p-0 border-b border-slate-300 bg-slate-50">
                                   {detailLoading ? (
                                     <div className="p-4 text-center text-xs text-slate-400 uppercase tracking-widest">Loading pipeline...</div>
                                   ) : poDetail?.pipeline ? (
@@ -1169,9 +1183,10 @@ export default function PaymentsOut() {
                           <tr className="bg-slate-800 text-white font-semibold">
                             <td className="px-3 py-2 text-[10px] uppercase tracking-widest" colSpan={3}>Total ({filtered.length} POs)</td>
                             <td className="px-3 py-2 text-right font-mono tabular-nums">{fmt(filtered.reduce((s, i) => s + i.poAmount, 0))}</td>
-                            <td colSpan={4}></td>
+                            <td colSpan={2}></td>
+                            <td className="px-3 py-2 text-right font-mono tabular-nums text-yellow-300">{fmt(filtered.reduce((s, i) => s + (i.pendingCash || 0), 0))}</td>
                             <td className="px-3 py-2 text-right font-mono tabular-nums">{fmt(filtered.reduce((s, i) => s + i.balance, 0))}</td>
-                            <td></td>
+                            <td colSpan={4}></td>
                           </tr>
                         </tfoot>
                       </table>

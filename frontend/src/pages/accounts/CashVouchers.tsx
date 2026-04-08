@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import api from '../../services/api';
 
 interface CashVoucher {
@@ -78,6 +78,7 @@ export default function CashVouchers() {
   // Filters
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [typeFilter, setTypeFilter] = useState('ALL');
+  const [purposeFilter, setPurposeFilter] = useState<'ALL' | 'FUEL' | 'RAW_MATERIAL' | 'CONTRACTOR'>('ALL');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
@@ -86,6 +87,23 @@ export default function CashVouchers() {
   const [showSettleModal, setShowSettleModal] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [selectedVoucher, setSelectedVoucher] = useState<CashVoucher | null>(null);
+
+  // Client-side purpose bucket filter (Fuel/RM/Contractor) — keyword based since
+  // CashVoucher has no FK to vendor/contractor; we infer from category + purpose text.
+  const filteredVouchers = useMemo(() => {
+    if (purposeFilter === 'ALL') return vouchers;
+    const FUEL_KW = ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'biomass', 'fuel'];
+    const RM_KW = ['maize', 'corn', 'broken rice', 'grain', 'sorghum', 'molasses', 'rice'];
+    const CONTRACT_KW = ['contractor', 'contract', 'labour', 'labor', 'civil', 'manpower'];
+    return vouchers.filter((v) => {
+      const text = `${v.purpose || ''} ${v.payeeName || ''}`.toLowerCase();
+      const cat = (v.category || '').toUpperCase();
+      if (purposeFilter === 'FUEL') return cat === 'FUEL' || FUEL_KW.some(k => text.includes(k));
+      if (purposeFilter === 'RAW_MATERIAL') return cat === 'MATERIAL' || RM_KW.some(k => text.includes(k));
+      if (purposeFilter === 'CONTRACTOR') return cat === 'LABOUR' || CONTRACT_KW.some(k => text.includes(k));
+      return true;
+    });
+  }, [vouchers, purposeFilter]);
 
   // Form state
   const [form, setForm] = useState(emptyForm);
@@ -248,6 +266,24 @@ export default function CashVouchers() {
             ))}
           </div>
 
+          {/* Purpose Filter — match Payments Out buckets */}
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mr-1">For</span>
+            {(['ALL', 'FUEL', 'RAW_MATERIAL', 'CONTRACTOR'] as const).map((p) => (
+              <button
+                key={p}
+                onClick={() => setPurposeFilter(p)}
+                className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest border ${
+                  purposeFilter === p
+                    ? 'bg-slate-800 text-white border-slate-800'
+                    : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                {p === 'RAW_MATERIAL' ? 'RM' : p}
+              </button>
+            ))}
+          </div>
+
           {/* Type Filter */}
           <div className="flex items-center gap-1">
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mr-1">Type</span>
@@ -331,14 +367,14 @@ export default function CashVouchers() {
               </tr>
             </thead>
             <tbody>
-              {vouchers.length === 0 ? (
+              {filteredVouchers.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="px-3 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">
                     No vouchers found
                   </td>
                 </tr>
               ) : (
-                vouchers.map((v, i) => (
+                filteredVouchers.map((v, i) => (
                   <tr key={v.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
                     <td className="px-3 py-1.5 text-slate-500 font-mono border-r border-slate-100">{v.voucherNo}</td>
                     <td className="px-3 py-1.5 text-slate-700 border-r border-slate-100 whitespace-nowrap">{fmtDate(v.date)}</td>
@@ -389,13 +425,13 @@ export default function CashVouchers() {
         </div>
 
         {/* Table Footer */}
-        {vouchers.length > 0 && (
+        {filteredVouchers.length > 0 && (
           <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 bg-slate-800 text-white px-3 py-2 flex items-center justify-between">
             <span className="text-[10px] font-bold uppercase tracking-widest">
-              {vouchers.length} voucher{vouchers.length !== 1 ? 's' : ''}
+              {filteredVouchers.length} voucher{filteredVouchers.length !== 1 ? 's' : ''}{purposeFilter !== 'ALL' ? ` (${purposeFilter === 'RAW_MATERIAL' ? 'RM' : purposeFilter})` : ''}
             </span>
             <span className="text-[10px] font-bold uppercase tracking-widest font-mono tabular-nums">
-              Total: {fmtCurrency(vouchers.reduce((sum, v) => sum + v.amount, 0))}
+              Total: {fmtCurrency(filteredVouchers.reduce((sum, v) => sum + v.amount, 0))}
             </span>
           </div>
         )}
