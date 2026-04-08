@@ -4,6 +4,7 @@ import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError, ValidationError } from '../shared/errors';
 import { z } from 'zod';
 import prisma from '../config/prisma';
+import { DIVISIONS } from '../shared/config/divisions';
 
 const router = Router();
 
@@ -25,6 +26,7 @@ const journalLineSchema = z.object({
   credit: z.number().min(0).default(0),
   narration: z.string().optional().nullable(),
   costCenter: z.string().optional().nullable(),
+  division: z.enum(DIVISIONS).optional().nullable(),
 });
 
 const createJournalSchema = z.object({
@@ -42,6 +44,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const fromStr = req.query.from as string | undefined;
   const toStr = req.query.to as string | undefined;
   const refType = req.query.refType as string | undefined;
+  const divisionStr = req.query.division as string | undefined;
 
   const where: Record<string, unknown> = {};
   if (fromStr || toStr) {
@@ -51,6 +54,9 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     };
   }
   if (refType) where.refType = refType;
+  if (divisionStr && (DIVISIONS as readonly string[]).includes(divisionStr)) {
+    where.lines = { some: { division: divisionStr } };
+  }
 
   const [entries, total] = await Promise.all([
     prisma.journalEntry.findMany({
@@ -135,6 +141,7 @@ router.get('/ledger/:accountId', asyncHandler(async (req: AuthRequest, res: Resp
   const { accountId } = req.params;
   const fromStr = req.query.from as string | undefined;
   const toStr = req.query.to as string | undefined;
+  const divisionStr = req.query.division as string | undefined;
   const take = Math.min(parseInt(req.query.limit as string) || 200, 500);
 
   const account = await prisma.account.findUnique({
@@ -154,6 +161,9 @@ router.get('/ledger/:accountId', asyncHandler(async (req: AuthRequest, res: Resp
       ...(toStr ? { lte: new Date(toStr) } : {}),
     };
   }
+  if (divisionStr && (DIVISIONS as readonly string[]).includes(divisionStr)) {
+    where.division = divisionStr;
+  }
 
   const lines = await prisma.journalLine.findMany({
     where,
@@ -165,6 +175,7 @@ router.get('/ledger/:accountId', asyncHandler(async (req: AuthRequest, res: Resp
       credit: true,
       narration: true,
       costCenter: true,
+      division: true,
       journal: {
         select: {
           id: true,
@@ -181,7 +192,7 @@ router.get('/ledger/:accountId', asyncHandler(async (req: AuthRequest, res: Resp
   const isDebitNormal = account.type === 'ASSET' || account.type === 'EXPENSE';
   let runningBalance = account.openingBalance;
 
-  const ledgerLines = lines.map((l: { debit: number; credit: number; id: string; narration: string | null; costCenter: string | null; journal: { id: string; entryNo: number; date: Date; narration: string; refType: string | null } }) => {
+  const ledgerLines = lines.map((l: { debit: number; credit: number; id: string; narration: string | null; costCenter: string | null; division: string | null; journal: { id: string; entryNo: number; date: Date; narration: string; refType: string | null } }) => {
     if (isDebitNormal) {
       runningBalance += l.debit - l.credit;
     } else {
@@ -463,12 +474,13 @@ router.post('/', validate(createJournalSchema), asyncHandler(async (req: AuthReq
         refId: refId || null,
         userId: req.user?.id || 'system',
         lines: {
-          create: lines.map((l: { accountId: string; debit: number; credit: number; narration?: string; costCenter?: string }) => ({
+          create: lines.map((l: { accountId: string; debit: number; credit: number; narration?: string; costCenter?: string; division?: string }) => ({
             accountId: l.accountId,
             debit: l.debit,
             credit: l.credit,
             narration: l.narration || null,
             costCenter: l.costCenter || null,
+            division: l.division || null,
           })),
         },
       },
