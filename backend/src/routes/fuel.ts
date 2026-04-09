@@ -48,6 +48,18 @@ router.get('/master', authenticate, asyncHandler(async (req: AuthRequest, res: R
 router.post('/master', authenticate, validate(fuelMasterSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const b = req.body;
 
+  // Prevent duplicate fuel names (case-insensitive, ignores spaces)
+  const normalized = b.name.trim().toLowerCase().replace(/\s+/g, ' ');
+  const existing = await prisma.inventoryItem.findFirst({
+    where: { category: 'FUEL', isActive: true, name: { equals: normalized, mode: 'insensitive' } },
+    select: { id: true, name: true, code: true },
+  });
+  if (existing) {
+    return res.status(409).json({
+      error: `Fuel "${existing.name}" already exists (${existing.code}). Edit the existing one instead of creating a duplicate.`,
+    });
+  }
+
   // Auto-generate code if not provided: FUEL-001, FUEL-002, etc.
   let code = b.code;
   if (!code) {
