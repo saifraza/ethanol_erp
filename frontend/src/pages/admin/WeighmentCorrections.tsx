@@ -109,9 +109,19 @@ export default function WeighmentCorrections() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [page, setPage] = useState(0);
+
+  // Debounce search input — avoid refetch on every keystroke
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(0);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [search]);
 
   // Modal state
   const [editTarget, setEditTarget] = useState<CorrectableRow | null>(null);
@@ -122,7 +132,7 @@ export default function WeighmentCorrections() {
     try {
       setLoading(true);
       const params = new URLSearchParams();
-      if (search) params.set('search', search);
+      if (debouncedSearch) params.set('search', debouncedSearch);
       if (fromDate) params.set('from', fromDate);
       if (toDate) params.set('to', toDate);
       params.set('limit', String(PAGE_SIZE));
@@ -144,7 +154,7 @@ export default function WeighmentCorrections() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, fromDate, toDate]);
+  }, [page, debouncedSearch, fromDate, toDate]);
 
   useEffect(() => {
     fetchRows();
@@ -159,8 +169,9 @@ export default function WeighmentCorrections() {
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const pageStart = total === 0 ? 0 : page * PAGE_SIZE + 1;
   const pageEnd = total === 0 ? 0 : page * PAGE_SIZE + rows.length;
+  const initialLoading = loading && rows.length === 0 && !debouncedSearch && !fromDate && !toDate;
 
-  if (loading) {
+  if (initialLoading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-xs text-slate-400 uppercase tracking-widest">Loading weighments...</div>
@@ -191,10 +202,7 @@ export default function WeighmentCorrections() {
             <input
               type="text"
               value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(0);
-              }}
+              onChange={(e) => setSearch(e.target.value)}
               placeholder="e.g. 137 or HR55T2963"
               className="border border-slate-300 px-2.5 py-1.5 text-xs w-64 focus:outline-none focus:ring-1 focus:ring-slate-400"
             />
