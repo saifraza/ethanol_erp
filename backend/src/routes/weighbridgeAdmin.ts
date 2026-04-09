@@ -46,9 +46,12 @@ router.get(
 
     const where: Record<string, unknown> = {};
     if (fromDate || toDate) {
+      const toDateExclusive = toDate
+        ? new Date(toDate.getTime() + 24 * 60 * 60 * 1000)
+        : undefined;
       where.date = {
         ...(fromDate ? { gte: fromDate } : {}),
-        ...(toDate ? { lte: toDate } : {}),
+        ...(toDateExclusive ? { lt: toDateExclusive } : {}),
       };
     }
     if (search) {
@@ -65,32 +68,35 @@ router.get(
       }
     }
 
-    const trucks = await prisma.grainTruck.findMany({
-      where,
-      take,
-      skip,
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        ticketNo: true,
-        vehicleNo: true,
-        supplier: true,
-        materialType: true,
-        materialId: true,
-        weightGross: true,
-        weightTare: true,
-        weightNet: true,
-        date: true,
-        createdAt: true,
-        cancelled: true,
-        cancelledReason: true,
-        grnId: true,
-        factoryLocalId: true,
-        goodsReceipt: {
-          select: { grnNo: true, status: true, invoiceNo: true, fullyPaid: true },
+    const [trucks, total] = await Promise.all([
+      prisma.grainTruck.findMany({
+        where,
+        take,
+        skip,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          ticketNo: true,
+          vehicleNo: true,
+          supplier: true,
+          materialType: true,
+          materialId: true,
+          weightGross: true,
+          weightTare: true,
+          weightNet: true,
+          date: true,
+          createdAt: true,
+          cancelled: true,
+          cancelledReason: true,
+          grnId: true,
+          factoryLocalId: true,
+          goodsReceipt: {
+            select: { grnNo: true, status: true, invoiceNo: true, fullyPaid: true },
+          },
         },
-      },
-    });
+      }),
+      prisma.grainTruck.count({ where }),
+    ]);
 
     // Run blocker check for each row (fast — all data already loaded via include)
     const rows = await Promise.all(
@@ -105,7 +111,12 @@ router.get(
       }),
     );
 
-    res.json(rows);
+    res.json({
+      items: rows,
+      total,
+      limit: take,
+      offset: skip,
+    });
   }),
 );
 

@@ -77,6 +77,15 @@ interface POLite {
   vendorName: string;
 }
 
+interface CorrectableResponse {
+  items?: CorrectableRow[];
+  total?: number;
+  limit?: number;
+  offset?: number;
+}
+
+const PAGE_SIZE = 50;
+
 const fmtDateTime = (s: string) => {
   const d = new Date(s);
   return d.toLocaleString('en-IN', {
@@ -96,10 +105,12 @@ const fmtKg = (tons: number) => {
 
 export default function WeighmentCorrections() {
   const [rows, setRows] = useState<CorrectableRow[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+  const [page, setPage] = useState(0);
 
   // Modal state
   const [editTarget, setEditTarget] = useState<CorrectableRow | null>(null);
@@ -113,33 +124,40 @@ export default function WeighmentCorrections() {
       if (search) params.set('search', search);
       if (fromDate) params.set('from', fromDate);
       if (toDate) params.set('to', toDate);
+      params.set('limit', String(PAGE_SIZE));
+      params.set('offset', String(page * PAGE_SIZE));
       const res = await api.get(`/weighbridge/admin/correctable?${params.toString()}`);
       // Defensive: API may return array OR { items: [] } OR error object
       const data = res.data;
       const list = Array.isArray(data)
         ? data
-        : Array.isArray((data as { items?: CorrectableRow[] })?.items)
-        ? (data as { items: CorrectableRow[] }).items
+        : Array.isArray((data as CorrectableResponse)?.items)
+        ? (data as CorrectableResponse).items || []
         : [];
       setRows(list);
+      setTotal(Array.isArray(data) ? list.length : typeof (data as CorrectableResponse)?.total === 'number' ? (data as CorrectableResponse).total || 0 : list.length);
     } catch (err) {
       console.error('Failed to load weighments:', err);
       setRows([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
-  }, [search, fromDate, toDate]);
+  }, [page, search, fromDate, toDate]);
 
   useEffect(() => {
     fetchRows();
   }, [fetchRows]);
 
   const kpis = {
-    total: rows.length,
+    total,
     editable: rows.filter((r) => r.canEdit).length,
     blocked: rows.filter((r) => !r.canEdit && !r.cancelled).length,
     cancelled: rows.filter((r) => r.cancelled).length,
   };
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageStart = total === 0 ? 0 : page * PAGE_SIZE + 1;
+  const pageEnd = total === 0 ? 0 : page * PAGE_SIZE + rows.length;
 
   if (loading) {
     return (
@@ -161,14 +179,21 @@ export default function WeighmentCorrections() {
           </div>
         </div>
 
+        <div className="bg-blue-50 border-x border-b border-blue-200 px-4 py-2 -mx-3 md:-mx-6 text-[10px] font-medium uppercase tracking-widest text-blue-700">
+          This screen shows inbound GrainTruck correction rows only. DDGS and dispatch weighments synced from the factory server are tracked elsewhere.
+        </div>
+
         {/* Filter bar */}
-        <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6 flex gap-3 items-end">
+        <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6 flex gap-3 items-end flex-wrap">
           <div>
             <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Search (ticket / vehicle / supplier)</div>
             <input
               type="text"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(0);
+              }}
               placeholder="e.g. 137 or HR55T2963"
               className="border border-slate-300 px-2.5 py-1.5 text-xs w-64 focus:outline-none focus:ring-1 focus:ring-slate-400"
             />
@@ -178,7 +203,10 @@ export default function WeighmentCorrections() {
             <input
               type="date"
               value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
+              onChange={(e) => {
+                setFromDate(e.target.value);
+                setPage(0);
+              }}
               className="border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
             />
           </div>
@@ -187,7 +215,10 @@ export default function WeighmentCorrections() {
             <input
               type="date"
               value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
+              onChange={(e) => {
+                setToDate(e.target.value);
+                setPage(0);
+              }}
               className="border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
             />
           </div>
@@ -202,25 +233,26 @@ export default function WeighmentCorrections() {
         {/* KPI strip */}
         <div className="grid grid-cols-4 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
           <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-blue-500">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Weighments</div>
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Matches</div>
             <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{kpis.total}</div>
+            <div className="text-[9px] text-slate-400 uppercase tracking-widest mt-1">Showing {rows.length} on page</div>
           </div>
           <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-green-500">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Editable</div>
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Editable On Page</div>
             <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{kpis.editable}</div>
           </div>
           <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-amber-500">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Blocked</div>
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Blocked On Page</div>
             <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{kpis.blocked}</div>
           </div>
           <div className="bg-white px-4 py-3 border-l-4 border-l-red-500">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Cancelled</div>
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Cancelled On Page</div>
             <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{kpis.cancelled}</div>
           </div>
         </div>
 
         {/* Table */}
-        <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-hidden">
+        <div className="-mx-3 md:-mx-6 border-x border-slate-300 overflow-hidden">
           <table className="w-full text-xs">
             <thead>
               <tr className="bg-slate-800 text-white">
@@ -310,6 +342,30 @@ export default function WeighmentCorrections() {
               })}
             </tbody>
           </table>
+        </div>
+        <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6 flex items-center justify-between">
+          <span className="text-[10px] text-slate-500 uppercase tracking-widest">
+            {total === 0 ? 'No rows' : `Showing ${pageStart}-${pageEnd} of ${total}`}
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              disabled={page === 0}
+              className="px-2 py-0.5 bg-white border border-slate-300 text-slate-600 text-[10px] font-medium hover:bg-slate-50 disabled:opacity-30"
+            >
+              Prev
+            </button>
+            <span className="px-2 text-[10px] text-slate-500 font-mono tabular-nums">
+              Page {page + 1} of {pageCount}
+            </span>
+            <button
+              onClick={() => setPage((p) => (pageEnd < total ? p + 1 : p))}
+              disabled={pageEnd >= total}
+              className="px-2 py-0.5 bg-white border border-slate-300 text-slate-600 text-[10px] font-medium hover:bg-slate-50 disabled:opacity-30"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
 
