@@ -18,8 +18,11 @@ interface Blocker {
   message: string;
 }
 
+type WeighmentSource = 'GRAIN_TRUCK' | 'GOODS_RECEIPT' | 'ETHANOL_DISPATCH' | 'DDGS_DISPATCH';
+
 interface CorrectableRow {
   id: string;
+  mirrorId?: string;
   ticketNo: number | null;
   vehicleNo: string;
   supplier: string;
@@ -34,6 +37,7 @@ interface CorrectableRow {
   cancelledReason: string | null;
   grnId: string | null;
   factoryLocalId: string | null;
+  source?: WeighmentSource;
   goodsReceipt: {
     grnNo: number;
     status: string;
@@ -44,6 +48,13 @@ interface CorrectableRow {
   blockers: Blocker[];
   requiresAdminPin: boolean;
 }
+
+const SOURCE_LABEL: Record<WeighmentSource, { text: string; cls: string }> = {
+  GRAIN_TRUCK:      { text: 'GRAIN IN',  cls: 'border-blue-300 bg-blue-50 text-blue-700' },
+  GOODS_RECEIPT:    { text: 'FUEL IN',   cls: 'border-orange-300 bg-orange-50 text-orange-700' },
+  ETHANOL_DISPATCH: { text: 'ETH OUT',   cls: 'border-purple-300 bg-purple-50 text-purple-700' },
+  DDGS_DISPATCH:    { text: 'DDGS OUT',  cls: 'border-teal-300 bg-teal-50 text-teal-700' },
+};
 
 interface CorrectionAudit {
   id: string;
@@ -99,9 +110,9 @@ const fmtDateTime = (s: string) => {
   });
 };
 
-const fmtKg = (tons: number) => {
-  if (!tons) return '--';
-  return (tons * 1000).toLocaleString('en-IN') + ' kg';
+const fmtKg = (kg: number) => {
+  if (!kg) return '--';
+  return Math.round(kg).toLocaleString('en-IN') + ' kg';
 };
 
 export default function WeighmentCorrections() {
@@ -192,7 +203,7 @@ export default function WeighmentCorrections() {
         </div>
 
         <div className="bg-blue-50 border-x border-b border-blue-200 px-4 py-2 -mx-3 md:-mx-6 text-[10px] font-medium uppercase tracking-widest text-blue-700">
-          This screen shows inbound GrainTruck correction rows only. DDGS and dispatch weighments synced from the factory server are tracked elsewhere.
+          Shows every weighment from the cloud mirror (grain in, fuel in, ethanol out, DDGS out). Only grain inbound rows are editable today — non-grain correction flows land in a later phase.
         </div>
 
         {/* Filter bar */}
@@ -266,6 +277,7 @@ export default function WeighmentCorrections() {
             <thead>
               <tr className="bg-slate-800 text-white">
                 <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Ticket</th>
+                <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Type</th>
                 <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Date / Time</th>
                 <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Vehicle</th>
                 <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Supplier</th>
@@ -278,7 +290,7 @@ export default function WeighmentCorrections() {
             <tbody>
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-3 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">
+                  <td colSpan={9} className="px-3 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">
                     No weighments match the filter
                   </td>
                 </tr>
@@ -302,8 +314,17 @@ export default function WeighmentCorrections() {
                     <td className="px-3 py-1.5 text-slate-800 border-r border-slate-100 font-mono tabular-nums">
                       {r.ticketNo ? `T-${r.ticketNo}` : '--'}
                     </td>
+                    <td className="px-3 py-1.5 text-center border-r border-slate-100">
+                      {r.source && SOURCE_LABEL[r.source] ? (
+                        <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${SOURCE_LABEL[r.source].cls}`}>
+                          {SOURCE_LABEL[r.source].text}
+                        </span>
+                      ) : (
+                        <span className="text-[9px] text-slate-400">--</span>
+                      )}
+                    </td>
                     <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100 whitespace-nowrap">
-                      {fmtDateTime(r.createdAt)}
+                      {fmtDateTime(r.date || r.createdAt)}
                     </td>
                     <td className="px-3 py-1.5 text-slate-800 border-r border-slate-100 font-mono">
                       {r.vehicleNo}
