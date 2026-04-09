@@ -102,6 +102,7 @@ import gateEntryRoutes from './routes/gateEntry';
 import cashVoucherRoutes from './routes/cashVouchers';
 import bankLoanRoutes from './routes/bankLoans';
 import approvalRoutes from './routes/approvals';
+import notificationRoutes from './routes/notifications';
 // Unified Payments (aggregation views)
 import unifiedPaymentRoutes from './routes/unifiedPayments';
 // Process reports (previously unregistered)
@@ -118,6 +119,7 @@ import documentSearchRoutes from './routes/documentSearch';
 import vaultSyncRoutes from './routes/vaultSync';
 // Compliance Management
 import complianceRoutes from './routes/compliance';
+import taxRoutes from './routes/tax';
 import { authenticate } from './middleware/auth';
 import { errorHandler } from './shared/middleware/errorHandler';
 
@@ -235,6 +237,7 @@ app.use('/api/unified-payments', unifiedPaymentRoutes);
 app.use('/api/cash-vouchers', cashVoucherRoutes);
 app.use('/api/bank-loans', bankLoanRoutes);
 app.use('/api/approvals', approvalRoutes);
+app.use('/api/notifications', notificationRoutes);
 // Logistics (Gate Entry)
 app.use('/api/gate-entry', gateEntryRoutes);
 // OPC Bridge (factory automation — proxies to on-premise Windows service)
@@ -269,6 +272,7 @@ app.use('/api/document-search', documentSearchRoutes);
 app.use('/api/vault', vaultSyncRoutes);
 // Compliance Management
 app.use('/api/compliance', complianceRoutes);
+app.use('/api/tax', taxRoutes);
 
 
 // Serve uploaded files

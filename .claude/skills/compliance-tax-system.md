@@ -297,6 +297,12 @@ Each phase has its own skill file with data model, routes, UI, tests.
 
 ## 9. Change log
 - 2026-04-09: Initial map created. Phase 1 planned.
+- 2026-04-09: **Phase 1 BUILT** (master data foundation).
+  - Prisma schema extended: Vendor +9 fields, Customer +6, Material +3. Nine new models: ComplianceConfig, FiscalYear, InvoiceSeries, HsnCode, GstRate, TdsSection, TcsSection, ComplianceAudit, TaxRuleExplanation. All tables exist on Railway production.
+  - Backend: 12 files under `backend/src/routes/tax/` + `backend/src/services/complianceAudit.ts` + seed data `backend/src/data/taxComplianceSeed.ts`. Registered at `/api/tax/*` in `app.ts`. `tsc --noEmit` clean.
+  - Frontend: 8 SAP Tier 2 pages under `frontend/src/pages/tax/`. Routes registered at `/admin/tax/*` + `/compliance/tax-rules`. `vite build` clean.
+  - **Not yet done**: seed not run on Railway (call `POST /api/tax/seed` as admin); ComplianceConfig still has empty fields (fill via UI `/admin/tax/config` — GSTIN, PAN, TAN, LUT, tax regime decision 115BAB vs 115BAA vs NORMAL needs CA input); no commit yet.
+  - Next: smoke test locally → seed → fill config → commit → deploy.
 
 ---
 

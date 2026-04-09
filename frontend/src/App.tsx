@@ -61,6 +61,15 @@ const WeighmentCorrections = React.lazy(() => import('./pages/admin/WeighmentCor
 const ComplianceDashboard = React.lazy(() => import('./pages/compliance/ComplianceDashboard'));
 const ComplianceRegister = React.lazy(() => import('./pages/compliance/ComplianceRegister'));
 const ComplianceAI = React.lazy(() => import('./pages/compliance/ComplianceAI'));
+// Tax & Compliance Phase 1
+const TaxComplianceConfigPage = React.lazy(() => import('./pages/tax/ComplianceConfigPage'));
+const TaxFiscalYearsPage = React.lazy(() => import('./pages/tax/FiscalYearsPage'));
+const TaxInvoiceSeriesPage = React.lazy(() => import('./pages/tax/InvoiceSeriesPage'));
+const TaxHsnMasterPage = React.lazy(() => import('./pages/tax/HsnMasterPage'));
+const TaxTdsSectionMasterPage = React.lazy(() => import('./pages/tax/TdsSectionMasterPage'));
+const TaxTcsSectionMasterPage = React.lazy(() => import('./pages/tax/TcsSectionMasterPage'));
+const TaxComplianceAuditLogPage = React.lazy(() => import('./pages/tax/ComplianceAuditLogPage'));
+const TaxRulesReferencePage = React.lazy(() => import('./pages/tax/TaxRulesReferencePage'));
 const PurchaseRequisition = React.lazy(() => import('./pages/PurchaseRequisition'));
 // Sales & Distribution
 const Customers = React.lazy(() => import('./pages/sales/Customers'));
@@ -186,6 +195,15 @@ export default function App() {
         <Route path="compliance" element={<ComplianceDashboard />} />
         <Route path="compliance/register" element={<ComplianceRegister />} />
         <Route path="compliance/ai" element={<ComplianceAI />} />
+        {/* Tax & Compliance Phase 1 — Tax Rules Reference + Admin Masters */}
+        <Route path="compliance/tax-rules" element={<TaxRulesReferencePage />} />
+        <Route path="admin/tax/config" element={<TaxComplianceConfigPage />} />
+        <Route path="admin/tax/fiscal-years" element={<TaxFiscalYearsPage />} />
+        <Route path="admin/tax/invoice-series" element={<TaxInvoiceSeriesPage />} />
+        <Route path="admin/tax/hsn" element={<TaxHsnMasterPage />} />
+        <Route path="admin/tax/tds-sections" element={<TaxTdsSectionMasterPage />} />
+        <Route path="admin/tax/tcs-sections" element={<TaxTcsSectionMasterPage />} />
+        <Route path="admin/tax/audit" element={<TaxComplianceAuditLogPage />} />
         <Route path="purchase-requisition" element={<PurchaseRequisition />} />
         {/* Sales & Distribution */}
         <Route path="sales/customers" element={<Customers />} />

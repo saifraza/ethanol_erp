@@ -668,7 +668,7 @@ model DDGSDispatchTruck {
   updatedAt            DateTime              @default(now()) @updatedAt
   ddgsContractDispatch DDGSContractDispatch?
 
-  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
 
   @@index([date])
   @@index([customerId])
@@ -874,7 +874,7 @@ model DispatchTruck {
   createdAt         DateTime             @default(now())
   updatedAt         DateTime             @default(now()) @updatedAt
 
-  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
 
   @@index([date])
   @@index([entryId])
@@ -920,14 +920,14 @@ model GrainTruck {
   transporterName  String?
   materialType     String? // BROKEN_RICE, RICE_HUSK, MAIZE etc.
   ticketNo         Int? // weighbridge ticket number
-  factoryLocalId   String?  // factory-server Weighment.localId (for correction push back)
-  cancelled        Boolean  @default(false) // soft-cancel flag set by admin correction
+  factoryLocalId   String? // factory-server Weighment.localId (for correction push back)
+  cancelled        Boolean        @default(false) // soft-cancel flag set by admin correction
   cancelledReason  String?
   cancelledAt      DateTime?
   cancelledBy      String?
   createdAt        DateTime       @default(now())
 
-  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division    String?               @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   corrections WeighmentCorrection[]
 
   @@index([date])
@@ -944,17 +944,17 @@ model GrainTruck {
 // ═══════════════════════════════════════════════
 model WeighmentCorrection {
   id              String      @id @default(uuid())
-  weighmentKind   String      // "GrainTruck" | "DispatchTruck"
-  weighmentId     String      // FK-like to GrainTruck.id or DispatchTruck.id
+  weighmentKind   String // "GrainTruck" | "DispatchTruck"
+  weighmentId     String // FK-like to GrainTruck.id or DispatchTruck.id
   grainTruck      GrainTruck? @relation(fields: [weighmentId], references: [id], map: "WeighmentCorrection_grainTruck_fkey")
-  ticketNo        Int?        // snapshot for readability
-  vehicleNo       String?     // snapshot
-  fieldName       String      // "materialType" | "supplier" | "poId" | "cancel" | ...
-  oldValue        String?     // JSON stringified
-  newValue        String?     // JSON stringified
-  reason          String      // mandatory, min 10 chars enforced at API
-  correctedBy     String      // user.name
-  correctedByRole String      // user.role
+  ticketNo        Int? // snapshot for readability
+  vehicleNo       String? // snapshot
+  fieldName       String // "materialType" | "supplier" | "poId" | "cancel" | ...
+  oldValue        String? // JSON stringified
+  newValue        String? // JSON stringified
+  reason          String // mandatory, min 10 chars enforced at API
+  correctedBy     String // user.name
+  correctedByRole String // user.role
   adminPinUsed    Boolean     @default(false)
   factorySynced   Boolean     @default(false)
   factorySyncedAt DateTime?
@@ -1052,7 +1052,7 @@ model InventoryItem {
   fuelConsumptions        FuelConsumption[]
   rawMaterialConsumptions RawMaterialConsumption[]
 
-  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
 
   @@index([category])
   @@index([division])
@@ -1229,7 +1229,7 @@ model StockMovement {
   date          DateTime      @default(now())
   createdAt     DateTime      @default(now())
 
-  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
 
   @@index([itemId, date])
   @@index([warehouseId])
@@ -1320,7 +1320,7 @@ model PlantIssue {
   updatedAt     DateTime       @updatedAt
   comments      IssueComment[]
 
-  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
 
   @@index([status])
   @@index([division])
@@ -1393,6 +1393,13 @@ model Customer {
   pincode                  String?
   gstNo                    String? // GSTIN
   panNo                    String?
+  // ── Compliance & Tax (Phase 1) ──
+  stateCode                String? // 2-digit GST state code
+  placeOfSupply            String? // state code for GST PoS
+  isSEZ                    Boolean              @default(false)
+  isExport                 Boolean              @default(false)
+  isRCMApplicable          Boolean              @default(false)
+  customerType             String               @default("B2B") // B2B | B2C | SEZ | EXPORT | DEEMED_EXPORT
   contactPerson            String?
   phone                    String?
   email                    String?
@@ -1415,7 +1422,7 @@ model Customer {
   sugarContracts           SugarContract[]
   sugarDispatchTrucks      SugarDispatchTruck[]
 
-  divisions  String[] @default([]) // empty = available to all divisions
+  divisions String[] @default([]) // empty = available to all divisions
 }
 
 // Master: Product catalogue
@@ -1446,7 +1453,7 @@ model Transporter {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  divisions  String[] @default([]) // empty = available to all divisions
+  divisions String[] @default([]) // empty = available to all divisions
 }
 
 // ── Sales Order (HQ creates) ──
@@ -1476,7 +1483,7 @@ model SalesOrder {
   dispatchRequests DispatchRequest[]
   invoices         Invoice[]
 
-  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
 
   @@index([customerId])
   @@index([status])
@@ -1637,7 +1644,7 @@ model Shipment {
   documents           ShipmentDocument[]
   transporterPayments TransporterPayment[]
 
-  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
 
   @@index([date])
   @@index([status])
@@ -1806,7 +1813,7 @@ model Invoice {
   ddgsContractDispatches  DDGSContractDispatch[]
   sugarContractDispatches SugarContractDispatch[]
 
-  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
 
   @@index([customerId])
   @@index([status])
@@ -1833,7 +1840,7 @@ model Payment {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
 
   @@index([division])
 }
@@ -1844,50 +1851,61 @@ model Payment {
 
 // ── Vendor Master (supplier registration) ──
 model Vendor {
-  id            String   @id @default(uuid())
-  vendorCode    String?  @unique // auto or manual code
-  name          String
-  tradeName     String? // business trade name
-  category      String   @default("GENERAL") // RAW_MATERIAL, CHEMICAL, FUEL, PACKING, SERVICE, TRADER, GENERAL
-  gstin         String? // 15-char GSTIN
-  pan           String? // 10-char PAN
-  gstState      String? // 2-digit state code (e.g., "09" for UP)
-  gstStateCode  String? // state name
-  isRCM         Boolean  @default(false) // Reverse Charge Mechanism applicable
-  isMSME        Boolean  @default(false) // MSME vendor (priority payment)
-  msmeRegNo     String?
-  msmeCategory  String? // MICRO, SMALL, MEDIUM
+  id                      String      @id @default(uuid())
+  vendorCode              String?     @unique // auto or manual code
+  name                    String
+  tradeName               String? // business trade name
+  category                String      @default("GENERAL") // RAW_MATERIAL, CHEMICAL, FUEL, PACKING, SERVICE, TRADER, GENERAL
+  gstin                   String? // 15-char GSTIN
+  pan                     String? // 10-char PAN
+  gstState                String? // 2-digit state code (e.g., "09" for UP)
+  gstStateCode            String? // state name
+  isRCM                   Boolean     @default(false) // Reverse Charge Mechanism applicable
+  isMSME                  Boolean     @default(false) // MSME vendor (priority payment)
+  msmeRegNo               String?
+  msmeCategory            String? // MICRO, SMALL, MEDIUM
   // Address
-  address       String?
-  city          String?
-  state         String?
-  pincode       String?
+  address                 String?
+  city                    String?
+  state                   String?
+  pincode                 String?
   // Contact
-  contactPerson String?
-  phone         String?
-  email         String?
+  contactPerson           String?
+  phone                   String?
+  email                   String?
   // Bank Details
-  bankName      String?
-  bankBranch    String?
-  bankAccount   String?
-  bankIfsc      String?
+  bankName                String?
+  bankBranch              String?
+  bankAccount             String?
+  bankIfsc                String?
   // Payment
-  paymentTerms  String? // ADVANCE, COD, NET7, NET15, NET30, NET45, NET60
-  creditLimit   Float    @default(0)
-  creditDays    Int      @default(30)
+  paymentTerms            String? // ADVANCE, COD, NET7, NET15, NET30, NET45, NET60
+  creditLimit             Float       @default(0)
+  creditDays              Int         @default(30)
   // TDS
-  tdsApplicable Boolean  @default(false)
-  tdsSection    String? // 194C, 194Q, etc.
-  tdsPercent    Float    @default(0)
+  tdsApplicable           Boolean     @default(false)
+  tdsSection              String? // 194C, 194Q, etc. (legacy string, kept for compat)
+  tdsPercent              Float       @default(0)
+  // ── Compliance & Tax (Phase 1) ──
+  tdsSectionId            String? // FK to TdsSection master
+  tdsSectionRef           TdsSection? @relation(fields: [tdsSectionId], references: [id])
+  udyamNo                 String? // MSME Udyam registration no
+  msmePaymentTermDays     Int         @default(45) // 45 days unless written agreement
+  lowerDeductionCertNo    String? // Form 13 certificate
+  lowerDeductionRate      Float?
+  lowerDeductionValidFrom DateTime?
+  lowerDeductionValidTill DateTime?
+  is206ABNonFiler         Boolean     @default(false)
+  isUnregisteredForRCM    Boolean     @default(false) // unregistered under GST → RCM on all supplies
   // Procurement agent/trader
-  isAgent       Boolean  @default(false) // true = informal procurement agent/trader
-  aadhaarNo     String? // Aadhaar number for individual traders
-  productTypes  String? // Comma-separated: "FUEL,RAW_MATERIAL,CHEMICAL" — what this trader buys
+  isAgent                 Boolean     @default(false) // true = informal procurement agent/trader
+  aadhaarNo               String? // Aadhaar number for individual traders
+  productTypes            String? // Comma-separated: "FUEL,RAW_MATERIAL,CHEMICAL" — what this trader buys
   //
-  isActive      Boolean  @default(true)
-  remarks       String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  isActive                Boolean     @default(true)
+  remarks                 String?
+  createdAt               DateTime    @default(now())
+  updatedAt               DateTime    @updatedAt
 
   purchaseOrders PurchaseOrder[]
   grns           GoodsReceipt[]
@@ -1895,7 +1913,7 @@ model Vendor {
   vendorPayments VendorPayment[]
   vendorItems    VendorItem[]
 
-  divisions  String[] @default([]) // empty = available to all divisions
+  divisions String[] @default([]) // empty = available to all divisions
 
   @@index([isAgent])
 }
@@ -1928,9 +1946,13 @@ model Material {
   name            String
   category        String   @default("RAW_MATERIAL") // RAW_MATERIAL, CHEMICAL, FUEL, PACKING, CONSUMABLE, SPARE, SERVICE
   subCategory     String? // e.g., ENZYME, YEAST, ACID
-  hsnCode         String? // HSN/SAC code
+  hsnCode         String? // HSN/SAC code (legacy string — new code uses hsnId FK)
+  hsnId           String? // FK to HsnCode master (Phase 1 compliance)
+  hsn             HsnCode? @relation(fields: [hsnId], references: [id])
+  defaultUqc      String? // Unit Quantity Code per GSTN (e.g., "KLR", "KGS", "NOS")
+  isRcmApplicable Boolean  @default(false) // RCM applies to procurement of this material
   unit            String   @default("KG") // KG, MT, LTR, KL, NOS, BAG, DRUM
-  gstPercent      Float    @default(18) // default GST rate
+  gstPercent      Float    @default(18) // default GST rate (legacy — new code reads from GstRate)
   defaultRate     Float    @default(0) // last/standard rate
   minStock        Float    @default(0) // reorder level
   currentStock    Float    @default(0) // current qty in store
@@ -1943,7 +1965,7 @@ model Material {
   poLines  POLine[]
   grnLines GRNLine[]
 
-  divisions  String[] @default([]) // empty = available to all divisions
+  divisions String[] @default([]) // empty = available to all divisions
 }
 
 // ── Purchase Order (HQ creates, sent to vendor) ──
@@ -1999,7 +2021,7 @@ model PurchaseOrder {
   vendorInvoices VendorInvoice[]
   grainTrucks    GrainTruck[]
 
-  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
 
   @@index([vendorId])
   @@index([status])
@@ -2104,7 +2126,7 @@ model GoodsReceipt {
   vendorInvoices VendorInvoice[]
   grainTrucks    GrainTruck[]
 
-  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
 
   @@index([poId])
   @@index([vendorId])
@@ -2208,7 +2230,7 @@ model VendorInvoice {
 
   payments VendorPayment[]
 
-  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
 
   @@index([vendorId])
   @@index([poId])
@@ -2247,7 +2269,7 @@ model VendorPayment {
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
-  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
 
   @@index([vendorId])
   @@index([invoiceId])
@@ -2289,7 +2311,7 @@ model Contractor {
   bills    ContractorBill[]
   payments ContractorPayment[]
 
-  divisions  String[] @default([]) // empty = available to all divisions
+  divisions String[] @default([]) // empty = available to all divisions
 
   @@index([pan])
   @@index([isActive])
@@ -2337,7 +2359,7 @@ model ContractorBill {
   lines    ContractorBillLine[]
   payments ContractorPayment[]
 
-  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
 
   @@index([contractorId])
   @@index([status])
@@ -2421,7 +2443,7 @@ model DirectPurchase {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
 
   @@index([date])
   @@index([isPaid])
@@ -2458,7 +2480,7 @@ model DirectSale {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
 
   @@index([date])
   @@index([isPaid])
@@ -2639,7 +2661,7 @@ model JournalEntry {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
 
   @@index([date])
   @@index([refType, refId])
@@ -2679,7 +2701,7 @@ model BankTransaction {
   importBatch    String? // batch ID for CSV imports
   createdAt      DateTime @default(now())
 
-  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
 
   @@index([accountId, date])
   @@index([isReconciled])
@@ -2711,7 +2733,7 @@ model GateEntry {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
 
   @@index([date])
   @@index([status])
@@ -2746,7 +2768,7 @@ model CashVoucher {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
 
   @@index([date])
   @@index([status])
@@ -3025,6 +3047,43 @@ model Approval {
   @@index([status])
   @@index([type])
   @@index([entityId])
+}
+
+// ══════════════════════════════════════════════════════════════
+// NOTIFICATIONS — Unified inbox (approvals, alerts, system events)
+// Replaces the old "poll approvals/count" pattern with a proper
+// per-user, per-role inbox with read state, severity, categories.
+// ══════════════════════════════════════════════════════════════
+
+model Notification {
+  id         String    @id @default(uuid())
+  category   String // APPROVAL, STOCK_LOW, PAYMENT_DUE, SYNC_ERROR, FACTORY, SYSTEM, INFO
+  severity   String    @default("INFO") // INFO, WARNING, CRITICAL
+  title      String
+  message    String
+  link       String? // deep-link path e.g. /admin/approvals/123
+  // Targeting: either a specific user, or broadcast to a role
+  userId     String? // if set, only this user sees it
+  role       String? // ADMIN, SUPER_ADMIN, MANAGER, OPERATOR — broadcast to role
+  // Source entity for dedupe + auto-resolve
+  entityType String? // Approval, GoodsReceipt, PurchaseOrder, etc.
+  entityId   String?
+  dedupeKey  String? // prevents spamming same alert (e.g. "low-stock:ITEM-123")
+  // State
+  read       Boolean   @default(false)
+  readAt     DateTime?
+  resolved   Boolean   @default(false) // auto-set when underlying issue is gone
+  resolvedAt DateTime?
+  // Metadata for rendering
+  metadata   Json?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([userId, read, createdAt])
+  @@index([role, read, createdAt])
+  @@index([category, resolved])
+  @@index([dedupeKey])
+  @@index([entityType, entityId])
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -3323,7 +3382,7 @@ model SugarDispatchTruck {
   updatedAt             DateTime               @default(now()) @updatedAt
   sugarContractDispatch SugarContractDispatch?
 
-  division   String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
 
   @@index([date])
   @@index([customerId])
@@ -3409,4 +3468,176 @@ model SugarContractDispatch {
 
   @@index([contractId])
   @@index([dispatchDate])
+}
+
+// ═══════════════════════════════════════════════
+// COMPLIANCE & TAX — PHASE 1 (Master Data)
+// See .claude/skills/compliance-tax-system.md
+// ═══════════════════════════════════════════════
+
+// Company-level tax identity + LUT + regime
+model ComplianceConfig {
+  id                  String    @id @default(cuid())
+  legalName           String
+  pan                 String    @unique
+  tan                 String    @unique
+  gstin               String    @unique
+  cin                 String?
+  udyamNo             String?
+  registeredState     String // 2-digit GST state code (e.g., "23" for MP)
+  registeredStateName String? // "Madhya Pradesh"
+  taxRegime           String    @default("NORMAL") // "115BAB" | "115BAA" | "NORMAL"
+  fyStartMonth        Int       @default(4) // April
+  eInvoiceEnabled     Boolean   @default(true)
+  eInvoiceThresholdCr Float     @default(5)
+  eWayBillMinAmount   Float     @default(50000)
+  lutNumber           String?
+  lutValidFrom        DateTime?
+  lutValidTill        DateTime?
+  updatedBy           String?
+  updatedAt           DateTime  @updatedAt
+  createdAt           DateTime  @default(now())
+}
+
+// Fiscal Year + period lock
+model FiscalYear {
+  id        String          @id @default(cuid())
+  code      String          @unique // "2026-27"
+  startDate DateTime
+  endDate   DateTime
+  isCurrent Boolean         @default(false)
+  isClosed  Boolean         @default(false)
+  closedAt  DateTime?
+  closedBy  String?
+  series    InvoiceSeries[]
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@index([isCurrent])
+}
+
+// Per-FY per-docType invoice number series with atomic next-number
+model InvoiceSeries {
+  id         String     @id @default(cuid())
+  fyId       String
+  fy         FiscalYear @relation(fields: [fyId], references: [id], onDelete: Cascade)
+  docType    String // TAX_INVOICE | CREDIT_NOTE | DEBIT_NOTE | DELIVERY_CHALLAN | EXPORT_INVOICE | RCM_INVOICE | JOBWORK_INVOICE
+  prefix     String // "ETH/26-27/"
+  nextNumber Int        @default(1)
+  width      Int        @default(5)
+  isActive   Boolean    @default(true)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@unique([fyId, docType])
+  @@index([fyId])
+}
+
+// HSN / SAC code master
+model HsnCode {
+  id          String     @id @default(cuid())
+  code        String     @unique // "2207 20"
+  description String
+  uqc         String // "KLR" | "KGS" | "NOS" | "MTS"
+  category    String // FINISHED_GOOD | RAW_MATERIAL | BYPRODUCT | SERVICE
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  rates       GstRate[]
+  materials   Material[]
+
+  @@index([code])
+  @@index([category])
+}
+
+// Effective-dated GST rate per HSN
+model GstRate {
+  id            String    @id @default(cuid())
+  hsnId         String
+  hsn           HsnCode   @relation(fields: [hsnId], references: [id], onDelete: Cascade)
+  cgst          Float     @default(0)
+  sgst          Float     @default(0)
+  igst          Float     @default(0)
+  cess          Float     @default(0)
+  isExempt      Boolean   @default(false)
+  isOutsideGst  Boolean   @default(false) // e.g., ENA, alcohol for human consumption
+  conditionNote String? // "EBP only" | "Industrial use"
+  effectiveFrom DateTime
+  effectiveTill DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([hsnId, effectiveFrom])
+}
+
+// TDS Section master (new Income-tax Act 2025 codes + old legacy)
+model TdsSection {
+  id                 String    @id @default(cuid())
+  code               String    @unique // "393_CONTRACTOR"
+  newSection         String // "393"
+  oldSection         String? // "194C"
+  nature             String // "Contractor"
+  rateIndividual     Float // 1
+  rateOthers         Float // 2
+  thresholdSingle    Float     @default(0)
+  thresholdAggregate Float     @default(0)
+  panMissingRate     Float     @default(20)
+  nonFilerRate       Float     @default(5)
+  effectiveFrom      DateTime
+  effectiveTill      DateTime?
+  isActive           Boolean   @default(true)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  vendors            Vendor[]
+
+  @@index([newSection])
+  @@index([effectiveFrom])
+}
+
+// TCS Section master
+model TcsSection {
+  id            String    @id @default(cuid())
+  code          String    @unique // "206C_1H"
+  nature        String
+  rate          Float
+  threshold     Float     @default(0)
+  effectiveFrom DateTime
+  effectiveTill DateTime?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+// Audit trail for every compliance field change
+model ComplianceAudit {
+  id         String   @id @default(cuid())
+  entityType String // "Vendor" | "Customer" | "ComplianceConfig" | "GstRate" | "TdsSection" | ...
+  entityId   String
+  field      String
+  oldValue   String?
+  newValue   String?
+  changedBy  String
+  changedAt  DateTime @default(now())
+  reason     String?
+
+  @@index([entityType, entityId])
+  @@index([changedAt])
+}
+
+// Plain-English explanations used by the Tax Rules Reference page
+model TaxRuleExplanation {
+  id           String   @id @default(cuid())
+  ruleKey      String   @unique // "tds.393.contractor"
+  title        String
+  plainEnglish String   @db.Text
+  whatErpDoes  String   @db.Text
+  whatUserDoes String   @db.Text
+  sourceLink   String?
+  category     String // DIRECT_TAX | GST | PAYROLL | ROC | DISTILLERY | OTHER
+  sortOrder    Int      @default(0)
+  updatedBy    String?
+  updatedAt    DateTime @updatedAt
+  createdAt    DateTime @default(now())
+
+  @@index([category, sortOrder])
 }
