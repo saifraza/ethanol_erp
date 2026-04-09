@@ -81,17 +81,39 @@ export function computeDurations(
 // (values stored by the weighbridge e.g. BROKEN_RICE, RICE_HUSK, MAIZE, FUEL, etc.)
 // ──────────────────────────────────────────────────────────
 
-function mapGrainMaterial(raw: string | null | undefined): WeighmentMaterialType {
-  if (!raw) return 'RAW_MATERIAL';
-  const norm = raw.toUpperCase().replace(/[^A-Z0-9]/g, ' ');
-  // Biomass + liquid fuels burned in the boiler / vehicles
-  const FUEL_KEYWORDS = [
-    'HUSK', 'BAGASSE', 'STALK', 'STRAW', 'WOOD', 'FIREWOOD', 'COAL',
-    'BRIQUETTE', 'PELLET', 'BIOMASS', 'FUEL', 'HSD', 'DIESEL', 'PETROL',
-    'LIGNITE', 'SAWDUST', 'CHIPS', 'TRASH', 'PITH',
-  ];
-  if (FUEL_KEYWORDS.some((kw) => norm.includes(kw))) return 'FUEL';
-  // Ethanol is never inbound on GrainTruck; everything else is raw material
+const MATERIAL_FUEL_KEYWORDS = [
+  'HUSK', 'BAGASSE', 'STALK', 'STRAW', 'WOOD', 'FIREWOOD', 'COAL',
+  'BRIQUETTE', 'PELLET', 'BIOMASS', 'FUEL', 'HSD', 'DIESEL', 'PETROL',
+  'LIGNITE', 'SAWDUST', 'CHIPS', 'TRASH', 'PITH',
+];
+
+// Supplier-name keywords that identify a fuel supplier.  Used as a fallback
+// when GrainTruck.materialType is null (weighbridge didn't categorize the row).
+// NOTE: this is a heuristic — the proper fix is stamping materialType upstream.
+const SUPPLIER_FUEL_KEYWORDS = [
+  'MASH BIO',      // Mash Bio Pvt Ltd (biomass supplier) + Godam Mash Bio
+  'BIO FUEL', 'BIOFUEL', 'BIO ENERGY',
+  'IRFAN',         // Irfan Khan — local husk/firewood trader
+  'SIDRA',         // Sidra Trading and Transport — husk
+  'SHYAM TRADER',  // New Shyam Trader — husk
+  'GODAM',         // "Godam ..." = MSPIL fuel godown transfers
+];
+
+function mapGrainMaterial(
+  raw: string | null | undefined,
+  supplier?: string | null,
+): WeighmentMaterialType {
+  // 1. Explicit material label wins
+  if (raw) {
+    const norm = raw.toUpperCase().replace(/[^A-Z0-9]/g, ' ');
+    if (MATERIAL_FUEL_KEYWORDS.some((kw) => norm.includes(kw))) return 'FUEL';
+    return 'RAW_MATERIAL';
+  }
+  // 2. Fallback: infer from supplier name
+  if (supplier) {
+    const normSup = supplier.toUpperCase().replace(/[^A-Z0-9]/g, ' ');
+    if (SUPPLIER_FUEL_KEYWORDS.some((kw) => normSup.includes(kw))) return 'FUEL';
+  }
   return 'RAW_MATERIAL';
 }
 
@@ -132,7 +154,7 @@ export function normalizeGrainTruck(row: GrainTruckRecord): UnifiedWeighmentRow 
   // We leave secondWeightAt null — there is no reliable proxy.
   const secondWeightAt: string | null = null;
 
-  const materialType = mapGrainMaterial(row.materialType);
+  const materialType = mapGrainMaterial(row.materialType, row.supplier);
   const status = deriveStatus(row.weightGross, row.weightTare, row.cancelled);
 
   const durations = computeDurations(gateEntryAt, null, secondWeightAt, null);
