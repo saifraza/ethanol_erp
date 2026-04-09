@@ -94,7 +94,6 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'pnl', label: 'Profit & Loss', to: '/accounts/profit-loss', icon: TrendingUp, group: 'books' },
   { key: 'balance-sheet', label: 'Balance Sheet', to: '/accounts/balance-sheet', icon: Landmark, group: 'books' },
   { key: 'bank-recon', label: 'Bank Recon', to: '/accounts/bank-reconciliation', icon: Banknote, group: 'books' },
-  { key: 'taxes', label: 'Taxes', to: '/accounts/taxes', icon: PieChart, group: 'books' },
   { key: 'bank-loans', label: 'Bank Loans', to: '/accounts/bank-loans', icon: Landmark, group: 'books' },
 
   // ── INVENTORY / STORE ──
@@ -109,6 +108,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'compliance-ai', label: 'Compliance AI', to: '/compliance/ai', icon: BotMessageSquare, group: 'compliance' },
 
   // ── TAX & STATUTORY ──
+  { key: 'taxes', label: 'Tax Dashboard', to: '/accounts/taxes', icon: PieChart, group: 'tax' },
   { key: 'tax-rules-reference', label: 'Tax Rules Reference', to: '/compliance/tax-rules', icon: BookOpen, group: 'tax' },
   { key: 'tax-config', label: 'Company Config', to: '/admin/tax/config', icon: Building2, group: 'tax', adminOnly: true },
   { key: 'tax-fiscal-years', label: 'Fiscal Years', to: '/admin/tax/fiscal-years', icon: ClipboardList, group: 'tax', adminOnly: true },
@@ -129,13 +129,6 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'company-documents', label: 'Document Vault', to: '/admin/documents', icon: FolderArchive, group: 'admin' },
   { key: 'document-search', label: 'Doc Search (AI)', to: '/admin/document-search', icon: Search, group: 'admin' },
   { key: 'weighment-corrections', label: 'Weighment Corrections', to: '/admin/weighment-corrections', icon: ClipboardCheck, group: 'admin', adminOnly: true },
-  { key: 'tax-config', label: 'Tax · Company Config', to: '/admin/tax/config', icon: Building2, group: 'admin', adminOnly: true },
-  { key: 'tax-fiscal-years', label: 'Tax · Fiscal Years', to: '/admin/tax/fiscal-years', icon: ClipboardList, group: 'admin', adminOnly: true },
-  { key: 'tax-invoice-series', label: 'Tax · Invoice Series', to: '/admin/tax/invoice-series', icon: Receipt, group: 'admin', adminOnly: true },
-  { key: 'tax-hsn', label: 'Tax · HSN Master', to: '/admin/tax/hsn', icon: Package, group: 'admin', adminOnly: true },
-  { key: 'tax-tds', label: 'Tax · TDS Sections', to: '/admin/tax/tds-sections', icon: Calculator, group: 'admin', adminOnly: true },
-  { key: 'tax-tcs', label: 'Tax · TCS Sections', to: '/admin/tax/tcs-sections', icon: Calculator, group: 'admin', adminOnly: true },
-  { key: 'tax-audit', label: 'Tax · Audit Log', to: '/admin/tax/audit', icon: ListChecks, group: 'admin', adminOnly: true },
 ];
 
 // For UsersPage — unique module keys for permission assignment (excludes adminOnly)
@@ -190,6 +183,10 @@ export const inventoryNav = MODULE_DEFS.filter(m => m.group === 'inventory').map
 
 export const complianceNav = MODULE_DEFS.filter(m => m.group === 'compliance').map(m => ({
   to: m.to, label: m.label, icon: m.icon, moduleKey: m.key,
+}));
+
+export const taxNav = MODULE_DEFS.filter(m => m.group === 'tax').map(m => ({
+  to: m.to, label: m.label, icon: m.icon, moduleKey: m.key, adminOnly: m.adminOnly,
 }));
 
 export const adminNav = MODULE_DEFS.filter(m => m.group === 'admin').map(m => ({

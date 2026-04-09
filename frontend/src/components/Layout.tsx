@@ -7,7 +7,7 @@ import {
   LayoutDashboard, LogOut, ChevronDown, ChevronRight,
   WifiOff, Menu, X, Bell
 } from 'lucide-react';
-import { processNav, salesNav, procurementNav, tradeNav, accountsNav, booksNav, inventoryNav, logisticsNav, complianceNav, adminNav } from '../config/modules';
+import { processNav, salesNav, procurementNav, tradeNav, accountsNav, booksNav, inventoryNav, logisticsNav, complianceNav, taxNav, adminNav } from '../config/modules';
 
 function hasModuleAccess(user: any, moduleKey: string): boolean {
   if (!user) return false;
@@ -37,6 +37,7 @@ export default function Layout() {
   const [booksOpen, setBooksOpen] = useState(p.startsWith('/books'));
   const [inventoryOpen, setInventoryOpen] = useState(p.startsWith('/inventory'));
   const [complianceOpen, setComplianceOpen] = useState(p.startsWith('/compliance') || p.startsWith('/admin/documents'));
+  const [taxOpen, setTaxOpen] = useState(p.startsWith('/admin/tax') || p === '/compliance/tax-rules' || p === '/accounts/taxes');
   const [adminOpen, setAdminOpen] = useState(p.startsWith('/admin'));
   const [serverUp, setServerUp] = useState(true);
   const [reconnecting, setReconnecting] = useState(false);
@@ -246,6 +247,20 @@ export default function Layout() {
           {complianceOpen && (
             <div className="space-y-0.5 ml-1 border-l border-gray-700 pl-2">
               {complianceNav.filter(n => hasModuleAccess(user, n.moduleKey)).map(n => (
+                <NavLink key={n.to} {...n} active={location.pathname === n.to} onClick={closeSidebar} />
+              ))}
+            </div>
+          )}
+          </>)}
+
+          {taxNav.some(n => (!n.adminOnly || user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') && hasModuleAccess(user, n.moduleKey)) && (<>
+          <button onClick={() => setTaxOpen(!taxOpen)} className="flex items-center justify-between w-full px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mt-3 hover:text-gray-200">
+            <span>Tax &amp; Statutory</span>
+            {taxOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </button>
+          {taxOpen && (
+            <div className="space-y-0.5 ml-1 border-l border-gray-700 pl-2">
+              {taxNav.filter(n => (!n.adminOnly || user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') && hasModuleAccess(user, n.moduleKey)).map(n => (
                 <NavLink key={n.to} {...n} active={location.pathname === n.to} onClick={closeSidebar} />
               ))}
             </div>
