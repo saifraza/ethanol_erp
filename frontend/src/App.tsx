@@ -94,6 +94,7 @@ const PurchaseOrders = React.lazy(() => import('./pages/procurement/PurchaseOrde
 const GoodsReceipts = React.lazy(() => import('./pages/procurement/GoodsReceipts'));
 const AutoGoodsReceipts = React.lazy(() => import('./pages/procurement/AutoGoodsReceipts'));
 const StoreReceipts = React.lazy(() => import('./pages/store/StoreReceipts'));
+const StoreModule = React.lazy(() => import('./pages/store/StoreModule'));
 const VendorPayments = React.lazy(() => import('./pages/procurement/VendorPayments'));
 const RawMaterialPurchase = React.lazy(() => import('./pages/procurement/RawMaterialPurchase'));
 // Direct Trade
@@ -178,7 +179,7 @@ export default function App() {
         <Route path="inventory" element={<Inventory />} />
         <Route path="inventory/masters" element={<InventoryMasters />} />
         <Route path="inventory/store-indents" element={<StoreIndents />} />
-        <Route path="inventory/store-deals" element={<StoreDeals />} />
+        <Route path="inventory/store-deals" element={<Navigate to="/store/receipts?tab=pos" replace />} />
         {/* Inventory (SAP-style) */}
         <Route path="inventory/dashboard" element={<StockDashboard />} />
         <Route path="inventory/items" element={<MaterialMaster />} />
@@ -230,7 +231,7 @@ export default function App() {
         <Route path="procurement/purchase-orders" element={<PurchaseOrders />} />
         <Route path="procurement/goods-receipts" element={<Navigate to="/logistics/gate-register?tab=grn" replace />} />
         <Route path="procurement/goods-receipts/auto" element={<AutoGoodsReceipts />} />
-        <Route path="store/receipts" element={<StoreReceipts />} />
+        <Route path="store/receipts" element={<StoreModule />} />
         <Route path="procurement/vendor-payments" element={<VendorPayments />} />
         <Route path="procurement/raw-material-purchase" element={<RawMaterialPurchase />} />
         {/* Direct Trade */}

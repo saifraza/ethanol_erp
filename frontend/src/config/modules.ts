@@ -19,7 +19,7 @@ export interface ModuleDef {
   label: string;
   to: string;
   icon: any;
-  group: 'process' | 'admin' | 'sales' | 'procurement' | 'trade' | 'accounts' | 'books' | 'inventory' | 'logistics' | 'compliance';
+  group: 'process' | 'admin' | 'sales' | 'procurement' | 'trade' | 'accounts' | 'books' | 'inventory' | 'logistics' | 'compliance' | 'tax';
   adminOnly?: boolean;
 }
 
@@ -99,16 +99,24 @@ export const MODULE_DEFS: ModuleDef[] = [
 
   // ── INVENTORY / STORE ──
   { key: 'inventory-store', label: 'Inventory & Store', to: '/inventory', icon: Warehouse, group: 'inventory' },
-  { key: 'store-receipts', label: 'Store Receipts (GRN)', to: '/store/receipts', icon: PackageCheck, group: 'inventory' },
+  { key: 'store-module', label: 'Store (PO & GRN)', to: '/store/receipts', icon: PackageCheck, group: 'inventory' },
   { key: 'store-indents', label: 'Store Indents', to: '/inventory/store-indents', icon: ShoppingCart, group: 'inventory' },
-  { key: 'store-deals', label: 'Store Deals', to: '/inventory/store-deals', icon: ShoppingCart, group: 'inventory' },
   { key: 'masters', label: 'Dept & Warehouses', to: '/inventory/masters', icon: Building2, group: 'inventory' },
 
   // ── COMPLIANCE ─���
   { key: 'compliance-dashboard', label: 'Compliance', to: '/compliance', icon: ShieldCheck, group: 'compliance' },
   { key: 'compliance-register', label: 'Register', to: '/compliance/register', icon: ListChecks, group: 'compliance' },
   { key: 'compliance-ai', label: 'Compliance AI', to: '/compliance/ai', icon: BotMessageSquare, group: 'compliance' },
-  { key: 'tax-rules-reference', label: 'Tax Rules Reference', to: '/compliance/tax-rules', icon: BookOpen, group: 'compliance' },
+
+  // ── TAX & STATUTORY ──
+  { key: 'tax-rules-reference', label: 'Tax Rules Reference', to: '/compliance/tax-rules', icon: BookOpen, group: 'tax' },
+  { key: 'tax-config', label: 'Company Config', to: '/admin/tax/config', icon: Building2, group: 'tax', adminOnly: true },
+  { key: 'tax-fiscal-years', label: 'Fiscal Years', to: '/admin/tax/fiscal-years', icon: ClipboardList, group: 'tax', adminOnly: true },
+  { key: 'tax-invoice-series', label: 'Invoice Series', to: '/admin/tax/invoice-series', icon: Receipt, group: 'tax', adminOnly: true },
+  { key: 'tax-hsn', label: 'HSN Master', to: '/admin/tax/hsn', icon: Package, group: 'tax', adminOnly: true },
+  { key: 'tax-tds', label: 'TDS Sections', to: '/admin/tax/tds-sections', icon: Calculator, group: 'tax', adminOnly: true },
+  { key: 'tax-tcs', label: 'TCS Sections', to: '/admin/tax/tcs-sections', icon: Calculator, group: 'tax', adminOnly: true },
+  { key: 'tax-audit', label: 'Audit Log', to: '/admin/tax/audit', icon: ListChecks, group: 'tax', adminOnly: true },
 
   // ── ADMIN ──
   { key: 'approvals', label: 'Approvals', to: '/admin/approvals', icon: ClipboardCheck, group: 'admin' },
@@ -139,7 +147,7 @@ export const ALL_MODULES = MODULE_DEFS
 const GROUP_LABELS: Record<string, string> = {
   process: 'Plant / Process', sales: 'Sales', procurement: 'Purchase',
   trade: 'Spot Trade', accounts: 'Accounts', books: 'Books',
-  inventory: 'Inventory', logistics: 'Logistics', compliance: 'Compliance', admin: 'Admin',
+  inventory: 'Inventory', logistics: 'Logistics', compliance: 'Compliance', tax: 'Tax & Statutory', admin: 'Admin',
 };
 
 export const GROUPED_MODULES = Object.entries(GROUP_LABELS).map(([group, label]) => ({
