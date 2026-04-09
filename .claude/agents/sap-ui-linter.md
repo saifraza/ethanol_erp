@@ -1,7 +1,7 @@
 ---
 name: sap-ui-linter
 description: Scans enterprise pages for SAP Tier-2 design violations — banned rounded classes, emojis, missing edge-to-edge tables, missing slate-800 toolbars. Use after any edit to frontend/src/pages/ (excluding process/).
-model: haiku
+model: sonnet
 tools: Read, Bash, Grep, Glob
 ---
 

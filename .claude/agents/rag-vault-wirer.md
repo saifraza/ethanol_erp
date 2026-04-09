@@ -1,7 +1,7 @@
 ---
 name: rag-vault-wirer
 description: Wires RAG (LightRAG) + Obsidian Vault sync into document upload routes. Only for compliance/company documents — skips ERP transactional uploads (POs, invoices, GRNs). Use after any new document upload endpoint is built.
-model: haiku
+model: sonnet
 tools: Read, Edit, Grep, Glob
 ---
 
