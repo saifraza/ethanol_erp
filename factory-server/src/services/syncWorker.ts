@@ -140,7 +140,12 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
       if (result.ok && result.count > 0) {
         // NF-7 FIX: Per-item acknowledgment instead of batch-level
         const processedIds = new Set(result.processedWbIds || []);
-        const useLegacyBatchAck = processedIds.size === 0; // backward compat with old cloud
+        // Legacy ack only when the cloud response did NOT include the
+        // `processedWbIds` key at all (old cloud version). An empty array
+        // means "modern cloud processed 0 items" — DO NOT mark all synced.
+        // Ghost-row incident 2026-04-09: empty-array → legacy path marked
+        // 155 of 173 weighments as synced even though cloud dropped them.
+        const useLegacyBatchAck = result.processedWbIds === undefined;
         for (const w of unsynced) {
           // Cloud payload sends id=localId, so processedWbIds contains localIds
           if (useLegacyBatchAck || processedIds.has(w.localId) || processedIds.has(w.id)) {

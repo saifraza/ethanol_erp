@@ -99,7 +99,39 @@ export function registerPushRoutes(router: Router): void {
       try {
         w = weighmentSchema.parse(raw);
       } catch (e) {
-        console.error(`[WB-PUSH] Schema parse error for ${raw?.id}:`, e instanceof Error ? e.message : e);
+        const parseErr = e instanceof Error ? e.message : String(e);
+        console.error(`[WB-PUSH] Schema parse error for ${raw?.id}:`, parseErr);
+        // CRITICAL: ACK the bad record so factory stops retrying forever.
+        // If the factory payload is malformed, retrying won't help — we need
+        // a human to look at it. Log to PlantIssue and mark processed.
+        if (raw?.id) {
+          ids.push(raw.id);
+          results.push({
+            id: raw.id,
+            type: 'WB_PUSH_SCHEMA_ERROR',
+            refNo: raw?.vehicle_no || '',
+            sourceWbId: raw.id,
+          });
+          setImmediate(async () => {
+            try {
+              await prisma.plantIssue.create({
+                data: {
+                  title: `Weighbridge push schema error: ${raw?.vehicle_no || 'unknown'}`,
+                  description: `Raw payload id: ${raw?.id}\nVehicle: ${raw?.vehicle_no || 'unknown'}\nParse error: ${parseErr}\n\nRaw payload:\n${JSON.stringify(raw, null, 2)}`,
+                  issueType: 'OTHER',
+                  severity: 'HIGH',
+                  equipment: 'Weighbridge / Cloud Sync',
+                  location: 'Cloud ERP',
+                  status: 'OPEN',
+                  reportedBy: 'system-weighbridge',
+                  userId: 'system-weighbridge',
+                },
+              });
+            } catch (logErr) {
+              console.error('[WB-PUSH] Failed to persist schema-error to PlantIssue:', logErr);
+            }
+          });
+        }
         continue;
       }
 
@@ -108,14 +140,32 @@ export function registerPushRoutes(router: Router): void {
 
         // ── PRE-PHASE: gate entries + dupGrain merge ──
         const prePhase = await runPrePhase(w, ctx);
+        let prePhaseAcked = false;
         if (prePhase) {
           ids.push(...prePhase.ids);
           results.push(...prePhase.results);
+          // Pre-phase handled this weighment if it added results that reference w.id
+          prePhaseAcked = prePhase.results.some(r => r.sourceWbId === w.id);
           if (prePhase.shortCircuit) continue;
         }
 
         // Skip incomplete weighments (no weights to process)
         if (w.status !== 'COMPLETE' || !w.weight_net || !w.weight_gross || !w.weight_tare) {
+          // ACK so factory stops retrying the same partial snapshot. When the
+          // weighment later becomes COMPLETE the factory will push a fresh
+          // record with the same localId — the dedup path will then pick it
+          // up and route to the correct handler.
+          // Skip the marker if pre-phase already acked (e.g. GATE_ENTRY trucks
+          // that the pre-phase handler legitimately processed).
+          if (!prePhaseAcked) {
+            ids.push(w.id);
+            results.push({
+              id: w.id,
+              type: 'WB_PUSH_SKIPPED_INCOMPLETE',
+              refNo: w.vehicle_no,
+              sourceWbId: w.id,
+            });
+          }
           continue;
         }
 
@@ -123,6 +173,13 @@ export function registerPushRoutes(router: Router): void {
         const dup = await checkWbDuplicate(w);
         if (dup) {
           ids.push(dup.id);
+          // ACK so factory stops retrying — the row already exists in cloud.
+          results.push({
+            id: dup.id,
+            type: 'WB_PUSH_DEDUP',
+            refNo: w.vehicle_no,
+            sourceWbId: w.id,
+          });
           continue;
         }
 
