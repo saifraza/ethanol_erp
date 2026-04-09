@@ -33,7 +33,14 @@ router.use(authorize('ADMIN'));
 
 // ═══════════════════════════════════════════════════════════════════════════
 // GET /api/weighbridge/admin/correctable
-// List recent GrainTrucks with each one's blocker reasons (for UI render).
+// Lists ALL weighments from the cloud Weighment mirror (single source of
+// truth). For each mirror row, attaches the corresponding legacy record
+// (GrainTruck / GoodsReceipt / DispatchTruck / DDGS) so the UI knows
+// whether it's editable from this screen.
+//
+// Fuel / ethanol / DDGS rows currently show as view-only with a clear
+// blocker explaining that the correction UI only supports grain inbound
+// for now. No more invisible weighments.
 // ═══════════════════════════════════════════════════════════════════════════
 router.get(
   '/correctable',
@@ -45,10 +52,10 @@ router.get(
     const toDate = req.query.to ? new Date(req.query.to as string) : undefined;
 
     const where: Record<string, unknown> = {};
-    const andClauses: Record<string, unknown>[] = [];
 
-    // Date filter: accept rows where EITHER `date` OR `createdAt` falls in the range.
-    // Many factory-synced rows have weird/null `date` values, so we also check createdAt.
+    // Date filter — applied to gateEntryAt (mirror's canonical timestamp),
+    // with a fallback window on factoryCreatedAt for rows that have no gate
+    // entry captured (rare). Rows are included if EITHER field lands in range.
     if (fromDate || toDate) {
       const toDateExclusive = toDate
         ? new Date(toDate.getTime() + 24 * 60 * 60 * 1000)
@@ -57,73 +64,204 @@ router.get(
         ...(fromDate ? { gte: fromDate } : {}),
         ...(toDateExclusive ? { lt: toDateExclusive } : {}),
       };
-      andClauses.push({
-        OR: [
-          { date: range },
-          { createdAt: range },
-        ],
-      });
+      where.OR = [
+        { gateEntryAt: range },
+        { factoryCreatedAt: range },
+      ];
     }
 
-    // Search filter: case-insensitive contains on vehicleNo, supplier, and
-    // numeric match on ticketNo when the query parses as an integer.
-    // Accept "T-167", "t-167", "T167", or plain "167" for ticket lookups.
+    // Search filter — case-insensitive contains on vehicleNo / supplierName /
+    // customerName, and numeric match on ticketNo when the query parses as
+    // an integer. Accepts "T-89", "t-89", "T89", or plain "89".
     if (search) {
       const searchOr: Record<string, unknown>[] = [
         { vehicleNo: { contains: search, mode: 'insensitive' } },
-        { supplier: { contains: search, mode: 'insensitive' } },
+        { supplierName: { contains: search, mode: 'insensitive' } },
+        { customerName: { contains: search, mode: 'insensitive' } },
       ];
       const digitsOnly = search.trim().replace(/^[Tt]-?/, '');
       const ticketNo = parseInt(digitsOnly, 10);
       if (!isNaN(ticketNo) && String(ticketNo) === digitsOnly) {
         searchOr.push({ ticketNo });
       }
-      andClauses.push({ OR: searchOr });
+      // Combine with date filter if present — both must match
+      if (where.OR) {
+        where.AND = [{ OR: where.OR }, { OR: searchOr }];
+        delete where.OR;
+      } else {
+        where.OR = searchOr;
+      }
     }
 
-    if (andClauses.length > 0) {
-      where.AND = andClauses;
-    }
-
-    const [trucks, total] = await Promise.all([
-      prisma.grainTruck.findMany({
+    const [mirrorRows, total] = await Promise.all([
+      prisma.weighment.findMany({
         where,
         take,
         skip,
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ gateEntryAt: 'desc' }, { factoryCreatedAt: 'desc' }],
         select: {
           id: true,
+          localId: true,
           ticketNo: true,
           vehicleNo: true,
-          supplier: true,
-          materialType: true,
-          materialId: true,
-          weightGross: true,
-          weightTare: true,
-          weightNet: true,
-          date: true,
-          createdAt: true,
+          direction: true,
+          supplierName: true,
+          customerName: true,
+          materialName: true,
+          materialCategory: true,
+          grossWeight: true,
+          tareWeight: true,
+          netWeight: true,
+          gateEntryAt: true,
+          factoryCreatedAt: true,
+          status: true,
           cancelled: true,
           cancelledReason: true,
-          grnId: true,
-          factoryLocalId: true,
-          goodsReceipt: {
-            select: { grnNo: true, status: true, invoiceNo: true, fullyPaid: true },
-          },
         },
       }),
-      prisma.grainTruck.count({ where }),
+      prisma.weighment.count({ where }),
     ]);
 
-    // Run blocker check for each row (fast — all data already loaded via include)
+    // Batch-fetch matching GrainTruck rows by ticketNo (for editability check
+    // on grain inbound rows) AND by factoryLocalId (to catch rows where ticket
+    // was re-assigned during a correction). One query, not N.
+    const ticketNos = mirrorRows
+      .map((m) => m.ticketNo)
+      .filter((t): t is number => t !== null);
+    const localIds = mirrorRows.map((m) => m.localId);
+
+    const grainTrucks = (ticketNos.length > 0 || localIds.length > 0)
+      ? await prisma.grainTruck.findMany({
+          where: {
+            OR: [
+              ...(ticketNos.length > 0 ? [{ ticketNo: { in: ticketNos } }] : []),
+              ...(localIds.length > 0 ? [{ factoryLocalId: { in: localIds } }] : []),
+            ],
+          },
+          select: {
+            id: true,
+            ticketNo: true,
+            factoryLocalId: true,
+            materialType: true,
+            materialId: true,
+            grnId: true,
+            goodsReceipt: {
+              select: { grnNo: true, status: true, invoiceNo: true, fullyPaid: true },
+            },
+          },
+        })
+      : [];
+
+    // Build lookup maps — prefer factoryLocalId match (unique), fall back to
+    // ticketNo match for legacy rows synced before the factoryLocalId column.
+    const gtByLocalId = new Map(
+      grainTrucks
+        .filter((g) => g.factoryLocalId)
+        .map((g) => [g.factoryLocalId as string, g]),
+    );
+    const gtByTicket = new Map(
+      grainTrucks
+        .filter((g) => g.ticketNo !== null)
+        .map((g) => [g.ticketNo as number, g]),
+    );
+
+    // Batch-fetch matching GoodsReceipt rows by ticketNo in remarks (for fuel
+    // inbound trucks with PO). Used for display context only — not editable
+    // from this screen yet.
+    const grnMarkers = ticketNos.map((t) => `Ticket #${t}`);
+    const grns = grnMarkers.length > 0
+      ? await prisma.goodsReceipt.findMany({
+          where: { OR: grnMarkers.map((m) => ({ remarks: { contains: m } })) },
+          select: {
+            id: true,
+            grnNo: true,
+            status: true,
+            invoiceNo: true,
+            fullyPaid: true,
+            remarks: true,
+            vehicleNo: true,
+          },
+        })
+      : [];
+    const grnByTicket = new Map<number, (typeof grns)[number]>();
+    for (const g of grns) {
+      const match = g.remarks?.match(/Ticket #(\d+)/);
+      if (match) {
+        const t = parseInt(match[1], 10);
+        if (!isNaN(t)) grnByTicket.set(t, g);
+      }
+    }
+
+    // Shape each mirror row into the CorrectableRow contract the frontend expects
     const rows = await Promise.all(
-      trucks.map(async (t) => {
-        const summary = await checkGrainTruckCorrectable(t.id);
+      mirrorRows.map(async (m) => {
+        // Try to find a matching GrainTruck via factoryLocalId first (unique),
+        // then ticketNo. If present, this is an editable grain inbound row.
+        const gt = gtByLocalId.get(m.localId) ??
+          (m.ticketNo !== null ? gtByTicket.get(m.ticketNo) : undefined);
+
+        if (gt) {
+          const summary = await checkGrainTruckCorrectable(gt.id);
+          return {
+            id: gt.id,
+            mirrorId: m.id,
+            ticketNo: m.ticketNo,
+            vehicleNo: m.vehicleNo,
+            supplier: m.supplierName ?? '',
+            materialType: m.materialName ?? gt.materialType ?? null,
+            materialId: gt.materialId,
+            weightGross: m.grossWeight ?? 0,
+            weightTare: m.tareWeight ?? 0,
+            weightNet: m.netWeight ?? 0,
+            date: m.gateEntryAt ?? m.factoryCreatedAt,
+            createdAt: m.factoryCreatedAt,
+            cancelled: m.cancelled,
+            cancelledReason: m.cancelledReason,
+            grnId: gt.grnId,
+            goodsReceipt: gt.goodsReceipt,
+            factoryLocalId: m.localId,
+            source: 'GRAIN_TRUCK' as const,
+            canEdit: summary.canEdit,
+            blockers: summary.blockers,
+            requiresAdminPin: summary.requiresAdminPin,
+          };
+        }
+
+        // Non-grain row — fuel inbound (GoodsReceipt), ethanol/DDGS outbound
+        // (DispatchTruck / DDGSDispatchTruck). Visible but not editable from
+        // this screen. Attach GRN context for fuel rows if available.
+        const grn = m.ticketNo !== null ? grnByTicket.get(m.ticketNo) : undefined;
+        const sourceLabel = m.direction === 'OUTBOUND'
+          ? (m.materialCategory === 'DDGS' ? 'DDGS_DISPATCH' : 'ETHANOL_DISPATCH')
+          : 'GOODS_RECEIPT';
+        const blockerMessage = m.direction === 'OUTBOUND'
+          ? `Outbound ${m.materialCategory || 'dispatch'} weighment — corrections for this type will be added in a later phase`
+          : 'Fuel / non-grain inbound weighment is stored in GoodsReceipt — corrections for this type will be added in a later phase';
+
         return {
-          ...t,
-          canEdit: summary.canEdit,
-          blockers: summary.blockers,
-          requiresAdminPin: summary.requiresAdminPin,
+          id: m.id, // mirror id; cannot be used with legacy correct endpoint
+          mirrorId: m.id,
+          ticketNo: m.ticketNo,
+          vehicleNo: m.vehicleNo,
+          supplier: m.supplierName ?? m.customerName ?? '',
+          materialType: m.materialName,
+          materialId: null,
+          weightGross: m.grossWeight ?? 0,
+          weightTare: m.tareWeight ?? 0,
+          weightNet: m.netWeight ?? 0,
+          date: m.gateEntryAt ?? m.factoryCreatedAt,
+          createdAt: m.factoryCreatedAt,
+          cancelled: m.cancelled,
+          cancelledReason: m.cancelledReason,
+          grnId: grn?.id ?? null,
+          goodsReceipt: grn
+            ? { grnNo: grn.grnNo, status: grn.status, invoiceNo: grn.invoiceNo, fullyPaid: grn.fullyPaid }
+            : null,
+          factoryLocalId: m.localId,
+          source: sourceLabel,
+          canEdit: false,
+          blockers: [{ reason: blockerMessage, code: 'NON_GRAIN_SOURCE' }],
+          requiresAdminPin: false,
         };
       }),
     );
