@@ -3647,3 +3647,72 @@ model TaxRuleExplanation {
 
   @@index([category, sortOrder])
 }
+
+/// Cloud mirror of factory Weighment. Passive — does not drive any
+/// business logic. Populated by POST /api/weighment/sync from factory
+/// syncWorker (Phase 2) and by a Tailscale backfill script (Phase 3).
+/// See .claude/memory or commit history for the architectural context.
+model Weighment {
+  id                 String    @id @default(uuid())
+  localId            String    @unique
+  ticketNo           Int?
+  vehicleNo          String
+  direction          String
+  supplierName       String?
+  customerName       String?
+  shipToName         String?
+  materialName       String?
+  materialCategory   String?
+  purchaseType       String?
+  poId               String?
+  poLineId           String?
+  supplierId         String?
+  customerId         String?
+  grossWeight        Float?
+  tareWeight         Float?
+  netWeight          Float?
+  grossTime          DateTime?
+  tareTime           DateTime?
+  gateEntryAt        DateTime?
+  firstWeightAt      DateTime?
+  secondWeightAt     DateTime?
+  releaseAt          DateTime?
+  status             String
+  labStatus          String?
+  labMoisture        Float?
+  labStarch          Float?
+  labDamaged         Float?
+  labForeignMatter   Float?
+  labRemarks         String?
+  driverName         String?
+  driverPhone        String?
+  driverLicense      String?
+  transporterName    String?
+  transporterGstin   String?
+  vehicleType        String?
+  bags               Int?
+  rate               Float?
+  strength           Float?
+  quantityBL         Float?
+  sealNo             String?
+  rstNo              String?
+  remarks            String?
+  cancelled          Boolean   @default(false)
+  cancelledReason    String?
+  cancelledAt        DateTime?
+  factoryCreatedAt   DateTime?
+  factoryUpdatedAt   DateTime?
+  rawPayload         Json?
+  syncedAt           DateTime  @default(now()) @updatedAt
+  syncedFromIp       String?
+  mirrorVersion      Int       @default(1)
+
+  @@index([direction, gateEntryAt])
+  @@index([materialCategory])
+  @@index([status])
+  @@index([vehicleNo])
+  @@index([ticketNo])
+  @@index([poId])
+  @@index([factoryCreatedAt])
+  @@index([syncedAt])
+}

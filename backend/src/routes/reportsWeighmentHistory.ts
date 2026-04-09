@@ -16,9 +16,11 @@ import {
   normalizeGrainTruck,
   normalizeDispatchTruck,
   normalizeDDGSDispatchTruck,
+  normalizeMirror,
   GrainTruckRecord,
   DispatchTruckRecord,
   DDGSDispatchTruckRecord,
+  WeighmentMirrorRecord,
 } from '../utils/weighmentNormalize';
 import { streamXlsxResponse } from '../utils/xlsxExport';
 
@@ -55,6 +57,7 @@ const querySchema = z.object({
       return isNaN(n) ? 0 : Math.max(n, 0);
     }),
   format: z.enum(['json', 'xlsx']).optional().default('json'),
+  source: z.enum(['mirror', 'legacy', 'auto']).optional().default('auto'),
 });
 
 type QueryParams = z.output<typeof querySchema>;
@@ -198,6 +201,114 @@ async function fetchDDGSTrucks(
 }
 
 // ──────────────────────────────────────────────────────────
+// Mirror fetch helper
+// ──────────────────────────────────────────────────────────
+
+async function fetchMirrorWeighments(
+  params: QueryParams,
+  fromDate: Date | undefined,
+  toDate: Date | undefined,
+  xlsxMode: boolean,
+): Promise<WeighmentMirrorRecord[]> {
+  const where: Record<string, unknown> = {};
+
+  // Date range on gateEntryAt
+  if (fromDate || toDate) {
+    where.gateEntryAt = {
+      ...(fromDate ? { gte: fromDate } : {}),
+      ...(toDate ? { lte: toDate } : {}),
+    };
+  }
+
+  // Direction
+  if (params.direction !== 'ALL') {
+    where.direction = params.direction;
+  }
+
+  // Material category → materialType mapping
+  if (params.materialType !== 'ALL') {
+    const catMap: Record<string, string[]> = {
+      ETHANOL: ['ETHANOL'],
+      DDGS: ['DDGS'],
+      RAW_MATERIAL: ['RAW_MATERIAL'],
+      FUEL: ['FUEL'],
+      OTHER: ['OTHER'],
+    };
+    const cats = catMap[params.materialType];
+    if (cats) {
+      where.materialCategory = { in: cats };
+    }
+  }
+
+  // Status
+  if (params.status !== 'ALL') {
+    if (params.status === 'COMPLETE') {
+      where.status = { in: ['COMPLETE', 'RELEASED'] };
+      where.cancelled = false;
+    } else if (params.status === 'CANCELLED') {
+      where.cancelled = true;
+    } else if (params.status === 'PENDING') {
+      where.status = { in: ['GATE_ENTRY', 'GATE_IN', 'PENDING'] };
+      where.cancelled = false;
+    } else {
+      // PARTIAL — anything not complete/pending/cancelled
+      where.status = { notIn: ['COMPLETE', 'RELEASED', 'GATE_ENTRY', 'GATE_IN', 'PENDING'] };
+      where.cancelled = false;
+    }
+  }
+
+  // Only completed filter
+  if (params.onlyCompleted) {
+    where.status = { in: ['COMPLETE', 'RELEASED'] };
+    where.cancelled = false;
+  }
+
+  // Search: vehicleNo, supplierName, customerName, ticketNo
+  if (params.search) {
+    const needle = params.search;
+    const ticketNum = parseInt(needle, 10);
+    const orClauses: unknown[] = [
+      { vehicleNo: { contains: needle, mode: 'insensitive' } },
+      { supplierName: { contains: needle, mode: 'insensitive' } },
+      { customerName: { contains: needle, mode: 'insensitive' } },
+    ];
+    if (!isNaN(ticketNum)) {
+      orClauses.push({ ticketNo: ticketNum });
+    }
+    where.OR = orClauses;
+  }
+
+  return prisma.weighment.findMany({
+    take: xlsxMode ? 10000 : undefined,
+    where,
+    orderBy: { gateEntryAt: 'desc' },
+    select: {
+      id: true,
+      localId: true,
+      ticketNo: true,
+      vehicleNo: true,
+      direction: true,
+      supplierName: true,
+      customerName: true,
+      materialName: true,
+      materialCategory: true,
+      supplierId: true,
+      customerId: true,
+      grossWeight: true,
+      tareWeight: true,
+      netWeight: true,
+      gateEntryAt: true,
+      firstWeightAt: true,
+      secondWeightAt: true,
+      releaseAt: true,
+      status: true,
+      cancelled: true,
+      rstNo: true,
+    },
+  }) as Promise<WeighmentMirrorRecord[]>;
+}
+
+// ──────────────────────────────────────────────────────────
 // Post-normalization filter + sort
 // ──────────────────────────────────────────────────────────
 
@@ -308,6 +419,46 @@ router.get(
 
     const { fromDate, toDate } = parseDateRange(params.from, params.to);
     const xlsxMode = params.format === 'xlsx';
+
+    // ── Mirror-first branch ─────────────────────────────────
+    // Decide whether to use the mirror table or the legacy union.
+    // 'auto'   → use mirror if it has any rows, else fall through to legacy
+    // 'mirror' → always use mirror
+    // 'legacy' → always use legacy union (original code path below)
+
+    let useMirror = false;
+    if (params.source === 'mirror') {
+      useMirror = true;
+    } else if (params.source === 'auto') {
+      const mirrorCount = await prisma.weighment.count();
+      useMirror = mirrorCount > 0;
+    }
+
+    if (useMirror) {
+      const mirrorRaw = await fetchMirrorWeighments(params, fromDate, toDate, xlsxMode);
+      const normalized: UnifiedWeighmentRow[] = mirrorRaw.map(normalizeMirror);
+      const filtered = applyFilters(normalized, params);
+
+      if (xlsxMode) {
+        const exportRows = filtered.slice(0, 10000).map(toXlsxRow);
+        const today = new Date().toISOString().slice(0, 10);
+        await streamXlsxResponse(
+          res,
+          `weighment-history-${today}.xlsx`,
+          'Weighment History',
+          XLSX_COLUMNS,
+          exportRows,
+        );
+        return;
+      }
+
+      const total = filtered.length;
+      const paginated = filtered.slice(params.offset, params.offset + params.limit);
+      res.json({ total, limit: params.limit, offset: params.offset, data: paginated, source: 'mirror' });
+      return;
+    }
+
+    // ── Legacy union (original code path — DO NOT MODIFY) ───
 
     // Determine which sources to query based on direction + materialType filters
     const wantInbound =

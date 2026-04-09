@@ -286,3 +286,106 @@ export function normalizeDDGSDispatchTruck(row: DDGSDispatchTruckRecord): Unifie
     ...durations,
   };
 }
+
+// ──────────────────────────────────────────────────────────
+// Mirror Weighment → UnifiedWeighmentRow
+// ──────────────────────────────────────────────────────────
+
+export interface WeighmentMirrorRecord {
+  id: string;
+  localId: string;
+  ticketNo: number | null;
+  vehicleNo: string;
+  direction: string;
+  supplierName: string | null;
+  customerName: string | null;
+  materialName: string | null;
+  materialCategory: string | null;
+  supplierId: string | null;
+  customerId: string | null;
+  grossWeight: number | null;
+  tareWeight: number | null;
+  netWeight: number | null;
+  gateEntryAt: Date | null;
+  firstWeightAt: Date | null;
+  secondWeightAt: Date | null;
+  releaseAt: Date | null;
+  status: string;
+  cancelled: boolean;
+  rstNo: string | null;
+}
+
+/**
+ * Map the mirror Weighment.materialCategory to WeighmentMaterialType.
+ * Falls back to mapGrainMaterial heuristic when category is null.
+ */
+function mapMirrorMaterialType(
+  category: string | null | undefined,
+  materialName: string | null | undefined,
+  partyName: string | null | undefined,
+): WeighmentMaterialType {
+  if (category) {
+    const upper = category.toUpperCase();
+    if (upper === 'ETHANOL') return 'ETHANOL';
+    if (upper === 'DDGS') return 'DDGS';
+    if (upper === 'FUEL') return 'FUEL';
+    if (upper === 'RAW_MATERIAL') return 'RAW_MATERIAL';
+    if (upper === 'SUGAR') return 'RAW_MATERIAL'; // Sugar inbound treated as raw
+    return 'OTHER';
+  }
+  // Fallback: use mapGrainMaterial heuristic with materialName + partyName
+  return mapGrainMaterial(materialName, partyName);
+}
+
+/** Map mirror status field to canonical WeighmentStatus. */
+function mapMirrorStatus(status: string, cancelled: boolean): WeighmentStatus {
+  if (cancelled) return 'CANCELLED';
+  const upper = status.toUpperCase();
+  if (upper === 'COMPLETE' || upper === 'RELEASED') return 'COMPLETE';
+  if (upper === 'GATE_ENTRY' || upper === 'GATE_IN' || upper === 'PENDING') return 'PENDING';
+  return 'PARTIAL';
+}
+
+export function normalizeMirror(row: WeighmentMirrorRecord): UnifiedWeighmentRow {
+  const direction: WeighmentDirection =
+    row.direction.toUpperCase() === 'OUTBOUND' ? 'OUTBOUND' : 'INBOUND';
+
+  const partyName =
+    direction === 'OUTBOUND'
+      ? (row.customerName ?? row.supplierName ?? '')
+      : (row.supplierName ?? row.customerName ?? '');
+
+  const partyId = direction === 'OUTBOUND' ? (row.customerId ?? null) : (row.supplierId ?? null);
+
+  const materialType = mapMirrorMaterialType(row.materialCategory, row.materialName, partyName);
+
+  const status = mapMirrorStatus(row.status, row.cancelled);
+
+  const gateEntryAt = row.gateEntryAt?.toISOString() ?? null;
+  const firstWeightAt = row.firstWeightAt?.toISOString() ?? null;
+  const secondWeightAt = row.secondWeightAt?.toISOString() ?? null;
+  const releaseAt = row.releaseAt?.toISOString() ?? null;
+
+  const durations = computeDurations(gateEntryAt, firstWeightAt, secondWeightAt, releaseAt);
+
+  return {
+    id: row.id,
+    source: 'GRAIN_TRUCK', // Closest generic label; frontend treats source as informational
+    ticketNo: row.ticketNo,
+    direction,
+    materialType,
+    materialName: row.materialName ?? null,
+    vehicleNo: row.vehicleNo,
+    partyName,
+    partyId,
+    gateEntryAt,
+    firstWeightAt,
+    secondWeightAt,
+    releaseAt,
+    grossWeight: row.grossWeight ?? null,
+    tareWeight: row.tareWeight ?? null,
+    netWeight: row.netWeight ?? null,
+    status,
+    ...durations,
+  };
+}

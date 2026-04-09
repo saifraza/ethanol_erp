@@ -124,6 +124,9 @@ import complianceRoutes from './routes/compliance';
 import taxRoutes from './routes/tax';
 // Reports — Weighment History (unified INBOUND/OUTBOUND report)
 import reportsWeighmentHistoryRoutes from './routes/reportsWeighmentHistory';
+// Weighment mirror sync + audit
+import weighmentSyncRoutes from './routes/weighmentSync';
+import weighmentAuditRoutes from './routes/weighmentAudit';
 import { authenticate } from './middleware/auth';
 import { errorHandler } from './shared/middleware/errorHandler';
 
@@ -281,6 +284,9 @@ app.use('/api/compliance', complianceRoutes);
 app.use('/api/tax', taxRoutes);
 // Reports — Weighment History
 app.use('/api/reports/weighment-history', reportsWeighmentHistoryRoutes);
+// Weighment mirror — machine-to-machine sync (X-WB-Key) + admin audit (JWT)
+app.use('/api/weighment/sync', weighmentSyncRoutes);
+app.use('/api/weighment/audit', weighmentAuditRoutes);
 
 
 // Serve uploaded files

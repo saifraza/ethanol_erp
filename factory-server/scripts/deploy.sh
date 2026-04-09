@@ -85,11 +85,20 @@ say "Stopping factory node (NOT Oracle, NOT WtService)..."
 $SSH 'taskkill /F /IM node.exe & timeout /t 3 /nobreak >nul & exit 0' 2>&1 | grep -v "^$" || true
 ok "node stopped"
 
-# ---------- 5. npm ci (only our node_modules; never touches Oracle) ----------
-# Skipped by default — Prisma only re-generates when schema changes.
-# Uncomment if you've added/removed deps:
-# say "Reinstalling deps..."
-# $SSH "cd ${REMOTE_DIR} && npm ci --omit=dev" || die "npm ci failed"
+# ---------- 5. npm install (only our node_modules; never touches Oracle) ----------
+# MANDATORY: always run after package.json copy. If we added a new dep
+# (e.g. exceljs on 2026-04-09) and skip this step, node crashes on boot
+# with "Cannot find module 'X'" and the factory goes down — exactly what
+# happened on 2026-04-09 when the weighment-history report shipped.
+#
+# `npm install --omit=dev` is idempotent — it's a no-op (~2 seconds) when
+# deps are already in sync with package.json + package-lock.json, and
+# installs only the delta when something changed. Safer than the original
+# `npm ci` which would wipe and reinstall every time (slow) and also
+# safer than skipping (which silently breaks the factory).
+say "Installing deps (idempotent; no-op if nothing changed)..."
+$SSH "cd ${REMOTE_DIR} && npm install --omit=dev --no-audit --no-fund" 2>&1 | tail -10 || die "npm install failed — factory deps out of sync"
+ok "deps in sync"
 
 # ---------- 6. Prisma generate — MANDATORY, BOTH schemas ----------
 # This is the bug that killed gate entry for the entire day 2026-04-08.
