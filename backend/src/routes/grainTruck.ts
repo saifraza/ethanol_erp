@@ -479,27 +479,40 @@ router.post('/', authenticate, upload.single('photo'), async (req: AuthRequest, 
     }
     const photoUrl = req.file ? `/uploads/grain-truck/${req.file.filename}` : null;
 
-    const truck = await prisma.grainTruck.create({
-      data: {
-        date: truckDate,
-        uidRst: uidRst || '',
-        vehicleNo: vehicleNo || '',
-        supplier: supplier || '',
-        weightGross: gross,
-        weightTare: tare,
-        weightNet,
-        quarantineWeight: qWeight,
-        moisture: moistureInput.value,
-        starchPercent: starchInput.value,
-        damagedPercent: damagedInput.value,
-        foreignMatter: foreignMatterInput.value,
-        quarantine: (quarantine === 'true' || quarantine === true) || qWeight > 0,
-        quarantineReason: quarantineReason || null,
-        photoUrl,
-        bags: bagsInput.value,
-        remarks: remarks || null,
-        userId: req.user!.id,
-      },
+    // Allocate a manual ticket number in the cloud-reserved range (>= 1,000,000)
+    // so it never collides with factory-allocated tickets (currently ~150 and counting).
+    // Done inside a transaction with the create so two concurrent manual posts can't
+    // land on the same ticket.
+    const MANUAL_TICKET_BASE = 1_000_000;
+    const truck = await prisma.$transaction(async (tx) => {
+      const maxManual = await tx.grainTruck.aggregate({
+        _max: { ticketNo: true },
+        where: { ticketNo: { gte: MANUAL_TICKET_BASE } },
+      });
+      const nextTicketNo = (maxManual._max.ticketNo ?? MANUAL_TICKET_BASE - 1) + 1;
+      return tx.grainTruck.create({
+        data: {
+          date: truckDate,
+          ticketNo: nextTicketNo,
+          uidRst: uidRst || '',
+          vehicleNo: vehicleNo || '',
+          supplier: supplier || '',
+          weightGross: gross,
+          weightTare: tare,
+          weightNet,
+          quarantineWeight: qWeight,
+          moisture: moistureInput.value,
+          starchPercent: starchInput.value,
+          damagedPercent: damagedInput.value,
+          foreignMatter: foreignMatterInput.value,
+          quarantine: (quarantine === 'true' || quarantine === true) || qWeight > 0,
+          quarantineReason: quarantineReason || null,
+          photoUrl,
+          bags: bagsInput.value,
+          remarks: remarks || null,
+          userId: req.user!.id,
+        },
+      });
     });
     res.status(201).json(truck);
   } catch (err: any) { res.status(500).json({ error: err.message }); }

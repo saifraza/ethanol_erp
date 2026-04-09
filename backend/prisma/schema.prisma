@@ -920,12 +920,17 @@ model GrainTruck {
   transporterName  String?
   materialType     String? // BROKEN_RICE, RICE_HUSK, MAIZE etc.
   ticketNo         Int? // weighbridge ticket number
-  factoryLocalId   String? // factory-server Weighment.localId (for correction push back)
+  factoryLocalId   String?  @unique // factory-server Weighment.localId (dedup key — UNIQUE to prevent duplicate rows on concurrent push)
   cancelled        Boolean        @default(false) // soft-cancel flag set by admin correction
   cancelledReason  String?
   cancelledAt      DateTime?
   cancelledBy      String?
   createdAt        DateTime       @default(now())
+  // Timestamp trail from factory Weighment (mirrored for reporting/analytics)
+  gateEntryAt      DateTime? // when the truck entered the gate (Weighment.gateEntryAt)
+  firstWeightAt    DateTime? // first weighbridge reading (Weighment.firstWeightAt)
+  secondWeightAt   DateTime? // second weighbridge reading (Weighment.secondWeightAt)
+  releaseAt        DateTime? // when the truck was released (future — factory doesn't track yet)
 
   division    String?               @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   corrections WeighmentCorrection[]
@@ -935,7 +940,8 @@ model GrainTruck {
   @@index([grnId])
   @@index([ticketNo])
   @@index([division])
-  @@index([factoryLocalId])
+  @@index([gateEntryAt])
+  @@index([firstWeightAt])
 }
 
 // ═══════════════════════════════════════════════
