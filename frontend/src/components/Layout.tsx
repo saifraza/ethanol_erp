@@ -368,6 +368,8 @@ function getPageContext(path: string): string {
     'materials': 'procurement',
     'purchase-orders': 'procurement',
     'goods-receipts': 'procurement',
+    'auto-grn': 'procurement',
+    'store-receipts': 'inventory',
     'vendor-invoices': 'procurement',
     'vendor-payments': 'procurement',
     'inventory': 'inventory',

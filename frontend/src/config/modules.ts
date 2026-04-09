@@ -68,7 +68,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'traders', label: 'Traders', to: '/procurement/traders', icon: UserCheck, group: 'procurement' },
   { key: 'materials', label: 'Items', to: '/inventory', icon: Box, group: 'procurement' },
   { key: 'purchase-orders', label: 'Purchase Orders', to: '/procurement/purchase-orders', icon: ShoppingBag, group: 'procurement' },
-  { key: 'goods-receipts', label: 'GRN', to: '/logistics/gate-register?tab=grn', icon: PackageCheck, group: 'procurement' },
+  { key: 'auto-grn', label: 'Auto GRN (WB)', to: '/procurement/goods-receipts/auto', icon: PackageCheck, group: 'procurement' },
   { key: 'contractors', label: 'Contractors', to: '/procurement/contractors', icon: HardHat, group: 'procurement' },
   { key: 'raw-material-purchase', label: 'RM Deals', to: '/procurement/raw-material-purchase', icon: Handshake, group: 'procurement' },
 
@@ -97,8 +97,9 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'taxes', label: 'Taxes', to: '/accounts/taxes', icon: PieChart, group: 'books' },
   { key: 'bank-loans', label: 'Bank Loans', to: '/accounts/bank-loans', icon: Landmark, group: 'books' },
 
-  // ── INVENTORY ──
+  // ── INVENTORY / STORE ──
   { key: 'inventory-store', label: 'Inventory & Store', to: '/inventory', icon: Warehouse, group: 'inventory' },
+  { key: 'store-receipts', label: 'Store Receipts (GRN)', to: '/store/receipts', icon: PackageCheck, group: 'inventory' },
   { key: 'store-indents', label: 'Store Indents', to: '/inventory/store-indents', icon: ShoppingCart, group: 'inventory' },
   { key: 'store-deals', label: 'Store Deals', to: '/inventory/store-deals', icon: ShoppingCart, group: 'inventory' },
   { key: 'masters', label: 'Dept & Warehouses', to: '/inventory/masters', icon: Building2, group: 'inventory' },
