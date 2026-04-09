@@ -161,12 +161,11 @@ The ERP has two distinct UI styles:
 
 **Before making ANY change that touches `factory-server/`, `weighbridge/`, or anything that will be deployed to the factory PC, you MUST:**
 
-1. **Read `.claude/skills/factory-incidents-postmortem.md`** — the full incident timeline + permanent rules. The factory has been burned 7 times (2026-03-31 → 2026-04-08). Every rule in that file is written in blood. Do not guess — read the file.
-2. **Read `.claude/skills/factory-architecture.md`** — the architecture + deploy runbook.
+1. **Read `.claude/skills/factory-operations.md`** — Part A is the full incident timeline + permanent rules (the factory has been burned 7 times, 2026-03-31 → 2026-04-08, every rule is written in blood). Part B is the architecture + deploy runbook. Do not guess — read the file.
 3. **Never deploy manually.** Always use `./factory-server/scripts/deploy.sh` — the script enforces prisma generate (local + cloud), service safety checks, and startup log scanning. Manual SCP is how incidents happen.
 4. **Check uncommitted state before touching factory files**: `git status factory-server/` — if there are uncommitted changes you don't recognize, investigate before editing, don't assume they're stale.
 5. **If you see Prisma `Unknown argument` or `Unknown field` errors** anywhere — the fix is ALWAYS: kill node → `prisma generate` (both schemas!) → restart via schtasks. Never a code change. This bug has shipped twice in one day (2026-04-08 gate entry + 2026-04-08 master-data cache).
-6. **If adding a field to any Prisma model** (factory, cloud, or weighbridge), grep for where it's referenced across systems — see `.claude/skills/weighbridge-add-product.md` for the cross-system field-mirroring contract.
+6. **If adding a field to any Prisma model** (factory, cloud, or weighbridge), grep for where it's referenced across systems — see `.claude/skills/weighbridge.md` Part B for the cross-system field-mirroring contract.
 7. **When in doubt, ask the user before touching factory.** This is production and there are no maintenance windows. A wrong move = trucks piled up at the gate and a phone call from the plant manager.
 
 Routine checks when doing factory work:
@@ -279,10 +278,8 @@ Weighbridge can also push directly to cloud (`CLOUD_API_URL` in config.py) — b
 | Live weight from scale | `weighbridge/weight_reader.py` (serial COM1 or file mode) |
 | Print slips (gate pass, weighment) | `weighbridge/templates/` (Flask) or factory-server print endpoints (being built) |
 | OPC/DCS bridge | `.claude/skills/opc-bridge.md` |
-| Factory deploy / SSH / safety | `.claude/skills/factory-architecture.md` |
-| Factory incidents / postmortems / permanent rules | `.claude/skills/factory-incidents-postmortem.md` — **READ FIRST** before touching factory |
-| Serial protocol / hardware | `.claude/skills/weighbridge-system.md` |
-| Adding new product to weighbridge (scrap, sugar, animal feed, etc.) | `.claude/skills/weighbridge-add-product.md` |
+| Factory deploy / SSH / safety / incidents / postmortems | `.claude/skills/factory-operations.md` — **READ FIRST** before touching factory. Part A = incidents (load-bearing), Part B = architecture + deploy runbook |
+| Weighbridge: serial protocol, hardware, new products, corrections | `.claude/skills/weighbridge.md` — Part A = hardware/protocol, Part B = add-product contract, Part C = corrections |
 | Weighbridge `/push` handlers (cloud-side) | `backend/src/routes/weighbridge/handlers/*.ts` |
 | Sales order → dispatch → invoice | `backend/src/routes/salesOrders.ts`, `shipments.ts`, `invoices.ts` |
 | Procurement PO → GRN → payment | `backend/src/routes/purchaseOrders.ts`, `goodsReceipts.ts`, `vendorPayments.ts` |
@@ -572,25 +569,37 @@ To add Telegram to a new module, see `autoCollectModules/_template.ts`.
 
 ## Module Skills
 
-For detailed guidance on specific modules, see `.claude/skills/`:
-- `process-production.md` — Full grain-to-ethanol-to-DDGS pipeline (grain, milling, liquefaction, fermentation, distillation, evaporation, decanter, dryer, DDGS, daily entries)
-- `process-grain.md` — Grain intake detail: mass balance, truck weighing, silo tracking
-- `process-fermentation.md` — Fermentation detail: batch phases, lab readings, dosing
-- `process-distillation.md` — Distillation detail: ethanol product, tank calibration, dispatch
-- `sales-module.md` — Order-to-cash, e-invoice, e-way bill, dispatch workflow
-- `procurement-module.md` — Procure-to-pay, PO lifecycle, GRN
-- `accounts-module.md` — Payment desk, receivables, collections, payment flow, future costing
-- `accounts-full-module.md` — Full double-entry bookkeeping spec (Chart of Accounts, Journals, Ledger, P&L, Balance Sheet, Bank Recon, GST)
-- `dashboard-analytics.md` — Dashboard performance, KPI calculations
-- `admin-settings.md` — Auth, users, settings, audit trail
-- `charts-graphs.md` — Standard chart design system (OPC Live pattern) — colors, axes, tooltips, containers, Brush, reference lines. ALL charts must follow this.
-- `ubi-h2h-banking.md` — **CRITICAL** — UBI H2H-STP direct bank payment integration. Full spec: SFTP, AES-256-GCM encryption, Maker-Checker-Releaser security, data models, routes, file format. Bank side LIVE, ERP side pending SFTP credentials.
-- `factory-architecture.md` — Factory server + weighbridge PC: architecture, deploy, SSH, safety rules, troubleshooting
-- `factory-incidents-postmortem.md` — **READ BEFORE ANY FACTORY WORK.** All 7 factory incidents (2026-03-31 → 2026-04-08) with root cause, fix, and permanent rules. This is where the scars live.
-- `weighbridge-system.md` — Hardware: serial protocol, 3-step workflow, cross-system API contracts
-- `weighbridge-add-product.md` — **READ FIRST** before adding any new product (scrap, sugar, animal feed, etc.) to the weighbridge pipeline. Decision tree, handler contract, race condition rules, testing checklist.
-- `opc-bridge.md` — OPC bridge to ABB 800xA DCS
-- `debt-register.md` — Known tech debt items with severity and fix direction
+See `.claude/skills/SKILLS.md` for the full index. Quick summary of the 18 skills (post 2026-04-09 consolidation):
+
+**Factory & hardware (safety-critical):**
+- `factory-operations.md` — **READ FIRST.** Part A: all 7 incidents + permanent rules. Part B: architecture + deploy runbook.
+- `weighbridge.md` — Part A: serial/hardware. Part B: add-product contract. Part C: weighment corrections.
+- `opc-bridge.md` — OPC bridge to ABB 800xA DCS.
+
+**Process:**
+- `process-production.md` — Full grain → ethanol → DDGS pipeline (merged with grain/fermentation/distillation detail sections).
+- `logistics-gate-entry-plan.md` — Gate entry operator UI + truck flow.
+
+**Business modules:**
+- `accounts-module.md` — Full double-entry spec (merged).
+- `sales-module.md` — Order-to-cash, e-invoice, e-way bill.
+- `procurement-module.md` — Procure-to-pay, PO, GRN.
+- `inventory-module.md` — SAP-style warehouses, stock, movements.
+- `trade-inventory.md` — Direct trade purchases/sales.
+- `contractors-thakedar.md` — Contractor management.
+- `dashboard-analytics.md` — Dashboard KPIs.
+
+**Compliance, tax, banking:**
+- `compliance-tax-system.md` — 6-phase compliance plan (merged with all phase files).
+- `ubi-h2h-banking.md` — **CRITICAL.** UBI H2H-STP direct bank payments.
+- `ewb-jobwork-issue.md` — E-way bill for job work.
+
+**Reference:**
+- `charts-graphs.md` — Standard chart design system. ALL charts must follow.
+- `admin-settings.md` — Auth, users, settings, audit.
+- `debt-register.md` — Known tech debt with severity + fix direction.
+
+Agents in `.claude/agents/` read these skills on every invocation — see `SKILLS.md` for the agent → skill mapping.
 
 ---
 
