@@ -45,27 +45,44 @@ router.get(
     const toDate = req.query.to ? new Date(req.query.to as string) : undefined;
 
     const where: Record<string, unknown> = {};
+    const andClauses: Record<string, unknown>[] = [];
+
+    // Date filter: accept rows where EITHER `date` OR `createdAt` falls in the range.
+    // Many factory-synced rows have weird/null `date` values, so we also check createdAt.
     if (fromDate || toDate) {
       const toDateExclusive = toDate
         ? new Date(toDate.getTime() + 24 * 60 * 60 * 1000)
         : undefined;
-      where.date = {
+      const range = {
         ...(fromDate ? { gte: fromDate } : {}),
         ...(toDateExclusive ? { lt: toDateExclusive } : {}),
       };
+      andClauses.push({
+        OR: [
+          { date: range },
+          { createdAt: range },
+        ],
+      });
     }
+
+    // Search filter: case-insensitive contains on vehicleNo, supplier, and
+    // numeric match on ticketNo when the query parses as an integer.
+    // Accept "T-167", "t-167", "T167", or plain "167" for ticket lookups.
     if (search) {
-      // numeric search = ticketNo, else text = vehicleNo/supplier
-      const ticketNo = parseInt(search);
-      if (!isNaN(ticketNo)) {
-        where.ticketNo = ticketNo;
-      } else {
-        where.OR = [
-          { vehicleNo: { contains: search, mode: 'insensitive' } },
-          { supplier: { contains: search, mode: 'insensitive' } },
-          { materialType: { contains: search, mode: 'insensitive' } },
-        ];
+      const searchOr: Record<string, unknown>[] = [
+        { vehicleNo: { contains: search, mode: 'insensitive' } },
+        { supplier: { contains: search, mode: 'insensitive' } },
+      ];
+      const digitsOnly = search.trim().replace(/^[Tt]-?/, '');
+      const ticketNo = parseInt(digitsOnly, 10);
+      if (!isNaN(ticketNo) && String(ticketNo) === digitsOnly) {
+        searchOr.push({ ticketNo });
       }
+      andClauses.push({ OR: searchOr });
+    }
+
+    if (andClauses.length > 0) {
+      where.AND = andClauses;
     }
 
     const [trucks, total] = await Promise.all([

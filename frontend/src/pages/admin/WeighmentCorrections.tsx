@@ -74,6 +74,7 @@ interface POLite {
   id: string;
   poNo: string;
   status: string;
+  vendorId: string;
   vendorName: string;
 }
 
@@ -410,8 +411,9 @@ interface EditModalProps {
 
 function EditModal({ row, onClose, onSaved }: EditModalProps) {
   const [materialId, setMaterialId] = useState(row.materialId || '');
-  const [materialType, setMaterialType] = useState(row.materialType || '');
-  const [supplier, setSupplier] = useState(row.supplier || '');
+  const [vendorId, setVendorId] = useState('');
+  const [vendorSearch, setVendorSearch] = useState('');
+  const [vendorDropdownOpen, setVendorDropdownOpen] = useState(false);
   const [poId, setPoId] = useState('');
   const [vehicleNo, setVehicleNo] = useState(row.vehicleNo || '');
   const [remarks, setRemarks] = useState('');
@@ -452,7 +454,8 @@ function EditModal({ row, onClose, onSaved }: EditModalProps) {
           id: string;
           poNo?: string | number;
           status?: string;
-          vendor?: { name?: string };
+          vendorId?: string;
+          vendor?: { id?: string; name?: string };
           vendorName?: string;
         };
         const list = firstArray(r.data) as PoRaw[];
@@ -463,15 +466,32 @@ function EditModal({ row, onClose, onSaved }: EditModalProps) {
           id: p.id,
           poNo: String(p.poNo ?? '--'),
           status: p.status || '',
+          vendorId: p.vendor?.id || p.vendorId || '',
           vendorName: p.vendor?.name || p.vendorName || '',
         })));
       })
       .catch(() => setPos([]));
 
     api.get('/vendors')
-      .then((r) => setVendors(firstArray(r.data) as VendorLite[]))
+      .then((r) => {
+        const list = firstArray(r.data) as VendorLite[];
+        setVendors(list);
+        // Pre-select current vendor by name match (supplier is stored as plain string)
+        if (row.supplier) {
+          const match = list.find((v) => v.name.trim().toLowerCase() === row.supplier.trim().toLowerCase());
+          if (match) setVendorId(match.id);
+          setVendorSearch(row.supplier);
+        }
+      })
       .catch(() => setVendors([]));
-  }, []);
+  }, [row.supplier]);
+
+  // When vendor changes, clear PO (it may no longer be valid for the new vendor)
+  const currentVendor = vendors.find((v) => v.id === vendorId);
+  const filteredPOs = vendorId ? pos.filter((p) => p.vendorId === vendorId) : pos;
+  const filteredVendors = vendorSearch
+    ? vendors.filter((v) => v.name.toLowerCase().includes(vendorSearch.toLowerCase()))
+    : vendors;
 
   const submit = async () => {
     setError('');
@@ -485,9 +505,15 @@ function EditModal({ row, onClose, onSaved }: EditModalProps) {
     }
 
     const fields: Record<string, unknown> = {};
-    if (materialId && materialId !== row.materialId) fields.materialId = materialId;
-    if (materialType.trim() && materialType.trim() !== (row.materialType || '').trim()) fields.materialType = materialType.trim();
-    if (supplier.trim() && supplier.trim() !== row.supplier) fields.supplier = supplier.trim();
+    if (materialId && materialId !== row.materialId) {
+      fields.materialId = materialId;
+      // materialType (human-readable name) is propagated server-side from the
+      // selected InventoryItem.name, so we don't need to send it.
+    }
+    // Vendor dropdown drives supplier — store vendor.name into supplier field.
+    if (currentVendor && currentVendor.name.trim() !== row.supplier.trim()) {
+      fields.supplier = currentVendor.name.trim();
+    }
     if (poId) fields.poId = poId;
     if (vehicleNo.trim() && vehicleNo.trim() !== row.vehicleNo) fields.vehicleNo = vehicleNo.trim();
     if (remarks) fields.remarks = remarks;
@@ -534,11 +560,7 @@ function EditModal({ row, onClose, onSaved }: EditModalProps) {
             <Field label="Material">
               <select
                 value={materialId}
-                onChange={(e) => {
-                  setMaterialId(e.target.value);
-                  const m = materials.find((x) => x.id === e.target.value);
-                  if (m) setMaterialType(m.name);
-                }}
+                onChange={(e) => setMaterialId(e.target.value)}
                 className="border border-slate-300 px-2 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
               >
                 <option value="">-- select --</option>
@@ -550,38 +572,57 @@ function EditModal({ row, onClose, onSaved }: EditModalProps) {
               </select>
             </Field>
 
-            <Field label="Material Name (free text)">
-              <input
-                type="text"
-                value={materialType}
-                onChange={(e) => setMaterialType(e.target.value)}
-                className="border border-slate-300 px-2 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
-              />
+            <Field label="Supplier / Vendor">
+              <div className="relative">
+                <input
+                  type="text"
+                  value={vendorSearch}
+                  onChange={(e) => {
+                    setVendorSearch(e.target.value);
+                    setVendorDropdownOpen(true);
+                    // Clear selection if user edits text
+                    if (currentVendor && currentVendor.name !== e.target.value) {
+                      setVendorId('');
+                      setPoId('');
+                    }
+                  }}
+                  onFocus={() => setVendorDropdownOpen(true)}
+                  onBlur={() => setTimeout(() => setVendorDropdownOpen(false), 150)}
+                  placeholder="Type to search vendor..."
+                  className="border border-slate-300 px-2 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
+                />
+                {vendorDropdownOpen && filteredVendors.length > 0 && (
+                  <div className="absolute z-10 left-0 right-0 top-full mt-0.5 bg-white border border-slate-300 shadow-lg max-h-48 overflow-y-auto">
+                    {filteredVendors.slice(0, 50).map((v) => (
+                      <div
+                        key={v.id}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setVendorId(v.id);
+                          setVendorSearch(v.name);
+                          setVendorDropdownOpen(false);
+                          // Reset PO if it no longer matches the new vendor
+                          const currentPo = pos.find((p) => p.id === poId);
+                          if (currentPo && currentPo.vendorId !== v.id) setPoId('');
+                        }}
+                        className={`px-2 py-1 text-xs cursor-pointer hover:bg-blue-50 ${v.id === vendorId ? 'bg-blue-100' : ''}`}
+                      >
+                        {v.name}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </Field>
 
-            <Field label="Supplier / Party">
-              <input
-                type="text"
-                list="vendorList"
-                value={supplier}
-                onChange={(e) => setSupplier(e.target.value)}
-                className="border border-slate-300 px-2 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
-              />
-              <datalist id="vendorList">
-                {vendors.map((v) => (
-                  <option key={v.id} value={v.name} />
-                ))}
-              </datalist>
-            </Field>
-
-            <Field label="Purchase Order (optional)">
+            <Field label={`Purchase Order (${filteredPOs.length} open${vendorId ? ' for vendor' : ''})`}>
               <select
                 value={poId}
                 onChange={(e) => setPoId(e.target.value)}
                 className="border border-slate-300 px-2 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
               >
                 <option value="">-- keep current --</option>
-                {pos.map((p) => (
+                {filteredPOs.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.poNo} — {p.vendorName} [{p.status}]
                   </option>
