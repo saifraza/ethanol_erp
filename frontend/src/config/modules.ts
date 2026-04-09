@@ -19,7 +19,7 @@ export interface ModuleDef {
   label: string;
   to: string;
   icon: any;
-  group: 'process' | 'admin' | 'sales' | 'procurement' | 'trade' | 'accounts' | 'books' | 'inventory' | 'logistics';
+  group: 'process' | 'admin' | 'sales' | 'procurement' | 'trade' | 'accounts' | 'books' | 'inventory' | 'logistics' | 'compliance';
   adminOnly?: boolean;
 }
 
@@ -108,6 +108,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'compliance-dashboard', label: 'Compliance', to: '/compliance', icon: ShieldCheck, group: 'compliance' },
   { key: 'compliance-register', label: 'Register', to: '/compliance/register', icon: ListChecks, group: 'compliance' },
   { key: 'compliance-ai', label: 'Compliance AI', to: '/compliance/ai', icon: BotMessageSquare, group: 'compliance' },
+  { key: 'tax-rules-reference', label: 'Tax Rules Reference', to: '/compliance/tax-rules', icon: BookOpen, group: 'compliance' },
 
   // ── ADMIN ──
   { key: 'approvals', label: 'Approvals', to: '/admin/approvals', icon: ClipboardCheck, group: 'admin' },
@@ -120,6 +121,13 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'company-documents', label: 'Document Vault', to: '/admin/documents', icon: FolderArchive, group: 'admin' },
   { key: 'document-search', label: 'Doc Search (AI)', to: '/admin/document-search', icon: Search, group: 'admin' },
   { key: 'weighment-corrections', label: 'Weighment Corrections', to: '/admin/weighment-corrections', icon: ClipboardCheck, group: 'admin', adminOnly: true },
+  { key: 'tax-config', label: 'Tax · Company Config', to: '/admin/tax/config', icon: Building2, group: 'admin', adminOnly: true },
+  { key: 'tax-fiscal-years', label: 'Tax · Fiscal Years', to: '/admin/tax/fiscal-years', icon: ClipboardList, group: 'admin', adminOnly: true },
+  { key: 'tax-invoice-series', label: 'Tax · Invoice Series', to: '/admin/tax/invoice-series', icon: Receipt, group: 'admin', adminOnly: true },
+  { key: 'tax-hsn', label: 'Tax · HSN Master', to: '/admin/tax/hsn', icon: Package, group: 'admin', adminOnly: true },
+  { key: 'tax-tds', label: 'Tax · TDS Sections', to: '/admin/tax/tds-sections', icon: Calculator, group: 'admin', adminOnly: true },
+  { key: 'tax-tcs', label: 'Tax · TCS Sections', to: '/admin/tax/tcs-sections', icon: Calculator, group: 'admin', adminOnly: true },
+  { key: 'tax-audit', label: 'Tax · Audit Log', to: '/admin/tax/audit', icon: ListChecks, group: 'admin', adminOnly: true },
 ];
 
 // For UsersPage — unique module keys for permission assignment (excludes adminOnly)
