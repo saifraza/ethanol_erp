@@ -57,6 +57,17 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       const totalPaid = invoices.reduce((s: number, inv: any) =>
         s + (inv.payments || []).reduce((ps: number, p: any) => ps + (p.amount || 0) + (p.tdsDeducted || 0), 0), 0);
       const paymentStatus = totalInvoiced === 0 ? 'NO_INVOICE' : totalPaid >= totalInvoiced ? 'PAID' : totalPaid > 0 ? 'PARTIAL' : 'UNPAID';
+      // Received value = sum of (receivedQty × rate + GST) across PO lines.
+      // This is the real financial exposure — what we've actually received and owe for.
+      // Contract grandTotal stays available as po.grandTotal for reference, but the list
+      // now displays received value so an un-received PO shows ₹0 instead of the full
+      // contract amount (user feedback 2026-04-09).
+      const receivedValue = Math.round(
+        (po.lines || []).reduce((s: number, l: any) => {
+          const base = (l.receivedQty || 0) * (l.rate || 0);
+          return s + base + (base * (l.gstPercent || 0)) / 100;
+        }, 0) * 100,
+      ) / 100;
       return {
         ...po,
         linesCount: po.lines?.length || 0,
@@ -65,6 +76,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         totalInvoiced,
         totalPaid,
         paymentStatus,
+        receivedValue,
       };
     });
 

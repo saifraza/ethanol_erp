@@ -65,6 +65,7 @@ interface PurchaseOrder {
   vendor: Vendor;
   supplyType: string;
   grandTotal: number;
+  receivedValue?: number;
   subtotal: number;
   totalGst: number;
   lines: POLine[];
@@ -617,7 +618,7 @@ const PurchaseOrders: React.FC = () => {
     total: pos.length,
     draft: pos.filter((p) => p.status === 'DRAFT').length,
     active: pos.filter((p) => ['APPROVED', 'SENT'].includes(p.status)).length,
-    totalValue: pos.reduce((sum, p) => sum + p.grandTotal, 0),
+    totalValue: pos.reduce((sum, p) => sum + (p.receivedValue ?? 0), 0),
   };
 
   const { subtotal, totalGst, grandTotal } = calculateTotals();
@@ -1046,7 +1047,12 @@ const PurchaseOrders: React.FC = () => {
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100">{new Date(po.poDate).toLocaleDateString('en-IN')}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100">{new Date(po.deliveryDate).toLocaleDateString('en-IN')}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-center">{po.linesCount}</td>
-                    <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums font-bold">{po.grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums font-bold" title={`Ordered: ₹${po.grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}>
+                      {(po.receivedValue ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                      {po.receivedValue !== undefined && po.receivedValue < po.grandTotal && (
+                        <div className="text-[9px] font-normal text-slate-400 font-mono">of ₹{po.grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
+                      )}
+                    </td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-center">
                       {po.paymentStatus === 'PAID' && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-300 bg-green-50 text-green-700">PAID</span>}
                       {po.paymentStatus === 'PARTIAL' && (
@@ -1242,7 +1248,7 @@ const PurchaseOrders: React.FC = () => {
                             {/* Pipeline Steps */}
                             <div className="flex items-center gap-0 mb-4">
                               {[
-                                { label: 'Ordered', done: true, value: `₹${(poDetail.pipeline.ordered.amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, sub: `${poDetail.pipeline.ordered.qty} items` },
+                                { label: 'Received Value', done: (poDetail.pipeline.received.amount || 0) > 0, value: `₹${(poDetail.pipeline.received.amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, sub: `Ordered ₹${(poDetail.pipeline.ordered.amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` },
                                 { label: 'Received', done: poDetail.pipeline.received.grnCount > 0, value: `${poDetail.pipeline.received.qty} qty`, sub: `${poDetail.pipeline.received.grnCount} GRN${poDetail.pipeline.received.grnCount !== 1 ? 's' : ''} · ${poDetail.pipeline.received.pending} pending` },
                                 { label: 'Invoiced', done: poDetail.pipeline.invoiced.count > 0, value: poDetail.pipeline.invoiced.count > 0 ? `₹${poDetail.pipeline.invoiced.amount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '--', sub: `${poDetail.pipeline.invoiced.count} invoice${poDetail.pipeline.invoiced.count !== 1 ? 's' : ''}` },
                                 { label: 'Paid', done: poDetail.pipeline.paid.amount > 0, value: poDetail.pipeline.paid.amount > 0 ? `₹${poDetail.pipeline.paid.amount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '--', sub: poDetail.pipeline.paid.balance > 0 ? `₹${poDetail.pipeline.paid.balance.toLocaleString('en-IN', { maximumFractionDigits: 0 })} due` : 'Cleared' },
@@ -1384,9 +1390,9 @@ const PurchaseOrders: React.FC = () => {
               </tbody>
               <tfoot>
                 {(() => {
-                  const allTotal = filteredPOs.reduce((s, p) => s + p.grandTotal, 0);
+                  const allTotal = filteredPOs.reduce((s, p) => s + (p.receivedValue ?? 0), 0);
                   const receivedPOs = filteredPOs.filter(p => ['PARTIAL_RECEIVED', 'RECEIVED', 'CLOSED'].includes(p.status));
-                  const receivedTotal = receivedPOs.reduce((s, p) => s + p.grandTotal, 0);
+                  const receivedTotal = receivedPOs.reduce((s, p) => s + (p.receivedValue ?? 0), 0);
                   const totalPaid = filteredPOs.reduce((s, p) => s + (p.totalPaid || 0), 0);
                   const totalInvoiced = filteredPOs.reduce((s, p) => s + (p.totalInvoiced || 0), 0);
                   const balanceToPay = totalInvoiced - totalPaid;
