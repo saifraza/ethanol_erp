@@ -83,8 +83,14 @@ export function computeDurations(
 
 function mapGrainMaterial(raw: string | null | undefined): WeighmentMaterialType {
   if (!raw) return 'RAW_MATERIAL';
-  const upper = raw.toUpperCase();
-  if (upper === 'FUEL' || upper === 'HSD' || upper === 'DIESEL') return 'FUEL';
+  const norm = raw.toUpperCase().replace(/[^A-Z0-9]/g, ' ');
+  // Biomass + liquid fuels burned in the boiler / vehicles
+  const FUEL_KEYWORDS = [
+    'HUSK', 'BAGASSE', 'STALK', 'STRAW', 'WOOD', 'FIREWOOD', 'COAL',
+    'BRIQUETTE', 'PELLET', 'BIOMASS', 'FUEL', 'HSD', 'DIESEL', 'PETROL',
+    'LIGNITE', 'SAWDUST', 'CHIPS', 'TRASH', 'PITH',
+  ];
+  if (FUEL_KEYWORDS.some((kw) => norm.includes(kw))) return 'FUEL';
   // Ethanol is never inbound on GrainTruck; everything else is raw material
   return 'RAW_MATERIAL';
 }
