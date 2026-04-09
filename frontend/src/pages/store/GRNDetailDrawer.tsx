@@ -102,7 +102,7 @@ export default function GRNDetailDrawer({ grnId, endpoint, readOnly, onClose, on
   const canApprove =
     !readOnly &&
     !!user &&
-    ['ADMIN', 'SUPER_ADMIN', 'SUPERVISOR'].includes(user.role);
+    ['ADMIN', 'SUPER_ADMIN', 'STORE_INCHARGE', 'PROCUREMENT_MANAGER', 'SUPERVISOR'].includes(user.role);
 
   const load = useCallback(async () => {
     try {

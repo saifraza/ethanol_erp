@@ -268,13 +268,47 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
       AND: [STORE_SOURCE_WHERE],
     },
     include: {
-      po: true,
+      po: { include: { lines: true } },
       vendor: true,
-      lines: true,
+      lines: {
+        include: {
+          inventoryItem: { select: { id: true, name: true } },
+        },
+      },
     },
   });
   if (!grn) throw new NotFoundError('Store GRN', req.params.id);
-  res.json(grn);
+
+  // Resolve createdBy name
+  let createdByName: string | null = null;
+  if (grn.userId) {
+    const u = await prisma.user.findUnique({
+      where: { id: grn.userId },
+      select: { name: true, email: true },
+    });
+    createdByName = u?.name || u?.email || grn.userId;
+  }
+
+  // Flatten for the drawer — it reads poNo / vendorName / createdBy / date at the top level.
+  // Also enrich each line with the PO line's ordered qty so the "Ordered" column shows a value.
+  const poLineMap = new Map<string, number>();
+  for (const pl of (grn.po?.lines || []) as any[]) {
+    poLineMap.set(pl.id, pl.quantity);
+  }
+  const flat = {
+    ...grn,
+    date: grn.grnDate,
+    poNo: grn.po ? `PO-${grn.po.poNo}` : null,
+    vendorName: grn.vendor?.name || null,
+    createdBy: createdByName,
+    totalAmount: grn.totalAmount,
+    lines: (grn.lines || []).map((ln: any) => ({
+      ...ln,
+      itemName: ln.inventoryItem?.name || ln.description,
+      orderedQty: ln.poLineId ? poLineMap.get(ln.poLineId) ?? null : null,
+    })),
+  };
+  res.json(flat);
 }));
 
 // ═══════════════════════════════════════════════
