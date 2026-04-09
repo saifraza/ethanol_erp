@@ -257,13 +257,17 @@ export default function GrainUnloadingTrucks() {
         )}
       </div>
 
-      {/* Add Truck Button */}
-      {!showForm && (
+      {/* Add Truck Button — DISABLED: all grain entry now flows through the weighbridge.
+          Keeping the code path so we can re-enable if needed, but the UI is hidden. */}
+      {false && !showForm && (
         <button onClick={() => setShowForm(true)}
           className="w-full border-2 border-dashed border-amber-300 rounded-lg py-4 text-amber-600 hover:bg-amber-50 flex items-center justify-center gap-2 mb-5 font-medium">
           <Plus size={20} /> Add Truck
         </button>
       )}
+      <div className="w-full border-2 border-dashed border-slate-300 bg-slate-50 rounded-lg py-4 text-slate-500 text-center mb-5 text-sm">
+        Manual entry is disabled. All grain trucks are now recorded via the weighbridge.
+      </div>
 
       {/* New Truck Form */}
       {showForm && (

@@ -170,13 +170,17 @@ export default function EthanolDispatch() {
         </div>
       </div>
 
-      {/* Add Dispatch Button */}
-      {!showForm && (
+      {/* Add Dispatch Button — DISABLED: all ethanol dispatch now flows through the weighbridge.
+          Code path preserved for future re-enable. */}
+      {false && !showForm && (
         <button onClick={() => setShowForm(true)}
           className="w-full border-2 border-dashed border-red-300 rounded-lg py-4 text-red-600 hover:bg-red-50 flex items-center justify-center gap-2 mb-5 font-medium">
           <Plus size={20} /> Add Dispatch
         </button>
       )}
+      <div className="w-full border-2 border-dashed border-slate-300 bg-slate-50 rounded-lg py-4 text-slate-500 text-center mb-5 text-sm">
+        Manual entry is disabled. All ethanol dispatches are now recorded via the weighbridge.
+      </div>
 
       {/* New Dispatch Form */}
       {showForm && (
