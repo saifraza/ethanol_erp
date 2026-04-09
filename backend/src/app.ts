@@ -122,6 +122,8 @@ import vaultSyncRoutes from './routes/vaultSync';
 // Compliance Management
 import complianceRoutes from './routes/compliance';
 import taxRoutes from './routes/tax';
+// Reports — Weighment History (unified INBOUND/OUTBOUND report)
+import reportsWeighmentHistoryRoutes from './routes/reportsWeighmentHistory';
 import { authenticate } from './middleware/auth';
 import { errorHandler } from './shared/middleware/errorHandler';
 
@@ -277,6 +279,8 @@ app.use('/api/vault', vaultSyncRoutes);
 // Compliance Management
 app.use('/api/compliance', complianceRoutes);
 app.use('/api/tax', taxRoutes);
+// Reports — Weighment History
+app.use('/api/reports/weighment-history', reportsWeighmentHistoryRoutes);
 
 
 // Serve uploaded files
