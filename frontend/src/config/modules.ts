@@ -110,7 +110,6 @@ export const MODULE_DEFS: ModuleDef[] = [
   // ── TAX & STATUTORY ──
   { key: 'taxes', label: 'Tax Dashboard', to: '/accounts/taxes', icon: PieChart, group: 'tax' },
   { key: 'tax-rules-reference', label: 'Tax Rules Reference', to: '/compliance/tax-rules', icon: BookOpen, group: 'tax' },
-  { key: 'tax-config', label: 'Company Config', to: '/admin/tax/config', icon: Building2, group: 'tax', adminOnly: true },
   { key: 'tax-fiscal-years', label: 'Fiscal Years', to: '/admin/tax/fiscal-years', icon: ClipboardList, group: 'tax', adminOnly: true },
   { key: 'tax-invoice-series', label: 'Invoice Series', to: '/admin/tax/invoice-series', icon: Receipt, group: 'tax', adminOnly: true },
   { key: 'tax-hsn', label: 'HSN Master', to: '/admin/tax/hsn', icon: Package, group: 'tax', adminOnly: true },
