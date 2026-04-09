@@ -521,12 +521,70 @@ router.put('/deals/:id', authenticate, asyncHandler(async (req: AuthRequest, res
     return res.status(400).json({ error: 'Cannot change material after receipts have been recorded' });
   }
 
-  // Update rate on the PO line
-  if (b.rate !== undefined && deal.lines[0]) {
-    await prisma.pOLine.update({
-      where: { id: deal.lines[0].id },
-      data: { rate: b.rate },
-    });
+  const line = deal.lines[0];
+  if (line) {
+    let inventoryItemId = line.inventoryItemId;
+    let description = line.description;
+    let unit = line.unit;
+    let hsnCode = line.hsnCode || '';
+    let gstPercent = line.gstPercent || 0;
+    const rate = b.rate !== undefined ? (parseFloat(String(b.rate)) || 0) : line.rate;
+
+    if (b.materialItemId && b.materialItemId !== line.inventoryItemId) {
+      const materialItem = await prisma.inventoryItem.findUnique({
+        where: { id: b.materialItemId },
+        select: { id: true, name: true, unit: true, hsnCode: true, gstPercent: true, category: true },
+      });
+      if (!materialItem) return res.status(404).json({ error: 'Material item not found' });
+      if (!RAW_CATEGORIES.includes(materialItem.category as typeof RAW_CATEGORIES[number])) {
+        return res.status(400).json({ error: `Item "${materialItem.name}" is not a raw material/chemical/packing item (category=${materialItem.category})` });
+      }
+      inventoryItemId = materialItem.id;
+      description = materialItem.name;
+      unit = materialItem.unit || unit;
+      hsnCode = materialItem.hsnCode || '';
+      gstPercent = materialItem.gstPercent ?? 0;
+    }
+
+    const isRealQty = line.quantity < 900000;
+    const amount = isRealQty ? Math.round(line.quantity * rate * 100) / 100 : 0;
+    const totalGst = isRealQty ? Math.round(amount * gstPercent / 100 * 100) / 100 : 0;
+    const cgstAmount = isRealQty ? Math.round(totalGst / 2 * 100) / 100 : 0;
+    const sgstAmount = isRealQty ? Math.round(totalGst / 2 * 100) / 100 : 0;
+    const igstAmount = 0;
+    const lineTotal = isRealQty ? Math.round((amount + totalGst) * 100) / 100 : 0;
+
+    await prisma.$transaction([
+      prisma.pOLine.update({
+        where: { id: line.id },
+        data: {
+          inventoryItemId,
+          description,
+          unit,
+          hsnCode,
+          gstPercent,
+          rate,
+          amount,
+          taxableAmount: amount,
+          cgstAmount,
+          sgstAmount,
+          igstAmount,
+          totalGst,
+          lineTotal,
+        },
+      }),
+      prisma.purchaseOrder.update({
+        where: { id: deal.id },
+        data: {
+          subtotal: amount,
+          totalCgst: cgstAmount,
+          totalSgst: sgstAmount,
+          totalIgst: igstAmount,
+          totalGst,
+          grandTotal: lineTotal,
+        },
+      }),
+    ]);
   }
 
   // Update PO fields
