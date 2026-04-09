@@ -39,15 +39,18 @@
   <table class="items-table">
     <thead>
       <tr>
-        <th style="width:25px">#</th>
+        <th style="width:22px">#</th>
         <th class="left">Description</th>
-        <th style="width:50px">HSN</th>
-        <th style="width:40px">Qty</th>
-        <th style="width:35px">Unit</th>
-        <th class="right" style="width:65px">Rate (Rs.)</th>
-        <th style="width:35px">GST%</th>
-        <th class="right" style="width:80px">Taxable (Rs.)</th>
-        <th class="right" style="width:80px">Total (Rs.)</th>
+        <th style="width:45px">HSN</th>
+        <th style="width:38px">Qty</th>
+        <th style="width:38px">Recd</th>
+        <th style="width:38px">Accpt</th>
+        <th style="width:38px">Rejct</th>
+        <th style="width:30px">Unit</th>
+        <th class="right" style="width:58px">Rate (Rs.)</th>
+        <th style="width:32px">GST%</th>
+        <th class="right" style="width:72px">Taxable (Rs.)</th>
+        <th class="right" style="width:72px">Total (Rs.)</th>
       </tr>
     </thead>
     <tbody>
@@ -57,6 +60,9 @@
         <td>{{description}}</td>
         <td class="center">{{hsnCode}}</td>
         <td class="center">{{formatNum quantity}}</td>
+        <td class="center" style="{{#if overDelivered}}background:#d4f8d4;color:#0a6b0a;font-weight:bold;{{/if}}">{{formatNum receivedQty}}</td>
+        <td class="center">{{formatNum acceptedQty}}</td>
+        <td class="center" style="{{#if rejectedQty}}color:#b00;{{/if}}">{{formatNum rejectedQty}}</td>
         <td class="center">{{unit}}</td>
         <td class="right">{{formatNum rate}}</td>
         <td class="center">{{gstPercent}}%</td>

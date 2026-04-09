@@ -491,10 +491,23 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
       include: {
         vendor: true,
         lines: true,
+        grns: { include: { lines: true } },
       },
     });
 
     if (!po) { res.status(404).json({ error: 'PO not found' }); return; }
+
+    // Aggregate GRN lines by poLineId → received / accepted / rejected per PO line
+    const grnAgg: Record<string, { received: number; accepted: number; rejected: number }> = {};
+    for (const g of (po.grns || [])) {
+      for (const gl of (g.lines || [])) {
+        if (!gl.poLineId) continue;
+        const a = grnAgg[gl.poLineId] || (grnAgg[gl.poLineId] = { received: 0, accepted: 0, rejected: 0 });
+        a.received += gl.receivedQty || 0;
+        a.accepted += gl.acceptedQty || 0;
+        a.rejected += gl.rejectedQty || 0;
+      }
+    }
 
     const poData = {
       poNo: po.poNo,
@@ -516,10 +529,18 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
         const taxable = l.taxableAmount && l.taxableAmount > 0 ? l.taxableAmount : lineAmount * (1 - (l.discountPercent || 0) / 100);
         const gstAmt = taxable * (l.gstPercent || 0) / 100;
         const isIntra = po.supplyType !== 'INTER_STATE';
+        const agg = grnAgg[l.id] || { received: 0, accepted: 0, rejected: 0 };
+        const orderedQty = l.quantity >= 900000 ? 0 : l.quantity;
+        const overDelivered = agg.received > orderedQty && orderedQty > 0;
         return {
           description: l.description,
           hsnCode: l.hsnCode || '',
           quantity: displayQty,
+          orderedQty,
+          receivedQty: Math.round(agg.received * 100) / 100,
+          acceptedQty: Math.round(agg.accepted * 100) / 100,
+          rejectedQty: Math.round(agg.rejected * 100) / 100,
+          overDelivered,
           unit: l.unit,
           rate: l.rate,
           discountPercent: l.discountPercent || 0,

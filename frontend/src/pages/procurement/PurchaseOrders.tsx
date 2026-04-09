@@ -1258,6 +1258,57 @@ const PurchaseOrders: React.FC = () => {
                               ))}
                             </div>
 
+                            {/* Line items with receipt breakdown */}
+                            {poDetail.lines && poDetail.lines.length > 0 && (() => {
+                              // Aggregate GRN lines by poLineId
+                              const agg: Record<string, { rec: number; acc: number; rej: number }> = {};
+                              for (const g of (poDetail.grns || [])) {
+                                for (const gl of (g.lines || [])) {
+                                  if (!gl.poLineId) continue;
+                                  const a = agg[gl.poLineId] || (agg[gl.poLineId] = { rec: 0, acc: 0, rej: 0 });
+                                  a.rec += gl.receivedQty || 0;
+                                  a.acc += gl.acceptedQty || 0;
+                                  a.rej += gl.rejectedQty || 0;
+                                }
+                              }
+                              return (
+                                <div className="border border-slate-200">
+                                  <div className="bg-slate-100 px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-200">Line Items</div>
+                                  <table className="w-full text-xs">
+                                    <thead>
+                                      <tr className="bg-slate-800 text-white">
+                                        <th className="text-left px-2 py-1 font-semibold text-[9px] uppercase tracking-widest border-r border-slate-700">Item</th>
+                                        <th className="text-right px-2 py-1 font-semibold text-[9px] uppercase tracking-widest border-r border-slate-700">Ordered</th>
+                                        <th className="text-right px-2 py-1 font-semibold text-[9px] uppercase tracking-widest border-r border-slate-700">Received</th>
+                                        <th className="text-right px-2 py-1 font-semibold text-[9px] uppercase tracking-widest border-r border-slate-700">Accepted</th>
+                                        <th className="text-right px-2 py-1 font-semibold text-[9px] uppercase tracking-widest border-r border-slate-700">Rejected</th>
+                                        <th className="text-right px-2 py-1 font-semibold text-[9px] uppercase tracking-widest border-r border-slate-700">Rate</th>
+                                        <th className="text-right px-2 py-1 font-semibold text-[9px] uppercase tracking-widest">Unit</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {poDetail.lines.map((l: any, i: number) => {
+                                        const a = agg[l.id] || { rec: 0, acc: 0, rej: 0 };
+                                        const orderedQty = l.quantity >= 900000 ? 0 : l.quantity;
+                                        const over = orderedQty > 0 && a.rec > orderedQty;
+                                        return (
+                                          <tr key={l.id} className={`border-b border-slate-100 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                                            <td className="px-2 py-1 text-slate-800 border-r border-slate-100">{l.description}</td>
+                                            <td className="px-2 py-1 text-right font-mono tabular-nums border-r border-slate-100">{orderedQty || (l.quantity >= 900000 ? 'OPEN' : '--')}</td>
+                                            <td className={`px-2 py-1 text-right font-mono tabular-nums border-r border-slate-100 ${over ? 'bg-green-100 text-green-800 font-bold' : a.rec > 0 ? 'text-slate-800' : 'text-slate-400'}`}>{a.rec.toFixed(2)}</td>
+                                            <td className="px-2 py-1 text-right font-mono tabular-nums border-r border-slate-100 text-slate-700">{a.acc.toFixed(2)}</td>
+                                            <td className={`px-2 py-1 text-right font-mono tabular-nums border-r border-slate-100 ${a.rej > 0 ? 'text-red-600 font-bold' : 'text-slate-400'}`}>{a.rej.toFixed(2)}</td>
+                                            <td className="px-2 py-1 text-right font-mono tabular-nums border-r border-slate-100 text-slate-700">₹{(l.rate || 0).toLocaleString('en-IN')}</td>
+                                            <td className="px-2 py-1 text-right text-slate-500">{l.unit}</td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              );
+                            })()}
+
                             {/* Documents */}
                             <div className="grid grid-cols-3 gap-3">
                               {/* GRNs */}
