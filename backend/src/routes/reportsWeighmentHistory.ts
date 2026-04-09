@@ -436,8 +436,12 @@ router.get(
 
     if (useMirror) {
       const mirrorRaw = await fetchMirrorWeighments(params, fromDate, toDate, xlsxMode);
-      const normalized: UnifiedWeighmentRow[] = mirrorRaw.map(normalizeMirror);
-      const filtered = applyFilters(normalized, params);
+      // fetchMirrorWeighments already pushed all filters (direction, material,
+      // status, date range, search with ticketNo, onlyCompleted) down to
+      // Postgres and ordered by gateEntryAt desc. Do NOT run the legacy
+      // applyFilters() post-filter here — its substring search on
+      // vehicleNo/partyName would strip rows that were matched by ticketNo.
+      const filtered: UnifiedWeighmentRow[] = mirrorRaw.map(normalizeMirror);
 
       if (xlsxMode) {
         const exportRows = filtered.slice(0, 10000).map(toXlsxRow);
