@@ -70,6 +70,7 @@ router.get('/summary', asyncHandler(async (_req: AuthRequest, res: Response) => 
     config,
     currentFy,
     seriesByDocType,
+    invoiceSeries,
     hsn: hsnList,
     tdsSections,
     tcsSections,

@@ -210,7 +210,7 @@ export default function TaxRulesReferencePage() {
     try {
       setLoading(true);
       setError(null);
-      const res = await api.get<Summary>('/tax/tax-rules/summary');
+      const res = await api.get<Summary>('/tax/rules/summary');
       setSummary(res.data);
     } catch (err) {
       console.error('Failed to fetch tax rules summary:', err);
