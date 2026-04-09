@@ -13,6 +13,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import GRNDetailDrawer from './GRNDetailDrawer';
@@ -199,12 +200,20 @@ export default function StoreReceipts() {
             <span className="text-[10px] text-slate-400">Manual GRN — chemicals, spares, lab, PPE, consumables</span>
           </div>
           {canWrite && (
-            <button
-              onClick={() => setCreateOpen(true)}
-              className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 uppercase tracking-widest"
-            >
-              + New Receipt
-            </button>
+            <div className="flex items-center gap-2">
+              <Link
+                to="/procurement/purchase-orders?new=1"
+                className="px-3 py-1 bg-white text-slate-700 border border-slate-300 text-[11px] font-medium hover:bg-slate-50 uppercase tracking-widest"
+              >
+                + New Store PO
+              </Link>
+              <button
+                onClick={() => setCreateOpen(true)}
+                className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 uppercase tracking-widest"
+              >
+                + New Receipt
+              </button>
+            </div>
           )}
         </div>
 

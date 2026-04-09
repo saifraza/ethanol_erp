@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   ShoppingBag,
   Plus,
@@ -142,8 +143,21 @@ const PurchaseOrders: React.FC = () => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortField(field); setSortDir('desc'); }
   };
+  const location = useLocation();
+  const navigate = useNavigate();
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingPoId, setEditingPoId] = useState<string | null>(null);
+
+  // Support ?new=1 to auto-open the create form (used from Store Receipts)
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('new') === '1') {
+      setShowCreateForm(true);
+      setEditingPoId(null);
+      // Clean the URL so a refresh doesn't re-open the modal
+      navigate(location.pathname, { replace: true });
+    }
+  }, [location.search, location.pathname, navigate]);
   const [submitting, setSubmitting] = useState(false);
 
   const [formData, setFormData] = useState({
