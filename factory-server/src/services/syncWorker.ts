@@ -196,6 +196,110 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
   return { synced, failed };
 }
 
+// ==========================================================================
+// RAW MIRROR PUSH — new Phase 2 path, complements the legacy pushToCloud()
+// ==========================================================================
+//
+// Pushes raw Weighment rows to cloud POST /api/weighment/sync. The cloud
+// endpoint upserts them into a passive `Weighment` mirror table by localId.
+// No business logic — pure mirror for reports/audit.
+//
+// Runs ALONGSIDE pushToCloud() in the same sync cycle. Never blocks it.
+// On error, logs and moves on. Idempotent — safe to re-run the same batch.
+//
+// Cursor strategy: in-memory `Date`, defaults to 7 days ago on startup.
+// On successful batch, advances to the newest `updatedAt` seen. Survives
+// cycles but resets on process restart → up to 7 days get re-pushed, which
+// is safe because the cloud upsert is keyed by localId.
+//
+// No schema changes. No new dependencies. One outbound POST per cycle.
+
+const RAW_MIRROR_BATCH = 200;
+const RAW_MIRROR_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+let _rawMirrorCursor: Date = new Date(Date.now() - RAW_MIRROR_LOOKBACK_MS);
+let _lastRawMirrorResult: { synced: number; failed: number; at: string } | null = null;
+
+export async function pushRawToCloud(): Promise<{ synced: number; failed: number }> {
+  const rows = await prisma.weighment.findMany({
+    where: { updatedAt: { gt: _rawMirrorCursor } },
+    orderBy: { updatedAt: 'asc' },
+    take: RAW_MIRROR_BATCH,
+  });
+
+  if (rows.length === 0) return { synced: 0, failed: 0 };
+
+  // Strip nulls — cloud Zod schema uses .optional() which rejects null
+  // (only allows undefined). Factory row fields that are explicitly null
+  // must be omitted from the JSON payload entirely.
+  const cloudRows = rows.map(r => {
+    const o: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(r)) {
+      if (v === null || v === undefined) continue;
+      if (v instanceof Date) {
+        o[k] = v.toISOString();
+      } else {
+        o[k] = v;
+      }
+    }
+    return o;
+  });
+
+  try {
+    const response = await fetch(`${config.cloudErpUrl}/weighment/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-WB-Key': config.cloudApiKey },
+      body: JSON.stringify({ rows: cloudRows }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`[RAW-MIRROR] Cloud ${response.status}: ${errText.slice(0, 300)}`);
+      return { synced: 0, failed: rows.length };
+    }
+
+    const result = await response.json() as {
+      ok: boolean;
+      count: number;
+      processedLocalIds: string[];
+      failed: Array<{ localId: string; error: string }>;
+    };
+
+    const synced = result.processedLocalIds?.length || 0;
+    const failed = result.failed?.length || 0;
+
+    if (synced > 0) {
+      // Advance cursor to the newest updatedAt among successful rows
+      const successSet = new Set(result.processedLocalIds);
+      let newestTs = _rawMirrorCursor.getTime();
+      for (const r of rows) {
+        if (successSet.has(r.localId)) {
+          const ts = r.updatedAt.getTime();
+          if (ts > newestTs) newestTs = ts;
+        }
+      }
+      _rawMirrorCursor = new Date(newestTs);
+    }
+
+    if (failed > 0) {
+      console.error(`[RAW-MIRROR] ${failed} row(s) rejected by cloud. First: ${JSON.stringify(result.failed[0])}`);
+    }
+
+    return { synced, failed };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    console.error(`[RAW-MIRROR] Push threw: ${msg}`);
+    return { synced: 0, failed: rows.length };
+  }
+}
+
+export function getLastRawMirrorResult() {
+  return _lastRawMirrorResult;
+}
+
+function setLastRawMirrorResult(r: { synced: number; failed: number }) {
+  _lastRawMirrorResult = { ...r, at: new Date().toISOString() };
+}
+
 /** Pull master data from cloud ERP. */
 export async function pullMasterData(): Promise<Record<string, number>> {
   const response = await fetch(`${config.cloudErpUrl}/weighbridge/master-data`, {
@@ -284,12 +388,24 @@ async function syncCycle(): Promise<void> {
   _running = true;
 
   try {
-    // Push weighments
+    // Push weighments (legacy path — still drives GRN/inventory/accounting)
     const pushResult = await pushToCloud();
     _lastPushResult = { ...pushResult, at: new Date().toISOString() };
 
     if (pushResult.synced > 0 || pushResult.failed > 0) {
       console.log(`[SYNC-WORKER] Push: ${pushResult.synced} synced, ${pushResult.failed} failed`);
+    }
+
+    // Push raw rows to cloud mirror (Phase 2 — passive, no business logic).
+    // Wrapped separately so any failure never impacts the legacy push path.
+    try {
+      const rawResult = await pushRawToCloud();
+      setLastRawMirrorResult(rawResult);
+      if (rawResult.synced > 0 || rawResult.failed > 0) {
+        console.log(`[SYNC-WORKER] Raw mirror: ${rawResult.synced} synced, ${rawResult.failed} failed`);
+      }
+    } catch (err) {
+      console.error(`[SYNC-WORKER] Raw mirror push crashed: ${err instanceof Error ? err.message : err}`);
     }
 
     // Pull master data periodically
