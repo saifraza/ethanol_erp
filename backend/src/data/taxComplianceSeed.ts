@@ -126,6 +126,29 @@ export interface TdsSectionSeed {
   nonFilerRate: number;
 }
 
+// One TDS Payable child ledger per section.
+// All hang under parent account code "2200" (TDS Payable, LIABILITY).
+// ledgerCode is the unique Account.code we'll create / upsert.
+// tdsSectionCode matches TdsSectionSeed.code so seed.ts can back-link
+// the resulting Account.id onto TdsSection.defaultLedgerId.
+export interface TdsLedgerSeed {
+  ledgerCode: string;
+  ledgerName: string;
+  tdsSectionCode: string;
+}
+
+export const TDS_LEDGER_SEED: TdsLedgerSeed[] = [
+  { ledgerCode: '2201', ledgerName: 'TDS Payable - 194C - Contractors',     tdsSectionCode: '393_CONTRACTOR'    },
+  { ledgerCode: '2202', ledgerName: 'TDS Payable - 194J - Professional',     tdsSectionCode: '393_PROFESSIONAL'  },
+  { ledgerCode: '2203', ledgerName: 'TDS Payable - 194I(a) - Rent Plant',    tdsSectionCode: '393_RENT_PLANT'    },
+  { ledgerCode: '2204', ledgerName: 'TDS Payable - 194I(b) - Rent Building', tdsSectionCode: '393_RENT_BUILDING' },
+  { ledgerCode: '2205', ledgerName: 'TDS Payable - 194H - Commission',       tdsSectionCode: '393_COMMISSION'    },
+  { ledgerCode: '2206', ledgerName: 'TDS Payable - 194A - Interest',         tdsSectionCode: '393_INTEREST'      },
+  { ledgerCode: '2207', ledgerName: 'TDS Payable - 194Q - Goods Purchase',   tdsSectionCode: '393_GOODS'         },
+  { ledgerCode: '2208', ledgerName: 'TDS Payable - 194IA - Property',        tdsSectionCode: '393_PROPERTY'      },
+  { ledgerCode: '2209', ledgerName: 'TDS Payable - 194T - Partner Payments', tdsSectionCode: '394_PARTNER'       },
+];
+
 export const TDS_SEED: TdsSectionSeed[] = [
   {
     code: '393_CONTRACTOR',

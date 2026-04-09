@@ -5,6 +5,7 @@ import { asyncHandler } from '../../shared/middleware';
 import {
   HSN_SEED,
   TDS_SEED,
+  TDS_LEDGER_SEED,
   TCS_SEED,
   INVOICE_SERIES_SEED,
   TAX_RULE_EXPLANATIONS_SEED,
@@ -26,6 +27,8 @@ router.post('/', authorize('ADMIN', 'SUPER_ADMIN'), asyncHandler(async (_req: Au
   let tcsCount = 0;
   let seriesCount = 0;
   let explanationCount = 0;
+  let ledgerCount = 0;
+  let ledgerLinkCount = 0;
 
   // ---- Compliance config (create only if missing)
   const existingConfig = await prisma.complianceConfig.findFirst();
@@ -223,6 +226,47 @@ router.post('/', authorize('ADMIN', 'SUPER_ADMIN'), asyncHandler(async (_req: Au
     explanationCount++;
   }
 
+  // ---- TDS Payable ledgers (9 child accounts under parent code 2200)
+  // Parent "TDS Payable" (2200) already exists in every MSPIL Chart of Accounts.
+  // We create 9 section-specific children and back-link each TdsSection.defaultLedgerId.
+  const tdsParent = await prisma.account.findUnique({ where: { code: '2200' } });
+  if (tdsParent) {
+    for (const seed of TDS_LEDGER_SEED) {
+      const ledger = await prisma.account.upsert({
+        where: { code: seed.ledgerCode },
+        update: {
+          // Preserve any manual rename — only ensure parent + type stay correct
+          parentId: tdsParent.id,
+          type: 'LIABILITY',
+          subType: 'CURRENT_LIABILITY',
+          isSystem: true,
+        },
+        create: {
+          code: seed.ledgerCode,
+          name: seed.ledgerName,
+          type: 'LIABILITY',
+          subType: 'CURRENT_LIABILITY',
+          parentId: tdsParent.id,
+          isSystem: true,
+          isActive: true,
+        },
+      });
+      ledgerCount++;
+
+      // Back-link to TdsSection
+      const section = await prisma.tdsSection.findUnique({
+        where: { code: seed.tdsSectionCode },
+      });
+      if (section && section.defaultLedgerId !== ledger.id) {
+        await prisma.tdsSection.update({
+          where: { id: section.id },
+          data: { defaultLedgerId: ledger.id },
+        });
+        ledgerLinkCount++;
+      }
+    }
+  }
+
   res.json({
     hsn: hsnCount,
     gstRates: gstRateCount,
@@ -231,6 +275,8 @@ router.post('/', authorize('ADMIN', 'SUPER_ADMIN'), asyncHandler(async (_req: Au
     invoiceSeries: seriesCount,
     explanations: explanationCount,
     fiscalYears: 2,
+    tdsLedgers: ledgerCount,
+    tdsLedgerLinks: ledgerLinkCount,
   });
 }));
 

@@ -12,11 +12,11 @@ import seedRoutes from './seed';
 const router = Router();
 
 router.use('/config', configRoutes);
-router.use('/fiscal-year', fiscalYearRoutes);
+router.use('/fiscal-years', fiscalYearRoutes);
 router.use('/invoice-series', invoiceSeriesRoutes);
 router.use('/hsn', hsnRoutes);
-router.use('/tds-section', tdsSectionRoutes);
-router.use('/tcs-section', tcsSectionRoutes);
+router.use('/tds-sections', tdsSectionRoutes);
+router.use('/tcs-sections', tcsSectionRoutes);
 router.use('/audit', auditRoutes);
 router.use('/rules', taxRulesRoutes);
 router.use('/seed', seedRoutes);

@@ -3592,12 +3592,14 @@ model TdsSection {
   effectiveFrom      DateTime
   effectiveTill      DateTime?
   isActive           Boolean   @default(true)
+  defaultLedgerId    String? // FK → Account (TDS Payable ledger for this section)
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
   vendors            Vendor[]
 
   @@index([newSection])
   @@index([effectiveFrom])
+  @@index([defaultLedgerId])
 }
 
 // TCS Section master
