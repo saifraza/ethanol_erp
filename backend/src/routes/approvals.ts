@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, AuthRequest, authorize } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
+import { resolveNotifications } from '../services/notify';
 
 const router = Router();
 router.use(authenticate as any);
@@ -63,6 +64,10 @@ router.put('/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthReque
   }
 
   const updated = await prisma.approval.findUnique({ where: { id: req.params.id } });
+  // Resolve any linked notification (bell badge clears immediately)
+  if (updated) {
+    await resolveNotifications('Approval', updated.id);
+  }
   res.json(updated);
 }));
 

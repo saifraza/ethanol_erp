@@ -1,4 +1,5 @@
 import { prisma, syncToInventory, convertToUnit, WeighmentInput, PushContext, PushOutcome, emptyOutcome } from '../shared';
+import { notify } from '../../../services/notify';
 
 /**
  * INBOUND + PO/JOB_WORK → Auto-create GRN
@@ -56,11 +57,12 @@ export async function handlePoInbound(w: WeighmentInput, ctx: PushContext): Prom
   const rate = poLine.rate;
 
   // Overage tolerance: check if this delivery pushes total received beyond PO qty + 5%
+  // OPEN deals have no qty limit (running account with fixed rate) — never flag overage.
   const newTotalReceived = poLine.receivedQty + receivedQty;
   const overageQty = newTotalReceived - poLine.quantity;
   const overagePercent = poLine.quantity > 0 ? (overageQty / poLine.quantity) * 100 : (newTotalReceived > 0 ? 100 : 0);
   let needsApproval = false;
-  if (overageQty > 0 && overagePercent > 5) needsApproval = true;
+  if (po.dealType !== 'OPEN' && overageQty > 0 && overagePercent > 5) needsApproval = true;
 
   // ── LAB FAIL → Quarantine GrainTruck (grain/RM) or reject (fuel), skip GRN ──
   if (w.lab_status === 'FAIL') {
@@ -73,36 +75,53 @@ export async function handlePoInbound(w: WeighmentInput, ctx: PushContext): Prom
     const tareTon = (w.weight_tare || 0) / 1000;
     const netTon = netKg / 1000;
     const labInfo = w.lab_remarks ? ` | Lab: ${w.lab_remarks}` : '';
-
-    const truck = await prisma.grainTruck.create({
-      data: {
-        date: w.created_at ? new Date(w.created_at) : new Date(),
-        uidRst: ctx.wbUidRst,
-        vehicleNo: w.vehicle_no,
-        supplier: po.vendor.name || w.supplier_name || '',
-        weightGross: grossTon,
-        weightTare: tareTon,
-        weightNet: netTon,
-        moisture: w.lab_moisture ?? undefined,
-        starchPercent: w.lab_starch ?? undefined,
-        damagedPercent: w.lab_damaged ?? undefined,
-        foreignMatter: w.lab_foreign_matter ?? undefined,
-        quarantine: true,
-        quarantineWeight: netTon,
-        quarantineReason: `QUARANTINE — Lab FAIL | PO-${po.poNo}${labInfo}`,
-        bags: w.bags ?? undefined,
-        remarks: `${ctx.wbRef} | QUARANTINE — Lab FAIL | PO-${po.poNo}${labInfo}`,
-        poId: po.id,
-        materialId: poLine.inventoryItemId || undefined,
-        vehicleType: w.vehicle_type || undefined,
-        driverName: w.driver_name || undefined,
-        driverMobile: w.driver_mobile || undefined,
-        transporterName: w.transporter || undefined,
-        materialType: w.material || undefined,
-        ticketNo: w.ticket_no || undefined,
-        factoryLocalId: w.id,
+    const existingTruck = await prisma.grainTruck.findFirst({
+      where: {
+        OR: [
+          { factoryLocalId: w.id },
+          { remarks: { contains: `WB:${w.id}` } },
+        ],
       },
+      select: { id: true },
     });
+    const truckData = {
+      date: w.created_at ? new Date(w.created_at) : new Date(),
+      uidRst: ctx.wbUidRst,
+      vehicleNo: w.vehicle_no,
+      supplier: po.vendor.name || w.supplier_name || '',
+      weightGross: grossTon,
+      weightTare: tareTon,
+      weightNet: netTon,
+      moisture: w.lab_moisture ?? undefined,
+      starchPercent: w.lab_starch ?? undefined,
+      damagedPercent: w.lab_damaged ?? undefined,
+      foreignMatter: w.lab_foreign_matter ?? undefined,
+      quarantine: true,
+      quarantineWeight: netTon,
+      quarantineReason: `QUARANTINE — Lab FAIL | PO-${po.poNo}${labInfo}`,
+      bags: w.bags ?? undefined,
+      remarks: `${ctx.wbRef} | QUARANTINE — Lab FAIL | PO-${po.poNo}${labInfo}`,
+      poId: po.id,
+      grnId: null,
+      materialId: poLine.inventoryItemId || undefined,
+      vehicleType: w.vehicle_type || undefined,
+      driverName: w.driver_name || undefined,
+      driverMobile: w.driver_mobile || undefined,
+      transporterName: w.transporter || undefined,
+      materialType: w.material || undefined,
+      ticketNo: w.ticket_no || undefined,
+    };
+    const truck = existingTruck
+      ? await prisma.grainTruck.update({
+          where: { id: existingTruck.id },
+          data: truckData,
+        })
+      : await prisma.grainTruck.create({
+          data: {
+            ...truckData,
+            factoryLocalId: w.id,
+          },
+        });
 
     out.results.push({ id: truck.id, type: 'QUARANTINE', refNo: `PO-${po.poNo} | Vehicle ${w.vehicle_no}`, sourceWbId: w.id });
     out.ids.push(truck.id);
@@ -280,33 +299,54 @@ export async function handlePoInbound(w: WeighmentInput, ctx: PushContext): Prom
     const grossTon = (w.weight_gross || 0) / 1000;
     const tareTon = (w.weight_tare || 0) / 1000;
     const netTon = netKg / 1000;
-    await prisma.grainTruck.create({
-      data: {
-        date: w.created_at ? new Date(w.created_at) : new Date(),
-        uidRst: ctx.wbUidRst,
-        vehicleNo: w.vehicle_no,
-        supplier: po.vendor.name || w.supplier_name || '',
-        weightGross: grossTon,
-        weightTare: tareTon,
-        weightNet: netTon,
-        moisture: w.lab_moisture ?? undefined,
-        starchPercent: w.lab_starch ?? undefined,
-        damagedPercent: w.lab_damaged ?? undefined,
-        foreignMatter: w.lab_foreign_matter ?? undefined,
-        bags: w.bags ?? undefined,
-        remarks: `${ctx.wbRef} | GRN-${grn.grnNo} | PO-${po.poNo}${labRemarksSuffix}`,
-        poId: po.id,
-        grnId: grn.id,
-        materialId: poLine.inventoryItemId || undefined,
-        vehicleType: w.vehicle_type || undefined,
-        driverName: w.driver_name || undefined,
-        driverMobile: w.driver_mobile || undefined,
-        transporterName: w.transporter || undefined,
-        materialType: w.material || undefined,
-        ticketNo: w.ticket_no || undefined,
-        factoryLocalId: w.id,
+    const existingTruck = await prisma.grainTruck.findFirst({
+      where: {
+        OR: [
+          { factoryLocalId: w.id },
+          { remarks: { contains: `WB:${w.id}` } },
+        ],
       },
-    }).catch(() => {});
+      select: { id: true },
+    });
+    const grainTruckData = {
+      date: w.created_at ? new Date(w.created_at) : new Date(),
+      uidRst: ctx.wbUidRst,
+      vehicleNo: w.vehicle_no,
+      supplier: po.vendor.name || w.supplier_name || '',
+      weightGross: grossTon,
+      weightTare: tareTon,
+      weightNet: netTon,
+      moisture: w.lab_moisture ?? undefined,
+      starchPercent: w.lab_starch ?? undefined,
+      damagedPercent: w.lab_damaged ?? undefined,
+      foreignMatter: w.lab_foreign_matter ?? undefined,
+      quarantine: w.lab_status === 'PASS' ? false : undefined,
+      quarantineWeight: w.lab_status === 'PASS' ? 0 : undefined,
+      quarantineReason: w.lab_status === 'PASS' ? '' : undefined,
+      bags: w.bags ?? undefined,
+      remarks: `${ctx.wbRef} | GRN-${grn.grnNo} | PO-${po.poNo}${labRemarksSuffix}`,
+      poId: po.id,
+      grnId: grn.id,
+      materialId: poLine.inventoryItemId || undefined,
+      vehicleType: w.vehicle_type || undefined,
+      driverName: w.driver_name || undefined,
+      driverMobile: w.driver_mobile || undefined,
+      transporterName: w.transporter || undefined,
+      materialType: w.material || undefined,
+      ticketNo: w.ticket_no || undefined,
+    };
+    const persistTruck = existingTruck
+      ? prisma.grainTruck.update({
+          where: { id: existingTruck.id },
+          data: grainTruckData,
+        })
+      : prisma.grainTruck.create({
+          data: {
+            ...grainTruckData,
+            factoryLocalId: w.id,
+          },
+        });
+    await persistTruck.catch(() => {});
   }
 
   // Inventory sync
@@ -324,9 +364,9 @@ export async function handlePoInbound(w: WeighmentInput, ctx: PushContext): Prom
     }
   }
 
-  // Approval record if overage > 5%
+  // Approval record if overage > 5% (never for OPEN deals — guarded above)
   if (needsApproval) {
-    await prisma.approval.create({
+    const approval = await prisma.approval.create({
       data: {
         type: 'PO_OVERAGE',
         status: 'PENDING',
@@ -337,7 +377,22 @@ export async function handlePoInbound(w: WeighmentInput, ctx: PushContext): Prom
         requestedBy: 'system-weighbridge',
         metadata: { poNo: po.poNo, grnNo: grn.grnNo, orderedQty: poLine.quantity, receivedQty, overageQty: Math.round(overageQty * 100) / 100, overagePercent: Math.round(overagePercent * 10) / 10, vehicleNo: w.vehicle_no },
       },
-    }).catch(() => {});
+    }).catch(() => null);
+
+    if (approval) {
+      await notify({
+        category: 'APPROVAL',
+        severity: 'WARNING',
+        role: 'ADMIN',
+        title: `PO-${po.poNo} overage ${overagePercent.toFixed(1)}%`,
+        message: `${w.vehicle_no} delivered ${receivedQty.toFixed(2)} ${poLine.unit} — ${overageQty.toFixed(2)} ${poLine.unit} over PO line.`,
+        link: '/admin/approvals',
+        entityType: 'Approval',
+        entityId: approval.id,
+        dedupeKey: `po-overage:${grn.id}`,
+        metadata: { poNo: po.poNo, grnNo: grn.grnNo, vehicleNo: w.vehicle_no },
+      });
+    }
   }
 
   out.results.push({ id: grn.id, type: needsApproval ? 'GRN_NEEDS_APPROVAL' : 'GRN', refNo: `GRN-${grn.grnNo}`, sourceWbId: w.id });

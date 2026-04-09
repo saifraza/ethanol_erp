@@ -41,15 +41,37 @@ export default function Layout() {
   const [serverUp, setServerUp] = useState(true);
   const [reconnecting, setReconnecting] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [pendingApprovals, setPendingApprovals] = useState(0);
+  const [notifCount, setNotifCount] = useState(0);
+  const [notifCritical, setNotifCritical] = useState(0);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifList, setNotifList] = useState<Array<{id:string;category:string;severity:string;title:string;message:string;link?:string|null;read:boolean;createdAt:string}>>([]);
 
-  // Poll pending approvals count for bell badge
+  // Poll unread notifications count for bell badge
   useEffect(() => {
-    const fetchCount = () => api.get('/approvals/count').then(r => setPendingApprovals(r.data.count || 0)).catch(() => {});
+    const fetchCount = () => api.get('/notifications/count')
+      .then(r => { setNotifCount(r.data.count || 0); setNotifCritical(r.data.critical || 0); })
+      .catch(() => {});
     fetchCount();
     const iv = setInterval(fetchCount, 30000);
     return () => clearInterval(iv);
   }, []);
+
+  // Fetch list when dropdown opens
+  useEffect(() => {
+    if (!notifOpen) return;
+    api.get('/notifications?limit=15').then(r => setNotifList(r.data || [])).catch(() => {});
+  }, [notifOpen]);
+
+  const markRead = async (id: string) => {
+    await api.post(`/notifications/${id}/read`).catch(() => {});
+    setNotifList(list => list.map(n => n.id === id ? { ...n, read: true } : n));
+    setNotifCount(c => Math.max(0, c - 1));
+  };
+  const markAllRead = async () => {
+    await api.post('/notifications/read-all').catch(() => {});
+    setNotifList(list => list.map(n => ({ ...n, read: true })));
+    setNotifCount(0); setNotifCritical(0);
+  };
 
   // Close sidebar on navigation (mobile)
   useEffect(() => { setSidebarOpen(false); }, [location.pathname]);
@@ -248,12 +270,48 @@ export default function Layout() {
         <div className="p-3 border-t border-gray-700 text-sm">
           <div className="flex items-center justify-between">
             <div className="font-medium">{user?.name}</div>
-            <Link to="/admin/approvals" className="relative p-1 hover:bg-gray-700 rounded">
-              <Bell size={16} className="text-gray-400" />
-              {pendingApprovals > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold w-4 h-4 flex items-center justify-center rounded-full">{pendingApprovals}</span>
+            <div className="relative">
+              <button onClick={() => setNotifOpen(o => !o)} className="relative p-1 hover:bg-gray-700 rounded">
+                <Bell size={16} className={notifCritical > 0 ? 'text-red-400' : 'text-gray-400'} />
+                {notifCount > 0 && (
+                  <span className={`absolute -top-1 -right-1 ${notifCritical > 0 ? 'bg-red-500' : 'bg-blue-500'} text-white text-[9px] font-bold min-w-4 h-4 px-1 flex items-center justify-center rounded-full`}>{notifCount > 99 ? '99+' : notifCount}</span>
+                )}
+              </button>
+              {notifOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setNotifOpen(false)} />
+                  <div className="absolute bottom-full mb-2 left-0 w-80 bg-white border border-slate-300 shadow-2xl z-50 max-h-[70vh] flex flex-col">
+                    <div className="bg-slate-800 text-white px-3 py-2 flex items-center justify-between">
+                      <span className="text-[11px] font-bold uppercase tracking-widest">Notifications</span>
+                      {notifCount > 0 && <button onClick={markAllRead} className="text-[10px] text-slate-300 hover:text-white">Mark all read</button>}
+                    </div>
+                    <div className="overflow-y-auto flex-1">
+                      {notifList.length === 0 && (
+                        <div className="text-xs text-slate-400 uppercase tracking-widest text-center py-8">No notifications</div>
+                      )}
+                      {notifList.map(n => {
+                        const sevColor = n.severity === 'CRITICAL' ? 'border-l-red-500' : n.severity === 'WARNING' ? 'border-l-amber-500' : 'border-l-blue-500';
+                        const content = (
+                          <div className={`border-b border-slate-100 border-l-4 ${sevColor} px-3 py-2 hover:bg-slate-50 ${n.read ? 'opacity-60' : ''}`}>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="text-[11px] font-bold text-slate-800">{n.title}</div>
+                              <span className="text-[9px] text-slate-400 whitespace-nowrap">{new Date(n.createdAt).toLocaleString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true, day: '2-digit', month: 'short' })}</span>
+                            </div>
+                            <div className="text-[10px] text-slate-600 mt-0.5 leading-tight">{n.message}</div>
+                            <div className="text-[9px] text-slate-400 uppercase tracking-widest mt-1">{n.category}</div>
+                          </div>
+                        );
+                        return n.link ? (
+                          <Link key={n.id} to={n.link} onClick={() => { markRead(n.id); setNotifOpen(false); }}>{content}</Link>
+                        ) : (
+                          <div key={n.id} onClick={() => markRead(n.id)} className="cursor-pointer">{content}</div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
               )}
-            </Link>
+            </div>
           </div>
           <div className="text-xs text-gray-400 mb-1">{user?.role}</div>
           <button onClick={logout} className="flex items-center gap-2 text-gray-400 hover:text-white text-xs mt-1"><LogOut size={13} />Logout</button>
