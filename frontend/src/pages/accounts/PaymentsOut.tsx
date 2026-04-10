@@ -237,7 +237,10 @@ export default function PaymentsOut() {
   const [invoiceFilePath, setInvoiceFilePath] = useState('');
   const [extracting, setExtracting] = useState(false);
   const [extracted, setExtracted] = useState<Record<string, unknown> | null>(null);
-  const [payForm, setPayForm] = useState({ amount: '', mode: 'NEFT', reference: '', paymentDate: todayStr(), tdsDeducted: '', tdsSection: '', remarks: '' });
+  const [payForm, setPayForm] = useState({ amount: '', mode: 'NEFT', reference: '', paymentDate: todayStr(), tdsDeducted: '', tdsSection: '', tdsLedgerId: '', remarks: '' });
+  const [tdsCalc, setTdsCalc] = useState<{ shouldDeduct: boolean; rate: number; tdsAmount: number; netAmount: number; ledgerId: string | null; sectionLabel: string; reason: string } | null>(null);
+  const [tdsOverride, setTdsOverride] = useState(true); // true = apply TDS, false = skip
+  const [tdsLoading, setTdsLoading] = useState(false);
   const [splitMode, setSplitMode] = useState(false);
   const [splits, setSplits] = useState<Array<{ mode: string; amount: string; reference: string }>>([{ mode: 'NEFT', amount: '', reference: '' }]);
   const [directPayItem, setDirectPayItem] = useState<PendingPayable | null>(null);
@@ -407,16 +410,16 @@ export default function PaymentsOut() {
     setPayForm({
       amount: String(inv.balanceAmount || ''),
       mode: 'NEFT', reference: '', paymentDate: todayStr(),
-      tdsDeducted: item.tdsApplicable ? String(((inv.balanceAmount || 0) * (item.tdsPercent || 0) / 100).toFixed(2)) : '',
-      tdsSection: item.tdsSection || '', remarks: '',
+      tdsDeducted: '', tdsSection: '', tdsLedgerId: '', remarks: '',
     });
+    setTdsCalc(null);
+    setTdsOverride(true);
     setSplitMode(false);
     setPayStep('instructions');
     setPayModal({ item, invoice: inv });
     setError('');
-    // Fetch vendor bank details
-    try {
-      const res = await api.get(`/vendors/${item.vendorId}`);
+    // Fetch vendor bank details + auto-calculate TDS in parallel
+    const bankPromise = api.get(`/vendors/${item.vendorId}`).then(res => {
       const v = res.data as Record<string, unknown>;
       setVendorBank({
         bankName: (v.bankName as string) || '',
@@ -424,7 +427,28 @@ export default function PaymentsOut() {
         bankAccount: (v.bankAccount as string) || '',
         bankIfsc: (v.bankIfsc as string) || '',
       });
-    } catch { setVendorBank(null); }
+    }).catch(() => setVendorBank(null));
+
+    const tdsPromise = (async () => {
+      setTdsLoading(true);
+      try {
+        const res = await api.post('/tax/calculate-tds', { vendorId: item.vendorId, amount: inv.balanceAmount || 0 });
+        const calc = res.data;
+        setTdsCalc(calc);
+        if (calc.shouldDeduct) {
+          setPayForm(f => ({
+            ...f,
+            tdsDeducted: String(calc.tdsAmount),
+            tdsSection: calc.sectionLabel,
+            tdsLedgerId: calc.ledgerId || '',
+          }));
+          setTdsOverride(true);
+        }
+      } catch { /* silent — manual entry still works */ }
+      finally { setTdsLoading(false); }
+    })();
+
+    await Promise.all([bankPromise, tdsPromise]);
   };
 
   const [poPendingCash, setPoPendingCash] = useState(0);
@@ -554,6 +578,7 @@ export default function PaymentsOut() {
           paymentDate: payForm.paymentDate,
           tdsDeducted: parseFloat(payForm.tdsDeducted) || 0,
           tdsSection: payForm.tdsSection || null,
+          tdsLedgerId: payForm.tdsLedgerId || null,
         });
       } else {
         // Single payment
@@ -566,6 +591,7 @@ export default function PaymentsOut() {
           paymentDate: payForm.paymentDate,
           tdsDeducted: parseFloat(payForm.tdsDeducted) || 0,
           tdsSection: payForm.tdsSection || null,
+          tdsLedgerId: payForm.tdsLedgerId || null,
           remarks: payForm.remarks || `Fuel deal PO-${directPayItem.poNo}`,
         });
       }
@@ -671,6 +697,7 @@ export default function PaymentsOut() {
           paymentDate: payForm.paymentDate,
           tdsDeducted: parseFloat(payForm.tdsDeducted) || 0,
           tdsSection: payForm.tdsSection || null,
+          tdsLedgerId: payForm.tdsLedgerId || null,
         });
       } else {
         // Single payment
@@ -683,6 +710,7 @@ export default function PaymentsOut() {
           paymentDate: payForm.paymentDate,
           tdsDeducted: parseFloat(payForm.tdsDeducted) || 0,
           tdsSection: payForm.tdsSection || null,
+          tdsLedgerId: payForm.tdsLedgerId || null,
           remarks: payForm.remarks || null,
         });
       }
@@ -1895,15 +1923,50 @@ export default function PaymentsOut() {
                     <input type="date" value={payForm.paymentDate} onChange={e => setPayForm(f => ({ ...f, paymentDate: e.target.value }))}
                       required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                   </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">TDS Deducted</label>
-                    <input type="number" step="0.01" value={payForm.tdsDeducted} onChange={e => setPayForm(f => ({ ...f, tdsDeducted: e.target.value }))}
-                      className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">TDS Section</label>
-                    <input type="text" value={payForm.tdsSection} onChange={e => setPayForm(f => ({ ...f, tdsSection: e.target.value }))}
-                      placeholder="194C, 194Q..." className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                  <div className="col-span-2">
+                    {tdsLoading && <div className="text-[10px] text-slate-400 uppercase tracking-widest">Calculating TDS...</div>}
+                    {tdsCalc && (
+                      <div className={`border px-3 py-2 text-xs ${tdsCalc.shouldDeduct ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-slate-50'}`}>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">TDS Calculation</span>
+                          {tdsCalc.shouldDeduct && (
+                            <label className="flex items-center gap-1.5 text-[10px]">
+                              <input type="checkbox" checked={tdsOverride} onChange={e => {
+                                setTdsOverride(e.target.checked);
+                                if (!e.target.checked) setPayForm(f => ({ ...f, tdsDeducted: '0', tdsSection: '', tdsLedgerId: '' }));
+                                else setPayForm(f => ({ ...f, tdsDeducted: String(tdsCalc.tdsAmount), tdsSection: tdsCalc.sectionLabel, tdsLedgerId: tdsCalc.ledgerId || '' }));
+                              }} className="w-3 h-3" />
+                              <span className="text-slate-600 font-medium">Apply TDS</span>
+                            </label>
+                          )}
+                        </div>
+                        {tdsCalc.shouldDeduct ? (
+                          <div className="space-y-1">
+                            <div className="flex justify-between"><span className="text-slate-500">Section</span><span className="font-medium text-slate-800">{tdsCalc.sectionLabel}</span></div>
+                            <div className="flex justify-between"><span className="text-slate-500">Rate</span><span className="font-mono font-medium">{tdsCalc.rate}%</span></div>
+                            <div className="flex justify-between"><span className="text-slate-500">TDS Amount</span><span className="font-mono font-bold text-amber-700">{tdsCalc.tdsAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
+                            <div className="flex justify-between"><span className="text-slate-500">Net to Vendor</span><span className="font-mono font-bold text-green-700">{tdsCalc.netAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
+                            <div className="text-[9px] text-slate-400 mt-1 leading-relaxed">{tdsCalc.reason}</div>
+                          </div>
+                        ) : (
+                          <div className="text-slate-500">{tdsCalc.reason}</div>
+                        )}
+                      </div>
+                    )}
+                    {!tdsCalc && !tdsLoading && (
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">TDS Deducted (manual)</label>
+                          <input type="number" step="0.01" value={payForm.tdsDeducted} onChange={e => setPayForm(f => ({ ...f, tdsDeducted: e.target.value }))}
+                            className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">TDS Section</label>
+                          <input type="text" value={payForm.tdsSection} onChange={e => setPayForm(f => ({ ...f, tdsSection: e.target.value }))}
+                            placeholder="194C, 194Q..." className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div>
@@ -2063,9 +2126,28 @@ export default function PaymentsOut() {
                       required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">TDS Deducted</label>
-                    <input type="number" step="0.01" value={payForm.tdsDeducted} onChange={e => setPayForm(f => ({ ...f, tdsDeducted: e.target.value }))}
-                      className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                    {tdsCalc && tdsCalc.shouldDeduct ? (
+                      <div className={`border px-2 py-1.5 text-[10px] ${tdsOverride ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-slate-50'}`}>
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold uppercase tracking-widest text-slate-500">TDS {tdsCalc.rate}%</span>
+                          <label className="flex items-center gap-1">
+                            <input type="checkbox" checked={tdsOverride} onChange={e => {
+                              setTdsOverride(e.target.checked);
+                              if (!e.target.checked) setPayForm(f => ({ ...f, tdsDeducted: '0', tdsSection: '', tdsLedgerId: '' }));
+                              else setPayForm(f => ({ ...f, tdsDeducted: String(tdsCalc.tdsAmount), tdsSection: tdsCalc.sectionLabel, tdsLedgerId: tdsCalc.ledgerId || '' }));
+                            }} className="w-3 h-3" />
+                            <span className="text-slate-600">Apply</span>
+                          </label>
+                        </div>
+                        {tdsOverride && <div className="font-mono font-bold text-amber-700 mt-0.5">{tdsCalc.tdsAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>}
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">TDS Deducted</label>
+                        <input type="number" step="0.01" value={payForm.tdsDeducted} onChange={e => setPayForm(f => ({ ...f, tdsDeducted: e.target.value }))}
+                          className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label>

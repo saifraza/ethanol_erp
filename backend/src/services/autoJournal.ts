@@ -399,6 +399,8 @@ export async function onVendorPaymentMade(
     mode: string;
     reference?: string | null;
     tdsDeducted: number;
+    tdsLedgerId?: string | null; // section-specific ledger e.g. "TDS Payable - 194C"
+    tdsSection?: string | null;
     vendorId: string;
     userId: string;
     paymentDate: Date;
@@ -407,12 +409,15 @@ export async function onVendorPaymentMade(
   try {
     const bankCode = PAYMENT_ACCOUNT[payment.mode] || ACCT.SBI_BANK;
     const codes = [bankCode, ACCT.TRADE_PAYABLE];
-    if (payment.tdsDeducted > 0) codes.push(ACCT.TDS_PAYABLE);
+    if (payment.tdsDeducted > 0 && !payment.tdsLedgerId) codes.push(ACCT.TDS_PAYABLE);
 
     const accts = await resolveAccounts(prisma, codes);
     for (const code of codes) {
       if (!accts[code]) return null;
     }
+
+    // Use section-specific ledger if provided, else fall back to generic 2200
+    const tdsAccountId = payment.tdsLedgerId || accts[ACCT.TDS_PAYABLE];
 
     const totalSettled = payment.amount + payment.tdsDeducted;
     const lines: { accountId: string; debit: number; credit: number; narration?: string }[] = [
@@ -420,8 +425,8 @@ export async function onVendorPaymentMade(
       { accountId: accts[bankCode], debit: 0, credit: payment.amount, narration: `${payment.mode} ${payment.reference || ''}`.trim() },
     ];
 
-    if (payment.tdsDeducted > 0) {
-      lines.push({ accountId: accts[ACCT.TDS_PAYABLE], debit: 0, credit: payment.tdsDeducted, narration: `TDS deducted` });
+    if (payment.tdsDeducted > 0 && tdsAccountId) {
+      lines.push({ accountId: tdsAccountId, debit: 0, credit: payment.tdsDeducted, narration: `TDS deducted ${payment.tdsSection || ''}`.trim() });
     }
 
     return await prisma.$transaction(async (tx: any) => {

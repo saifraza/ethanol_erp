@@ -326,6 +326,8 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       mode: b.mode || 'BANK_TRANSFER',
       reference: b.reference,
       tdsDeducted: tdsDeducted,
+      tdsLedgerId: b.tdsLedgerId || null,
+      tdsSection: b.tdsSection || null,
       vendorId: b.vendorId,
       userId: req.user!.id,
       paymentDate: b.paymentDate ? new Date(b.paymentDate) : new Date(),
