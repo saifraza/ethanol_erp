@@ -281,6 +281,7 @@ Weighbridge can also push directly to cloud (`CLOUD_API_URL` in config.py) — b
 | Factory deploy / SSH / safety / incidents / postmortems | `.claude/skills/factory-operations.md` — **READ FIRST** before touching factory. Part A = incidents (load-bearing), Part B = architecture + deploy runbook |
 | Weighbridge: serial protocol, hardware, new products, corrections | `.claude/skills/weighbridge.md` — Part A = hardware/protocol, Part B = add-product contract, Part C = corrections |
 | Weighbridge `/push` handlers (cloud-side) | `backend/src/routes/weighbridge/handlers/*.ts` |
+| Weighment corrections (any type — grain/fuel/ethanol/DDGS) | `.claude/skills/correct-weighment.md` — **Saif-only CLI skill.** Read skill first, then execute. |
 | Sales order → dispatch → invoice | `backend/src/routes/salesOrders.ts`, `shipments.ts`, `invoices.ts` |
 | Procurement PO → GRN → payment | `backend/src/routes/purchaseOrders.ts`, `goodsReceipts.ts`, `vendorPayments.ts` |
 | Accounts / journal / bank | `backend/src/routes/chartOfAccounts.ts`, `journalEntries.ts`, `bankPayments.ts` |

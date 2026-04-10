@@ -26,6 +26,9 @@
 - **[ubi-h2h-banking.md](ubi-h2h-banking.md)** — UBI H2H-STP direct bank payments. SFTP, AES-256-GCM, Maker-Checker-Releaser.
 - **[ewb-jobwork-issue.md](ewb-jobwork-issue.md)** — E-way bill for job work (standalone flow).
 
+## Operations (Saif-only CLI)
+- **[correct-weighment.md](correct-weighment.md)** — Weighment correction skill. Edit/cancel any weighment (grain, fuel, ethanol, DDGS) via CLI. Full guard checks, factory push, audit trail, admin notifications. **PAYMENT_MADE = hard alarm, never bypass.**
+
 ## System-wide / Reference
 - **[charts-graphs.md](charts-graphs.md)** — Chart design system (Recharts + OPC Live pattern). **All charts must follow this.**
 - **[admin-settings.md](admin-settings.md)** — Auth, users, settings, audit.
