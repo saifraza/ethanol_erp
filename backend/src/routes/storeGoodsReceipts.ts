@@ -465,14 +465,17 @@ router.post('/', storeWriteAuth, validate(createSchema), asyncHandler(async (req
     }
   }
 
-  // Process & validate lines
+  // Process & validate lines — inherit inventoryItemId from PO line if not provided
+  const poLineMap = new Map(po.lines.map((l: any) => [l.id, l]));
   const processedLines = b.lines.map((line) => {
     const receivedQty = Number(line.receivedQty) || 0;
     const acceptedQty = Number(line.acceptedQty) || 0;
     const rejectedQty = Math.max(0, receivedQty - acceptedQty);
     const rate = Number(line.rate) || 0;
     const amount = acceptedQty * rate;
-    const itemId = line.inventoryItemId || line.materialId || null;
+    // Inherit inventoryItemId from PO line if frontend didn't send it
+    const poLine = line.poLineId ? poLineMap.get(line.poLineId) : null;
+    const itemId = line.inventoryItemId || line.materialId || poLine?.inventoryItemId || poLine?.materialId || null;
     return {
       poLineId: line.poLineId || null,
       inventoryItemId: itemId,
@@ -588,11 +591,13 @@ router.put('/:id', storeWriteAuth, validate(updateSchema), asyncHandler(async (r
       }
     }
 
+    const poLineMap = new Map<string, any>((po?.lines || []).map((l: any) => [l.id, l]));
     const processedLines = b.lines.map((line) => {
       const receivedQty = Number(line.receivedQty) || 0;
       const acceptedQty = Number(line.acceptedQty) || 0;
       const rate = Number(line.rate) || 0;
-      const itemId = line.inventoryItemId || line.materialId || null;
+      const poLine = line.poLineId ? poLineMap.get(line.poLineId) : null;
+      const itemId = line.inventoryItemId || line.materialId || poLine?.inventoryItemId || poLine?.materialId || null;
       return {
         poLineId: line.poLineId || null,
         inventoryItemId: itemId,
