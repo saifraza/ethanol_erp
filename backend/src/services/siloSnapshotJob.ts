@@ -224,13 +224,12 @@ export async function computeSnapshot(opts?: { force?: boolean }): Promise<void>
     const grainConsumed = r2(Math.max(0, grainDistilled + deltaGrainInSystem + deltaFlour));
     const siloOpening = baselineOpening ?? prev?.siloClosing ?? 0;
 
-    // 6. Grain received from trucks (since previous snapshot date)
-    const truckSince = prev?.date ?? new Date(shiftDate.getTime() - 24 * 3600 * 1000);
+    // 6. Grain received from trucks within shift window (avoids double-counting)
     const truckAgg = await prisma.grainTruck.aggregate({
       _sum: { weightNet: true },
       _count: true,
       where: {
-        createdAt: { gte: truckSince, lt: new Date() }, // up to now for manual trigger
+        createdAt: { gte: shiftStartUTC, lt: shiftEndUTC },
         cancelled: false,
       },
     });
@@ -286,10 +285,10 @@ async function checkAndRun(): Promise<void> {
 
     // Only run at 9 AM IST, once per day
     if (istHour !== 9 || lastRunDate === todayStr) return;
-    lastRunDate = todayStr;
 
     console.log('[Silo Snapshot] 9 AM IST — running daily snapshot...');
     await computeSnapshot();
+    lastRunDate = todayStr; // set AFTER success so failure allows retry
   } catch (err) {
     console.error('[Silo Snapshot] Failed:', (err as Error).message);
   }
