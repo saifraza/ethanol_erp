@@ -1,0 +1,296 @@
+import { Router, Response } from 'express';
+import { AuthRequest, authenticate, authorize } from '../middleware/auth';
+import { asyncHandler, validate } from '../shared/middleware';
+import { z } from 'zod';
+import prisma from '../config/prisma';
+
+const router = Router();
+
+function r2(n: number) { return Math.round(n * 100) / 100; }
+
+// GET / — List snapshots (paginated)
+router.get('/', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const take = Math.min(parseInt(req.query.limit as string) || 30, 100);
+  const skip = parseInt(req.query.offset as string) || 0;
+
+  const [items, total] = await Promise.all([
+    prisma.siloSnapshot.findMany({
+      take, skip,
+      orderBy: { date: 'desc' },
+    }),
+    prisma.siloSnapshot.count(),
+  ]);
+
+  res.json({ items, total });
+}));
+
+// GET /latest — Latest snapshot + live estimate (snapshot + pending trucks since)
+router.get('/latest', authenticate, asyncHandler(async (_req: AuthRequest, res: Response) => {
+  const snapshot = await prisma.siloSnapshot.findFirst({
+    orderBy: { date: 'desc' },
+  });
+
+  if (!snapshot) {
+    return res.json({ snapshot: null, live: null });
+  }
+
+  // Pending trucks since last snapshot
+  const truckAgg = await prisma.grainTruck.aggregate({
+    _sum: { weightNet: true },
+    _count: true,
+    where: {
+      createdAt: { gt: snapshot.date },
+      cancelled: false,
+    },
+  });
+  const pendingTrucksMT = r2(((truckAgg._sum?.weightNet) ?? 0) / 1000);
+  const pendingTruckCount = truckAgg._count ?? 0;
+
+  const siloEstimate = r2(snapshot.siloClosing + pendingTrucksMT);
+  const snapshotAgeMs = Date.now() - snapshot.date.getTime();
+  const snapshotAgeH = Math.floor(snapshotAgeMs / 3600000);
+  const snapshotAgeM = Math.floor((snapshotAgeMs % 3600000) / 60000);
+
+  res.json({
+    snapshot,
+    live: {
+      siloEstimate,
+      pendingTrucksMT,
+      pendingTruckCount,
+      snapshotAge: `${snapshotAgeH}h ${snapshotAgeM}m`,
+    },
+  });
+}));
+
+// GET /live-tanks — Current OPC tank levels (% and KL) for gauge display
+router.get('/live-tanks', authenticate, asyncHandler(async (_req: AuthRequest, res: Response) => {
+  if (!process.env.DATABASE_URL_OPC) {
+    return res.json({ tanks: [], opcOnline: false });
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { PrismaClient } = require('@prisma/opc-client');
+  const opc = new PrismaClient();
+
+  try {
+    const TAGS: Record<string, { label: string; capField: string }> = {
+      LT130201: { label: 'F1', capField: 'fermenter1Cap' },
+      LT130202: { label: 'F2', capField: 'fermenter2Cap' },
+      LT130301: { label: 'F3', capField: 'fermenter3Cap' },
+      LT130302: { label: 'F4', capField: 'fermenter4Cap' },
+      LT130401: { label: 'Beer Well', capField: 'beerWellCap' },
+      LT_120103: { label: 'ILT', capField: 'iltCap' },
+      LT_120102: { label: 'FLT', capField: 'fltCap' },
+    };
+
+    const settings = await prisma.settings.findFirst();
+    const caps: Record<string, number> = {
+      fermenter1Cap: (settings as any)?.fermenter1Cap ?? 2300,
+      fermenter2Cap: (settings as any)?.fermenter2Cap ?? 2300,
+      fermenter3Cap: (settings as any)?.fermenter3Cap ?? 2300,
+      fermenter4Cap: (settings as any)?.fermenter4Cap ?? 2300,
+      beerWellCap: (settings as any)?.beerWellCap ?? 430,
+      iltCap: (settings as any)?.iltCap ?? 190,
+      fltCap: (settings as any)?.fltCap ?? 440,
+    };
+
+    const tagNames = Object.keys(TAGS);
+    const readings = await opc.opcReading.findMany({
+      where: { tag: { in: tagNames }, property: 'IO_VALUE' },
+      orderBy: { scannedAt: 'desc' },
+      take: tagNames.length * 2,
+      select: { tag: true, value: true, scannedAt: true },
+    });
+
+    const latestByTag = new Map<string, { value: number; scannedAt: Date }>();
+    for (const r of readings) {
+      if (!latestByTag.has(r.tag)) {
+        latestByTag.set(r.tag, { value: r.value, scannedAt: r.scannedAt });
+      }
+    }
+
+    const tanks = Object.entries(TAGS).map(([tag, { label, capField }]) => {
+      const reading = latestByTag.get(tag);
+      const pct = reading?.value ?? 0;
+      const cap = caps[capField] ?? 0;
+      const kl = r2((pct / 100) * cap);
+      return {
+        tag,
+        label,
+        pct: r2(pct),
+        kl,
+        capacityKL: cap,
+        updatedAt: reading?.scannedAt?.toISOString() ?? null,
+      };
+    });
+
+    const oldestReading = readings.length > 0
+      ? Math.min(...readings.map((r: { scannedAt: Date }) => r.scannedAt.getTime()))
+      : null;
+    const opcOnline = oldestReading ? (Date.now() - oldestReading) < 10 * 60 * 1000 : false;
+
+    res.json({ tanks, opcOnline });
+  } finally {
+    await opc.$disconnect();
+  }
+}));
+
+// POST /baseline — Set manual baseline silo stock (first entry)
+const baselineSchema = z.object({
+  siloClosingMT: z.number().min(0),
+  date: z.string().optional(), // ISO date, defaults to today
+  remarks: z.string().optional(),
+});
+
+router.post('/baseline', authenticate, authorize('SUPER_ADMIN'), validate(baselineSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { siloClosingMT, date: dateStr, remarks } = req.body;
+
+  const date = dateStr ? new Date(dateStr) : new Date(Date.UTC(
+    new Date().getFullYear(),
+    new Date().getMonth(),
+    new Date().getDate(),
+    0, 0, 0, 0,
+  ));
+
+  // Read current OPC levels if available
+  let f1Level = 0, f2Level = 0, f3Level = 0, f4Level = 0;
+  let beerWellLevel = 0, iltLevel = 0, fltLevel = 0;
+  let totalVolumeKL = 0, grainInSystem = 0;
+
+  const grainPct = await getGrainPct();
+
+  if (process.env.DATABASE_URL_OPC) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { PrismaClient } = require('@prisma/opc-client');
+      const opc = new PrismaClient();
+      const caps = await getCapacities();
+      const tagNames = ['LT130201', 'LT130202', 'LT130301', 'LT130302', 'LT130401', 'LT_120103', 'LT_120102'];
+      const readings = await opc.opcReading.findMany({
+        where: { tag: { in: tagNames }, property: 'IO_VALUE' },
+        orderBy: { scannedAt: 'desc' },
+        take: tagNames.length * 2,
+        select: { tag: true, value: true },
+      });
+      const latest = new Map<string, number>();
+      for (const r of readings) {
+        if (!latest.has(r.tag)) latest.set(r.tag, r.value);
+      }
+      f1Level = r2(((latest.get('LT130201') ?? 0) / 100) * caps.f1);
+      f2Level = r2(((latest.get('LT130202') ?? 0) / 100) * caps.f2);
+      f3Level = r2(((latest.get('LT130301') ?? 0) / 100) * caps.f3);
+      f4Level = r2(((latest.get('LT130302') ?? 0) / 100) * caps.f4);
+      beerWellLevel = r2(((latest.get('LT130401') ?? 0) / 100) * caps.beerWell);
+      iltLevel = r2(((latest.get('LT_120103') ?? 0) / 100) * caps.ilt);
+      fltLevel = r2(((latest.get('LT_120102') ?? 0) / 100) * caps.flt);
+      totalVolumeKL = r2(f1Level + f2Level + f3Level + f4Level + beerWellLevel + iltLevel + fltLevel);
+      grainInSystem = r2(totalVolumeKL * grainPct);
+      await opc.$disconnect();
+    } catch (err) {
+      console.warn('[Silo Baseline] OPC read failed, using zeros:', (err as Error).message);
+    }
+  }
+
+  // Upsert baseline
+  const snapshot = await prisma.siloSnapshot.upsert({
+    where: { date },
+    create: {
+      date,
+      source: 'BASELINE',
+      f1Level, f2Level, f3Level, f4Level,
+      beerWellLevel, iltLevel, fltLevel,
+      totalVolumeKL,
+      grainPctUsed: grainPct,
+      grainInSystem,
+      siloOpening: siloClosingMT,
+      siloClosing: siloClosingMT,
+      remarks: remarks || 'Manual baseline',
+    },
+    update: {
+      source: 'BASELINE',
+      f1Level, f2Level, f3Level, f4Level,
+      beerWellLevel, iltLevel, fltLevel,
+      totalVolumeKL,
+      grainPctUsed: grainPct,
+      grainInSystem,
+      siloOpening: siloClosingMT,
+      siloClosing: siloClosingMT,
+      remarks: remarks || 'Manual baseline (updated)',
+    },
+  });
+
+  res.status(201).json(snapshot);
+}));
+
+// POST /trigger — Manually trigger a snapshot now
+router.post('/trigger', authenticate, authorize('SUPER_ADMIN'), asyncHandler(async (_req: AuthRequest, res: Response) => {
+  const { computeSnapshot } = await import('../services/siloSnapshotJob');
+  await computeSnapshot();
+  const latest = await prisma.siloSnapshot.findFirst({ orderBy: { date: 'desc' } });
+  res.json({ message: 'Snapshot triggered', snapshot: latest });
+}));
+
+// PUT /flour — Update flour silo levels on the latest snapshot (manual input)
+const flourSchema = z.object({
+  flourSilo1Level: z.number().min(0),
+  flourSilo2Level: z.number().min(0),
+});
+
+router.put('/flour', authenticate, validate(flourSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { flourSilo1Level, flourSilo2Level } = req.body;
+  const flourTotal = r2(flourSilo1Level + flourSilo2Level);
+
+  const latest = await prisma.siloSnapshot.findFirst({ orderBy: { date: 'desc' } });
+  if (!latest) {
+    return res.status(404).json({ error: 'No snapshot exists yet — set baseline first' });
+  }
+
+  const updated = await prisma.siloSnapshot.update({
+    where: { id: latest.id },
+    data: { flourSilo1Level, flourSilo2Level, flourTotal },
+  });
+
+  res.json(updated);
+}));
+
+// PUT /:id — Override/correct a snapshot
+const overrideSchema = z.object({
+  siloClosing: z.number().optional(),
+  remarks: z.string().optional(),
+});
+
+router.put('/:id', authenticate, authorize('SUPER_ADMIN'), validate(overrideSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { id } = req.params;
+  const { siloClosing, remarks } = req.body;
+
+  const updated = await prisma.siloSnapshot.update({
+    where: { id },
+    data: {
+      ...(siloClosing !== undefined ? { siloClosing, source: 'OVERRIDE' } : {}),
+      ...(remarks !== undefined ? { remarks } : {}),
+    },
+  });
+
+  res.json(updated);
+}));
+
+// --- helpers ---
+async function getGrainPct(): Promise<number> {
+  const s = await prisma.settings.findFirst();
+  return ((s as any)?.grainPercent ?? 31) / 100;
+}
+
+async function getCapacities(): Promise<Record<string, number>> {
+  const s = await prisma.settings.findFirst();
+  return {
+    f1: (s as any)?.fermenter1Cap ?? 2300,
+    f2: (s as any)?.fermenter2Cap ?? 2300,
+    f3: (s as any)?.fermenter3Cap ?? 2300,
+    f4: (s as any)?.fermenter4Cap ?? 2300,
+    beerWell: (s as any)?.beerWellCap ?? 430,
+    ilt: (s as any)?.iltCap ?? 190,
+    flt: (s as any)?.fltCap ?? 440,
+  };
+}
+
+export default router;

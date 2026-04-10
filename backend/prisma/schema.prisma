@@ -176,6 +176,58 @@ model GrainEntry {
   @@index([yearStart, date])
 }
 
+model SiloSnapshot {
+  id                 String   @id @default(uuid())
+  date               DateTime @unique
+  source             String   @default("AUTO") // AUTO | BASELINE | OVERRIDE
+
+  // OPC tank levels at snapshot (KL, converted from %)
+  f1Level            Float    @default(0)
+  f2Level            Float    @default(0)
+  f3Level            Float    @default(0)
+  f4Level            Float    @default(0)
+  beerWellLevel      Float    @default(0)
+  iltLevel           Float    @default(0)
+  fltLevel           Float    @default(0)
+  totalVolumeKL      Float    @default(0)
+
+  // Flour silos (manual input — no OPC sensor)
+  flourSilo1Level    Float    @default(0) // MT
+  flourSilo2Level    Float    @default(0) // MT
+  flourTotal         Float    @default(0) // MT
+
+  // Wash from flow meter (KL, 24h)
+  washDistilledKL    Float    @default(0)
+
+  // Grain math
+  grainPctUsed       Float    @default(0.31)
+  grainInSystem      Float    @default(0)
+  deltaGrainInSystem Float    @default(0)
+  grainDistilled     Float    @default(0)
+  grainConsumed      Float    @default(0)
+
+  // Grain IN from trucks
+  grainReceivedMT    Float    @default(0)
+  truckCount         Int      @default(0)
+
+  // Silo stock
+  siloOpening        Float    @default(0)
+  siloClosing        Float    @default(0)
+
+  // Cumulatives (year)
+  cumReceived        Float    @default(0)
+  cumConsumed        Float    @default(0)
+
+  // Data quality
+  opcDataAge         Int?
+  remarks            String?
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([date])
+}
+
 model MillingEntry {
   id           String   @id @default(uuid())
   date         DateTime

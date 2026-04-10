@@ -18,6 +18,7 @@ const UsersPage = React.lazy(() => import('./pages/UsersPage'));
 const WeighmentSystem = React.lazy(() => import('./pages/admin/WeighmentSystem'));
 const DocumentTemplates = React.lazy(() => import('./pages/DocumentTemplates'));
 const GrainUnloading = React.lazy(() => import('./pages/process/GrainUnloading'));
+const SiloStock = React.lazy(() => import('./pages/process/SiloStock'));
 const GrainUnloadingTrucks = React.lazy(() => import('./pages/process/GrainUnloadingTrucks'));
 const Milling = React.lazy(() => import('./pages/process/Milling'));
 const Liquefaction = React.lazy(() => import('./pages/process/Liquefaction'));
@@ -164,7 +165,8 @@ export default function App() {
         <Route index element={<HomeRedirect />} />
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="process/raw-material" element={<RawMaterial />} />
-        <Route path="process/grain-stock" element={<GrainUnloading />} />
+        <Route path="process/grain-stock" element={<SiloStock />} />
+        <Route path="process/grain-stock-old" element={<GrainUnloading />} />
         <Route path="process/grain-unloading" element={<GrainUnloadingTrucks />} />
         <Route path="process/milling" element={<Milling />} />
         <Route path="process/liquefaction" element={<Liquefaction />} />

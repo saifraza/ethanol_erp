@@ -131,6 +131,8 @@ import complianceRoutes from './routes/compliance';
 import taxRoutes from './routes/tax';
 // Reports — Weighment History (unified INBOUND/OUTBOUND report)
 import reportsWeighmentHistoryRoutes from './routes/reportsWeighmentHistory';
+// Silo Stock (auto-computed grain stock)
+import siloSnapshotRoutes from './routes/siloSnapshot';
 // Weighment mirror sync + audit
 import weighmentSyncRoutes from './routes/weighmentSync';
 import weighmentAuditRoutes from './routes/weighmentAudit';
@@ -304,6 +306,8 @@ app.use('/api/reports/weighment-history', reportsWeighmentHistoryRoutes);
 // Weighment mirror — machine-to-machine sync (X-WB-Key) + admin audit (JWT)
 app.use('/api/weighment/sync', weighmentSyncRoutes);
 app.use('/api/weighment/audit', weighmentAuditRoutes);
+// Silo Stock (auto-computed grain stock from OPC)
+app.use('/api/silo-stock', siloSnapshotRoutes);
 // Mobile app (PIN auth + field data submission)
 app.use('/api/mobile', mobileRoutes);
 

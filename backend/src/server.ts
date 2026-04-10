@@ -112,6 +112,7 @@ const server = app.listen(PORT, HOST, async () => {
   if (process.env.DATABASE_URL_OPC) {
     import('./services/opcHealthWatchdog').then(m => m.startOpcWatchdog()).catch(() => {});
     import('./services/opcReadingCleanup').then(m => m.startOpcReadingCleanup()).catch(() => {});
+    import('./services/siloSnapshotJob').then(m => m.startSiloSnapshotJob()).catch(() => {});
   }
 });
 
