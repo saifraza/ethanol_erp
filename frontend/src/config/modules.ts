@@ -61,15 +61,15 @@ export const MODULE_DEFS: ModuleDef[] = [
   // ── LOGISTICS (Transport, Gate, Shipments) ──
   { key: 'gate-register', label: 'Gate & Receipts', to: '/logistics/gate-register', icon: Scale, group: 'logistics' },
   { key: 'shipments', label: 'Shipments', to: '/sales/shipments', icon: Truck, group: 'logistics' },
-  { key: 'transporters', label: 'Transporters', to: '/sales/transporters', icon: Truck, group: 'logistics' },
+  // Transporters merged into Vendor Master (category: TRANSPORTER)
 
   // ── PROCUREMENT (Grain + Chemicals inward) ──
-  { key: 'vendors', label: 'Vendors', to: '/procurement/vendors', icon: Building2, group: 'procurement' },
+  { key: 'vendors', label: 'Vendor Master', to: '/procurement/vendors', icon: Building2, group: 'procurement' },
   { key: 'traders', label: 'Traders', to: '/procurement/traders', icon: UserCheck, group: 'procurement' },
   { key: 'materials', label: 'Items', to: '/inventory', icon: Box, group: 'procurement' },
   { key: 'purchase-orders', label: 'Purchase Orders', to: '/procurement/purchase-orders', icon: ShoppingBag, group: 'procurement' },
   { key: 'auto-grn', label: 'Auto GRN (WB)', to: '/procurement/goods-receipts/auto', icon: PackageCheck, group: 'procurement' },
-  { key: 'contractors', label: 'Contractors', to: '/procurement/contractors', icon: HardHat, group: 'procurement' },
+  // Contractors merged into Vendor Master (category: CONTRACTOR_*)
   { key: 'raw-material-purchase', label: 'RM Deals', to: '/procurement/raw-material-purchase', icon: Handshake, group: 'procurement' },
 
   // ── SPOT TRADE (Cash buy/sell at gate) ──
