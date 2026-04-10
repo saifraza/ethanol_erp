@@ -62,7 +62,7 @@ const TAG_CATALOG: Record<string, Record<string, { folder: string; type: string;
       LT_150701: 'Level 150701', LT_150801: 'Level 150801', LT_150901: 'Level 150901',
       'LT_1501001': 'Level 1501001', LT_150102: 'Level 150102', LT_150703: 'Level 150703',
       LT_150902: 'Level 150902',
-      PT_150301: 'Pressure 150301', PT_150901: 'Pressure 150901', PT_151101: 'Pressure 151101',
+      PT_151101: 'Pressure 151101',
       TE_150101: 'Temp 150101', TE_150201: 'Temp 150201', TE_150301: 'Temp 150301',
       TE_150401: 'Temp 150401', TE_150501: 'Temp 150501', TE_150601: 'Temp 150601',
       TE_150701: 'Temp 150701', TE_150801: 'Temp 150801', TE_150901: 'Temp 150901',
