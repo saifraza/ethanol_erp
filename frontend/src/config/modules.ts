@@ -20,7 +20,7 @@ export interface ModuleDef {
   label: string;
   to: string;
   icon: any;
-  group: 'process' | 'admin' | 'sales' | 'procurement' | 'trade' | 'accounts' | 'books' | 'inventory' | 'logistics' | 'compliance' | 'tax' | 'hr';
+  group: 'process' | 'admin' | 'sales' | 'procurement' | 'trade' | 'accounts' | 'books' | 'inventory' | 'compliance' | 'tax' | 'hr';
   adminOnly?: boolean;
 }
 
@@ -58,11 +58,6 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'ethanol-contracts', label: 'Ethanol Supply', to: '/sales/ethanol-contracts', icon: Handshake, group: 'sales' },
   { key: 'ddgs-contracts', label: 'DDGS Supply', to: '/sales/ddgs-contracts', icon: Package, group: 'sales' },
   { key: 'sugar-contracts', label: 'Sugar Supply', to: '/sales/sugar-contracts', icon: Package, group: 'sales' },
-
-  // ── LOGISTICS (Transport, Gate, Shipments) ──
-  { key: 'gate-register', label: 'Gate & Receipts', to: '/logistics/gate-register', icon: Scale, group: 'logistics' },
-  { key: 'shipments', label: 'Shipments', to: '/sales/shipments', icon: Truck, group: 'logistics' },
-  // Transporters merged into Vendor Master (category: TRANSPORTER)
 
   // ── PROCUREMENT (Grain + Chemicals inward) ──
   { key: 'vendors', label: 'Vendor Master', to: '/procurement/vendors', icon: Building2, group: 'procurement' },
@@ -117,6 +112,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'tax-tds', label: 'TDS Sections', to: '/admin/tax/tds-sections', icon: Calculator, group: 'tax', adminOnly: true },
   { key: 'tax-tcs', label: 'TCS Sections', to: '/admin/tax/tcs-sections', icon: Calculator, group: 'tax', adminOnly: true },
   { key: 'tax-audit', label: 'Audit Log', to: '/admin/tax/audit', icon: ListChecks, group: 'tax', adminOnly: true },
+  { key: 'gst-recon', label: 'GST Reconciliation', to: '/tax/gst-recon', icon: Search, group: 'tax' },
 
   // ── ADMIN ──
   { key: 'approvals', label: 'Approvals', to: '/admin/approvals', icon: ClipboardCheck, group: 'admin' },
@@ -179,10 +175,6 @@ export const accountsNav = MODULE_DEFS.filter(m => m.group === 'accounts').map(m
 }));
 
 export const booksNav = MODULE_DEFS.filter(m => m.group === 'books').map(m => ({
-  to: m.to, label: m.label, icon: m.icon, moduleKey: m.key,
-}));
-
-export const logisticsNav = MODULE_DEFS.filter(m => m.group === 'logistics').map(m => ({
   to: m.to, label: m.label, icon: m.icon, moduleKey: m.key,
 }));
 

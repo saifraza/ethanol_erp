@@ -70,6 +70,7 @@ const TaxTdsSectionMasterPage = React.lazy(() => import('./pages/tax/TdsSectionM
 const TaxTcsSectionMasterPage = React.lazy(() => import('./pages/tax/TcsSectionMasterPage'));
 const TaxComplianceAuditLogPage = React.lazy(() => import('./pages/tax/ComplianceAuditLogPage'));
 const TaxRulesReferencePage = React.lazy(() => import('./pages/tax/TaxRulesReferencePage'));
+const GstReconPage = React.lazy(() => import('./pages/tax/GstReconPage'));
 
 // HR & Payroll
 const HrEmployees = React.lazy(() => import('./pages/hr/Employees'));
@@ -92,8 +93,6 @@ const FreightManagement = React.lazy(() => import('./pages/sales/FreightManageme
 const EthanolContracts = React.lazy(() => import('./pages/sales/EthanolContracts'));
 const DDGSContracts = React.lazy(() => import('./pages/sales/DDGSContracts'));
 const SugarContracts = React.lazy(() => import('./pages/sales/SugarContracts'));
-// Logistics
-const GateAndReceipts = React.lazy(() => import('./pages/logistics/GateAndReceipts'));
 // Procurement (P2P)
 const Vendors = React.lazy(() => import('./pages/procurement/Vendors'));
 const Traders = React.lazy(() => import('./pages/procurement/Traders'));
@@ -217,6 +216,7 @@ export default function App() {
         <Route path="admin/tax/tds-sections" element={<TaxTdsSectionMasterPage />} />
         <Route path="admin/tax/tcs-sections" element={<TaxTcsSectionMasterPage />} />
         <Route path="admin/tax/audit" element={<TaxComplianceAuditLogPage />} />
+        <Route path="tax/gst-recon" element={<GstReconPage />} />
         {/* HR & Payroll */}
         <Route path="hr/dashboard" element={<HrPayrollDashboard />} />
         <Route path="hr/employees" element={<HrEmployees />} />
@@ -238,15 +238,13 @@ export default function App() {
         <Route path="sales/ethanol-contracts" element={<EthanolContracts />} />
         <Route path="sales/ddgs-contracts" element={<DDGSContracts />} />
         <Route path="sales/sugar-contracts" element={<SugarContracts />} />
-        {/* Logistics */}
-        <Route path="logistics/gate-register" element={<GateAndReceipts />} />
         {/* Procurement (P2P) */}
         <Route path="procurement/vendors" element={<Vendors />} />
         <Route path="procurement/traders" element={<Traders />} />
         <Route path="procurement/contractors" element={<ContractorManagement />} />
         <Route path="procurement/materials" element={<Navigate to="/inventory" replace />} />
         <Route path="procurement/purchase-orders" element={<PurchaseOrders />} />
-        <Route path="procurement/goods-receipts" element={<Navigate to="/logistics/gate-register?tab=grn" replace />} />
+        <Route path="procurement/goods-receipts" element={<Navigate to="/store/receipts" replace />} />
         <Route path="procurement/goods-receipts/auto" element={<AutoGoodsReceipts />} />
         <Route path="store/receipts" element={<StoreModule />} />
         <Route path="procurement/vendor-payments" element={<VendorPayments />} />

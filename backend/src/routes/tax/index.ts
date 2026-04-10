@@ -8,6 +8,7 @@ import tcsSectionRoutes from './tcsSection';
 import auditRoutes from './audit';
 import taxRulesRoutes from './taxRules';
 import seedRoutes from './seed';
+import gstr2bReconRoutes from './gstr2bRecon';
 import { authenticate, AuthRequest } from '../../middleware/auth';
 import { asyncHandler } from '../../shared/middleware';
 import { calculateTds } from '../../services/tdsCalculator';
@@ -23,6 +24,7 @@ router.use('/tcs-sections', tcsSectionRoutes);
 router.use('/audit', auditRoutes);
 router.use('/rules', taxRulesRoutes);
 router.use('/seed', seedRoutes);
+router.use('/gstr2b-recon', gstr2bReconRoutes);
 
 // ── TDS Calculator (live preview for payment screens) ──
 router.post('/calculate-tds', authenticate as any, asyncHandler(async (req: AuthRequest, res: Response) => {

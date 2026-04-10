@@ -3998,3 +3998,63 @@ model PayrollLineComponent {
   @@unique([payrollLineId, componentId])
   @@index([payrollLineId])
 }
+
+// ── GST Reconciliation (2A / 2B) ────────────────────────────
+model GstReconRun {
+  id            String   @id @default(cuid())
+  returnType    String   // "2A" | "2B"
+  filingPeriod  String   // "042026" (MMYYYY from portal)
+  periodMonth   Int      // 4
+  periodYear    Int      // 2026
+  buyerGstin    String
+  uploadedAt    DateTime @default(now())
+  uploadedBy    String
+  status        String   @default("UPLOADED") // UPLOADED | MATCHED | FINALIZED
+  totalPortal   Int      @default(0)
+  totalBooks    Int      @default(0)
+  matched       Int      @default(0)
+  onlyInPortal  Int      @default(0)
+  onlyInBooks   Int      @default(0)
+  mismatch      Int      @default(0)
+  itcMatched    Float    @default(0)
+  itcAtRisk     Float    @default(0)
+  rawJson       String?  @db.Text
+  entries       GstReconEntry[]
+
+  @@index([filingPeriod])
+  @@index([returnType, filingPeriod])
+  @@index([uploadedAt])
+}
+
+model GstReconEntry {
+  id              String       @id @default(cuid())
+  runId           String
+  run             GstReconRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+  source          String       // "PORTAL" | "BOOKS"
+  supplierGstin   String
+  supplierName    String?
+  invoiceNumber   String
+  invoiceDate     DateTime?
+  invoiceValue    Float        @default(0)
+  taxableValue    Float        @default(0)
+  cgst            Float        @default(0)
+  sgst            Float        @default(0)
+  igst            Float        @default(0)
+  cess            Float        @default(0)
+  totalGst        Float        @default(0)
+  isRCM           Boolean      @default(false)
+  itcAvailable    String?      // "Y" | "N" from portal
+  matchStatus     String       @default("PENDING") // MATCHED | ONLY_IN_PORTAL | ONLY_IN_BOOKS | MISMATCH
+  matchMethod     String?      // "AUTO" | "MANUAL"
+  vendorInvoiceId String?
+  taxDiffCgst     Float?
+  taxDiffSgst     Float?
+  taxDiffIgst     Float?
+  taxDiffTotal    Float?
+  notes           String?
+
+  @@index([runId])
+  @@index([runId, matchStatus])
+  @@index([supplierGstin, invoiceNumber])
+  @@index([vendorInvoiceId])
+}
