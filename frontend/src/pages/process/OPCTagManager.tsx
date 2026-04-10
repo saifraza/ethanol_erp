@@ -761,9 +761,8 @@ export default function OPCTagManager() {
                                         <tbody>
                                           {[...historyData].reverse().map((d, idx) => {
                                             const hr = new Date(d.hour);
-                                            const ist = new Date(hr.getTime() + 5.5 * 60 * 60 * 1000);
-                                            const dateStr = ist.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
-                                            const timeStr = ist.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+                                            const dateStr = hr.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+                                            const timeStr = hr.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
                                             return (
                                               <tr key={idx} className={`border-b border-slate-100 ${idx % 2 ? 'bg-slate-50/70' : ''}`}>
                                                 <td className="px-2 py-1 text-slate-600 border-r border-slate-100 font-mono">{dateStr} {timeStr}</td>
