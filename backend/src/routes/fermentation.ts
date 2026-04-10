@@ -362,7 +362,19 @@ router.post('/field-reading', async (req: Request, res: Response) => {
         userId,
       },
     });
-    res.status(201).json({ entry, batchNo: fermBatch.batchNo });
+
+    // Auto-detect fermentation end: gravity ≤ 1.0
+    let fermentationFinished = false;
+    const grav = spGravity ? parseFloat(spGravity) : null;
+    if (grav !== null && grav <= 1.0 && !fermBatch.fermentationEndTime) {
+      await prisma.fermentationBatch.update({
+        where: { id: fermBatch.id },
+        data: { fermentationEndTime: new Date(), finalRsGravity: grav },
+      });
+      fermentationFinished = true;
+    }
+
+    res.status(201).json({ entry, batchNo: fermBatch.batchNo, fermentationFinished });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
@@ -472,7 +484,21 @@ router.post('/lab-reading', async (req: Request, res: Response) => {
         });
       }
 
-      res.status(201).json({ entry, batchNo: fermBatch.batchNo, autoAdvanced, autoAdvancedTo: autoAdvanced ? 'REACTION' : undefined });
+      // Auto-detect fermentation end: gravity ≤ 1.0 means fermentation is complete
+      let fermentationFinished = false;
+      const gravity = b.spGravity ? parseFloat(b.spGravity) : null;
+      if (gravity !== null && gravity <= 1.0 && !fermBatch.fermentationEndTime) {
+        await prisma.fermentationBatch.update({
+          where: { id: fermBatch.id },
+          data: {
+            fermentationEndTime: new Date(),
+            finalRsGravity: gravity,
+          },
+        });
+        fermentationFinished = true;
+      }
+
+      res.status(201).json({ entry, batchNo: fermBatch.batchNo, autoAdvanced, autoAdvancedTo: autoAdvanced ? 'REACTION' : undefined, fermentationFinished });
     }
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
@@ -480,10 +506,12 @@ router.post('/lab-reading', async (req: Request, res: Response) => {
 // POST traditional lab entry (kept for backward compat)
 router.post('/', upload.single('spentLossPhoto'), async (req: Request, res: Response) => {
   const b = req.body;
+  const batchNo = parseInt(b.batchNo) || 0;
+  const fermenterNo = parseInt(b.fermenterNo) || 1;
   const entry = await prisma.fermentationEntry.create({
     data: {
       date: new Date(b.date), analysisTime: b.analysisTime || '',
-      batchNo: parseInt(b.batchNo) || 0, fermenterNo: parseInt(b.fermenterNo) || 1,
+      batchNo, fermenterNo,
       level: b.level ? parseFloat(b.level) : null,
       spGravity: b.spGravity ? parseFloat(b.spGravity) : null,
       ph: b.ph ? parseFloat(b.ph) : null,
@@ -499,6 +527,21 @@ router.post('/', upload.single('spentLossPhoto'), async (req: Request, res: Resp
       remarks: b.remarks || null, userId: (req as any).user?.id || 'unknown'
     }
   });
+
+  // Auto-detect fermentation end: gravity ≤ 1.0
+  const grav = b.spGravity ? parseFloat(b.spGravity) : null;
+  if (grav !== null && grav <= 1.0 && batchNo > 0) {
+    const fermBatch = await prisma.fermentationBatch.findFirst({
+      where: { batchNo, fermenterNo, fermentationEndTime: null },
+    });
+    if (fermBatch) {
+      await prisma.fermentationBatch.update({
+        where: { id: fermBatch.id },
+        data: { fermentationEndTime: new Date(), finalRsGravity: grav },
+      });
+    }
+  }
+
   res.status(201).json(entry);
 });
 

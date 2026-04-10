@@ -14,7 +14,7 @@ import { FERM_CAPACITY_KL } from '../../config/constants';
 interface LabReading { id: string; analysisTime: string; spGravity?: number; ph?: number; rs?: number; rst?: number; alcohol?: number; ds?: number; vfaPpa?: number; temp?: number; level?: number; remarks?: string; status?: string; createdAt: string; }
 interface Dosing { id: string; chemicalName: string; quantity: number; unit: string; rate?: number; level?: number; addedAt: string; }
 interface PFBatch { id: string; batchNo: number; fermenterNo: number; phase: string; setupTime?: string; dosingEndTime?: string; transferTime?: string; cipStartTime?: string; cipEndTime?: string; slurryVolume?: number; slurryGravity?: number; slurryTemp?: number; remarks?: string; dosings: Dosing[]; labReadings: LabReading[]; createdAt?: string; }
-interface FermBatch { id: string; batchNo: number; fermenterNo: number; phase: string; pfTransferTime?: string; fillingStartTime?: string; fillingEndTime?: string; setupEndTime?: string; reactionStartTime?: string; retentionStartTime?: string; transferTime?: string; cipStartTime?: string; cipEndTime?: string; setupTime?: string; setupDate?: string; setupGravity?: number; setupRs?: number; setupRst?: number; fermLevel?: number; volume?: number; transferVolume?: number; beerWellNo?: number; finalDate?: string; finalRsGravity?: number; totalHours?: number; finalAlcohol?: number; yeast?: string; enzyme?: string; formolin?: string; booster?: string; urea?: string; remarks?: string; dosings: Dosing[]; }
+interface FermBatch { id: string; batchNo: number; fermenterNo: number; phase: string; pfTransferTime?: string; fillingStartTime?: string; fillingEndTime?: string; setupEndTime?: string; reactionStartTime?: string; retentionStartTime?: string; fermentationEndTime?: string; transferTime?: string; cipStartTime?: string; cipEndTime?: string; setupTime?: string; setupDate?: string; setupGravity?: number; setupRs?: number; setupRst?: number; fermLevel?: number; volume?: number; transferVolume?: number; beerWellNo?: number; finalDate?: string; finalRsGravity?: number; totalHours?: number; finalAlcohol?: number; yeast?: string; enzyme?: string; formolin?: string; booster?: string; urea?: string; remarks?: string; dosings: Dosing[]; }
 interface BeerWellReading { id: string; wellNo: number; level?: number; spGravity?: number; ph?: number; alcohol?: number; temp?: number; remarks?: string; batchNo?: number; createdAt: string; }
 interface Chemical { id: string; name: string; unit: string; rate?: number; }
 interface Recipe { id: string; chemicalName: string; quantity: number; unit: string; }
@@ -1745,9 +1745,9 @@ export default function Fermentation() {
                       return h > 0 ? `${h}h ${m}m` : `${m}m`;
                     };
 
-                    // Cycle time: PF transfer → BW transfer (or current)
+                    // Cycle time: PF transfer → fermentation end (gravity ≤ 1.0), NOT transfer to BW
                     const cycleStart = b.pfTransferTime || b.fillingStartTime;
-                    const cycleEnd = b.transferTime;
+                    const cycleEnd = b.fermentationEndTime || null; // only show when gravity hit 1.0
                     const cycleTime = cycleStart ? elapsedStr(cycleStart, cycleEnd) : (b.totalHours ? `${b.totalHours}h` : '—');
 
                     // Volume from last level reading (fermenter ~250 M³ capacity, level is %)
@@ -1794,9 +1794,11 @@ export default function Fermentation() {
                               {b.fillingEndTime && <div className="bg-amber-50 rounded px-2 py-1"><span className="text-amber-400">Rxn</span> <span className="font-bold text-amber-700">{new Date(b.fillingEndTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}</span></div>}
                               {b.fillingEndTime && b.retentionStartTime && <div className="text-gray-300 self-center">→ {elapsedStr(b.fillingEndTime, b.retentionStartTime)}</div>}
                               {b.retentionStartTime && <div className="bg-orange-50 rounded px-2 py-1"><span className="text-orange-400">Ret</span> <span className="font-bold text-orange-700">{new Date(b.retentionStartTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}</span></div>}
-                              {b.retentionStartTime && b.transferTime && <div className="text-gray-300 self-center">→ {elapsedStr(b.retentionStartTime, b.transferTime)}</div>}
+                              {b.retentionStartTime && (b.fermentationEndTime || b.transferTime) && <div className="text-gray-300 self-center">→ {elapsedStr(b.retentionStartTime, b.fermentationEndTime || b.transferTime || null)}</div>}
+                              {b.fermentationEndTime && <div className="bg-green-50 rounded px-2 py-1"><span className="text-green-500">SG=1.0</span> <span className="font-bold text-green-700">{new Date(b.fermentationEndTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}</span></div>}
+                              {b.fermentationEndTime && b.transferTime && <div className="text-gray-300 self-center">→ {elapsedStr(b.fermentationEndTime, b.transferTime)}</div>}
                               {b.transferTime && <div className="bg-purple-50 rounded px-2 py-1"><span className="text-purple-400">→BW</span> <span className="font-bold text-purple-700">{new Date(b.transferTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}</span></div>}
-                              {cycleStart && <div className="bg-indigo-50 rounded px-2 py-1 ml-2"><span className="text-indigo-400">Total</span> <span className="font-bold text-indigo-700">{cycleTime}</span></div>}
+                              {cycleStart && <div className="bg-indigo-50 rounded px-2 py-1 ml-2"><span className="text-indigo-400">Ferm Time</span> <span className="font-bold text-indigo-700">{cycleTime}</span></div>}
                             </div>
 
                             {/* Setup Data — all fields from batch setup */}

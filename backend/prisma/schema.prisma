@@ -462,6 +462,7 @@ model FermentationBatch {
   setupEndTime       DateTime?
   reactionStartTime  DateTime?
   retentionStartTime DateTime?
+  fermentationEndTime DateTime?    // auto-set when gravity ≤ 1.0
   transferTime       DateTime?
   cipStartTime       DateTime?
   cipEndTime         DateTime?
