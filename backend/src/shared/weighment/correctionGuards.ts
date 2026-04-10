@@ -197,10 +197,7 @@ export async function checkDispatchTruckCorrectable(
     where: { id },
     select: {
       id: true,
-      cancelled: true,
       status: true,
-      invoiceId: true,
-      invoice: { select: { invoiceNo: true } },
       createdAt: true,
     },
   });
@@ -213,18 +210,10 @@ export async function checkDispatchTruckCorrectable(
     };
   }
 
-  if (truck.cancelled) {
+  if (truck.status === 'CANCELLED') {
     return {
       canEdit: false,
       blockers: [{ code: 'ALREADY_CANCELLED', message: 'This dispatch has already been cancelled' }],
-      requiresAdminPin: false,
-    };
-  }
-
-  if (truck.invoiceId) {
-    return {
-      canEdit: false,
-      blockers: [{ code: 'INVOICE_LINKED', message: `Invoice ${truck.invoice?.invoiceNo || truck.invoiceId} linked. Cancel invoice first.` }],
       requiresAdminPin: false,
     };
   }
