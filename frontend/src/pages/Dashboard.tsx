@@ -137,9 +137,10 @@ export default function Dashboard() {
   const [days, setDays] = useState(7);
   const [activeTab, setActiveTab] = useState<'overview' | 'fermentation' | 'production' | 'quality' | 'dispatch'>('overview');
 
-  // OPC live tank levels
+  // OPC live tank levels + feed rate
   interface TankLevel { label: string; level: number; temp?: number; color: string; }
   const [tankLevels, setTankLevels] = useState<TankLevel[]>([]);
+  const [liveFeedRate, setLiveFeedRate] = useState<number | null>(null);
   const OPC_TANK_MAP = [
     { tag: 'LT130201', tempTag: 'TE130201', label: 'F-1', color: '#3b82f6' },
     { tag: 'LT130202', tempTag: 'TE130202', label: 'F-2', color: '#8b5cf6' },
@@ -155,9 +156,11 @@ export default function Dashboard() {
       api.get('/opc/live').then(r => {
         const tags: { tag: string; values: Record<string, number> }[] = r.data?.tags || [];
         const lookup: Record<string, number> = {};
+        const pvLookup: Record<string, number> = {};
         for (const t of tags) {
           const v = t.values?.IO_VALUE ?? t.values?.PV;
           if (v != null) lookup[t.tag] = v;
+          if (t.values?.PV != null) pvLookup[t.tag] = t.values.PV;
         }
         setTankLevels(OPC_TANK_MAP.map(m => ({
           label: m.label,
@@ -165,10 +168,13 @@ export default function Dashboard() {
           temp: m.tempTag ? Math.round((lookup[m.tempTag] || 0) * 100) / 100 : undefined,
           color: m.color,
         })));
+        // Live feed rate from MG_140101 PV or FCV_140101 PV (M3/hr)
+        const feedPV = pvLookup['MG_140101'] ?? pvLookup['FCV_140101'] ?? null;
+        setLiveFeedRate(feedPV !== null ? Math.round(feedPV * 10) / 10 : null);
       }).catch(() => {});
     };
     fetchTanks();
-    const iv = setInterval(fetchTanks, 60000);
+    const iv = setInterval(fetchTanks, 30000); // 30s for live feed rate
     return () => clearInterval(iv);
   }, []);
 
@@ -256,7 +262,7 @@ export default function Dashboard() {
             <KPI label="Raw Moisture" value={k.avgMoisture.toFixed(1)} unit="%" icon={Wheat} color="bg-yellow-600" sub={`${data.tables.rawMaterial.length} samples`} />
             <KPI label="Raw Starch" value={k.avgStarch.toFixed(1)} unit="%" icon={Wheat} color="bg-lime-600" sub="Avg starch %" />
             <KPI label="DDGS Produced" value={(k.ddgsProduced / 1000).toFixed(1)} unit="T" icon={Package} color="bg-green-700" sub={`Dispatched: ${(k.ddgsDispatched / 1000).toFixed(1)} T`} />
-            <KPI label="Wash Distilled" value={k.washDistilled.toFixed(0)} unit="KL" icon={Flame} color="bg-orange-600" sub="Total wash" />
+            <KPI label="Live Feed Rate" value={liveFeedRate !== null ? liveFeedRate.toFixed(1) : '—'} unit="M³/hr" icon={Flame} color="bg-orange-600" sub={`Wash 24h: ${k.washDistilled.toFixed(0)} KL`} />
             <KPI label="Active Fermenters" value={data.live.fermenters.length + data.live.preFermenters.length} unit="" icon={Activity} color="bg-teal-600" sub={`${data.live.fermenters.length} F + ${data.live.preFermenters.length} PF`} />
           </div>
 
@@ -445,10 +451,11 @@ export default function Dashboard() {
       {/* ═══ PRODUCTION TAB ═══ */}
       {activeTab === 'production' && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <KPI label="Wash Distilled" value={k.washDistilled.toFixed(0)} unit="KL" icon={Flame} color="bg-orange-600" />
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <KPI label="Live Feed Rate" value={liveFeedRate !== null ? liveFeedRate.toFixed(1) : '—'} unit="M³/hr" icon={Flame} color="bg-orange-600" sub={`Wash 24h: ${k.washDistilled.toFixed(0)} KL`} />
             <KPI label="Ethanol (AL)" value={fmtNum(k.ethanolProductionAL)} unit="AL" icon={Fuel} color="bg-blue-600" />
             <KPI label="Grain Consumed" value={k.grainConsumed.toFixed(0)} unit="T" icon={Wheat} color="bg-amber-600" />
+            <KPI label="Silo Stock" value={k.siloStock.toFixed(0)} unit="T" icon={Factory} color="bg-amber-800" />
             <KPI label="DDGS Produced" value={(k.ddgsProduced / 1000).toFixed(1)} unit="T" icon={Package} color="bg-green-700" sub={`Dispatched: ${(k.ddgsDispatched / 1000).toFixed(1)} T`} />
           </div>
 

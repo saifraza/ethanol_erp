@@ -19,7 +19,8 @@ router.get('/analytics', authenticate, async (req: AuthRequest, res: Response) =
     const [
       grain, ethanol, dispatch, ddgsStock, ddgsDispatch, ddgsProduction,
       distillation, liquefaction, milling, fermentationBatches,
-      pfBatches, rawMaterial, settings
+      pfBatches, rawMaterial, settings,
+      latestSiloSnapshot, grainTruckAgg,
     ] = await Promise.all([
       prisma.grainEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
       prisma.ethanolProductEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
@@ -42,11 +43,22 @@ router.get('/analytics', authenticate, async (req: AuthRequest, res: Response) =
       }),
       prisma.rawMaterialEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
       prisma.settings.findFirst(),
+      // Silo stock from auto-computed snapshots (replaces stale GrainEntry)
+      prisma.siloSnapshot.findFirst({ orderBy: { date: 'desc' } }),
+      // Grain received from weighbridge trucks in period
+      prisma.grainTruck.aggregate({
+        _sum: { weightNet: true },
+        _count: true,
+        where: { createdAt: { gte: from, lte: now }, cancelled: false },
+      }),
     ]);
 
     // ─── KPIs ───
-    const totalGrainUnloaded = grain.reduce((s, e) => s + (e.grainUnloaded || 0), 0);
-    const totalGrainConsumed = grain.reduce((s, e) => s + (e.grainConsumed || 0), 0);
+    // Grain: prefer weighbridge trucks (accurate) over manual GrainEntry (stale)
+    const grainTrucksMT = Math.round(((grainTruckAgg._sum?.weightNet) ?? 0) / 1000 * 100) / 100;
+    const totalGrainUnloaded = grainTrucksMT > 0 ? grainTrucksMT : grain.reduce((s, e) => s + (e.grainUnloaded || 0), 0);
+    // Grain consumed from silo snapshot (auto-computed) or fallback to manual GrainEntry
+    const totalGrainConsumed = latestSiloSnapshot?.grainConsumed ?? grain.reduce((s, e) => s + (e.grainConsumed || 0), 0);
     // Use latest grain in range, or fall back to most recent entry (for silo/stock display)
     const latestGrain = grain.length > 0
       ? grain[grain.length - 1]
@@ -233,8 +245,11 @@ router.get('/analytics', authenticate, async (req: AuthRequest, res: Response) =
       kpis: {
         grainUnloaded: totalGrainUnloaded,
         grainConsumed: totalGrainConsumed,
-        siloStock: latestGrain?.siloClosingStock || 0,
-        totalAtPlant: latestGrain?.totalGrainAtPlant || 0,
+        // Silo stock: prefer auto-computed snapshot over stale manual GrainEntry
+        siloStock: latestSiloSnapshot?.siloClosing ?? (latestGrain?.siloClosingStock || 0),
+        totalAtPlant: latestSiloSnapshot
+          ? Math.round((latestSiloSnapshot.siloClosing + latestSiloSnapshot.grainInSystem) * 100) / 100
+          : (latestGrain?.totalGrainAtPlant || 0),
         ethanolProductionBL: totalEthanolBL,
         ethanolProductionAL: totalEthanolAL,
         ethanolStock: latestEthanol?.totalStock || 0,
@@ -244,7 +259,8 @@ router.get('/analytics', authenticate, async (req: AuthRequest, res: Response) =
         dispatchTrucks: dispatch.length,
         ddgsProduced: totalDDGSProduced,
         ddgsDispatched: totalDDGSDispatched,
-        washDistilled: totalWashDistilled,
+        // Wash: prefer silo snapshot (OPC-computed) over manual GrainEntry
+        washDistilled: latestSiloSnapshot?.washDistilledKL ?? totalWashDistilled,
         avgMoisture,
         avgStarch,
         latestKlpd: latestEthanol?.klpd || 0,
