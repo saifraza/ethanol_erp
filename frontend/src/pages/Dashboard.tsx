@@ -137,11 +137,47 @@ export default function Dashboard() {
   const [days, setDays] = useState(7);
   const [activeTab, setActiveTab] = useState<'overview' | 'fermentation' | 'production' | 'quality' | 'dispatch'>('overview');
 
-  // OPC live tank levels + feed rate
+  // OPC live tank levels + feed rate + RC strength
   interface TankLevel { label: string; level: number; temp?: number; color: string; }
   const [tankLevels, setTankLevels] = useState<TankLevel[]>([]);
   const [liveFeedRate, setLiveFeedRate] = useState<number | null>(null);
   const [feedHistory, setFeedHistory] = useState<{ time: string; rate: number }[]>([]);
+  const [rcStrength, setRcStrength] = useState<{ pctVV: number; density: number; temp: number } | null>(null);
+
+  // Ethanol strength from density + temperature (OIML R-22 interpolation)
+  // Density of ethanol-water at 20°C (% v/v → kg/m³)
+  const DENSITY_TABLE_20C: [number, number][] = [
+    [100, 789.24], [99, 790.50], [98, 792.00], [97, 793.80], [96, 795.80],
+    [95, 798.10], [94, 800.60], [93, 803.40], [92, 806.30], [91, 809.50],
+    [90, 812.90], [88, 820.10], [85, 831.30], [80, 848.90],
+  ];
+  // Thermal expansion coeff (per °C from 20°C) by approx strength
+  const ALPHA_TABLE: [number, number][] = [
+    [100, 0.00108], [96, 0.00103], [93, 0.00098], [90, 0.00093], [85, 0.00087], [80, 0.00082],
+  ];
+  function lerp(table: [number, number][], x: number): number {
+    if (x <= table[0][0]) return table[0][1];
+    if (x >= table[table.length - 1][0]) return table[table.length - 1][1];
+    for (let i = 0; i < table.length - 1; i++) {
+      const [x0, y0] = table[i], [x1, y1] = table[i + 1];
+      if ((x0 <= x && x <= x1) || (x1 <= x && x <= x0)) {
+        const t = (x - x0) / (x1 - x0);
+        return y0 + t * (y1 - y0);
+      }
+    }
+    return table[0][1];
+  }
+  function calcRcStrength(densityKgM3: number, tempC: number): number {
+    // Iterative: correct density to 20°C, look up strength
+    let strength = 95;
+    for (let i = 0; i < 8; i++) {
+      const alpha = lerp(ALPHA_TABLE, strength);
+      const rho20 = densityKgM3 / (1 - alpha * (tempC - 20));
+      // Lookup strength from density at 20°C (table is descending % → ascending density)
+      strength = lerp(DENSITY_TABLE_20C, rho20);
+    }
+    return Math.round(strength * 100) / 100;
+  }
   const OPC_TANK_MAP = [
     { tag: 'LT130201', tempTag: 'TE130201', label: 'F-1', color: '#3b82f6' },
     { tag: 'LT130202', tempTag: 'TE130202', label: 'F-2', color: '#8b5cf6' },
@@ -172,6 +208,15 @@ export default function Dashboard() {
         // Live feed rate from MG_140101 PV or FCV_140101 PV (M3/hr)
         const feedPV = pvLookup['MG_140101'] ?? pvLookup['FCV_140101'] ?? null;
         setLiveFeedRate(feedPV !== null ? Math.round(feedPV * 10) / 10 : null);
+
+        // RC strength from DM_150701 (density) + TE_140101 (temp)
+        const rcDensity = lookup['DM_150701'];
+        const rcTemp = lookup['TE_140101'];
+        if (rcDensity && rcTemp && rcDensity > 700 && rcDensity < 900 && rcTemp > 50 && rcTemp < 100) {
+          setRcStrength({ pctVV: calcRcStrength(rcDensity, rcTemp), density: Math.round(rcDensity * 100) / 100, temp: Math.round(rcTemp * 100) / 100 });
+        } else {
+          setRcStrength(null);
+        }
       }).catch(() => {});
 
       // Feed rate history (last 1h, raw readings)
@@ -272,6 +317,7 @@ export default function Dashboard() {
             <KPI label="Raw Moisture" value={k.avgMoisture.toFixed(1)} unit="%" icon={Wheat} color="bg-yellow-600" sub={`${data.tables.rawMaterial.length} samples`} />
             <KPI label="DDGS Produced" value={(k.ddgsProduced / 1000).toFixed(1)} unit="T" icon={Package} color="bg-green-700" sub={`Dispatched: ${(k.ddgsDispatched / 1000).toFixed(1)} T`} />
             <KPI label="Live Feed Rate" value={liveFeedRate !== null ? liveFeedRate.toFixed(1) : '—'} unit="M³/hr" icon={Flame} color="bg-orange-600" sub={`Wash 24h: ${k.washDistilled.toFixed(0)} KL`} />
+            <KPI label="RC Strength (Live)" value={rcStrength ? rcStrength.pctVV.toFixed(1) : '—'} unit="% v/v" icon={Beaker} color="bg-rose-600" sub={rcStrength ? `${rcStrength.density} kg/m³ @ ${rcStrength.temp}°C` : 'Awaiting OPC'} />
             <KPI label="Active Fermenters" value={data.live.fermenters.length + data.live.preFermenters.length} unit="" icon={Activity} color="bg-teal-600" sub={`${data.live.fermenters.length} F + ${data.live.preFermenters.length} PF`} />
           </div>
 
@@ -479,8 +525,9 @@ export default function Dashboard() {
       {/* ═══ PRODUCTION TAB ═══ */}
       {activeTab === 'production' && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             <KPI label="Live Feed Rate" value={liveFeedRate !== null ? liveFeedRate.toFixed(1) : '—'} unit="M³/hr" icon={Flame} color="bg-orange-600" sub={`Wash 24h: ${k.washDistilled.toFixed(0)} KL`} />
+            <KPI label="RC Strength (Live)" value={rcStrength ? rcStrength.pctVV.toFixed(1) : '—'} unit="% v/v" icon={Beaker} color="bg-rose-600" sub={rcStrength ? `${rcStrength.density} kg/m³ @ ${rcStrength.temp}°C` : 'Awaiting OPC'} />
             <KPI label="Ethanol (AL)" value={fmtNum(k.ethanolProductionAL)} unit="AL" icon={Fuel} color="bg-blue-600" />
             <KPI label="Grain Consumed" value={k.grainConsumed.toFixed(0)} unit="T" icon={Wheat} color="bg-amber-600" />
             <KPI label="Silo Stock" value={k.siloStock.toFixed(0)} unit="T" icon={Factory} color="bg-amber-800" />
