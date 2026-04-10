@@ -15,10 +15,15 @@ model User {
   role           String       @default("OPERATOR")
   paymentRole    String? // MAKER, CHECKER, RELEASER — null = no bank payment access
   allowedModules String? // comma-separated module keys, null = all access
+  phone          String?      // for mobile app PIN login
+  mobilePin      String?      // hashed PIN for mobile app
+  pushToken      String?      // Expo push notification token
   isActive       Boolean      @default(true)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   grainEntries   GrainEntry[]
+
+  @@index([phone])
 }
 
 model DailyEntry {
@@ -1132,6 +1137,7 @@ model Department {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  employees Employee[]
 }
 
 // ── Warehouse / Storage Location ──
@@ -2316,6 +2322,7 @@ model Contractor {
 
   bills    ContractorBill[]
   payments ContractorPayment[]
+  employees Employee[]
 
   divisions String[] @default([]) // empty = available to all divisions
 
@@ -3007,6 +3014,25 @@ model PaymentPin {
   updatedAt      DateTime  @updatedAt
 
   @@index([userId])
+}
+
+// ══════════════════════════════════════════════════════════════
+// MOBILE APP — Offline-first field data submissions
+// ══════════════════════════════════════════════════════════════
+
+model MobileSubmission {
+  id          String    @id @default(uuid())
+  localId     String    @unique // client-generated ID for idempotency
+  module      String // ddgs, decanter, etc.
+  data        String // JSON stringified field values
+  operatorId  String
+  capturedAt  DateTime // when operator entered the data
+  processedAt DateTime? // when backend processed into actual tables
+  createdAt   DateTime  @default(now())
+
+  @@index([module])
+  @@index([operatorId])
+  @@index([capturedAt])
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -3717,4 +3743,258 @@ model Weighment {
   @@index([poId])
   @@index([factoryCreatedAt])
   @@index([syncedAt])
+}
+
+// ══════════════════════════════════════════════════════════════
+// HR MODULE — Employee Master, Payroll, Statutory Compliance
+// ══════════════════════════════════════════════════════════════
+
+model Designation {
+  id        String   @id @default(cuid())
+  title     String   @unique
+  grade     String? // E1, E2, M1, S1
+  band      String? // Senior Management, Middle Management, Staff
+  level     Int      @default(0) // hierarchy level for org chart (0=top)
+  minSalary Float?
+  maxSalary Float?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  employees Employee[]
+}
+
+model Employee {
+  id    String @id @default(cuid())
+  empCode String @unique // MSPIL-001
+  empNo   Int    @unique @default(autoincrement())
+
+  // Personal
+  firstName      String
+  lastName       String
+  fatherName     String?
+  dateOfBirth    DateTime?
+  gender         String? // MALE, FEMALE, OTHER
+  bloodGroup     String?
+  maritalStatus  String?
+  photo          String?
+
+  // Contact
+  phone            String?
+  email            String?
+  addressCurrent   String?
+  addressPermanent String?
+  emergencyContact String?
+  emergencyPhone   String?
+
+  // Identity
+  aadhaar    String?
+  pan        String?
+  passportNo String?
+
+  // EPF / PF
+  uan                   String? // 12-digit Universal Account Number
+  pfMemberNo            String? // Establishment-specific: AA/BBB/CCCCCCC
+  pfJoiningDate         DateTime?
+  previousPfNo          String? // For Form 13 transfer
+  isInternationalWorker Boolean @default(false)
+  higherPensionOpt      Boolean @default(false) // Section 11(3) opt-in
+
+  // ESI
+  esicNo String?
+
+  // PF Nomination (Form 2)
+  pfNomineeName     String?
+  pfNomineeRelation String?
+  pfNomineeDob      DateTime?
+  pfNomineeShare    Float? // percentage (100 if single nominee)
+
+  // Bank
+  bankName    String?
+  bankBranch  String?
+  bankAccount String?
+  bankIfsc    String?
+
+  // Employment
+  designationId String?
+  designation   Designation? @relation(fields: [designationId], references: [id])
+  departmentId  String?
+  department    Department?  @relation(fields: [departmentId], references: [id])
+  reportingToId String?
+  reportingTo   Employee?    @relation("Reporting", fields: [reportingToId], references: [id])
+  reportees     Employee[]   @relation("Reporting")
+
+  // Labor Contractor (for contract workers)
+  contractorId      String?
+  contractor        Contractor? @relation(fields: [contractorId], references: [id])
+  contractStartDate DateTime?
+  contractEndDate   DateTime?
+  contractRefNo     String?
+  dailyWageRate     Float?
+
+  dateOfJoining    DateTime
+  confirmationDate DateTime?
+  dateOfLeaving    DateTime?
+  employmentType   String  @default("PERMANENT") // PERMANENT, CONTRACT, FIXED_TERM, TRAINEE, APPRENTICE, DAILY_WAGE
+  skillCategory    String? // UNSKILLED, SEMI_SKILLED, SKILLED, HIGHLY_SKILLED
+  shiftPattern     String? // DAY, ROTATING_3SHIFT, GENERAL
+  workLocation     String  @default("FACTORY") // FACTORY, OFFICE
+
+  // Salary Config
+  ctcAnnual        Float   @default(0)
+  basicMonthly     Float   @default(0)
+  epfApplicable    Boolean @default(true)
+  epfOnActualBasic Boolean @default(false) // true = PF on full basic, false = capped at 15000
+  esiApplicable    Boolean @default(true)
+  ptApplicable     Boolean @default(true)
+  taxRegime        String  @default("NEW") // NEW, OLD
+
+  // Tax declarations (old regime)
+  declared80C     Float @default(0)
+  declared80D     Float @default(0)
+  declaredHRA     Float @default(0)
+  declaredOther   Float @default(0)
+  rentPaidMonthly Float @default(0)
+
+  // Status
+  status   String  @default("ACTIVE") // ACTIVE, ON_NOTICE, RELIEVED, ABSCONDING, TERMINATED
+  isActive Boolean @default(true)
+  remarks  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  salaryComponents EmployeeSalaryComponent[]
+  payrollLines     PayrollLine[]
+
+  @@index([departmentId])
+  @@index([designationId])
+  @@index([status])
+  @@index([reportingToId])
+  @@index([contractorId])
+}
+
+model SalaryComponent {
+  id              String  @id @default(cuid())
+  code            String  @unique // BASIC, HRA, EPF_EE, EPF_ER_EPF, EPF_ER_EPS, etc.
+  name            String
+  type            String // EARNING, DEDUCTION, EMPLOYER_CONTRIBUTION
+  isStatutory     Boolean @default(false)
+  isTaxable       Boolean @default(true)
+  isPfWage        Boolean @default(false) // included in PF wage calculation
+  calculationType String  @default("FIXED") // FIXED, PERCENTAGE_OF_BASIC, PERCENTAGE_OF_GROSS, FORMULA
+  defaultPct      Float?
+  isActive        Boolean @default(true)
+  sortOrder       Int     @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  employeeComponents EmployeeSalaryComponent[]
+  payrollComponents  PayrollLineComponent[]
+}
+
+model EmployeeSalaryComponent {
+  id            String          @id @default(cuid())
+  employeeId    String
+  employee      Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  componentId   String
+  component     SalaryComponent @relation(fields: [componentId], references: [id])
+  monthlyAmount Float           @default(0)
+  annualAmount  Float           @default(0)
+  effectiveFrom DateTime        @default(now())
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@unique([employeeId, componentId])
+  @@index([employeeId])
+}
+
+model PayrollRun {
+  id               String    @id @default(cuid())
+  runNo            Int       @unique @default(autoincrement())
+  month            Int
+  year             Int
+  runDate          DateTime  @default(now())
+  status           String    @default("DRAFT") // DRAFT, PROCESSING, COMPUTED, APPROVED, PAID, CANCELLED
+  totalGross       Float     @default(0)
+  totalDeductions  Float     @default(0)
+  totalNet         Float     @default(0)
+  totalEpfEmployee Float     @default(0)
+  totalEpfEmployer Float     @default(0)
+  totalEsiEmployee Float     @default(0)
+  totalEsiEmployer Float     @default(0)
+  totalPt          Float     @default(0)
+  totalTds         Float     @default(0)
+  employeeCount    Int       @default(0)
+  approvedBy       String?
+  approvedAt       DateTime?
+  paidDate         DateTime?
+  remarks          String?
+  userId           String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  lines PayrollLine[]
+
+  @@unique([month, year])
+  @@index([status])
+}
+
+model PayrollLine {
+  id           String     @id @default(cuid())
+  payrollRunId String
+  payrollRun   PayrollRun @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+  employeeId   String
+  employee     Employee   @relation(fields: [employeeId], references: [id])
+
+  grossEarnings   Float @default(0)
+  totalDeductions Float @default(0)
+  netPay          Float @default(0)
+
+  // EPF breakdown
+  pfWages        Float @default(0) // Basic + DA
+  epfEmployee    Float @default(0) // 12% of PF wages
+  epfEmployerEpf Float @default(0) // 3.67% of PF wages
+  epfEmployerEps Float @default(0) // 8.33% of min(pfWages, 15000)
+  edliEmployer   Float @default(0) // 0.50% of min(pfWages, 15000)
+  epfAdminCharge Float @default(0) // 0.50% of min(pfWages, 15000)
+
+  // ESI
+  esiEmployee Float @default(0)
+  esiEmployer Float @default(0)
+
+  // Other statutory
+  professionalTax Float @default(0)
+  tds             Float @default(0)
+
+  // ECR fields
+  grossWages Float @default(0)
+  epfWages   Float @default(0)
+  epsWages   Float @default(0) // min(pfWages, 15000)
+  edliWages  Float @default(0) // min(pfWages, 15000)
+  ncpDays    Int   @default(0)
+
+  status    String   @default("COMPUTED") // COMPUTED, APPROVED, PAID, HOLD
+  remarks   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  components PayrollLineComponent[]
+
+  @@unique([payrollRunId, employeeId])
+  @@index([payrollRunId])
+  @@index([employeeId])
+}
+
+model PayrollLineComponent {
+  id            String          @id @default(cuid())
+  payrollLineId String
+  payrollLine   PayrollLine     @relation(fields: [payrollLineId], references: [id], onDelete: Cascade)
+  componentId   String
+  component     SalaryComponent @relation(fields: [componentId], references: [id])
+  amount        Float           @default(0)
+  createdAt     DateTime        @default(now())
+
+  @@unique([payrollLineId, componentId])
+  @@index([payrollLineId])
 }

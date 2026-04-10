@@ -11,7 +11,8 @@ import {
   Store, Tractor, Scale, Handshake,
   BookOpen, Calculator, TrendingUp, Landmark,
   PackageSearch, ArrowRightLeft, ClipboardCheck, BarChart2, Banknote, PieChart, HardHat,
-  FolderArchive, Search, ShieldCheck, ListChecks, BotMessageSquare
+  FolderArchive, Search, ShieldCheck, ListChecks, BotMessageSquare,
+  UserCheck as UserCheckIcon, Network, Wallet, CircleDollarSign, LayoutGrid
 } from 'lucide-react';
 
 export interface ModuleDef {
@@ -19,7 +20,7 @@ export interface ModuleDef {
   label: string;
   to: string;
   icon: any;
-  group: 'process' | 'admin' | 'sales' | 'procurement' | 'trade' | 'accounts' | 'books' | 'inventory' | 'logistics' | 'compliance' | 'tax';
+  group: 'process' | 'admin' | 'sales' | 'procurement' | 'trade' | 'accounts' | 'books' | 'inventory' | 'logistics' | 'compliance' | 'tax' | 'hr';
   adminOnly?: boolean;
 }
 
@@ -129,6 +130,14 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'company-documents', label: 'Document Vault', to: '/admin/documents', icon: FolderArchive, group: 'admin' },
   { key: 'document-search', label: 'Doc Search (AI)', to: '/admin/document-search', icon: Search, group: 'admin' },
   { key: 'weighment-corrections', label: 'Weighment Corrections', to: '/admin/weighment-corrections', icon: ClipboardCheck, group: 'admin', adminOnly: true },
+
+  // ── HR & PAYROLL ──
+  { key: 'hr-dashboard', label: 'HR Dashboard', to: '/hr/dashboard', icon: LayoutGrid, group: 'hr' },
+  { key: 'employees', label: 'Employees', to: '/hr/employees', icon: Users, group: 'hr' },
+  { key: 'designations', label: 'Designations', to: '/hr/designations', icon: UserCheckIcon, group: 'hr' },
+  { key: 'org-chart', label: 'Org Chart', to: '/hr/org-chart', icon: Network, group: 'hr' },
+  { key: 'salary-structure', label: 'Salary Structure', to: '/hr/salary-structure', icon: Wallet, group: 'hr' },
+  { key: 'payroll', label: 'Payroll', to: '/hr/payroll', icon: CircleDollarSign, group: 'hr' },
 ];
 
 // For UsersPage — unique module keys for permission assignment (excludes adminOnly)
@@ -140,7 +149,7 @@ export const ALL_MODULES = MODULE_DEFS
 const GROUP_LABELS: Record<string, string> = {
   process: 'Plant / Process', sales: 'Sales', procurement: 'Purchase',
   trade: 'Spot Trade', accounts: 'Accounts', books: 'Books',
-  inventory: 'Inventory', logistics: 'Logistics', compliance: 'Compliance', tax: 'Tax & Statutory', admin: 'Admin',
+  inventory: 'Inventory', logistics: 'Logistics', compliance: 'Compliance', tax: 'Tax & Statutory', hr: 'HR & Payroll', admin: 'Admin',
 };
 
 export const GROUPED_MODULES = Object.entries(GROUP_LABELS).map(([group, label]) => ({
@@ -187,6 +196,10 @@ export const complianceNav = MODULE_DEFS.filter(m => m.group === 'compliance').m
 
 export const taxNav = MODULE_DEFS.filter(m => m.group === 'tax').map(m => ({
   to: m.to, label: m.label, icon: m.icon, moduleKey: m.key, adminOnly: m.adminOnly,
+}));
+
+export const hrNav = MODULE_DEFS.filter(m => m.group === 'hr').map(m => ({
+  to: m.to, label: m.label, icon: m.icon, moduleKey: m.key,
 }));
 
 export const adminNav = MODULE_DEFS.filter(m => m.group === 'admin').map(m => ({

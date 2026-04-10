@@ -7,7 +7,7 @@ import {
   LayoutDashboard, LogOut, ChevronDown, ChevronRight,
   WifiOff, Menu, X, Bell
 } from 'lucide-react';
-import { processNav, salesNav, procurementNav, tradeNav, accountsNav, booksNav, inventoryNav, logisticsNav, complianceNav, taxNav, adminNav } from '../config/modules';
+import { processNav, salesNav, procurementNav, tradeNav, accountsNav, booksNav, inventoryNav, logisticsNav, complianceNav, taxNav, hrNav, adminNav } from '../config/modules';
 
 function hasModuleAccess(user: any, moduleKey: string): boolean {
   if (!user) return false;
@@ -38,6 +38,7 @@ export default function Layout() {
   const [inventoryOpen, setInventoryOpen] = useState(p.startsWith('/inventory'));
   const [complianceOpen, setComplianceOpen] = useState(p.startsWith('/compliance') || p.startsWith('/admin/documents'));
   const [taxOpen, setTaxOpen] = useState(p.startsWith('/admin/tax') || p === '/compliance/tax-rules' || p === '/accounts/taxes');
+  const [hrOpen, setHrOpen] = useState(p.startsWith('/hr'));
   const [adminOpen, setAdminOpen] = useState(p.startsWith('/admin'));
   const [serverUp, setServerUp] = useState(true);
   const [reconnecting, setReconnecting] = useState(false);
@@ -261,6 +262,20 @@ export default function Layout() {
           {taxOpen && (
             <div className="space-y-0.5 ml-1 border-l border-gray-700 pl-2">
               {taxNav.filter(n => (!n.adminOnly || user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') && hasModuleAccess(user, n.moduleKey)).map(n => (
+                <NavLink key={n.to} {...n} active={location.pathname === n.to} onClick={closeSidebar} />
+              ))}
+            </div>
+          )}
+          </>)}
+
+          {hrNav.some(n => hasModuleAccess(user, n.moduleKey)) && (<>
+          <button onClick={() => setHrOpen(!hrOpen)} className="flex items-center justify-between w-full px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mt-3 hover:text-gray-200">
+            <span>HR &amp; Payroll</span>
+            {hrOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </button>
+          {hrOpen && (
+            <div className="space-y-0.5 ml-1 border-l border-gray-700 pl-2">
+              {hrNav.filter(n => hasModuleAccess(user, n.moduleKey)).map(n => (
                 <NavLink key={n.to} {...n} active={location.pathname === n.to} onClick={closeSidebar} />
               ))}
             </div>

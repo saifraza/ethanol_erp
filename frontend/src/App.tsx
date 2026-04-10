@@ -70,6 +70,15 @@ const TaxTdsSectionMasterPage = React.lazy(() => import('./pages/tax/TdsSectionM
 const TaxTcsSectionMasterPage = React.lazy(() => import('./pages/tax/TcsSectionMasterPage'));
 const TaxComplianceAuditLogPage = React.lazy(() => import('./pages/tax/ComplianceAuditLogPage'));
 const TaxRulesReferencePage = React.lazy(() => import('./pages/tax/TaxRulesReferencePage'));
+
+// HR & Payroll
+const HrEmployees = React.lazy(() => import('./pages/hr/Employees'));
+const HrDesignations = React.lazy(() => import('./pages/hr/Designations'));
+const HrOrgChart = React.lazy(() => import('./pages/hr/OrgChart'));
+const HrSalaryStructure = React.lazy(() => import('./pages/hr/SalaryStructure'));
+const HrPayroll = React.lazy(() => import('./pages/hr/Payroll'));
+const HrPayrollDashboard = React.lazy(() => import('./pages/hr/PayrollDashboard'));
+
 const PurchaseRequisition = React.lazy(() => import('./pages/PurchaseRequisition'));
 // Sales & Distribution
 const Customers = React.lazy(() => import('./pages/sales/Customers'));
@@ -208,6 +217,13 @@ export default function App() {
         <Route path="admin/tax/tds-sections" element={<TaxTdsSectionMasterPage />} />
         <Route path="admin/tax/tcs-sections" element={<TaxTcsSectionMasterPage />} />
         <Route path="admin/tax/audit" element={<TaxComplianceAuditLogPage />} />
+        {/* HR & Payroll */}
+        <Route path="hr/dashboard" element={<HrPayrollDashboard />} />
+        <Route path="hr/employees" element={<HrEmployees />} />
+        <Route path="hr/designations" element={<HrDesignations />} />
+        <Route path="hr/org-chart" element={<HrOrgChart />} />
+        <Route path="hr/salary-structure" element={<HrSalaryStructure />} />
+        <Route path="hr/payroll" element={<HrPayroll />} />
         <Route path="purchase-requisition" element={<PurchaseRequisition />} />
         {/* Sales & Distribution */}
         <Route path="sales/customers" element={<Customers />} />

@@ -98,6 +98,12 @@ import inventoryStockRoutes from './routes/inventoryStock';
 import inventoryCountRoutes from './routes/inventoryCounts';
 import inventoryReorderRoutes from './routes/inventoryReorder';
 import departmentRoutes from './routes/departments';
+// HR & Payroll
+import employeeRoutes from './routes/employees';
+import designationRoutes from './routes/designations';
+import salaryComponentRoutes from './routes/salaryComponents';
+import employeeSalaryRoutes from './routes/employeeSalary';
+import payrollRoutes from './routes/payroll';
 // Logistics (Gate Entry)
 import gateEntryRoutes from './routes/gateEntry';
 // Cash Vouchers & Bank Loans
@@ -127,6 +133,8 @@ import reportsWeighmentHistoryRoutes from './routes/reportsWeighmentHistory';
 // Weighment mirror sync + audit
 import weighmentSyncRoutes from './routes/weighmentSync';
 import weighmentAuditRoutes from './routes/weighmentAudit';
+// Mobile App (field data collection)
+import mobileRoutes from './routes/mobile';
 import { authenticate } from './middleware/auth';
 import { errorHandler } from './shared/middleware/errorHandler';
 
@@ -194,6 +202,13 @@ app.use('/api/inventory/stock', inventoryStockRoutes);
 app.use('/api/inventory/counts', inventoryCountRoutes);
 app.use('/api/inventory/reorder', inventoryReorderRoutes);
 app.use('/api/departments', departmentRoutes);
+// HR & Payroll
+app.use('/api/employees', employeeRoutes);
+app.use('/api/designations', designationRoutes);
+app.use('/api/salary-components', salaryComponentRoutes);
+app.use('/api/employee-salary', employeeSalaryRoutes);
+app.use('/api/payroll', payrollRoutes);
+
 app.use('/api/issues', issueRoutes);
 app.use('/api/purchase-requisition', purchaseRequisitionRoutes);
 // Sales & Distribution
@@ -287,6 +302,8 @@ app.use('/api/reports/weighment-history', reportsWeighmentHistoryRoutes);
 // Weighment mirror — machine-to-machine sync (X-WB-Key) + admin audit (JWT)
 app.use('/api/weighment/sync', weighmentSyncRoutes);
 app.use('/api/weighment/audit', weighmentAuditRoutes);
+// Mobile app (PIN auth + field data submission)
+app.use('/api/mobile', mobileRoutes);
 
 
 // Serve uploaded files
