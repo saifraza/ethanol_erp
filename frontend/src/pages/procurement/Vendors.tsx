@@ -436,8 +436,18 @@ export default function Vendors() {
       CHEMICAL_SUPPLIER: 'border-purple-400 bg-purple-50 text-purple-700',
       FUEL_SUPPLIER: 'border-orange-400 bg-orange-50 text-orange-700',
       PACKING_SUPPLIER: 'border-green-400 bg-green-50 text-green-700',
+      SPARES_SUPPLIER: 'border-cyan-400 bg-cyan-50 text-cyan-700',
       TRANSPORTER: 'border-yellow-400 bg-yellow-50 text-yellow-700',
       SERVICE_PROVIDER: 'border-pink-400 bg-pink-50 text-pink-700',
+      CONSULTANT: 'border-pink-400 bg-pink-50 text-pink-700',
+      COMMISSION_AGENT: 'border-rose-400 bg-rose-50 text-rose-700',
+      CONTRACTOR_CIVIL: 'border-amber-400 bg-amber-50 text-amber-700',
+      CONTRACTOR_ELECTRICAL: 'border-amber-400 bg-amber-50 text-amber-700',
+      CONTRACTOR_MANPOWER: 'border-amber-400 bg-amber-50 text-amber-700',
+      CONTRACTOR_OTHER: 'border-amber-400 bg-amber-50 text-amber-700',
+      RENT_BUILDING: 'border-indigo-400 bg-indigo-50 text-indigo-700',
+      RENT_PLANT: 'border-indigo-400 bg-indigo-50 text-indigo-700',
+      TRADER: 'border-teal-400 bg-teal-50 text-teal-700',
       OTHER: 'border-gray-400 bg-gray-50 text-gray-700'
     };
     return colors[cat || 'OTHER'] || 'border-gray-400 bg-gray-50 text-gray-700';
@@ -525,14 +535,59 @@ export default function Vendors() {
                   </div>
                   <div className="mt-3">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Category</label>
-                    <select value={category} onChange={e => setCategory(e.target.value)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
-                      <option value="RAW_MATERIAL_SUPPLIER">Raw Material Supplier</option>
-                      <option value="CHEMICAL_SUPPLIER">Chemical Supplier</option>
-                      <option value="FUEL_SUPPLIER">Fuel Supplier</option>
-                      <option value="PACKING_SUPPLIER">Packing Supplier</option>
-                      <option value="TRANSPORTER">Transporter</option>
-                      <option value="SERVICE_PROVIDER">Service Provider</option>
-                      <option value="OTHER">Other</option>
+                    <select value={category} onChange={e => {
+                      const cat = e.target.value;
+                      setCategory(cat);
+                      // Auto-enable TDS + suggest section based on category
+                      const autoTds: Record<string, string> = {
+                        TRANSPORTER: '393_CONTRACTOR',
+                        CONTRACTOR_CIVIL: '393_CONTRACTOR',
+                        CONTRACTOR_ELECTRICAL: '393_CONTRACTOR',
+                        CONTRACTOR_MANPOWER: '393_CONTRACTOR',
+                        CONTRACTOR_OTHER: '393_CONTRACTOR',
+                        SERVICE_PROVIDER: '393_PROFESSIONAL',
+                        CONSULTANT: '393_PROFESSIONAL',
+                        RENT_BUILDING: '393_RENT_BUILDING',
+                        RENT_PLANT: '393_RENT_PLANT',
+                        COMMISSION_AGENT: '393_COMMISSION',
+                      };
+                      if (autoTds[cat] && tdsSections.length > 0) {
+                        setTdsApplicable(true);
+                        const sec = tdsSections.find(s => s.code === autoTds[cat]);
+                        if (sec) {
+                          setTdsSectionId(sec.id);
+                          setTdsSection(sec.oldSection || sec.code);
+                          setTdsPercent(String(sec.rateOthers));
+                        }
+                      }
+                    }} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                      <optgroup label="Suppliers">
+                        <option value="RAW_MATERIAL_SUPPLIER">Raw Material Supplier</option>
+                        <option value="CHEMICAL_SUPPLIER">Chemical Supplier</option>
+                        <option value="FUEL_SUPPLIER">Fuel Supplier</option>
+                        <option value="PACKING_SUPPLIER">Packing Supplier</option>
+                        <option value="SPARES_SUPPLIER">Spares / AMC Supplier</option>
+                      </optgroup>
+                      <optgroup label="Contractors (TDS 194C)">
+                        <option value="CONTRACTOR_CIVIL">Contractor - Civil</option>
+                        <option value="CONTRACTOR_ELECTRICAL">Contractor - Electrical</option>
+                        <option value="CONTRACTOR_MANPOWER">Contractor - Manpower</option>
+                        <option value="CONTRACTOR_OTHER">Contractor - Other</option>
+                      </optgroup>
+                      <optgroup label="Services">
+                        <option value="TRANSPORTER">Transporter (TDS 194C)</option>
+                        <option value="SERVICE_PROVIDER">Service Provider (TDS 194J)</option>
+                        <option value="CONSULTANT">Consultant / Professional (TDS 194J)</option>
+                        <option value="COMMISSION_AGENT">Commission Agent (TDS 194H)</option>
+                      </optgroup>
+                      <optgroup label="Rent">
+                        <option value="RENT_BUILDING">Rent - Land / Building (TDS 194I)</option>
+                        <option value="RENT_PLANT">Rent - Plant / Machinery (TDS 194I)</option>
+                      </optgroup>
+                      <optgroup label="Other">
+                        <option value="TRADER">Trader / Agent</option>
+                        <option value="OTHER">Other</option>
+                      </optgroup>
                     </select>
                   </div>
                 </div>
