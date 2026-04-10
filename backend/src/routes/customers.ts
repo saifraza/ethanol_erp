@@ -86,6 +86,62 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     res.json({ customer, outstandingAmount, totalOrders });
 }));
 
+// GET /check-duplicate — find potential duplicate customers by GSTIN, PAN, phone, or name
+router.get('/check-duplicate', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const gstNo = (req.query.gstNo as string || '').trim().toUpperCase();
+  const panNo = (req.query.panNo as string || '').trim().toUpperCase();
+  const phone = (req.query.phone as string || '').trim();
+  const name = (req.query.name as string || '').trim();
+  const excludeId = req.query.excludeId as string | undefined;
+
+  if (!gstNo && !panNo && !phone && !name) {
+    res.json({ duplicates: [] });
+    return;
+  }
+
+  const conditions: any[] = [];
+  if (gstNo && gstNo.length >= 10) {
+    conditions.push({ gstNo: { equals: gstNo, mode: 'insensitive' } });
+  }
+  if (panNo && panNo.length >= 10) {
+    conditions.push({ panNo: { equals: panNo, mode: 'insensitive' } });
+  }
+  if (phone && phone.length >= 8) {
+    conditions.push({ phone: { contains: phone } });
+  }
+  if (name && name.length >= 3) {
+    conditions.push({ name: { contains: name, mode: 'insensitive' } });
+  }
+
+  if (conditions.length === 0) {
+    res.json({ duplicates: [] });
+    return;
+  }
+
+  const where: any = { OR: conditions, isActive: true };
+  if (excludeId) where.NOT = { id: excludeId };
+
+  const matches = await prisma.customer.findMany({
+    where,
+    select: {
+      id: true, name: true, shortName: true, gstNo: true, panNo: true,
+      phone: true, city: true,
+    },
+    take: 10,
+  });
+
+  const duplicates = matches.map(m => {
+    const reasons: string[] = [];
+    if (gstNo && m.gstNo?.toUpperCase() === gstNo) reasons.push('GSTIN');
+    if (panNo && m.panNo?.toUpperCase() === panNo) reasons.push('PAN');
+    if (phone && m.phone?.includes(phone)) reasons.push('Phone');
+    if (name && m.name.toLowerCase().includes(name.toLowerCase())) reasons.push('Name');
+    return { ...m, matchReasons: reasons };
+  });
+
+  res.json({ duplicates });
+}));
+
 // POST / — create customer
 router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;

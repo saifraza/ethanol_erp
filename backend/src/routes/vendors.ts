@@ -107,6 +107,63 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     });
 }));
 
+// GET /check-duplicate — find potential duplicate vendors by GSTIN, PAN, phone, or name
+router.get('/check-duplicate', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const gstin = (req.query.gstin as string || '').trim().toUpperCase();
+  const pan = (req.query.pan as string || '').trim().toUpperCase();
+  const phone = (req.query.phone as string || '').trim();
+  const name = (req.query.name as string || '').trim();
+  const excludeId = req.query.excludeId as string | undefined;
+
+  if (!gstin && !pan && !phone && !name) {
+    res.json({ duplicates: [] });
+    return;
+  }
+
+  const conditions: any[] = [];
+  if (gstin && gstin.length >= 10) {
+    conditions.push({ gstin: { equals: gstin, mode: 'insensitive' } });
+  }
+  if (pan && pan.length >= 10) {
+    conditions.push({ pan: { equals: pan, mode: 'insensitive' } });
+  }
+  if (phone && phone.length >= 8) {
+    conditions.push({ phone: { contains: phone } });
+  }
+  if (name && name.length >= 3) {
+    conditions.push({ name: { contains: name, mode: 'insensitive' } });
+  }
+
+  if (conditions.length === 0) {
+    res.json({ duplicates: [] });
+    return;
+  }
+
+  const where: any = { OR: conditions, isActive: true };
+  if (excludeId) where.NOT = { id: excludeId };
+
+  const matches = await prisma.vendor.findMany({
+    where,
+    select: {
+      id: true, name: true, tradeName: true, gstin: true, pan: true,
+      phone: true, city: true, category: true, isAgent: true,
+    },
+    take: 10,
+  });
+
+  // Tag match reason
+  const duplicates = matches.map(m => {
+    const reasons: string[] = [];
+    if (gstin && m.gstin?.toUpperCase() === gstin) reasons.push('GSTIN');
+    if (pan && m.pan?.toUpperCase() === pan) reasons.push('PAN');
+    if (phone && m.phone?.includes(phone)) reasons.push('Phone');
+    if (name && m.name.toLowerCase().includes(name.toLowerCase())) reasons.push('Name');
+    return { ...m, matchReasons: reasons };
+  });
+
+  res.json({ duplicates });
+}));
+
 // POST / — create vendor
 router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;

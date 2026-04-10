@@ -115,6 +115,27 @@ export default function Vendors() {
   const [tdsSections, setTdsSections] = useState<{ id: string; code: string; oldSection: string | null; nature: string; rateIndividual: number; rateOthers: number }[]>([]);
   const [remarks, setRemarks] = useState('');
 
+  // Duplicate detection
+  const [dupMatches, setDupMatches] = useState<Array<{ id: string; name: string; tradeName?: string | null; gstin?: string | null; pan?: string | null; phone?: string | null; city?: string | null; category?: string | null; matchReasons: string[] }>>([]);
+  const dupTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const checkDuplicates = React.useCallback((fName: string, fGstin: string, fPan: string, fPhone: string, exId: string | null) => {
+    if (dupTimerRef.current) clearTimeout(dupTimerRef.current);
+    dupTimerRef.current = setTimeout(async () => {
+      const params = new URLSearchParams();
+      if (fName.trim().length >= 3) params.set('name', fName.trim());
+      if (fGstin.trim().length >= 10) params.set('gstin', fGstin.trim());
+      if (fPan.trim().length >= 10) params.set('pan', fPan.trim());
+      if (fPhone.trim().length >= 8) params.set('phone', fPhone.trim());
+      if (exId) params.set('excludeId', exId);
+      if (!params.toString()) { setDupMatches([]); return; }
+      try {
+        const res = await api.get(`/vendors/check-duplicate?${params.toString()}`);
+        setDupMatches(res.data.duplicates || []);
+      } catch { setDupMatches([]); }
+    }, 600);
+  }, []);
+
   // Vendor items (supply list)
   const [vendorItems, setVendorItems] = useState<VendorItemRow[]>([]);
   const [allItems, setAllItems] = useState<InvItem[]>([]);
@@ -175,6 +196,12 @@ export default function Vendors() {
     loadTdsSections();
   }, []);
 
+  // Trigger duplicate check when key fields change (only when form is open for create)
+  useEffect(() => {
+    if (!showForm) return;
+    checkDuplicates(name, gstin, pan, phone, editId);
+  }, [name, gstin, pan, phone, showForm, editId, checkDuplicates]);
+
   const filteredVendors = vendors.filter(v =>
     v.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     v.phone?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -211,6 +238,7 @@ export default function Vendors() {
     setTdsSection('194C');
     setTdsPercent('');
     setRemarks('');
+    setDupMatches([]);
     setEditId(null);
     setShowForm(false);
     setVendorItems([]);
@@ -520,6 +548,42 @@ export default function Vendors() {
               </div>
 
               <div className="p-4 space-y-4 max-h-[80vh] overflow-y-auto">
+                {/* Duplicate warning */}
+                {dupMatches.length > 0 && !editId && (
+                  <div className="border border-red-300 bg-red-50 px-4 py-3">
+                    <div className="text-[11px] font-bold text-red-800 uppercase tracking-widest mb-1">
+                      Possible Duplicate{dupMatches.length > 1 ? 's' : ''} Found
+                    </div>
+                    <div className="text-[11px] text-red-700 mb-2">
+                      The following existing vendor{dupMatches.length > 1 ? 's' : ''} match what you're entering. Use an existing record instead of creating a duplicate.
+                    </div>
+                    <div className="space-y-1.5">
+                      {dupMatches.map(d => (
+                        <div key={d.id} className="flex items-center justify-between bg-white border border-red-200 px-3 py-1.5">
+                          <div className="text-xs text-slate-800">
+                            <span className="font-semibold">{d.name}</span>
+                            {d.tradeName && <span className="text-slate-500 ml-1">({d.tradeName})</span>}
+                            {d.gstin && <span className="font-mono text-[10px] ml-2 text-slate-500">{d.gstin}</span>}
+                            {d.phone && <span className="ml-2 text-slate-500">{d.phone}</span>}
+                            {d.city && <span className="ml-2 text-slate-400">{d.city}</span>}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[9px] font-bold uppercase text-red-600">
+                              {d.matchReasons.join(' + ')}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => { resetForm(); const v = vendors.find(vv => vv.id === d.id); if (v) openForm(v); }}
+                              className="px-2 py-0.5 bg-blue-600 text-white text-[10px] font-medium hover:bg-blue-700"
+                            >
+                              Edit This
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {/* Section 1: Basic Info */}
                 <div>
                   <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Basic Info</div>

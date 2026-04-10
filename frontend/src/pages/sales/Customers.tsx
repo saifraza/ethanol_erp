@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Users, Plus, X, Save, Loader2, Trash2, Search, ChevronDown, RotateCcw } from 'lucide-react';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
@@ -51,6 +51,27 @@ export default function Customers() {
   const [defaultTerms, setDefaultTerms] = useState('COD');
   const [gstLookupLoading, setGstLookupLoading] = useState(false);
 
+  // Duplicate detection
+  const [dupMatches, setDupMatches] = useState<Array<{ id: string; name: string; shortName?: string | null; gstNo?: string | null; panNo?: string | null; phone?: string | null; city?: string | null; matchReasons: string[] }>>([]);
+  const dupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const checkDuplicates = useCallback((fName: string, fGstNo: string, fPanNo: string, fPhone: string, exId: string | null) => {
+    if (dupTimerRef.current) clearTimeout(dupTimerRef.current);
+    dupTimerRef.current = setTimeout(async () => {
+      const params = new URLSearchParams();
+      if (fName.trim().length >= 3) params.set('name', fName.trim());
+      if (fGstNo.trim().length >= 10) params.set('gstNo', fGstNo.trim());
+      if (fPanNo.trim().length >= 10) params.set('panNo', fPanNo.trim());
+      if (fPhone.trim().length >= 8) params.set('phone', fPhone.trim());
+      if (exId) params.set('excludeId', exId);
+      if (!params.toString()) { setDupMatches([]); return; }
+      try {
+        const res = await api.get(`/customers/check-duplicate?${params.toString()}`);
+        setDupMatches(res.data.duplicates || []);
+      } catch { setDupMatches([]); }
+    }, 600);
+  }, []);
+
   const lookupGSTIN = async () => {
     const gstin = gstNo.trim().toUpperCase();
     if (gstin.length !== 15) { setMsg({ type: 'err', text: 'GSTIN must be 15 characters' }); return; }
@@ -94,6 +115,11 @@ export default function Customers() {
     loadCustomers();
   }, []);
 
+  useEffect(() => {
+    if (!showForm) return;
+    checkDuplicates(name, gstNo, panNo, phone, editId);
+  }, [name, gstNo, panNo, phone, showForm, editId, checkDuplicates]);
+
   const filteredCustomers = customers.filter(c =>
     c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     c.shortName?.toLowerCase().includes(searchQuery.toLowerCase())
@@ -114,6 +140,7 @@ export default function Customers() {
     setCreditLimit('');
     setCautionDeposit('');
     setDefaultTerms('COD');
+    setDupMatches([]);
     setEditId(null);
     setShowForm(false);
   };
@@ -260,6 +287,42 @@ export default function Customers() {
             </div>
 
             <div className="p-4">
+              {/* Duplicate warning */}
+              {dupMatches.length > 0 && !editId && (
+                <div className="border border-red-300 bg-red-50 px-4 py-3 mb-3">
+                  <div className="text-[11px] font-bold text-red-800 uppercase tracking-widest mb-1">
+                    Possible Duplicate{dupMatches.length > 1 ? 's' : ''} Found
+                  </div>
+                  <div className="text-[11px] text-red-700 mb-2">
+                    The following existing customer{dupMatches.length > 1 ? 's' : ''} match what you're entering. Use an existing record instead of creating a duplicate.
+                  </div>
+                  <div className="space-y-1.5">
+                    {dupMatches.map(d => (
+                      <div key={d.id} className="flex items-center justify-between bg-white border border-red-200 px-3 py-1.5">
+                        <div className="text-xs text-slate-800">
+                          <span className="font-semibold">{d.name}</span>
+                          {d.shortName && <span className="text-slate-500 ml-1">({d.shortName})</span>}
+                          {d.gstNo && <span className="font-mono text-[10px] ml-2 text-slate-500">{d.gstNo}</span>}
+                          {d.phone && <span className="ml-2 text-slate-500">{d.phone}</span>}
+                          {d.city && <span className="ml-2 text-slate-400">{d.city}</span>}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[9px] font-bold uppercase text-red-600">
+                            {d.matchReasons.join(' + ')}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => { resetForm(); const c = customers.find(cc => cc.id === d.id); if (c) openForm(c); }}
+                            className="px-2 py-0.5 bg-blue-600 text-white text-[10px] font-medium hover:bg-blue-700"
+                          >
+                            Edit This
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Customer Name *</label>
