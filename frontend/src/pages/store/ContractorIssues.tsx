@@ -41,8 +41,16 @@ interface ContractorOption {
   name: string;
 }
 
+interface InventoryOption {
+  id: string;
+  name: string;
+  unit?: string;
+  avgCost?: number;
+}
+
 interface DraftLine {
   description: string;
+  inventoryItemId?: string;
   quantity: number;
   unit: string;
   rate: number;
@@ -67,7 +75,7 @@ const statusColor: Record<string, string> = {
   CANCELLED: 'border-red-500 bg-red-50 text-red-700',
 };
 
-const emptyLine = (): DraftLine => ({ description: '', quantity: 1, unit: 'Pcs', rate: 0 });
+const emptyLine = (): DraftLine => ({ description: '', inventoryItemId: undefined, quantity: 1, unit: 'Pcs', rate: 0 });
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
@@ -79,6 +87,7 @@ export default function ContractorIssues() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [contractors, setContractors] = useState<ContractorOption[]>([]);
+  const [inventoryItems, setInventoryItems] = useState<InventoryOption[]>([]);
 
   // create/edit modal
   const [showForm, setShowForm] = useState(false);
@@ -119,8 +128,24 @@ export default function ContractorIssues() {
     }
   }, []);
 
+  const fetchInventoryItems = useCallback(async () => {
+    try {
+      const res = await api.get('/inventory/items');
+      const items = (res.data as { items?: InventoryOption[] }).items || [];
+      setInventoryItems(items.map((it: any) => ({
+        id: it.id,
+        name: it.name,
+        unit: it.unit || 'Nos',
+        avgCost: it.avgCost || it.lastPurchaseRate || 0,
+      })));
+    } catch (err) {
+      console.error('Failed to fetch inventory items:', err);
+    }
+  }, []);
+
   useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => { fetchContractors(); }, [fetchContractors]);
+  useEffect(() => { fetchInventoryItems(); }, [fetchInventoryItems]);
 
   /* --- computed KPIs --- */
   const kpis = {
@@ -466,12 +491,19 @@ export default function ContractorIssues() {
                       <tr key={idx} className={`border-b border-slate-100 ${idx % 2 ? 'bg-slate-50/70' : ''}`}>
                         <td className="px-3 py-1 text-slate-400 border-r border-slate-100">{idx + 1}</td>
                         <td className="px-1 py-1 border-r border-slate-100">
-                          <input
-                            type="text"
+                          <ItemSearchInput
                             value={line.description}
-                            onChange={(e) => updateLine(idx, 'description', e.target.value)}
-                            placeholder="Item description"
-                            className="w-full border border-slate-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
+                            items={inventoryItems}
+                            onSelect={(item) => {
+                              setFormLines((prev) =>
+                                prev.map((l, i) =>
+                                  i === idx
+                                    ? { ...l, description: item.name, inventoryItemId: item.id, unit: item.unit || l.unit, rate: item.avgCost || l.rate }
+                                    : l,
+                                ),
+                              );
+                            }}
+                            onChange={(v) => updateLine(idx, 'description', v)}
                           />
                         </td>
                         <td className="px-1 py-1 border-r border-slate-100">
@@ -743,6 +775,76 @@ export default function ContractorIssues() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Item search input with dropdown                                    */
+/* ------------------------------------------------------------------ */
+
+function ItemSearchInput({
+  value, items, onSelect, onChange,
+}: {
+  value: string;
+  items: InventoryOption[];
+  onSelect: (item: InventoryOption) => void;
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState(value);
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => { setSearch(value); }, [value]);
+
+  React.useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const q = search.toLowerCase();
+  const filtered = q.length < 1
+    ? items.slice(0, 20)
+    : items.filter((it) => it.name.toLowerCase().includes(q)).slice(0, 20);
+
+  return (
+    <div ref={ref} className="relative">
+      <input
+        type="text"
+        value={search}
+        onChange={(e) => {
+          setSearch(e.target.value);
+          onChange(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        placeholder="Search item..."
+        className="w-full border border-slate-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
+      />
+      {open && filtered.length > 0 && (
+        <div className="absolute z-50 left-0 right-0 top-full bg-white border border-slate-300 shadow-2xl max-h-48 overflow-y-auto">
+          {filtered.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => {
+                onSelect(item);
+                setSearch(item.name);
+                setOpen(false);
+              }}
+              className="w-full text-left px-2 py-1.5 text-xs hover:bg-blue-50 border-b border-slate-100 flex justify-between"
+            >
+              <span className="text-slate-800">{item.name}</span>
+              <span className="text-slate-400 font-mono text-[10px]">
+                {item.unit}{item.avgCost ? ` | ₹${item.avgCost.toLocaleString('en-IN')}` : ''}
+              </span>
+            </button>
+          ))}
         </div>
       )}
     </div>
