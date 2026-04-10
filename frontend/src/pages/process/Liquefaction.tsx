@@ -1,5 +1,5 @@
-import { useEffect, useState, useMemo, useRef } from 'react';
-import { Droplets, Save, Loader2, Trash2, Clock, TrendingUp, Database, AlertTriangle, ChevronDown, ChevronUp, FlaskConical, Eye, X, Share2, Camera, CheckCircle, XCircle, Pencil, ZoomIn, ZoomOut } from 'lucide-react';
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
+import { Droplets, Save, Loader2, Trash2, Clock, TrendingUp, Database, AlertTriangle, ChevronDown, ChevronUp, FlaskConical, Eye, X, Share2, Camera, CheckCircle, XCircle, Pencil, ZoomIn, ZoomOut, Radio, Thermometer, Gauge, Beaker } from 'lucide-react';
 import api from '../../services/api';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -98,8 +98,78 @@ export default function Liquefaction() {
   const [editForm, setEditForm] = useState<FormState>(emptyForm());
   const [editSaving, setEditSaving] = useState(false);
 
+  /* ── OPC Live Data ── */
+  const OPC_TAG_MAP: Record<string, { field: keyof FormState; label: string }> = {
+    'LT_120103': { field: 'iltLevel', label: 'ILT Level' },
+    'LT_120102': { field: 'fltLevel', label: 'FLT Level' },
+    'TE_120201': { field: 'iltTemp', label: 'ILT Temp' },
+    'TE_120101': { field: 'fltTemp', label: 'FLT Temp' },
+    'MG_120103': { field: 'hotWaterFlowRate', label: 'Hot Water Flow' },
+    'MG_120104': { field: 'thinSlopRecycleFlowRate', label: 'Thin Slop Recycle Flow' },
+    'MG_120301': { field: 'flowToFermenter', label: 'Flow to Fermenter' },
+  };
+
+  interface OpcFieldData { value: number; updatedAt: string; }
+  const [opcData, setOpcData] = useState<Record<string, OpcFieldData>>({});
+  const [opcLoading, setOpcLoading] = useState(false);
+
+  const fetchAllOpcData = useCallback(async () => {
+    try {
+      const res = await api.get('/opc/live');
+      const tags: { tag: string; values: Record<string, number>; updatedAt: string }[] = res.data?.tags || [];
+      if (!tags.length) return;
+
+      const result: Record<string, OpcFieldData> = {};
+      for (const t of tags) {
+        const mapping = OPC_TAG_MAP[t.tag];
+        if (!mapping) continue;
+        const val = t.values?.IO_VALUE ?? t.values?.PV;
+        if (val != null) {
+          result[mapping.field] = { value: Math.round(val * 100) / 100, updatedAt: t.updatedAt };
+        }
+      }
+      setOpcData(result);
+    } catch { /* OPC unavailable */ }
+  }, []);
+
+  // Auto-fill form from OPC data (only if fresh < 15 min and field is empty)
+  const autoFillFromOpc = useCallback((currentForm: FormState) => {
+    const updates: Partial<FormState> = {};
+    let changed = false;
+    for (const [, mapping] of Object.entries(OPC_TAG_MAP)) {
+      const opc = opcData[mapping.field];
+      if (!opc) continue;
+      const ageMs = Date.now() - new Date(opc.updatedAt).getTime();
+      if (ageMs < 15 * 60 * 1000 && !currentForm[mapping.field]) {
+        (updates as any)[mapping.field] = String(opc.value);
+        changed = true;
+      }
+    }
+    if (changed) setForm(f => ({ ...f, ...updates }));
+  }, [opcData]);
+
+  const fmtOpcAgo = (iso?: string) => {
+    if (!iso) return '';
+    const s = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
+    if (s < 60) return `${s}s ago`;
+    if (s < 3600) return `${Math.round(s / 60)}m ago`;
+    return `${Math.round(s / 3600)}h ago`;
+  };
+
   const load = () => api.get('/liquefaction').then(r => setEntries(r.data)).catch(() => {});
   useEffect(() => { load(); }, []);
+
+  // Fetch OPC on mount + refresh every 60s
+  useEffect(() => {
+    fetchAllOpcData();
+    const iv = setInterval(fetchAllOpcData, 60000);
+    return () => clearInterval(iv);
+  }, [fetchAllOpcData]);
+
+  // Auto-fill when OPC data arrives and form is empty
+  useEffect(() => {
+    if (Object.keys(opcData).length) autoFillFromOpc(form);
+  }, [opcData]);
 
   /* ---- stats ---- */
   const stats = useMemo(() => {
@@ -273,9 +343,22 @@ export default function Liquefaction() {
   const [barYZoom, setBarYZoom] = useState(0);
 
   /* ---- input helper (inline, stable via key) ---- */
+  const opcBadge = (field: keyof FormState) => {
+    const opc = opcData[field];
+    if (!opc) return null;
+    const ageMs = Date.now() - new Date(opc.updatedAt).getTime();
+    const fresh = ageMs < 15 * 60 * 1000;
+    return (
+      <span className={`ml-1 text-[9px] font-bold px-1 py-0.5 rounded ${fresh ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}
+        title={`OPC: ${opc.value} (${fmtOpcAgo(opc.updatedAt)})`}>
+        OPC {opc.value} <span className="font-normal">{fmtOpcAgo(opc.updatedAt)}</span>
+      </span>
+    );
+  };
+
   const numInput = (label: string, field: keyof FormState, step = '0.001') => (
     <div key={field}>
-      <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
+      <label className="block text-xs font-medium text-gray-500 mb-1">{label}{opcBadge(field)}</label>
       <input type="number" step={step} value={form[field]}
         onChange={e => upd(field, e.target.value)}
         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition" />
@@ -299,6 +382,189 @@ export default function Liquefaction() {
         </div>
       </div>
 
+      {/* ═══ TANK DASHBOARD ═══ */}
+      {(() => {
+        const latest = entries[0]; // entries are desc, newest first
+        const iltOpc = opcData['iltLevel'];
+        const fltOpc = opcData['fltLevel'];
+        const iltTempOpc = opcData['iltTemp'];
+        const fltTempOpc = opcData['fltTemp'];
+
+        const tanks = [
+          {
+            id: 'ILT', name: 'ILT', fullName: 'Initial Liquefaction Tank',
+            color: 'blue', Icon: Beaker,
+            opcLevel: iltOpc?.value, opcTemp: iltTempOpc?.value,
+            opcUpdated: iltOpc?.updatedAt || iltTempOpc?.updatedAt,
+            gravity: latest?.iltSpGravity, ph: latest?.iltPh, rs: latest?.iltRs,
+            temp: latest?.iltTemp, level: latest?.iltLevel, steam: latest?.iltSteam,
+            brix: latest?.iltBrix, acidity: latest?.iltAcidity,
+          },
+          {
+            id: 'FLT', name: 'FLT', fullName: 'Final Liquefaction Tank',
+            color: 'green', Icon: FlaskConical,
+            opcLevel: fltOpc?.value, opcTemp: fltTempOpc?.value,
+            opcUpdated: fltOpc?.updatedAt || fltTempOpc?.updatedAt,
+            gravity: latest?.fltSpGravity, ph: latest?.fltPh, rs: latest?.fltRs,
+            temp: latest?.fltTemp, level: latest?.fltLevel, flowRate: latest?.fltFlowRate,
+            iodine: latest?.fltIodineTest, rst: latest?.fltRst,
+            brix: latest?.fltBrix, acidity: latest?.fltAcidity,
+          },
+        ];
+
+        return (
+          <div className="grid grid-cols-2 gap-3">
+            {tanks.map(t => {
+              const hasOpc = t.opcLevel != null || t.opcTemp != null;
+              const opcFresh = t.opcUpdated ? (Date.now() - new Date(t.opcUpdated).getTime()) < 15 * 60 * 1000 : false;
+              const borderColor = t.color === 'blue' ? 'border-blue-400' : 'border-green-400';
+              const bgGrad = t.color === 'blue'
+                ? 'bg-gradient-to-br from-blue-50 to-blue-100/50'
+                : 'bg-gradient-to-br from-green-50 to-emerald-100/50';
+              const textColor = t.color === 'blue' ? 'text-blue-700' : 'text-green-700';
+              const iconColor = t.color === 'blue' ? 'text-blue-500' : 'text-green-500';
+
+              return (
+                <div key={t.id} className={`${bgGrad} border-2 ${borderColor} rounded-xl p-3 relative`}>
+                  {/* Tank Header */}
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${t.color === 'blue' ? 'bg-blue-200' : 'bg-green-200'}`}>
+                      <t.Icon size={16} className={iconColor} />
+                    </div>
+                    <div>
+                      <div className={`text-sm font-extrabold ${textColor}`}>{t.name}</div>
+                      <div className="text-[9px] text-gray-500">{t.fullName}</div>
+                    </div>
+                  </div>
+
+                  {/* OPC Live Badges */}
+                  {hasOpc && (
+                    <div className="flex items-center gap-1.5 flex-wrap mb-2">
+                      {t.opcLevel != null && (
+                        <span className={`text-[11px] font-extrabold px-1.5 py-0.5 border ${opcFresh ? 'text-green-800 bg-green-100 border-green-300' : 'text-gray-500 bg-gray-100 border-gray-300'}`}>
+                          Level {t.opcLevel}%
+                        </span>
+                      )}
+                      {t.opcTemp != null && (
+                        <span className={`text-[11px] font-extrabold px-1.5 py-0.5 border ${opcFresh ? 'text-orange-800 bg-orange-100 border-orange-300' : 'text-gray-500 bg-gray-100 border-gray-300'}`}>
+                          {t.opcTemp}&deg;C
+                        </span>
+                      )}
+                      {t.opcUpdated && (
+                        <span className="text-[9px] text-gray-500 font-medium">{fmtOpcAgo(t.opcUpdated)}</span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Latest Reading Metrics */}
+                  {latest ? (
+                    <div className="space-y-1.5">
+                      {/* Primary: Gravity large */}
+                      {t.gravity != null && (
+                        <div className="text-xl font-black text-gray-900 tracking-tight leading-tight">
+                          {t.gravity.toFixed(3)}
+                          <span className="text-[10px] font-medium text-gray-400 ml-1">SG</span>
+                        </div>
+                      )}
+
+                      {/* Grid of secondary metrics */}
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                        {t.ph != null && (
+                          <div className="flex justify-between">
+                            <span className="text-[10px] text-gray-500">pH</span>
+                            <span className="text-xs font-bold text-gray-800">{t.ph.toFixed(2)}</span>
+                          </div>
+                        )}
+                        {t.rs != null && (
+                          <div className="flex justify-between">
+                            <span className="text-[10px] text-gray-500">RS</span>
+                            <span className="text-xs font-bold text-gray-800">{t.rs.toFixed(2)}%</span>
+                          </div>
+                        )}
+                        {t.temp != null && !hasOpc && (
+                          <div className="flex justify-between">
+                            <span className="text-[10px] text-gray-500">Temp</span>
+                            <span className="text-xs font-bold text-gray-800">{t.temp}°C</span>
+                          </div>
+                        )}
+                        {t.level != null && !hasOpc && (
+                          <div className="flex justify-between">
+                            <span className="text-[10px] text-gray-500">Level</span>
+                            <span className="text-xs font-bold text-gray-800">{t.level}</span>
+                          </div>
+                        )}
+                        {'rst' in t && t.rst != null && (
+                          <div className="flex justify-between">
+                            <span className="text-[10px] text-gray-500">RST</span>
+                            <span className="text-xs font-bold text-gray-800">{t.rst.toFixed(2)}%</span>
+                          </div>
+                        )}
+                        {'steam' in t && t.steam != null && (
+                          <div className="flex justify-between">
+                            <span className="text-[10px] text-gray-500">Steam</span>
+                            <span className="text-xs font-bold text-gray-800">{t.steam}</span>
+                          </div>
+                        )}
+                        {'flowRate' in t && t.flowRate != null && (
+                          <div className="flex justify-between">
+                            <span className="text-[10px] text-gray-500">Flow</span>
+                            <span className="text-xs font-bold text-gray-800">{t.flowRate}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Iodine Test Badge (FLT only) */}
+                      {'iodine' in t && t.iodine && (
+                        <div className="mt-1">
+                          <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-md ${
+                            t.iodine === 'NEGATIVE' ? 'bg-green-100 text-green-700 border border-green-300' : 'bg-red-100 text-red-700 border border-red-300'
+                          }`}>
+                            {t.iodine === 'NEGATIVE' ? <CheckCircle size={10} /> : <XCircle size={10} />}
+                            Iodine: {t.iodine}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Last reading time */}
+                      <div className="text-[9px] text-gray-400 flex items-center gap-0.5 mt-1">
+                        <Clock size={8} />
+                        {latest.analysisTime || fmtDate(latest.date)} — last reading
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-[10px] text-gray-400 italic mt-2">No readings yet</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
+
+      {/* Flow Summary Strip */}
+      {(() => {
+        const latest = entries[0];
+        if (!latest) return null;
+        const flows = [
+          { label: 'Jet Cooker', val: latest.jetCookerTemp, unit: '°C' },
+          { label: 'Flour Rate', val: latest.flourRate, unit: '' },
+          { label: 'Hot Water', val: opcData['hotWaterFlowRate']?.value ?? latest.hotWaterFlowRate, unit: 'M³/hr' },
+          { label: 'Thin Slop', val: opcData['thinSlopRecycleFlowRate']?.value ?? latest.thinSlopRecycleFlowRate, unit: '' },
+          { label: 'To Fermenter', val: opcData['flowToFermenter']?.value ?? latest.flowToFermenter, unit: 'M³/hr' },
+        ].filter(f => f.val != null);
+        if (!flows.length) return null;
+        return (
+          <div className="flex gap-2 flex-wrap">
+            {flows.map(f => (
+              <div key={f.label} className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-center flex-1 min-w-[100px]">
+                <div className="text-[9px] text-gray-500 font-bold uppercase tracking-wider">{f.label}</div>
+                <div className="text-sm font-bold text-gray-800 mt-0.5">{typeof f.val === 'number' ? f.val.toFixed(1) : f.val} <span className="text-[9px] text-gray-400">{f.unit}</span></div>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
       {/* KPI Cards */}
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
         {[
@@ -319,9 +585,33 @@ export default function Liquefaction() {
 
       {/* New Reading Form */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-        <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-          <Save size={18} className="text-blue-600" /> New Reading
-        </h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+            <Save size={18} className="text-blue-600" /> New Reading
+          </h2>
+          <button type="button" onClick={() => {
+            setOpcLoading(true);
+            fetchAllOpcData().then(() => {
+              // Force-fill all OPC fields regardless of current value
+              const updates: Partial<FormState> = {};
+              for (const [, mapping] of Object.entries(OPC_TAG_MAP)) {
+                const opc = opcData[mapping.field];
+                if (opc) {
+                  const ageMs = Date.now() - new Date(opc.updatedAt).getTime();
+                  if (ageMs < 15 * 60 * 1000) (updates as any)[mapping.field] = String(opc.value);
+                }
+              }
+              setForm(f => ({ ...f, ...updates }));
+              setMsg({ type: 'ok', text: `Filled ${Object.keys(updates).length} fields from OPC` });
+              setTimeout(() => setMsg(null), 3000);
+            }).finally(() => setOpcLoading(false));
+          }}
+            disabled={opcLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 text-green-700 border border-green-300 rounded-lg text-xs font-semibold hover:bg-green-100 transition disabled:opacity-50">
+            {opcLoading ? <Loader2 size={12} className="animate-spin" /> : <Radio size={12} />}
+            Fill from OPC
+          </button>
+        </div>
 
         {/* Top row: Date, Time, Jet Cooker */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
