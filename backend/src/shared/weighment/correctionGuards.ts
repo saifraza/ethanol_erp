@@ -1,7 +1,8 @@
 /**
  * Weighment Correction Guards
  *
- * Checks whether a GrainTruck weighment record can be edited by an admin.
+ * Checks whether a weighment record can be edited by an admin.
+ * Supports GrainTruck, GoodsReceipt, DispatchTruck, DDGSDispatchTruck.
  * Blockers are ordered by severity — first match is the reason.
  *
  * See .claude/skills/weighment-corrections.md for the full specification.
@@ -110,4 +111,195 @@ export async function checkGrainTruckCorrectable(
   }
 
   return { canEdit: blockers.length === 0, blockers, requiresAdminPin };
+}
+
+/**
+ * Check whether a GoodsReceipt (fuel inbound) can be edited.
+ */
+export async function checkGoodsReceiptCorrectable(
+  id: string,
+  opts: { adminPinProvided?: boolean } = {},
+): Promise<CorrectableSummary> {
+  const grn = await prisma.goodsReceipt.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      grnNo: true,
+      status: true,
+      invoiceNo: true,
+      fullyPaid: true,
+      paymentLinkedAt: true,
+      createdAt: true,
+    },
+  });
+
+  if (!grn) {
+    return {
+      canEdit: false,
+      blockers: [{ code: 'NOT_FOUND', message: 'GoodsReceipt not found' }],
+      requiresAdminPin: false,
+    };
+  }
+
+  if (grn.status === 'CANCELLED') {
+    return {
+      canEdit: false,
+      blockers: [{ code: 'ALREADY_CANCELLED', message: `GRN-${grn.grnNo} is already cancelled` }],
+      requiresAdminPin: false,
+    };
+  }
+
+  if (grn.fullyPaid || grn.paymentLinkedAt) {
+    return {
+      canEdit: false,
+      blockers: [{ code: 'PAYMENT_MADE', message: `Payment made against GRN-${grn.grnNo}. Reverse payment first.` }],
+      requiresAdminPin: false,
+    };
+  }
+
+  if (grn.invoiceNo) {
+    return {
+      canEdit: false,
+      blockers: [{ code: 'INVOICE_LINKED', message: `Vendor invoice #${grn.invoiceNo} linked to GRN-${grn.grnNo}. Cancel invoice first.` }],
+      requiresAdminPin: false,
+    };
+  }
+
+  if (grn.status === 'CONFIRMED') {
+    return {
+      canEdit: false,
+      blockers: [{ code: 'GRN_CONFIRMED', message: `GRN-${grn.grnNo} confirmed and posted to inventory. Reverse GRN first.` }],
+      requiresAdminPin: false,
+    };
+  }
+
+  const ageDays = (Date.now() - new Date(grn.createdAt).getTime()) / (1000 * 60 * 60 * 24);
+  const requiresAdminPin = ageDays > AGED_RECORD_DAYS;
+  if (requiresAdminPin && !opts.adminPinProvided) {
+    return {
+      canEdit: false,
+      blockers: [{ code: 'AGED_RECORD', message: `Record is ${Math.floor(ageDays)} days old. Admin PIN required.` }],
+      requiresAdminPin: true,
+    };
+  }
+
+  return { canEdit: true, blockers: [], requiresAdminPin };
+}
+
+/**
+ * Check whether a DispatchTruck (ethanol outbound) can be edited.
+ */
+export async function checkDispatchTruckCorrectable(
+  id: string,
+  opts: { adminPinProvided?: boolean } = {},
+): Promise<CorrectableSummary> {
+  const truck = await prisma.dispatchTruck.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      cancelled: true,
+      status: true,
+      invoiceId: true,
+      invoice: { select: { invoiceNo: true } },
+      createdAt: true,
+    },
+  });
+
+  if (!truck) {
+    return {
+      canEdit: false,
+      blockers: [{ code: 'NOT_FOUND', message: 'DispatchTruck not found' }],
+      requiresAdminPin: false,
+    };
+  }
+
+  if (truck.cancelled) {
+    return {
+      canEdit: false,
+      blockers: [{ code: 'ALREADY_CANCELLED', message: 'This dispatch has already been cancelled' }],
+      requiresAdminPin: false,
+    };
+  }
+
+  if (truck.invoiceId) {
+    return {
+      canEdit: false,
+      blockers: [{ code: 'INVOICE_LINKED', message: `Invoice ${truck.invoice?.invoiceNo || truck.invoiceId} linked. Cancel invoice first.` }],
+      requiresAdminPin: false,
+    };
+  }
+
+  if (['RELEASED', 'EXITED'].includes(truck.status)) {
+    return {
+      canEdit: false,
+      blockers: [{ code: 'SHIPMENT_RELEASED', message: `Truck has been ${truck.status.toLowerCase()}. Cannot edit after release.` }],
+      requiresAdminPin: false,
+    };
+  }
+
+  const ageDays = (Date.now() - new Date(truck.createdAt).getTime()) / (1000 * 60 * 60 * 24);
+  const requiresAdminPin = ageDays > AGED_RECORD_DAYS;
+  if (requiresAdminPin && !opts.adminPinProvided) {
+    return {
+      canEdit: false,
+      blockers: [{ code: 'AGED_RECORD', message: `Record is ${Math.floor(ageDays)} days old. Admin PIN required.` }],
+      requiresAdminPin: true,
+    };
+  }
+
+  return { canEdit: true, blockers: [], requiresAdminPin };
+}
+
+/**
+ * Check whether a DDGSDispatchTruck can be edited.
+ */
+export async function checkDDGSDispatchTruckCorrectable(
+  id: string,
+  opts: { adminPinProvided?: boolean } = {},
+): Promise<CorrectableSummary> {
+  const truck = await prisma.dDGSDispatchTruck.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      status: true,
+      invoiceNo: true,
+      createdAt: true,
+    },
+  });
+
+  if (!truck) {
+    return {
+      canEdit: false,
+      blockers: [{ code: 'NOT_FOUND', message: 'DDGSDispatchTruck not found' }],
+      requiresAdminPin: false,
+    };
+  }
+
+  if (truck.invoiceNo) {
+    return {
+      canEdit: false,
+      blockers: [{ code: 'INVOICE_LINKED', message: `Invoice ${truck.invoiceNo} linked. Cannot edit after invoicing.` }],
+      requiresAdminPin: false,
+    };
+  }
+
+  if (['BILLED', 'RELEASED'].includes(truck.status)) {
+    return {
+      canEdit: false,
+      blockers: [{ code: 'BILLED', message: `Truck has been ${truck.status.toLowerCase()}. Cannot edit after billing/release.` }],
+      requiresAdminPin: false,
+    };
+  }
+
+  const ageDays = (Date.now() - new Date(truck.createdAt).getTime()) / (1000 * 60 * 60 * 24);
+  const requiresAdminPin = ageDays > AGED_RECORD_DAYS;
+  if (requiresAdminPin && !opts.adminPinProvided) {
+    return {
+      canEdit: false,
+      blockers: [{ code: 'AGED_RECORD', message: `Record is ${Math.floor(ageDays)} days old. Admin PIN required.` }],
+      requiresAdminPin: true,
+    };
+  }
+
+  return { canEdit: true, blockers: [], requiresAdminPin };
 }

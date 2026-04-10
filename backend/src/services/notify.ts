@@ -19,6 +19,7 @@ export type NotifyCategory =
   | 'SYNC_ERROR'
   | 'FACTORY'
   | 'SYSTEM'
+  | 'WEIGHMENT'
   | 'INFO';
 
 export type NotifySeverity = 'INFO' | 'WARNING' | 'CRITICAL';

@@ -228,18 +228,15 @@ router.get(
         }
 
         // Non-grain row — fuel inbound (GoodsReceipt), ethanol/DDGS outbound
-        // (DispatchTruck / DDGSDispatchTruck). Visible but not editable from
-        // this screen. Attach GRN context for fuel rows if available.
+        // (DispatchTruck / DDGSDispatchTruck). Visible but view-only from the UI.
+        // Corrections handled via /correct-weighment skill (Saif-only, CLI).
         const grn = m.ticketNo !== null ? grnByTicket.get(m.ticketNo) : undefined;
         const sourceLabel = m.direction === 'OUTBOUND'
           ? (m.materialCategory === 'DDGS' ? 'DDGS_DISPATCH' : 'ETHANOL_DISPATCH')
           : 'GOODS_RECEIPT';
-        const blockerMessage = m.direction === 'OUTBOUND'
-          ? `Outbound ${m.materialCategory || 'dispatch'} weighment — corrections for this type will be added in a later phase`
-          : 'Fuel / non-grain inbound weighment is stored in GoodsReceipt — corrections for this type will be added in a later phase';
 
         return {
-          id: m.id, // mirror id; cannot be used with legacy correct endpoint
+          id: m.id,
           mirrorId: m.id,
           ticketNo: m.ticketNo,
           vehicleNo: m.vehicleNo,
@@ -260,7 +257,7 @@ router.get(
           factoryLocalId: m.localId,
           source: sourceLabel,
           canEdit: false,
-          blockers: [{ reason: blockerMessage, code: 'NON_GRAIN_SOURCE' }],
+          blockers: [{ code: 'CLI_ONLY', message: 'Use /correct-weighment skill in Claude Code to edit non-grain weighments' }],
           requiresAdminPin: false,
         };
       }),
