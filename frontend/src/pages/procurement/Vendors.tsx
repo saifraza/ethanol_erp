@@ -55,6 +55,13 @@ interface Vendor {
   tdsApplicable?: boolean;
   tdsSection?: string;
   tdsPercent?: number;
+  tdsSectionId?: string | null;
+  tdsSectionRef?: { id: string; code: string; oldSection: string | null; nature: string; rateIndividual: number; rateOthers: number } | null;
+  is206ABNonFiler?: boolean;
+  lowerDeductionCertNo?: string | null;
+  lowerDeductionRate?: number | null;
+  lowerDeductionValidFrom?: string | null;
+  lowerDeductionValidTill?: string | null;
   remarks?: string;
 }
 
@@ -99,6 +106,13 @@ export default function Vendors() {
   const [tdsApplicable, setTdsApplicable] = useState(false);
   const [tdsSection, setTdsSection] = useState('194C');
   const [tdsPercent, setTdsPercent] = useState('');
+  const [tdsSectionId, setTdsSectionId] = useState<string>('');
+  const [is206ABNonFiler, setIs206ABNonFiler] = useState(false);
+  const [lowerDeductionCertNo, setLowerDeductionCertNo] = useState('');
+  const [lowerDeductionRate, setLowerDeductionRate] = useState('');
+  const [lowerDeductionValidFrom, setLowerDeductionValidFrom] = useState('');
+  const [lowerDeductionValidTill, setLowerDeductionValidTill] = useState('');
+  const [tdsSections, setTdsSections] = useState<{ id: string; code: string; oldSection: string | null; nature: string; rateIndividual: number; rateOthers: number }[]>([]);
   const [remarks, setRemarks] = useState('');
 
   // Vendor items (supply list)
@@ -148,9 +162,17 @@ export default function Vendors() {
     }
   };
 
+  const loadTdsSections = async () => {
+    try {
+      const res = await api.get('/tax/tds-sections');
+      setTdsSections(res.data || []);
+    } catch { /* silent — legacy dropdown still works */ }
+  };
+
   useEffect(() => {
     loadVendors();
     loadAllItems();
+    loadTdsSections();
   }, []);
 
   const filteredVendors = vendors.filter(v =>
@@ -228,6 +250,12 @@ export default function Vendors() {
       setTdsApplicable(vendor.tdsApplicable || false);
       setTdsSection(vendor.tdsSection || '194C');
       setTdsPercent(vendor.tdsPercent?.toString() || '');
+      setTdsSectionId(vendor.tdsSectionId || '');
+      setIs206ABNonFiler(vendor.is206ABNonFiler || false);
+      setLowerDeductionCertNo(vendor.lowerDeductionCertNo || '');
+      setLowerDeductionRate(vendor.lowerDeductionRate?.toString() || '');
+      setLowerDeductionValidFrom(vendor.lowerDeductionValidFrom?.slice(0, 10) || '');
+      setLowerDeductionValidTill(vendor.lowerDeductionValidTill?.slice(0, 10) || '');
       setRemarks(vendor.remarks || '');
     }
     setShowForm(true);
@@ -321,6 +349,12 @@ export default function Vendors() {
         tdsApplicable,
         tdsSection: tdsApplicable ? tdsSection : undefined,
         tdsPercent: tdsApplicable && tdsPercent ? parseFloat(tdsPercent) : undefined,
+        tdsSectionId: tdsApplicable && tdsSectionId ? tdsSectionId : null,
+        is206ABNonFiler: tdsApplicable ? is206ABNonFiler : false,
+        lowerDeductionCertNo: tdsApplicable && lowerDeductionCertNo ? lowerDeductionCertNo : null,
+        lowerDeductionRate: tdsApplicable && lowerDeductionRate ? parseFloat(lowerDeductionRate) : null,
+        lowerDeductionValidFrom: tdsApplicable && lowerDeductionValidFrom ? lowerDeductionValidFrom : null,
+        lowerDeductionValidTill: tdsApplicable && lowerDeductionValidTill ? lowerDeductionValidTill : null,
         remarks: remarks || undefined,
       };
 
@@ -648,19 +682,61 @@ export default function Vendors() {
                     </label>
                   </div>
                   {tdsApplicable && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-                      <div>
-                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">TDS Section</label>
-                        <select value={tdsSection} onChange={e => setTdsSection(e.target.value)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
-                          <option value="194C">194C - Contractors</option>
-                          <option value="194Q">194Q - Tenements</option>
-                          <option value="194J">194J - Commission</option>
-                          <option value="194H">194H - Transport</option>
-                        </select>
+                    <div className="space-y-3 mt-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">TDS Section</label>
+                          <select
+                            value={tdsSectionId}
+                            onChange={e => {
+                              const sid = e.target.value;
+                              setTdsSectionId(sid);
+                              const sec = tdsSections.find(s => s.id === sid);
+                              if (sec) {
+                                setTdsSection(sec.oldSection || sec.code);
+                                setTdsPercent(String(sec.rateOthers));
+                              }
+                            }}
+                            className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
+                          >
+                            <option value="">-- Select --</option>
+                            {tdsSections.map(s => (
+                              <option key={s.id} value={s.id}>
+                                {s.oldSection || s.code} - {s.nature} ({s.rateIndividual}%/{s.rateOthers}%)
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">TDS % (override if needed)</label>
+                          <input type="number" step="0.01" value={tdsPercent} onChange={e => setTdsPercent(e.target.value)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="2" />
+                        </div>
                       </div>
-                      <div>
-                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">TDS %</label>
-                        <input type="number" step="0.01" value={tdsPercent} onChange={e => setTdsPercent(e.target.value)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="2" />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <label className="flex items-center gap-2 text-xs">
+                          <input type="checkbox" checked={is206ABNonFiler} onChange={e => setIs206ABNonFiler(e.target.checked)} className="w-3.5 h-3.5 border-slate-300" />
+                          <span className="text-slate-600">206AB Non-Filer (rate doubles if ITR not filed 2 years)</span>
+                        </label>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Lower Deduction Cert No</label>
+                          <input type="text" value={lowerDeductionCertNo} onChange={e => setLowerDeductionCertNo(e.target.value)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="Form 13 cert no" />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">LDC Rate %</label>
+                          <input type="number" step="0.01" value={lowerDeductionRate} onChange={e => setLowerDeductionRate(e.target.value)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="0.75" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Valid From</label>
+                            <input type="date" value={lowerDeductionValidFrom} onChange={e => setLowerDeductionValidFrom(e.target.value)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Valid Till</label>
+                            <input type="date" value={lowerDeductionValidTill} onChange={e => setLowerDeductionValidTill(e.target.value)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )}

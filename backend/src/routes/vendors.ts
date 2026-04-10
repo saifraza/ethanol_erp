@@ -65,6 +65,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       where,
       orderBy: { name: 'asc' },
       take: 500,
+      include: { tdsSectionRef: { select: { id: true, code: true, oldSection: true, nature: true, rateIndividual: true, rateOthers: true } } },
     });
     res.json({ vendors });
 }));
@@ -84,6 +85,7 @@ router.get('/by-item/:itemId', asyncHandler(async (req: AuthRequest, res: Respon
 router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const vendor = await prisma.vendor.findUnique({
       where: { id: req.params.id },
+      include: { tdsSectionRef: { select: { id: true, code: true, oldSection: true, nature: true, rateIndividual: true, rateOthers: true } } },
     });
     if (!vendor) return res.status(404).json({ error: 'Vendor not found' });
 
@@ -138,6 +140,12 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         tdsApplicable: b.tdsApplicable || false,
         tdsSection: b.tdsSection || null,
         tdsPercent: b.tdsPercent ? parseFloat(b.tdsPercent) : 0,
+        tdsSectionId: b.tdsSectionId || null,
+        is206ABNonFiler: b.is206ABNonFiler || false,
+        lowerDeductionCertNo: b.lowerDeductionCertNo || null,
+        lowerDeductionRate: b.lowerDeductionRate ? parseFloat(b.lowerDeductionRate) : null,
+        lowerDeductionValidFrom: b.lowerDeductionValidFrom ? new Date(b.lowerDeductionValidFrom) : null,
+        lowerDeductionValidTill: b.lowerDeductionValidTill ? new Date(b.lowerDeductionValidTill) : null,
         remarks: b.remarks || null,
         isAgent: b.isAgent || false,
         aadhaarNo: b.aadhaarNo || null,
@@ -181,6 +189,12 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
         tdsApplicable: b.tdsApplicable !== undefined ? b.tdsApplicable : undefined,
         tdsSection: b.tdsSection !== undefined ? b.tdsSection : undefined,
         tdsPercent: b.tdsPercent !== undefined ? parseFloat(b.tdsPercent) : undefined,
+        tdsSectionId: b.tdsSectionId !== undefined ? (b.tdsSectionId || null) : undefined,
+        is206ABNonFiler: b.is206ABNonFiler !== undefined ? b.is206ABNonFiler : undefined,
+        lowerDeductionCertNo: b.lowerDeductionCertNo !== undefined ? (b.lowerDeductionCertNo || null) : undefined,
+        lowerDeductionRate: b.lowerDeductionRate !== undefined ? (b.lowerDeductionRate ? parseFloat(b.lowerDeductionRate) : null) : undefined,
+        lowerDeductionValidFrom: b.lowerDeductionValidFrom !== undefined ? (b.lowerDeductionValidFrom ? new Date(b.lowerDeductionValidFrom) : null) : undefined,
+        lowerDeductionValidTill: b.lowerDeductionValidTill !== undefined ? (b.lowerDeductionValidTill ? new Date(b.lowerDeductionValidTill) : null) : undefined,
         remarks: b.remarks !== undefined ? b.remarks : undefined,
         isAgent: b.isAgent !== undefined ? b.isAgent : undefined,
         aadhaarNo: b.aadhaarNo !== undefined ? b.aadhaarNo : undefined,
