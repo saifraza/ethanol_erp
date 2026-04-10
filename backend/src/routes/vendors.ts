@@ -81,33 +81,8 @@ router.get('/by-item/:itemId', asyncHandler(async (req: AuthRequest, res: Respon
     res.json(vendorItems);
 }));
 
-// GET /:id — single vendor with outstanding balance and PO count
-router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
-    const vendor = await prisma.vendor.findUnique({
-      where: { id: req.params.id },
-      include: { tdsSectionRef: { select: { id: true, code: true, oldSection: true, nature: true, rateIndividual: true, rateOthers: true } } },
-    });
-    if (!vendor) return res.status(404).json({ error: 'Vendor not found' });
-
-    // Calculate outstanding balance (sum of vendorInvoice.balanceAmount)
-    const invoices = await prisma.vendorInvoice.findMany({
-      where: { vendorId: req.params.id },
-    });
-    const outstandingBalance = invoices.reduce((sum, inv) => sum + (inv.balanceAmount || 0), 0);
-
-    // Count total POs
-    const poCount = await prisma.purchaseOrder.count({
-      where: { vendorId: req.params.id },
-    });
-
-    res.json({
-      vendor,
-      outstandingBalance,
-      poCount,
-    });
-}));
-
 // GET /check-duplicate — find potential duplicate vendors by GSTIN, PAN, phone, or name
+// MUST be before /:id so Express doesn't match "check-duplicate" as an id param
 router.get('/check-duplicate', asyncHandler(async (req: AuthRequest, res: Response) => {
   const gstin = (req.query.gstin as string || '').trim().toUpperCase();
   const pan = (req.query.pan as string || '').trim().toUpperCase();
@@ -151,7 +126,6 @@ router.get('/check-duplicate', asyncHandler(async (req: AuthRequest, res: Respon
     take: 10,
   });
 
-  // Tag match reason
   const duplicates = matches.map(m => {
     const reasons: string[] = [];
     if (gstin && m.gstin?.toUpperCase() === gstin) reasons.push('GSTIN');
@@ -162,6 +136,32 @@ router.get('/check-duplicate', asyncHandler(async (req: AuthRequest, res: Respon
   });
 
   res.json({ duplicates });
+}));
+
+// GET /:id — single vendor with outstanding balance and PO count
+router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const vendor = await prisma.vendor.findUnique({
+      where: { id: req.params.id },
+      include: { tdsSectionRef: { select: { id: true, code: true, oldSection: true, nature: true, rateIndividual: true, rateOthers: true } } },
+    });
+    if (!vendor) return res.status(404).json({ error: 'Vendor not found' });
+
+    // Calculate outstanding balance (sum of vendorInvoice.balanceAmount)
+    const invoices = await prisma.vendorInvoice.findMany({
+      where: { vendorId: req.params.id },
+    });
+    const outstandingBalance = invoices.reduce((sum, inv) => sum + (inv.balanceAmount || 0), 0);
+
+    // Count total POs
+    const poCount = await prisma.purchaseOrder.count({
+      where: { vendorId: req.params.id },
+    });
+
+    res.json({
+      vendor,
+      outstandingBalance,
+      poCount,
+    });
 }));
 
 // POST / — create vendor

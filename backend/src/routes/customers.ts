@@ -60,33 +60,8 @@ router.get('/gstin-lookup/:gstin', asyncHandler(async (req: AuthRequest, res: Re
     }
 }));
 
-// GET /:id — single customer with summary stats
-router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
-    const customer = await prisma.customer.findUnique({
-      where: { id: req.params.id },
-    });
-
-    if (!customer) {
-      res.status(404).json({ error: 'Customer not found' });
-      return;
-    }
-
-    // Get outstanding amount (sum of invoice.balanceAmount)
-    const invoices = await prisma.invoice.findMany({
-      where: { customerId: req.params.id },
-      select: { balanceAmount: true },
-    });
-    const outstandingAmount = invoices.reduce((sum, inv) => sum + inv.balanceAmount, 0);
-
-    // Get total orders (count of salesOrders)
-    const totalOrders = await prisma.salesOrder.count({
-      where: { customerId: req.params.id },
-    });
-
-    res.json({ customer, outstandingAmount, totalOrders });
-}));
-
 // GET /check-duplicate — find potential duplicate customers by GSTIN, PAN, phone, or name
+// MUST be before /:id so Express doesn't match "check-duplicate" as an id param
 router.get('/check-duplicate', asyncHandler(async (req: AuthRequest, res: Response) => {
   const gstNo = (req.query.gstNo as string || '').trim().toUpperCase();
   const panNo = (req.query.panNo as string || '').trim().toUpperCase();
@@ -140,6 +115,32 @@ router.get('/check-duplicate', asyncHandler(async (req: AuthRequest, res: Respon
   });
 
   res.json({ duplicates });
+}));
+
+// GET /:id — single customer with summary stats
+router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const customer = await prisma.customer.findUnique({
+      where: { id: req.params.id },
+    });
+
+    if (!customer) {
+      res.status(404).json({ error: 'Customer not found' });
+      return;
+    }
+
+    // Get outstanding amount (sum of invoice.balanceAmount)
+    const invoices = await prisma.invoice.findMany({
+      where: { customerId: req.params.id },
+      select: { balanceAmount: true },
+    });
+    const outstandingAmount = invoices.reduce((sum, inv) => sum + inv.balanceAmount, 0);
+
+    // Get total orders (count of salesOrders)
+    const totalOrders = await prisma.salesOrder.count({
+      where: { customerId: req.params.id },
+    });
+
+    res.json({ customer, outstandingAmount, totalOrders });
 }));
 
 // POST / — create customer
