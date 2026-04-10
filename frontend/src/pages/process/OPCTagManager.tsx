@@ -383,7 +383,7 @@ export default function OPCTagManager() {
   const fmtTime = (iso: string | null) => {
     if (!iso) return '--';
     const d = new Date(iso);
-    return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
   };
 
   const fmtAgo = (iso: string | null) => {
@@ -486,8 +486,8 @@ export default function OPCTagManager() {
             <span className="text-xs text-amber-800 font-semibold">DATA GAPS (24h): </span>
             <span className="text-xs text-amber-700">
               {gapData.gaps.map((g, i) => {
-                const from = new Date(g.from).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
-                const to = new Date(g.to).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
+                const from = new Date(g.from).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+                const to = new Date(g.to).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
                 return `${from}–${to}`;
               }).join(', ')}
               {' '}({Math.round(gapData.totalGapMinutes / 60 * 10) / 10}h total lost)
@@ -706,7 +706,7 @@ export default function OPCTagManager() {
                                       <ResponsiveContainer width="100%" height={250}>
                                         <ComposedChart data={historyData.map(d => ({
                                           ...d,
-                                          time: new Date(d.hour).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }),
+                                          time: new Date(d.hour).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
                                           date: new Date(d.hour).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
                                         }))}>
                                           <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -763,7 +763,7 @@ export default function OPCTagManager() {
                                             const hr = new Date(d.hour);
                                             const ist = new Date(hr.getTime() + 5.5 * 60 * 60 * 1000);
                                             const dateStr = ist.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
-                                            const timeStr = ist.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
+                                            const timeStr = ist.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
                                             return (
                                               <tr key={idx} className={`border-b border-slate-100 ${idx % 2 ? 'bg-slate-50/70' : ''}`}>
                                                 <td className="px-2 py-1 text-slate-600 border-r border-slate-100 font-mono">{dateStr} {timeStr}</td>
