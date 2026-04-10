@@ -2320,9 +2320,10 @@ model Contractor {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  bills    ContractorBill[]
-  payments ContractorPayment[]
-  employees Employee[]
+  bills       ContractorBill[]
+  payments    ContractorPayment[]
+  storeIssues ContractorStoreIssue[]
+  employees   Employee[]
 
   divisions String[] @default([]) // empty = available to all divisions
 
@@ -2415,6 +2416,59 @@ model ContractorPayment {
   @@index([billId])
   @@index([paymentDate])
   @@index([paymentStatus])
+}
+
+// ══════════════════════════════════════════════════════════════
+// CONTRACTOR STORE ISSUE — Items issued from store to contractors
+// with usage charge (debit note). Track per contractor.
+// ══════════════════════════════════════════════════════════════
+
+model ContractorStoreIssue {
+  id             String   @id @default(uuid())
+  issueNo        Int      @default(autoincrement())
+  issueDate      DateTime @default(now())
+  contractorId   String
+  contractor     Contractor @relation(fields: [contractorId], references: [id])
+  // Totals (denormalized for list view)
+  subtotal       Float    @default(0) // Sum of (qty × rate) across lines
+  chargePercent  Float    @default(5) // Usage/handling charge %
+  chargeAmount   Float    @default(0) // chargePercent × subtotal / 100
+  totalAmount    Float    @default(0) // subtotal + chargeAmount
+  status         String   @default("DRAFT") // DRAFT | CONFIRMED | RETURNED | CANCELLED
+  purpose        String?  // What work the items are for
+  remarks        String?
+  returnedAt     DateTime?
+  returnRemarks  String?
+  userId         String   // Created by
+  confirmedBy    String?
+  confirmedAt    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  lines ContractorStoreIssueLine[]
+
+  division String? @default("ETHANOL")
+
+  @@index([contractorId])
+  @@index([status])
+  @@index([issueDate])
+  @@index([division])
+}
+
+model ContractorStoreIssueLine {
+  id          String               @id @default(uuid())
+  issueId     String
+  issue       ContractorStoreIssue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  description String               // Item name
+  inventoryItemId String?          // Link to InventoryItem if from store stock
+  quantity    Float                @default(1)
+  unit        String               @default("NOS")
+  rate        Float                @default(0) // Cost price from store
+  amount      Float                @default(0) // qty × rate
+  returnedQty Float                @default(0) // How much was returned
+  remarks     String?
+
+  @@index([issueId])
 }
 
 // ══════════════════════════════════════════════════════════════

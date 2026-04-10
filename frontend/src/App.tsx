@@ -42,6 +42,7 @@ const DosingRecipes = React.lazy(() => import('./pages/process/DosingRecipes'));
 const Inventory = React.lazy(() => import('./pages/Inventory'));
 const InventoryMasters = React.lazy(() => import('./pages/inventory/Masters'));
 const StoreIndents = React.lazy(() => import('./pages/inventory/StoreIndents'));
+const ContractorIssues = React.lazy(() => import('./pages/store/ContractorIssues'));
 const StoreDeals = React.lazy(() => import('./pages/inventory/StoreDeals'));
 // Inventory (SAP-style)
 const StockDashboard = React.lazy(() => import('./pages/inventory/StockDashboard'));
@@ -188,6 +189,7 @@ export default function App() {
         <Route path="inventory" element={<Inventory />} />
         <Route path="inventory/masters" element={<InventoryMasters />} />
         <Route path="inventory/store-indents" element={<StoreIndents />} />
+        <Route path="inventory/contractor-issues" element={<ContractorIssues />} />
         <Route path="inventory/store-deals" element={<Navigate to="/store/receipts?tab=pos" replace />} />
         {/* Inventory (SAP-style) */}
         <Route path="inventory/dashboard" element={<StockDashboard />} />

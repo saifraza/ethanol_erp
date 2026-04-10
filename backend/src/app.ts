@@ -64,6 +64,7 @@ import pdcRoutes from './routes/postDatedCheques';
 // Contractors
 import contractorRoutes from './routes/contractors';
 import contractorBillRoutes from './routes/contractorBills';
+import contractorStoreIssueRoutes from './routes/contractorStoreIssues';
 // Direct Trade (cash purchases/sales without paperwork)
 import directPurchaseRoutes from './routes/directPurchases';
 import directSaleRoutes from './routes/directSales';
@@ -240,6 +241,7 @@ app.use('/api/post-dated-cheques', pdcRoutes);
 // Contractors
 app.use('/api/contractors', contractorRoutes);
 app.use('/api/contractor-bills', contractorBillRoutes);
+app.use('/api/contractor-store-issues', contractorStoreIssueRoutes);
 // Direct Trade
 app.use('/api/direct-purchases', directPurchaseRoutes);
 app.use('/api/direct-sales', directSaleRoutes);

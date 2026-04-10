@@ -96,6 +96,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'inventory-store', label: 'Inventory & Store', to: '/inventory', icon: Warehouse, group: 'inventory' },
   { key: 'store-module', label: 'Store (PO & GRN)', to: '/store/receipts', icon: PackageCheck, group: 'inventory' },
   { key: 'store-indents', label: 'Store Indents', to: '/inventory/store-indents', icon: ShoppingCart, group: 'inventory' },
+  { key: 'contractor-issues', label: 'Contractor Issues', to: '/inventory/contractor-issues', icon: HardHat, group: 'inventory' },
   { key: 'masters', label: 'Dept & Warehouses', to: '/inventory/masters', icon: Building2, group: 'inventory' },
 
   // ── COMPLIANCE ─���

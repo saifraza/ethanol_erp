@@ -16,9 +16,21 @@ import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError, ValidationError, ForbiddenError, ConflictError } from '../shared/errors';
 import { onStockMovement } from '../services/autoJournal';
 import prisma from '../config/prisma';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
 
 const router = Router();
 router.use(authenticate as any);
+
+// File upload config for store GRN invoice/e-way bill
+const uploadDir = path.join(__dirname, '../../uploads/store-grn');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+const grnStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadDir),
+  filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_')}`),
+});
+const grnUpload = multer({ storage: grnStorage, limits: { fileSize: 10 * 1024 * 1024 } });
 
 // Source discriminator — store = NOT auto. Handles null remarks (those are
 // also store) because `NOT { remarks: { contains: 'WB:' } }` in Prisma
@@ -771,5 +783,44 @@ router.delete('/:id', storeWriteAuth, asyncHandler(async (req: AuthRequest, res:
 
   res.json({ ok: true });
 }));
+
+// ═══════════════════════════════════════════════
+// POST /:id/upload — upload invoice / e-way bill files for a store GRN
+// ═══════════════════════════════════════════════
+router.post(
+  '/:id/upload',
+  storeWriteAuth,
+  grnUpload.fields([
+    { name: 'invoice', maxCount: 1 },
+    { name: 'ewayBill', maxCount: 1 },
+  ]),
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const grn = await prisma.goodsReceipt.findFirst({
+      where: { id: req.params.id, AND: [STORE_SOURCE_WHERE] },
+    });
+    if (!grn) throw new NotFoundError('Store GRN', req.params.id);
+
+    const files = req.files as Record<string, Express.Multer.File[]> | undefined;
+    const update: Record<string, string> = {};
+
+    if (files?.invoice?.[0]) {
+      update.invoiceFilePath = `/uploads/store-grn/${files.invoice[0].filename}`;
+    }
+    if (files?.ewayBill?.[0]) {
+      update.ewayBillFilePath = `/uploads/store-grn/${files.ewayBill[0].filename}`;
+    }
+
+    if (Object.keys(update).length === 0) {
+      throw new ValidationError('No files provided. Send invoice and/or ewayBill fields.');
+    }
+
+    const updated = await prisma.goodsReceipt.update({
+      where: { id: req.params.id },
+      data: update,
+      select: { id: true, invoiceFilePath: true, ewayBillFilePath: true },
+    });
+    res.json(updated);
+  }),
+);
 
 export default router;
