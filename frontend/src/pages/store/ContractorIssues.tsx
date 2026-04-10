@@ -121,8 +121,9 @@ export default function ContractorIssues() {
 
   const fetchContractors = useCallback(async () => {
     try {
-      const res = await api.get<ContractorOption[]>('/contractors', { params: { isActive: 'true' } });
-      setContractors(Array.isArray(res.data) ? res.data : (res.data as any).items ?? []);
+      const res = await api.get('/contractors', { params: { active: 'true' } });
+      const list = Array.isArray(res.data) ? res.data : (res.data as any).contractors ?? (res.data as any).items ?? [];
+      setContractors(list);
     } catch (err) {
       console.error('Failed to fetch contractors:', err);
     }

@@ -104,6 +104,9 @@ export default function CashVouchers() {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [selectedVoucher, setSelectedVoucher] = useState<CashVoucher | null>(null);
 
+  // Contractors for payee autocomplete
+  const [contractors, setContractors] = useState<{ id: string; name: string; phone?: string | null }[]>([]);
+
   // Client-side purpose bucket filter (Fuel/RM/Contractor) — keyword based since
   // CashVoucher has no FK to vendor/contractor; we infer from category + purpose text.
   const filteredVouchers = useMemo(() => {
@@ -151,6 +154,16 @@ export default function CashVouchers() {
   }, []);
 
   useEffect(() => { fetchPendingPOs(); }, [fetchPendingPOs]);
+
+  // Fetch contractors for payee picker
+  useEffect(() => {
+    api.get('/contractors', { params: { active: 'true' } })
+      .then(res => {
+        const list = res.data?.contractors ?? res.data ?? [];
+        setContractors(Array.isArray(list) ? list : []);
+      })
+      .catch(() => {});
+  }, []);
 
   // Filtered pending POs by purpose chip
   const filteredPendingPOs = useMemo(() => {
@@ -629,6 +642,26 @@ export default function CashVouchers() {
                   ))}
                 </select>
               </div>
+
+              {/* Pick from Contractor (optional) */}
+              {contractors.length > 0 && (
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Pick Contractor (optional)</label>
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      const c = contractors.find(x => x.id === e.target.value);
+                      if (c) setForm({ ...form, payeeName: c.name, payeePhone: c.phone || '' });
+                    }}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
+                  >
+                    <option value="">-- Select contractor to auto-fill --</option>
+                    {contractors.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {/* Payee + Phone */}
               <div className="grid grid-cols-2 gap-3">
