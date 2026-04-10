@@ -155,6 +155,19 @@ export default function Fermentation() {
     return [1, 2, 3, 4].filter(n => !active.has(n));
   }, [fermBatches]);
 
+  /* ── OPC Prefill helper — returns form with level+temp from live OPC if fresh ── */
+  const opcPrefill = (vessel: Vessel | null): Record<string, string> => {
+    if (!vessel) return {};
+    const opc = opcData[vessel.label];
+    if (!opc?.updatedAt) return {};
+    const ageMs = Date.now() - new Date(opc.updatedAt).getTime();
+    if (ageMs > 15 * 60 * 1000) return {};
+    const fill: Record<string, string> = {};
+    if (opc.level != null) fill.level = String(opc.level);
+    if (opc.temp != null) fill.temp = String(opc.temp);
+    return fill;
+  };
+
   /* ── ACTIONS ── */
   const saveReading = async (andShare = false) => {
     if (!selected) return;
@@ -182,13 +195,13 @@ export default function Fermentation() {
         // Auto-advanced FILLING → REACTION (2 consecutive same levels)
         if (labRes?.autoAdvanced) {
           flash('ok', `${selected.label} saved ✓ · Filling complete → Reaction started`);
-          load(); setSaving(false); setReadingForm({ level: '', spGravity: '', ph: '', rs: '', rst: '', alcohol: '', ds: '', vfaPpa: '', temp: '', spentLoss: '', remarks: '', status: 'U/F', analysisTime: '' });
+          load(); setSaving(false); setReadingForm(opcPrefill(selected));
           return;
         }
         // PF ready to transfer hint
         if (labRes?.readyToTransfer) {
           flash('ok', `${selected.label} saved ✓ · Ready to transfer (SG ≤ ${labRes.gravityTarget})`);
-          load(); setSaving(false); setReadingForm({ level: '', spGravity: '', ph: '', rs: '', rst: '', alcohol: '', ds: '', vfaPpa: '', temp: '', spentLoss: '', remarks: '', status: 'U/F', analysisTime: '' });
+          load(); setSaving(false); setReadingForm(opcPrefill(selected));
           return;
         }
       }
@@ -214,7 +227,7 @@ export default function Fermentation() {
           flash('ok', 'Shared on Telegram');
         } catch { flash('err', 'Telegram send failed'); }
       }
-      setReadingForm({});
+      setReadingForm(opcPrefill(selected));
       load();
     } catch { flash('err', 'Save failed'); }
     setSaving(false);
@@ -908,17 +921,7 @@ export default function Fermentation() {
                 onClick={() => {
                   if (isSelected) { setSelected(null); return; }
                   setSelected(v); setTab('reading'); setShowNewBatch(false); setDosingExpanded(false);
-                  // Auto-fill level + temp from OPC if data is live (< 5 min old)
-                  const opc = opcData[v.label];
-                  const autoFill: Record<string, string> = {};
-                  if (opc?.updatedAt) {
-                    const ageMs = Date.now() - new Date(opc.updatedAt).getTime();
-                    if (ageMs < 15 * 60 * 1000) {
-                      if (opc.level != null) autoFill.level = String(opc.level);
-                      if (opc.temp != null) autoFill.temp = String(opc.temp);
-                    }
-                  }
-                  setReadingForm(autoFill);
+                  setReadingForm(opcPrefill(v));
                 }}
                 className={`relative rounded-xl p-2.5 text-left transition-all duration-200 border-2 ${
                   isSelected ? `${cfg.bg} ring-2 ${cfg.ring} border-transparent shadow-lg scale-[1.03]`
@@ -935,32 +938,32 @@ export default function Fermentation() {
                 </div>
                 {batchNo > 0 && (
                   <div className="flex items-center gap-1.5 mb-0.5">
-                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md ${cfg.bg} ${cfg.text}`}>{cfg.label}</span>
-                    <span className="text-[9px] text-gray-400 font-semibold">#{batchNo}</span>
+                    <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded-md ${cfg.bg} ${cfg.text}`}>{cfg.label}</span>
+                    <span className="text-[10px] text-gray-500 font-bold">#{batchNo}</span>
                   </div>
                 )}
-                {metric1 && <div className="text-sm font-black text-gray-900 mt-1 tracking-tight">{metric1}</div>}
+                {metric1 && <div className="text-lg font-black text-gray-900 mt-1 tracking-tight leading-tight">{metric1}</div>}
                 {(metric2 || levelStr) && (
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {metric2 && <span className="text-[10px] font-semibold text-gray-500">{metric2}</span>}
-                    {levelStr && <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1 py-0.5 rounded">{levelStr}</span>}
+                  <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                    {metric2 && <span className="text-xs font-bold text-gray-700">{metric2}</span>}
+                    {levelStr && <span className="text-xs font-extrabold text-blue-800 bg-blue-100 px-1.5 py-0.5 rounded">{levelStr}</span>}
                   </div>
                 )}
                 {/* OPC Live Data on tile */}
                 {opcData[v.label] && (
                   <div className="mt-1 flex items-center gap-1.5 flex-wrap">
                     {opcData[v.label].level != null && (
-                      <span className="text-[9px] font-bold text-green-700 bg-green-50 border border-green-200 px-1 py-0.5">
+                      <span className="text-[11px] font-extrabold text-green-800 bg-green-100 border border-green-300 px-1.5 py-0.5">
                         OPC {opcData[v.label].level}%
                       </span>
                     )}
                     {opcData[v.label].temp != null && (
-                      <span className="text-[9px] font-bold text-orange-600 bg-orange-50 border border-orange-200 px-1 py-0.5">
+                      <span className="text-[11px] font-extrabold text-orange-800 bg-orange-100 border border-orange-300 px-1.5 py-0.5">
                         {opcData[v.label].temp}&deg;C
                       </span>
                     )}
                     {opcData[v.label].updatedAt && (
-                      <span className="text-[8px] text-gray-400">{fmtOpcAgo(opcData[v.label].updatedAt)}</span>
+                      <span className="text-[9px] text-gray-500 font-medium">{fmtOpcAgo(opcData[v.label].updatedAt)}</span>
                     )}
                   </div>
                 )}
@@ -1028,8 +1031,8 @@ export default function Fermentation() {
               <div>
                 <span className={`font-extrabold text-base ${isBW ? 'text-amber-800' : 'text-gray-900'}`}>{selected.label}</span>
                 <div className="flex items-center gap-1.5">
-                  {batchNo > 0 && <span className="text-[10px] text-gray-500 font-semibold">Batch #{batchNo}</span>}
-                  {phase !== 'IDLE' && !isBW && <span className={`text-[10px] font-bold ${cfg.text}`}>· {cfg.label}</span>}
+                  {batchNo > 0 && <span className="text-xs text-gray-600 font-bold">Batch #{batchNo}</span>}
+                  {phase !== 'IDLE' && !isBW && <span className={`text-xs font-extrabold ${cfg.text}`}>· {cfg.label}</span>}
                 </div>
               </div>
               <button onClick={() => setSelected(null)} className="ml-auto w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"><X size={14} className="text-gray-500" /></button>
@@ -1046,16 +1049,16 @@ export default function Fermentation() {
                 ) : (
                   <div className="space-y-2 max-w-xs mx-auto">
                     <div className="grid grid-cols-2 gap-2">
-                      <div><label className="text-[10px] font-bold text-gray-500">Batch #</label>
-                        <input type="number" value={newBatchForm.batchNo} onChange={e => setNewBatchForm(f => ({ ...f, batchNo: e.target.value }))} className="w-full px-2 py-1.5 border rounded-lg text-sm" /></div>
-                      <div><label className="text-[10px] font-bold text-gray-500">Level %</label>
-                        <input type="number" step="0.1" value={newBatchForm.pfLevel} onChange={e => setNewBatchForm(f => ({ ...f, pfLevel: e.target.value }))} className="w-full px-2 py-1.5 border rounded-lg text-sm" /></div>
+                      <div><label className="text-[10px] font-bold text-gray-600">Batch #</label>
+                        <input type="number" value={newBatchForm.batchNo} onChange={e => setNewBatchForm(f => ({ ...f, batchNo: e.target.value }))} className="w-full px-2 py-2 border border-gray-300 rounded-lg text-base font-bold" /></div>
+                      <div><label className="text-[10px] font-bold text-gray-600">Level %</label>
+                        <input type="number" step="0.1" value={newBatchForm.pfLevel} onChange={e => setNewBatchForm(f => ({ ...f, pfLevel: e.target.value }))} className="w-full px-2 py-2 border border-gray-300 rounded-lg text-base font-bold" /></div>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
-                      <div><label className="text-[10px] font-bold text-gray-500">Gravity</label>
-                        <input type="number" step="0.001" value={newBatchForm.slurryGravity} onChange={e => setNewBatchForm(f => ({ ...f, slurryGravity: e.target.value }))} className="w-full px-2 py-1.5 border rounded-lg text-sm" /></div>
-                      {isPF && <div><label className="text-[10px] font-bold text-gray-500">Temp °C</label>
-                        <input type="number" step="0.1" value={newBatchForm.slurryTemp} onChange={e => setNewBatchForm(f => ({ ...f, slurryTemp: e.target.value }))} className="w-full px-2 py-1.5 border rounded-lg text-sm" /></div>}
+                      <div><label className="text-[10px] font-bold text-gray-600">Gravity</label>
+                        <input type="number" step="0.001" value={newBatchForm.slurryGravity} onChange={e => setNewBatchForm(f => ({ ...f, slurryGravity: e.target.value }))} className="w-full px-2 py-2 border border-gray-300 rounded-lg text-base font-bold" /></div>
+                      {isPF && <div><label className="text-[10px] font-bold text-gray-600">Temp °C</label>
+                        <input type="number" step="0.1" value={newBatchForm.slurryTemp} onChange={e => setNewBatchForm(f => ({ ...f, slurryTemp: e.target.value }))} className="w-full px-2 py-2 border border-gray-300 rounded-lg text-base font-bold" /></div>}
                     </div>
                     <div className="flex gap-2">
                       <button onClick={startBatch} disabled={saving} className="flex-1 py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">
@@ -1099,24 +1102,24 @@ export default function Fermentation() {
                               if (p === 'DONE') { extra.cipEndTime = now; }
                             }
                             advancePhase(isPF ? 'PF' : 'FERM', batch!.id, p, extra);
-                          }} className={`flex-1 text-center py-1 rounded text-[7px] font-bold ${
+                          }} className={`flex-1 text-center py-1.5 rounded text-[9px] font-extrabold ${
                             canClick ? 'cursor-pointer hover:ring-2 hover:ring-offset-1 active:scale-95 transition-all' : ''
                           } ${
-                            i < ci ? 'bg-green-100 text-green-600' : i === ci ? `${pCfg.bg} ${pCfg.text} ring-1 ${pCfg.ring}` : 'bg-gray-50 text-gray-300'
+                            i < ci ? 'bg-green-100 text-green-700' : i === ci ? `${pCfg.bg} ${pCfg.text} ring-2 ${pCfg.ring}` : 'bg-gray-100 text-gray-400'
                           }`}>{pCfg.label}</div>
                         );
                       })}
                     </div>
                     {/* Setup stats */}
                     <div className="flex gap-2 flex-wrap">
-                      {isPF && (batch as PFBatch).slurryVolume && <div className="bg-indigo-50 rounded px-2 py-0.5 text-[10px]"><span className="text-indigo-400 font-bold">Vol</span> <span className="font-bold text-indigo-700">{((batch as PFBatch).slurryVolume! / 1000).toFixed(0)} KL</span></div>}
-                      {isPF && (batch as PFBatch).slurryGravity && <div className="bg-indigo-50 rounded px-2 py-0.5 text-[10px]"><span className="text-indigo-400 font-bold">SG</span> <span className="font-bold text-indigo-700">{(batch as PFBatch).slurryGravity!.toFixed(3)}</span></div>}
-                      {isPF && (batch as PFBatch).slurryTemp && <div className="bg-indigo-50 rounded px-2 py-0.5 text-[10px]"><span className="text-indigo-400 font-bold">Temp</span> <span className="font-bold text-indigo-700">{(batch as PFBatch).slurryTemp}°C</span></div>}
-                      {isFerm && (batch as FermBatch).fermLevel && <div className="bg-blue-50 rounded px-2 py-0.5 text-[10px]"><span className="text-blue-400 font-bold">Lvl</span> <span className="font-bold text-blue-700">{(batch as FermBatch).fermLevel}%</span></div>}
-                      {isFerm && (batch as FermBatch).setupGravity && <div className="bg-indigo-50 rounded px-2 py-0.5 text-[10px]"><span className="text-indigo-400 font-bold">SG</span> <span className="font-bold text-indigo-700">{(batch as FermBatch).setupGravity!.toFixed(3)}</span></div>}
-                      {isFerm && (batch as FermBatch).finalAlcohol && <div className="bg-emerald-50 rounded px-2 py-0.5 text-[10px]"><span className="text-emerald-400 font-bold">Alc</span> <span className="font-bold text-emerald-700">{(batch as FermBatch).finalAlcohol}%</span></div>}
-                      {isFerm && (batch as FermBatch).retentionStartTime && phase === 'RETENTION' && <div className="bg-orange-50 rounded px-2 py-0.5 text-[10px]"><span className="text-orange-400 font-bold">Ret</span> <span className="font-bold text-orange-700">{elapsed((batch as FermBatch).retentionStartTime)}</span></div>}
-                      {batch.remarks && <div className="bg-gray-100 rounded px-2 py-0.5 text-[10px] text-gray-500 truncate max-w-[200px]" title={batch.remarks}>{batch.remarks}</div>}
+                      {isPF && (batch as PFBatch).slurryVolume && <div className="bg-indigo-100 rounded px-2.5 py-1 text-[11px]"><span className="text-indigo-500 font-bold">Vol</span> <span className="font-extrabold text-indigo-800">{((batch as PFBatch).slurryVolume! / 1000).toFixed(0)} KL</span></div>}
+                      {isPF && (batch as PFBatch).slurryGravity && <div className="bg-indigo-100 rounded px-2.5 py-1 text-[11px]"><span className="text-indigo-500 font-bold">SG</span> <span className="font-extrabold text-indigo-800">{(batch as PFBatch).slurryGravity!.toFixed(3)}</span></div>}
+                      {isPF && (batch as PFBatch).slurryTemp && <div className="bg-indigo-100 rounded px-2.5 py-1 text-[11px]"><span className="text-indigo-500 font-bold">Temp</span> <span className="font-extrabold text-indigo-800">{(batch as PFBatch).slurryTemp}°C</span></div>}
+                      {isFerm && (batch as FermBatch).fermLevel && <div className="bg-blue-100 rounded px-2.5 py-1 text-[11px]"><span className="text-blue-500 font-bold">Lvl</span> <span className="font-extrabold text-blue-800">{(batch as FermBatch).fermLevel}%</span></div>}
+                      {isFerm && (batch as FermBatch).setupGravity && <div className="bg-indigo-100 rounded px-2.5 py-1 text-[11px]"><span className="text-indigo-500 font-bold">SG</span> <span className="font-extrabold text-indigo-800">{(batch as FermBatch).setupGravity!.toFixed(3)}</span></div>}
+                      {isFerm && (batch as FermBatch).finalAlcohol && <div className="bg-emerald-100 rounded px-2.5 py-1 text-[11px]"><span className="text-emerald-500 font-bold">Alc</span> <span className="font-extrabold text-emerald-800">{(batch as FermBatch).finalAlcohol}%</span></div>}
+                      {isFerm && (batch as FermBatch).retentionStartTime && phase === 'RETENTION' && <div className="bg-orange-100 rounded px-2.5 py-1 text-[11px]"><span className="text-orange-500 font-bold">Ret</span> <span className="font-extrabold text-orange-800">{elapsed((batch as FermBatch).retentionStartTime)}</span></div>}
+                      {batch.remarks && <div className="bg-gray-100 rounded px-2.5 py-1 text-[11px] text-gray-600 truncate max-w-[200px]" title={batch.remarks}>{batch.remarks}</div>}
                     </div>
                     {/* Phase actions — compact row */}
                     <div className="flex gap-1.5 flex-wrap">
@@ -1217,10 +1220,10 @@ export default function Fermentation() {
                           ...(!isBW ? [{ key: 'ds', label: 'DS%', step: '0.01' }, { key: 'vfaPpa', label: 'VFA', step: '0.01' }] : []),
                         ].map(f => (
                           <div key={f.key}>
-                            <label className="text-[8px] font-bold text-gray-500 uppercase tracking-wider">{f.label}</label>
+                            <label className="text-[9px] font-bold text-gray-600 uppercase tracking-wider">{f.label}</label>
                             <input type="number" step={f.step} value={(readingForm as any)[f.key] || ''}
                               onChange={e => setReadingForm(rf => ({ ...rf, [f.key]: e.target.value }))}
-                              className="w-full px-2 py-1.5 text-sm font-semibold text-gray-900 border border-gray-200 rounded-lg bg-gray-50 focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300 focus:bg-white outline-none transition-all" inputMode="decimal" />
+                              className="w-full px-2 py-2 text-base font-bold text-gray-900 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 outline-none transition-all" inputMode="decimal" />
                           </div>
                         ))}
                       </div>
@@ -1371,19 +1374,19 @@ export default function Fermentation() {
                                 </div>
                               ) : (
                                 /* Normal row */
-                                <div key={r.id || i} className="flex items-center gap-2 px-2.5 py-2 bg-gray-50/80 rounded-lg text-[11px] group hover:bg-gray-100 transition-colors">
-                                  <span className="text-gray-400 font-mono text-[10px] w-11 shrink-0">{fmtTime(r.analysisTime || r.createdAt)}</span>
+                                <div key={r.id || i} className="flex items-center gap-2 px-2.5 py-2 bg-gray-50/80 rounded-lg text-xs group hover:bg-gray-100 transition-colors">
+                                  <span className="text-gray-500 font-mono text-[11px] w-12 shrink-0 font-semibold">{fmtTime(r.analysisTime || r.createdAt)}</span>
                                   <div className="flex items-center gap-2 flex-1 flex-wrap">
-                                    {r.level != null && <span className="text-blue-700 font-bold bg-blue-50 px-1.5 py-0.5 rounded">Lvl {r.level}%</span>}
-                                    {r.spGravity != null && <span className="text-indigo-700 font-bold bg-indigo-50 px-1.5 py-0.5 rounded">SG {typeof r.spGravity === 'number' ? r.spGravity.toFixed(3) : r.spGravity}</span>}
-                                    {r.ph != null && <span className="text-gray-700 font-semibold">pH {r.ph}</span>}
-                                    {r.temp != null && <span className={`font-bold px-1.5 py-0.5 rounded ${(r.temp || 0) > 37 ? 'text-red-700 bg-red-50' : 'text-orange-700 bg-orange-50'}`}>{r.temp}°C</span>}
-                                    {r.alcohol != null && <span className="text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded">Alc {r.alcohol}%</span>}
-                                    {r.rs != null && <span className="text-amber-700 font-bold bg-amber-50 px-1.5 py-0.5 rounded">RS {r.rs}</span>}
-                                    {r.rst != null && <span className="text-amber-600 font-semibold bg-amber-50 px-1.5 py-0.5 rounded">RST {r.rst}</span>}
-                                    {r.ds != null && <span className="text-purple-700 font-semibold bg-purple-50 px-1.5 py-0.5 rounded">DS {r.ds}%</span>}
-                                    {r.vfaPpa != null && <span className="text-rose-700 font-semibold bg-rose-50 px-1.5 py-0.5 rounded">VFA {r.vfaPpa}</span>}
-                                    {r.status === 'FIELD' && <span className="text-[9px] bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded font-bold">FIELD</span>}
+                                    {r.level != null && <span className="text-blue-800 font-extrabold bg-blue-100 px-1.5 py-0.5 rounded">Lvl {r.level}%</span>}
+                                    {r.spGravity != null && <span className="text-indigo-800 font-extrabold bg-indigo-100 px-1.5 py-0.5 rounded">SG {typeof r.spGravity === 'number' ? r.spGravity.toFixed(3) : r.spGravity}</span>}
+                                    {r.ph != null && <span className="text-gray-800 font-bold">pH {r.ph}</span>}
+                                    {r.temp != null && <span className={`font-extrabold px-1.5 py-0.5 rounded ${(r.temp || 0) > 37 ? 'text-red-800 bg-red-100' : 'text-orange-800 bg-orange-100'}`}>{r.temp}°C</span>}
+                                    {r.alcohol != null && <span className="text-emerald-800 font-extrabold bg-emerald-100 px-1.5 py-0.5 rounded">Alc {r.alcohol}%</span>}
+                                    {r.rs != null && <span className="text-amber-800 font-extrabold bg-amber-100 px-1.5 py-0.5 rounded">RS {r.rs}</span>}
+                                    {r.rst != null && <span className="text-amber-700 font-bold bg-amber-100 px-1.5 py-0.5 rounded">RST {r.rst}</span>}
+                                    {r.ds != null && <span className="text-purple-800 font-bold bg-purple-100 px-1.5 py-0.5 rounded">DS {r.ds}%</span>}
+                                    {r.vfaPpa != null && <span className="text-rose-800 font-bold bg-rose-100 px-1.5 py-0.5 rounded">VFA {r.vfaPpa}</span>}
+                                    {r.status === 'FIELD' && <span className="text-[10px] bg-yellow-200 text-yellow-900 px-1.5 py-0.5 rounded font-bold">FIELD</span>}
                                   </div>
                                   {r.id && (
                                     <div className="flex items-center gap-1 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity">
