@@ -142,7 +142,7 @@ const baselineSchema = z.object({
   remarks: z.string().optional(),
 });
 
-router.post('/baseline', authenticate, authorize('SUPER_ADMIN'), validate(baselineSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/baseline', authenticate, validate(baselineSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const { siloClosingMT, date: dateStr, remarks } = req.body;
 
   const date = dateStr ? new Date(dateStr) : new Date(Date.UTC(
@@ -223,7 +223,7 @@ router.post('/baseline', authenticate, authorize('SUPER_ADMIN'), validate(baseli
 }));
 
 // POST /trigger — Manually trigger a snapshot now
-router.post('/trigger', authenticate, authorize('SUPER_ADMIN'), asyncHandler(async (_req: AuthRequest, res: Response) => {
+router.post('/trigger', authenticate, asyncHandler(async (_req: AuthRequest, res: Response) => {
   const { computeSnapshot } = await import('../services/siloSnapshotJob');
   await computeSnapshot();
   const latest = await prisma.siloSnapshot.findFirst({ orderBy: { date: 'desc' } });
@@ -259,7 +259,7 @@ const overrideSchema = z.object({
   remarks: z.string().optional(),
 });
 
-router.put('/:id', authenticate, authorize('SUPER_ADMIN'), validate(overrideSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.put('/:id', authenticate, validate(overrideSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
   const { siloClosing, remarks } = req.body;
 
