@@ -19,7 +19,10 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 500);
 
     const where: any = {};
-    if (status) where.status = status;
+    if (status) {
+      const statuses = status.split(',').map(s => s.trim()).filter(Boolean);
+      where.status = statuses.length === 1 ? statuses[0] : { in: statuses };
+    }
     if (vendorId) where.vendorId = vendorId;
     // Filter by inventory item category on PO lines (not vendor category — those don't match)
     // FUEL = any PO with a line whose inventoryItem.category is 'FUEL'
