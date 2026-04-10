@@ -282,6 +282,15 @@ router.post('/push-hourly', validate(pushHourlySchema), asyncHandler(async (req:
 router.get('/monitor/pull', asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!checkPushKey(req, res)) return;
   const opc = getOpcPrisma();
+
+  // One-time fix: Evap_ANALOG → ANALOG (wrong folder name from UI catalog)
+  try {
+    await opc.opcMonitoredTag.updateMany({
+      where: { area: 'Evaporation', folder: 'Evap_ANALOG' },
+      data: { folder: 'ANALOG' },
+    });
+  } catch { /* ignore if already fixed */ }
+
   let tags: Array<Record<string, unknown>>;
   try {
     tags = await opc.opcMonitoredTag.findMany({
