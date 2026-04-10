@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import prisma from '../config/prisma';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import { recomputeEthanolEntryByDate } from './ethanolProduct';
 
 const router = Router();
 
@@ -279,6 +280,10 @@ router.post('/', authenticate, upload.single('photo'), async (req: AuthRequest, 
       }
     }
 
+    // Backfill: recompute enclosing ethanol entry so late-arriving standalone trucks
+    // don't leave stale negative production / KLPD on the window's entry
+    try { await recomputeEthanolEntryByDate(dispatchDate); } catch (e) { /* non-fatal */ }
+
     res.status(201).json({ ...dispatch, lifting, contractNo: lifting ? 'linked' : null });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
@@ -292,7 +297,11 @@ router.delete('/:id', authenticate, async (req: AuthRequest, res: Response) => {
       const filePath = path.join(__dirname, '../../uploads/dispatch', filename);
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     }
+    const truckDate = d?.date;
     await prisma.dispatchTruck.delete({ where: { id: req.params.id } });
+    if (truckDate) {
+      try { await recomputeEthanolEntryByDate(truckDate); } catch (e) { /* non-fatal */ }
+    }
     res.json({ success: true });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });

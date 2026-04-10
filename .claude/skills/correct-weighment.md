@@ -200,9 +200,11 @@ const resp = await fetch(`${FACTORY_SERVER_URL}/api/weighbridge/correction`, {
 | Cloud | Factory |
 |---|---|
 | `materialType` | `materialName` |
+| `materialName` | `materialName` (direct passthrough) |
 | `materialCategory` | `materialCategory` |
 | `supplier` | `supplierName` |
-| `poId` | `cloudPurchaseOrderId` |
+| `poId` | `poId` |
+| `poLineId` | `poLineId` |
 | `vehicleNo` | `vehicleNo` |
 | `driverName` | `driverName` |
 | `driverMobile` | `driverPhone` |
@@ -211,6 +213,13 @@ const resp = await fetch(`${FACTORY_SERVER_URL}/api/weighbridge/correction`, {
 | `bags` | `bags` |
 
 Mark audit rows as `factorySynced: true` on success, `factorySynced: false` + `factoryError` on failure.
+
+**KNOWN LIMITATION — GoodsReceipt (fuel) audit rows:**
+The `WeighmentCorrection` model has a FK (`weighmentId` → `GrainTruck.id`) that prevents inserting audit rows for fuel corrections (GoodsReceipt source). For fuel corrections:
+- Skip cloud audit row creation (FK prevents it)
+- The GoodsReceipt.remarks field already contains correction notes (added by the correction flow that updated the GRN)
+- Factory push still works normally via `/api/weighbridge/correction`
+- TODO: Schema fix — make `weighmentId` FK optional or polymorphic to support all source types
 
 ### Step 6: Admin Notification
 

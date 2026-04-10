@@ -194,9 +194,9 @@ export default function GateEntry() {
     if (!vehicleNo) { alert('Vehicle number is required'); return; }
     if (isEthanol && !ethContractId) { alert('Select an ethanol contract'); return; }
     if (isDdgsOut && !ddgsContractId) { alert('Select a DDGS contract'); return; }
-    if (purchaseType === 'TRADER' && !selectedTraderId) { alert('Select a trader'); return; }
-    if (purchaseType === 'TRADER' && (!rate || parseFloat(rate) <= 0)) { alert('Rate is required for trader purchases'); return; }
-    if (purchaseType === 'TRADER' && !materialName) { alert('Select a material/product'); return; }
+    if (direction === 'INBOUND' && purchaseType === 'TRADER' && !selectedTraderId) { alert('Select a trader'); return; }
+    if (direction === 'INBOUND' && purchaseType === 'TRADER' && (!rate || parseFloat(rate) <= 0)) { alert('Rate is required for trader purchases'); return; }
+    if (direction === 'INBOUND' && purchaseType === 'TRADER' && !materialName) { alert('Select a material/product'); return; }
     setSaving(true);
     try {
       const body: Record<string, unknown> = {

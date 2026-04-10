@@ -1335,9 +1335,11 @@ router.post('/correction', requireWbKey, asyncHandler(async (req: Request, res: 
   const updateData: Record<string, unknown> = {};
   const f = body.fields || {};
   if ('materialType' in f) updateData.materialName = f.materialType;
+  if ('materialName' in f) updateData.materialName = f.materialName; // direct passthrough
   if ('materialCategory' in f) updateData.materialCategory = f.materialCategory;
   if ('supplier' in f) updateData.supplierName = f.supplier;
-  if ('poId' in f) updateData.cloudPurchaseOrderId = f.poId; // factory stores the cloud poId
+  if ('poId' in f) updateData.poId = f.poId; // factory field is poId
+  if ('poLineId' in f) updateData.poLineId = f.poLineId;
   if ('vehicleNo' in f) updateData.vehicleNo = f.vehicleNo;
   if ('driverName' in f) updateData.driverName = f.driverName;
   if ('driverMobile' in f) updateData.driverPhone = f.driverMobile;
