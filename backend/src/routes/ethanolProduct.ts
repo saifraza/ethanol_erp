@@ -50,6 +50,7 @@ function calcKLPD(productionBL: number, prevDate: Date | null, curDate: Date): n
   return (productionBL / hours) * 24 / 1000; // BL -> KL per day
 }
 
+
 // GET /api/ethanol-product/latest — returns latest entry as "previous" + defaults
 // ?beforeId=xxx — get the entry before this one (for edit mode)
 router.get('/latest', authenticate, async (req: AuthRequest, res: Response) => {
@@ -170,14 +171,13 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     const totalDispatch = linkedDispatch + standaloneDispatch;
 
     const summary = calcSummary(tankData, prevEntry, totalDispatch);
-    const klpd = calcKLPD(summary.productionBL, prevEntry?.date || null, entryDate);
 
-    // Override production to 0 when plant not running
-    if (plantNotRunning) {
+    // Clamp negative production to 0 (can happen when dispatch exceeds measured production)
+    if (plantNotRunning || summary.productionBL < 0) {
       summary.productionBL = 0;
       summary.productionAL = 0;
     }
-    const finalKlpd = plantNotRunning ? 0 : klpd;
+    const klpd = calcKLPD(summary.productionBL, prevEntry?.date || null, entryDate);
 
     const entry = await prisma.ethanolProductEntry.create({
       data: {
@@ -185,7 +185,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
         yearStart,
         ...tankData,
         ...summary,
-        klpd: finalKlpd,
+        klpd,
         remarks: remarks || null,
         userId: req.user!.id,
         trucks: {
@@ -231,14 +231,13 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
     );
     const totalDispatch = linkedDispatch + standaloneDispatch;
     const summary = calcSummary(tankData, prevEntry, totalDispatch);
-    const klpd = calcKLPD(summary.productionBL, prevEntry?.date || null, entryDate);
 
-    // Override production to 0 when plant not running
-    if (pnr) {
+    // Clamp negative production to 0
+    if (pnr || summary.productionBL < 0) {
       summary.productionBL = 0;
       summary.productionAL = 0;
     }
-    const finalKlpd = pnr ? 0 : klpd;
+    const klpd = calcKLPD(summary.productionBL, prevEntry?.date || null, entryDate);
 
     // Delete old trucks, recreate
     await prisma.dispatchTruck.deleteMany({ where: { entryId: req.params.id } });
@@ -249,7 +248,7 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
         date: entryDate,
         ...tankData,
         ...summary,
-        klpd: finalKlpd,
+        klpd,
         remarks: remarks || null,
         trucks: {
           create: truckList.map(t => ({
@@ -276,5 +275,52 @@ router.delete('/:id', authenticate, authorize('ADMIN'), async (req: AuthRequest,
     res.json({ message: 'Deleted' });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
+
+// ─────────────────────────────────────────────────────────────
+// Backfill helper: recompute an ethanol entry's totals.
+// Called when a standalone DispatchTruck is created/updated/deleted
+// so late-arriving trucks don't leave stale production/klpd on the entry
+// whose window they fall in.
+// ─────────────────────────────────────────────────────────────
+export async function recomputeEthanolEntryByDate(truckDate: Date): Promise<void> {
+  // Find the ethanol entry whose window contains this truck date:
+  // the first entry with date >= truckDate (since window is (prev, current])
+  const enclosing = await prisma.ethanolProductEntry.findFirst({
+    where: { date: { gte: truckDate } },
+    orderBy: { date: 'asc' },
+    include: { trucks: true },
+  });
+  if (!enclosing) return;
+
+  const prevEntry = await prisma.ethanolProductEntry.findFirst({
+    where: { yearStart: enclosing.yearStart, date: { lt: enclosing.date } },
+    orderBy: { date: 'desc' },
+  });
+
+  // Rebuild tankData from stored fields
+  const tankData: any = {};
+  for (const f of TANK_FIELDS) tankData[f] = (enclosing as any)[f];
+
+  const linkedDispatch = enclosing.trucks.reduce((s, t) => s + (t.quantityBL || 0), 0);
+  const standaloneDispatch = await getStandaloneDispatch(
+    prevEntry?.date || null, enclosing.date
+  );
+  const totalDispatch = linkedDispatch + standaloneDispatch;
+  const summary = calcSummary(tankData, prevEntry, totalDispatch);
+
+  const klpd = calcKLPD(summary.productionBL, prevEntry?.date || null, enclosing.date);
+
+  await prisma.ethanolProductEntry.update({
+    where: { id: enclosing.id },
+    data: {
+      totalStock: summary.totalStock,
+      avgStrength: summary.avgStrength,
+      totalDispatch: summary.totalDispatch,
+      productionBL: summary.productionBL,
+      productionAL: summary.productionAL,
+      klpd,
+    },
+  });
+}
 
 export default router;
