@@ -40,6 +40,37 @@
 
 **Permanent rule**: If cloud shows stale but local `/health` shows fresh scans + pending syncs, it's an internet issue at the factory, not a bridge bug. Data will auto-sync when internet recovers (queue retries with backoff).
 
+### 3. Backfill cursor corruption — 2026-04-10
+
+**What happened**: OPC Live page showed "ONLINE (2h ago)" — bridge appeared connected, `pendingSyncs: 0`, push returning 200, but cloud `MAX(scannedAt)` was stuck 2+ hours in the past.
+
+**Root cause**: `cloud_sync.py` `push_readings()` had a single forward cursor (`last_push_batch`) used for BOTH new readings and backfill. After restart recovery pushed the latest 500 readings, the backfill phase would:
+1. Fetch old readings (`WHERE scan_batch < _backfill_before ORDER BY scanned_at DESC`)
+2. Push them successfully (old `scannedAt` timestamps)
+3. **Set `last_push_batch = last_batch`** — pointing to an OLD batch ID
+4. Next cycle: `WHERE scan_batch > last_push_batch` fetched mid-range data, not latest
+5. Cloud's `MAX(scannedAt)` stayed frozen at the restart-recovery timestamp
+
+The bridge looked healthy: no errors, no queue buildup, heartbeats flowing. But every push was sending stale data while new readings accumulated locally unsent.
+
+**Fix**: Separated forward and backward cursors with an `is_backfill` flag:
+```python
+is_backfill = False
+# ... backfill sets is_backfill = True, moves _backfill_before backward
+
+if self._post("/push", payload):
+    if not is_backfill:
+        self.last_push_batch = last_batch  # Only advance for NEW data
+```
+Backfill moves `_backfill_before` backward independently. `last_push_batch` only advances when pushing genuinely new readings. The two cursors never interfere.
+
+**Fix deployed**: SCP'd to lab PC, killed old process (PID file), restarted. New process immediately pushed 500 latest readings with fresh timestamps. Cloud showed live data within 60s.
+
+**Permanent rules**:
+- **Separate cursors for forward sync vs backfill.** A single cursor that serves both directions WILL corrupt one or the other eventually.
+- **After any sync fix, verify cloud `MAX(scannedAt)` moves forward** — `pendingSyncs: 0` and HTTP 200 don't prove freshness.
+- **Bridge "healthy" ≠ cloud data fresh.** Health checks must include a freshness assertion (scan age + last pushed timestamp), not just connectivity.
+
 ---
 
 ## Part B — Architecture
