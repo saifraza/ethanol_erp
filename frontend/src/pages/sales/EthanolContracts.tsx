@@ -733,7 +733,7 @@ const EthanolContracts: React.FC = () => {
                                           <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
                                             t.status === 'GROSS_WEIGHED' ? 'border-green-300 bg-green-100 text-green-700' : 'border-orange-300 bg-orange-100 text-orange-700'
                                           }`}>
-                                            {t.status === 'GATE_IN' ? 'AT GATE' : t.status === 'TARE_WEIGHED' ? 'LOADING' : 'WEIGHED'}
+                                            {t.status === 'GROSS_WEIGHED' ? 'DISPATCHED' : 'LOADING'}
                                           </span>
                                         </td>
                                         <td className="px-2 py-1.5 border-r border-orange-100 text-center">
@@ -1317,7 +1317,7 @@ const EthanolContracts: React.FC = () => {
                 </div>
                 <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
                   t.status === 'GROSS_WEIGHED' ? 'border-green-400 bg-green-500 text-white' : 'border-orange-400 bg-orange-500 text-white'
-                }`}>{t.status === 'GATE_IN' ? 'AT GATE' : t.status === 'TARE_WEIGHED' ? 'LOADING' : 'WEIGHED'}</span>
+                }`}>{t.status === 'GROSS_WEIGHED' ? 'DISPATCHED' : 'LOADING'}</span>
               </div>
               <div className="p-4 space-y-3 max-h-[70vh] overflow-y-auto">
                 {/* Quantity & Value */}
