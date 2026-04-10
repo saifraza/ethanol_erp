@@ -7,7 +7,7 @@ import {
   LayoutDashboard, LogOut, ChevronDown, ChevronRight,
   WifiOff, Menu, X, Bell
 } from 'lucide-react';
-import { processNav, salesNav, procurementNav, tradeNav, accountsNav, booksNav, inventoryNav, logisticsNav, complianceNav, taxNav, hrNav, adminNav } from '../config/modules';
+import { processNav, salesNav, procurementNav, tradeNav, accountsNav, booksNav, inventoryNav, complianceNav, taxNav, hrNav, adminNav } from '../config/modules';
 
 function hasModuleAccess(user: any, moduleKey: string): boolean {
   if (!user) return false;
@@ -31,7 +31,6 @@ export default function Layout() {
   const [processOpen, setProcessOpen] = useState(p.startsWith('/process') || p.startsWith('/purchase-requisition'));
   const [salesOpen, setSalesOpen] = useState(p.startsWith('/sales'));
   const [procurementOpen, setProcurementOpen] = useState(p.startsWith('/procurement') || p.startsWith('/fuel'));
-  const [logisticsOpen, setLogisticsOpen] = useState(p.startsWith('/logistics'));
   const [tradeOpen, setTradeOpen] = useState(p.startsWith('/trade'));
   const [accountsOpen, setAccountsOpen] = useState(p.startsWith('/accounts') || p.startsWith('/payments'));
   const [booksOpen, setBooksOpen] = useState(p.startsWith('/books'));
@@ -150,20 +149,6 @@ export default function Layout() {
           {salesOpen && (
             <div className="space-y-0.5 ml-1 border-l border-gray-700 pl-2">
               {salesNav.filter(n => hasModuleAccess(user, n.moduleKey)).map(n => (
-                <NavLink key={n.to} {...n} active={location.pathname === n.to} onClick={closeSidebar} />
-              ))}
-            </div>
-          )}
-          </>)}
-
-          {logisticsNav.some(n => hasModuleAccess(user, n.moduleKey)) && (<>
-          <button onClick={() => setLogisticsOpen(!logisticsOpen)} className="flex items-center justify-between w-full px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mt-3 hover:text-gray-200">
-            <span>Logistics</span>
-            {logisticsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          </button>
-          {logisticsOpen && (
-            <div className="space-y-0.5 ml-1 border-l border-gray-700 pl-2">
-              {logisticsNav.filter(n => hasModuleAccess(user, n.moduleKey)).map(n => (
                 <NavLink key={n.to} {...n} active={location.pathname === n.to} onClick={closeSidebar} />
               ))}
             </div>
