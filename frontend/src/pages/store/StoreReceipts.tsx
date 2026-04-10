@@ -82,6 +82,44 @@ interface DraftConflict {
   createdBy?: string | null;
 }
 
+interface PendingPOGrn {
+  id: string;
+  grnNo: number;
+  status: string;
+  grnDate: string;
+  totalQty: number;
+  totalAmount: number;
+}
+
+interface PendingPOLine {
+  id: string;
+  description: string;
+  quantity: number;
+  receivedQty: number;
+  pendingQty: number;
+  unit: string;
+  rate: number;
+}
+
+interface PendingPO {
+  id: string;
+  poNo: number;
+  poDate: string;
+  deliveryDate?: string | null;
+  status: string;
+  dealType?: string | null;
+  grandTotal: number;
+  vendor: { id: string; name: string };
+  totalOrdered: number;
+  totalReceived: number;
+  totalPending: number;
+  receiptStatus: string;
+  draftGrns: PendingPOGrn[];
+  confirmedGrns: PendingPOGrn[];
+  lineCount: number;
+  lines: PendingPOLine[];
+}
+
 const PAGE_SIZE = 50;
 
 const fmtDate = (s?: string | null) => {
@@ -127,11 +165,18 @@ export default function StoreReceipts() {
   const [status, setStatus] = useState<string>('');
   const [page, setPage] = useState(0);
 
+  // Pending POs section
+  const [pendingPOs, setPendingPOs] = useState<PendingPO[]>([]);
+  const [pendingLoading, setPendingLoading] = useState(true);
+  const [pendingCollapsed, setPendingCollapsed] = useState(false);
+  const [expandedPO, setExpandedPO] = useState<string | null>(null);
+
   // Detail drawer
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // Create modal
   const [createOpen, setCreateOpen] = useState(false);
+  const [createForPO, setCreateForPO] = useState<string | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -168,6 +213,23 @@ export default function StoreReceipts() {
   useEffect(() => {
     fetchRows();
   }, [fetchRows]);
+
+  const fetchPendingPOs = useCallback(async () => {
+    try {
+      setPendingLoading(true);
+      const res = await api.get('/goods-receipts/store/pending-pos');
+      setPendingPOs(res.data as PendingPO[]);
+    } catch (err) {
+      console.error('Failed to load pending POs:', err);
+      setPendingPOs([]);
+    } finally {
+      setPendingLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPendingPOs();
+  }, [fetchPendingPOs]);
 
   const kpis = useMemo(() => {
     const draft = rows.filter((r) => r.status === 'DRAFT').length;
@@ -222,6 +284,147 @@ export default function StoreReceipts() {
           Only use this page for items physically counted at the store.
           Weighbridge-delivered materials (rice husk, grain, fuel) are auto-created — see Auto GRN.
         </div>
+
+        {/* ══════════ Pending POs — Awaiting Goods ══════════ */}
+        {pendingPOs.length > 0 && (
+          <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300">
+            <button
+              onClick={() => setPendingCollapsed(c => !c)}
+              className="w-full bg-blue-50 border-b border-blue-200 px-4 py-2.5 flex items-center justify-between hover:bg-blue-100 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-[11px] font-bold text-blue-800 uppercase tracking-widest">
+                  Running Purchase Orders
+                </span>
+                <span className="text-[10px] text-blue-600 font-mono tabular-nums">
+                  {pendingPOs.length} PO{pendingPOs.length !== 1 ? 's' : ''} awaiting goods
+                </span>
+              </div>
+              <span className="text-blue-600 text-xs">{pendingCollapsed ? '+' : '-'}</span>
+            </button>
+
+            {!pendingCollapsed && (
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-slate-700 text-white">
+                    <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">PO</th>
+                    <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">Vendor</th>
+                    <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">PO Date</th>
+                    <th className="text-center px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">Items</th>
+                    <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">Ordered</th>
+                    <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">Received</th>
+                    <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">Pending</th>
+                    <th className="text-center px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">Receipt Status</th>
+                    <th className="text-center px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingPOs.map((po, i) => {
+                    const statusLabel =
+                      po.receiptStatus === 'DRAFT_IN_PROGRESS'
+                        ? 'Draft GRN Open'
+                        : po.receiptStatus === 'PARTIAL_RECEIVED'
+                        ? 'Partially Received'
+                        : 'Awaiting Goods';
+                    const statusColor =
+                      po.receiptStatus === 'DRAFT_IN_PROGRESS'
+                        ? 'border-amber-300 bg-amber-50 text-amber-700'
+                        : po.receiptStatus === 'PARTIAL_RECEIVED'
+                        ? 'border-blue-300 bg-blue-50 text-blue-700'
+                        : 'border-orange-300 bg-orange-50 text-orange-700';
+                    const isExpanded = expandedPO === po.id;
+
+                    return (
+                      <React.Fragment key={po.id}>
+                        <tr
+                          className={`border-b border-slate-100 hover:bg-blue-50/60 cursor-pointer ${i % 2 ? 'bg-slate-50/70' : ''}`}
+                          onClick={() => setExpandedPO(isExpanded ? null : po.id)}
+                        >
+                          <td className="px-3 py-1.5 text-slate-800 border-r border-slate-100 font-mono tabular-nums font-semibold">
+                            PO-{po.poNo}
+                          </td>
+                          <td className="px-3 py-1.5 text-slate-700 border-r border-slate-100">{po.vendor.name}</td>
+                          <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100 whitespace-nowrap">{fmtDate(po.poDate)}</td>
+                          <td className="px-3 py-1.5 text-center text-slate-700 border-r border-slate-100 font-mono tabular-nums">{po.lineCount}</td>
+                          <td className="px-3 py-1.5 text-right text-slate-700 border-r border-slate-100 font-mono tabular-nums">{po.totalOrdered}</td>
+                          <td className="px-3 py-1.5 text-right text-slate-700 border-r border-slate-100 font-mono tabular-nums">{po.totalReceived}</td>
+                          <td className="px-3 py-1.5 text-right text-slate-800 border-r border-slate-100 font-mono tabular-nums font-semibold">{po.totalPending}</td>
+                          <td className="px-3 py-1.5 text-center border-r border-slate-100">
+                            <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${statusColor}`}>
+                              {statusLabel}
+                            </span>
+                          </td>
+                          <td className="px-3 py-1.5 text-center">
+                            {po.draftGrns.length > 0 ? (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setSelectedId(po.draftGrns[0].id); }}
+                                className="px-2 py-0.5 bg-amber-600 text-white text-[10px] font-medium hover:bg-amber-700 uppercase tracking-widest"
+                              >
+                                Edit Draft
+                              </button>
+                            ) : (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setCreateForPO(po.id); setCreateOpen(true); }}
+                                className="px-2 py-0.5 bg-green-600 text-white text-[10px] font-medium hover:bg-green-700 uppercase tracking-widest"
+                              >
+                                Receive
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr>
+                            <td colSpan={9} className="bg-slate-50 px-6 py-2 border-b border-slate-200">
+                              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Line Items</div>
+                              <table className="w-full text-[11px]">
+                                <thead>
+                                  <tr className="text-[9px] text-slate-500 uppercase tracking-widest">
+                                    <th className="text-left pb-1 pr-4">Material</th>
+                                    <th className="text-right pb-1 pr-4">Ordered</th>
+                                    <th className="text-right pb-1 pr-4">Received</th>
+                                    <th className="text-right pb-1 pr-4">Pending</th>
+                                    <th className="text-left pb-1">Unit</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {po.lines.map(l => (
+                                    <tr key={l.id} className="border-t border-slate-100">
+                                      <td className="py-1 pr-4 text-slate-700">{l.description}</td>
+                                      <td className="py-1 pr-4 text-right font-mono tabular-nums text-slate-600">{l.quantity}</td>
+                                      <td className="py-1 pr-4 text-right font-mono tabular-nums text-slate-600">{l.receivedQty}</td>
+                                      <td className="py-1 pr-4 text-right font-mono tabular-nums text-slate-800 font-semibold">{l.pendingQty}</td>
+                                      <td className="py-1 text-slate-500">{l.unit}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                              {po.confirmedGrns.length > 0 && (
+                                <div className="mt-2 pt-2 border-t border-slate-200">
+                                  <div className="text-[9px] text-slate-500 uppercase tracking-widest mb-1">Previous Receipts</div>
+                                  <div className="flex flex-wrap gap-2">
+                                    {po.confirmedGrns.map(g => (
+                                      <button
+                                        key={g.id}
+                                        onClick={() => setSelectedId(g.id)}
+                                        className="px-2 py-0.5 bg-white border border-slate-300 text-slate-700 text-[10px] font-mono hover:bg-slate-50"
+                                      >
+                                        GRN-{g.grnNo} ({fmtDate(g.grnDate)})
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
 
         {/* Filter bar */}
         <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6 flex gap-3 items-end flex-wrap">
@@ -410,7 +613,7 @@ export default function StoreReceipts() {
             endpoint="store"
             readOnly={!canWrite}
             onClose={() => setSelectedId(null)}
-            onChanged={fetchRows}
+            onChanged={() => { fetchRows(); fetchPendingPOs(); }}
           />
         )}
 
@@ -418,14 +621,18 @@ export default function StoreReceipts() {
         {createOpen && canWrite && (
           <CreateReceiptModal
             isAdmin={isAdmin}
-            onClose={() => setCreateOpen(false)}
+            preSelectPOId={createForPO}
+            onClose={() => { setCreateOpen(false); setCreateForPO(null); }}
             onCreated={(grnId) => {
               setCreateOpen(false);
+              setCreateForPO(null);
               fetchRows();
+              fetchPendingPOs();
               setSelectedId(grnId);
             }}
             onEditExisting={(grnId) => {
               setCreateOpen(false);
+              setCreateForPO(null);
               setSelectedId(grnId);
             }}
           />
@@ -440,11 +647,13 @@ export default function StoreReceipts() {
 // ═══════════════════════════════════════════════════════════════════════════
 function CreateReceiptModal({
   isAdmin,
+  preSelectPOId,
   onClose,
   onCreated,
   onEditExisting,
 }: {
   isAdmin: boolean;
+  preSelectPOId?: string | null;
   onClose: () => void;
   onCreated: (grnId: string) => void;
   onEditExisting: (grnId: string) => void;
@@ -505,6 +714,15 @@ function CreateReceiptModal({
       }
     })();
   }, []);
+
+  // Auto-select PO when preSelectPOId is passed (from Receive button)
+  useEffect(() => {
+    if (preSelectPOId && pos.length > 0 && !selectedPO) {
+      const match = pos.find(p => p.id === preSelectPOId);
+      if (match) pickPO(match);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preSelectPOId, pos]);
 
   const filteredPOs = useMemo(() => {
     const q = poSearch.trim().toLowerCase();

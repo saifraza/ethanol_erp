@@ -181,6 +181,92 @@ const updateSchema = z.object({
   lines: z.array(lineSchema).optional(),
 });
 
+// ═══════════════════════════════════════════════════════════════════
+// GET /pending-pos — running store POs with GRN receipt status
+// Shows APPROVED/SENT/PARTIAL_RECEIVED POs (non-weighbridge) so
+// the store in-charge can see what's expected and quickly receive.
+// ═══════════════════════════════════════════════════════════════════
+router.get('/pending-pos', asyncHandler(async (_req: AuthRequest, res: Response) => {
+  const pos = await prisma.purchaseOrder.findMany({
+    where: {
+      status: { in: ['APPROVED', 'SENT', 'PARTIAL_RECEIVED'] },
+    },
+    orderBy: { poDate: 'desc' },
+    take: 200,
+    include: {
+      vendor: { select: { id: true, name: true } },
+      lines: {
+        select: {
+          id: true, description: true, quantity: true,
+          receivedQty: true, pendingQty: true, unit: true, rate: true,
+          inventoryItem: { select: { id: true, name: true, category: true } },
+        },
+      },
+      grns: {
+        where: { ...STORE_SOURCE_WHERE },
+        select: {
+          id: true, grnNo: true, status: true, grnDate: true,
+          totalQty: true, totalAmount: true,
+        },
+        orderBy: { grnDate: 'desc' },
+      },
+    },
+  });
+
+  // Filter out weighbridge-bound POs (FUEL, RAW_MATERIAL line categories)
+  const storePOs = pos.filter(po => {
+    const cats = po.lines.map(l => l.inventoryItem?.category || null);
+    const isFuel = cats.some(c => c === 'FUEL');
+    const isGrain = cats.some(c => c === 'RAW_MATERIAL');
+    return !isFuel && !isGrain;
+  });
+
+  // Only include POs with pending lines
+  const result = storePOs
+    .filter(po => po.lines.some(l => l.pendingQty > 0))
+    .map(po => {
+      const totalOrdered = po.lines.reduce((s: number, l: { quantity: number }) => s + l.quantity, 0);
+      const totalReceived = po.lines.reduce((s: number, l: { receivedQty: number }) => s + l.receivedQty, 0);
+      const totalPending = po.lines.reduce((s: number, l: { pendingQty: number }) => s + l.pendingQty, 0);
+      const draftGrns = po.grns.filter((g: { status: string }) => g.status === 'DRAFT');
+      const confirmedGrns = po.grns.filter((g: { status: string }) => g.status === 'CONFIRMED');
+
+      let receiptStatus: string;
+      if (confirmedGrns.length > 0 && totalPending > 0) receiptStatus = 'PARTIAL_RECEIVED';
+      else if (draftGrns.length > 0) receiptStatus = 'DRAFT_IN_PROGRESS';
+      else receiptStatus = 'AWAITING_GOODS';
+
+      return {
+        id: po.id,
+        poNo: po.poNo,
+        poDate: po.poDate,
+        deliveryDate: po.deliveryDate,
+        status: po.status,
+        dealType: po.dealType,
+        grandTotal: po.grandTotal,
+        vendor: po.vendor,
+        totalOrdered,
+        totalReceived,
+        totalPending,
+        receiptStatus,
+        draftGrns,
+        confirmedGrns,
+        lineCount: po.lines.length,
+        lines: po.lines.map(l => ({
+          id: l.id,
+          description: l.description,
+          quantity: l.quantity,
+          receivedQty: l.receivedQty,
+          pendingQty: l.pendingQty,
+          unit: l.unit,
+          rate: l.rate,
+        })),
+      };
+    });
+
+  res.json(result);
+}));
+
 // ═══════════════════════════════════════════════
 // GET / — paginated list of store (manual) GRNs
 // ═══════════════════════════════════════════════
