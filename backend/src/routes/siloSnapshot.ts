@@ -74,6 +74,8 @@ router.get('/live-tanks', authenticate, asyncHandler(async (_req: AuthRequest, r
 
   try {
     const TAGS: Record<string, { label: string; capField: string }> = {
+      LT130101: { label: 'PF1', capField: 'pfCap' },
+      LT130102: { label: 'PF2', capField: 'pfCap' },
       LT130201: { label: 'F1', capField: 'fermenter1Cap' },
       LT130202: { label: 'F2', capField: 'fermenter2Cap' },
       LT130301: { label: 'F3', capField: 'fermenter3Cap' },
@@ -85,6 +87,7 @@ router.get('/live-tanks', authenticate, asyncHandler(async (_req: AuthRequest, r
 
     const settings = await prisma.settings.findFirst();
     const caps: Record<string, number> = {
+      pfCap: (settings as any)?.pfCap ?? 430,
       fermenter1Cap: (settings as any)?.fermenter1Cap ?? 2300,
       fermenter2Cap: (settings as any)?.fermenter2Cap ?? 2300,
       fermenter3Cap: (settings as any)?.fermenter3Cap ?? 2300,

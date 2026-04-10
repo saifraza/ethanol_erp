@@ -263,7 +263,7 @@ export default function SiloStock() {
           {/* Tank Level Gauges */}
           <div className="bg-white rounded-lg border border-gray-200 p-4">
             <h3 className="text-sm font-semibold text-gray-700 mb-3">Live Tank Levels</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+            <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-3">
               {tanks.map(t => (
                 <TankGauge key={t.tag} label={t.label} pct={t.pct} kl={t.kl} capacityKL={t.capacityKL} />
               ))}
