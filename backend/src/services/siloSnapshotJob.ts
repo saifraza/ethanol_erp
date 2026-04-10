@@ -153,7 +153,8 @@ async function getGrainPct(): Promise<number> {
 
 function r2(n: number) { return Math.round(n * 100) / 100; }
 
-export async function computeSnapshot(): Promise<void> {
+export async function computeSnapshot(opts?: { force?: boolean }): Promise<void> {
+  const force = opts?.force ?? false;
   const opc = getOpcPrisma();
 
   try {
@@ -170,10 +171,10 @@ export async function computeSnapshot(): Promise<void> {
       0, 0, 0, 0,
     ));
 
-    // Idempotency: check if snapshot already exists
+    // Idempotency: skip if AUTO snapshot already exists (unless force=true)
     const existing = await prisma.siloSnapshot.findUnique({ where: { date: shiftDate } });
-    if (existing) {
-      console.log(`[Silo Snapshot] Already exists for ${istDateStr(shiftDateIST)}, skipping`);
+    if (existing && !force) {
+      console.log(`[Silo Snapshot] Already exists for ${istDateStr(shiftDateIST)}, skipping (use force to override)`);
       return;
     }
 
@@ -193,12 +194,19 @@ export async function computeSnapshot(): Promise<void> {
     // 3. Read 24h wash distilled from flow meter
     const washDistilledKL = r2(await readWashDistilled(opc, shiftStartUTC, shiftEndUTC));
 
-    // 4. Flour silos — manual input, carry forward from previous snapshot
+    // 4. Previous snapshot — exclude today's entry so baseline→auto works same day
     const prev = await prisma.siloSnapshot.findFirst({
+      where: { date: { lt: shiftDate } },
       orderBy: { date: 'desc' },
     });
-    const flourSilo1Level = prev?.flourSilo1Level ?? 0;
-    const flourSilo2Level = prev?.flourSilo2Level ?? 0;
+
+    // If existing is BASELINE and we're forcing, use baseline's siloClosing as opening
+    const baselineOpening = (existing?.source === 'BASELINE') ? existing.siloClosing : null;
+
+    // Flour silos — carry forward from previous or existing baseline
+    const flourSrc = existing ?? prev;
+    const flourSilo1Level = flourSrc?.flourSilo1Level ?? 0;
+    const flourSilo2Level = flourSrc?.flourSilo2Level ?? 0;
     const flourTotal = r2(flourSilo1Level + flourSilo2Level);
     const prevFlourTotal = prev?.flourTotal ?? 0;
     const deltaFlour = r2(flourTotal - prevFlourTotal);
@@ -207,11 +215,14 @@ export async function computeSnapshot(): Promise<void> {
     const grainInSystem = r2(totalVolumeKL * grainPct);
     const grainDistilled = r2(washDistilledKL * grainPct);
 
-    const prevGrainInSystem = prev?.grainInSystem ?? 0;
+    // For delta, compare against previous day's snapshot (or baseline's captured grainInSystem)
+    const prevGrainInSystem = existing?.source === 'BASELINE'
+      ? existing.grainInSystem  // baseline captured tank levels at time of setting
+      : (prev?.grainInSystem ?? 0);
     const deltaGrainInSystem = r2(grainInSystem - prevGrainInSystem);
     // grain consumed = distilled + Δ(grain in tanks) + Δ(flour in silos)
     const grainConsumed = r2(Math.max(0, grainDistilled + deltaGrainInSystem + deltaFlour));
-    const siloOpening = prev?.siloClosing ?? 0;
+    const siloOpening = baselineOpening ?? prev?.siloClosing ?? 0;
 
     // 6. Grain received from trucks (since previous snapshot date)
     const truckSince = prev?.date ?? new Date(shiftDate.getTime() - 24 * 3600 * 1000);
@@ -219,7 +230,7 @@ export async function computeSnapshot(): Promise<void> {
       _sum: { weightNet: true },
       _count: true,
       where: {
-        createdAt: { gte: truckSince, lt: shiftDate },
+        createdAt: { gte: truckSince, lt: new Date() }, // up to now for manual trigger
         cancelled: false,
       },
     });
@@ -233,32 +244,35 @@ export async function computeSnapshot(): Promise<void> {
     const cumReceived = r2((prev?.cumReceived ?? 0) + grainReceivedMT);
     const cumConsumed = r2((prev?.cumConsumed ?? 0) + grainConsumed);
 
-    // 9. Save snapshot
-    await prisma.siloSnapshot.create({
-      data: {
-        date: shiftDate,
-        source: 'AUTO',
-        f1Level, f2Level, f3Level, f4Level,
-        beerWellLevel, iltLevel, fltLevel,
-        totalVolumeKL,
-        flourSilo1Level, flourSilo2Level, flourTotal,
-        washDistilledKL,
-        grainPctUsed: grainPct,
-        grainInSystem,
-        deltaGrainInSystem,
-        grainDistilled,
-        grainConsumed,
-        grainReceivedMT,
-        truckCount,
-        siloOpening,
-        siloClosing,
-        cumReceived,
-        cumConsumed,
-        opcDataAge: pctLevels.dataAge,
-      },
+    const snapshotData = {
+      source: 'AUTO' as const,
+      f1Level, f2Level, f3Level, f4Level,
+      beerWellLevel, iltLevel, fltLevel,
+      totalVolumeKL,
+      flourSilo1Level, flourSilo2Level, flourTotal,
+      washDistilledKL,
+      grainPctUsed: grainPct,
+      grainInSystem,
+      deltaGrainInSystem,
+      grainDistilled,
+      grainConsumed,
+      grainReceivedMT,
+      truckCount,
+      siloOpening,
+      siloClosing,
+      cumReceived,
+      cumConsumed,
+      opcDataAge: pctLevels.dataAge,
+    };
+
+    // 9. Save — upsert so manual trigger overwrites baseline/stale auto
+    await prisma.siloSnapshot.upsert({
+      where: { date: shiftDate },
+      create: { date: shiftDate, ...snapshotData },
+      update: snapshotData,
     });
 
-    console.log(`[Silo Snapshot] Created for ${istDateStr(shiftDateIST)}: closing=${siloClosing} MT, consumed=${grainConsumed} MT, received=${grainReceivedMT} MT`);
+    console.log(`[Silo Snapshot] ${existing ? 'Updated' : 'Created'} for ${istDateStr(shiftDateIST)}: closing=${siloClosing} MT, consumed=${grainConsumed} MT, received=${grainReceivedMT} MT, wash=${washDistilledKL} KL`);
   } finally {
     await opc.$disconnect();
   }

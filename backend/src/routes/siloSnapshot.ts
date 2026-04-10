@@ -222,10 +222,10 @@ router.post('/baseline', authenticate, validate(baselineSchema), asyncHandler(as
   res.status(201).json(snapshot);
 }));
 
-// POST /trigger — Manually trigger a snapshot now
+// POST /trigger — Manually trigger a snapshot now (force=true overwrites existing)
 router.post('/trigger', authenticate, asyncHandler(async (_req: AuthRequest, res: Response) => {
   const { computeSnapshot } = await import('../services/siloSnapshotJob');
-  await computeSnapshot();
+  await computeSnapshot({ force: true });
   const latest = await prisma.siloSnapshot.findFirst({ orderBy: { date: 'desc' } });
   res.json({ message: 'Snapshot triggered', snapshot: latest });
 }));
