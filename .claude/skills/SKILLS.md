@@ -6,7 +6,7 @@
 ## Factory & Hardware (safety-critical)
 - **[factory-operations.md](factory-operations.md)** — **READ FIRST before ANY factory work.** Incidents postmortem (Part A) + architecture + deploy runbook (Part B). All 7 factory outages documented.
 - **[weighbridge.md](weighbridge.md)** — Hardware, serial protocol, 3-step workflow (Part A) + adding new products (Part B) + weighment corrections (Part C).
-- **[opc-bridge.md](opc-bridge.md)** — OPC bridge to ABB 800xA DCS. Windows service, cloud sync.
+- **[opc-bridge.md](opc-bridge.md)** — **READ FIRST before ANY OPC work.** Incidents (Part A) + architecture (Part B) + cloud backend (Part C) + frontend (Part D) + deploy/ops (Part E) + robustness comparison (Part G) + troubleshooting (Part H). Lab PC creds, DCS connection, 4-layer watchdog.
 
 ## Process / Plant Operations
 - **[process-production.md](process-production.md)** — Master grain-to-ethanol-to-DDGS pipeline. Sub-sections: grain intake (B), fermentation (C), distillation (D).
