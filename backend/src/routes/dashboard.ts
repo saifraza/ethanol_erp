@@ -55,7 +55,8 @@ router.get('/analytics', authenticate, async (req: AuthRequest, res: Response) =
 
     // ─── KPIs ───
     // Grain: prefer weighbridge trucks (accurate) over manual GrainEntry (stale)
-    const grainTrucksMT = Math.round(((grainTruckAgg._sum?.weightNet) ?? 0) / 1000 * 100) / 100;
+    // weightNet is already in MT (not kg) — no /1000 needed
+    const grainTrucksMT = Math.round(((grainTruckAgg._sum?.weightNet) ?? 0) * 100) / 100;
     const totalGrainUnloaded = grainTrucksMT > 0 ? grainTrucksMT : grain.reduce((s, e) => s + (e.grainUnloaded || 0), 0);
     // Grain consumed from silo snapshot (auto-computed) or fallback to manual GrainEntry
     const totalGrainConsumed = latestSiloSnapshot?.grainConsumed ?? grain.reduce((s, e) => s + (e.grainConsumed || 0), 0);

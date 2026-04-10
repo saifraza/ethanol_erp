@@ -233,7 +233,7 @@ export async function computeSnapshot(opts?: { force?: boolean }): Promise<void>
         cancelled: false,
       },
     });
-    const grainReceivedMT = r2(((truckAgg._sum?.weightNet) ?? 0) / 1000); // kg → MT
+    const grainReceivedMT = r2((truckAgg._sum?.weightNet) ?? 0); // weightNet already in MT
     const truckCount = truckAgg._count ?? 0;
 
     // 7. Silo closing

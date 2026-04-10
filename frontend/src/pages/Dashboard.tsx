@@ -141,6 +141,7 @@ export default function Dashboard() {
   interface TankLevel { label: string; level: number; temp?: number; color: string; }
   const [tankLevels, setTankLevels] = useState<TankLevel[]>([]);
   const [liveFeedRate, setLiveFeedRate] = useState<number | null>(null);
+  const [feedHistory, setFeedHistory] = useState<{ time: string; rate: number }[]>([]);
   const OPC_TANK_MAP = [
     { tag: 'LT130201', tempTag: 'TE130201', label: 'F-1', color: '#3b82f6' },
     { tag: 'LT130202', tempTag: 'TE130202', label: 'F-2', color: '#8b5cf6' },
@@ -171,6 +172,15 @@ export default function Dashboard() {
         // Live feed rate from MG_140101 PV or FCV_140101 PV (M3/hr)
         const feedPV = pvLookup['MG_140101'] ?? pvLookup['FCV_140101'] ?? null;
         setLiveFeedRate(feedPV !== null ? Math.round(feedPV * 10) / 10 : null);
+      }).catch(() => {});
+
+      // Feed rate history (last 1h, raw readings)
+      api.get('/opc/history/MG_140101?hours=1&property=PV').then(r => {
+        const readings: { hour: string; avg: number }[] = r.data?.readings || [];
+        setFeedHistory(readings.map(pt => ({
+          time: new Date(pt.hour).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
+          rate: Math.round(pt.avg * 10) / 10,
+        })));
       }).catch(() => {});
     };
     fetchTanks();
@@ -257,10 +267,9 @@ export default function Dashboard() {
           </div>
 
           {/* KPI Grid — Row 2: Quality, DDGS, Distillation */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
             <KPI label="Ethanol Strength" value={k.avgEthanolStrength.toFixed(1)} unit="%" icon={FlaskConical} color="bg-purple-600" sub="Distillation avg" />
             <KPI label="Raw Moisture" value={k.avgMoisture.toFixed(1)} unit="%" icon={Wheat} color="bg-yellow-600" sub={`${data.tables.rawMaterial.length} samples`} />
-            <KPI label="Raw Starch" value={k.avgStarch.toFixed(1)} unit="%" icon={Wheat} color="bg-lime-600" sub="Avg starch %" />
             <KPI label="DDGS Produced" value={(k.ddgsProduced / 1000).toFixed(1)} unit="T" icon={Package} color="bg-green-700" sub={`Dispatched: ${(k.ddgsDispatched / 1000).toFixed(1)} T`} />
             <KPI label="Live Feed Rate" value={liveFeedRate !== null ? liveFeedRate.toFixed(1) : '—'} unit="M³/hr" icon={Flame} color="bg-orange-600" sub={`Wash 24h: ${k.washDistilled.toFixed(0)} KL`} />
             <KPI label="Active Fermenters" value={data.live.fermenters.length + data.live.preFermenters.length} unit="" icon={Activity} color="bg-teal-600" sub={`${data.live.fermenters.length} F + ${data.live.preFermenters.length} PF`} />
@@ -314,6 +323,25 @@ export default function Dashboard() {
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {/* Live Feed Rate — 1h rolling chart */}
+          {feedHistory.length > 0 && (
+            <div className="bg-white border border-slate-300 p-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Live Feed Rate (Last 1 Hour)</span>
+                <span className="text-xs font-mono font-bold text-orange-600">{liveFeedRate !== null ? `${liveFeedRate} M³/hr` : '—'}</span>
+              </div>
+              <ResponsiveContainer width="100%" height={180}>
+                <AreaChart data={feedHistory}>
+                  <CartesianGrid {...CHART_GRID} />
+                  <XAxis dataKey="time" {...CHART_AXIS_PROPS} />
+                  <YAxis {...CHART_AXIS_PROPS} domain={['auto', 'auto']} />
+                  <Tooltip {...CHART_TOOLTIP} formatter={(v: number) => [`${v} M³/hr`, 'Feed Rate']} />
+                  <Area type="monotone" dataKey="rate" stroke="#ea580c" fill="#fed7aa" strokeWidth={2} dot={false} />
+                </AreaChart>
+              </ResponsiveContainer>
             </div>
           )}
 

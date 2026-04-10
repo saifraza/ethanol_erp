@@ -43,7 +43,7 @@ router.get('/latest', authenticate, asyncHandler(async (_req: AuthRequest, res: 
       cancelled: false,
     },
   });
-  const pendingTrucksMT = r2(((truckAgg._sum?.weightNet) ?? 0) / 1000);
+  const pendingTrucksMT = r2((truckAgg._sum?.weightNet) ?? 0); // weightNet already in MT
   const pendingTruckCount = truckAgg._count ?? 0;
 
   const siloEstimate = r2(snapshot.siloClosing + pendingTrucksMT);
