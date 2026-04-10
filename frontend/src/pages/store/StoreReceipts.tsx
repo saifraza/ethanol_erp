@@ -701,8 +701,8 @@ function CreateReceiptModal({
         const res = await api.get('/purchase-orders', {
           params: { limit: 500, status: 'APPROVED,SENT,PARTIAL_RECEIVED' },
         });
-        const data = res.data as POLite[] | { items?: POLite[] };
-        const list = Array.isArray(data) ? data : data.items || [];
+        const data = res.data as POLite[] | { items?: POLite[]; pos?: POLite[] };
+        const list = Array.isArray(data) ? data : data.pos || data.items || [];
         // Hide weighbridge-bound POs
         const filtered = list.filter((p) => !isWeighbridgeDealType(p.dealType));
         setPos(filtered);
