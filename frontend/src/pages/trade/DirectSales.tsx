@@ -17,7 +17,7 @@ interface Sale {
 
 interface Stats { totalEntries: number; todayCount: number; todayAmount: number; totalAmount: number; unpaidCount: number; unpaidAmount: number; }
 
-const PRODUCTS = ['Spent Wash', 'Scrap Iron', 'Scrap Copper', 'Empty Drums', 'Gunny Bags', 'Coal Ash', 'Waste Oil', 'Other'];
+const PRODUCTS = ['Scrap Iron', 'Scrap Copper', 'Scrap SS', 'Empty Drums', 'Gunny Bags', 'Coal Ash', 'Waste Oil', 'Spent Wash', 'Other'];
 const UNITS = ['KG', 'MT', 'QTL', 'LTR', 'NOS', 'LOT'];
 const PAY_MODES = ['CASH', 'UPI', 'BANK_TRANSFER', 'CHEQUE'];
 
