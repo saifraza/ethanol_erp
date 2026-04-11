@@ -103,7 +103,7 @@ const EMPTY_FORM: Partial<FuelItem> = {
 export default function FuelManagement() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
-  const [tab, setTab] = useState<'master' | 'daily' | 'deals'>('deals');
+  const [tab, setTab] = useState<'master' | 'daily' | 'deals' | 'closed'>('deals');
   const [fuels, setFuels] = useState<FuelItem[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [rows, setRows] = useState<ConsumptionRow[]>([]);
@@ -186,9 +186,12 @@ export default function FuelManagement() {
     dealCount: number;
     truckCount: number;
   }
-  const fuelGroups = useMemo(() => {
+  const activeDeals = useMemo(() => deals.filter(d => d.status !== 'CLOSED'), [deals]);
+  const closedDeals = useMemo(() => deals.filter(d => d.status === 'CLOSED'), [deals]);
+
+  const buildFuelGroups = (dealList: OpenDeal[]) => {
     const map = new Map<string, FuelGroup>();
-    for (const deal of deals) {
+    for (const deal of dealList) {
       // For each fuel line in the PO, add to that fuel's group
       const fuelLines = deal.lines.filter(l => l.inventoryItemId);
       for (const line of fuelLines) {
@@ -258,7 +261,9 @@ export default function FuelManagement() {
       grp.outstanding = Math.round((grp.totalValue - grp.totalPaid) * 100) / 100;
     }
     return Array.from(map.values()).sort((a, b) => b.totalValue - a.totalValue);
-  }, [deals]);
+  };
+  const fuelGroups = useMemo(() => buildFuelGroups(activeDeals), [activeDeals]);
+  const closedFuelGroups = useMemo(() => buildFuelGroups(closedDeals), [closedDeals]);
 
   const fmtNum = (n: number) => n === 0 ? '--' : n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
@@ -486,13 +491,16 @@ export default function FuelManagement() {
         {/* Tabs — Deals first */}
         <div className="bg-white border-x border-b border-slate-300 -mx-3 md:-mx-6 flex">
           <button onClick={() => setTab('deals')} className={`px-5 py-2.5 text-[11px] font-bold uppercase tracking-widest border-b-2 ${tab === 'deals' ? 'border-blue-600 text-slate-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
-            Fuel Deals {deals.length > 0 && <span className="ml-1 bg-orange-500 text-white text-[9px] px-1.5 py-0.5">{deals.length}</span>}
+            Fuel Deals {activeDeals.length > 0 && <span className="ml-1 bg-orange-500 text-white text-[9px] px-1.5 py-0.5">{activeDeals.length}</span>}
           </button>
           <button onClick={() => setTab('daily')} className={`px-5 py-2.5 text-[11px] font-bold uppercase tracking-widest border-b-2 ${tab === 'daily' ? 'border-blue-600 text-slate-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
             Daily Consumption
           </button>
           <button onClick={() => setTab('master')} className={`px-5 py-2.5 text-[11px] font-bold uppercase tracking-widest border-b-2 ${tab === 'master' ? 'border-blue-600 text-slate-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
             Fuel Master
+          </button>
+          <button onClick={() => setTab('closed')} className={`px-5 py-2.5 text-[11px] font-bold uppercase tracking-widest border-b-2 ${tab === 'closed' ? 'border-blue-600 text-slate-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+            Closed Deals {closedDeals.length > 0 && <span className="ml-1 bg-slate-500 text-white text-[9px] px-1.5 py-0.5">{closedDeals.length}</span>}
           </button>
         </div>
 
@@ -762,7 +770,7 @@ export default function FuelManagement() {
                                       {fmtCurrency(line.rate)}/{line.unit || 'MT'}
                                     </td>
                                     <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">
-                                      {ordered > 0 ? `${fmtNum(ordered)} ${line.unit || 'MT'}` : <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-blue-300 bg-blue-50 text-blue-700">Open</span>}
+                                      {d.status === 'CLOSED' ? <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-slate-300 bg-slate-100 text-slate-500">Closed</span> : ordered > 0 ? `${fmtNum(ordered)} ${line.unit || 'MT'}` : <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-blue-300 bg-blue-50 text-blue-700">Open</span>}
                                     </td>
                                     <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold border-r border-slate-100">
                                       {fmtNum(lineReceived)} {line.unit || 'MT'}
@@ -848,6 +856,102 @@ export default function FuelManagement() {
                     <div>
                       <span className="text-[9px] text-slate-400 mr-1">Due:</span>
                       <span className="font-mono tabular-nums font-bold text-red-300">{fmtCurrency(fuelGroups.reduce((s, g) => s + g.outstanding, 0))}</span>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+        {/* ═══ TAB: CLOSED DEALS ═══ */}
+        {tab === 'closed' && (
+          <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-hidden">
+            {closedFuelGroups.length === 0 ? (
+              <div className="px-3 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">No closed deals yet.</div>
+            ) : (
+              <>
+                {closedFuelGroups.map((grp) => (
+                  <div key={grp.fuelName}>
+                    <div className="bg-slate-200 border-b border-slate-300 px-4 py-2.5 flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <span className="text-xs font-bold uppercase tracking-widest text-slate-800">{grp.fuelName}</span>
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 border border-slate-400 bg-white text-slate-600">{grp.dealCount} DEAL{grp.dealCount !== 1 ? 'S' : ''}</span>
+                      </div>
+                      <div className="flex items-center gap-6 text-xs">
+                        <div>
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mr-1">Received:</span>
+                          <span className="font-mono tabular-nums font-bold text-slate-800">{fmtNum(grp.totalReceived)} {grp.unit}</span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mr-1">Value:</span>
+                          <span className="font-mono tabular-nums font-bold text-slate-800">{fmtCurrency(grp.totalValue)}</span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mr-1">Paid:</span>
+                          <span className="font-mono tabular-nums text-green-700">{fmtCurrency(grp.totalPaid)}</span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mr-1">Due:</span>
+                          <span className={`font-mono tabular-nums font-bold ${grp.outstanding > 0 ? 'text-red-600' : 'text-slate-500'}`}>{fmtCurrency(grp.outstanding)}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-slate-700 text-white">
+                          <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">PO#</th>
+                          <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">Vendor</th>
+                          <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">Rate</th>
+                          <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">Received</th>
+                          <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">Value</th>
+                          <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">Paid</th>
+                          <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600">Due</th>
+                          <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {grp.entries.map(({ deal: d, line, lineValue, lineReceived }, ei) => {
+                          const linePaid = d.totalValue > 0 ? d.totalPaid * (lineValue / d.totalValue) : 0;
+                          const lineOutstanding = Math.round((lineValue - linePaid) * 100) / 100;
+                          return (
+                            <tr key={`${d.id}-${line.id}`} className={`border-b border-slate-100 ${ei % 2 ? 'bg-slate-50/70' : ''}`}>
+                              <td className="px-3 py-1.5 font-mono text-slate-500 border-r border-slate-100">PO-{d.poNo}</td>
+                              <td className="px-3 py-1.5 border-r border-slate-100">
+                                <div className="font-semibold text-slate-800">{d.vendor.name}</div>
+                                {d.vendor.phone && <div className="text-[9px] text-slate-400">{d.vendor.phone}</div>}
+                              </td>
+                              <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{fmtCurrency(line.rate)}/{line.unit || 'MT'}</td>
+                              <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold border-r border-slate-100">{fmtNum(lineReceived)} {line.unit || 'MT'}</td>
+                              <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{fmtCurrency(lineValue)}</td>
+                              <td className="px-3 py-1.5 text-right font-mono tabular-nums text-green-700 border-r border-slate-100">{fmtCurrency(linePaid)}</td>
+                              <td className={`px-3 py-1.5 text-right font-mono tabular-nums font-bold border-r border-slate-100 ${lineOutstanding > 0 ? 'text-red-600' : 'text-slate-500'}`}>{fmtCurrency(lineOutstanding)}</td>
+                              <td className="px-3 py-1.5">
+                                <div className="flex gap-1 flex-wrap">
+                                  {d.truckCount > 0 && <button onClick={() => setTrucksModal({ poId: d.id, title: `PO-${d.poNo}`, subtitle: `${d.vendor?.name || ''} · ${grp.fuelName}` })} className="text-[10px] text-purple-600 font-semibold uppercase hover:underline">Trucks</button>}
+                                  <button onClick={() => setLedgerModal({ vendorId: d.vendor.id, vendorName: d.vendor.name })} className="text-[10px] text-indigo-600 font-semibold uppercase hover:underline">Ledger</button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
+                <div className="bg-slate-800 text-white px-4 py-2 flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-widest">Grand Total (Closed)</span>
+                  <div className="flex items-center gap-6 text-xs">
+                    <div>
+                      <span className="text-[9px] text-slate-400 mr-1">Value:</span>
+                      <span className="font-mono tabular-nums font-bold">{fmtCurrency(closedFuelGroups.reduce((s, g) => s + g.totalValue, 0))}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-400 mr-1">Paid:</span>
+                      <span className="font-mono tabular-nums text-green-300">{fmtCurrency(closedFuelGroups.reduce((s, g) => s + g.totalPaid, 0))}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-400 mr-1">Due:</span>
+                      <span className="font-mono tabular-nums font-bold text-red-300">{fmtCurrency(closedFuelGroups.reduce((s, g) => s + g.outstanding, 0))}</span>
                     </div>
                   </div>
                 </div>
