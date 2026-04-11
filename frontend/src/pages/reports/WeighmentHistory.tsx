@@ -433,7 +433,7 @@ export default function WeighmentHistory() {
 
         {/* ── Data Table ── */}
         <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-x-auto">
-          <table className="w-full text-xs min-w-[1400px]">
+          <table className="w-full text-xs min-w-[1540px]">
             <thead className="sticky top-0 z-10">
               <tr className="bg-slate-800 text-white">
                 <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Date</th>
@@ -442,6 +442,7 @@ export default function WeighmentHistory() {
                 <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Party</th>
                 <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Dir</th>
                 <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Material</th>
+                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Item Name</th>
                 <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Gate In</th>
                 <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">1st Wt</th>
                 <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">2nd Wt</th>
@@ -457,13 +458,13 @@ export default function WeighmentHistory() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={16} className="px-3 py-8 text-center">
+                  <td colSpan={17} className="px-3 py-8 text-center">
                     <span className="text-xs text-slate-400 uppercase tracking-widest">Loading...</span>
                   </td>
                 </tr>
               ) : data.length === 0 ? (
                 <tr>
-                  <td colSpan={16} className="px-3 py-8 text-center">
+                  <td colSpan={17} className="px-3 py-8 text-center">
                     <span className="text-xs text-slate-400 uppercase tracking-widest">No Records Found</span>
                   </td>
                 </tr>
@@ -490,6 +491,9 @@ export default function WeighmentHistory() {
                     </td>
                     <td className="px-3 py-1.5 text-center border-r border-slate-100">
                       <MaterialBadge mat={row.materialType} />
+                    </td>
+                    <td className="px-3 py-1.5 text-slate-700 border-r border-slate-100 max-w-[140px] truncate">
+                      {row.materialName || '--'}
                     </td>
                     <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100 whitespace-nowrap font-mono tabular-nums text-[10px]">
                       {fmtTime(row.gateEntryAt)}

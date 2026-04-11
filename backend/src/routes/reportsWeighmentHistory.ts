@@ -73,15 +73,20 @@ function parseDateRange(
   let fromDate: Date | undefined;
   let toDate: Date | undefined;
 
+  // Dates are in IST (UTC+5:30).  Convert to UTC for Prisma queries.
+  // "from" = start of IST day → 00:00 IST = previous day 18:30 UTC
+  // "to"   = end of IST day   → 23:59:59 IST = same day 18:29:59 UTC
+  const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
   if (from) {
-    fromDate = new Date(from);
+    fromDate = new Date(new Date(from).getTime() - IST_OFFSET_MS);
     if (isNaN(fromDate.getTime())) throw new ValidationError('Invalid `from` date');
   }
   if (to) {
-    toDate = new Date(to);
+    const endOfDayIST = new Date(to);
+    endOfDayIST.setHours(23, 59, 59, 999);
+    toDate = new Date(endOfDayIST.getTime() - IST_OFFSET_MS);
     if (isNaN(toDate.getTime())) throw new ValidationError('Invalid `to` date');
-    // Include the full `to` day (end of day)
-    toDate.setHours(23, 59, 59, 999);
   }
 
   return { fromDate, toDate };
@@ -332,8 +337,11 @@ function applyFilters(rows: UnifiedWeighmentRow[], params: QueryParams): Unified
     // When onlyCompleted, use secondWeightAt for the date filter (already applied at DB layer,
     // but apply again here as an in-memory guard for rows that slipped through via createdAt fallback)
     if (params.from || params.to) {
-      const fromMs = params.from ? new Date(params.from).getTime() : -Infinity;
-      const toMs = params.to ? new Date(params.to + 'T23:59:59.999Z').getTime() : Infinity;
+      const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+      const fromMs = params.from ? new Date(params.from).getTime() - IST_OFFSET_MS : -Infinity;
+      const toEndIST = params.to ? new Date(params.to) : null;
+      if (toEndIST) toEndIST.setHours(23, 59, 59, 999);
+      const toMs = toEndIST ? toEndIST.getTime() - IST_OFFSET_MS : Infinity;
       result = result.filter((r) => {
         const ts = r.secondWeightAt ? new Date(r.secondWeightAt).getTime() : null;
         if (!ts) return false;
@@ -371,6 +379,7 @@ const XLSX_COLUMNS = [
   { header: 'Party', key: 'partyName', width: 28 },
   { header: 'Direction', key: 'direction', width: 11 },
   { header: 'Material', key: 'materialType', width: 14 },
+  { header: 'Item Name', key: 'materialName', width: 20 },
   { header: 'Gate In', key: 'gateEntryAt_fmt', width: 20 },
   { header: '1st Wt Time', key: 'firstWeightAt', width: 20 },
   { header: '2nd Wt Time', key: 'secondWeightAt', width: 20 },
@@ -391,6 +400,7 @@ function toXlsxRow(r: UnifiedWeighmentRow): Record<string, unknown> {
     partyName: r.partyName,
     direction: r.direction,
     materialType: r.materialType,
+    materialName: r.materialName ?? '',
     gateEntryAt_fmt: r.gateEntryAt ?? '',
     firstWeightAt: r.firstWeightAt ?? '',
     secondWeightAt: r.secondWeightAt ?? '',
