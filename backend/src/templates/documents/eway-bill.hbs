@@ -98,7 +98,8 @@
       <td>
         <span class="lbl">Document Details</span>
         <span class="val">Tax Invoice</span><br>
-        <span class="mono">INV-{{invoiceNo}}</span> dt. <span>{{formatDate invoiceDate}}</span>
+        <span class="mono">{{invoiceNo}}</span> dt. <span>{{formatDate invoiceDate}}</span>
+        {{#if challanNo}}<br><span class="lbl" style="margin-top:3px;">Challan No</span><span class="mono">{{challanNo}}</span>{{/if}}
       </td>
       <td>
         <span class="lbl">Transaction Type</span>

@@ -706,17 +706,87 @@ router.get('/:orderId/shipments/:shipmentId/gate-pass-pdf', asyncHandler(async (
   res.send(pdfBuffer);
 }));
 
-// GET /:orderId/shipments/:shipmentId/ewb-pdf — Download uploaded EWB PDF
+// GET /:orderId/shipments/:shipmentId/ewb-pdf — Generate proper E-Way Bill PDF
 router.get('/:orderId/shipments/:shipmentId/ewb-pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
-  const invoice = await prisma.invoice.findFirst({
-    where: { shipmentId: req.params.shipmentId },
-    select: { ewbPdfData: true, ewbNo: true },
+  const order = await prisma.directSale.findUnique({
+    where: { id: req.params.orderId },
+    include: { customer: { select: { name: true, gstNo: true, address: true, city: true, state: true, pincode: true } } },
   });
-  if (!invoice?.ewbPdfData) return res.status(404).json({ error: 'No EWB PDF uploaded' });
+  if (!order) return res.status(404).json({ error: 'Order not found' });
 
+  const shipment = await prisma.shipment.findFirst({
+    where: { id: req.params.shipmentId, directSaleId: req.params.orderId },
+  });
+  if (!shipment) return res.status(404).json({ error: 'Shipment not found' });
+
+  const invoice = await prisma.invoice.findFirst({
+    where: { shipmentId: shipment.id },
+    select: {
+      invoiceNo: true, remarks: true, invoiceDate: true,
+      amount: true, gstAmount: true, gstPercent: true, totalAmount: true,
+      supplyType: true, cgstPercent: true, cgstAmount: true, sgstPercent: true, sgstAmount: true,
+      igstPercent: true, igstAmount: true,
+      ewbNo: true, ewbDate: true, ewbValidTill: true, ewbPdfData: true,
+      quantity: true, unit: true, rate: true, productName: true,
+    },
+  });
+  if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+  if (!invoice.ewbNo) return res.status(400).json({ error: 'E-Way Bill not generated yet' });
+
+  // If manually uploaded PDF exists, serve that
+  if (invoice.ewbPdfData) {
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="EWB-${invoice.ewbNo}.pdf"`);
+    res.send(invoice.ewbPdfData);
+    return;
+  }
+
+  const cust = order.customer;
+  const hsnCode = HSN_MAP[order.productName] || HSN_MAP['Other'];
+
+  const { renderDocumentPdf } = await import('../services/documentRenderer');
+  const pdfBuffer = await renderDocumentPdf({
+    docType: 'EWAY_BILL',
+    data: {
+      ewbNo: invoice.ewbNo,
+      ewbDate: invoice.ewbDate,
+      ewbValidTill: invoice.ewbValidTill,
+      sellerGstin: '23AAECM3666P1Z1',
+      sellerName: 'Mahakaushal Sugar & Power Industries Ltd',
+      sellerAddress: 'Village Bachai, Dist. Narsinghpur (M.P.) - 487001',
+      sellerState: 'Madhya Pradesh',
+      buyerGstin: cust?.gstNo || '',
+      buyerName: cust?.name || order.buyerName,
+      buyerAddress: cust?.address ? [cust.address, cust.city].filter(Boolean).join(', ') : (order.buyerAddress || ''),
+      buyerState: cust?.state || '',
+      buyerPincode: cust?.pincode || '',
+      invoiceNo: invoice.remarks || `INV-${invoice.invoiceNo}`,
+      invoiceDate: invoice.invoiceDate,
+      hsnCode,
+      productName: invoice.productName || order.productName,
+      quantity: invoice.quantity,
+      unit: invoice.unit,
+      amount: invoice.amount,
+      gstPercent: invoice.gstPercent,
+      supplyType: invoice.supplyType,
+      cgstPercent: invoice.cgstPercent || 0,
+      cgstAmount: invoice.cgstAmount || 0,
+      sgstPercent: invoice.sgstPercent || 0,
+      sgstAmount: invoice.sgstAmount || 0,
+      igstPercent: invoice.igstPercent || 0,
+      igstAmount: invoice.igstAmount || 0,
+      totalAmount: invoice.totalAmount,
+      vehicleNo: shipment.vehicleNo,
+      transporterName: shipment.transporterName || '',
+      destination: shipment.destination || cust?.city || cust?.state || '',
+      distanceKm: 100,
+      challanNo: `SC/${shipment.shipmentNo}`,
+    },
+    verifyId: shipment.id,
+  });
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="EWB-${invoice.ewbNo || 'unknown'}.pdf"`);
-  res.send(invoice.ewbPdfData);
+  res.setHeader('Content-Disposition', `inline; filename="EWB-${invoice.ewbNo}.pdf"`);
+  res.send(pdfBuffer);
 }));
 
 // DELETE /:id
