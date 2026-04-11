@@ -1318,4 +1318,104 @@ router.post('/:id/import-history', asyncHandler(async (req: AuthRequest, res: Re
     res.json({ success: true, imported, skipped, totalLiftings: allLiftings.length, totalKL });
 }));
 
+// ── EXCEL EXPORT ──
+router.get('/export/excel', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const ExcelJS = require('exceljs');
+    const { contractId, from, to } = req.query;
+
+    const where: Record<string, unknown> = {};
+    if (contractId) where.contractId = contractId as string;
+    if (from || to) {
+      where.liftingDate = {};
+      if (from) (where.liftingDate as Record<string, unknown>).gte = new Date(from as string);
+      if (to) (where.liftingDate as Record<string, unknown>).lte = new Date(to as string + 'T23:59:59');
+    }
+
+    const liftings = await prisma.ethanolLifting.findMany({
+      where,
+      orderBy: { liftingDate: 'desc' },
+      include: { contract: { select: { contractNo: true, buyerName: true, contractType: true, conversionRate: true, ethanolRate: true, principalName: true } } },
+      take: 5000,
+    });
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'MSPIL ERP';
+    const ws = wb.addWorksheet('Ethanol Liftings');
+
+    // Header styling
+    const hdrFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } } as const;
+    const hdrFont = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 } as const;
+    const borderThin = { style: 'thin', color: { argb: 'FFE2E8F0' } } as const;
+    const borders = { top: borderThin, bottom: borderThin, left: borderThin, right: borderThin };
+
+    ws.columns = [
+      { header: 'Date', key: 'date', width: 12 },
+      { header: 'Contract', key: 'contract', width: 25 },
+      { header: 'Party', key: 'party', width: 30 },
+      { header: 'Type', key: 'type', width: 12 },
+      { header: 'Vehicle', key: 'vehicle', width: 16 },
+      { header: 'Qty (BL)', key: 'qtyBL', width: 12 },
+      { header: 'Qty (KL)', key: 'qtyKL', width: 12 },
+      { header: 'Strength', key: 'strength', width: 10 },
+      { header: 'Rate (₹)', key: 'rate', width: 12 },
+      { header: 'Amount (₹)', key: 'amount', width: 15 },
+      { header: 'Invoice', key: 'invoice', width: 18 },
+      { header: 'RST No', key: 'rst', width: 14 },
+      { header: 'Transporter', key: 'transporter', width: 22 },
+      { header: 'Destination', key: 'destination', width: 20 },
+      { header: 'Status', key: 'status', width: 12 },
+    ];
+
+    // Style header row
+    const headerRow = ws.getRow(1);
+    headerRow.eachCell((cell: any) => { cell.fill = hdrFill; cell.font = hdrFont; cell.border = borders; cell.alignment = { vertical: 'middle' }; });
+    headerRow.height = 24;
+
+    // Data rows
+    for (const l of liftings) {
+      const row = ws.addRow({
+        date: l.liftingDate,
+        contract: l.contract.contractNo,
+        party: l.contract.buyerName,
+        type: l.contract.contractType === 'JOB_WORK' ? 'Job Work' : l.contract.contractType === 'FIXED_PRICE' ? 'Fixed Price' : 'OMC',
+        vehicle: l.vehicleNo,
+        qtyBL: l.quantityBL,
+        qtyKL: l.quantityKL,
+        strength: l.strength,
+        rate: l.rate,
+        amount: l.amount,
+        invoice: l.invoiceNo,
+        rst: l.rstNo,
+        transporter: l.transporterName,
+        destination: l.destination,
+        status: l.status,
+      });
+      row.eachCell((cell: any) => { cell.border = borders; cell.font = { size: 10 }; });
+    }
+
+    // Format columns
+    ws.getColumn('date').numFmt = 'DD-MMM-YY';
+    ws.getColumn('qtyBL').numFmt = '#,##0.00';
+    ws.getColumn('qtyKL').numFmt = '#,##0.00';
+    ws.getColumn('rate').numFmt = '#,##0.00';
+    ws.getColumn('amount').numFmt = '₹#,##0.00';
+    ws.getColumn('strength').numFmt = '0.0';
+
+    // Summary row
+    const totalBL = liftings.reduce((s, l) => s + l.quantityBL, 0);
+    const totalKL = liftings.reduce((s, l) => s + l.quantityKL, 0);
+    const totalAmt = liftings.reduce((s, l) => s + (l.amount || 0), 0);
+    const sumRow = ws.addRow({ date: '', contract: '', party: 'TOTAL', type: '', vehicle: `${liftings.length} trips`, qtyBL: totalBL, qtyKL: totalKL, strength: '', rate: '', amount: totalAmt });
+    sumRow.eachCell((cell: any) => { cell.font = { bold: true, size: 10 }; cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } }; cell.border = borders; });
+
+    // Auto-filter
+    ws.autoFilter = { from: 'A1', to: `O${liftings.length + 1}` };
+
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const fileName = `Ethanol-Liftings-${dateStr}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=${fileName}`);
+    await wb.xlsx.write(res);
+}));
+
 export default router;

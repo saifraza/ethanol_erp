@@ -435,6 +435,28 @@ const EthanolContracts: React.FC = () => {
     } catch (err: any) { setError(err?.response?.data?.error || 'Failed to toggle'); }
   };
 
+  // Excel export
+  const [exportFrom, setExportFrom] = useState('');
+  const [exportTo, setExportTo] = useState('');
+  const [exportContractId, setExportContractId] = useState('');
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const params = new URLSearchParams();
+      if (exportContractId) params.set('contractId', exportContractId);
+      if (exportFrom) params.set('from', exportFrom);
+      if (exportTo) params.set('to', exportTo);
+      const res = await api.get(`/ethanol-contracts/export/excel?${params}`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement('a'); a.href = url;
+      a.download = `Ethanol-Liftings-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.click(); window.URL.revokeObjectURL(url);
+    } catch { setError('Export failed'); }
+    setExporting(false);
+  };
+
   const filtered = typeFilter === 'ALL' ? contracts : contracts.filter(c => c.contractType === typeFilter);
   const pctUsed = (c: Contract) => c.contractQtyKL ? Math.round((c.totalSuppliedKL / c.contractQtyKL) * 100) : 0;
   const daysLeft = (c: Contract) => { const d = Math.ceil((new Date(c.endDate).getTime() - Date.now()) / 86400000); return d > 0 ? d : 0; };
@@ -503,6 +525,32 @@ const EthanolContracts: React.FC = () => {
             {error}<button onClick={() => setError('')} className="float-right text-red-400 hover:text-red-600">&times;</button>
           </div>
         )}
+
+        {/* Export bar */}
+        <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6 flex items-end gap-3 flex-wrap">
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Party</label>
+            <select value={exportContractId} onChange={e => setExportContractId(e.target.value)}
+              className="border border-slate-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 w-48">
+              <option value="">All Contracts</option>
+              {contracts.map(c => <option key={c.id} value={c.id}>{c.buyerName}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">From</label>
+            <input type="date" value={exportFrom} onChange={e => setExportFrom(e.target.value)}
+              className="border border-slate-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">To</label>
+            <input type="date" value={exportTo} onChange={e => setExportTo(e.target.value)}
+              className="border border-slate-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+          </div>
+          <button onClick={handleExport} disabled={exporting}
+            className="px-3 py-1 bg-green-700 text-white text-[11px] font-medium hover:bg-green-800 disabled:opacity-50 flex items-center gap-1.5">
+            <FileDown size={12} /> {exporting ? 'Exporting...' : 'Export Excel'}
+          </button>
+        </div>
 
         {/* Type filter tabs */}
         <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6 flex gap-1">

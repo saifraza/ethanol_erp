@@ -51,7 +51,7 @@ import messagingRoutes from './routes/messaging';
 import documentTemplateRoutes from './routes/documentTemplates';
 // Procurement (P2P) module
 import vendorRoutes from './routes/vendors';
-import traderRoutes from './routes/traders';
+// traderRoutes removed — traders are vendors with category=TRADER (isAgent flag)
 import materialRoutes from './routes/materials';
 import purchaseOrderRoutes from './routes/purchaseOrders';
 import goodsReceiptRoutes from './routes/goodsReceipts';
@@ -231,7 +231,7 @@ app.use('/api/messaging', messagingRoutes);
 app.use('/api/document-templates', documentTemplateRoutes);
 // Procurement (P2P)
 app.use('/api/vendors', vendorRoutes);
-app.use('/api/traders', traderRoutes);
+// app.use('/api/traders', traderRoutes); // merged into vendors
 app.use('/api/materials', materialRoutes);
 app.use('/api/purchase-orders', purchaseOrderRoutes);
 app.use('/api/goods-receipts/auto', autoGoodsReceiptRoutes);

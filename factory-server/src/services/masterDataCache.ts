@@ -221,7 +221,7 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
         take: 500,
       }),
       cloud.vendor.findMany({
-        where: { isActive: true, isAgent: true },
+        where: { isActive: true, OR: [{ isAgent: true }, { category: 'TRADER' }] },
         select: { id: true, name: true, phone: true, productTypes: true, category: true },
         orderBy: { name: 'asc' },
         take: 100,

@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 
 interface Supplier { id: string; name: string }
 interface Material { id: string; name: string; category?: string }
-interface PO { id: string; po_no: number; vendor_name: string; status: string; deal_type?: string; lines: POLine[] }
+interface PO { id: string; po_no: number; vendor_name: string; vendor_id?: string; status: string; deal_type?: string; lines: POLine[] }
 interface POLine { id: string; description: string; quantity: number; received_qty: number; pending_qty: number; rate: number; unit: string }
 interface Customer { id: string; name: string; gstNo?: string | null; address?: string | null; state?: string | null; pincode?: string | null }
 interface Trader { id: string; name: string; phone?: string; productTypes?: string; category?: string }
@@ -142,9 +142,10 @@ export default function GateEntry() {
   // Updated in loadMasterData alongside suppliers, materials, etc.
 
   // Filter POs by selected supplier
+  const traderIds = new Set(traders.map(t => t.id));
   const filteredPOs = pos.filter(p => {
-    if (purchaseType === 'JOB_WORK') return p.deal_type === 'JOB_WORK';
-    if (purchaseType === 'PO') return p.deal_type !== 'JOB_WORK';
+    // Hide trader POs from PO and JOB_WORK modes — traders use TRADER mode
+    if (purchaseType === 'PO' || purchaseType === 'JOB_WORK') return !p.vendor_id || !traderIds.has(p.vendor_id);
     return true;
   }).filter(p => !supplierName || p.vendor_name.toLowerCase().includes(supplierName.toLowerCase()));
   const selectedPO = pos.find(p => p.id === selectedPoId);

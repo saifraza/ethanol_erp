@@ -63,6 +63,8 @@ interface Vendor {
   lowerDeductionValidFrom?: string | null;
   lowerDeductionValidTill?: string | null;
   remarks?: string;
+  isAgent?: boolean;
+  productTypes?: string;
 }
 
 export default function Vendors() {
@@ -114,6 +116,7 @@ export default function Vendors() {
   const [lowerDeductionValidTill, setLowerDeductionValidTill] = useState('');
   const [tdsSections, setTdsSections] = useState<{ id: string; code: string; oldSection: string | null; nature: string; rateIndividual: number; rateOthers: number }[]>([]);
   const [remarks, setRemarks] = useState('');
+  const [productTypes, setProductTypes] = useState<string[]>([]);
 
   // Duplicate detection
   const [dupMatches, setDupMatches] = useState<Array<{ id: string; name: string; tradeName?: string | null; gstin?: string | null; pan?: string | null; phone?: string | null; city?: string | null; category?: string | null; matchReasons: string[] }>>([]);
@@ -238,6 +241,7 @@ export default function Vendors() {
     setTdsSection('194C');
     setTdsPercent('');
     setRemarks('');
+    setProductTypes([]);
     setDupMatches([]);
     setEditId(null);
     setShowForm(false);
@@ -285,6 +289,7 @@ export default function Vendors() {
       setLowerDeductionValidFrom(vendor.lowerDeductionValidFrom?.slice(0, 10) || '');
       setLowerDeductionValidTill(vendor.lowerDeductionValidTill?.slice(0, 10) || '');
       setRemarks(vendor.remarks || '');
+      setProductTypes(vendor.productTypes?.split(',').filter(Boolean) || []);
     }
     setShowForm(true);
     if (vendor) {
@@ -352,6 +357,8 @@ export default function Vendors() {
         name,
         tradeName: tradeName || undefined,
         category,
+        isAgent: category === 'TRADER',
+        productTypes: category === 'TRADER' && productTypes.length > 0 ? productTypes.join(',') : undefined,
         gstin: gstin || undefined,
         pan: pan || undefined,
         gstState: gstState || undefined,
@@ -655,6 +662,30 @@ export default function Vendors() {
                     </select>
                   </div>
                 </div>
+
+                {/* Trader Product Types (only when category is TRADER) */}
+                {category === 'TRADER' && (
+                  <div className="mt-2">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">Approved Product Types</label>
+                    <div className="flex flex-wrap gap-3">
+                      {[
+                        { value: 'RAW_MATERIAL', label: 'Raw Material (Grain)' },
+                        { value: 'FUEL', label: 'Fuel' },
+                        { value: 'CHEMICAL', label: 'Chemical' },
+                        { value: 'PACKING', label: 'Packing' },
+                        { value: 'SPARE_PART', label: 'Spares' },
+                        { value: 'OTHER', label: 'Other' },
+                      ].map(pt => (
+                        <label key={pt.value} className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer">
+                          <input type="checkbox" checked={productTypes.includes(pt.value)}
+                            onChange={e => setProductTypes(prev => e.target.checked ? [...prev, pt.value] : prev.filter(x => x !== pt.value))}
+                            className="accent-blue-600" />
+                          {pt.label}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Section 2: GST & Compliance */}
                 <div>
