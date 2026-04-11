@@ -99,14 +99,12 @@ router.get('/latest', authenticate, asyncHandler(async (_req: AuthRequest, res: 
     ? ethanolEntries.filter(e => e.avgStrength > 0).reduce((s, e) => s + e.avgStrength, 0) / ethanolEntries.filter(e => e.avgStrength > 0).length
     : 0;
 
-  // Use previous day's yield if today's ethanol data is missing/incomplete
+  // Yield always uses previous day's data — today's production is incomplete
+  // until tomorrow's dip reading is entered
   let yieldALPerMT = 0;
-  let yieldProductionAL = ethanolProductionAL;
-  let yieldGrainConsumed = snapshot.grainConsumed;
-  if (ethanolProductionAL > 0 && snapshot.grainConsumed > 0) {
-    yieldALPerMT = r2(ethanolProductionAL / snapshot.grainConsumed);
-  } else if (prevSnapshot && prevSnapshot.grainConsumed > 0) {
-    // Fallback: previous day's yield
+  let yieldProductionAL = 0;
+  let yieldGrainConsumed = 0;
+  if (prevSnapshot && prevSnapshot.grainConsumed > 0) {
     const prevEthanol = await prisma.ethanolProductEntry.findMany({
       where: {
         date: {
