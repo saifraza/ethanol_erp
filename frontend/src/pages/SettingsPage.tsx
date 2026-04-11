@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import api from '../services/api';
-import { Save, Send, Users, Lock, ArrowRight } from 'lucide-react';
+import { Save, Send, Users, Lock, ArrowRight, MessageCircle, Copy } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 type RouteTarget = 'group1' | 'group2' | 'private';
@@ -28,6 +28,11 @@ export default function SettingsPage() {
   const [allModules, setAllModules] = useState<string[]>([]);
   const [moduleRouting, setModuleRouting] = useState<Record<string, RouteTarget>>({});
 
+  // WhatsApp state
+  const [waStatus, setWaStatus] = useState<{ connected: boolean; phone?: string }>({ connected: false });
+  const [waQr, setWaQr] = useState<string | null>(null);
+  const [waRouting, setWaRouting] = useState<Record<string, RouteTarget>>({});
+
   // Load settings + Telegram status
   useEffect(() => {
     api.get('/settings').then(r => {
@@ -36,8 +41,15 @@ export default function SettingsPage() {
         const routing = r.data.telegramModuleRouting;
         if (routing) setModuleRouting(JSON.parse(routing));
       } catch { /* ignore */ }
+      try {
+        const waRoutingRaw = r.data.whatsappModuleRouting;
+        if (waRoutingRaw) setWaRouting(JSON.parse(waRoutingRaw));
+      } catch { /* ignore */ }
     });
     api.get('/telegram/status').then(r => setTgStatus(r.data)).catch(() => {});
+    // WhatsApp status
+    api.get('/whatsapp/status').then(r => setWaStatus(r.data)).catch(() => {});
+    api.get('/whatsapp/qr').then(r => { if (r.data.qr) setWaQr(r.data.qr); }).catch(() => {});
     api.get('/telegram/modules').then(r => {
       if (r.data.modules) {
         setAllModules(r.data.modules.map((m: any) => m.module));
@@ -63,6 +75,34 @@ export default function SettingsPage() {
     });
   };
 
+  const cycleWaModuleRoute = (mod: string) => {
+    if (!isAdmin) return;
+    setWaRouting(prev => {
+      const current = prev[mod] || 'group1';
+      const idx = ROUTE_CYCLE.indexOf(current);
+      const next = ROUTE_CYCLE[(idx + 1) % ROUTE_CYCLE.length];
+      const updated = { ...prev, [mod]: next };
+      setSettings((s: any) => ({ ...s, whatsappModuleRouting: JSON.stringify(updated) }));
+      return updated;
+    });
+  };
+
+  const copyTgRoutingToWa = () => {
+    setWaRouting({ ...moduleRouting });
+    setSettings((s: any) => ({ ...s, whatsappModuleRouting: JSON.stringify(moduleRouting) }));
+    setMsg('Copied Telegram routing to WhatsApp'); setTimeout(() => setMsg(''), 2000);
+  };
+
+  const handleWaTestGroup = async () => {
+    try {
+      const r = await api.post('/whatsapp/test-group');
+      setMsg(r.data.success ? 'Test sent to WhatsApp group!' : (r.data.error || 'Failed'));
+    } catch (e: any) {
+      setMsg(e.response?.data?.error || 'Failed to send WhatsApp test');
+    }
+    setTimeout(() => setMsg(''), 3000);
+  };
+
   const update = (k: string, v: string) => setSettings((s: any) => ({ ...s, [k]: v === '' ? null : parseFloat(v) }));
   const updateStr = (k: string, v: string) => setSettings((s: any) => ({ ...s, [k]: v }));
 
@@ -71,7 +111,12 @@ export default function SettingsPage() {
     if (typeof payload.telegramModuleRouting === 'object') {
       payload.telegramModuleRouting = JSON.stringify(payload.telegramModuleRouting);
     }
+    if (typeof payload.whatsappModuleRouting === 'object') {
+      payload.whatsappModuleRouting = JSON.stringify(payload.whatsappModuleRouting);
+    }
     await api.patch('/settings', payload);
+    // Reset WhatsApp worker config cache
+    api.post('/whatsapp/reset').catch(() => {});
     setMsg('Saved!'); setTimeout(() => setMsg(''), 2000);
   };
 
@@ -227,6 +272,112 @@ export default function SettingsPage() {
                 </button>
               );
             })}
+          </div>
+        </div>
+
+        {/* WhatsApp (Outbound Push) */}
+        <div className="mt-6 pt-6 border-t">
+          <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
+            <MessageCircle size={20} className="text-green-500" />
+            WhatsApp (Outbound Push)
+          </h2>
+          <p className="text-xs text-gray-400 mb-3">Parallel push channel — same reports/alerts as Telegram, delivered to WhatsApp groups and phones via Baileys worker.</p>
+
+          {/* Status */}
+          <div className="flex items-center gap-2 mb-4">
+            <span className={`w-3 h-3 rounded-full ${waStatus.connected ? 'bg-green-500' : 'bg-gray-400'}`} />
+            <span className="text-sm font-medium">{waStatus.connected ? 'Connected' : 'Disconnected'}</span>
+            {waStatus.phone && <span className="text-sm text-gray-500">- {waStatus.phone}</span>}
+          </div>
+
+          {/* QR Code */}
+          {waQr && !waStatus.connected && (
+            <div className="mb-4 p-3 bg-white border rounded-lg text-center">
+              <img src={waQr} alt="WhatsApp QR" className="mx-auto w-48 h-48" />
+              <p className="text-xs text-gray-500 mt-2">Scan with WhatsApp to connect</p>
+            </div>
+          )}
+
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <input type="checkbox" checked={settings.whatsappEnabled ?? false} onChange={e => setSettings((s: any) => ({ ...s, whatsappEnabled: e.target.checked }))} disabled={!isAdmin} />
+              <label className="text-sm font-medium">Enable WhatsApp Push</label>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 uppercase">Worker URL</label>
+              <input type="text" value={settings.whatsappWorkerUrl ?? ''} onChange={e => updateStr('whatsappWorkerUrl', e.target.value)} className="input-field w-full" placeholder="https://mspil-whatsapp-production.up.railway.app" disabled={!isAdmin} />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 uppercase">Worker API Key</label>
+              <input type="password" value={settings.whatsappWorkerApiKey ?? ''} onChange={e => updateStr('whatsappWorkerApiKey', e.target.value)} className="input-field w-full" placeholder="mspil-wa-internal" disabled={!isAdmin} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase">Group 1 JID</label>
+                <input type="text" value={settings.whatsappGroupJid ?? ''} onChange={e => updateStr('whatsappGroupJid', e.target.value)} className="input-field w-full" placeholder="120363xxx@g.us" disabled={!isAdmin} />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase">Group 1 Name</label>
+                <input type="text" value={settings.whatsappGroupName ?? ''} onChange={e => updateStr('whatsappGroupName', e.target.value)} className="input-field w-full" placeholder="MSPIL Reports" disabled={!isAdmin} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase">Group 2 JID (optional)</label>
+                <input type="text" value={settings.whatsappGroup2Jid ?? ''} onChange={e => updateStr('whatsappGroup2Jid', e.target.value)} className="input-field w-full" placeholder="120363yyy@g.us" disabled={!isAdmin} />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase">Group 2 Name</label>
+                <input type="text" value={settings.whatsappGroup2Name ?? ''} onChange={e => updateStr('whatsappGroup2Name', e.target.value)} className="input-field w-full" placeholder="Ops Group" disabled={!isAdmin} />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 uppercase">Private Phones (comma-separated, with country code)</label>
+              <input type="text" value={settings.whatsappPrivatePhones ?? ''} onChange={e => updateStr('whatsappPrivatePhones', e.target.value)} className="input-field w-full" placeholder="919876543210, 919123456789" disabled={!isAdmin} />
+            </div>
+            {isAdmin && (
+              <div className="flex gap-2">
+                <button onClick={handleWaTestGroup} className="btn-secondary text-sm">
+                  <Send size={14} className="inline mr-1" /> Test WhatsApp Group
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* WhatsApp Module Routing */}
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold">WhatsApp Report Routing</h3>
+              {isAdmin && (
+                <button onClick={copyTgRoutingToWa} className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                  <Copy size={12} /> Copy from Telegram
+                </button>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              {allModules.map(mod => {
+                const target = (waRouting[mod] || moduleRouting[mod] || 'group1') as RouteTarget;
+                const colors = routeColor[target];
+                const waLabel = target === 'group1' ? (settings.whatsappGroupName || 'WA Group 1')
+                  : target === 'group2' ? (settings.whatsappGroup2Name || 'WA Group 2') : 'Private';
+                return (
+                  <button
+                    key={mod}
+                    onClick={() => cycleWaModuleRoute(mod)}
+                    disabled={!isAdmin}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium ${colors.bg} ${colors.text} border ${colors.border} hover:opacity-80 transition-all`}
+                  >
+                    <span className="flex items-center gap-2">
+                      {target === 'private' ? <Lock size={14} /> : <Users size={14} />}
+                      {MODULE_LABELS[mod] || mod}
+                    </span>
+                    <span className={`text-[10px] font-bold uppercase tracking-wider ${colors.icon}`}>
+                      {waLabel}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 
