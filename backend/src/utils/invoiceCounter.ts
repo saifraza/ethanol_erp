@@ -4,7 +4,7 @@
  * Must be called inside a prisma.$transaction to prevent duplicates.
  */
 
-type InvoiceSeries = 'ETH' | 'DDGS' | 'LFO' | 'HFO' | 'RS' | 'ENA' | 'SUG';
+type InvoiceSeries = 'ETH' | 'DDGS' | 'LFO' | 'HFO' | 'RS' | 'ENA' | 'SUG' | 'SCRAP';
 
 const COUNTER_PREFIX = 'counter:INV/';
 

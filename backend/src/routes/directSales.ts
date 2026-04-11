@@ -2,9 +2,40 @@ import { Router, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, AuthRequest, authorize } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
+import { generateIRN, generateEWBByIRN } from '../services/eInvoice';
+import { onSaleInvoiceCreated } from '../services/autoJournal';
+import { nextInvoiceNo } from '../utils/invoiceCounter';
+import multer from 'multer';
+
+const COMPANY_STATE = 'Madhya Pradesh';
+const DEFAULT_GST_PCT = 18;
+
+// HSN code map for scrap/miscellaneous products
+const HSN_MAP: Record<string, string> = {
+  'Scrap Iron': '72044900',
+  'Scrap Copper': '74040000',
+  'Scrap SS': '72042900',
+  'Empty Drums': '73101000',
+  'Gunny Bags': '63053200',
+  'Coal Ash': '26219090',
+  'Waste Oil': '27109900',
+  'Spent Wash': '23099090',
+  'Other': '99999999',
+};
+
+function calcGstSplit(amount: number, gstPercent: number, customerState: string | null | undefined) {
+  const gstAmount = Math.round((amount * gstPercent) / 100 * 100) / 100;
+  const isInterstate = customerState && customerState !== COMPANY_STATE;
+  if (isInterstate) {
+    return { supplyType: 'INTER_STATE' as const, cgstPercent: 0, cgstAmount: 0, sgstPercent: 0, sgstAmount: 0, igstPercent: gstPercent, igstAmount: gstAmount, gstAmount };
+  }
+  const half = Math.round(gstAmount / 2 * 100) / 100;
+  return { supplyType: 'INTRA_STATE' as const, cgstPercent: gstPercent / 2, cgstAmount: half, sgstPercent: gstPercent / 2, sgstAmount: Math.round((gstAmount - half) * 100) / 100, igstPercent: 0, igstAmount: 0, gstAmount };
+}
 
 const router = Router();
 router.use(authenticate as any);
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 // GET / — list orders with optional filters
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -87,7 +118,7 @@ router.get('/active', asyncHandler(async (req: AuthRequest, res: Response) => {
   res.json({ orders });
 }));
 
-// GET /:id/dispatches — shipments linked to this order
+// GET /:id/dispatches — shipments linked to this order (with invoice data)
 router.get('/:id/dispatches', asyncHandler(async (req: AuthRequest, res: Response) => {
   const shipments = await prisma.shipment.findMany({
     where: { directSaleId: req.params.id },
@@ -98,19 +129,68 @@ router.get('/:id/dispatches', asyncHandler(async (req: AuthRequest, res: Respons
       weightTare: true, weightGross: true, weightNet: true, bags: true,
       status: true, gateInTime: true, grossTime: true, releaseTime: true,
       productName: true, invoiceRef: true, remarks: true,
+      driverName: true, driverMobile: true, transporterName: true, destination: true,
     },
   });
 
+  // Fetch linked invoices via Invoice.shipmentId
+  const shipmentIds = shipments.map(s => s.id);
+  const invoices = shipmentIds.length > 0 ? await prisma.invoice.findMany({
+    where: { shipmentId: { in: shipmentIds } },
+    select: {
+      id: true, invoiceNo: true, shipmentId: true, amount: true, totalAmount: true,
+      gstPercent: true, gstAmount: true, supplyType: true,
+      cgstAmount: true, sgstAmount: true, igstAmount: true,
+      rate: true, quantity: true, unit: true, productName: true,
+      irn: true, irnStatus: true, irnDate: true, ackNo: true,
+      ewbNo: true, ewbDate: true, ewbStatus: true,
+      status: true, paidAmount: true, balanceAmount: true, freightCharge: true,
+      remarks: true,
+    },
+  }) : [];
+  const invoiceByShipment = new Map(invoices.map(inv => [inv.shipmentId, inv]));
+
+  // Fetch linked cash vouchers by matching linkedInvoiceId
+  const invoiceIds = invoices.map(i => i.id);
+  const cashVouchers = invoiceIds.length > 0 ? await prisma.cashVoucher.findMany({
+    where: { linkedInvoiceId: { in: invoiceIds } },
+    select: { id: true, voucherNo: true, amount: true, status: true, linkedInvoiceId: true },
+  }) : [];
+  // Also find cash vouchers for shipments with 0% invoice (no invoice, only cash voucher)
+  // These are linked via purpose containing shipment ID
+  const noInvoiceShipments = shipments.filter(s => !invoiceByShipment.has(s.id)).map(s => s.id);
+  const directCashVouchers = noInvoiceShipments.length > 0 ? await prisma.cashVoucher.findMany({
+    where: { purpose: { contains: 'shipment:' }, linkedInvoiceId: { in: noInvoiceShipments } },
+    select: { id: true, voucherNo: true, amount: true, status: true, linkedInvoiceId: true },
+  }) : [];
+
+  const cvByInvoice = new Map(cashVouchers.map(cv => [cv.linkedInvoiceId, cv]));
+  const cvByShipment = new Map(directCashVouchers.map(cv => [cv.linkedInvoiceId, cv]));
+
+  const enriched = shipments.map(s => ({
+    ...s,
+    invoice: invoiceByShipment.get(s.id) || null,
+    cashVoucher: cvByInvoice.get(invoiceByShipment.get(s.id)?.id || '') || cvByShipment.get(s.id) || null,
+  }));
+
   const atGate = shipments.filter(s => ['GATE_IN', 'TARE_WEIGHED', 'LOADING'].includes(s.status));
   const dispatched = shipments.filter(s => !['GATE_IN', 'TARE_WEIGHED', 'LOADING'].includes(s.status));
+  const invoicedCount = invoices.length;
+  const irnCount = invoices.filter(i => i.irnStatus === 'GENERATED').length;
+  const ewbCount = invoices.filter(i => i.ewbStatus === 'GENERATED').length;
+  const outstanding = invoices.reduce((s, i) => s + (i.balanceAmount || 0), 0);
 
   res.json({
-    shipments,
+    shipments: enriched,
     pipeline: {
       atWeighbridge: atGate.length,
       atWeighbridgeVehicles: atGate.map(s => s.vehicleNo).join(', '),
       totalDispatches: shipments.length,
       dispatched: dispatched.length,
+      invoiced: invoicedCount,
+      irnGenerated: irnCount,
+      ewbGenerated: ewbCount,
+      outstanding,
     },
   });
 }));
@@ -179,6 +259,419 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     data,
   });
   res.json(order);
+}));
+
+// ══════════════════════════════════════════════════════════════════
+//  DOCUMENT GENERATION — Invoice (with % split), IRN, EWB, Challan, Gate Pass
+// ══════════════════════════════════════════════════════════════════
+
+// POST /:orderId/shipments/:shipmentId/create-invoice — Create invoice with optional split
+router.post('/:orderId/shipments/:shipmentId/create-invoice', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { orderId, shipmentId } = req.params;
+  const invoicePercent = Math.max(0, Math.min(100, parseFloat(req.body.invoicePercent) || 100));
+
+  const order = await prisma.directSale.findUnique({
+    where: { id: orderId },
+    include: { customer: { select: { id: true, name: true, gstNo: true, state: true, address: true, city: true, pincode: true, phone: true, email: true } } },
+  });
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+
+  const shipment = await prisma.shipment.findFirst({
+    where: { id: shipmentId, directSaleId: orderId },
+  });
+  if (!shipment) return res.status(404).json({ error: 'Shipment not found for this order' });
+
+  // Check if invoice already exists for this shipment
+  const existing = await prisma.invoice.findFirst({ where: { shipmentId } });
+  if (existing) return res.status(400).json({ error: 'Invoice already exists for this dispatch' });
+
+  // Also check if cash voucher already exists for 0% invoice case
+  if (invoicePercent === 0) {
+    const existingCv = await prisma.cashVoucher.findFirst({ where: { linkedInvoiceId: shipmentId } });
+    if (existingCv) return res.status(400).json({ error: 'Cash voucher already created for this dispatch' });
+  }
+
+  const netKg = shipment.weightNet || 0;
+  if (netKg <= 0) return res.status(400).json({ error: 'Shipment has no net weight' });
+
+  // Rate is provided at invoice time (scrap prices fluctuate)
+  const rate = parseFloat(req.body.rate);
+  if (!rate || rate <= 0) return res.status(400).json({ error: 'Rate is required' });
+
+  const totalAmount = netKg * rate;
+  const hsnCode = HSN_MAP[order.productName] || HSN_MAP['Other'];
+  const gstPercent = parseFloat(req.body.gstPercent) || DEFAULT_GST_PCT;
+  const customerState = order.customer?.state || null;
+
+  let invoice: any = null;
+  let cashVoucher: any = null;
+
+  if (invoicePercent > 0) {
+    const invAmount = Math.round(totalAmount * invoicePercent / 100 * 100) / 100;
+    const invQty = Math.round(netKg * invoicePercent / 100 * 100) / 100;
+    const gst = calcGstSplit(invAmount, gstPercent, customerState);
+    const invTotal = Math.round((invAmount + gst.gstAmount) * 100) / 100;
+
+    invoice = await prisma.$transaction(async (tx) => {
+      const customInvNo = await nextInvoiceNo(tx, 'SCRAP');
+
+      const inv = await tx.invoice.create({
+        data: {
+          customerId: order.customerId || order.customer?.id || '',
+          invoiceDate: shipment.date,
+          shipmentId: shipment.id,
+          productName: order.productName,
+          quantity: invQty,
+          unit: order.unit,
+          rate,
+          amount: invAmount,
+          gstPercent,
+          gstAmount: gst.gstAmount,
+          supplyType: gst.supplyType,
+          cgstPercent: gst.cgstPercent,
+          cgstAmount: gst.cgstAmount,
+          sgstPercent: gst.sgstPercent,
+          sgstAmount: gst.sgstAmount,
+          igstPercent: gst.igstPercent,
+          igstAmount: gst.igstAmount,
+          totalAmount: invTotal,
+          balanceAmount: invTotal,
+          status: 'UNPAID',
+          remarks: customInvNo,
+          userId: req.user!.id,
+          division: 'ETHANOL',
+        },
+      });
+
+      return inv;
+    });
+
+    // Auto-journal (fire-and-forget)
+    onSaleInvoiceCreated(prisma, {
+      id: invoice.id, invoiceNo: invoice.invoiceNo, totalAmount: invoice.totalAmount,
+      amount: invoice.amount, gstAmount: invoice.gstAmount, gstPercent,
+      cgstAmount: invoice.cgstAmount, sgstAmount: invoice.sgstAmount, igstAmount: invoice.igstAmount,
+      supplyType: invoice.supplyType, productName: order.productName,
+      customerId: order.customerId || '', userId: req.user!.id,
+      invoiceDate: shipment.date, customer: { state: customerState },
+    });
+  }
+
+  // Create cash voucher for remaining %
+  if (invoicePercent < 100) {
+    const cashPercent = 100 - invoicePercent;
+    const cashAmount = Math.round(totalAmount * cashPercent / 100 * 100) / 100;
+
+    cashVoucher = await prisma.cashVoucher.create({
+      data: {
+        date: shipment.date,
+        type: 'RECEIPT',
+        payeeName: order.buyerName,
+        payeePhone: order.buyerPhone,
+        purpose: `Scrap sale cash (${cashPercent}%) - ${order.productName} - Order #${order.entryNo} - shipment:${shipmentId}`,
+        category: 'MISC',
+        amount: cashAmount,
+        paymentMode: 'CASH',
+        authorizedBy: req.user!.name || req.user!.id,
+        status: 'ACTIVE',
+        linkedInvoiceId: invoice?.id || shipmentId, // link to invoice or shipment for 0% case
+        userId: req.user!.id,
+        division: 'ETHANOL',
+      },
+    });
+  }
+
+  res.json({
+    invoice: invoice ? { id: invoice.id, invoiceNo: invoice.invoiceNo, totalAmount: invoice.totalAmount } : null,
+    cashVoucher: cashVoucher ? { id: cashVoucher.id, voucherNo: cashVoucher.voucherNo, amount: cashVoucher.amount } : null,
+    invoicePercent,
+  });
+}));
+
+// POST /:orderId/shipments/:shipmentId/e-invoice — Generate IRN + EWB
+router.post('/:orderId/shipments/:shipmentId/e-invoice', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { shipmentId } = req.params;
+
+  const shipment = await prisma.shipment.findFirst({
+    where: { id: shipmentId, directSaleId: req.params.orderId },
+  });
+  if (!shipment) return res.status(404).json({ error: 'Shipment not found' });
+
+  const invoice = await prisma.invoice.findFirst({
+    where: { shipmentId },
+    include: { customer: true },
+  });
+  if (!invoice) return res.status(400).json({ error: 'Create an invoice for this dispatch first.' });
+  if (!shipment.vehicleNo?.trim()) return res.status(400).json({ error: 'Vehicle number is required for e-invoice.' });
+  if (!invoice.rate || invoice.rate <= 0) return res.status(400).json({ error: 'Invoice rate is zero.' });
+
+  const irnAlreadyExists = !!invoice.irn;
+  if (irnAlreadyExists && invoice.ewbNo) {
+    return res.status(400).json({ error: 'Both IRN and E-Way Bill already generated.' });
+  }
+
+  const customer = invoice.customer;
+  const missingFields: string[] = [];
+  if (!customer.gstNo) missingFields.push('GSTIN');
+  if (!customer.state) missingFields.push('State');
+  if (!customer.pincode) missingFields.push('Pincode');
+  if (!customer.address) missingFields.push('Address');
+  if (missingFields.length > 0) {
+    return res.status(400).json({ error: `Customer "${customer.name}" is missing: ${missingFields.join(', ')}. Update customer record first.`, missingFields });
+  }
+
+  // ── STEP 1: Generate IRN ──
+  let irn = invoice.irn;
+  let ackNo = invoice.ackNo;
+
+  if (!irnAlreadyExists) {
+    const hsnCode = HSN_MAP[invoice.productName] || HSN_MAP['Other'];
+    const invoiceData = {
+      invoiceNo: invoice.remarks || `INV-${invoice.invoiceNo}`,
+      invoiceDate: invoice.invoiceDate,
+      productName: invoice.productName,
+      hsnCode,
+      quantity: invoice.quantity,
+      unit: invoice.unit === 'KG' ? 'KGS' : invoice.unit,
+      rate: invoice.rate,
+      amount: invoice.amount,
+      gstPercent: invoice.gstPercent,
+      customer: {
+        gstin: customer.gstNo || '',
+        name: customer.name,
+        address: customer.address || '',
+        city: customer.city || '',
+        pincode: customer.pincode || '',
+        state: customer.state || '',
+        phone: customer.phone || '',
+        email: customer.email || '',
+      },
+    };
+
+    const irnResult = await generateIRN(invoiceData);
+    if (!irnResult.success) {
+      return res.status(400).json({ error: irnResult.error, step: 'e-invoice', rawResponse: (irnResult as any).rawResponse });
+    }
+
+    irn = irnResult.irn || null;
+    ackNo = irnResult.ackNo ? String(irnResult.ackNo) : null;
+
+    await prisma.invoice.update({
+      where: { id: invoice.id },
+      data: {
+        irn,
+        irnDate: new Date(),
+        irnStatus: 'GENERATED',
+        ackNo,
+        signedQRCode: irnResult.signedQRCode ? irnResult.signedQRCode.slice(0, 4000) : null,
+      } as any,
+    });
+  }
+
+  if (!irn) return res.status(500).json({ error: 'IRN not available for EWB generation' });
+
+  // ── STEP 2: Generate E-Way Bill from IRN ──
+  let ewayBillNo: string | null = null;
+  let ewayBillDate: string | null = null;
+  let ewbError: string | null = null;
+
+  try {
+    const distanceKm = req.body.distanceKm ? parseInt(req.body.distanceKm) : 100;
+    const vehNo = (shipment.vehicleNo || '').replace(/\s/g, '');
+    const transporterGstin = req.body.transporterGstin || '';
+    const transporterName = shipment.transporterName || '';
+
+    const ewbData: Record<string, any> = {
+      Irn: irn,
+      Distance: distanceKm,
+      TransMode: '1',
+      VehNo: vehNo,
+      VehType: 'R',
+    };
+    if (transporterGstin && transporterGstin.length === 15) ewbData.TransId = transporterGstin;
+    if (transporterName && transporterName.length >= 3) ewbData.TransName = transporterName;
+
+    const ewbResult = await generateEWBByIRN(irn, ewbData);
+
+    if (ewbResult.success && ewbResult.ewayBillNo) {
+      ewayBillNo = ewbResult.ewayBillNo;
+      ewayBillDate = ewbResult.ewayBillDate || new Date().toISOString();
+
+      await prisma.invoice.update({
+        where: { id: invoice.id },
+        data: {
+          ewbNo: ewayBillNo,
+          ewbDate: ewayBillDate ? new Date(ewayBillDate) : new Date(),
+          ewbValidTill: ewbResult.validUpto ? new Date(ewbResult.validUpto) : null,
+          ewbStatus: 'GENERATED',
+        } as any,
+      });
+    } else {
+      ewbError = ewbResult.error || 'E-Way Bill generation failed';
+    }
+  } catch (err: any) {
+    ewbError = err.message || 'E-Way Bill generation error';
+  }
+
+  res.json({
+    success: true,
+    irn,
+    ackNo,
+    invoiceNo: invoice.remarks || `INV-${invoice.invoiceNo}`,
+    ewayBillNo,
+    ewayBillDate,
+    ewbError,
+    message: ewayBillNo
+      ? 'e-Invoice and E-Way Bill generated successfully'
+      : `e-Invoice generated (IRN: ${irn}). E-Way Bill failed: ${ewbError}`,
+  });
+}));
+
+// PATCH /:orderId/shipments/:shipmentId/manual-ewb — Manual EWB number + optional PDF
+router.patch('/:orderId/shipments/:shipmentId/manual-ewb', upload.single('ewbPdf'), asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { ewbNo } = req.body;
+  if (!ewbNo?.trim()) return res.status(400).json({ error: 'EWB number is required' });
+
+  const invoice = await prisma.invoice.findFirst({
+    where: { shipmentId: req.params.shipmentId },
+    select: { id: true },
+  });
+  if (!invoice) return res.status(404).json({ error: 'Invoice not found for this shipment' });
+
+  const data: any = { ewbNo: ewbNo.trim(), ewbDate: new Date(), ewbStatus: 'GENERATED' };
+  if (req.file?.buffer) data.ewbPdfData = req.file.buffer;
+
+  await prisma.invoice.update({ where: { id: invoice.id }, data });
+  res.json({ success: true, ewbNo: ewbNo.trim(), hasPdf: !!req.file });
+}));
+
+// GET /:orderId/shipments/:shipmentId/challan-pdf — Delivery Challan
+router.get('/:orderId/shipments/:shipmentId/challan-pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const order = await prisma.directSale.findUnique({
+    where: { id: req.params.orderId },
+    include: { customer: { select: { gstNo: true } } },
+  });
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+
+  const shipment = await prisma.shipment.findFirst({
+    where: { id: req.params.shipmentId, directSaleId: req.params.orderId },
+  });
+  if (!shipment) return res.status(404).json({ error: 'Shipment not found' });
+
+  // Get rate from linked invoice if exists, otherwise from order
+  const linkedInvoice = await prisma.invoice.findFirst({
+    where: { shipmentId: shipment.id },
+    select: { rate: true, gstPercent: true },
+  });
+  const netKg = shipment.weightNet || 0;
+  const rate = linkedInvoice?.rate || order.rate || 0;
+  const amount = Math.round(netKg * rate);
+  const gstRate = linkedInvoice?.gstPercent || DEFAULT_GST_PCT;
+  const gstAmount = Math.round(amount * gstRate / 100);
+  const hsnCode = HSN_MAP[order.productName] || HSN_MAP['Other'];
+
+  const { renderDocumentPdf } = await import('../services/documentRenderer');
+  const pdfBuffer = await renderDocumentPdf({
+    docType: 'CHALLAN',
+    data: {
+      challanNo: `SC/${shipment.shipmentNo}`,
+      date: shipment.date,
+      vehicleNo: shipment.vehicleNo,
+      driverName: shipment.driverName,
+      driverPhone: shipment.driverMobile,
+      transporterName: shipment.transporterName,
+      destination: shipment.destination,
+      buyerName: order.buyerName,
+      buyerAddress: order.buyerAddress || '',
+      buyerGst: order.customer?.gstNo || '',
+      contractNo: `Order #${order.entryNo}`,
+      productName: order.productName,
+      hsnCode,
+      quantity: netKg,
+      unit: order.unit,
+      rate,
+      amount,
+      gstRate,
+      gstAmount,
+      totalValue: amount + gstAmount,
+      bags: shipment.bags,
+      weightGross: shipment.weightGross,
+      weightTare: shipment.weightTare,
+      weightNet: netKg,
+    },
+    verifyId: shipment.id,
+  });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="Challan-Scrap-${shipment.vehicleNo}.pdf"`);
+  res.send(pdfBuffer);
+}));
+
+// GET /:orderId/shipments/:shipmentId/gate-pass-pdf — Gate Pass
+router.get('/:orderId/shipments/:shipmentId/gate-pass-pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const order = await prisma.directSale.findUnique({
+    where: { id: req.params.orderId },
+    include: { customer: { select: { gstNo: true } } },
+  });
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+
+  const shipment = await prisma.shipment.findFirst({
+    where: { id: req.params.shipmentId, directSaleId: req.params.orderId },
+  });
+  if (!shipment) return res.status(404).json({ error: 'Shipment not found' });
+
+  const invoice = await prisma.invoice.findFirst({
+    where: { shipmentId: shipment.id },
+    select: { invoiceNo: true, ewbNo: true, remarks: true, rate: true },
+  });
+
+  const netKg = shipment.weightNet || 0;
+  const rate = invoice?.rate || order.rate || 0;
+  const amount = Math.round(netKg * rate);
+  const hsnCode = HSN_MAP[order.productName] || HSN_MAP['Other'];
+
+  const { renderDocumentPdf } = await import('../services/documentRenderer');
+  const pdfBuffer = await renderDocumentPdf({
+    docType: 'GATE_PASS',
+    data: {
+      gatePassNo: `GP/SC/${shipment.shipmentNo}`,
+      date: shipment.date,
+      vehicleNo: shipment.vehicleNo,
+      driverName: shipment.driverName,
+      driverMobile: shipment.driverMobile,
+      transporterName: shipment.transporterName,
+      destination: shipment.destination,
+      ewayBillNo: invoice?.ewbNo || '',
+      invoiceNo: invoice?.remarks || (invoice ? `INV-${invoice.invoiceNo}` : ''),
+      partyName: order.buyerName,
+      partyAddress: order.buyerAddress || '',
+      partyGstin: order.customer?.gstNo || '',
+      hsnCode,
+      weightGross: shipment.weightGross,
+      weightTare: shipment.weightTare,
+      weightNet: netKg,
+      netMT: netKg / 1000,
+      bags: shipment.bags,
+      rate,
+      invoiceAmount: amount,
+    },
+    verifyId: shipment.id,
+  });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="GatePass-Scrap-${shipment.vehicleNo}.pdf"`);
+  res.send(pdfBuffer);
+}));
+
+// GET /:orderId/shipments/:shipmentId/ewb-pdf — Download uploaded EWB PDF
+router.get('/:orderId/shipments/:shipmentId/ewb-pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const invoice = await prisma.invoice.findFirst({
+    where: { shipmentId: req.params.shipmentId },
+    select: { ewbPdfData: true, ewbNo: true },
+  });
+  if (!invoice?.ewbPdfData) return res.status(404).json({ error: 'No EWB PDF uploaded' });
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="EWB-${invoice.ewbNo || 'unknown'}.pdf"`);
+  res.send(invoice.ewbPdfData);
 }));
 
 // DELETE /:id
