@@ -113,14 +113,12 @@ export async function handleDDGSOutbound(w: WeighmentInput, ctx: PushContext): P
     const dispatch = await tx.dDGSDispatchTruck.upsert({
       where: { sourceWbId: w.id },
       update: {
-        weightGross: grossKg,
-        weightTare: tareKg,
-        weightNet: netMT,
-        grossTime: grossTimeVal,
-        // Promote partial-state stub (GATE_IN/TARE_WEIGHED from pre-phase) to GROSS_WEIGHED.
-        // Status guard at line 84-86 has already bailed for BILLED/RELEASED.
+        ...(tareKg > 0 ? { weightTare: tareKg, tareTime: tareTimeVal } : {}),
+        ...(grossKg > 0 ? { weightGross: grossKg, grossTime: grossTimeVal } : {}),
+        ...(grossKg > 0 && tareKg > 0 ? { weightNet: netMT } : {}),
+        // Promote partial-state stub to TARE_WEIGHED or GROSS_WEIGHED based on available weights
         ...(existing && (existing.status === 'GATE_IN' || existing.status === 'TARE_WEIGHED')
-          ? { status: 'GROSS_WEIGHED' as const }
+          ? { status: (grossKg > 0 && tareKg > 0) ? 'GROSS_WEIGHED' as const : (tareKg > 0 ? 'TARE_WEIGHED' as const : existing.status) }
           : {}),
         // Only set contract info if not already set (don't clobber manual links)
         ...(contract && !existing?.contractId
@@ -139,11 +137,11 @@ export async function handleDDGSOutbound(w: WeighmentInput, ctx: PushContext): P
         driverName: w.driver_name || null,
         driverMobile: w.driver_mobile || null,
         transporterName: w.transporter || null,
-        weightGross: grossKg,
-        weightTare: tareKg,
-        weightNet: netMT,
+        ...(grossKg > 0 ? { weightGross: grossKg } : {}),
+        ...(tareKg > 0 ? { weightTare: tareKg } : {}),
+        ...(grossKg > 0 && tareKg > 0 ? { weightNet: netMT } : {}),
         bags: w.bags || 0,
-        status: 'GROSS_WEIGHED',
+        status: (grossKg > 0 && tareKg > 0) ? 'GROSS_WEIGHED' : (tareKg > 0 ? 'TARE_WEIGHED' : 'GATE_IN'),
         hsnCode: DDGS_HSN,
         gateInTime: gateInVal,
         tareTime: tareTimeVal,

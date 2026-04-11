@@ -68,11 +68,12 @@ export async function handleSugarOutbound(w: WeighmentInput, ctx: PushContext): 
     const dispatch = await tx.sugarDispatchTruck.upsert({
       where: { sourceWbId: w.id },
       update: {
-        weightGross: grossKg,
-        weightTare: tareKg,
-        weightNet: netMT,
-        grossTime: grossTimeVal,
-        // Only set contract info if not already set (don't clobber manual links)
+        ...(tareKg > 0 ? { weightTare: tareKg, tareTime: tareTimeVal } : {}),
+        ...(grossKg > 0 ? { weightGross: grossKg, grossTime: grossTimeVal } : {}),
+        ...(grossKg > 0 && tareKg > 0 ? { weightNet: netMT } : {}),
+        ...(existing && (existing.status === 'GATE_IN' || existing.status === 'TARE_WEIGHED')
+          ? { status: (grossKg > 0 && tareKg > 0) ? 'GROSS_WEIGHED' as const : (tareKg > 0 ? 'TARE_WEIGHED' as const : existing.status) }
+          : {}),
         ...(contract && !existing?.contractId
           ? { contractId: contract.id, customerId: contract.customerId, rate: rate > 0 ? rate : null }
           : {}),
@@ -87,11 +88,11 @@ export async function handleSugarOutbound(w: WeighmentInput, ctx: PushContext): 
         driverName: w.driver_name || null,
         driverMobile: w.driver_mobile || null,
         transporterName: w.transporter || null,
-        weightGross: grossKg,
-        weightTare: tareKg,
-        weightNet: netMT,
+        ...(grossKg > 0 ? { weightGross: grossKg } : {}),
+        ...(tareKg > 0 ? { weightTare: tareKg } : {}),
+        ...(grossKg > 0 && tareKg > 0 ? { weightNet: netMT } : {}),
         bags: w.bags || 0,
-        status: 'GROSS_WEIGHED',
+        status: (grossKg > 0 && tareKg > 0) ? 'GROSS_WEIGHED' : (tareKg > 0 ? 'TARE_WEIGHED' : 'GATE_IN'),
         hsnCode: SUGAR_HSN,
         gateInTime: gateInVal,
         tareTime: tareTimeVal,
@@ -108,9 +109,10 @@ export async function handleSugarOutbound(w: WeighmentInput, ctx: PushContext): 
     await tx.shipment.upsert({
       where: { sourceWbId: w.id },
       update: {
-        weightTare: tareKg,
-        weightGross: grossKg,
-        weightNet: netKg,
+        ...(tareKg > 0 ? { weightTare: tareKg } : {}),
+        ...(grossKg > 0 ? { weightGross: grossKg } : {}),
+        ...(grossKg > 0 && tareKg > 0 ? { weightNet: netKg } : {}),
+        status: (grossKg > 0 && tareKg > 0) ? 'GROSS_WEIGHED' : (tareKg > 0 ? 'TARE_WEIGHED' : 'GATE_IN'),
         grossTime: grossTimeVal ? grossTimeVal.toISOString() : undefined,
       },
       create: {
@@ -122,11 +124,11 @@ export async function handleSugarOutbound(w: WeighmentInput, ctx: PushContext): 
         driverMobile: w.driver_mobile || null,
         transporterName: w.transporter || null,
         vehicleType: w.vehicle_type || null,
-        weightTare: tareKg,
-        weightGross: grossKg,
-        weightNet: netKg,
+        ...(tareKg > 0 ? { weightTare: tareKg } : {}),
+        ...(grossKg > 0 ? { weightGross: grossKg } : {}),
+        ...(grossKg > 0 && tareKg > 0 ? { weightNet: netKg } : {}),
         bags: w.bags || null,
-        status: 'GROSS_WEIGHED',
+        status: (grossKg > 0 && tareKg > 0) ? 'GROSS_WEIGHED' : (tareKg > 0 ? 'TARE_WEIGHED' : 'GATE_IN'),
         gateInTime: gateInVal.toISOString(),
         tareTime: tareTimeVal ? tareTimeVal.toISOString() : null,
         grossTime: grossTimeVal ? grossTimeVal.toISOString() : null,
