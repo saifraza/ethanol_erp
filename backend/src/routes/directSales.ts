@@ -573,7 +573,7 @@ router.patch('/:orderId/shipments/:shipmentId/manual-ewb', upload.single('ewbPdf
 router.get('/:orderId/shipments/:shipmentId/challan-pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
   const order = await prisma.directSale.findUnique({
     where: { id: req.params.orderId },
-    include: { customer: { select: { gstNo: true } } },
+    include: { customer: { select: { name: true, gstNo: true, address: true, city: true, state: true, pincode: true, phone: true } } },
   });
   if (!order) return res.status(404).json({ error: 'Order not found' });
 
@@ -585,7 +585,7 @@ router.get('/:orderId/shipments/:shipmentId/challan-pdf', asyncHandler(async (re
   // Get rate from linked invoice if exists, otherwise from order
   const linkedInvoice = await prisma.invoice.findFirst({
     where: { shipmentId: shipment.id },
-    select: { rate: true, gstPercent: true },
+    select: { rate: true, gstPercent: true, remarks: true, invoiceNo: true, ewbNo: true },
   });
   const netKg = shipment.weightNet || 0;
   const rate = linkedInvoice?.rate || order.rate || 0;
@@ -593,6 +593,7 @@ router.get('/:orderId/shipments/:shipmentId/challan-pdf', asyncHandler(async (re
   const gstRate = linkedInvoice?.gstPercent || DEFAULT_GST_PCT;
   const gstAmount = Math.round(amount * gstRate / 100);
   const hsnCode = HSN_MAP[order.productName] || HSN_MAP['Other'];
+  const cust = order.customer;
 
   const { renderDocumentPdf } = await import('../services/documentRenderer');
   const pdfBuffer = await renderDocumentPdf({
@@ -603,11 +604,23 @@ router.get('/:orderId/shipments/:shipmentId/challan-pdf', asyncHandler(async (re
       vehicleNo: shipment.vehicleNo,
       driverName: shipment.driverName,
       driverPhone: shipment.driverMobile,
+      driverMobile: shipment.driverMobile,
       transporterName: shipment.transporterName,
       destination: shipment.destination,
-      buyerName: order.buyerName,
-      buyerAddress: order.buyerAddress || '',
-      buyerGst: order.customer?.gstNo || '',
+      invoiceNo: linkedInvoice?.remarks || (linkedInvoice ? `INV-${linkedInvoice.invoiceNo}` : ''),
+      ewayBillNo: linkedInvoice?.ewbNo || '',
+      customer: {
+        name: cust?.name || order.buyerName,
+        address: cust?.address || order.buyerAddress || '',
+        city: cust?.city || '',
+        state: cust?.state || '',
+        pincode: cust?.pincode || '',
+        gstNo: cust?.gstNo || '',
+        phone: cust?.phone || order.buyerPhone || '',
+      },
+      buyerName: cust?.name || order.buyerName,
+      buyerAddress: cust?.address || order.buyerAddress || '',
+      buyerGst: cust?.gstNo || '',
       contractNo: `Order #${order.entryNo}`,
       productName: order.productName,
       hsnCode,
@@ -632,56 +645,57 @@ router.get('/:orderId/shipments/:shipmentId/challan-pdf', asyncHandler(async (re
 
 // GET /:orderId/shipments/:shipmentId/gate-pass-pdf — Gate Pass
 router.get('/:orderId/shipments/:shipmentId/gate-pass-pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
-  const order = await prisma.directSale.findUnique({
+  const order2 = await prisma.directSale.findUnique({
     where: { id: req.params.orderId },
-    include: { customer: { select: { gstNo: true } } },
+    include: { customer: { select: { name: true, gstNo: true, address: true, city: true, state: true, pincode: true, phone: true } } },
   });
-  if (!order) return res.status(404).json({ error: 'Order not found' });
+  if (!order2) return res.status(404).json({ error: 'Order not found' });
 
-  const shipment = await prisma.shipment.findFirst({
+  const shipment2 = await prisma.shipment.findFirst({
     where: { id: req.params.shipmentId, directSaleId: req.params.orderId },
   });
-  if (!shipment) return res.status(404).json({ error: 'Shipment not found' });
+  if (!shipment2) return res.status(404).json({ error: 'Shipment not found' });
 
-  const invoice = await prisma.invoice.findFirst({
-    where: { shipmentId: shipment.id },
+  const gpInvoice = await prisma.invoice.findFirst({
+    where: { shipmentId: shipment2.id },
     select: { invoiceNo: true, ewbNo: true, remarks: true, rate: true },
   });
 
-  const netKg = shipment.weightNet || 0;
-  const rate = invoice?.rate || order.rate || 0;
-  const amount = Math.round(netKg * rate);
-  const hsnCode = HSN_MAP[order.productName] || HSN_MAP['Other'];
+  const gpNetKg = shipment2.weightNet || 0;
+  const gpRate = gpInvoice?.rate || order2.rate || 0;
+  const gpAmount = Math.round(gpNetKg * gpRate);
+  const gpHsnCode = HSN_MAP[order2.productName] || HSN_MAP['Other'];
+  const gpCust = order2.customer;
 
-  const { renderDocumentPdf } = await import('../services/documentRenderer');
-  const pdfBuffer = await renderDocumentPdf({
+  const { renderDocumentPdf: renderGP } = await import('../services/documentRenderer');
+  const pdfBuffer = await renderGP({
     docType: 'GATE_PASS',
     data: {
-      gatePassNo: `GP/SC/${shipment.shipmentNo}`,
-      date: shipment.date,
-      vehicleNo: shipment.vehicleNo,
-      driverName: shipment.driverName,
-      driverMobile: shipment.driverMobile,
-      transporterName: shipment.transporterName,
-      destination: shipment.destination,
-      ewayBillNo: invoice?.ewbNo || '',
-      invoiceNo: invoice?.remarks || (invoice ? `INV-${invoice.invoiceNo}` : ''),
-      partyName: order.buyerName,
-      partyAddress: order.buyerAddress || '',
-      partyGstin: order.customer?.gstNo || '',
-      hsnCode,
-      weightGross: shipment.weightGross,
-      weightTare: shipment.weightTare,
-      weightNet: netKg,
-      netMT: netKg / 1000,
-      bags: shipment.bags,
-      rate,
-      invoiceAmount: amount,
+      gatePassNo: `GP/SC/${shipment2.shipmentNo}`,
+      date: shipment2.date,
+      vehicleNo: shipment2.vehicleNo,
+      driverName: shipment2.driverName,
+      driverMobile: shipment2.driverMobile,
+      transporterName: shipment2.transporterName,
+      destination: shipment2.destination || gpCust?.city || gpCust?.state || '',
+      ewayBillNo: gpInvoice?.ewbNo || '',
+      invoiceNo: gpInvoice?.remarks || (gpInvoice ? `INV-${gpInvoice.invoiceNo}` : ''),
+      partyName: gpCust?.name || order2.buyerName,
+      partyAddress: gpCust?.address ? [gpCust.address, gpCust.city, gpCust.state, gpCust.pincode].filter(Boolean).join(', ') : (order2.buyerAddress || ''),
+      partyGstin: gpCust?.gstNo || '',
+      hsnCode: gpHsnCode,
+      weightGross: shipment2.weightGross,
+      weightTare: shipment2.weightTare,
+      weightNet: gpNetKg,
+      netMT: gpNetKg / 1000,
+      bags: shipment2.bags,
+      rate: gpRate,
+      invoiceAmount: gpAmount,
     },
-    verifyId: shipment.id,
+    verifyId: shipment2.id,
   });
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="GatePass-Scrap-${shipment.vehicleNo}.pdf"`);
+  res.setHeader('Content-Disposition', `inline; filename="GatePass-Scrap-${shipment2.vehicleNo}.pdf"`);
   res.send(pdfBuffer);
 }));
 

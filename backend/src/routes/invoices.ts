@@ -347,6 +347,14 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
     const isDDGSInvoice = !!ddgsLink || invoice.productName?.toUpperCase().includes('DDGS');
     const stateCode = invoice.customer.gstNo ? invoice.customer.gstNo.substring(0, 2) : '';
 
+    // Fetch linked shipment for scrap/misc invoices (no lifting or ddgs dispatch)
+    const shipment = (!lifting && !ddgsLink && invoice.shipmentId)
+      ? await prisma.shipment.findUnique({
+          where: { id: invoice.shipmentId },
+          select: { vehicleNo: true, driverName: true, driverMobile: true, transporterName: true, destination: true, customerName: true },
+        })
+      : null;
+
     const customInvNo = lifting?.invoiceNo || invoice.remarks; // custom invoice no stored on lifting or in remarks
     const invData = {
       invoiceNo: invoice.invoiceNo,
@@ -417,11 +425,11 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
       roundedTotalAmount: Math.round(invoice.totalAmount || 0),
       roundOff: Math.round((Math.round(invoice.totalAmount || 0) - (invoice.totalAmount || 0)) * 100) / 100,
       remarks: invoice.remarks,
-      // Transport / Dispatch info — pull from ethanol lifting OR ddgs dispatch truck
-      vehicleNo: lifting?.vehicleNo || ddgsTruck?.vehicleNo || ddgsLink?.vehicleNo || null,
-      driverName: lifting?.driverName || ddgsTruck?.driverName || ddgsLink?.driverName || null,
-      transporterName: lifting?.transporterName || ddgsTruck?.transporterName || ddgsLink?.transporterName || null,
-      destination: lifting?.destination || ddgsTruck?.destination || ddgsLink?.destination || null,
+        // Transport / Dispatch info — pull from ethanol lifting OR ddgs dispatch truck OR shipment (scrap)
+      vehicleNo: lifting?.vehicleNo || ddgsTruck?.vehicleNo || ddgsLink?.vehicleNo || shipment?.vehicleNo || null,
+      driverName: lifting?.driverName || ddgsTruck?.driverName || ddgsLink?.driverName || shipment?.driverName || null,
+      transporterName: lifting?.transporterName || ddgsTruck?.transporterName || ddgsLink?.transporterName || shipment?.transporterName || null,
+      destination: lifting?.destination || ddgsTruck?.destination || ddgsLink?.destination || shipment?.destination || null,
       distanceKm: lifting?.distanceKm || ddgsLink?.distanceKm || null,
       strength: lifting?.strength || null,
       rstNo: lifting?.rstNo || (ddgsTruck?.rstNo ? String(ddgsTruck.rstNo) : null),
