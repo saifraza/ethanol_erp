@@ -1,409 +1,245 @@
-import { useState, useEffect, useRef } from 'react';
-import { Truck, Plus, Trash2, Camera, X, Share2, ChevronDown, ChevronUp, Image, Clock } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Share2, X } from 'lucide-react';
 import api from '../../services/api';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
+interface DispatchRow {
+  id: string;
+  date: string;
+  vehicleNo: string;
+  partyName: string;
+  destination: string;
+  quantityBL: number;
+  strength: number | null;
+  status: string;
+  gateInTime: string | null;
+  releaseTime: string | null;
+  weightGross: number | null;
+  weightTare: number | null;
+  weightNet: number | null;
+  contractId: string | null;
+  photoUrl: string | null;
+  remarks: string | null;
+  sealNo: string | null;
+  rstNo: string | null;
+  driverName: string | null;
+  transporterName: string | null;
+  gatePassNo: string | null;
+  challanNo: string | null;
+  contract: { contractNo: string; buyerName: string } | null;
+}
+
+interface Summary {
+  totalBL: number;
+  totalTrucks: number;
+  avgPerTruck: number;
+  releasedCount: number;
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  GATE_IN: 'border-yellow-400 bg-yellow-50 text-yellow-700',
+  TARE_WEIGHED: 'border-blue-400 bg-blue-50 text-blue-700',
+  GROSS_WEIGHED: 'border-purple-400 bg-purple-50 text-purple-700',
+  RELEASED: 'border-green-400 bg-green-50 text-green-700',
+};
+
+function fmtDate(d: string) {
+  const dt = new Date(d);
+  return dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' });
+}
+
+function fmtTime(d: string | null) {
+  if (!d) return '--';
+  const dt = new Date(d);
+  return dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+}
+
+function fmtNum(n: number) {
+  return n === 0 ? '--' : n.toLocaleString('en-IN', { maximumFractionDigits: 1 });
+}
+
 export default function EthanolDispatch() {
-  const [dispatches, setDispatches] = useState<any[]>([]);
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [showForm, setShowForm] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
-  const [showHistory, setShowHistory] = useState(false);
-  const [history, setHistory] = useState<Record<string, any[]>>({});
+  const today = new Date().toISOString().split('T')[0];
+  const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
+
+  const [from, setFrom] = useState(weekAgo);
+  const [to, setTo] = useState(today);
+  const [status, setStatus] = useState('ALL');
+  const [search, setSearch] = useState('');
+  const [dispatches, setDispatches] = useState<DispatchRow[]>([]);
+  const [summary, setSummary] = useState<Summary>({ totalBL: 0, totalTrucks: 0, avgPerTruck: 0, releasedCount: 0 });
+  const [loading, setLoading] = useState(true);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
-  // Active contracts for party dropdown
-  const [contracts, setContracts] = useState<any[]>([]);
-
-  // Form state
-  const [batchNo, setBatchNo] = useState('');
-  const [vehicleNo, setVehicleNo] = useState('');
-  const [partyName, setPartyName] = useState('');
-  const [contractId, setContractId] = useState('');
-  const [destination, setDestination] = useState('');
-  const [quantityBL, setQuantityBL] = useState('');
-  const [strength, setStrength] = useState('');
-  const [driverName, setDriverName] = useState('');
-  const [driverPhone, setDriverPhone] = useState('');
-  const [driverLicense, setDriverLicense] = useState('');
-  const [transporterName, setTransporterName] = useState('');
-  const [distanceKm, setDistanceKm] = useState('');
-  const [rstNo, setRstNo] = useState('');
-  const [sealNo, setSealNo] = useState('');
-  const [pesoDate, setPesoDate] = useState('');
-  const [remarks, setRemarks] = useState('');
-  const [photo, setPhoto] = useState<File | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => { loadDispatches(); }, [date]);
-  useEffect(() => {
-    api.get('/dispatch/active-contracts').then(r => setContracts(r.data.contracts || [])).catch(() => {});
-  }, []);
-
-  async function loadDispatches() {
+  const fetchData = useCallback(async () => {
     try {
-      const res = await api.get(`/dispatch?date=${date}`);
+      setLoading(true);
+      const params = new URLSearchParams({ from, to });
+      if (status !== 'ALL') params.set('status', status);
+      if (search.trim()) params.set('search', search.trim());
+      const res = await api.get(`/dispatch/report?${params}`);
       setDispatches(res.data.dispatches || []);
-    } catch (e) { console.error(e); }
-  }
-
-  async function loadHistory() {
-    try {
-      const res = await api.get('/dispatch/history');
-      setHistory(res.data.history || {});
-    } catch (e) { console.error(e); }
-  }
-
-  function resetForm() {
-    setBatchNo(''); setVehicleNo(''); setPartyName(''); setContractId(''); setDestination('');
-    setQuantityBL(''); setStrength(''); setDriverName(''); setDriverPhone(''); setDriverLicense('');
-    setTransporterName(''); setDistanceKm(''); setRstNo(''); setSealNo(''); setPesoDate(''); setRemarks('');
-    setPhoto(null); setShowForm(false);
-  }
-
-  function handleContractSelect(cid: string) {
-    setContractId(cid);
-    if (cid) {
-      const c = contracts.find(x => x.id === cid);
-      if (c) setPartyName(c.buyerName);
-    } else {
-      setPartyName('');
+      setSummary(res.data.summary || { totalBL: 0, totalTrucks: 0, avgPerTruck: 0, releasedCount: 0 });
+    } catch (err) {
+      console.error('Failed to fetch dispatches:', err);
+    } finally {
+      setLoading(false);
     }
-  }
+  }, [from, to, status, search]);
 
-  const selectedContract = contracts.find(c => c.id === contractId);
-
-  async function handleSave(share = false) {
-    if (!vehicleNo && !quantityBL) { setMsg({ type: 'err', text: 'Vehicle No or Quantity required' }); return; }
-    setSaving(true); setMsg(null);
-    try {
-      const fd = new FormData();
-      fd.append('date', date);
-      fd.append('batchNo', batchNo);
-      fd.append('vehicleNo', vehicleNo);
-      fd.append('partyName', partyName);
-      fd.append('destination', destination);
-      fd.append('quantityBL', quantityBL);
-      fd.append('strength', strength);
-      fd.append('remarks', remarks);
-      if (contractId) fd.append('contractId', contractId);
-      if (driverName) fd.append('driverName', driverName);
-      if (driverPhone) fd.append('driverPhone', driverPhone);
-      if (driverLicense) fd.append('driverLicense', driverLicense);
-      if (transporterName) fd.append('transporterName', transporterName);
-      if (distanceKm) fd.append('distanceKm', distanceKm);
-      if (rstNo) fd.append('rstNo', rstNo);
-      if (sealNo) fd.append('sealNo', sealNo);
-      if (pesoDate) fd.append('pesoDate', pesoDate);
-      if (photo) fd.append('photo', photo);
-
-      await api.post('/dispatch', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-
-      // Auto-send Telegram for each dispatch truck
-      try {
-        const msg = `🚛 *Ethanol Dispatch* — ${now}\nVehicle: ${vehicleNo}\nParty: ${partyName || '-'}\nDestination: ${destination || '-'}\nQuantity: ${quantityBL} BL${strength ? ` @ ${strength}%` : ''}\nBatch: ${batchNo || '-'}${remarks ? `\nRemarks: ${remarks}` : ''}`;
-        await api.post('/telegram/send-report', { message: msg, module: 'dispatch' });
-      } catch (_) { /* Telegram send is best-effort */ }
-
-      setMsg({ type: 'ok', text: `Dispatch saved at ${now}` });
-      resetForm();
-      await loadDispatches();
-    } catch (err: any) { setMsg({ type: 'err', text: err.response?.data?.error || 'Save failed' }); }
-    setSaving(false);
-  }
-
-  async function handleDelete(id: string) {
-    if (!confirm('Delete this dispatch?')) return;
-    try {
-      await api.delete(`/dispatch/${id}`);
-      await loadDispatches();
-    } catch (e) { console.error(e); }
-  }
-
-  function handlePhotoSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (file) setPhoto(file);
-  }
-
-  const totalBL = dispatches.reduce((s, d) => s + (d.quantityBL || 0), 0);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   async function shareTelegram() {
-    const lines = dispatches.map((d: any, i: number) =>
-      `${i+1}. ${d.batchNo ? `[${d.batchNo}] ` : ''}${d.vehicleNo} → ${d.destination || '-'} | ${d.quantityBL} BL${d.strength ? ` @ ${d.strength}%` : ''} | ${d.partyName}`
-    ).join('\n');
-    const text = `*Ethanol Dispatch Report*\n📅 ${date}\n\n${lines}\n\n*Total: ${totalBL.toFixed(1)} BL (${dispatches.length} trucks)*`;
+    const lines = dispatches
+      .filter(d => d.quantityBL > 0)
+      .map((d, i) =>
+        `${i + 1}. ${d.vehicleNo} | ${d.partyName || '-'} | ${d.destination || '-'} | ${d.quantityBL} BL${d.strength ? ` @ ${d.strength}%` : ''}`
+      ).join('\n');
+    const text = `*Ethanol Dispatch Report*\n${from} to ${to}\n\n${lines}\n\n*Total: ${fmtNum(summary.totalBL)} BL (${summary.totalTrucks} trucks)*`;
     try {
       await api.post('/telegram/send-report', { message: text, module: 'dispatch' });
       setMsg({ type: 'ok', text: 'Report shared via Telegram' });
-    } catch (_) {
+    } catch {
       setMsg({ type: 'err', text: 'Telegram share failed' });
     }
+    setTimeout(() => setMsg(null), 3000);
   }
 
-  const fmtDt = (d: string) => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  if (loading && dispatches.length === 0) return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="text-xs text-slate-400 uppercase tracking-widest">Loading...</div>
+    </div>
+  );
 
   return (
-    <div className="max-w-5xl mx-auto px-3 py-4">
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-5">
-        <div className="p-2 bg-red-100 rounded-lg"><Truck size={24} className="text-red-600" /></div>
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">Ethanol Dispatch</h1>
-          <p className="text-xs text-gray-500">Log truck dispatches as they happen</p>
-        </div>
-      </div>
-
-      {/* Date + Summary */}
-      <div className="flex items-end gap-4 mb-5">
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
-          <input type="date" value={date} onChange={e => setDate(e.target.value)}
-            className="border rounded-lg px-3 py-2.5 text-sm" />
-        </div>
-        <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-2">
-          <div className="text-[10px] text-red-400 uppercase">Today's Total</div>
-          <div className="text-lg font-bold text-red-700">{totalBL.toFixed(1)} BL</div>
-          <div className="text-[10px] text-gray-500">{dispatches.length} truck{dispatches.length !== 1 ? 's' : ''}</div>
-        </div>
-      </div>
-
-      {/* Add Dispatch Button — DISABLED: all ethanol dispatch now flows through the weighbridge.
-          Code path preserved for future re-enable. */}
-      {false && !showForm && (
-        <button onClick={() => setShowForm(true)}
-          className="w-full border-2 border-dashed border-red-300 rounded-lg py-4 text-red-600 hover:bg-red-50 flex items-center justify-center gap-2 mb-5 font-medium">
-          <Plus size={20} /> Add Dispatch
-        </button>
-      )}
-      <div className="w-full border-2 border-dashed border-slate-300 bg-slate-50 rounded-lg py-4 text-slate-500 text-center mb-5 text-sm">
-        Manual entry is disabled. All ethanol dispatches are now recorded via the weighbridge.
-      </div>
-
-      {/* New Dispatch Form */}
-      {showForm && (
-        <div className="border-2 border-red-300 rounded-lg p-4 bg-white mb-5">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-red-700">New Dispatch</h3>
-            <button onClick={resetForm} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+    <div className="min-h-screen bg-slate-50">
+      <div className="p-3 md:p-6 space-y-0">
+        {/* Toolbar */}
+        <div className="bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <h1 className="text-sm font-bold tracking-wide uppercase">Ethanol Dispatch</h1>
+            <span className="text-[10px] text-slate-400">|</span>
+            <span className="text-[10px] text-slate-400">Dispatch History & Reports</span>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
-            <div>
-              <label className="text-[10px] text-gray-400">Batch No</label>
-              <input type="text" value={batchNo} onChange={e => setBatchNo(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" placeholder="B-001" />
-            </div>
-            <div>
-              <label className="text-[10px] text-gray-400">Vehicle No</label>
-              <input type="text" value={vehicleNo} onChange={e => setVehicleNo(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" placeholder="MH 12 AB 1234" />
-            </div>
-            <div>
-              <label className="text-[10px] text-gray-400">Party / Contract</label>
-              <select value={contractId} onChange={e => handleContractSelect(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm">
-                <option value="">-- Other (no contract) --</option>
-                {contracts.map(c => (
-                  <option key={c.id} value={c.id}>{c.buyerName} ({c.contractType === 'JOB_WORK' ? 'JW' : c.contractType === 'OMC' ? 'OMC' : 'FP'})</option>
-                ))}
-              </select>
-              {selectedContract && (
-                <div className="text-[10px] text-blue-600 mt-0.5">
-                  {selectedContract.contractNo} | Rate: {selectedContract.contractType === 'JOB_WORK' ? `₹${selectedContract.conversionRate}/BL` : `₹${selectedContract.ethanolRate}/L`}
-                  {selectedContract.autoGenerateEInvoice && <span className="text-green-600 ml-1">(Auto E-Invoice ON)</span>}
-                </div>
-              )}
-            </div>
-            <div>
-              <label className="text-[10px] text-gray-400">Destination</label>
-              <input type="text" value={destination} onChange={e => setDestination(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" />
-            </div>
-            <div>
-              <label className="text-[10px] text-gray-400">Quantity (BL)</label>
-              <input type="number" step="any" value={quantityBL} onChange={e => setQuantityBL(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" />
-            </div>
-            <div>
-              <label className="text-[10px] text-gray-400">Strength %</label>
-              <input type="number" step="any" value={strength} onChange={e => setStrength(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" />
-            </div>
-          </div>
-          {/* Driver & Transport */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
-            <div>
-              <label className="text-[10px] text-gray-400">Driver Name</label>
-              <input type="text" value={driverName} onChange={e => setDriverName(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" />
-            </div>
-            <div>
-              <label className="text-[10px] text-gray-400">Driver Phone</label>
-              <input type="text" value={driverPhone} onChange={e => setDriverPhone(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" />
-            </div>
-            <div>
-              <label className="text-[10px] text-gray-400">DL No</label>
-              <input type="text" value={driverLicense} onChange={e => setDriverLicense(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" placeholder="Driving License" />
-            </div>
-            <div>
-              <label className="text-[10px] text-gray-400">Transporter</label>
-              <input type="text" value={transporterName} onChange={e => setTransporterName(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
-            <div>
-              <label className="text-[10px] text-gray-400">RST No</label>
-              <input type="text" value={rstNo} onChange={e => setRstNo(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" />
-            </div>
-            <div>
-              <label className="text-[10px] text-gray-400">Seal No</label>
-              <input type="text" value={sealNo} onChange={e => setSealNo(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" />
-            </div>
-            <div>
-              <label className="text-[10px] text-gray-400">Peso Date</label>
-              <input type="text" value={pesoDate} onChange={e => setPesoDate(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" placeholder="DD/MM/YY" />
-            </div>
-            {contractId && (
-              <div>
-                <label className="text-[10px] text-gray-400">Distance (km)</label>
-                <input type="number" value={distanceKm} onChange={e => setDistanceKm(e.target.value)}
-                  className="border rounded px-2 py-2 w-full text-sm" placeholder="for E-Way Bill" />
-              </div>
-            )}
-          </div>
-
-          <div className="mb-3">
-            <label className="text-[10px] text-gray-400">Remarks</label>
-            <input type="text" value={remarks} onChange={e => setRemarks(e.target.value)}
-              className="border rounded px-2 py-2 w-full text-sm" />
-          </div>
-
-          {/* Photo */}
-          <div className="mb-3">
-            <input type="file" accept="image/*" capture="environment" ref={fileRef}
-              onChange={handlePhotoSelect} className="hidden" />
-            {photo ? (
-              <div className="flex items-center gap-3">
-                <img src={URL.createObjectURL(photo)} alt="Preview"
-                  className="w-20 h-20 object-cover rounded-lg border" />
-                <div>
-                  <p className="text-xs text-gray-500">{photo.name}</p>
-                  <button onClick={() => setPhoto(null)} className="text-xs text-red-500 hover:underline">Remove</button>
-                </div>
-              </div>
-            ) : (
-              <button onClick={() => fileRef.current?.click()}
-                className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 border border-blue-200 rounded-lg px-3 py-2">
-                <Camera size={16} /> Take / Upload Photo
+          <div className="flex items-center gap-2">
+            {msg && <span className={`text-[10px] ${msg.type === 'ok' ? 'text-green-400' : 'text-red-400'}`}>{msg.text}</span>}
+            {dispatches.length > 0 && (
+              <button onClick={shareTelegram}
+                className="px-3 py-1 bg-green-600 text-white text-[11px] font-medium hover:bg-green-700 flex items-center gap-1">
+                <Share2 size={12} /> Telegram
               </button>
             )}
           </div>
+        </div>
 
-          {/* Save */}
-          <div className="flex items-center gap-3">
-            <button onClick={() => handleSave()} disabled={saving}
-              className="px-6 py-2.5 bg-red-600 text-white rounded-lg font-medium text-sm hover:bg-red-700 disabled:opacity-50">
-              {saving ? 'Saving...' : 'Save Dispatch'}
-            </button>
-            {msg && <span className={`text-sm ${msg.type === 'ok' ? 'text-green-600' : 'text-red-600'}`}>{msg.text}</span>}
+        {/* Filter Bar */}
+        <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6 flex flex-wrap items-end gap-3">
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">From</label>
+            <input type="date" value={from} onChange={e => setFrom(e.target.value)}
+              className="border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">To</label>
+            <input type="date" value={to} onChange={e => setTo(e.target.value)}
+              className="border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Status</label>
+            <select value={status} onChange={e => setStatus(e.target.value)}
+              className="border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+              <option value="ALL">All</option>
+              <option value="GATE_IN">Gate In</option>
+              <option value="TARE_WEIGHED">Tare Weighed</option>
+              <option value="GROSS_WEIGHED">Gross Weighed</option>
+              <option value="RELEASED">Released</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Party</label>
+            <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..."
+              className="border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 w-40" />
           </div>
         </div>
-      )}
 
-      {/* Today's Dispatches */}
-      <div className="space-y-3 mb-5">
-        {dispatches.map((d, i) => (
-          <div key={d.id} className="border rounded-lg p-3 bg-white">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1 flex-wrap">
-                  <span className="text-xs font-bold text-gray-400">#{dispatches.length - i}</span>
-                  {d.contractId && <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium">Contract</span>}
-                  {d.batchNo && <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">{d.batchNo}</span>}
-                  <span className="font-semibold text-sm">{d.vehicleNo}</span>
-                  <span className="text-xs text-gray-400">
-                    {new Date(d.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
-                  </span>
-                </div>
-                <div className="text-xs text-gray-600">
-                  {d.partyName && <span>{d.partyName} • </span>}
-                  {d.destination && <span>{d.destination} • </span>}
-                  <span className="font-semibold text-red-600">{d.quantityBL} BL</span>
-                  {d.strength && <span> @ {d.strength}%</span>}
-                </div>
-                {(d.driverName || d.transporterName || d.rstNo || d.sealNo) && (
-                  <div className="text-[10px] text-gray-400 mt-0.5 flex flex-wrap gap-x-3">
-                    {d.driverName && <span>Driver: {d.driverName}</span>}
-                    {d.transporterName && <span>Transport: {d.transporterName}</span>}
-                    {d.rstNo && <span>RST: {d.rstNo}</span>}
-                    {d.sealNo && <span>Seal: {d.sealNo}</span>}
-                  </div>
-                )}
-                {d.remarks && <div className="text-[11px] text-gray-400 mt-0.5">{d.remarks}</div>}
-              </div>
-              <div className="flex items-center gap-2">
-                {d.photoUrl && (
-                  <button onClick={() => setPhotoPreview(`${API_BASE}${d.photoUrl}`)}
-                    className="text-blue-500 hover:text-blue-700"><Image size={16} /></button>
-                )}
-                <button onClick={() => handleDelete(d.id)}
-                  className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
-              </div>
-            </div>
+        {/* KPI Strip */}
+        <div className="grid grid-cols-4 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+          <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-red-500">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Dispatched</div>
+            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmtNum(summary.totalBL)}</div>
+            <div className="text-[10px] text-slate-400">BL</div>
           </div>
-        ))}
-        {dispatches.length === 0 && !showForm && (
-          <p className="text-center text-sm text-gray-400 py-8">No dispatches for {date}</p>
-        )}
-      </div>
-
-      {/* Telegram share */}
-      {dispatches.length > 0 && (
-        <button onClick={shareTelegram}
-          className="w-full flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 mb-5">
-          <Share2 size={16} /> Share on Telegram
-        </button>
-      )}
-
-      {/* Dispatch History */}
-      <div className="border-t pt-4">
-        <button onClick={() => { setShowHistory(!showHistory); if (!showHistory) loadHistory(); }}
-          className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-800">
-          {showHistory ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-          <Clock size={14} /> Dispatch History
-        </button>
-        {showHistory && (
-          <div className="mt-3 space-y-4">
-            {Object.keys(history).length === 0 && <p className="text-sm text-gray-400">No past dispatches</p>}
-            {Object.entries(history).map(([dateKey, items]) => {
-              const dayTotal = items.reduce((s: number, d: any) => s + (d.quantityBL || 0), 0);
-              return (
-                <div key={dateKey} className="border rounded-lg p-3 bg-gray-50">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-semibold text-gray-700">{fmtDt(dateKey)}</span>
-                    <span className="text-xs font-bold text-red-600">{dayTotal.toFixed(1)} BL — {items.length} trucks</span>
-                  </div>
-                  <div className="space-y-1">
-                    {items.map((d: any) => (
-                      <div key={d.id} className="text-xs text-gray-600 flex justify-between">
-                        <span>{d.batchNo ? `[${d.batchNo}] ` : ''}{d.vehicleNo} → {d.partyName}</span>
-                        <span className="font-medium">{d.quantityBL} BL</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
+          <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-blue-500">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Trucks</div>
+            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{summary.totalTrucks}</div>
           </div>
-        )}
+          <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-amber-500">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Avg / Truck</div>
+            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmtNum(summary.avgPerTruck)}</div>
+            <div className="text-[10px] text-slate-400">BL</div>
+          </div>
+          <div className="bg-white px-4 py-3 border-l-4 border-l-green-500">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Released</div>
+            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{summary.releasedCount}</div>
+          </div>
+        </div>
+
+        {/* Data Table */}
+        <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-x-auto">
+          <table className="w-full text-xs min-w-[900px]">
+            <thead>
+              <tr className="bg-slate-800 text-white">
+                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Date</th>
+                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Vehicle</th>
+                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Party / Buyer</th>
+                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Destination</th>
+                <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Qty (BL)</th>
+                <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Str %</th>
+                <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Status</th>
+                <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Gate In</th>
+                <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Released</th>
+                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Contract</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dispatches.length === 0 && (
+                <tr><td colSpan={10} className="px-3 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">No dispatches found</td></tr>
+              )}
+              {dispatches.map((d, i) => (
+                <tr key={d.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''} cursor-pointer`}
+                  onClick={() => d.photoUrl ? setPhotoPreview(`${API_BASE}${d.photoUrl}`) : null}>
+                  <td className="px-3 py-1.5 text-slate-700 border-r border-slate-100 whitespace-nowrap">{fmtDate(d.date)}</td>
+                  <td className="px-3 py-1.5 text-slate-800 font-medium border-r border-slate-100 whitespace-nowrap">{d.vehicleNo || '--'}</td>
+                  <td className="px-3 py-1.5 text-slate-700 border-r border-slate-100">{d.contract?.buyerName || d.partyName || '--'}</td>
+                  <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">{d.destination || '--'}</td>
+                  <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-800 font-medium border-r border-slate-100">{d.quantityBL > 0 ? fmtNum(d.quantityBL) : '--'}</td>
+                  <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-600 border-r border-slate-100">{d.strength ? d.strength.toFixed(1) : '--'}</td>
+                  <td className="px-3 py-1.5 text-center border-r border-slate-100">
+                    <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${STATUS_COLORS[d.status] || 'border-slate-300 bg-slate-50 text-slate-600'}`}>
+                      {d.status?.replace(/_/g, ' ')}
+                    </span>
+                  </td>
+                  <td className="px-3 py-1.5 text-center text-slate-500 border-r border-slate-100 whitespace-nowrap">{fmtTime(d.gateInTime)}</td>
+                  <td className="px-3 py-1.5 text-center text-slate-500 border-r border-slate-100 whitespace-nowrap">{fmtTime(d.releaseTime)}</td>
+                  <td className="px-3 py-1.5 text-slate-500">{d.contract?.contractNo || '--'}</td>
+                </tr>
+              ))}
+            </tbody>
+            {dispatches.length > 0 && (
+              <tfoot>
+                <tr className="bg-slate-800 text-white font-semibold">
+                  <td className="px-3 py-2 text-[10px] uppercase tracking-widest border-r border-slate-700" colSpan={4}>Total</td>
+                  <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-700">{fmtNum(summary.totalBL)}</td>
+                  <td className="px-3 py-2 border-r border-slate-700"></td>
+                  <td className="px-3 py-2 text-center text-[10px] border-r border-slate-700">{summary.totalTrucks} TRUCKS</td>
+                  <td className="px-3 py-2 border-r border-slate-700" colSpan={3}></td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
       </div>
 
       {/* Photo Preview Modal */}
@@ -412,7 +248,7 @@ export default function EthanolDispatch() {
           <div className="relative max-w-2xl w-full">
             <button onClick={() => setPhotoPreview(null)}
               className="absolute -top-10 right-0 text-white"><X size={24} /></button>
-            <img src={photoPreview} alt="Dispatch photo" className="w-full rounded-lg" />
+            <img src={photoPreview} alt="Dispatch photo" className="w-full" />
           </div>
         </div>
       )}

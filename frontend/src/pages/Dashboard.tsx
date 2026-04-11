@@ -407,13 +407,13 @@ export default function Dashboard() {
             <div className="bg-white border border-slate-300 p-3">
               <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Ethanol Production (BL)</h3>
               <ResponsiveContainer width="100%" height={250}>
-                <BarChart data={t.ethanol}>
+                <BarChart data={ethanolExToday}>
                   <CartesianGrid {...CHART_GRID} />
                   <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
                   <YAxis {...CHART_AXIS_PROPS} />
                   <Tooltip {...CHART_TOOLTIP} formatter={(v: number) => v.toFixed(0)} labelFormatter={(l: string) => `Date: ${l}`} />
                   <Bar dataKey="productionBL" fill="#3b82f6" name="Production BL" radius={[3, 3, 0, 0]} />
-                  {t.ethanol.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" tickFormatter={shortDate} />}
+                  {ethanolExToday.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" tickFormatter={shortDate} />}
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -450,7 +450,7 @@ export default function Dashboard() {
             <div className="bg-white border border-slate-300 p-3">
               <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Ethanol Stock & Dispatch (BL)</h3>
               <ResponsiveContainer width="100%" height={250}>
-                <ComposedChart data={t.ethanol}>
+                <ComposedChart data={ethanolExToday}>
                   <CartesianGrid {...CHART_GRID} />
                   <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
                   <YAxis {...CHART_AXIS_PROPS} />
@@ -458,7 +458,7 @@ export default function Dashboard() {
                   <Legend {...CHART_LEGEND} />
                   <Area type="monotone" dataKey="totalStock" stroke="#0891b2" fill="#0891b2" fillOpacity={0.15} name="Stock" />
                   <Bar dataKey="dispatch" fill="#10b981" name="Dispatch" radius={[3, 3, 0, 0]} />
-                  {t.ethanol.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" tickFormatter={shortDate} />}
+                  {ethanolExToday.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" tickFormatter={shortDate} />}
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
@@ -595,13 +595,13 @@ export default function Dashboard() {
             <div className="bg-white border border-slate-300 p-3">
               <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Ethanol Stock (BL)</h3>
               <ResponsiveContainer width="100%" height={250}>
-                <AreaChart data={t.ethanol}>
+                <AreaChart data={ethanolExToday}>
                   <CartesianGrid {...CHART_GRID} />
                   <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
                   <YAxis {...CHART_AXIS_PROPS} />
                   <Tooltip {...CHART_TOOLTIP} />
                   <Area type="monotone" dataKey="totalStock" stroke="#0891b2" fill="#0891b2" fillOpacity={0.15} name="Stock BL" />
-                  {t.ethanol.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" tickFormatter={shortDate} />}
+                  {ethanolExToday.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" tickFormatter={shortDate} />}
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -751,13 +751,13 @@ export default function Dashboard() {
             <div className="bg-white border border-slate-300 p-3">
               <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Daily Ethanol Dispatch (BL)</h3>
               <ResponsiveContainer width="100%" height={250}>
-                <BarChart data={t.ethanol}>
+                <BarChart data={ethanolExToday}>
                   <CartesianGrid {...CHART_GRID} />
                   <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
                   <YAxis {...CHART_AXIS_PROPS} />
                   <Tooltip {...CHART_TOOLTIP} />
                   <Bar dataKey="dispatch" fill="#10b981" name="Dispatch BL" radius={[3, 3, 0, 0]} />
-                  {t.ethanol.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" tickFormatter={shortDate} />}
+                  {ethanolExToday.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" tickFormatter={shortDate} />}
                 </BarChart>
               </ResponsiveContainer>
             </div>

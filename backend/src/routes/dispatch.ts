@@ -122,6 +122,60 @@ router.get('/history', authenticate, async (req: AuthRequest, res: Response) => 
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
+// GET /api/dispatch/report — reporting endpoint (all dispatches, date range, aggregates)
+router.get('/report', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const fromStr = req.query.from as string;
+    const toStr = req.query.to as string;
+    const status = req.query.status as string;
+    const search = req.query.search as string;
+
+    // Default: last 7 days
+    const now = new Date();
+    const end = toStr ? new Date(toStr + 'T23:59:59.999Z') : new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    const start = fromStr ? new Date(fromStr + 'T00:00:00.000Z') : new Date(end.getTime() - 7 * 86400000);
+
+    const where: any = { date: { gte: start, lte: end } };
+    if (status && status !== 'ALL') where.status = status;
+    if (search) where.partyName = { contains: search, mode: 'insensitive' };
+
+    const [dispatches, agg, releasedCount] = await Promise.all([
+      prisma.dispatchTruck.findMany({
+        where,
+        orderBy: { date: 'desc' },
+        take: 500,
+        select: {
+          id: true, date: true, vehicleNo: true, partyName: true, destination: true,
+          quantityBL: true, strength: true, status: true, gateInTime: true, releaseTime: true,
+          weightGross: true, weightTare: true, weightNet: true,
+          contractId: true, photoUrl: true, remarks: true, sealNo: true, rstNo: true,
+          driverName: true, transporterName: true, gatePassNo: true, challanNo: true,
+          contract: { select: { contractNo: true, buyerName: true } },
+        },
+      }),
+      prisma.dispatchTruck.aggregate({
+        where,
+        _sum: { quantityBL: true },
+        _count: true,
+      }),
+      prisma.dispatchTruck.count({ where: { ...where, status: 'RELEASED' } }),
+    ]);
+
+    const totalBL = agg._sum.quantityBL || 0;
+    const totalTrucks = agg._count || 0;
+
+    res.json({
+      dispatches,
+      summary: {
+        totalBL: Math.round(totalBL * 100) / 100,
+        totalTrucks,
+        avgPerTruck: totalTrucks > 0 ? Math.round(totalBL / totalTrucks * 100) / 100 : 0,
+        releasedCount,
+      },
+    });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
 // POST /api/dispatch — create a dispatch entry with optional photo + optional lifting
 router.post('/', authenticate, upload.single('photo'), async (req: AuthRequest, res: Response) => {
   try {
