@@ -537,6 +537,8 @@ router.post('/:orderId/shipments/:shipmentId/e-invoice', asyncHandler(async (req
           ewbStatus: 'GENERATED',
         } as any,
       });
+      // Mark shipment as DELIVERED once EWB is generated
+      await prisma.shipment.update({ where: { id: shipmentId }, data: { status: 'DELIVERED' } });
     } else {
       ewbError = ewbResult.error || 'E-Way Bill generation failed';
     }
@@ -573,6 +575,8 @@ router.patch('/:orderId/shipments/:shipmentId/manual-ewb', upload.single('ewbPdf
   if (req.file?.buffer) data.ewbPdfData = req.file.buffer;
 
   await prisma.invoice.update({ where: { id: invoice.id }, data });
+  // Mark shipment as DELIVERED once EWB is set
+  await prisma.shipment.update({ where: { id: req.params.shipmentId }, data: { status: 'DELIVERED' } });
   res.json({ success: true, ewbNo: ewbNo.trim(), hasPdf: !!req.file });
 }));
 
