@@ -69,9 +69,8 @@ export const MODULE_DEFS: ModuleDef[] = [
   // Contractors merged into Vendor Master (category: CONTRACTOR_*)
   { key: 'raw-material-purchase', label: 'RM Deals', to: '/procurement/raw-material-purchase', icon: Handshake, group: 'procurement' },
 
-  // ── SPOT TRADE (Cash buy/sell at gate) ──
-  { key: 'direct-purchase', label: 'Spot Purchase', to: '/trade/purchases', icon: Tractor, group: 'trade' },
-  { key: 'direct-sale', label: 'Spot Sale', to: '/trade/sales', icon: Store, group: 'trade' },
+  // ── SPOT TRADE ──
+  { key: 'direct-sale', label: 'Scrap Sales', to: '/trade/sales', icon: Store, group: 'trade' },
 
   // ── ACCOUNTS (day-to-day transactions) ──
   { key: 'cash-book', label: 'Cash Book', to: '/accounts/cash-book', icon: IndianRupee, group: 'accounts' },
