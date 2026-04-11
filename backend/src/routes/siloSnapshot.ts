@@ -13,7 +13,7 @@ router.get('/', authenticate, asyncHandler(async (req: AuthRequest, res: Respons
   const take = Math.min(parseInt(req.query.limit as string) || 30, 100);
   const skip = parseInt(req.query.offset as string) || 0;
 
-  const [items, total] = await Promise.all([
+  const [snapshots, total] = await Promise.all([
     prisma.siloSnapshot.findMany({
       take, skip,
       orderBy: { date: 'desc' },
@@ -21,7 +21,35 @@ router.get('/', authenticate, asyncHandler(async (req: AuthRequest, res: Respons
     prisma.siloSnapshot.count(),
   ]);
 
-  res.json({ items, total });
+  // Join with ethanol production by date for yield calculation
+  if (snapshots.length > 0) {
+    const minDate = snapshots[snapshots.length - 1].date;
+    const maxDate = new Date(snapshots[0].date.getTime() + 24 * 3600 * 1000);
+    const ethanolEntries = await prisma.ethanolProductEntry.findMany({
+      where: { date: { gte: minDate, lt: maxDate } },
+      select: { date: true, productionAL: true, productionBL: true },
+      orderBy: { date: 'asc' },
+    });
+    // Group ethanol by date string
+    const ethanolByDate = new Map<string, { al: number; bl: number }>();
+    for (const e of ethanolEntries) {
+      const key = e.date.toISOString().split('T')[0];
+      const existing = ethanolByDate.get(key) || { al: 0, bl: 0 };
+      existing.al += Math.max(0, e.productionAL || 0);
+      existing.bl += Math.max(0, e.productionBL || 0);
+      ethanolByDate.set(key, existing);
+    }
+    const items = snapshots.map(s => {
+      const key = s.date.toISOString().split('T')[0];
+      const eth = ethanolByDate.get(key);
+      const ethanolAL = r2(eth?.al ?? 0);
+      const yieldALPerMT = s.grainConsumed > 0 ? r2(ethanolAL / s.grainConsumed) : 0;
+      return { ...s, ethanolAL, yieldALPerMT };
+    });
+    return res.json({ items, total });
+  }
+
+  res.json({ items: snapshots, total });
 }));
 
 // GET /latest — Latest snapshot + live estimate (snapshot + pending trucks since)
@@ -35,16 +63,36 @@ router.get('/latest', authenticate, asyncHandler(async (_req: AuthRequest, res: 
   }
 
   // Pending trucks since last snapshot
-  const truckAgg = await prisma.grainTruck.aggregate({
-    _sum: { weightNet: true },
-    _count: true,
-    where: {
-      createdAt: { gt: snapshot.date },
-      cancelled: false,
-    },
-  });
-  const pendingTrucksMT = r2((truckAgg._sum?.weightNet) ?? 0); // weightNet already in MT
+  const [truckAgg, ethanolEntries] = await Promise.all([
+    prisma.grainTruck.aggregate({
+      _sum: { weightNet: true },
+      _count: true,
+      where: {
+        createdAt: { gt: snapshot.date },
+        cancelled: false,
+      },
+    }),
+    // Match ethanol production for same date (daily dip reading)
+    prisma.ethanolProductEntry.findMany({
+      where: {
+        date: {
+          gte: snapshot.date,
+          lt: new Date(snapshot.date.getTime() + 24 * 3600 * 1000),
+        },
+      },
+      select: { productionBL: true, productionAL: true, avgStrength: true },
+    }),
+  ]);
+  const pendingTrucksMT = r2((truckAgg._sum?.weightNet) ?? 0);
   const pendingTruckCount = truckAgg._count ?? 0;
+
+  // Ethanol yield: AL produced per MT grain consumed
+  const ethanolProductionBL = ethanolEntries.reduce((s, e) => s + Math.max(0, e.productionBL || 0), 0);
+  const ethanolProductionAL = ethanolEntries.reduce((s, e) => s + Math.max(0, e.productionAL || 0), 0);
+  const ethanolAvgStrength = ethanolEntries.filter(e => e.avgStrength > 0).length > 0
+    ? ethanolEntries.filter(e => e.avgStrength > 0).reduce((s, e) => s + e.avgStrength, 0) / ethanolEntries.filter(e => e.avgStrength > 0).length
+    : 0;
+  const yieldALPerMT = snapshot.grainConsumed > 0 ? r2(ethanolProductionAL / snapshot.grainConsumed) : 0;
 
   const siloEstimate = r2(snapshot.siloClosing + pendingTrucksMT);
   const snapshotAgeMs = Date.now() - snapshot.date.getTime();
@@ -53,6 +101,12 @@ router.get('/latest', authenticate, asyncHandler(async (_req: AuthRequest, res: 
 
   res.json({
     snapshot,
+    ethanol: {
+      productionBL: r2(ethanolProductionBL),
+      productionAL: r2(ethanolProductionAL),
+      avgStrength: r2(ethanolAvgStrength),
+      yieldALPerMT,
+    },
     live: {
       siloEstimate,
       pendingTrucksMT,

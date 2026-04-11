@@ -43,8 +43,21 @@ interface LiveTank {
   updatedAt: string | null;
 }
 
+interface EthanolYield {
+  productionBL: number;
+  productionAL: number;
+  avgStrength: number;
+  yieldALPerMT: number;
+}
+
+interface HistoryRow extends SiloSnapshot {
+  ethanolAL?: number;
+  yieldALPerMT?: number;
+}
+
 interface LatestResponse {
   snapshot: SiloSnapshot | null;
+  ethanol: EthanolYield | null;
   live: {
     siloEstimate: number;
     pendingTrucksMT: number;
@@ -63,7 +76,7 @@ export default function SiloStock() {
   const [latest, setLatest] = useState<LatestResponse | null>(null);
   const [tanks, setTanks] = useState<LiveTank[]>([]);
   const [opcOnline, setOpcOnline] = useState(false);
-  const [history, setHistory] = useState<SiloSnapshot[]>([]);
+  const [history, setHistory] = useState<HistoryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showBaseline, setShowBaseline] = useState(false);
   const [baselineVal, setBaselineVal] = useState('');
@@ -76,7 +89,7 @@ export default function SiloStock() {
       const [latestRes, tanksRes, histRes] = await Promise.all([
         api.get<LatestResponse>('/silo-stock/latest'),
         api.get<{ tanks: LiveTank[]; opcOnline: boolean }>('/silo-stock/live-tanks'),
-        api.get<{ items: SiloSnapshot[]; total: number }>('/silo-stock?limit=30'),
+        api.get<{ items: HistoryRow[]; total: number }>('/silo-stock?limit=30'),
       ]);
       setLatest(latestRes.data);
       setTanks(tanksRes.data.tanks);
@@ -134,6 +147,7 @@ export default function SiloStock() {
 
   const snap = latest?.snapshot;
   const live = latest?.live;
+  const ethanol = latest?.ethanol;
 
   // Chart data
   const chartData = [...history].reverse().map(s => ({
@@ -141,6 +155,8 @@ export default function SiloStock() {
     siloStock: s.siloClosing,
     received: s.grainReceivedMT,
     consumed: s.grainConsumed,
+    ethanolAL: s.ethanolAL ?? 0,
+    yield: s.yieldALPerMT ?? 0,
   }));
 
   if (loading) {
@@ -207,7 +223,7 @@ export default function SiloStock() {
       {snap && (
         <>
           {/* KPI Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             <KpiCard label="Silo Stock (Live)" value={`${fmtNum(live?.siloEstimate ?? snap.siloClosing)} MT`}
               sub={live ? `Snapshot + ${live.pendingTruckCount} pending truck${live.pendingTruckCount !== 1 ? 's' : ''}` : ''}
               color="blue" large />
@@ -217,6 +233,10 @@ export default function SiloStock() {
               sub={`${snap.truckCount} truck${snap.truckCount !== 1 ? 's' : ''}`} color="green" />
             <KpiCard label="Grain In System" value={`${fmtNum(snap.grainInSystem)} MT`}
               sub={`${fmtNum(snap.totalVolumeKL)} KL @ ${Math.round(snap.grainPctUsed * 100)}%`} color="purple" />
+            <KpiCard label="Ethanol Produced" value={ethanol?.productionAL ? `${fmtNum(ethanol.productionAL)} AL` : '--'}
+              sub={ethanol?.productionBL ? `${fmtNum(ethanol.productionBL)} BL @ ${fmtNum(ethanol.avgStrength)}%` : 'No dip reading'} color="teal" />
+            <KpiCard label="Yield (AL/MT)" value={ethanol?.yieldALPerMT ? fmtNum(ethanol.yieldALPerMT) : '--'}
+              sub={ethanol?.yieldALPerMT ? `${fmtNum(ethanol.productionAL)} AL / ${fmtNum(snap.grainConsumed)} MT` : 'Need ethanol + grain data'} color="indigo" />
           </div>
 
           {/* Calculation Breakdown */}
@@ -242,8 +262,9 @@ export default function SiloStock() {
                 <div className="font-semibold text-gray-600 uppercase text-[10px] tracking-wider mb-2">Grain Consumed Breakdown</div>
                 <CalcRow label="Wash Distilled (24h)" value={snap.washDistilledKL} unit="KL" />
                 <CalcRow label={`x Grain % (${Math.round(snap.grainPctUsed * 100)}%)`} value={snap.grainDistilled} unit="MT" sub="= grain distilled" />
-                <CalcRow label="Grain In System (now)" value={snap.grainInSystem} unit="MT" />
-                <CalcRow label="Delta Grain In System" value={snap.deltaGrainInSystem} unit="MT" color={snap.deltaGrainInSystem > 0 ? 'red' : 'green'} />
+                <CalcRow label="Grain In System (prev)" value={snap.grainInSystem - snap.deltaGrainInSystem} unit="MT" sub="= previous snapshot" />
+                <CalcRow label="Grain In System (now)" value={snap.grainInSystem} unit="MT" sub="= current tanks" />
+                <CalcRow label="Delta Grain In System" value={snap.deltaGrainInSystem} unit="MT" color={snap.deltaGrainInSystem > 0 ? 'red' : 'green'} sub={`= ${fmtNum(snap.grainInSystem)} − ${fmtNum(snap.grainInSystem - snap.deltaGrainInSystem)}`} />
                 {snap.flourTotal > 0 && <CalcRow label="Flour in Silos" value={snap.flourTotal} unit="MT" />}
                 <div className="border-t border-gray-200 pt-1.5">
                   <CalcRow label="= Grain Consumed" value={snap.grainConsumed} unit="MT" bold />
@@ -278,32 +299,53 @@ export default function SiloStock() {
 
           {/* Charts */}
           {chartData.length > 1 && (
-            <div className="grid md:grid-cols-2 gap-4">
+            <div className="space-y-4">
+              {/* Yield Trend — most important */}
               <div className="bg-white rounded-lg border border-gray-200 p-4">
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">Silo Stock Trend</h3>
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">
+                  Ethanol Yield Trend (AL per MT Grain)
+                </h3>
                 <ResponsiveContainer width="100%" height={220}>
-                  <LineChart data={chartData}>
+                  <LineChart data={chartData.filter(d => d.yield > 0)}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                    <YAxis tick={{ fontSize: 10 }} />
-                    <Tooltip contentStyle={{ fontSize: 11 }} />
-                    <Line type="monotone" dataKey="siloStock" name="Silo (MT)" stroke="#2563eb" strokeWidth={2} dot={{ r: 3 }} />
+                    <YAxis yAxisId="left" tick={{ fontSize: 10 }} domain={['auto', 'auto']} />
+                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} />
+                    <Tooltip contentStyle={{ fontSize: 11 }}
+                      formatter={(v: number, name: string) => [v.toFixed(1), name]} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    <Line type="monotone" dataKey="yield" name="Yield (AL/MT)" stroke="#6366f1" strokeWidth={2} dot={{ r: 3 }} yAxisId="left" />
+                    <Line type="monotone" dataKey="ethanolAL" name="Ethanol (AL)" stroke="#14b8a6" strokeWidth={1.5} dot={{ r: 2 }} yAxisId="right" />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
-              <div className="bg-white rounded-lg border border-gray-200 p-4">
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">Daily In vs Out</h3>
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                    <YAxis tick={{ fontSize: 10 }} />
-                    <Tooltip contentStyle={{ fontSize: 11 }} />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Bar dataKey="received" name="Received (MT)" fill="#22c55e" />
-                    <Bar dataKey="consumed" name="Consumed (MT)" fill="#f59e0b" />
-                  </BarChart>
-                </ResponsiveContainer>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Silo Stock Trend</h3>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <LineChart data={chartData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                      <YAxis tick={{ fontSize: 10 }} />
+                      <Tooltip contentStyle={{ fontSize: 11 }} />
+                      <Line type="monotone" dataKey="siloStock" name="Silo (MT)" stroke="#2563eb" strokeWidth={2} dot={{ r: 3 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Daily In vs Out</h3>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={chartData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                      <YAxis tick={{ fontSize: 10 }} />
+                      <Tooltip contentStyle={{ fontSize: 11 }} />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                      <Bar dataKey="received" name="Received (MT)" fill="#22c55e" />
+                      <Bar dataKey="consumed" name="Consumed (MT)" fill="#f59e0b" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
             </div>
           )}
@@ -323,7 +365,8 @@ export default function SiloStock() {
                     <th className="text-right px-3 py-2 font-semibold">Consumed</th>
                     <th className="text-right px-3 py-2 font-semibold">Closing</th>
                     <th className="text-right px-3 py-2 font-semibold">Wash (KL)</th>
-                    <th className="text-right px-3 py-2 font-semibold">Grain In Sys</th>
+                    <th className="text-right px-3 py-2 font-semibold">Ethanol (AL)</th>
+                    <th className="text-right px-3 py-2 font-semibold">Yield</th>
                     <th className="text-center px-3 py-2 font-semibold">Source</th>
                   </tr>
                 </thead>
@@ -336,7 +379,8 @@ export default function SiloStock() {
                       <td className="px-3 py-1.5 text-right font-mono text-amber-700">{s.grainConsumed > 0 ? `-${fmtNum(s.grainConsumed)}` : '--'}</td>
                       <td className="px-3 py-1.5 text-right font-mono font-semibold text-gray-800">{fmtNum(s.siloClosing)}</td>
                       <td className="px-3 py-1.5 text-right font-mono text-gray-500">{fmtNum(s.washDistilledKL, 0)}</td>
-                      <td className="px-3 py-1.5 text-right font-mono text-gray-500">{fmtNum(s.grainInSystem)}</td>
+                      <td className="px-3 py-1.5 text-right font-mono text-teal-700">{s.ethanolAL ? fmtNum(s.ethanolAL) : '--'}</td>
+                      <td className="px-3 py-1.5 text-right font-mono font-semibold text-indigo-700">{s.yieldALPerMT ? fmtNum(s.yieldALPerMT) : '--'}</td>
                       <td className="px-3 py-1.5 text-center">
                         <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
                           s.source === 'BASELINE' ? 'bg-blue-100 text-blue-700' :
@@ -347,7 +391,7 @@ export default function SiloStock() {
                     </tr>
                   ))}
                   {history.length === 0 && (
-                    <tr><td colSpan={8} className="px-3 py-6 text-center text-gray-400">No snapshots yet</td></tr>
+                    <tr><td colSpan={10} className="px-3 py-6 text-center text-gray-400">No snapshots yet</td></tr>
                   )}
                 </tbody>
               </table>
@@ -365,6 +409,8 @@ function KpiCard({ label, value, sub, color, large }: { label: string; value: st
     green: 'border-l-green-500',
     amber: 'border-l-amber-500',
     purple: 'border-l-purple-500',
+    teal: 'border-l-teal-500',
+    indigo: 'border-l-indigo-500',
   };
   return (
     <div className={`bg-white rounded-lg border border-gray-200 border-l-4 ${colors[color] || 'border-l-gray-400'} px-4 py-3`}>
