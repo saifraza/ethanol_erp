@@ -194,6 +194,16 @@ export async function checkWbDuplicate(w: WeighmentInput): Promise<{ id: string 
   });
   if (dupSugar) return dupSugar;
 
+  // Shipment stubs (scrap outbound pre-phase) — exclude partial states
+  const dupShipment = await prisma.shipment.findFirst({
+    where: {
+      remarks: { contains: wbMarker },
+      status: { notIn: ['GATE_IN', 'TARE_WEIGHED'] },
+    },
+    select: { id: true },
+  });
+  if (dupShipment) return dupShipment;
+
   const dupGRN = await prisma.goodsReceipt.findFirst({
     where: { remarks: { contains: wbMarker } },
     select: { id: true },

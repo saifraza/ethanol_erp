@@ -40,9 +40,11 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
           direction: 'OUTBOUND',
           OR: [
             { materialCategory: 'DDGS' },
+            { materialCategory: 'SCRAP' },
             { materialName: { contains: 'ddgs', mode: 'insensitive' } },
             { materialName: { contains: 'wdgs', mode: 'insensitive' } },
             { materialName: { contains: 'distillers', mode: 'insensitive' } },
+            { materialName: { contains: 'scrap', mode: 'insensitive' } },
           ],
         },
       ],

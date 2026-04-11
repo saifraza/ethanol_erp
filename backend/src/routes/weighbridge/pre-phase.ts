@@ -34,13 +34,13 @@ export async function runPrePhase(w: WeighmentInput, ctx: PushContext): Promise<
   }
 
   // ── 2b. OUTBOUND DDGS partial-state stub ──
-  // Mirrors how ethanol shows in-progress trucks. At GATE_ENTRY (no weights) or
-  // FIRST_DONE (tare only), upsert a DDGSDispatchTruck row keyed by sourceWbId
-  // so the cloud /sales/ddgs-contracts pipeline shows it immediately. The
-  // COMPLETE handler (handleDDGSOutbound) later updates weights via the same
-  // unique key — no duplicate row.
   if (isGateOrPending && !isInbound && isDdgsOutbound(w, ctx)) {
     return await createOrUpdateDdgsTruckStub(w, ctx);
+  }
+
+  // ── 2c. OUTBOUND SCRAP partial-state stub ──
+  if (isGateOrPending && !isInbound && isScrapOutbound(w, ctx)) {
+    return await createOrUpdateScrapShipmentStub(w, ctx);
   }
 
   // ── 3. COMPLETE inbound: dupGrain merge with fall-through ──
@@ -282,6 +282,63 @@ async function createOrUpdateDdgsTruckStub(w: WeighmentInput, ctx: PushContext):
   return {
     ids: [dispatch.id],
     results: [{ id: dispatch.id, type: 'DDGSDispatchTruck', refNo: `STUB-${dispatch.id.slice(0, 8)}`, sourceWbId: w.id }],
+    shortCircuit: true,
+  };
+}
+
+// ==========================================================================
+//  OUTBOUND SCRAP — partial-state stub (Shipment with directSaleId)
+// ==========================================================================
+
+function isScrapOutbound(w: WeighmentInput, ctx: PushContext): boolean {
+  if (w.direction !== 'OUT') return false;
+  if (ctx.materialCategory === 'SCRAP') return true;
+  const lower = (w.material || '').toLowerCase();
+  return lower.includes('scrap');
+}
+
+async function createOrUpdateScrapShipmentStub(w: WeighmentInput, _ctx: PushContext): Promise<PrePhaseResult> {
+  const dateVal = w.created_at ? new Date(w.created_at) : new Date();
+  const gateInVal = w.first_weight_at ? new Date(w.first_weight_at) : dateVal;
+  const tareKg = w.weight_tare || 0;
+  const tareTimeVal = w.first_weight_at ? new Date(w.first_weight_at).toISOString() : null;
+  const partyName = (w.customer_name || w.supplier_name || '').trim();
+  const stubStatus = tareKg > 0 ? 'TARE_WEIGHED' : 'GATE_IN';
+  const directSaleId = w.cloud_contract_id || null;
+
+  const shipment = await prisma.shipment.upsert({
+    where: { sourceWbId: w.id },
+    update: {
+      ...(tareKg > 0 ? { weightTare: tareKg } : {}),
+    },
+    create: {
+      sourceWbId: w.id,
+      directSaleId,
+      productName: w.material || 'Scrap',
+      customerName: partyName,
+      vehicleNo: w.vehicle_no,
+      driverName: w.driver_name || null,
+      driverMobile: w.driver_mobile || null,
+      transporterName: w.transporter || null,
+      weightTare: tareKg,
+      weightGross: 0,
+      weightNet: 0,
+      status: stubStatus,
+      gateInTime: gateInVal.toISOString(),
+      tareTime: tareTimeVal,
+      paymentStatus: 'NOT_REQUIRED',
+      remarks: `WB:${w.id}`,
+      shipToName: w.ship_to_name || null,
+      shipToGstin: w.ship_to_gstin || null,
+      shipToAddress: w.ship_to_address || null,
+      shipToState: w.ship_to_state || null,
+      shipToPincode: w.ship_to_pincode || null,
+    },
+  });
+
+  return {
+    ids: [shipment.id],
+    results: [{ id: shipment.id, type: 'ScrapShipment', refNo: `STUB-${shipment.id.slice(0, 8)}`, sourceWbId: w.id }],
     shortCircuit: true,
   };
 }
