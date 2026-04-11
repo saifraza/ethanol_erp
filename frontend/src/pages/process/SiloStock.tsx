@@ -239,7 +239,7 @@ export default function SiloStock() {
             <KpiCard label="Ethanol Produced" value={ethanol?.productionAL ? `${fmtNum(ethanol.productionAL)} AL` : '--'}
               sub={ethanol?.productionBL ? `${fmtNum(ethanol.productionBL)} BL @ ${fmtNum(ethanol.avgStrength)}%` : 'No dip reading'} color="teal" />
             <KpiCard label="Yield (AL/MT)" value={ethanol?.yieldALPerMT ? fmtNum(ethanol.yieldALPerMT) : '--'}
-              sub={ethanol?.yieldALPerMT ? `${fmtNum(ethanol.productionAL)} AL / ${fmtNum(snap.grainConsumed)} MT` : 'Need ethanol + grain data'} color="indigo" />
+              sub={ethanol?.yieldALPerMT ? `${fmtNum(ethanol.yieldProductionAL)} AL / ${fmtNum(ethanol.yieldGrainConsumed)} MT` : 'Need ethanol + grain data'} color="indigo" />
           </div>
 
           {/* Calculation Breakdown */}

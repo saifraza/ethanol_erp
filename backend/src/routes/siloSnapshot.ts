@@ -63,7 +63,8 @@ router.get('/latest', authenticate, asyncHandler(async (_req: AuthRequest, res: 
   }
 
   // Pending trucks since last snapshot
-  const [truckAgg, ethanolEntries] = await Promise.all([
+  // Previous snapshot + its ethanol data for "last complete day" yield
+  const [truckAgg, ethanolEntries, prevSnapshot] = await Promise.all([
     prisma.grainTruck.aggregate({
       _sum: { weightNet: true },
       _count: true,
@@ -82,6 +83,11 @@ router.get('/latest', authenticate, asyncHandler(async (_req: AuthRequest, res: 
       },
       select: { productionBL: true, productionAL: true, avgStrength: true },
     }),
+    // Previous day's snapshot for fallback yield
+    prisma.siloSnapshot.findFirst({
+      where: { date: { lt: snapshot.date } },
+      orderBy: { date: 'desc' },
+    }),
   ]);
   const pendingTrucksMT = r2((truckAgg._sum?.weightNet) ?? 0);
   const pendingTruckCount = truckAgg._count ?? 0;
@@ -92,7 +98,31 @@ router.get('/latest', authenticate, asyncHandler(async (_req: AuthRequest, res: 
   const ethanolAvgStrength = ethanolEntries.filter(e => e.avgStrength > 0).length > 0
     ? ethanolEntries.filter(e => e.avgStrength > 0).reduce((s, e) => s + e.avgStrength, 0) / ethanolEntries.filter(e => e.avgStrength > 0).length
     : 0;
-  const yieldALPerMT = snapshot.grainConsumed > 0 ? r2(ethanolProductionAL / snapshot.grainConsumed) : 0;
+
+  // Use previous day's yield if today's ethanol data is missing/incomplete
+  let yieldALPerMT = 0;
+  let yieldProductionAL = ethanolProductionAL;
+  let yieldGrainConsumed = snapshot.grainConsumed;
+  if (ethanolProductionAL > 0 && snapshot.grainConsumed > 0) {
+    yieldALPerMT = r2(ethanolProductionAL / snapshot.grainConsumed);
+  } else if (prevSnapshot && prevSnapshot.grainConsumed > 0) {
+    // Fallback: previous day's yield
+    const prevEthanol = await prisma.ethanolProductEntry.findMany({
+      where: {
+        date: {
+          gte: prevSnapshot.date,
+          lt: new Date(prevSnapshot.date.getTime() + 24 * 3600 * 1000),
+        },
+      },
+      select: { productionAL: true },
+    });
+    const prevAL = prevEthanol.reduce((s, e) => s + Math.max(0, e.productionAL || 0), 0);
+    if (prevAL > 0) {
+      yieldALPerMT = r2(prevAL / prevSnapshot.grainConsumed);
+      yieldProductionAL = prevAL;
+      yieldGrainConsumed = prevSnapshot.grainConsumed;
+    }
+  }
 
   const siloEstimate = r2(snapshot.siloClosing + pendingTrucksMT);
   const snapshotAgeMs = Date.now() - snapshot.date.getTime();
@@ -106,6 +136,8 @@ router.get('/latest', authenticate, asyncHandler(async (_req: AuthRequest, res: 
       productionAL: r2(ethanolProductionAL),
       avgStrength: r2(ethanolAvgStrength),
       yieldALPerMT,
+      yieldProductionAL: r2(yieldProductionAL),
+      yieldGrainConsumed: r2(yieldGrainConsumed),
     },
     live: {
       siloEstimate,
