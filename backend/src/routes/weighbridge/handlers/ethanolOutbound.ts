@@ -125,6 +125,7 @@ async function handleEthanolOutboundInner(w: WeighmentInput, _ctx: PushContext):
           driverName: w.driver_name || null,
           driverPhone: w.driver_mobile || null,
           transporterName: w.transporter || null,
+          contractId: w.cloud_contract_id || null,
           status: 'GATE_IN',
           gateInTime: gateInVal,
           ...(setSrc ? { sourceWbId: w.id } : {}),

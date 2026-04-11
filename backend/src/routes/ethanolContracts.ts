@@ -311,32 +311,36 @@ router.post('/:id/liftings', asyncHandler(async (req: AuthRequest, res: Response
       },
     });
 
-    // Auto e-invoice: fire-and-forget if enabled
+    // Auto-invoice: create invoice + link atomically in transaction (NOT fire-and-forget)
+    // This was the root cause of the 2026-04-11 incident: setImmediate created invoices
+    // but the linking update silently failed, orphaning 19 invoices.
+    let createdInvoice: any = null;
     if (contract.autoGenerateEInvoice && rate && amount && contract.buyerGst) {
-      setImmediate(async () => {
-        try {
-          // 1. Resolve customer
-          let custId = contract.buyerCustomerId;
-          if (!custId) {
-            let cust = await prisma.customer.findFirst({ where: { gstNo: contract.buyerGst! } });
-            if (!cust) {
-              const st = stateFromGstin(contract.buyerGst!);
-              cust = await prisma.customer.create({
-                data: { name: contract.buyerName, gstNo: contract.buyerGst, address: contract.buyerAddress, state: st, phone: contract.buyerPhone, email: contract.buyerEmail },
-              });
-            }
-            custId = cust.id;
-            await prisma.ethanolContract.update({ where: { id: contract.id }, data: { buyerCustomerId: custId } });
+      try {
+        // 1. Resolve customer
+        let custId = contract.buyerCustomerId;
+        if (!custId) {
+          let cust = await prisma.customer.findFirst({ where: { gstNo: contract.buyerGst! } });
+          if (!cust) {
+            const st = stateFromGstin(contract.buyerGst!);
+            cust = await prisma.customer.create({
+              data: { name: contract.buyerName, gstNo: contract.buyerGst, address: contract.buyerAddress, state: st, phone: contract.buyerPhone, email: contract.buyerEmail },
+            });
           }
-          const cust = await prisma.customer.findUnique({ where: { id: custId! } });
-          if (!cust) throw new Error('Customer not found');
+          custId = cust.id;
+          await prisma.ethanolContract.update({ where: { id: contract.id }, data: { buyerCustomerId: custId } });
+        }
+        const cust = await prisma.customer.findUnique({ where: { id: custId! } });
+        if (!cust) throw new Error('Customer not found');
 
-          // 2. Create invoice
-          const gst = calcGstSplit(amount!, contract.gstPercent || 18, cust.state);
-          const total = Math.round((amount! + gst.gstAmount) * 100) / 100;
-          const inv = await prisma.invoice.create({
+        // 2. Create invoice + link to lifting in ONE transaction — never orphan
+        const gst = calcGstSplit(amount!, contract.gstPercent || 18, cust.state);
+        const total = Math.round((amount! + gst.gstAmount) * 100) / 100;
+        const inv = await prisma.$transaction(async (tx) => {
+          const created = await tx.invoice.create({
             data: {
-              customerId: cust.id, invoiceDate: lifting.liftingDate, productName: 'ETHANOL',
+              customerId: cust.id, invoiceDate: lifting.liftingDate,
+              productName: contract.contractType === 'JOB_WORK' ? 'Job Work Charges for Ethanol Production' : 'ETHANOL',
               quantity: qtyBL, unit: 'LTR', rate: rate!, amount: amount!,
               gstPercent: contract.gstPercent || 18, gstAmount: gst.gstAmount, supplyType: gst.supplyType,
               cgstPercent: gst.cgstPercent, cgstAmount: gst.cgstAmount, sgstPercent: gst.sgstPercent, sgstAmount: gst.sgstAmount,
@@ -344,46 +348,58 @@ router.post('/:id/liftings', asyncHandler(async (req: AuthRequest, res: Response
               totalAmount: total, balanceAmount: total, status: 'UNPAID', userId: 'system',
             },
           });
-          await prisma.ethanolLifting.update({ where: { id: lifting.id }, data: { invoiceId: inv.id, invoiceNo: `INV-${inv.invoiceNo}` } });
+          await tx.ethanolLifting.update({ where: { id: lifting.id }, data: { invoiceId: created.id, invoiceNo: `INV-${created.invoiceNo}` } });
+          return created;
+        });
+        createdInvoice = inv;
 
-          // 2b. Auto-journal: Dr Trade Receivable, Cr Sales + GST
-          onSaleInvoiceCreated(prisma, {
-            id: inv.id, invoiceNo: inv.invoiceNo, totalAmount: total,
-            amount: amount!, gstAmount: gst.gstAmount, gstPercent: contract.gstPercent || 18,
-            cgstAmount: gst.cgstAmount, sgstAmount: gst.sgstAmount, igstAmount: gst.igstAmount,
-            supplyType: gst.supplyType, productName: 'ETHANOL',
-            customerId: cust.id, userId: 'system', invoiceDate: lifting.liftingDate,
-            customer: { state: cust.state },
-          });
+        // Auto-journal (non-critical, outside transaction)
+        onSaleInvoiceCreated(prisma, {
+          id: inv.id, invoiceNo: inv.invoiceNo, totalAmount: total,
+          amount: amount!, gstAmount: gst.gstAmount, gstPercent: contract.gstPercent || 18,
+          cgstAmount: gst.cgstAmount, sgstAmount: gst.sgstAmount, igstAmount: gst.igstAmount,
+          supplyType: gst.supplyType,
+          productName: contract.contractType === 'JOB_WORK' ? 'Job Work Charges for Ethanol Production' : 'ETHANOL',
+          customerId: cust.id, userId: 'system', invoiceDate: lifting.liftingDate,
+          customer: { state: cust.state },
+        });
 
-          // 3. Generate IRN
-          if (cust.gstNo && cust.state && cust.pincode && cust.address) {
-            const irnRes = await generateIRN({
-              invoiceNo: `INV-${inv.invoiceNo}`, invoiceDate: inv.invoiceDate,
-              productName: 'ETHANOL', quantity: inv.quantity, unit: 'LTR', rate: inv.rate, amount: inv.amount, gstPercent: inv.gstPercent,
-              customer: { gstin: cust.gstNo, name: cust.name, address: cust.address, city: cust.city || '', pincode: cust.pincode, state: cust.state, phone: cust.phone || '', email: cust.email || '' },
-            });
-            if (irnRes.success && irnRes.irn) {
-              await prisma.invoice.update({ where: { id: inv.id }, data: { irn: irnRes.irn, irnDate: new Date(), irnStatus: 'GENERATED', ackNo: irnRes.ackNo ? String(irnRes.ackNo) : null, signedQRCode: irnRes.signedQRCode?.slice(0, 4000) || null } as any });
-
-              // 4. Generate EWB
-              const vehNo = (lifting.vehicleNo || '').replace(/\s/g, '');
-              const autoEwbData: Record<string, any> = { Irn: irnRes.irn, Distance: 100, TransMode: '1', VehNo: vehNo, VehType: 'R' };
-              if (lifting.transporterName && lifting.transporterName.length >= 3) autoEwbData.TransName = lifting.transporterName;
-              const ewbRes = await generateEWBByIRN(irnRes.irn, autoEwbData);
-              if (ewbRes.success && ewbRes.ewayBillNo) {
-                await prisma.invoice.update({ where: { id: inv.id }, data: { ewbNo: ewbRes.ewayBillNo, ewbDate: new Date(), ewbStatus: 'GENERATED' } as any });
+        // 3. IRN + EWB: fire-and-forget (external API, OK to be async)
+        if (cust.gstNo && cust.state && cust.pincode && cust.address) {
+          setImmediate(async () => {
+            try {
+              const irnRes = await generateIRN({
+                invoiceNo: `INV-${inv.invoiceNo}`, invoiceDate: inv.invoiceDate,
+                productName: inv.productName, quantity: inv.quantity, unit: 'LTR', rate: inv.rate, amount: inv.amount, gstPercent: inv.gstPercent,
+                customer: { gstin: cust.gstNo!, name: cust.name, address: cust.address!, city: cust.city || '', pincode: cust.pincode!, state: cust.state!, phone: cust.phone || '', email: cust.email || '' },
+              });
+              if (irnRes.success && irnRes.irn) {
+                await prisma.invoice.update({ where: { id: inv.id }, data: { irn: irnRes.irn, irnDate: new Date(), irnStatus: 'GENERATED', ackNo: irnRes.ackNo ? String(irnRes.ackNo) : null, signedQRCode: irnRes.signedQRCode?.slice(0, 4000) || null } as any });
+                const vehNo = (lifting.vehicleNo || '').replace(/\s/g, '');
+                const autoEwbData: Record<string, any> = { Irn: irnRes.irn, Distance: 100, TransMode: '1', VehNo: vehNo, VehType: 'R' };
+                if (lifting.transporterName && lifting.transporterName.length >= 3) autoEwbData.TransName = lifting.transporterName;
+                const ewbRes = await generateEWBByIRN(irnRes.irn, autoEwbData);
+                if (ewbRes.success && ewbRes.ewayBillNo) {
+                  await prisma.invoice.update({ where: { id: inv.id }, data: { ewbNo: ewbRes.ewayBillNo, ewbDate: new Date(), ewbStatus: 'GENERATED' } as any });
+                }
               }
+              console.log(`[EthanolContract] Auto e-invoice complete for lifting ${lifting.id}`);
+            } catch (err: any) {
+              console.error(`[EthanolContract] Auto IRN/EWB failed for lifting ${lifting.id}:`, err.message);
             }
-          }
-          console.log(`[EthanolContract] Auto e-invoice complete for lifting ${lifting.id}`);
-        } catch (err: any) {
-          console.error(`[EthanolContract] Auto e-invoice failed for lifting ${lifting.id}:`, err.message);
+          });
         }
-      });
+      } catch (err: any) {
+        // Invoice creation failed — log but don't block the lifting creation
+        console.error(`[EthanolContract] Auto-invoice failed for lifting ${lifting.id}:`, err.message);
+      }
     }
 
-    res.json({ lifting });
+    // Return lifting with invoice info if created
+    const result = createdInvoice
+      ? await prisma.ethanolLifting.findUnique({ where: { id: lifting.id }, include: { invoice: { select: { id: true, invoiceNo: true } } } })
+      : lifting;
+    res.json({ lifting: result || lifting });
 }));
 
 // GET liftings for a contract
@@ -421,24 +437,6 @@ router.patch('/:id/liftings/:liftingId/manual-ewb', ewbUpload.single('ewbPdf'), 
 }));
 
 // GET EWB PDF for a lifting (serves uploaded PDF)
-router.get('/:id/liftings/:liftingId/ewb-pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
-    const lifting = await prisma.ethanolLifting.findFirst({
-      where: { id: req.params.liftingId, contractId: req.params.id },
-      select: { invoiceId: true },
-    });
-    if (!lifting?.invoiceId) return res.status(404).json({ error: 'Not found' });
-
-    const invoice = await prisma.invoice.findUnique({
-      where: { id: lifting.invoiceId },
-      select: { ewbPdfData: true, ewbNo: true },
-    });
-    if (!invoice?.ewbPdfData) return res.status(404).json({ error: 'No EWB PDF uploaded' });
-
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="EWB-${invoice.ewbNo || 'unknown'}.pdf"`);
-    res.send(invoice.ewbPdfData);
-}));
-
 // PUT update lifting status (delivery confirmation)
 router.put('/liftings/:liftingId', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
@@ -786,6 +784,99 @@ router.post('/:id/liftings/:liftingId/create-invoice', asyncHandler(async (req: 
     res.json({ invoice });
 }));
 
+// ── GET /:id/liftings/:liftingId/delivery-challan-pdf ── Challan from lifting data (no DispatchTruck needed)
+router.get('/:id/liftings/:liftingId/delivery-challan-pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const lifting = await prisma.ethanolLifting.findFirst({
+      where: { id: req.params.liftingId, contractId: req.params.id },
+      include: { contract: { select: { buyerName: true, buyerAddress: true, buyerGst: true, contractType: true, ethanolRate: true } } },
+    });
+    if (!lifting) return res.status(404).json({ error: 'Lifting not found' });
+
+    const isJobWork = lifting.contract.contractType === 'JOB_WORK';
+    const productRate = isJobWork ? 71.86 : (lifting.contract.ethanolRate || 71.86);
+    const productValue = Math.round(lifting.quantityBL * productRate);
+    const gstRate = 5;
+    const gstAmount = Math.round(productValue * gstRate / 100);
+    const totalValue = productValue + gstAmount;
+
+    const { renderDocumentPdf } = await import('../services/documentRenderer');
+    const pdfBuffer = await renderDocumentPdf({
+      docType: 'ETHANOL_CHALLAN',
+      data: {
+        challanNo: lifting.challanNo || lifting.invoiceNo || '-',
+        date: lifting.liftingDate,
+        vehicleNo: lifting.vehicleNo,
+        driverName: lifting.driverName,
+        driverPhone: lifting.driverPhone,
+        transporterName: lifting.transporterName,
+        destination: lifting.destination,
+        rstNo: lifting.rstNo,
+        sealNo: null,
+        isJobWork,
+        buyerName: lifting.contract.buyerName,
+        buyerAddress: lifting.contract.buyerAddress || '',
+        buyerGst: lifting.contract.buyerGst || '',
+        quantityBL: lifting.quantityBL,
+        productRate,
+        productValue,
+        gstRate,
+        gstAmount,
+        totalValue,
+      },
+      verifyId: lifting.id,
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="Challan-${(lifting.challanNo || lifting.id).replace(/\//g, '-')}.pdf"`);
+    res.send(pdfBuffer);
+}));
+
+// ── GET /:id/liftings/:liftingId/gate-pass-pdf ── Gate pass from lifting data (no DispatchTruck needed)
+router.get('/:id/liftings/:liftingId/gate-pass-pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const lifting = await prisma.ethanolLifting.findFirst({
+      where: { id: req.params.liftingId, contractId: req.params.id },
+      include: { contract: { select: { contractNo: true, contractType: true, buyerName: true, buyerAddress: true, buyerGst: true, conversionRate: true, ethanolRate: true } } },
+    });
+    if (!lifting) return res.status(404).json({ error: 'Lifting not found' });
+
+    const isJobWork = lifting.contract.contractType === 'JOB_WORK';
+    const rate = isJobWork ? (lifting.contract.conversionRate || 0) : (lifting.contract.ethanolRate || 0);
+    const amount = Math.round(lifting.quantityBL * rate);
+
+    const { renderDocumentPdf } = await import('../services/documentRenderer');
+    const pdfBuffer = await renderDocumentPdf({
+      docType: 'ETHANOL_GATE_PASS',
+      data: {
+        gatePassNo: lifting.invoiceNo || '-',
+        date: lifting.liftingDate,
+        vehicleNo: lifting.vehicleNo,
+        driverName: lifting.driverName,
+        driverPhone: lifting.driverPhone,
+        transporterName: lifting.transporterName,
+        destination: lifting.destination,
+        contractNo: lifting.contract.contractNo,
+        rstNo: lifting.rstNo,
+        sealNo: null,
+        isJobWork,
+        buyerName: lifting.contract.buyerName,
+        buyerAddress: lifting.contract.buyerAddress || '',
+        buyerGst: lifting.contract.buyerGst || '',
+        productDescription: isJobWork ? 'Job Work Charges for Ethanol Production' : 'Ethanol',
+        hsnCode: isJobWork ? '998842' : '22072000',
+        quantityBL: lifting.quantityBL,
+        rate,
+        amount,
+        strength: lifting.strength,
+        weightGross: null,
+        weightTare: null,
+        weightNet: null,
+      },
+      verifyId: lifting.id,
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="GatePass-${lifting.id.slice(0, 8)}.pdf"`);
+    res.send(pdfBuffer);
+}));
+
 // ── GENERATE E-INVOICE (IRN + EWB) for a lifting ──
 router.post('/:id/liftings/:liftingId/e-invoice', asyncHandler(async (req: AuthRequest, res: Response) => {
     // Verify lifting belongs to this contract
@@ -1039,6 +1130,13 @@ router.get('/:id/liftings/:liftingId/ewb-pdf', asyncHandler(async (req: AuthRequ
     if (!lifting.invoice?.ewbNo) return res.status(400).json({ error: 'No E-Way Bill generated for this lifting' });
 
     const inv = lifting.invoice;
+
+    // Serve uploaded PDF if available (manual uploads for job work)
+    if (inv.ewbPdfData) {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="EWB-${inv.ewbNo || 'unknown'}.pdf"`);
+      return res.send(inv.ewbPdfData);
+    }
     const cust = inv.customer;
     const contract = lifting.contract;
     const buyerStateCode = cust.gstNo ? cust.gstNo.substring(0, 2) : '';

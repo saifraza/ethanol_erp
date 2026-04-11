@@ -879,24 +879,26 @@ const EthanolContracts: React.FC = () => {
                                                 } catch { setError('Failed to load invoice PDF'); }
                                               }} className="text-[8px] font-bold uppercase px-1 py-0.5 border border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100" title="Print Invoice">INV</button>
                                             )}
-                                            {l.dispatchTruck?.id && (
-                                              <>
-                                                <button onClick={async (e) => {
-                                                  e.stopPropagation();
-                                                  try {
-                                                    const res = await api.get(`/ethanol-gate-pass/${l.dispatchTruck!.id}/delivery-challan-pdf`, { responseType: 'blob' });
-                                                    window.open(URL.createObjectURL(res.data), '_blank');
-                                                  } catch { setError('Failed to load Delivery Challan'); }
-                                                }} className="text-[8px] font-bold uppercase px-1 py-0.5 border border-blue-300 bg-blue-50 text-blue-600 hover:bg-blue-100" title="Delivery Challan">DCH</button>
-                                                <button onClick={async (e) => {
-                                                  e.stopPropagation();
-                                                  try {
-                                                    const res = await api.get(`/ethanol-gate-pass/${l.dispatchTruck!.id}/gate-pass-pdf`, { responseType: 'blob' });
-                                                    window.open(URL.createObjectURL(res.data), '_blank');
-                                                  } catch { setError('Failed to load Gate Pass'); }
-                                                }} className="text-[8px] font-bold uppercase px-1 py-0.5 border border-amber-300 bg-amber-50 text-amber-600 hover:bg-amber-100" title="Gate Pass">GP</button>
-                                              </>
-                                            )}
+                                            <button onClick={async (e) => {
+                                              e.stopPropagation();
+                                              try {
+                                                const url = l.dispatchTruck?.id
+                                                  ? `/ethanol-gate-pass/${l.dispatchTruck.id}/delivery-challan-pdf`
+                                                  : `/ethanol-contracts/${c.id}/liftings/${l.id}/delivery-challan-pdf`;
+                                                const res = await api.get(url, { responseType: 'blob' });
+                                                window.open(URL.createObjectURL(res.data), '_blank');
+                                              } catch { setError('Failed to load Delivery Challan'); }
+                                            }} className="text-[8px] font-bold uppercase px-1 py-0.5 border border-blue-300 bg-blue-50 text-blue-600 hover:bg-blue-100" title="Delivery Challan">DCH</button>
+                                            <button onClick={async (e) => {
+                                              e.stopPropagation();
+                                              try {
+                                                const url = l.dispatchTruck?.id
+                                                  ? `/ethanol-gate-pass/${l.dispatchTruck.id}/gate-pass-pdf`
+                                                  : `/ethanol-contracts/${c.id}/liftings/${l.id}/gate-pass-pdf`;
+                                                const res = await api.get(url, { responseType: 'blob' });
+                                                window.open(URL.createObjectURL(res.data), '_blank');
+                                              } catch { setError('Failed to load Gate Pass'); }
+                                            }} className="text-[8px] font-bold uppercase px-1 py-0.5 border border-amber-300 bg-amber-50 text-amber-600 hover:bg-amber-100" title="Gate Pass">GP</button>
                                             {l.invoice?.ewbNo && (
                                               <button onClick={async (e) => {
                                                 e.stopPropagation();
