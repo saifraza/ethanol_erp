@@ -1698,6 +1698,9 @@ model Shipment {
   totalValue          Float? // declared value of goods
   coveringNote        String? // authority letter text
   sourceWbId          String?              @unique // Factory weighment ID for dedup/traceability (CRITICAL for idempotency)
+  // Scrap sales order link
+  directSaleId        String?
+  directSale          DirectSale?          @relation(fields: [directSaleId], references: [id])
   // Ship-To (may differ from Bill-To customer for job work)
   shipToCustomerId    String?
   shipToCustomer      Customer?            @relation("ShipmentShipTo", fields: [shipToCustomerId], references: [id])
@@ -1719,6 +1722,7 @@ model Shipment {
   @@index([paymentStatus])
   @@index([dispatchRequestId])
   @@index([division])
+  @@index([directSaleId])
 }
 
 // ── Shipment Documents (uploaded files: GR, Bilty, POD, Insurance, etc.) ──
@@ -2613,7 +2617,8 @@ model DirectSale {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  division String? @default("ETHANOL")
+  division   String?    @default("ETHANOL")
+  shipments  Shipment[]
 
   @@index([date])
   @@index([status])

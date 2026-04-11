@@ -87,6 +87,34 @@ router.get('/active', asyncHandler(async (req: AuthRequest, res: Response) => {
   res.json({ orders });
 }));
 
+// GET /:id/dispatches — shipments linked to this order
+router.get('/:id/dispatches', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const shipments = await prisma.shipment.findMany({
+    where: { directSaleId: req.params.id },
+    orderBy: { date: 'desc' },
+    take: 200,
+    select: {
+      id: true, shipmentNo: true, date: true, vehicleNo: true, customerName: true,
+      weightTare: true, weightGross: true, weightNet: true, bags: true,
+      status: true, gateInTime: true, grossTime: true, releaseTime: true,
+      productName: true, invoiceRef: true, remarks: true,
+    },
+  });
+
+  const atGate = shipments.filter(s => ['GATE_IN', 'TARE_WEIGHED', 'LOADING'].includes(s.status));
+  const dispatched = shipments.filter(s => !['GATE_IN', 'TARE_WEIGHED', 'LOADING'].includes(s.status));
+
+  res.json({
+    shipments,
+    pipeline: {
+      atWeighbridge: atGate.length,
+      atWeighbridgeVehicles: atGate.map(s => s.vehicleNo).join(', '),
+      totalDispatches: shipments.length,
+      dispatched: dispatched.length,
+    },
+  });
+}));
+
 // POST / — create new scrap sales order
 router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const b = req.body;

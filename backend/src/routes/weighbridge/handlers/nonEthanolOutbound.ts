@@ -67,6 +67,7 @@ export async function handleNonEthanolOutbound(w: WeighmentInput, ctx: PushConte
     });
 
     // 2. Atomic upsert Shipment by sourceWbId @unique
+    const scrapOrderId = (ctx.materialCategory === 'SCRAP' && w.cloud_contract_id) ? w.cloud_contract_id : null;
     const shipment = await tx.shipment.upsert({
       where: { sourceWbId: w.id },
       update: {
@@ -78,6 +79,7 @@ export async function handleNonEthanolOutbound(w: WeighmentInput, ctx: PushConte
       },
       create: {
         sourceWbId: w.id,
+        directSaleId: scrapOrderId,
         productName: w.material || 'DDGS',
         customerName: partyName,
         vehicleNo: w.vehicle_no,

@@ -1,8 +1,15 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Plus, X, Trash2, Edit2 } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Plus, X, Trash2, Edit2, ChevronDown, ChevronUp } from 'lucide-react';
 import api from '../../services/api';
 
 interface Customer { id: string; name: string; gstNo?: string; phone?: string; state?: string; address?: string; }
+interface Dispatch {
+  id: string; shipmentNo: number; date: string; vehicleNo: string; customerName: string;
+  weightTare: number | null; weightGross: number | null; weightNet: number | null; bags: number | null;
+  status: string; gateInTime: string | null; grossTime: string | null; releaseTime: string | null;
+  productName: string; invoiceRef: string | null;
+}
+interface Pipeline { atWeighbridge: number; atWeighbridgeVehicles: string; totalDispatches: number; dispatched: number; }
 
 interface Order {
   id: string; entryNo: number; date: string;
@@ -47,6 +54,10 @@ export default function DirectSales() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [dispatches, setDispatches] = useState<Dispatch[]>([]);
+  const [pipeline, setPipeline] = useState<Pipeline | null>(null);
+  const [loadingDispatches, setLoadingDispatches] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -122,6 +133,18 @@ export default function DirectSales() {
 
   async function handleStatusChange(id: string, status: string) {
     try { await api.put(`/direct-sales/${id}`, { status }); fetchData(); } catch { /* */ }
+  }
+
+  async function toggleExpand(id: string) {
+    if (expandedId === id) { setExpandedId(null); return; }
+    setExpandedId(id);
+    setLoadingDispatches(true);
+    try {
+      const res = await api.get(`/direct-sales/${id}/dispatches`);
+      setDispatches(res.data.shipments || []);
+      setPipeline(res.data.pipeline || null);
+    } catch { setDispatches([]); setPipeline(null); }
+    setLoadingDispatches(false);
   }
 
   async function handleDelete(id: string) {
@@ -282,8 +305,8 @@ export default function DirectSales() {
               )}
               {orders.map((o, i) => {
                 const daysLeft = o.validTo ? Math.ceil((new Date(o.validTo).getTime() - Date.now()) / 86400000) : null;
-                return (
-                  <tr key={o.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                return (<React.Fragment key={o.id}>
+                  <tr className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
                     <td className="px-3 py-1.5 text-slate-400 border-r border-slate-100 font-mono">{o.entryNo}</td>
                     <td className="px-3 py-1.5 text-slate-800 font-medium border-r border-slate-100">
                       {o.customer?.name || o.buyerName}
@@ -318,10 +341,100 @@ export default function DirectSales() {
                         {o.status !== 'ACTIVE' && (
                           <button onClick={() => handleDelete(o.id)} className="text-red-400 hover:text-red-600" title="Delete"><Trash2 size={13} /></button>
                         )}
+                        <button onClick={() => toggleExpand(o.id)} className="text-slate-400 hover:text-slate-600">
+                          {expandedId === o.id ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                        </button>
                       </div>
                     </td>
                   </tr>
-                );
+                  {/* Expanded dispatch panel */}
+                  {expandedId === o.id && (
+                    <tr>
+                      <td colSpan={10} className="bg-slate-50 border-b border-slate-200 p-0">
+                        <div className="px-4 py-3">
+                          {/* Supply Progress */}
+                          {o.quantity > 0 && (
+                            <div className="mb-3">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Supply Progress</span>
+                                <span className="text-[11px] font-mono text-slate-600">
+                                  {o.totalSuppliedQty.toLocaleString('en-IN')} / {o.quantity.toLocaleString('en-IN')} {o.unit} ({o.quantity > 0 ? Math.round(o.totalSuppliedQty / o.quantity * 100) : 0}%)
+                                </span>
+                              </div>
+                              <div className="w-full bg-slate-200 h-2">
+                                <div className="bg-green-500 h-2" style={{ width: `${Math.min(100, o.quantity > 0 ? (o.totalSuppliedQty / o.quantity) * 100 : 0)}%` }} />
+                              </div>
+                              <div className="text-[10px] text-slate-400 mt-0.5">{Math.max(0, o.quantity - o.totalSuppliedQty).toLocaleString('en-IN')} {o.unit} remaining</div>
+                            </div>
+                          )}
+
+                          {/* Pipeline KPIs */}
+                          {pipeline && (
+                            <div className="grid grid-cols-3 gap-0 border border-slate-300 mb-3">
+                              <div className={`px-3 py-2 border-r border-slate-300 ${pipeline.atWeighbridge > 0 ? 'bg-orange-50' : 'bg-white'}`}>
+                                <div className={`text-[10px] font-bold uppercase tracking-widest ${pipeline.atWeighbridge > 0 ? 'text-orange-600' : 'text-slate-400'}`}>At Weighbridge</div>
+                                <div className="text-lg font-bold text-slate-800 font-mono">{pipeline.atWeighbridge}</div>
+                                {pipeline.atWeighbridgeVehicles && <div className="text-[9px] text-orange-500 mt-0.5">{pipeline.atWeighbridgeVehicles}</div>}
+                              </div>
+                              <div className="bg-white px-3 py-2 border-r border-slate-300">
+                                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Dispatches</div>
+                                <div className="text-lg font-bold text-slate-800 font-mono">{pipeline.totalDispatches}</div>
+                              </div>
+                              <div className="bg-white px-3 py-2">
+                                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Completed</div>
+                                <div className="text-lg font-bold text-slate-800 font-mono">{pipeline.dispatched}</div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Dispatch table */}
+                          {loadingDispatches ? (
+                            <div className="text-xs text-slate-400 uppercase tracking-widest py-4 text-center">Loading dispatches...</div>
+                          ) : dispatches.length === 0 ? (
+                            <div className="text-xs text-slate-400 uppercase tracking-widest py-4 text-center">No dispatches yet</div>
+                          ) : (
+                            <table className="w-full text-xs border border-slate-300">
+                              <thead>
+                                <tr className="bg-slate-700 text-white">
+                                  <th className="text-left px-2 py-1.5 text-[9px] uppercase tracking-widest border-r border-slate-600">Date</th>
+                                  <th className="text-left px-2 py-1.5 text-[9px] uppercase tracking-widest border-r border-slate-600">Vehicle</th>
+                                  <th className="text-right px-2 py-1.5 text-[9px] uppercase tracking-widest border-r border-slate-600">Tare (kg)</th>
+                                  <th className="text-right px-2 py-1.5 text-[9px] uppercase tracking-widest border-r border-slate-600">Gross (kg)</th>
+                                  <th className="text-right px-2 py-1.5 text-[9px] uppercase tracking-widest border-r border-slate-600">Net (kg)</th>
+                                  <th className="text-right px-2 py-1.5 text-[9px] uppercase tracking-widest border-r border-slate-600">Amount</th>
+                                  <th className="text-center px-2 py-1.5 text-[9px] uppercase tracking-widest">Status</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {dispatches.map((d, di) => {
+                                  const netKg = d.weightNet || 0;
+                                  const amt = netKg * o.rate; // rate per unit (KG)
+                                  return (
+                                    <tr key={d.id} className={`border-b border-slate-100 ${di % 2 ? 'bg-slate-50/50' : ''}`}>
+                                      <td className="px-2 py-1 text-slate-600 border-r border-slate-100">{fmtDate(d.date)}</td>
+                                      <td className="px-2 py-1 text-slate-800 font-medium border-r border-slate-100">{d.vehicleNo}</td>
+                                      <td className="px-2 py-1 text-right font-mono text-slate-500 border-r border-slate-100">{d.weightTare?.toLocaleString('en-IN') || '--'}</td>
+                                      <td className="px-2 py-1 text-right font-mono text-slate-500 border-r border-slate-100">{d.weightGross?.toLocaleString('en-IN') || '--'}</td>
+                                      <td className="px-2 py-1 text-right font-mono text-slate-800 font-medium border-r border-slate-100">{netKg > 0 ? netKg.toLocaleString('en-IN') : '--'}</td>
+                                      <td className="px-2 py-1 text-right font-mono text-slate-700 border-r border-slate-100">{netKg > 0 ? fmtCurrency(amt) : '--'}</td>
+                                      <td className="px-2 py-1 text-center">
+                                        <span className={`text-[8px] font-bold uppercase px-1 py-0.5 border ${
+                                          d.status === 'GROSS_WEIGHED' || d.status === 'RELEASED' ? 'border-green-400 bg-green-50 text-green-700' :
+                                          d.status === 'LOADING' ? 'border-blue-400 bg-blue-50 text-blue-700' :
+                                          'border-amber-400 bg-amber-50 text-amber-700'
+                                        }`}>{d.status.replace(/_/g, ' ')}</span>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>);
               })}
             </tbody>
           </table>
