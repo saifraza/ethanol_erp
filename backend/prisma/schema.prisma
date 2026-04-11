@@ -187,6 +187,8 @@ model SiloSnapshot {
   f3Level            Float    @default(0)
   f4Level            Float    @default(0)
   beerWellLevel      Float    @default(0)
+  pf1Level           Float    @default(0)
+  pf2Level           Float    @default(0)
   iltLevel           Float    @default(0)
   fltLevel           Float    @default(0)
   totalVolumeKL      Float    @default(0)

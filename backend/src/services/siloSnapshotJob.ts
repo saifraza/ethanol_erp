@@ -25,6 +25,8 @@ const TANK_TAGS: Record<string, string> = {
   LT130301: 'f3',
   LT130302: 'f4',
   LT130401: 'beerWell',
+  LT130101: 'pf1',
+  LT130102: 'pf2',
   LT_120103: 'ilt',
   LT_120102: 'flt',
 };
@@ -71,7 +73,8 @@ function getOpcPrisma() {
 
 interface TankLevels {
   f1: number; f2: number; f3: number; f4: number;
-  beerWell: number; ilt: number; flt: number;
+  beerWell: number; pf1: number; pf2: number;
+  ilt: number; flt: number;
   dataAge: number | null;
 }
 
@@ -92,7 +95,7 @@ async function readTankLevels(opc: any): Promise<TankLevels> {
     }
   }
 
-  const levels: any = { f1: 0, f2: 0, f3: 0, f4: 0, beerWell: 0, ilt: 0, flt: 0, dataAge: null };
+  const levels: any = { f1: 0, f2: 0, f3: 0, f4: 0, beerWell: 0, pf1: 0, pf2: 0, ilt: 0, flt: 0, dataAge: null };
   let oldestReading: Date | null = null;
 
   for (const [tag, field] of Object.entries(TANK_TAGS)) {
@@ -141,6 +144,8 @@ async function getCapacities(): Promise<Record<string, number>> {
     f3: (s as any)?.fermenter3Cap ?? 2300,
     f4: (s as any)?.fermenter4Cap ?? 2300,
     beerWell: (s as any)?.beerWellCap ?? 430,
+    pf1: 430,
+    pf2: 430,
     ilt: (s as any)?.iltCap ?? 190,
     flt: (s as any)?.fltCap ?? 440,
   };
@@ -187,9 +192,11 @@ export async function computeSnapshot(opts?: { force?: boolean }): Promise<void>
     const f3Level = r2((pctLevels.f3 / 100) * caps.f3);
     const f4Level = r2((pctLevels.f4 / 100) * caps.f4);
     const beerWellLevel = r2((pctLevels.beerWell / 100) * caps.beerWell);
+    const pf1Level = r2((pctLevels.pf1 / 100) * caps.pf1);
+    const pf2Level = r2((pctLevels.pf2 / 100) * caps.pf2);
     const iltLevel = r2((pctLevels.ilt / 100) * caps.ilt);
     const fltLevel = r2((pctLevels.flt / 100) * caps.flt);
-    const totalVolumeKL = r2(f1Level + f2Level + f3Level + f4Level + beerWellLevel + iltLevel + fltLevel);
+    const totalVolumeKL = r2(f1Level + f2Level + f3Level + f4Level + beerWellLevel + pf1Level + pf2Level + iltLevel + fltLevel);
 
     // 3. Read 24h wash distilled from flow meter
     const washDistilledKL = r2(await readWashDistilled(opc, shiftStartUTC, shiftEndUTC));
@@ -249,7 +256,7 @@ export async function computeSnapshot(opts?: { force?: boolean }): Promise<void>
     const snapshotData = {
       source: 'AUTO' as const,
       f1Level, f2Level, f3Level, f4Level,
-      beerWellLevel, iltLevel, fltLevel,
+      beerWellLevel, pf1Level, pf2Level, iltLevel, fltLevel,
       totalVolumeKL,
       flourSilo1Level, flourSilo2Level, flourTotal,
       washDistilledKL,

@@ -241,7 +241,7 @@ router.post('/baseline', authenticate, validate(baselineSchema), asyncHandler(as
 
   // Read current OPC levels if available
   let f1Level = 0, f2Level = 0, f3Level = 0, f4Level = 0;
-  let beerWellLevel = 0, iltLevel = 0, fltLevel = 0;
+  let beerWellLevel = 0, pf1Level = 0, pf2Level = 0, iltLevel = 0, fltLevel = 0;
   let totalVolumeKL = 0, grainInSystem = 0;
 
   const grainPct = await getGrainPct();
@@ -252,7 +252,7 @@ router.post('/baseline', authenticate, validate(baselineSchema), asyncHandler(as
       const { PrismaClient } = require('@prisma/opc-client');
       const opc = new PrismaClient();
       const caps = await getCapacities();
-      const tagNames = ['LT130201', 'LT130202', 'LT130301', 'LT130302', 'LT130401', 'LT_120103', 'LT_120102'];
+      const tagNames = ['LT130201', 'LT130202', 'LT130301', 'LT130302', 'LT130401', 'LT130101', 'LT130102', 'LT_120103', 'LT_120102'];
       const readings = await opc.opcReading.findMany({
         where: { tag: { in: tagNames }, property: 'IO_VALUE' },
         orderBy: { scannedAt: 'desc' },
@@ -268,9 +268,11 @@ router.post('/baseline', authenticate, validate(baselineSchema), asyncHandler(as
       f3Level = r2(((latest.get('LT130301') ?? 0) / 100) * caps.f3);
       f4Level = r2(((latest.get('LT130302') ?? 0) / 100) * caps.f4);
       beerWellLevel = r2(((latest.get('LT130401') ?? 0) / 100) * caps.beerWell);
+      pf1Level = r2(((latest.get('LT130101') ?? 0) / 100) * caps.pf1);
+      pf2Level = r2(((latest.get('LT130102') ?? 0) / 100) * caps.pf2);
       iltLevel = r2(((latest.get('LT_120103') ?? 0) / 100) * caps.ilt);
       fltLevel = r2(((latest.get('LT_120102') ?? 0) / 100) * caps.flt);
-      totalVolumeKL = r2(f1Level + f2Level + f3Level + f4Level + beerWellLevel + iltLevel + fltLevel);
+      totalVolumeKL = r2(f1Level + f2Level + f3Level + f4Level + beerWellLevel + pf1Level + pf2Level + iltLevel + fltLevel);
       grainInSystem = r2(totalVolumeKL * grainPct);
       await opc.$disconnect();
     } catch (err) {
@@ -285,7 +287,7 @@ router.post('/baseline', authenticate, validate(baselineSchema), asyncHandler(as
       date,
       source: 'BASELINE',
       f1Level, f2Level, f3Level, f4Level,
-      beerWellLevel, iltLevel, fltLevel,
+      beerWellLevel, pf1Level, pf2Level, iltLevel, fltLevel,
       totalVolumeKL,
       grainPctUsed: grainPct,
       grainInSystem,
@@ -296,7 +298,7 @@ router.post('/baseline', authenticate, validate(baselineSchema), asyncHandler(as
     update: {
       source: 'BASELINE',
       f1Level, f2Level, f3Level, f4Level,
-      beerWellLevel, iltLevel, fltLevel,
+      beerWellLevel, pf1Level, pf2Level, iltLevel, fltLevel,
       totalVolumeKL,
       grainPctUsed: grainPct,
       grainInSystem,
