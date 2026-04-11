@@ -77,8 +77,12 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
         include: {
           invoice: {
             select: {
-              id: true, invoiceNo: true, totalAmount: true, paidAmount: true, status: true,
-              irn: true, irnStatus: true, ewbNo: true, ewbStatus: true,
+              id: true, invoiceNo: true, remarks: true, totalAmount: true, paidAmount: true, status: true,
+              amount: true, quantity: true, rate: true, unit: true, productName: true,
+              gstPercent: true, gstAmount: true, supplyType: true,
+              cgstAmount: true, sgstAmount: true, igstAmount: true, freightCharge: true,
+              irn: true, irnStatus: true, irnDate: true, ackNo: true,
+              ewbNo: true, ewbDate: true, ewbStatus: true,
             },
           },
         },
