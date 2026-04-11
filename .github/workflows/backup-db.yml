@@ -26,6 +26,8 @@ jobs:
             exit 1
           fi
           TIMESTAMP=$(date -u +%Y%m%d_%H%M%S)
+          export PATH="/usr/lib/postgresql/17/bin:$PATH"
+          pg_dump --version
           pg_dump "$DATABASE_URL" \
             --no-owner --no-acl \
             --format=custom \
