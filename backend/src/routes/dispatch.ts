@@ -282,7 +282,9 @@ router.post('/', authenticate, upload.single('photo'), async (req: AuthRequest, 
 
     // Backfill: recompute enclosing ethanol entry so late-arriving standalone trucks
     // don't leave stale negative production / KLPD on the window's entry
-    try { await recomputeEthanolEntryByDate(dispatchDate); } catch (e) { /* non-fatal */ }
+    try { await recomputeEthanolEntryByDate(dispatchDate); } catch (e: any) {
+      console.error('[Dispatch] recomputeEthanolEntry failed for', dispatchDate.toISOString(), ':', e.message);
+    }
 
     res.status(201).json({ ...dispatch, lifting, contractNo: lifting ? 'linked' : null });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
@@ -300,7 +302,9 @@ router.delete('/:id', authenticate, async (req: AuthRequest, res: Response) => {
     const truckDate = d?.date;
     await prisma.dispatchTruck.delete({ where: { id: req.params.id } });
     if (truckDate) {
-      try { await recomputeEthanolEntryByDate(truckDate); } catch (e) { /* non-fatal */ }
+      try { await recomputeEthanolEntryByDate(truckDate); } catch (e: any) {
+        console.error('[Dispatch] recomputeEthanolEntry failed for', truckDate.toISOString(), ':', e.message);
+      }
     }
     res.json({ success: true });
   } catch (err: any) { res.status(500).json({ error: err.message }); }

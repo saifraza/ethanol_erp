@@ -276,6 +276,16 @@ async function handleEthanolOutboundInner(w: WeighmentInput, _ctx: PushContext):
     return { skipped: false, id: dispatchTruck.id };
   });
 
+  // Recompute ethanol entry so dispatch is reflected in production/KLPD
+  if (w.quantity_bl && w.quantity_bl > 0) {
+    try {
+      const { recomputeEthanolEntryByDate } = await import('../../ethanolProduct');
+      await recomputeEthanolEntryByDate(dateVal);
+    } catch (e: any) {
+      console.error('[WB-PUSH][ETHANOL] recomputeEthanolEntry failed:', e.message);
+    }
+  }
+
   // ALWAYS ack to syncWorker — prevents the infinite-retry pattern that stuck 4 ethanol trucks
   // on 2026-04-07 (handler returned skipped=true → not in processedWbIds → factory retried 60+ times).
   out.results.push({ id: ethResult.id, type: 'EthanolDispatch', refNo: ethResult.id, sourceWbId: w.id });

@@ -5,6 +5,7 @@ import { authenticate, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { nextInvoiceNo } from '../utils/invoiceCounter';
 import { onSaleInvoiceCreated } from '../services/autoJournal';
+import { recomputeEthanolEntryByDate } from './ethanolProduct';
 
 const router = Router();
 
@@ -142,6 +143,11 @@ router.post('/:id/gross', asyncHandler(async (req: AuthRequest, res: Response) =
       grossTime: new Date(),
     },
   });
+  // Recompute ethanol entry so dispatch is reflected in production/KLPD
+  try { await recomputeEthanolEntryByDate(truck.date); } catch (e: any) {
+    console.error('[EthanolGatePass] recomputeEthanolEntry failed:', e.message);
+  }
+
   res.json({ ...updated, densityCheck });
 }));
 
