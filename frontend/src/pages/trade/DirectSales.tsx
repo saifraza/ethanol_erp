@@ -551,7 +551,7 @@ export default function DirectSales() {
                                     {/* Invoice column */}
                                     <td className="px-2 py-1.5 border-r border-slate-100 text-center">
                                       {d.invoice ? (
-                                        <button onClick={(e) => { e.stopPropagation(); setShowIrnDetail(showIrnDetail === d.id ? null : d.id); }}
+                                        <button onClick={(e) => { e.stopPropagation(); openPdf(`/invoices/${d.invoice!.id}/pdf`, 'invoice'); }}
                                           className="text-[10px] font-medium text-blue-700 underline hover:text-blue-900 cursor-pointer">
                                           {d.invoice.remarks || `INV-${d.invoice.invoiceNo}`}
                                         </button>
