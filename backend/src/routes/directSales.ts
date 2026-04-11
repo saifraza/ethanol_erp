@@ -294,6 +294,11 @@ router.post('/:orderId/shipments/:shipmentId/create-invoice', asyncHandler(async
   const netKg = shipment.weightNet || 0;
   if (netKg <= 0) return res.status(400).json({ error: 'Shipment has no net weight' });
 
+  // Must have a linked customer for invoice FK
+  if (!order.customerId) {
+    return res.status(400).json({ error: 'Link a customer to this order first (edit order and select buyer from Customer Master).' });
+  }
+
   // Rate is provided at invoice time (scrap prices fluctuate)
   const rate = parseFloat(req.body.rate);
   if (!rate || rate <= 0) return res.status(400).json({ error: 'Rate is required' });
@@ -317,7 +322,7 @@ router.post('/:orderId/shipments/:shipmentId/create-invoice', asyncHandler(async
 
       const inv = await tx.invoice.create({
         data: {
-          customerId: order.customerId || order.customer?.id || '',
+          customerId: order.customerId!,
           invoiceDate: shipment.date,
           shipmentId: shipment.id,
           productName: order.productName,
