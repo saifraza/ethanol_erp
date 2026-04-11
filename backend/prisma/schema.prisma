@@ -2573,30 +2573,38 @@ model DirectPurchase {
   @@index([division])
 }
 
+// Scrap / Misc Sales Orders — open rate contracts with validity period
 model DirectSale {
-  id           String    @id @default(uuid())
-  entryNo      Int       @default(autoincrement())
-  date         DateTime  @default(now())
-  // Buyer — linked to Customer master (optional for walk-ins)
-  customerId   String?
-  customer     Customer? @relation(fields: [customerId], references: [id])
-  buyerName    String
-  buyerPhone   String?
-  buyerAddress String?
-  // What was sold
-  productName  String // DDGS, Spent Wash, etc.
-  quantity     Float
-  unit         String   @default("KG")
-  rate         Float
-  amount       Float // qty × rate
-  // Vehicle
+  id              String    @id @default(uuid())
+  entryNo         Int       @default(autoincrement())
+  date            DateTime  @default(now())
+  // Buyer — linked to Customer master
+  customerId      String?
+  customer        Customer? @relation(fields: [customerId], references: [id])
+  buyerName       String
+  buyerPhone      String?
+  buyerAddress    String?
+  // Product & Rate
+  productName     String    // Scrap Iron, Scrap SS, etc.
+  rate            Float     @default(0)
+  unit            String    @default("KG")
+  // Validity
+  validFrom       DateTime  @default(now())
+  validTo         DateTime?
+  status          String    @default("ACTIVE") // ACTIVE, EXPIRED, CLOSED
+  // Supplied (running total from weighbridge dispatches)
+  quantity         Float    @default(0)  // estimated/target qty (0 = open/unlimited)
+  totalSuppliedQty Float   @default(0)
+  totalSuppliedAmt Float   @default(0)
+  amount           Float   @default(0)  // legacy: qty × rate (for backward compat)
+  // Vehicle (legacy — future dispatches tracked separately)
   vehicleNo    String?
   weightSlipNo String?
   grossWeight  Float?
   tareWeight   Float?
   netWeight    Float?
-  // Payment
-  paymentMode  String   @default("CASH") // CASH, UPI, BANK_TRANSFER, CHEQUE
+  // Payment (legacy)
+  paymentMode  String   @default("CASH")
   paymentRef   String?
   isPaid       Boolean  @default(true)
   //
@@ -2605,12 +2613,14 @@ model DirectSale {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division String? @default("ETHANOL")
 
   @@index([date])
-  @@index([isPaid])
+  @@index([status])
   @@index([division])
   @@index([customerId])
+  @@index([validFrom])
+  @@index([validTo])
 }
 
 // ── ETHANOL SUPPLY / CONTRACTS ──

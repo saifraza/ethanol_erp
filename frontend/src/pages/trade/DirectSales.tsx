@@ -1,60 +1,63 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, X, Trash2 } from 'lucide-react';
+import { Plus, X, Trash2, Edit2 } from 'lucide-react';
 import api from '../../services/api';
 
 interface Customer { id: string; name: string; gstNo?: string; phone?: string; state?: string; address?: string; }
 
-interface Sale {
+interface Order {
   id: string; entryNo: number; date: string;
   customerId: string | null; buyerName: string; buyerPhone: string | null; buyerAddress: string | null;
-  productName: string; quantity: number; unit: string; rate: number; amount: number;
-  vehicleNo: string | null; weightSlipNo: string | null;
-  grossWeight: number | null; tareWeight: number | null; netWeight: number | null;
-  paymentMode: string; paymentRef: string | null; isPaid: boolean;
+  productName: string; rate: number; unit: string;
+  validFrom: string; validTo: string | null; status: string;
+  quantity: number; totalSuppliedQty: number; totalSuppliedAmt: number;
   remarks: string | null; createdAt: string;
   customer: { id: string; name: string; gstNo: string | null; phone: string | null; state: string | null } | null;
 }
 
-interface Stats { totalEntries: number; todayCount: number; todayAmount: number; totalAmount: number; unpaidCount: number; unpaidAmount: number; }
+interface Stats { total: number; active: number; expiringSoon: number; totalSuppliedAmt: number; }
 
 const PRODUCTS = ['Scrap Iron', 'Scrap Copper', 'Scrap SS', 'Empty Drums', 'Gunny Bags', 'Coal Ash', 'Waste Oil', 'Spent Wash', 'Other'];
 const UNITS = ['KG', 'MT', 'QTL', 'LTR', 'NOS', 'LOT'];
-const PAY_MODES = ['CASH', 'UPI', 'BANK_TRANSFER', 'CHEQUE'];
 
 const fmtCurrency = (n: number) => n === 0 ? '--' : '\u20B9' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 });
-const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' });
+const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : '--';
+
+const STATUS_COLORS: Record<string, string> = {
+  ACTIVE: 'border-green-400 bg-green-50 text-green-700',
+  EXPIRED: 'border-red-400 bg-red-50 text-red-700',
+  CLOSED: 'border-slate-400 bg-slate-100 text-slate-600',
+};
 
 const emptyForm = {
-  date: new Date().toISOString().split('T')[0],
   customerId: '', buyerName: '', buyerPhone: '', buyerAddress: '',
-  productName: 'Scrap Iron', quantity: '', unit: 'KG', rate: '', vehicleNo: '', weightSlipNo: '',
-  grossWeight: '', tareWeight: '', netWeight: '',
-  paymentMode: 'CASH', paymentRef: '', isPaid: true, remarks: '',
+  productName: 'Scrap Iron', rate: '', unit: 'KG', quantity: '',
+  validFrom: new Date().toISOString().split('T')[0],
+  validTo: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+  remarks: '',
 };
 
 export default function DirectSales() {
-  const today = new Date().toISOString().split('T')[0];
-  const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
-
-  const [from, setFrom] = useState(weekAgo);
-  const [to, setTo] = useState(today);
-  const [sales, setSales] = useState<Sale[]>([]);
-  const [stats, setStats] = useState<Stats>({ totalEntries: 0, todayCount: 0, todayAmount: 0, totalAmount: 0, unpaidCount: 0, unpaidAmount: 0 });
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [stats, setStats] = useState<Stats>({ total: 0, active: 0, expiringSoon: 0, totalSuppliedAmt: 0 });
   const [loading, setLoading] = useState(true);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [statusFilter, setStatusFilter] = useState('ALL');
 
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await api.get(`/direct-sales?from=${from}&to=${to}`);
-      setSales(res.data.sales || []);
+      const params = new URLSearchParams();
+      if (statusFilter !== 'ALL') params.set('status', statusFilter);
+      const res = await api.get(`/direct-sales?${params}`);
+      setOrders(res.data.orders || []);
       setStats(res.data.stats || {});
     } catch { /* */ } finally { setLoading(false); }
-  }, [from, to]);
+  }, [statusFilter]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => {
@@ -64,8 +67,8 @@ export default function DirectSales() {
     }).catch(() => {});
   }, []);
 
-  function handleFormChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) {
-    const { name, value, type } = e.target;
+  function handleFormChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
+    const { name, value } = e.target;
     if (name === 'customerId') {
       const cust = customers.find(c => c.id === value);
       if (cust) {
@@ -75,35 +78,61 @@ export default function DirectSales() {
       }
       return;
     }
-    setForm(p => ({ ...p, [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value }));
+    setForm(p => ({ ...p, [name]: value }));
+  }
+
+  function openEdit(o: Order) {
+    setEditId(o.id);
+    setForm({
+      customerId: o.customerId || '',
+      buyerName: o.buyerName,
+      buyerPhone: o.buyerPhone || '',
+      buyerAddress: o.buyerAddress || '',
+      productName: o.productName,
+      rate: String(o.rate),
+      unit: o.unit,
+      quantity: o.quantity ? String(o.quantity) : '',
+      validFrom: o.validFrom?.split('T')[0] || '',
+      validTo: o.validTo?.split('T')[0] || '',
+      remarks: o.remarks || '',
+    });
+    setShowForm(true);
   }
 
   async function handleSave() {
-    if (!form.buyerName.trim()) { setMsg({ type: 'err', text: 'Buyer name required' }); return; }
-    if (!form.quantity || !form.rate) { setMsg({ type: 'err', text: 'Quantity and rate required' }); return; }
+    if (!form.buyerName.trim()) { setMsg({ type: 'err', text: 'Select a buyer' }); return; }
+    if (!form.rate) { setMsg({ type: 'err', text: 'Rate is required' }); return; }
     setSaving(true); setMsg(null);
     try {
-      await api.post('/direct-sales', form);
-      setMsg({ type: 'ok', text: 'Sale recorded' });
+      if (editId) {
+        await api.put(`/direct-sales/${editId}`, form);
+        setMsg({ type: 'ok', text: 'Order updated' });
+      } else {
+        await api.post('/direct-sales', form);
+        setMsg({ type: 'ok', text: 'Order created' });
+      }
       setForm({ ...emptyForm });
       setShowForm(false);
+      setEditId(null);
       fetchData();
     } catch (err: any) { setMsg({ type: 'err', text: err.response?.data?.error || 'Save failed' }); }
     setSaving(false);
     setTimeout(() => setMsg(null), 3000);
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm('Delete this sale entry?')) return;
-    try { await api.delete(`/direct-sales/${id}`); fetchData(); } catch { /* */ }
+  async function handleStatusChange(id: string, status: string) {
+    try { await api.put(`/direct-sales/${id}`, { status }); fetchData(); } catch { /* */ }
   }
 
-  const amount = (parseFloat(form.quantity) || 0) * (parseFloat(form.rate) || 0);
+  async function handleDelete(id: string) {
+    if (!confirm('Delete this order?')) return;
+    try { await api.delete(`/direct-sales/${id}`); fetchData(); } catch { /* */ }
+  }
 
   const labelCls = 'text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block';
   const inputCls = 'border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 w-full';
 
-  if (loading && sales.length === 0) return (
+  if (loading && orders.length === 0) return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center">
       <div className="text-xs text-slate-400 uppercase tracking-widest">Loading...</div>
     </div>
@@ -117,23 +146,23 @@ export default function DirectSales() {
           <div className="flex items-center gap-3">
             <h1 className="text-sm font-bold tracking-wide uppercase">Scrap & Misc Sales</h1>
             <span className="text-[10px] text-slate-400">|</span>
-            <span className="text-[10px] text-slate-400">Direct Sales Register</span>
+            <span className="text-[10px] text-slate-400">Rate Orders & Dispatch Tracking</span>
           </div>
           <div className="flex items-center gap-2">
             {msg && <span className={`text-[10px] ${msg.type === 'ok' ? 'text-green-400' : 'text-red-400'}`}>{msg.text}</span>}
-            <button onClick={() => setShowForm(!showForm)}
+            <button onClick={() => { setEditId(null); setForm({ ...emptyForm }); setShowForm(!showForm); }}
               className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 flex items-center gap-1">
-              <Plus size={14} /> New Sale
+              <Plus size={14} /> New Order
             </button>
           </div>
         </div>
 
-        {/* Quick Entry Form */}
+        {/* Order Form */}
         {showForm && (
           <div className="border-x border-b border-slate-300 -mx-3 md:-mx-6 bg-white">
             <div className="bg-slate-800 text-white px-4 py-2 flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-widest">Quick Entry</span>
-              <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-white"><X size={16} /></button>
+              <span className="text-xs font-bold uppercase tracking-widest">{editId ? 'Edit Order' : 'New Scrap Sales Order'}</span>
+              <button onClick={() => { setShowForm(false); setEditId(null); }} className="text-slate-400 hover:text-white"><X size={16} /></button>
             </div>
             <div className="p-4 space-y-3">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -146,14 +175,14 @@ export default function DirectSales() {
                 </div>
                 <div>
                   <label className={labelCls}>Buyer Name *</label>
-                  <input name="buyerName" value={form.buyerName} onChange={handleFormChange} className={inputCls} placeholder="Auto-filled or manual" />
+                  <input name="buyerName" value={form.buyerName} onChange={handleFormChange} className={inputCls} />
                 </div>
                 <div>
                   <label className={labelCls}>Phone</label>
                   <input name="buyerPhone" value={form.buyerPhone} onChange={handleFormChange} className={inputCls} />
                 </div>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
                 <div>
                   <label className={labelCls}>Product *</label>
                   <select name="productName" value={form.productName} onChange={handleFormChange} className={inputCls}>
@@ -161,8 +190,8 @@ export default function DirectSales() {
                   </select>
                 </div>
                 <div>
-                  <label className={labelCls}>Quantity *</label>
-                  <input name="quantity" type="number" step="any" value={form.quantity} onChange={handleFormChange} className={inputCls} />
+                  <label className={labelCls}>Rate *</label>
+                  <input name="rate" type="number" step="any" value={form.rate} onChange={handleFormChange} className={inputCls} placeholder="Per unit" />
                 </div>
                 <div>
                   <label className={labelCls}>Unit</label>
@@ -171,36 +200,16 @@ export default function DirectSales() {
                   </select>
                 </div>
                 <div>
-                  <label className={labelCls}>Rate</label>
-                  <input name="rate" type="number" step="any" value={form.rate} onChange={handleFormChange} className={inputCls} />
+                  <label className={labelCls}>Valid From</label>
+                  <input name="validFrom" type="date" value={form.validFrom} onChange={handleFormChange} className={inputCls} />
                 </div>
                 <div>
-                  <label className={labelCls}>Amount</label>
-                  <div className="border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-mono tabular-nums font-medium">{fmtCurrency(amount)}</div>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                <div>
-                  <label className={labelCls}>Vehicle No</label>
-                  <input name="vehicleNo" value={form.vehicleNo} onChange={handleFormChange} className={inputCls} placeholder="MH02AB1234" />
+                  <label className={labelCls}>Valid To</label>
+                  <input name="validTo" type="date" value={form.validTo} onChange={handleFormChange} className={inputCls} />
                 </div>
                 <div>
-                  <label className={labelCls}>Weight Slip</label>
-                  <input name="weightSlipNo" value={form.weightSlipNo} onChange={handleFormChange} className={inputCls} />
-                </div>
-                <div>
-                  <label className={labelCls}>Payment</label>
-                  <select name="paymentMode" value={form.paymentMode} onChange={handleFormChange} className={inputCls}>
-                    {PAY_MODES.map(m => <option key={m} value={m}>{m}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className={labelCls}>Ref / UTR</label>
-                  <input name="paymentRef" value={form.paymentRef} onChange={handleFormChange} className={inputCls} />
-                </div>
-                <div>
-                  <label className={labelCls}>Date</label>
-                  <input name="date" type="date" value={form.date} onChange={handleFormChange} className={inputCls} />
+                  <label className={labelCls}>Est. Qty</label>
+                  <input name="quantity" type="number" step="any" value={form.quantity} onChange={handleFormChange} className={inputCls} placeholder="0 = open" />
                 </div>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -208,16 +217,10 @@ export default function DirectSales() {
                   <label className={labelCls}>Remarks</label>
                   <input name="remarks" value={form.remarks} onChange={handleFormChange} className={inputCls} />
                 </div>
-                <div className="flex items-end">
-                  <label className="flex items-center gap-2 text-xs cursor-pointer">
-                    <input name="isPaid" type="checkbox" checked={form.isPaid} onChange={handleFormChange} />
-                    <span>Paid</span>
-                  </label>
-                </div>
-                <div className="flex items-end">
+                <div className="col-span-2 flex items-end">
                   <button onClick={handleSave} disabled={saving}
-                    className="px-4 py-1.5 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50 w-full">
-                    {saving ? 'Saving...' : 'Save Entry'}
+                    className="px-4 py-1.5 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">
+                    {saving ? 'Saving...' : editId ? 'Update Order' : 'Create Order'}
                   </button>
                 </div>
               </div>
@@ -225,38 +228,34 @@ export default function DirectSales() {
           </div>
         )}
 
-        {/* Filter Bar */}
-        <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6 flex flex-wrap items-end gap-3">
-          <div>
-            <label className={labelCls}>From</label>
-            <input type="date" value={from} onChange={e => setFrom(e.target.value)} className={inputCls} />
-          </div>
-          <div>
-            <label className={labelCls}>To</label>
-            <input type="date" value={to} onChange={e => setTo(e.target.value)} className={inputCls} />
-          </div>
+        {/* Status Filter Tabs */}
+        <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6 flex items-center gap-4">
+          {['ALL', 'ACTIVE', 'EXPIRED', 'CLOSED'].map(s => (
+            <button key={s} onClick={() => setStatusFilter(s)}
+              className={`text-[11px] font-bold uppercase tracking-widest pb-0.5 ${statusFilter === s ? 'text-blue-700 border-b-2 border-blue-600' : 'text-slate-400 hover:text-slate-600'}`}>
+              {s}
+            </button>
+          ))}
         </div>
 
         {/* KPI Strip */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
-          <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-blue-500">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Today Sales</div>
-            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{stats.todayCount}</div>
-            <div className="text-[10px] text-slate-400">{fmtCurrency(stats.todayAmount)}</div>
-          </div>
           <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-green-500">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Amount</div>
-            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmtCurrency(stats.totalAmount)}</div>
-            <div className="text-[10px] text-slate-400">{stats.totalEntries} entries</div>
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Active Orders</div>
+            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{stats.active}</div>
           </div>
-          <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-red-500">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Unpaid</div>
-            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{stats.unpaidCount}</div>
-            <div className="text-[10px] text-slate-400">{fmtCurrency(stats.unpaidAmount)}</div>
+          <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-blue-500">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Orders</div>
+            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{stats.total}</div>
           </div>
-          <div className="bg-white px-4 py-3 border-l-4 border-l-amber-500">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Period Entries</div>
-            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{stats.totalEntries}</div>
+          <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-amber-500">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Expiring Soon</div>
+            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{stats.expiringSoon}</div>
+            <div className="text-[10px] text-slate-400">Within 2 days</div>
+          </div>
+          <div className="bg-white px-4 py-3 border-l-4 border-l-indigo-500">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Supplied</div>
+            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmtCurrency(stats.totalSuppliedAmt)}</div>
           </div>
         </div>
 
@@ -266,60 +265,65 @@ export default function DirectSales() {
             <thead>
               <tr className="bg-slate-800 text-white">
                 <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">#</th>
-                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Date</th>
                 <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Buyer</th>
                 <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Product</th>
-                <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Qty</th>
-                <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Unit</th>
                 <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Rate</th>
-                <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Amount</th>
-                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Vehicle</th>
-                <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Payment</th>
-                <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest"></th>
+                <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Unit</th>
+                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Valid From</th>
+                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Valid To</th>
+                <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Status</th>
+                <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Supplied</th>
+                <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {sales.length === 0 && (
-                <tr><td colSpan={11} className="px-3 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">No sales found</td></tr>
+              {orders.length === 0 && (
+                <tr><td colSpan={10} className="px-3 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">No orders found</td></tr>
               )}
-              {sales.map((s, i) => (
-                <tr key={s.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
-                  <td className="px-3 py-1.5 text-slate-400 border-r border-slate-100 font-mono">{s.entryNo}</td>
-                  <td className="px-3 py-1.5 text-slate-700 border-r border-slate-100 whitespace-nowrap">{fmtDate(s.date)}</td>
-                  <td className="px-3 py-1.5 text-slate-800 font-medium border-r border-slate-100">
-                    {s.customer?.name || s.buyerName}
-                    {s.customer?.gstNo && <div className="text-[9px] text-slate-400">{s.customer.gstNo}</div>}
-                  </td>
-                  <td className="px-3 py-1.5 border-r border-slate-100">
-                    <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-slate-300 bg-slate-50 text-slate-600">{s.productName}</span>
-                  </td>
-                  <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-800 border-r border-slate-100">{s.quantity.toLocaleString('en-IN')}</td>
-                  <td className="px-3 py-1.5 text-center text-slate-500 border-r border-slate-100">{s.unit}</td>
-                  <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-600 border-r border-slate-100">{fmtCurrency(s.rate)}</td>
-                  <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-800 font-medium border-r border-slate-100">{fmtCurrency(s.amount)}</td>
-                  <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100">{s.vehicleNo || '--'}</td>
-                  <td className="px-3 py-1.5 text-center border-r border-slate-100">
-                    <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${s.isPaid ? 'border-green-400 bg-green-50 text-green-700' : 'border-red-400 bg-red-50 text-red-700'}`}>
-                      {s.isPaid ? s.paymentMode : 'UNPAID'}
-                    </span>
-                  </td>
-                  <td className="px-3 py-1.5 text-center">
-                    <button onClick={() => handleDelete(s.id)} className="text-red-400 hover:text-red-600"><Trash2 size={13} /></button>
-                  </td>
-                </tr>
-              ))}
+              {orders.map((o, i) => {
+                const daysLeft = o.validTo ? Math.ceil((new Date(o.validTo).getTime() - Date.now()) / 86400000) : null;
+                return (
+                  <tr key={o.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                    <td className="px-3 py-1.5 text-slate-400 border-r border-slate-100 font-mono">{o.entryNo}</td>
+                    <td className="px-3 py-1.5 text-slate-800 font-medium border-r border-slate-100">
+                      {o.customer?.name || o.buyerName}
+                      {o.customer?.gstNo && <div className="text-[9px] text-slate-400">{o.customer.gstNo}</div>}
+                    </td>
+                    <td className="px-3 py-1.5 border-r border-slate-100">
+                      <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-slate-300 bg-slate-50 text-slate-600">{o.productName}</span>
+                    </td>
+                    <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-800 font-medium border-r border-slate-100">{fmtCurrency(o.rate)}</td>
+                    <td className="px-3 py-1.5 text-center text-slate-500 border-r border-slate-100">{o.unit}</td>
+                    <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100 whitespace-nowrap">{fmtDate(o.validFrom)}</td>
+                    <td className="px-3 py-1.5 border-r border-slate-100 whitespace-nowrap">
+                      <span className="text-slate-600">{fmtDate(o.validTo)}</span>
+                      {daysLeft !== null && daysLeft >= 0 && daysLeft <= 2 && o.status === 'ACTIVE' && (
+                        <span className="text-[9px] text-amber-600 font-bold ml-1">{daysLeft}d left</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-1.5 text-center border-r border-slate-100">
+                      <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${STATUS_COLORS[o.status] || 'border-slate-300 bg-slate-50 text-slate-600'}`}>
+                        {o.status}
+                      </span>
+                    </td>
+                    <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-700 border-r border-slate-100">
+                      {o.totalSuppliedQty > 0 ? `${o.totalSuppliedQty.toLocaleString('en-IN')} ${o.unit}` : '--'}
+                    </td>
+                    <td className="px-3 py-1.5 text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <button onClick={() => openEdit(o)} className="text-slate-400 hover:text-blue-600" title="Edit"><Edit2 size={13} /></button>
+                        {o.status === 'ACTIVE' && (
+                          <button onClick={() => handleStatusChange(o.id, 'CLOSED')} className="text-[9px] text-slate-400 hover:text-red-600 border border-slate-200 px-1" title="Close">CLOSE</button>
+                        )}
+                        {o.status !== 'ACTIVE' && (
+                          <button onClick={() => handleDelete(o.id)} className="text-red-400 hover:text-red-600" title="Delete"><Trash2 size={13} /></button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
-            {sales.length > 0 && (
-              <tfoot>
-                <tr className="bg-slate-800 text-white font-semibold">
-                  <td className="px-3 py-2 border-r border-slate-700" colSpan={7}>
-                    <span className="text-[10px] uppercase tracking-widest">Total</span>
-                  </td>
-                  <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-700">{fmtCurrency(stats.totalAmount)}</td>
-                  <td className="px-3 py-2 border-r border-slate-700" colSpan={3}></td>
-                </tr>
-              </tfoot>
-            )}
           </table>
         </div>
       </div>

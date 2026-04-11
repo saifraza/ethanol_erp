@@ -6,61 +6,92 @@ import { asyncHandler } from '../shared/middleware';
 const router = Router();
 router.use(authenticate as any);
 
-// GET / — list with optional date filter
+// GET / — list orders with optional filters
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
-  const from = req.query.from as string | undefined;
-  const to = req.query.to as string | undefined;
+  const status = req.query.status as string | undefined;
+  const product = req.query.product as string | undefined;
 
   const where: any = {};
-  if (from || to) {
-    where.date = {};
-    if (from) where.date.gte = new Date(from);
-    if (to) where.date.lte = new Date(to + 'T23:59:59.999Z');
-  }
+  if (status && status !== 'ALL') where.status = status;
+  if (product) where.productName = product;
 
-  const sales = await prisma.directSale.findMany({
+  const orders = await prisma.directSale.findMany({
     where,
     orderBy: { date: 'desc' },
     take: 500,
     select: {
       id: true, entryNo: true, date: true,
       customerId: true, buyerName: true, buyerPhone: true, buyerAddress: true,
-      productName: true, quantity: true, unit: true, rate: true, amount: true,
-      vehicleNo: true, weightSlipNo: true, grossWeight: true, tareWeight: true, netWeight: true,
-      paymentMode: true, paymentRef: true, isPaid: true,
+      productName: true, rate: true, unit: true,
+      validFrom: true, validTo: true, status: true,
+      quantity: true, totalSuppliedQty: true, totalSuppliedAmt: true,
       remarks: true, createdAt: true,
       customer: { select: { id: true, name: true, gstNo: true, phone: true, state: true } },
     },
   });
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const todaySales = sales.filter(s => new Date(s.date) >= today);
-  const totalToday = todaySales.reduce((s, r) => s + r.amount, 0);
-  const totalAll = sales.reduce((s, r) => s + r.amount, 0);
-  const unpaid = sales.filter(s => !s.isPaid);
+  // Auto-expire past-due ACTIVE orders
+  const now = new Date();
+  const expired: string[] = [];
+  for (const o of orders) {
+    if (o.status === 'ACTIVE' && o.validTo && new Date(o.validTo) < now) {
+      expired.push(o.id);
+      o.status = 'EXPIRED';
+    }
+  }
+  if (expired.length > 0) {
+    await prisma.directSale.updateMany({
+      where: { id: { in: expired } },
+      data: { status: 'EXPIRED' },
+    });
+  }
+
+  const active = orders.filter(o => o.status === 'ACTIVE');
+  const twoDaysFromNow = new Date(now.getTime() + 2 * 86400000);
+  const expiringSoon = active.filter(o => o.validTo && new Date(o.validTo) <= twoDaysFromNow);
 
   res.json({
-    sales,
+    orders,
     stats: {
-      totalEntries: sales.length,
-      todayCount: todaySales.length,
-      todayAmount: totalToday,
-      totalAmount: totalAll,
-      unpaidCount: unpaid.length,
-      unpaidAmount: unpaid.reduce((s, r) => s + r.amount, 0),
+      total: orders.length,
+      active: active.length,
+      expiringSoon: expiringSoon.length,
+      totalSuppliedAmt: orders.reduce((s, o) => s + (o.totalSuppliedAmt || 0), 0),
     },
   });
 }));
 
-// POST / — create entry
+// GET /active — active orders for a product (for weighbridge matching)
+router.get('/active', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const product = req.query.product as string | undefined;
+  const now = new Date();
+
+  const where: any = {
+    status: 'ACTIVE',
+    validFrom: { lte: now },
+    OR: [{ validTo: null }, { validTo: { gte: now } }],
+  };
+  if (product) where.productName = product;
+
+  const orders = await prisma.directSale.findMany({
+    where,
+    orderBy: { date: 'desc' },
+    select: {
+      id: true, entryNo: true, buyerName: true, productName: true,
+      rate: true, unit: true, validFrom: true, validTo: true,
+      quantity: true, totalSuppliedQty: true,
+      customer: { select: { id: true, name: true } },
+    },
+  });
+
+  res.json({ orders });
+}));
+
+// POST / — create new scrap sales order
 router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const b = req.body;
-  const quantity = parseFloat(b.quantity) || 0;
-  const rate = parseFloat(b.rate) || 0;
-  const amount = quantity * rate;
 
-  // Auto-fill buyer fields from Customer master if customerId provided
+  // Auto-fill buyer from Customer master
   let buyerName = b.buyerName || '';
   let buyerPhone = b.buyerPhone || null;
   let buyerAddress = b.buyerAddress || null;
@@ -76,7 +107,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     }
   }
 
-  const sale = await prisma.directSale.create({
+  const order = await prisma.directSale.create({
     data: {
       date: b.date ? new Date(b.date) : new Date(),
       customerId: b.customerId || null,
@@ -84,27 +115,21 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       buyerPhone,
       buyerAddress,
       productName: b.productName,
-      quantity,
+      rate: parseFloat(b.rate) || 0,
       unit: b.unit || 'KG',
-      rate,
-      amount,
-      vehicleNo: b.vehicleNo || null,
-      weightSlipNo: b.weightSlipNo || null,
-      grossWeight: b.grossWeight ? parseFloat(b.grossWeight) : null,
-      tareWeight: b.tareWeight ? parseFloat(b.tareWeight) : null,
-      netWeight: b.netWeight ? parseFloat(b.netWeight) : null,
-      paymentMode: b.paymentMode || 'CASH',
-      paymentRef: b.paymentRef || null,
-      isPaid: b.isPaid !== undefined ? b.isPaid : true,
+      quantity: parseFloat(b.quantity) || 0,
+      validFrom: b.validFrom ? new Date(b.validFrom) : new Date(),
+      validTo: b.validTo ? new Date(b.validTo) : null,
+      status: 'ACTIVE',
       remarks: b.remarks || null,
       userId: req.user!.id,
     },
   });
 
-  res.status(201).json(sale);
+  res.status(201).json(order);
 }));
 
-// PUT /:id — update
+// PUT /:id — update order
 router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
   const b = req.body;
   const data: any = {};
@@ -112,16 +137,20 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
   if (b.buyerName !== undefined) data.buyerName = b.buyerName;
   if (b.buyerPhone !== undefined) data.buyerPhone = b.buyerPhone;
   if (b.buyerAddress !== undefined) data.buyerAddress = b.buyerAddress;
-  if (b.isPaid !== undefined) data.isPaid = b.isPaid;
-  if (b.paymentMode !== undefined) data.paymentMode = b.paymentMode;
-  if (b.paymentRef !== undefined) data.paymentRef = b.paymentRef;
+  if (b.productName !== undefined) data.productName = b.productName;
+  if (b.rate !== undefined) data.rate = parseFloat(b.rate) || 0;
+  if (b.unit !== undefined) data.unit = b.unit;
+  if (b.quantity !== undefined) data.quantity = parseFloat(b.quantity) || 0;
+  if (b.validFrom !== undefined) data.validFrom = new Date(b.validFrom);
+  if (b.validTo !== undefined) data.validTo = b.validTo ? new Date(b.validTo) : null;
+  if (b.status !== undefined) data.status = b.status;
   if (b.remarks !== undefined) data.remarks = b.remarks;
 
-  const sale = await prisma.directSale.update({
+  const order = await prisma.directSale.update({
     where: { id: req.params.id },
     data,
   });
-  res.json(sale);
+  res.json(order);
 }));
 
 // DELETE /:id
