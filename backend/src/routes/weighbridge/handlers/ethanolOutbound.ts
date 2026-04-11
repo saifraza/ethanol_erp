@@ -139,17 +139,15 @@ async function handleEthanolOutboundInner(w: WeighmentInput, _ctx: PushContext):
           shipToPincode: w.ship_to_pincode || null,
         },
       });
-      if (grossKg > 0 && tareKg > 0) {
+      if (tareKg > 0 || grossKg > 0) {
+        const hasBoth = grossKg > 0 && tareKg > 0;
         await tx.dispatchTruck.update({
           where: { id: newTruck.id },
           data: {
-            weightTare: tareKg,
-            weightGross: grossKg,
-            weightNet: grossKg - tareKg,
-            tareTime: tareTimeVal,
-            grossTime: grossTimeVal,
-            status: 'GROSS_WEIGHED',
-            // Codex audit fix: persist all dispatch fields, not just BL/strength/seal
+            ...(tareKg > 0 ? { weightTare: tareKg, tareTime: tareTimeVal } : {}),
+            ...(grossKg > 0 ? { weightGross: grossKg, grossTime: grossTimeVal } : {}),
+            ...(hasBoth ? { weightNet: grossKg - tareKg } : {}),
+            status: hasBoth ? 'GROSS_WEIGHED' : 'TARE_WEIGHED',
             ...(w.quantity_bl != null ? { quantityBL: w.quantity_bl } : {}),
             ...(w.ethanol_strength != null ? { strength: w.ethanol_strength } : {}),
             ...(w.seal_no ? { sealNo: w.seal_no } : {}),
@@ -229,18 +227,17 @@ async function handleEthanolOutboundInner(w: WeighmentInput, _ctx: PushContext):
     } else if (dispatchTruck.sourceWbId !== w.id) {
       console.warn(`[WB-PUSH][ETHANOL] ${w.vehicle_no} dispatchTruck.sourceWbId=${dispatchTruck.sourceWbId} (not w.id=${w.id}); updating weights only, leaving sourceWbId untouched.`);
     }
+    const hasBoth = grossKg > 0 && tareKg > 0;
     const updated = await tx.dispatchTruck.updateMany({
       where: {
         id: dispatchTruck.id,
         status: { in: ['GATE_IN', 'TARE_WEIGHED'] },
       },
       data: {
-        weightTare: tareKg,
-        weightGross: grossKg,
-        weightNet: grossKg - tareKg,
-        tareTime: tareTimeVal,
-        grossTime: grossTimeVal,
-        status: 'GROSS_WEIGHED',
+        ...(tareKg > 0 ? { weightTare: tareKg, tareTime: tareTimeVal } : {}),
+        ...(grossKg > 0 ? { weightGross: grossKg, grossTime: grossTimeVal } : {}),
+        ...(hasBoth ? { weightNet: grossKg - tareKg } : {}),
+        status: hasBoth ? 'GROSS_WEIGHED' : (tareKg > 0 ? 'TARE_WEIGHED' : 'GATE_IN'),
         ...(canSetSourceWbId ? { sourceWbId: w.id } : {}),
         // NOTE: quantityKL was removed here on 2026-04-07 — DispatchTruck schema only has
         // quantityBL, not quantityKL (those live on EthanolLifting / EthanolContract).
