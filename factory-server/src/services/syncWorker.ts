@@ -35,18 +35,8 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
       OR: [
         { status: { in: ['GATE_ENTRY', 'COMPLETE'] } },
         { status: 'FIRST_DONE', direction: 'INBOUND', labStatus: { not: 'PENDING' } },
-        {
-          status: 'FIRST_DONE',
-          direction: 'OUTBOUND',
-          OR: [
-            { materialCategory: 'DDGS' },
-            { materialCategory: 'SCRAP' },
-            { materialName: { contains: 'ddgs', mode: 'insensitive' } },
-            { materialName: { contains: 'wdgs', mode: 'insensitive' } },
-            { materialName: { contains: 'distillers', mode: 'insensitive' } },
-            { materialName: { contains: 'scrap', mode: 'insensitive' } },
-          ],
-        },
+        // Push ALL FIRST_DONE outbound (ethanol, DDGS, scrap, fuel, etc.)
+        { status: 'FIRST_DONE', direction: 'OUTBOUND' },
       ],
     },
     take: 20,
