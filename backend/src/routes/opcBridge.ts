@@ -3,7 +3,7 @@ import { authenticate, AuthRequest } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { z } from 'zod';
 import crypto from 'crypto';
-import { tgSendGroup } from '../services/telegramClient';
+import { broadcastToGroup } from '../services/messagingGateway';
 import { shouldAlarmForTag, TEMP_TAG_TO_FERMENTER } from '../services/fermenterPhaseDetector';
 
 const router = Router();
@@ -162,7 +162,7 @@ async function checkAlarms(opc: any, readings: { tag: string; property: string; 
       const mm = String(ist.getUTCMinutes()).padStart(2, '0');
       const time = `${hh % 12 || 12}:${mm} ${hh >= 12 ? 'PM' : 'AM'}`;
       const msg = `⚠️ *OPC ALARM* (${time} IST)\n\n${alerts.join('\n')}`;
-      await tgSendGroup(groupChatId, msg, 'opc-alarm');
+      await broadcastToGroup(groupChatId, msg, 'opc-alarm');
       console.log(`[OPC] Sent ${alerts.length} alarm(s) to Telegram group`);
     }
   }
@@ -907,7 +907,7 @@ router.post('/heartbeat', validate(heartbeatSchema), asyncHandler(async (req: Au
       const settings = await prismaMain.settings.findFirst();
       const groupChatId = (settings as any)?.telegramGroupChatId;
       if (groupChatId) {
-        await tgSendGroup(groupChatId, '⚠️ *FACTORY PC SLEEP ENABLED*\n\nSomeone re-enabled sleep on the factory PC. OPC data will be lost at night.\n\nRun: `powercfg /change standby-timeout-ac 0`', 'opc-health').catch(() => {});
+        await broadcastToGroup(groupChatId, '⚠️ *FACTORY PC SLEEP ENABLED*\n\nSomeone re-enabled sleep on the factory PC. OPC data will be lost at night.\n\nRun: `powercfg /change standby-timeout-ac 0`', 'opc-health').catch(() => {});
       }
     } catch { /* ignore */ }
   } else if (data.system.sleepDisabled) {
@@ -922,7 +922,7 @@ router.post('/heartbeat', validate(heartbeatSchema), asyncHandler(async (req: Au
       const settings = await prismaMain.settings.findFirst();
       const groupChatId = (settings as any)?.telegramGroupChatId;
       if (groupChatId) {
-        await tgSendGroup(groupChatId, `⚠️ *OPC SYNC QUEUE BUILDING UP*\n\n${data.queueDepth} readings queued. Cloud sync may be failing.`, 'opc-health').catch(() => {});
+        await broadcastToGroup(groupChatId, `⚠️ *OPC SYNC QUEUE BUILDING UP*\n\n${data.queueDepth} readings queued. Cloud sync may be failing.`, 'opc-health').catch(() => {});
       }
     } catch { /* ignore */ }
   } else if (data.queueDepth <= 10) {

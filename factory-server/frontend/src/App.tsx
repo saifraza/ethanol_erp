@@ -7,7 +7,6 @@ import GrossWeighment from './pages/GrossWeighment';
 import TareWeighment from './pages/TareWeighment';
 import Weighment from './pages/Weighment';
 import History from './pages/History';
-import WeighmentHistory from './pages/WeighmentHistory';
 import AdminDashboard from './pages/AdminDashboard';
 import UserManagement from './pages/UserManagement';
 import Settings from './pages/Settings';
@@ -63,7 +62,6 @@ function AppRoutes() {
         } />
         <Route path="/weighment" element={<Weighment />} />
         <Route path="/history" element={<History />} />
-        <Route path="/weighment-history" element={<WeighmentHistory />} />
         <Route path="/dashboard" element={
           isAdmin(user.role) ? <AdminDashboard /> : <Navigate to={homeFor(user.role)} />
         } />

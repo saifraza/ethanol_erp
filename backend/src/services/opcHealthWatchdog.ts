@@ -11,7 +11,7 @@
  *    but lastScanCompletedAt >10min old → bridge is alive but not scanning → alert
  */
 
-import { tgSendGroup } from './telegramClient';
+import { broadcastToGroup } from './messagingGateway';
 
 const CHECK_INTERVAL_MS = 3 * 60 * 1000; // 3 minutes
 const OFFLINE_THRESHOLD_MS = 3 * 60 * 1000; // 3 min without heartbeat = offline
@@ -116,7 +116,7 @@ async function sendAlert(prisma: any, message: string): Promise<boolean> {
   let any = false;
   for (const chat of chats) {
     try {
-      await tgSendGroup(chat, message, 'opc-health');
+      await broadcastToGroup(chat, message, 'opc-health');
       any = true;
     } catch (err) {
       console.error(`[OPC Watchdog] Alert send failed to ${chat}:`, (err as Error).message);
@@ -294,7 +294,7 @@ async function sendDailyGapSummary(prisma: any): Promise<void> {
     if (!groupChatId) return;
 
     if (gapHours.length === 0) {
-      await tgSendGroup(groupChatId, `✅ *OPC Daily Report*\n\n0 data gaps in last 24h. All systems operational.`, 'opc-health').catch(() => {});
+      await broadcastToGroup(groupChatId, `✅ *OPC Daily Report*\n\n0 data gaps in last 24h. All systems operational.`, 'opc-health').catch(() => {});
     } else {
       // Group consecutive gaps
       interface GapRange { from: Date; to: Date }
@@ -309,7 +309,7 @@ async function sendDailyGapSummary(prisma: any): Promise<void> {
       }
       const totalMin = gapHours.length * 60;
       const gapList = gaps.map(g => `  ${fmtIST(g.from)} — ${fmtIST(g.to)}`).join('\n');
-      await tgSendGroup(
+      await broadcastToGroup(
         groupChatId,
         `⚠️ *OPC Daily Report*\n\n${gaps.length} gap(s) detected in last 24h\nTotal lost: ~${totalMin} minutes\n\n${gapList}`,
         'opc-health'

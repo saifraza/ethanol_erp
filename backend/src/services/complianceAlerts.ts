@@ -7,7 +7,7 @@
  */
 
 import prisma from '../config/prisma';
-import { tgSendGroup } from './telegramClient';
+import { broadcastToGroup } from './messagingGateway';
 
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // Every 6 hours
 let alertInterval: NodeJS.Timeout | null = null;
@@ -109,7 +109,7 @@ async function checkCompliance(): Promise<void> {
 
     const msg = `⚖️ *COMPLIANCE ALERT* — ${timeStr}\n\n${lines.join('\n')}\n\n_${overdueItems.length} overdue, ${expiringItems.length} expiring_`;
 
-    await tgSendGroup(groupChatId, msg, 'compliance-alert');
+    await broadcastToGroup(groupChatId, msg, 'compliance-alert');
     console.log(`[Compliance] Sent alert: ${overdueItems.length} overdue, ${expiringItems.length} expiring`);
   } catch (err) {
     console.error('[Compliance] Alert check failed:', (err as Error).message);

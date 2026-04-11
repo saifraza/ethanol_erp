@@ -12,6 +12,7 @@ import prisma from '../config/prisma';
 import { z } from 'zod';
 import { tgSend, tgSendGroup, tgStatus } from '../services/telegramClient';
 import { initTelegram, stopPolling } from '../services/telegramBot';
+import { broadcast } from '../services/messagingGateway';
 
 const router = Router();
 
@@ -92,29 +93,9 @@ const sendReportSchema = z.object({
 
 router.post('/send-report', validate(sendReportSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const { module, message } = req.body;
-  const settings = await prisma.settings.findFirst();
-  const routing = getModuleRouting(settings);
-  const target = routing[module] || 'group1';
-
-  if (target === 'private') {
-    const chatIds = ((settings as any)?.telegramPrivateChatIds || '')
-      .split(',').map((p: string) => p.trim()).filter((p: string) => p.length > 0);
-    const results = [];
-    for (const id of chatIds) {
-      results.push(await tgSend(id, message, module));
-    }
-    res.json({ success: results.some(r => r.success), target: 'private', sent: results.length });
-  } else {
-    const chatId = target === 'group2'
-      ? (settings as any)?.telegramGroup2ChatId
-      : (settings as any)?.telegramGroupChatId;
-    if (!chatId) {
-      res.status(400).json({ success: false, error: `No Telegram ${target} configured` });
-      return;
-    }
-    const result = await tgSendGroup(chatId, message, module);
-    res.json({ ...result, target, sent: result.success ? 1 : 0 });
-  }
+  // Broadcast to both Telegram + WhatsApp via gateway
+  const result = await broadcast(module, message);
+  res.json({ success: result.telegram.success, telegram: result.telegram, whatsapp: result.whatsapp });
 }));
 
 // ── Config / Routing ──

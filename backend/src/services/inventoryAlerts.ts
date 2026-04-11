@@ -6,7 +6,7 @@
  */
 
 import prisma from '../config/prisma';
-import { tgSendGroup } from './telegramClient';
+import { broadcastToGroup } from './messagingGateway';
 
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // Every 6 hours
 let alertInterval: NodeJS.Timeout | null = null;
@@ -40,7 +40,7 @@ async function checkLowStock(): Promise<void> {
 
     const msg = `⚠️ *LOW STOCK ALERT* — ${timeStr}\n\n${lines.join('\n\n')}${lowStock.length > 15 ? `\n\n_...and ${lowStock.length - 15} more_` : ''}\n\n_${lowStock.length} item(s) below minimum stock level_`;
 
-    await tgSendGroup(groupChatId, msg, 'inventory-alert');
+    await broadcastToGroup(groupChatId, msg, 'inventory-alert');
     console.log(`[Inventory] Sent low stock alert: ${lowStock.length} items`);
   } catch (err) {
     console.error('[Inventory] Alert check failed:', (err as Error).message);

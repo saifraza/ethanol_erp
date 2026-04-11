@@ -2,7 +2,7 @@ import { Router, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
-import { sendTelegramMessage } from '../services/telegramBot';
+import { broadcastToPrivate } from '../services/messagingGateway';
 
 const router = Router();
 router.use(authenticate as any);
@@ -154,11 +154,10 @@ async function pushTelegramNotification(shiftDate: string, entry: any): Promise<
     `*Today Total: ${totalBags} bags (${totalMT.toFixed(2)} MT)*`,
   ].filter(Boolean).join('\n');
 
-  for (const chatId of chatIds) {
-    sendTelegramMessage(chatId, msg).catch(err =>
-      console.error(`[DDGS TG] Failed for ${chatId}:`, err.message)
-    );
-  }
+  // Broadcast to all configured private recipients (Telegram + WhatsApp)
+  broadcastToPrivate(msg, 'ddgs').catch(err =>
+    console.error(`[DDGS] Broadcast failed:`, (err as Error).message)
+  );
 }
 
 export default router;

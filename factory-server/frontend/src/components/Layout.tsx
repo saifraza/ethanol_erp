@@ -18,7 +18,6 @@ const NAV_ITEMS = [
   { to: '/tare', label: 'Tare Weighment', roles: ['TARE_WB'], group: 'operations' },
   { to: '/weighment', label: "Today's Weighments", roles: ['ALL'], group: 'operations' },
   { to: '/history', label: 'Search History', roles: ['ALL'], group: 'operations' },
-  { to: '/weighment-history', label: 'Weighment History', roles: ['ALL'], group: 'operations' },
   { to: '/dashboard', label: 'Dashboard', roles: [], group: 'admin' },
   { to: '/users', label: 'Users', roles: [], group: 'admin' },
   { to: '/settings', label: 'Settings', roles: [], group: 'admin' },

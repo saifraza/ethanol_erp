@@ -50,18 +50,18 @@ pushd factory-server > /dev/null
 popd > /dev/null
 ok "local build clean"
 
-# ---------- 2. Safety: verify server + Oracle/WtService ----------
+# ---------- 2. Safety: verify server + Oracle ----------
 say "Verifying factory server is reachable..."
 $SSH 'echo connected' > /dev/null || die "cannot SSH to factory ($FACTORY_HOST). Check Tailscale."
 ok "SSH OK"
 
-say "Verifying Oracle + WtService are still healthy..."
-SERVICES=$($SSH 'sc query OracleServiceXE | findstr STATE & sc query OracleXETNSListener | findstr STATE & sc query WtService | findstr STATE' 2>&1 || true)
+say "Verifying Oracle services are still healthy..."
+SERVICES=$($SSH 'sc query OracleServiceXE | findstr STATE & sc query OracleXETNSListener | findstr STATE' 2>&1 || true)
 echo "$SERVICES"
 if ! echo "$SERVICES" | grep -q "RUNNING"; then
-  die "Critical Windows service is NOT running. Aborting deploy — investigate before touching factory. Services checked: OracleServiceXE, OracleXETNSListener, WtService"
+  die "Critical Windows service is NOT running. Aborting deploy — investigate before touching factory. Services checked: OracleServiceXE, OracleXETNSListener"
 fi
-ok "Oracle + WtService running"
+ok "Oracle services running"
 
 # ---------- 3. Copy artifacts ----------
 say "Copying dist/ to server..."
@@ -81,7 +81,7 @@ $SCP factory-server/package-lock.json ${FACTORY_USER}@${FACTORY_HOST}:${REMOTE_D
 ok "files copied"
 
 # ---------- 4. Kill node (required so Windows releases Prisma DLL) ----------
-say "Stopping factory node (NOT Oracle, NOT WtService)..."
+say "Stopping factory node (NOT Oracle)..."
 $SSH 'taskkill /F /IM node.exe & timeout /t 3 /nobreak >nul & exit 0' 2>&1 | grep -v "^$" || true
 ok "node stopped"
 

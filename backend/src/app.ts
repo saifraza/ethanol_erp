@@ -120,6 +120,7 @@ import tankDipsRoutes from './routes/tankDips';
 import meshBioReportRoutes from './routes/meshBioReport';
 import autoCollectRoutes from './routes/autoCollect';
 import telegramRoutes from './routes/telegram';
+import whatsappRoutes from './routes/whatsapp';
 // Webhook delivery (cloud → factory server)
 import webhookRoutes from './routes/webhooks';
 // Document Vault & RAG Search
@@ -292,6 +293,7 @@ app.use('/api/tank-dips', tankDipsRoutes);
 app.use('/api/mesh-bio-report', meshBioReportRoutes);
 app.use('/api/auto-collect', autoCollectRoutes);
 app.use('/api/telegram', telegramRoutes);
+app.use('/api/whatsapp', whatsappRoutes);
 // Webhook delivery (cloud → factory server)
 app.use('/api/webhooks', authenticate, webhookRoutes);
 // Document Vault & RAG Search (LightRAG microservice)

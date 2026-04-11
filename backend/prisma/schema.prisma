@@ -104,6 +104,16 @@ model Settings {
   telegramGroup2Name     String? // Group 2 name (display only)
   telegramPrivateChatIds String? // Comma-separated private chat IDs
   telegramModuleRouting  String? // JSON: { "module": "group1"|"group2"|"private" }
+  // WhatsApp (outbound push via Baileys worker)
+  whatsappEnabled        Boolean  @default(false)
+  whatsappWorkerUrl      String?  // e.g. https://mspil-whatsapp-production.up.railway.app
+  whatsappWorkerApiKey   String?  // shared secret for x-api-key header
+  whatsappGroupJid       String?  // Primary group JID (120363xxx@g.us)
+  whatsappGroupName      String?
+  whatsappGroup2Jid      String?  // Secondary group JID
+  whatsappGroup2Name     String?
+  whatsappPrivatePhones  String?  // Comma-separated: 91xxxxxxxxxx,91yyyyyyyyyy
+  whatsappModuleRouting  String?  // JSON: { "module": "group1"|"group2"|"private" }
   opcAlarmsEnabled       Boolean  @default(true) // OPC alarm toggle (persists across deploys)
   opcWatchdogState       String? // JSON state for opcHealthWatchdog (survives Railway restarts) — added 2026-04-08
   createdAt              DateTime @default(now())
@@ -2758,6 +2768,20 @@ model TelegramMessage {
   timestamp DateTime @default(now())
 
   @@index([chatId, timestamp])
+  @@index([module, timestamp])
+  @@index([timestamp])
+}
+
+model WhatsAppMessage {
+  id        String   @id @default(cuid())
+  direction String   // "outgoing" (for now)
+  recipient String   // phone or group JID
+  message   String   @db.Text
+  module    String?
+  status    String   @default("sent") // sent, failed
+  timestamp DateTime @default(now())
+
+  @@index([recipient, timestamp])
   @@index([module, timestamp])
   @@index([timestamp])
 }
