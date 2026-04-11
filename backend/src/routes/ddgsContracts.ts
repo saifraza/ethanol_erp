@@ -255,7 +255,7 @@ router.get('/:id/supply-summary', asyncHandler(async (req: AuthRequest, res: Res
         include: {
           invoice: {
             select: {
-              id: true, invoiceNo: true, totalAmount: true, paidAmount: true, balanceAmount: true, status: true,
+              id: true, invoiceNo: true, remarks: true, totalAmount: true, paidAmount: true, balanceAmount: true, status: true,
               amount: true, quantity: true, rate: true, unit: true, productName: true,
               gstPercent: true, gstAmount: true, cgstAmount: true, sgstAmount: true, igstAmount: true,
               supplyType: true, freightCharge: true,
