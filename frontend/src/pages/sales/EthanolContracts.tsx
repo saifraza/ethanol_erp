@@ -769,7 +769,7 @@ const EthanolContracts: React.FC = () => {
                                     {/* Active trucks at site (not yet released) */}
                                     {activeTrucks.map((t: any) => (
                                       <tr key={`truck-${t.id}`} className={`border-b border-orange-200 ${t.status === 'GROSS_WEIGHED' ? 'bg-green-50/80' : 'bg-orange-50/80'}`}>
-                                        <td className="px-2 py-1.5 border-r border-orange-100 whitespace-nowrap">{t.gateInTime ? new Date(t.gateInTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '-'}</td>
+                                        <td className="px-2 py-1.5 border-r border-orange-100 whitespace-nowrap">{(t.gateInTime || t.date) ? new Date(t.gateInTime || t.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '-'}</td>
                                         <td className="px-2 py-1.5 border-r border-orange-100 font-medium">
                                           <button onClick={(e) => { e.stopPropagation(); setTruckDetail({ truck: t, contract: c }); }} className="text-blue-700 underline hover:text-blue-900">{t.vehicleNo}</button>
                                         </td>

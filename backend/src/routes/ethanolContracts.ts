@@ -846,7 +846,7 @@ router.get('/:id/liftings/:liftingId/gate-pass-pdf', asyncHandler(async (req: Au
     const pdfBuffer = await renderDocumentPdf({
       docType: 'ETHANOL_GATE_PASS',
       data: {
-        gatePassNo: lifting.invoiceNo || '-',
+        gatePassNo: lifting.challanNo || lifting.rstNo || '-',
         date: lifting.liftingDate,
         vehicleNo: lifting.vehicleNo,
         driverName: lifting.driverName,
