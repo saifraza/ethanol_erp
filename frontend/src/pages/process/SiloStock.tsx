@@ -149,15 +149,18 @@ export default function SiloStock() {
   const live = latest?.live;
   const ethanol = latest?.ethanol;
 
-  // Chart data
-  const chartData = [...history].reverse().map(s => ({
-    date: fmtDate(s.date),
-    siloStock: s.siloClosing,
-    received: s.grainReceivedMT,
-    consumed: s.grainConsumed,
-    ethanolAL: s.ethanolAL ?? 0,
-    yield: s.yieldALPerMT ?? 0,
-  }));
+  // Chart data — exclude today (production is incomplete until next dip)
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const chartData = [...history].reverse()
+    .filter(s => new Date(s.date).toISOString().slice(0, 10) !== todayStr)
+    .map(s => ({
+      date: fmtDate(s.date),
+      siloStock: s.siloClosing,
+      received: s.grainReceivedMT,
+      consumed: s.grainConsumed,
+      ethanolAL: s.ethanolAL ?? 0,
+      yield: s.yieldALPerMT ?? 0,
+    }));
 
   if (loading) {
     return (

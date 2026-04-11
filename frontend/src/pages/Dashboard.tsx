@@ -269,6 +269,11 @@ export default function Dashboard() {
 
   const k = data.kpis;
   const t = data.trends;
+  // Today's ethanol production is incomplete (next dip not entered yet) — exclude from charts
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const ethanolExToday = t.ethanol.filter((e: any) => e.date !== todayStr);
+  // KLPD KPI: use yesterday's (last complete) instead of today's incomplete
+  const prevKlpd = ethanolExToday.length > 0 ? ethanolExToday[ethanolExToday.length - 1].klpd : k.latestKlpd;
 
   return (
     <div className="space-y-4 pb-8">
@@ -314,7 +319,7 @@ export default function Dashboard() {
             <KPI label="Ethanol Prod" value={fmtNum(k.ethanolProductionBL)} unit="BL" icon={Fuel} color="bg-blue-600" sub={`AL: ${fmtNum(k.ethanolProductionAL)}`} />
             <KPI label="Current Stock" value={fmtNum(k.ethanolStock)} unit="BL" icon={Droplets} color="bg-cyan-600" sub={`Avg: ${k.avgStrength.toFixed(1)}%`} />
             <KPI label="Dispatched" value={fmtNum(k.totalDispatchBL)} unit="BL" icon={Truck} color="bg-green-600" sub={`${k.dispatchTrucks} trucks`} />
-            <KPI label="KLPD" value={k.latestKlpd.toFixed(1)} unit="" icon={TrendingUp} color="bg-indigo-600" sub="Latest flow rate" />
+            <KPI label="KLPD" value={prevKlpd.toFixed(1)} unit="" icon={TrendingUp} color="bg-indigo-600" sub="Last complete day" />
           </div>
 
           {/* KPI Grid — Row 2: Quality, DDGS, Distillation */}
@@ -416,13 +421,13 @@ export default function Dashboard() {
             <div className="bg-white border border-slate-300 p-3">
               <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">KLPD Trend</h3>
               <ResponsiveContainer width="100%" height={250}>
-                <LineChart data={t.ethanol}>
+                <LineChart data={ethanolExToday}>
                   <CartesianGrid {...CHART_GRID} />
                   <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
                   <YAxis {...CHART_AXIS_PROPS} />
                   <Tooltip {...CHART_TOOLTIP} />
                   <Line type="monotone" dataKey="klpd" stroke="#1e40af" strokeWidth={2} dot={{ r: 3, fill: '#1e40af' }} name="KLPD" />
-                  {t.ethanol.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" tickFormatter={shortDate} />}
+                  {ethanolExToday.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" tickFormatter={shortDate} />}
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -544,13 +549,13 @@ export default function Dashboard() {
             <div className="bg-white border border-slate-300 p-3">
               <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">KLPD Trend</h3>
               <ResponsiveContainer width="100%" height={250}>
-                <LineChart data={t.ethanol}>
+                <LineChart data={ethanolExToday}>
                   <CartesianGrid {...CHART_GRID} />
                   <XAxis dataKey="date" {...CHART_AXIS_PROPS} tickFormatter={shortDate} />
                   <YAxis {...CHART_AXIS_PROPS} />
                   <Tooltip {...CHART_TOOLTIP} />
                   <Line type="monotone" dataKey="klpd" stroke="#1e40af" strokeWidth={2} dot={{ r: 3, fill: '#1e40af' }} name="KLPD" />
-                  {t.ethanol.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" tickFormatter={shortDate} />}
+                  {ethanolExToday.length > 24 && <Brush dataKey="date" height={20} stroke="#1e40af" tickFormatter={shortDate} />}
                 </LineChart>
               </ResponsiveContainer>
             </div>
