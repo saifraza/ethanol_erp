@@ -275,7 +275,7 @@ function getHsnCode(productName: string): string {
     // Scrap / Miscellaneous
     'SCRAP IRON': '72044900',   // Ch 72: Ferrous waste & scrap — iron
     'SCRAP COPPER': '74040000', // Ch 74: Copper waste & scrap
-    'SCRAP SS': '72042900',     // Ch 72: Ferrous waste & scrap — stainless steel
+    'SCRAP SS': '72042190',     // Ch 72: Stainless steel waste & scrap — other
     'EMPTY DRUMS': '73101000',  // Ch 73: Iron/steel tanks, drums
     'GUNNY BAGS': '63053200',   // Ch 63: Used jute sacks
     'COAL ASH': '26219090',     // Ch 26: Slag, ash — other

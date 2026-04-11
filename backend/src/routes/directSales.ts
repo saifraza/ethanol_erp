@@ -14,7 +14,7 @@ const DEFAULT_GST_PCT = 18;
 const HSN_MAP: Record<string, string> = {
   'Scrap Iron': '72044900',
   'Scrap Copper': '74040000',
-  'Scrap SS': '72042900',
+  'Scrap SS': '72042190',
   'Empty Drums': '73101000',
   'Gunny Bags': '63053200',
   'Coal Ash': '26219090',
