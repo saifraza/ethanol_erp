@@ -744,6 +744,12 @@ router.get('/:orderId/shipments/:shipmentId/ewb-pdf', asyncHandler(async (req: A
   const cust = order.customer;
   const hsnCode = HSN_MAP[order.productName] || HSN_MAP['Other'];
 
+  // Generate QR code for EWB
+  const { generateQRCode } = await import('../services/templateEngine');
+  const ewbQrContent = `https://ewaybillgst.gov.in/Others/EBPrint?ewbNo=${invoice.ewbNo}`;
+  let ewbQrDataUrl: string | null = null;
+  try { ewbQrDataUrl = await generateQRCode(ewbQrContent); } catch { /* ignore QR failures */ }
+
   const { renderDocumentPdf } = await import('../services/documentRenderer');
   const pdfBuffer = await renderDocumentPdf({
     docType: 'EWAY_BILL',
@@ -751,6 +757,7 @@ router.get('/:orderId/shipments/:shipmentId/ewb-pdf', asyncHandler(async (req: A
       ewbNo: invoice.ewbNo,
       ewbDate: invoice.ewbDate,
       ewbValidTill: invoice.ewbValidTill,
+      ewbQrDataUrl,
       sellerGstin: '23AAECM3666P1Z1',
       sellerName: 'Mahakaushal Sugar & Power Industries Ltd',
       sellerAddress: 'Village Bachai, Dist. Narsinghpur (M.P.) - 487001',
@@ -779,7 +786,7 @@ router.get('/:orderId/shipments/:shipmentId/ewb-pdf', asyncHandler(async (req: A
       vehicleNo: shipment.vehicleNo,
       transporterName: shipment.transporterName || '',
       destination: shipment.destination || cust?.city || cust?.state || '',
-      distanceKm: 100,
+      distanceKm: parseInt(req.query.distance as string) || 440,
       challanNo: `SC/${shipment.shipmentNo}`,
     },
     verifyId: shipment.id,
