@@ -107,7 +107,30 @@ export async function handleNonEthanolOutbound(w: WeighmentInput, ctx: PushConte
     return { dispatch, shipment };
   });
 
-  out.results.push({ id: txResult.dispatch.id, type: 'DDGSDispatch', refNo: txResult.dispatch.id, sourceWbId: w.id });
+  // Link to scrap sales order if cloudContractId provided (DirectSale)
+  if (w.cloud_contract_id && netMT > 0 && ctx.materialCategory === 'SCRAP') {
+    try {
+      const order = await prisma.directSale.findUnique({
+        where: { id: w.cloud_contract_id },
+        select: { id: true, rate: true, status: true },
+      });
+      if (order && order.status === 'ACTIVE') {
+        const amt = netMT * 1000 * order.rate; // rate is per unit (KG), netMT → KG
+        await prisma.directSale.update({
+          where: { id: order.id },
+          data: {
+            totalSuppliedQty: { increment: netMT * 1000 }, // KG
+            totalSuppliedAmt: { increment: amt },
+          },
+        });
+        console.log(`[WB-PUSH][SCRAP] Linked ${netMT.toFixed(2)} MT to order ${order.id}, amt=${amt.toFixed(0)}`);
+      }
+    } catch (e: any) {
+      console.error('[WB-PUSH][SCRAP] Failed to link to scrap order:', e.message);
+    }
+  }
+
+  out.results.push({ id: txResult.dispatch.id, type: ctx.materialCategory === 'SCRAP' ? 'ScrapDispatch' : 'DDGSDispatch', refNo: txResult.dispatch.id, sourceWbId: w.id });
   out.ids.push(txResult.dispatch.id);
   return out;
 }

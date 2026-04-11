@@ -25,6 +25,7 @@ interface Trader { id: string; name: string; phone: string | null; productTypes:
 interface Customer { id: string; name: string; shortName: string | null; gstNo: string | null; address: string | null; state: string | null; pincode: string | null }
 interface EthContract { id: string; contractNo: string; contractType: string; buyerName: string; buyerGst: string | null; buyerAddress: string | null; conversionRate: number | null; ethanolRate: number | null; gstPercent: number | null; paymentTermsDays: number | null; omcDepot: string | null }
 interface DdgsContract { id: string; contractNo: string; status: string; dealType: string; buyerName: string; buyerGstin: string | null; buyerAddress: string | null; buyerState: string | null; principalName: string | null; rate: number | null; processingChargePerMT: number | null; gstPercent: number | null; contractQtyMT: number | null; totalSuppliedMT: number | null; startDate: string | null; endDate: string | null }
+interface ScrapSalesOrder { id: string; entryNo: number; buyerName: string; productName: string; rate: number; unit: string; validFrom: string | null; validTo: string | null; status: string; quantity: number; totalSuppliedQty: number }
 
 interface MasterCache {
   suppliers: Supplier[];
@@ -35,6 +36,7 @@ interface MasterCache {
   vehicles: string[];
   ethContracts: EthContract[];
   ddgsContracts: DdgsContract[];
+  scrapOrders: ScrapSalesOrder[];
   lastCloudSync: string | null;
   lastCloudCheck: string | null;
   cloudTimestamp: string | null;
@@ -42,7 +44,7 @@ interface MasterCache {
 }
 
 const EMPTY_CACHE: MasterCache = {
-  suppliers: [], materials: [], pos: [], traders: [], customers: [], vehicles: [], ethContracts: [], ddgsContracts: [],
+  suppliers: [], materials: [], pos: [], traders: [], customers: [], vehicles: [], ethContracts: [], ddgsContracts: [], scrapOrders: [],
   lastCloudSync: null, lastCloudCheck: null, cloudTimestamp: null, source: 'empty',
 };
 
@@ -129,6 +131,7 @@ function loadFromDisk(): boolean {
       data.vehicles = data.vehicles || [];
       data.ethContracts = data.ethContracts || [];
       data.ddgsContracts = data.ddgsContracts || [];
+      data.scrapOrders = data.scrapOrders || [];
       // Stage 2 schema evolution: backfill new Material fields on cached entries
       data.materials = (data.materials || []).map(m => ({
         ...m,
@@ -161,7 +164,8 @@ async function getCloudTimestamp(): Promise<string | null> {
         (SELECT MAX("updatedAt") FROM "InventoryItem"),
         (SELECT MAX("updatedAt") FROM "Customer"),
         (SELECT MAX("updatedAt") FROM "EthanolContract"),
-        (SELECT MAX("updatedAt") FROM "DDGSContract")
+        (SELECT MAX("updatedAt") FROM "DDGSContract"),
+        (SELECT MAX("updatedAt") FROM "DirectSale")
       ) as max
     `;
     return result[0]?.max?.toISOString() || null;
@@ -271,6 +275,34 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
       console.error('[CACHE] DDGS contracts sync failed:', err instanceof Error ? err.message : err);
     }
 
+    // Scrap sales orders — separate query with own error handling
+    let scrapOrders: ScrapSalesOrder[] = cache.scrapOrders;
+    try {
+      const rows = await cloud.$queryRawUnsafe<any[]>(
+        `SELECT id, "entryNo", "buyerName", "productName", rate, unit,
+                "validFrom", "validTo", status, quantity, "totalSuppliedQty"
+         FROM "DirectSale"
+         WHERE status = 'ACTIVE' AND ("validTo" IS NULL OR "validTo" >= NOW())
+         ORDER BY "entryNo" DESC LIMIT 50`
+      );
+      scrapOrders = rows.map(r => ({
+        id: r.id,
+        entryNo: Number(r.entryNo),
+        buyerName: r.buyerName,
+        productName: r.productName,
+        rate: r.rate != null ? Number(r.rate) : 0,
+        unit: r.unit || 'KG',
+        validFrom: r.validFrom ? new Date(r.validFrom).toISOString() : null,
+        validTo: r.validTo ? new Date(r.validTo).toISOString() : null,
+        status: r.status,
+        quantity: r.quantity != null ? Number(r.quantity) : 0,
+        totalSuppliedQty: r.totalSuppliedQty != null ? Number(r.totalSuppliedQty) : 0,
+      }));
+      console.log(`[CACHE] Scrap orders: ${scrapOrders.length}`);
+    } catch (err) {
+      console.error('[CACHE] Scrap orders sync failed:', err instanceof Error ? err.message : err);
+    }
+
     // Get recent vehicles from local DB
     let vehicles: string[] = cache.vehicles; // Keep existing if local query fails
     try {
@@ -326,6 +358,7 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
       customers: customers.map(c => ({ id: c.id, name: c.name, shortName: c.shortName, gstNo: c.gstNo, address: c.address, state: c.state, pincode: c.pincode })),
       ethContracts: ethContracts.map(c => ({ id: c.id, contractNo: c.contractNo, contractType: c.contractType, buyerName: c.buyerName, buyerGst: c.buyerGst, buyerAddress: c.buyerAddress, conversionRate: c.conversionRate, ethanolRate: c.ethanolRate, gstPercent: c.gstPercent, paymentTermsDays: c.paymentTermsDays, omcDepot: c.omcDepot })),
       ddgsContracts,
+      scrapOrders,
       vehicles,
       lastCloudSync: now,
       lastCloudCheck: now,

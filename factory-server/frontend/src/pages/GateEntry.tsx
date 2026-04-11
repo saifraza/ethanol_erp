@@ -10,6 +10,7 @@ interface Customer { id: string; name: string; gstNo?: string | null; address?: 
 interface Trader { id: string; name: string; phone?: string; productTypes?: string; category?: string }
 interface EthContract { id: string; contractNo: string; contractType: string; buyerName: string; buyerAddress?: string; omcDepot?: string }
 interface DdgsContract { id: string; contractNo: string; dealType: string; buyerName: string; buyerGstin?: string | null; buyerAddress?: string | null; principalName?: string | null; rate?: number | null; processingChargePerMT?: number | null; gstPercent?: number | null; contractQtyMT?: number | null; totalSuppliedMT?: number | null; endDate?: string | null }
+interface ScrapSalesOrder { id: string; entryNo: number; buyerName: string; productName: string; rate: number; unit: string; validFrom?: string | null; validTo?: string | null; status: string; quantity: number; totalSuppliedQty: number }
 
 const FUEL_KEYWORDS = ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'firewood', 'biomass'];
 const RAW_KEYWORDS = ['maize', 'corn', 'broken rice', 'grain', 'sorghum'];
@@ -71,6 +72,8 @@ export default function GateEntry() {
   // DDGS-specific
   const [ddgsContracts, setDdgsContracts] = useState<DdgsContract[]>([]);
   const [ddgsContractId, setDdgsContractId] = useState('');
+  const [scrapOrders, setScrapOrders] = useState<ScrapSalesOrder[]>([]);
+  const [scrapOrderId, setScrapOrderId] = useState('');
   const [driverName, setDriverName] = useState('');
   const [destination, setDestination] = useState('');
   const [rstNo, setRstNo] = useState('');
@@ -86,6 +89,8 @@ export default function GateEntry() {
   const isEthanol = direction === 'OUTBOUND' && materialName === 'Ethanol';
   const isDdgsOut = direction === 'OUTBOUND' && materialName === 'DDGS';
   const selectedDdgsContract = ddgsContracts.find(c => c.id === ddgsContractId);
+  const isScrapOut = direction === 'OUTBOUND' && materialName === 'Scrap';
+  const selectedScrapOrder = scrapOrders.find(o => o.id === scrapOrderId);
 
   // Load master data (silent=true for background refreshes — no spinner)
   const loadMasterData = useCallback(async (silent = false) => {
@@ -102,6 +107,7 @@ export default function GateEntry() {
       setVehicles(data.vehicles || []);
       setEthContracts(data.ethContracts || []);
       setDdgsContracts(data.ddgsContracts || []);
+      setScrapOrders(data.scrapOrders || []);
       // Check staleness from /api/master-data/status (separate call, cheap)
       try {
         const stat = await api.get('/master-data/status');
@@ -194,6 +200,7 @@ export default function GateEntry() {
     if (!vehicleNo) { alert('Vehicle number is required'); return; }
     if (isEthanol && !ethContractId) { alert('Select an ethanol contract'); return; }
     if (isDdgsOut && !ddgsContractId) { alert('Select a DDGS contract'); return; }
+    if (isScrapOut && !scrapOrderId) { alert('Select a scrap sales order'); return; }
     if (direction === 'INBOUND' && purchaseType === 'TRADER' && !selectedTraderId) { alert('Select a trader'); return; }
     if (direction === 'INBOUND' && purchaseType === 'TRADER' && (!rate || parseFloat(rate) <= 0)) { alert('Rate is required for trader purchases'); return; }
     if (direction === 'INBOUND' && purchaseType === 'TRADER' && !materialName) { alert('Select a material/product'); return; }
@@ -245,6 +252,9 @@ export default function GateEntry() {
       // races against contract edits/deletes between gate entry and sync).
       if (isDdgsOut && ddgsContractId) {
         body.cloudContractId = ddgsContractId;
+      }
+      if (isScrapOut && scrapOrderId) {
+        body.cloudContractId = scrapOrderId;
       }
       // For ethanol: create DispatchTruck on cloud ERP FIRST (blocking — must succeed).
       // If the local factory POST fails afterwards, roll back the cloud record so we
@@ -650,6 +660,38 @@ export default function GateEntry() {
                       )}
                       {selectedDdgsContract.endDate && (
                         <div className="col-span-2"><span className="text-slate-500 uppercase tracking-wider">Valid till:</span> <span className="text-slate-800">{new Date(selectedDdgsContract.endDate).toLocaleDateString('en-IN')}</span></div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* Scrap Sales Order picker */}
+          {isScrapOut && (
+            <>
+              <div className="md:col-span-3">
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">Scrap Sales Order *</label>
+                <select value={scrapOrderId} onChange={e => {
+                  setScrapOrderId(e.target.value);
+                  const o = scrapOrders.find(x => x.id === e.target.value);
+                  if (o) setCustomerName(o.buyerName);
+                }} className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
+                  <option value="">-- Select Order --</option>
+                  {(scrapOrders || []).map(o => (
+                    <option key={o.id} value={o.id}>#{o.entryNo} — {o.buyerName} | {o.productName} | {'\u20B9'}{o.rate}/{o.unit}</option>
+                  ))}
+                </select>
+                {selectedScrapOrder && (
+                  <div className="mt-2 border border-slate-300 bg-slate-50 px-3 py-2 text-[11px]">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1">
+                      <div><span className="text-slate-500 uppercase tracking-wider">Buyer:</span> <span className="font-bold text-slate-800">{selectedScrapOrder.buyerName}</span></div>
+                      <div><span className="text-slate-500 uppercase tracking-wider">Product:</span> <span className="font-bold text-slate-800">{selectedScrapOrder.productName}</span></div>
+                      <div><span className="text-slate-500 uppercase tracking-wider">Rate:</span> <span className="font-mono font-bold text-slate-800">{'\u20B9'}{selectedScrapOrder.rate}/{selectedScrapOrder.unit}</span></div>
+                      <div><span className="text-slate-500 uppercase tracking-wider">Supplied:</span> <span className="font-mono text-slate-800">{selectedScrapOrder.totalSuppliedQty.toLocaleString('en-IN')} {selectedScrapOrder.unit}</span></div>
+                      {selectedScrapOrder.validTo && (
+                        <div className="col-span-2"><span className="text-slate-500 uppercase tracking-wider">Valid till:</span> <span className="text-slate-800">{new Date(selectedScrapOrder.validTo).toLocaleDateString('en-IN')}</span></div>
                       )}
                     </div>
                   </div>

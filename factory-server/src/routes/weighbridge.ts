@@ -351,6 +351,7 @@ router.post('/gate-entry', requireAuth, requireRole('GATE_ENTRY', 'ADMIN'), asyn
       else if (SUGAR_KEYWORDS.some(kw => lower.includes(kw))) materialCategory = 'SUGAR';
       else if (RAW_MATERIAL_KEYWORDS.some(kw => lower.includes(kw))) materialCategory = 'RAW_MATERIAL';
       else if (CHEMICAL_KEYWORDS.some(kw => lower.includes(kw))) materialCategory = 'CHEMICAL';
+      else if (['scrap', 'iron scrap', 'copper scrap', 'ss scrap', 'empty drum', 'gunny'].some(kw => lower.includes(kw))) materialCategory = 'SCRAP';
     }
 
     // 4. Cloud DB live lookup (last resort if cache is empty/stale)
