@@ -10,11 +10,14 @@ router.use(authenticate as any);
 
 // ── Zod Schemas ──
 
+const REPAYMENT_FREQUENCIES = ['MONTHLY', 'QUARTERLY', 'HALF_YEARLY', 'BULLET', 'NONE'] as const;
+
 const createLoanSchema = z.object({
   loanNo: z.string().min(1, 'Loan number is required'),
   bankName: z.string().min(1, 'Bank name is required'),
   bankAccountCode: z.string().optional().nullable(),
   loanType: z.enum(['TERM_LOAN', 'WORKING_CAPITAL', 'CC_LIMIT', 'EQUIPMENT']).default('TERM_LOAN'),
+  repaymentFrequency: z.enum(REPAYMENT_FREQUENCIES).default('MONTHLY'),
   sanctionAmount: z.number().positive('Sanction amount must be positive'),
   interestRate: z.number().positive('Interest rate must be positive'),
   tenure: z.number().int().positive('Tenure must be a positive integer'),
@@ -27,6 +30,7 @@ const createLoanSchema = z.object({
 
 const updateLoanSchema = z.object({
   bankName: z.string().min(1).optional(),
+  repaymentFrequency: z.enum(REPAYMENT_FREQUENCIES).optional(),
   securityDetails: z.string().optional().nullable(),
   remarks: z.string().optional().nullable(),
   status: z.enum(['ACTIVE', 'CLOSED', 'RESTRUCTURED']).optional(),
@@ -53,6 +57,13 @@ function addMonths(date: Date, months: number): Date {
   const result = new Date(date);
   result.setMonth(result.getMonth() + months);
   return result;
+}
+
+function monthlyEquivalent(emi: number, freq: string): number {
+  if (freq === 'QUARTERLY') return emi / 3;
+  if (freq === 'HALF_YEARLY') return emi / 6;
+  if (freq === 'NONE' || freq === 'BULLET') return 0;
+  return emi; // MONTHLY
 }
 
 async function resolveAccount(code: string): Promise<{ id: string; name: string }> {
@@ -91,6 +102,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       interestRate: true,
       tenure: true,
       emiAmount: true,
+      repaymentFrequency: true,
       sanctionDate: true,
       disbursementDate: true,
       maturityDate: true,
@@ -131,55 +143,134 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
 }));
 
 // ═══════════════════════════════════════════════
-// GET /summary — Dashboard KPIs
+// GET /summary — Comprehensive dashboard KPIs
 // ═══════════════════════════════════════════════
 router.get('/summary', asyncHandler(async (_req: AuthRequest, res: Response) => {
-  const activeLoans = await prisma.bankLoan.findMany({
-    where: { status: 'ACTIVE' },
+  const allLoans = await prisma.bankLoan.findMany({
     select: {
       id: true,
+      loanType: true,
+      sanctionAmount: true,
       outstandingAmount: true,
       emiAmount: true,
+      interestRate: true,
+      repaymentFrequency: true,
+      securityDetails: true,
+      status: true,
+      maturityDate: true,
+      bankName: true,
+      loanNo: true,
     },
     take: 500,
   });
 
-  const totalOutstanding = activeLoans.reduce((sum, l) => sum + l.outstandingAmount, 0);
-  const monthlyEMIBurden = activeLoans.reduce((sum, l) => sum + l.emiAmount, 0);
+  const active = allLoans.filter((l) => l.status === 'ACTIVE');
 
-  const nextPayment = await prisma.loanRepayment.findFirst({
-    where: { status: 'SCHEDULED' },
+  // Headline KPIs
+  const totalSanctioned = allLoans.reduce((s, l) => s + l.sanctionAmount, 0);
+  const totalOutstanding = active.reduce((s, l) => s + l.outstandingAmount, 0);
+  const utilizationPercent = totalSanctioned > 0 ? Math.round((totalOutstanding / totalSanctioned) * 100) : 0;
+
+  // Monthly outflow — normalized
+  const monthlyOutflow = active.reduce(
+    (s, l) => s + monthlyEquivalent(l.emiAmount, l.repaymentFrequency),
+    0,
+  );
+
+  // Weighted average interest rate
+  const weightedSum = active.reduce((s, l) => s + l.outstandingAmount * l.interestRate, 0);
+  const weightedAvgRate = totalOutstanding > 0 ? Math.round((weightedSum / totalOutstanding) * 100) / 100 : 0;
+
+  // Counts
+  const activeCount = active.length;
+  const closedCount = allLoans.filter((l) => l.status === 'CLOSED').length;
+  const totalCount = allLoans.length;
+
+  // Secured vs unsecured
+  const isUnsecured = (s: string | null) => !s || s.toUpperCase().includes('UNSECURED');
+  const securedOutstanding = active.filter((l) => !isUnsecured(l.securityDetails)).reduce((s, l) => s + l.outstandingAmount, 0);
+  const unsecuredOutstanding = active.filter((l) => isUnsecured(l.securityDetails)).reduce((s, l) => s + l.outstandingAmount, 0);
+
+  // Type breakdown for chart
+  const typeMap: Record<string, { label: string; count: number; outstanding: number; sanctioned: number; monthlyOutflow: number }> = {};
+  for (const l of active) {
+    const key = l.loanType;
+    if (!typeMap[key]) {
+      const labels: Record<string, string> = { TERM_LOAN: 'Term Loan', WORKING_CAPITAL: 'Working Capital', CC_LIMIT: 'CC Limit', EQUIPMENT: 'Vehicle' };
+      typeMap[key] = { label: labels[key] || key, count: 0, outstanding: 0, sanctioned: 0, monthlyOutflow: 0 };
+    }
+    typeMap[key].count++;
+    typeMap[key].outstanding += l.outstandingAmount;
+    typeMap[key].sanctioned += l.sanctionAmount;
+    typeMap[key].monthlyOutflow += monthlyEquivalent(l.emiAmount, l.repaymentFrequency);
+  }
+  const byType = Object.entries(typeMap).map(([loanType, v]) => ({ loanType, ...v }));
+
+  // Rate band distribution
+  const bands = [
+    { band: '< 10%', min: 0, max: 10 },
+    { band: '10 - 14%', min: 10, max: 14 },
+    { band: '> 14%', min: 14, max: 100 },
+  ];
+  const rateBands = bands.map((b) => {
+    const matching = active.filter((l) => l.interestRate >= b.min && l.interestRate < b.max);
+    return { band: b.band, count: matching.length, outstanding: matching.reduce((s, l) => s + l.outstandingAmount, 0) };
+  });
+
+  // Upcoming 3-month outflow (synthetic — no LoanRepayment rows needed)
+  const now = new Date();
+  const upcomingOutflows: Array<{ month: string; totalOutflow: number }> = [];
+  for (let m = 0; m < 3; m++) {
+    const target = new Date(now.getFullYear(), now.getMonth() + m, 1);
+    const monthLabel = target.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+    let outflow = 0;
+    for (const l of active) {
+      if (l.repaymentFrequency === 'MONTHLY') {
+        outflow += l.emiAmount;
+      } else if (l.repaymentFrequency === 'QUARTERLY' && l.maturityDate) {
+        // Quarterly: check if this month aligns with disbursement quarter cycle
+        // Simplified: assume quarterly means every 3 months from disbursal
+        outflow += l.emiAmount / 3; // average per month
+      }
+      // NONE/BULLET: 0 principal outflow
+    }
+    upcomingOutflows.push({ month: monthLabel, totalOutflow: Math.round(outflow) });
+  }
+
+  // Next payment (from repayment schedule if any, otherwise null)
+  const nextRepayment = await prisma.loanRepayment.findFirst({
+    where: { status: { in: ['SCHEDULED', 'OVERDUE'] } },
     orderBy: { dueDate: 'asc' },
     select: {
-      id: true,
-      installmentNo: true,
       dueDate: true,
       totalAmount: true,
-      principalAmount: true,
-      interestAmount: true,
-      loan: {
-        select: { loanNo: true, bankName: true },
-      },
+      loan: { select: { loanNo: true, bankName: true, repaymentFrequency: true } },
     },
   });
 
-  const statusCounts = await prisma.bankLoan.groupBy({
-    by: ['status'],
-    _count: { id: true },
-  });
-
-  const countByStatus: Record<string, number> = {};
-  for (const s of statusCounts) {
-    countByStatus[s.status] = s._count.id;
-  }
-
   res.json({
+    totalSanctioned,
     totalOutstanding,
-    monthlyEMIBurden,
-    activeCount: countByStatus['ACTIVE'] ?? 0,
-    closedCount: countByStatus['CLOSED'] ?? 0,
-    restructuredCount: countByStatus['RESTRUCTURED'] ?? 0,
-    nextPayment,
+    utilizationPercent,
+    monthlyOutflow,
+    weightedAvgRate,
+    activeCount,
+    closedCount,
+    totalCount,
+    securedOutstanding,
+    unsecuredOutstanding,
+    byType,
+    rateBands,
+    upcomingOutflows,
+    nextPayment: nextRepayment
+      ? {
+          dueDate: nextRepayment.dueDate,
+          amount: nextRepayment.totalAmount,
+          bankName: nextRepayment.loan.bankName,
+          loanNo: nextRepayment.loan.loanNo,
+          frequency: nextRepayment.loan.repaymentFrequency,
+        }
+      : null,
   });
 }));
 
@@ -278,6 +369,7 @@ router.post('/', validate(createLoanSchema), asyncHandler(async (req: AuthReques
         bankName: data.bankName,
         bankAccountCode: data.bankAccountCode ?? null,
         loanType: data.loanType,
+        repaymentFrequency: data.repaymentFrequency ?? 'MONTHLY',
         sanctionAmount: data.sanctionAmount,
         disbursedAmount: data.sanctionAmount,
         outstandingAmount: data.sanctionAmount,

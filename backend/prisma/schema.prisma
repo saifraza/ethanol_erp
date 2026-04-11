@@ -2917,6 +2917,7 @@ model BankLoan {
   disbursementDate  DateTime?
   maturityDate      DateTime?
   status            String          @default("ACTIVE") // ACTIVE, CLOSED, RESTRUCTURED
+  repaymentFrequency String         @default("MONTHLY") // MONTHLY, QUARTERLY, HALF_YEARLY, BULLET, NONE
   securityDetails   String?
   remarks           String?
   repayments        LoanRepayment[]
