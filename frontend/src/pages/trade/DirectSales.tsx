@@ -306,7 +306,7 @@ export default function DirectSales() {
               {orders.map((o, i) => {
                 const daysLeft = o.validTo ? Math.ceil((new Date(o.validTo).getTime() - Date.now()) / 86400000) : null;
                 return (<React.Fragment key={o.id}>
-                  <tr className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                  <tr className={`border-b border-slate-100 hover:bg-blue-50/60 cursor-pointer ${i % 2 ? 'bg-slate-50/70' : ''}`} onClick={() => toggleExpand(o.id)}>
                     <td className="px-3 py-1.5 text-slate-400 border-r border-slate-100 font-mono">{o.entryNo}</td>
                     <td className="px-3 py-1.5 text-slate-800 font-medium border-r border-slate-100">
                       {o.customer?.name || o.buyerName}
