@@ -185,6 +185,14 @@
         <td class="inv-right inv-mono">{{formatNum igstAmount}}</td>
       </tr>
       {{/if}}
+      {{#if tcsAmount}}
+      <tr>
+        <td></td>
+        <td style="text-align:right; font-weight:600; font-style:italic;">TCS u/s 206C(1) @ {{tcsPercent}}%</td>
+        <td></td><td></td><td></td><td></td><td></td>
+        <td class="inv-right inv-mono">{{formatNum tcsAmount}}</td>
+      </tr>
+      {{/if}}
       {{#if roundOff}}
       <tr>
         <td></td>

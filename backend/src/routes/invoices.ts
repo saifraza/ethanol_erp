@@ -418,6 +418,9 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
       sgstPercent: invoice.sgstPercent || 0,
       igstPercent: invoice.igstPercent || 0,
       freightCharge: invoice.freightCharge,
+      tcsPercent: (invoice as any).tcsPercent || 0,
+      tcsAmount: (invoice as any).tcsAmount || 0,
+      tcsSection: (invoice as any).tcsSection || null,
       totalAmount: invoice.totalAmount,
       // Round-off display: render the rounded-to-rupee total and the signed delta as a "Less:
       // BALANCE ROUND OFF A/C" line. Stored totalAmount keeps full precision; this is display-only.

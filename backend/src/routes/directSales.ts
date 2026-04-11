@@ -145,6 +145,7 @@ router.get('/:id/dispatches', asyncHandler(async (req: AuthRequest, res: Respons
       irn: true, irnStatus: true, irnDate: true, ackNo: true,
       ewbNo: true, ewbDate: true, ewbStatus: true,
       status: true, paidAmount: true, balanceAmount: true, freightCharge: true,
+      tcsPercent: true, tcsAmount: true, tcsSection: true,
       remarks: true,
     },
   }) : [];
@@ -334,7 +335,10 @@ router.post('/:orderId/shipments/:shipmentId/create-invoice', asyncHandler(async
     const invAmount = Math.round(totalAmount * invoicePercent / 100 * 100) / 100;
     const invQty = Math.round(netKg * invoicePercent / 100 * 100) / 100;
     const gst = calcGstSplit(invAmount, gstPercent, customerState);
-    const invTotal = Math.round((invAmount + gst.gstAmount) * 100) / 100;
+    // TCS @ 2% u/s 206C(1) on scrap sales (mandatory from 01-Apr-2026)
+    const TCS_PERCENT = 2;
+    const tcsAmount = Math.round(invAmount * TCS_PERCENT / 100 * 100) / 100;
+    const invTotal = Math.round((invAmount + gst.gstAmount + tcsAmount) * 100) / 100;
 
     invoice = await prisma.$transaction(async (tx) => {
       const customInvNo = await nextInvoiceNo(tx, 'ETH');
@@ -358,6 +362,9 @@ router.post('/:orderId/shipments/:shipmentId/create-invoice', asyncHandler(async
           sgstAmount: gst.sgstAmount,
           igstPercent: gst.igstPercent,
           igstAmount: gst.igstAmount,
+          tcsPercent: TCS_PERCENT,
+          tcsAmount,
+          tcsSection: '206C(1)',
           totalAmount: invTotal,
           balanceAmount: invTotal,
           status: 'UNPAID',

@@ -9,6 +9,7 @@ interface DispatchInvoice {
   gstPercent: number; gstAmount: number; supplyType: string;
   cgstAmount: number; sgstAmount: number; igstAmount: number;
   rate: number; quantity: number; unit: string; productName: string;
+  tcsPercent: number; tcsAmount: number; tcsSection: string | null;
   irn: string | null; irnStatus: string | null; irnDate: string | null; ackNo: string | null;
   ewbNo: string | null; ewbDate: string | null; ewbStatus: string | null;
   status: string; paidAmount: number; balanceAmount: number; freightCharge: number;
@@ -674,6 +675,12 @@ export default function DirectSales() {
                                                 </span>
                                               </div>
                                             </div>
+                                            {d.invoice.tcsAmount > 0 && (
+                                            <div>
+                                              <span className="font-bold text-slate-400 uppercase tracking-widest">TCS u/s {d.invoice.tcsSection || '206C(1)'} ({d.invoice.tcsPercent}%)</span>
+                                              <div className="font-mono text-slate-700 mt-0.5">{fmtCurrency(d.invoice.tcsAmount)}</div>
+                                            </div>
+                                            )}
                                             <div>
                                               <span className="font-bold text-slate-400 uppercase tracking-widest">Total</span>
                                               <div className="font-mono font-bold text-slate-800 mt-0.5">{fmtCurrency(d.invoice.totalAmount)}</div>
@@ -759,6 +766,7 @@ export default function DirectSales() {
                   const gstPct = parseFloat(invForm.gstPercent) || 18;
                   const invAmt = Math.round(total * pct / 100);
                   const gstAmt = Math.round(invAmt * gstPct / 100);
+                  const tcsAmt = Math.round(invAmt * 2 / 100); // TCS 2% u/s 206C(1)
                   const cashAmt = Math.round(total * (100 - pct) / 100);
                   return (
                     <div className="border border-slate-200 bg-slate-50 p-3 space-y-2 text-[10px]">
@@ -766,12 +774,24 @@ export default function DirectSales() {
                         <span className="font-bold text-slate-500 uppercase tracking-widest">Total Value</span>
                         <span className="font-mono font-bold text-slate-800">{fmtCurrency(total)}</span>
                       </div>
-                      {pct > 0 && (
+                      {pct > 0 && (<>
                         <div className="flex justify-between text-blue-700">
                           <span className="font-bold uppercase tracking-widest">Invoice ({pct}%)</span>
-                          <span className="font-mono font-bold">{fmtCurrency(invAmt)} + {fmtCurrency(gstAmt)} GST = {fmtCurrency(invAmt + gstAmt)}</span>
+                          <span className="font-mono font-bold">{fmtCurrency(invAmt)}</span>
                         </div>
-                      )}
+                        <div className="flex justify-between text-slate-600 pl-4">
+                          <span className="uppercase tracking-widest">+ GST ({gstPct}%)</span>
+                          <span className="font-mono">{fmtCurrency(gstAmt)}</span>
+                        </div>
+                        <div className="flex justify-between text-slate-600 pl-4">
+                          <span className="uppercase tracking-widest">+ TCS u/s 206C(1) (2%)</span>
+                          <span className="font-mono">{fmtCurrency(tcsAmt)}</span>
+                        </div>
+                        <div className="flex justify-between text-blue-800 font-bold border-t border-slate-300 pt-1">
+                          <span className="uppercase tracking-widest">Invoice Total</span>
+                          <span className="font-mono">{fmtCurrency(invAmt + gstAmt + tcsAmt)}</span>
+                        </div>
+                      </>)}
                       {pct < 100 && (
                         <div className="flex justify-between text-amber-700">
                           <span className="font-bold uppercase tracking-widest">Cash Voucher ({100 - pct}%)</span>
