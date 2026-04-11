@@ -552,6 +552,7 @@ export default function BankLoans() {
                 <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-[100px]">Outstanding</th>
                 <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-[60px]">Rate</th>
                 <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-[120px]">Payment</th>
+                <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-[90px]">Next Due</th>
                 <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-[130px]">Security</th>
                 <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-[70px]">Remaining</th>
                 <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest w-[70px]">Status</th>
@@ -577,7 +578,7 @@ export default function BankLoans() {
                       <td colSpan={2} className="px-3 py-2 text-right">
                         <span className="text-[10px] text-slate-400 font-mono">of {fmtINR(groupSanctioned)}</span>
                       </td>
-                      <td colSpan={3} />
+                      <td colSpan={4} />
                     </tr>
                     {/* Loan rows */}
                     {groupLoans.map((loan, i) => {
@@ -609,6 +610,13 @@ export default function BankLoans() {
                               <span className="font-mono tabular-nums text-slate-700">{loan.emiAmount > 0 ? fmtINR(loan.emiAmount) : '--'}</span>
                               <span className={`ml-1.5 inline-block text-[8px] font-bold uppercase px-1 py-0 border ${fb.cls}`}>{fb.label}</span>
                             </td>
+                            <td className="px-3 py-1.5 text-center border-r border-slate-100">
+                              {loan.repaymentSummary?.nextDueDate ? (
+                                <span className={`font-mono text-[10px] ${new Date(loan.repaymentSummary.nextDueDate) < new Date() ? 'text-red-600 font-bold' : 'text-slate-600'}`}>
+                                  {new Date(loan.repaymentSummary.nextDueDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                                </span>
+                              ) : <span className="text-slate-300">--</span>}
+                            </td>
                             <td className="px-3 py-1.5 text-slate-500 border-r border-slate-100 truncate max-w-[130px]" title={loan.securityDetails || ''}>
                               {loan.securityDetails ? loan.securityDetails.slice(0, 20) + (loan.securityDetails.length > 20 ? '...' : '') : '--'}
                             </td>
@@ -621,7 +629,7 @@ export default function BankLoans() {
                           {/* Expanded detail */}
                           {isExpanded && (
                             <tr>
-                              <td colSpan={9} className="p-0">
+                              <td colSpan={10} className="p-0">
                                 <div className="bg-slate-50 border-b border-slate-300">
                                   {/* Loan detail bar */}
                                   <div className="bg-slate-200 border-b border-slate-300 px-4 py-2 flex flex-wrap items-center gap-4 text-[10px] text-slate-600">
@@ -693,7 +701,7 @@ export default function BankLoans() {
               })}
               {loans.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-3 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">No loans found</td>
+                  <td colSpan={10} className="px-3 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">No loans found</td>
                 </tr>
               )}
             </tbody>
@@ -705,7 +713,7 @@ export default function BankLoans() {
                   <td colSpan={2} className="px-3 py-2 text-[10px] uppercase tracking-widest border-r border-slate-700">Grand Total ({loans.length} loans)</td>
                   <td className="px-3 py-2 text-right font-mono tabular-nums text-[11px] border-r border-slate-700">{fmtINR(loans.reduce((s, l) => s + l.sanctionAmount, 0))}</td>
                   <td className="px-3 py-2 text-right font-mono tabular-nums text-[11px] border-r border-slate-700">{fmtINR(loans.reduce((s, l) => s + l.outstandingAmount, 0))}</td>
-                  <td colSpan={5} />
+                  <td colSpan={6} />
                 </tr>
               </tfoot>
             )}
