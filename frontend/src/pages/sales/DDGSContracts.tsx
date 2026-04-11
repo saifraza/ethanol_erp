@@ -715,7 +715,7 @@ const DDGSContracts: React.FC = () => {
                                         {/* Invoice */}
                                         <td className="px-2 py-1.5 border-r border-slate-100 text-center">
                                           {d.invoice ? (
-                                            <button onClick={(e) => { e.stopPropagation(); setShowIrnDetail(showIrnDetail === d.id ? null : d.id); }} className="text-[10px] font-medium text-blue-700 underline hover:text-blue-900 cursor-pointer">INV-{d.invoice.invoiceNo}</button>
+                                            <button onClick={(e) => { e.stopPropagation(); setShowIrnDetail(showIrnDetail === d.id ? null : d.id); }} className="text-[10px] font-medium text-blue-700 underline hover:text-blue-900 cursor-pointer">{d.invoice.remarks || `INV-${d.invoice.invoiceNo}`}</button>
                                           ) : (
                                             <button
                                               onClick={(e) => { e.stopPropagation(); handleCreateInvoice(c.id, d.id); }}
@@ -797,7 +797,7 @@ const DDGSContracts: React.FC = () => {
                                               <button onClick={async (e) => {
                                                 e.stopPropagation();
                                                 try {
-                                                  const res = await api.get(`/ddgs-dispatch/${d.ddgsDispatchTruckId}/gate-pass-pdf`, { responseType: 'blob' });
+                                                  const res = await api.get(`/ddgs-contracts/${c.id}/dispatches/${d.id}/challan-pdf`, { responseType: 'blob' });
                                                   window.open(URL.createObjectURL(res.data), '_blank');
                                                 } catch { setError('Failed to load challan PDF'); }
                                               }} className="text-[8px] font-bold uppercase px-1 py-0.5 border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100" title="Delivery Challan">DCH</button>
@@ -829,7 +829,7 @@ const DDGSContracts: React.FC = () => {
                                         <tr>
                                           <td colSpan={10} className="p-0 border-b-2 border-slate-300">
                                             <div className="bg-slate-800 text-white px-3 py-1.5 flex items-center justify-between">
-                                              <span className="text-[10px] font-bold uppercase tracking-widest">Invoice: INV-{d.invoice.invoiceNo}</span>
+                                              <span className="text-[10px] font-bold uppercase tracking-widest">Invoice: {d.invoice.remarks || `INV-${d.invoice.invoiceNo}`}</span>
                                               <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
                                                 d.invoice.status === 'PAID' ? 'bg-green-900/50 text-green-300 border-green-600' :
                                                 d.invoice.status === 'PARTIAL' ? 'bg-amber-900/50 text-amber-300 border-amber-600' :
