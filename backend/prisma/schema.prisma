@@ -1488,6 +1488,7 @@ model Customer {
   shipmentsShipTo          Shipment[]           @relation("ShipmentShipTo")
   sugarContracts           SugarContract[]
   sugarDispatchTrucks      SugarDispatchTruck[]
+  directSales              DirectSale[]
 
   divisions String[] @default([]) // empty = available to all divisions
 }
@@ -2573,10 +2574,12 @@ model DirectPurchase {
 }
 
 model DirectSale {
-  id           String   @id @default(uuid())
-  entryNo      Int      @default(autoincrement())
-  date         DateTime @default(now())
-  // Buyer — not a registered customer
+  id           String    @id @default(uuid())
+  entryNo      Int       @default(autoincrement())
+  date         DateTime  @default(now())
+  // Buyer — linked to Customer master (optional for walk-ins)
+  customerId   String?
+  customer     Customer? @relation(fields: [customerId], references: [id])
   buyerName    String
   buyerPhone   String?
   buyerAddress String?
@@ -2607,6 +2610,7 @@ model DirectSale {
   @@index([date])
   @@index([isPaid])
   @@index([division])
+  @@index([customerId])
 }
 
 // ── ETHANOL SUPPLY / CONTRACTS ──
