@@ -202,24 +202,27 @@ export async function computeSnapshot(opts?: { force?: boolean }): Promise<void>
 
     // If existing is BASELINE and we're forcing, use baseline's siloClosing as opening
     const baselineOpening = (existing?.source === 'BASELINE') ? existing.siloClosing : null;
+    const hasPrev = !!(existing?.source === 'BASELINE' ? existing : prev);
 
     // Flour silos — carry forward from previous or existing baseline
     const flourSrc = existing ?? prev;
     const flourSilo1Level = flourSrc?.flourSilo1Level ?? 0;
     const flourSilo2Level = flourSrc?.flourSilo2Level ?? 0;
     const flourTotal = r2(flourSilo1Level + flourSilo2Level);
-    const prevFlourTotal = prev?.flourTotal ?? 0;
-    const deltaFlour = r2(flourTotal - prevFlourTotal);
+    const prevFlourTotal = prev?.flourTotal ?? flourTotal; // no prev → delta=0
+    const deltaFlour = hasPrev ? r2(flourTotal - prevFlourTotal) : 0;
 
     // 5. Grain math
     const grainInSystem = r2(totalVolumeKL * grainPct);
     const grainDistilled = r2(washDistilledKL * grainPct);
 
     // For delta, compare against previous day's snapshot (or baseline's captured grainInSystem)
+    // If no previous snapshot exists at all, delta must be 0 — we can't assume all tank
+    // contents were consumed today. User must set a baseline first for meaningful data.
     const prevGrainInSystem = existing?.source === 'BASELINE'
       ? existing.grainInSystem  // baseline captured tank levels at time of setting
-      : (prev?.grainInSystem ?? 0);
-    const deltaGrainInSystem = r2(grainInSystem - prevGrainInSystem);
+      : (prev?.grainInSystem ?? grainInSystem); // no prev → assume same → delta=0
+    const deltaGrainInSystem = hasPrev ? r2(grainInSystem - prevGrainInSystem) : 0;
     // grain consumed = distilled + Δ(grain in tanks) + Δ(flour in silos)
     const grainConsumed = r2(Math.max(0, grainDistilled + deltaGrainInSystem + deltaFlour));
     const siloOpening = baselineOpening ?? prev?.siloClosing ?? 0;
