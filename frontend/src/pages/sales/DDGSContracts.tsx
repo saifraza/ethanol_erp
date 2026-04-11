@@ -51,6 +51,7 @@ interface Dispatch {
   gatePassNo?: string;
   invoiceId?: string;
   invoice?: DispatchInvoice | null;
+  ddgsDispatchTruckId?: string;
   status: string;
   remarks?: string;
 }
@@ -791,6 +792,24 @@ const DDGSContracts: React.FC = () => {
                                                   window.open(URL.createObjectURL(res.data), '_blank');
                                                 } catch { setError('Failed to load invoice PDF'); }
                                               }} className="text-[8px] font-bold uppercase px-1 py-0.5 border border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100" title="Print Invoice">INV</button>
+                                            )}
+                                            {d.ddgsDispatchTruckId && (
+                                              <button onClick={async (e) => {
+                                                e.stopPropagation();
+                                                try {
+                                                  const res = await api.get(`/ddgs-dispatch/${d.ddgsDispatchTruckId}/gate-pass-pdf`, { responseType: 'blob' });
+                                                  window.open(URL.createObjectURL(res.data), '_blank');
+                                                } catch { setError('Failed to load challan PDF'); }
+                                              }} className="text-[8px] font-bold uppercase px-1 py-0.5 border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100" title="Delivery Challan">DCH</button>
+                                            )}
+                                            {d.ddgsDispatchTruckId && (
+                                              <button onClick={async (e) => {
+                                                e.stopPropagation();
+                                                try {
+                                                  const res = await api.get(`/ddgs-dispatch/${d.ddgsDispatchTruckId}/gate-pass-pdf`, { responseType: 'blob' });
+                                                  window.open(URL.createObjectURL(res.data), '_blank');
+                                                } catch { setError('Failed to load gate pass PDF'); }
+                                              }} className="text-[8px] font-bold uppercase px-1 py-0.5 border border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100" title="Gate Pass">GP</button>
                                             )}
                                             {d.invoice?.ewbNo && (
                                               <button onClick={async (e) => {
