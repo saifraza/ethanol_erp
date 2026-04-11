@@ -294,9 +294,28 @@ router.post('/:orderId/shipments/:shipmentId/create-invoice', asyncHandler(async
   const netKg = shipment.weightNet || 0;
   if (netKg <= 0) return res.status(400).json({ error: 'Shipment has no net weight' });
 
-  // Must have a linked customer for invoice FK
-  if (!order.customerId) {
-    return res.status(400).json({ error: 'Link a customer to this order first (edit order and select buyer from Customer Master).' });
+  // Auto-create customer if not linked (scrap buyers are often walk-ins)
+  let customerId = order.customerId;
+  if (!customerId) {
+    const existing = await prisma.customer.findFirst({
+      where: { name: order.buyerName },
+      select: { id: true },
+    });
+    if (existing) {
+      customerId = existing.id;
+    } else {
+      const newCust = await prisma.customer.create({
+        data: {
+          name: order.buyerName,
+          phone: order.buyerPhone,
+          address: order.buyerAddress,
+          remarks: 'Auto-created from scrap sales order',
+        },
+      });
+      customerId = newCust.id;
+    }
+    // Link back to the order for future dispatches
+    await prisma.directSale.update({ where: { id: orderId }, data: { customerId } });
   }
 
   // Rate is provided at invoice time (scrap prices fluctuate)
@@ -322,7 +341,7 @@ router.post('/:orderId/shipments/:shipmentId/create-invoice', asyncHandler(async
 
       const inv = await tx.invoice.create({
         data: {
-          customerId: order.customerId!,
+          customerId: customerId!,
           invoiceDate: shipment.date,
           shipmentId: shipment.id,
           productName: order.productName,
