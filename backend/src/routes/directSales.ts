@@ -337,7 +337,7 @@ router.post('/:orderId/shipments/:shipmentId/create-invoice', asyncHandler(async
     const invTotal = Math.round((invAmount + gst.gstAmount) * 100) / 100;
 
     invoice = await prisma.$transaction(async (tx) => {
-      const customInvNo = await nextInvoiceNo(tx, 'SCRAP');
+      const customInvNo = await nextInvoiceNo(tx, 'ETH');
 
       const inv = await tx.invoice.create({
         data: {

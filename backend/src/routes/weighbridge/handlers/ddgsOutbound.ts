@@ -212,7 +212,7 @@ export async function handleDDGSOutbound(w: WeighmentInput, ctx: PushContext): P
     const total = Math.round((amount + gst.gstAmount) * 100) / 100;
 
     // MSPIL/DDGS/NNN counter (atomic increment via ON CONFLICT)
-    const customInvNo = await nextInvoiceNo(tx, 'DDGS');
+    const customInvNo = await nextInvoiceNo(tx, 'ETH');
 
     // Product line description: job work uses descriptive line; otherwise plain DDGS
     const isJobWork = contract.dealType === 'JOB_WORK';

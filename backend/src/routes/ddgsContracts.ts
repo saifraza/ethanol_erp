@@ -383,7 +383,7 @@ router.post('/:id/dispatches', asyncHandler(async (req: AuthRequest, res: Respon
         const total = Math.round((amount + gst.gstAmount) * 100) / 100;
 
         const inv = await prisma.$transaction(async (tx) => {
-          const customInvNo = await nextInvoiceNo(tx, 'DDGS');
+          const customInvNo = await nextInvoiceNo(tx, 'ETH');
 
           const invoice = await tx.invoice.create({
             data: {
@@ -530,7 +530,7 @@ router.post('/:id/release-truck/:truckId', asyncHandler(async (req: AuthRequest,
     const fresh = await tx.dDGSDispatchTruck.findUnique({ where: { id: truck.id }, select: { status: true } });
     if (fresh?.status === 'RELEASED') throw new Error('Already released');
 
-    const customInvNo = await nextInvoiceNo(tx, 'DDGS');
+    const customInvNo = await nextInvoiceNo(tx, 'ETH');
 
     // Create invoice
     const invoice = await tx.invoice.create({
@@ -630,7 +630,7 @@ router.post('/:id/dispatches/:dispatchId/create-invoice', asyncHandler(async (re
     const fresh = await tx.dDGSContractDispatch.findUnique({ where: { id: dispatch.id }, select: { invoiceId: true } });
     if (fresh?.invoiceId) throw new Error('Invoice already exists for this dispatch');
 
-    const customInvNo = await nextInvoiceNo(tx, 'DDGS');
+    const customInvNo = await nextInvoiceNo(tx, 'ETH');
 
     const inv = await tx.invoice.create({
       data: {
@@ -821,6 +821,56 @@ router.post('/:id/dispatches/:dispatchId/e-invoice', asyncHandler(async (req: Au
       ? 'e-Invoice and E-Way Bill generated successfully'
       : `e-Invoice generated (IRN: ${irn}). E-Way Bill failed: ${ewbError}`,
   });
+}));
+
+// ── DELIVERY CHALLAN PDF ──
+router.get('/:id/dispatches/:dispatchId/challan-pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const dispatch = await prisma.dDGSContractDispatch.findFirst({
+    where: { id: req.params.dispatchId, contractId: req.params.id },
+    include: { contract: { select: { buyerName: true, buyerAddress: true, buyerGstin: true, dealType: true, rate: true, processingChargePerMT: true, contractNo: true } } },
+  });
+  if (!dispatch) return res.status(404).json({ error: 'Dispatch not found' });
+
+  const isJobWork = dispatch.contract.dealType === 'JOB_WORK';
+  const rate = dispatch.rate || dispatch.contract.rate || 0;
+  const amount = Math.round(dispatch.weightNetMT * rate);
+  const gstRate = isJobWork ? 18 : 5;
+  const gstAmount = Math.round(amount * gstRate / 100);
+
+  const { renderDocumentPdf } = await import('../services/documentRenderer');
+  const pdfBuffer = await renderDocumentPdf({
+    docType: 'CHALLAN',
+    data: {
+      challanNo: dispatch.challanNo || dispatch.gatePassNo || '-',
+      date: dispatch.dispatchDate,
+      vehicleNo: dispatch.vehicleNo,
+      driverName: dispatch.driverName,
+      driverPhone: dispatch.driverPhone,
+      transporterName: dispatch.transporterName,
+      destination: dispatch.destination,
+      buyerName: dispatch.contract.buyerName,
+      buyerAddress: dispatch.contract.buyerAddress || '',
+      buyerGst: dispatch.contract.buyerGstin || '',
+      contractNo: dispatch.contract.contractNo,
+      productName: isJobWork ? 'JOBWORK CHARGES FOR DDGS PRODUCTION' : 'DDGS',
+      hsnCode: isJobWork ? '998817' : '23033000',
+      quantity: dispatch.weightNetMT,
+      unit: 'MT',
+      rate,
+      amount,
+      gstRate,
+      gstAmount,
+      totalValue: amount + gstAmount,
+      bags: dispatch.bags,
+      weightGross: dispatch.weightGrossMT * 1000,
+      weightTare: dispatch.weightTareMT * 1000,
+      weightNet: dispatch.weightNetMT * 1000,
+    },
+    verifyId: dispatch.id,
+  });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="Challan-DDGS-${dispatch.vehicleNo}.pdf"`);
+  res.send(pdfBuffer);
 }));
 
 // ── MANUAL EWB number + optional PDF upload ──
