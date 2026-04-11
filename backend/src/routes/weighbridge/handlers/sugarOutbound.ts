@@ -231,13 +231,30 @@ export async function handleSugarOutbound(w: WeighmentInput, ctx: PushContext): 
 
     // Single-increment guard — only bump contract totals if we transitioned to BILLED
     if (billedUpdate.count > 0) {
-      await tx.sugarContract.update({
+      // Concurrency guard: re-read the contract INSIDE the tx and run a
+      // conditional update so two simultaneous trucks can't oversubscribe a
+      // FIXED-quantity contract. For OPEN contracts (contractQtyMT === 0)
+      // there's no cap and we always increment.
+      const fresh = await tx.sugarContract.findUnique({
         where: { id: contract.id },
+        select: { contractQtyMT: true, totalSuppliedMT: true, contractNo: true },
+      });
+      const cap = fresh?.contractQtyMT || 0;
+      const isOpen = cap === 0;
+      const incremented = await tx.sugarContract.updateMany({
+        where: isOpen
+          ? { id: contract.id }
+          : { id: contract.id, totalSuppliedMT: { lte: cap - netMT } },
         data: {
           totalSuppliedMT: { increment: netMT },
           totalInvoicedAmt: { increment: total },
         },
       });
+      if (incremented.count === 0) {
+        throw new Error(
+          `Sugar contract ${fresh?.contractNo || contract.contractNo} oversubscribed: cannot bill ${netMT}MT (cap ${cap}MT, supplied ${fresh?.totalSuppliedMT}MT) from ${w.vehicle_no}`,
+        );
+      }
     }
 
     return { dispatch, billed: billedUpdate.count > 0, alreadyBilled: false, invoiceId: invoice.id, invoice, customer, amount, gst, total };

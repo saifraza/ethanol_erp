@@ -89,10 +89,14 @@ async function handleEthanolOutboundInner(w: WeighmentInput, _ctx: PushContext):
     }
 
     if (!dispatchTruck) {
-      const todayStart = new Date(dateVal);
+      // IST offset: 5.5 hours ahead of UTC. A truck at 11:30 PM IST crosses
+      // the UTC day boundary, so we must compute IST midnight boundaries.
+      const IST_MS = 5.5 * 60 * 60 * 1000;
+      const istDate = new Date(dateVal.getTime() + IST_MS);
+      const todayStart = new Date(istDate);
       todayStart.setUTCHours(0, 0, 0, 0);
-      const todayEnd = new Date(dateVal);
-      todayEnd.setUTCHours(23, 59, 59, 999);
+      todayStart.setTime(todayStart.getTime() - IST_MS);
+      const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000 - 1);
       dispatchTruck = await tx.dispatchTruck.findFirst({
         where: {
           vehicleNo: w.vehicle_no.toUpperCase(),
@@ -164,9 +168,29 @@ async function handleEthanolOutboundInner(w: WeighmentInput, _ctx: PushContext):
     if (dispatchTruck.status === 'RELEASED') return { skipped: false, id: dispatchTruck.id };
     // Idempotent re-sync if already GROSS_WEIGHED — ack and move on regardless of sourceWbId.
     // (Stale sourceWbId from a deleted+recreated factory weighment must NOT cause infinite retry.)
+    // BUT: if factory pushes corrected weights that differ from stored values, update them
+    // without changing status (weight correction support).
     if (dispatchTruck.status === 'GROSS_WEIGHED') {
       if (dispatchTruck.sourceWbId !== w.id) {
         console.warn(`[WB-PUSH][ETHANOL] ${w.vehicle_no} cloud GROSS_WEIGHED has sourceWbId=${dispatchTruck.sourceWbId} but factory pushed ${w.id} — keeping cloud record, acking factory.`);
+      }
+      // Check if pushed weights differ from stored — apply correction if so
+      const storedGross = dispatchTruck.weightGross || 0;
+      const storedTare = dispatchTruck.weightTare || 0;
+      const weightsChanged = (grossKg > 0 && grossKg !== storedGross) || (tareKg > 0 && tareKg !== storedTare);
+      if (weightsChanged) {
+        const correctedNet = (grossKg > 0 ? grossKg : storedGross) - (tareKg > 0 ? tareKg : storedTare);
+        await tx.dispatchTruck.update({
+          where: { id: dispatchTruck.id },
+          data: {
+            ...(grossKg > 0 && grossKg !== storedGross ? { weightGross: grossKg, grossTime: grossTimeVal } : {}),
+            ...(tareKg > 0 && tareKg !== storedTare ? { weightTare: tareKg, tareTime: tareTimeVal } : {}),
+            ...(correctedNet > 0 ? { weightNet: correctedNet } : {}),
+            ...(w.quantity_bl != null ? { quantityBL: w.quantity_bl } : {}),
+            ...(w.ethanol_strength != null ? { strength: w.ethanol_strength } : {}),
+          },
+        });
+        console.warn(`[WB-PUSH][ETHANOL] ${w.vehicle_no} weight correction on GROSS_WEIGHED: gross ${storedGross}→${grossKg}, tare ${storedTare}→${tareKg}`);
       }
       return { skipped: false, id: dispatchTruck.id };
     }

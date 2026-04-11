@@ -112,7 +112,7 @@ async function fetchGrainTrucks(
       : {};
 
   return prisma.grainTruck.findMany({
-    take: xlsxMode ? 10000 : undefined, // cap applied at merge layer for json
+    take: xlsxMode ? 10000 : 500,
     where: dateFilter,
     orderBy: { createdAt: 'desc' },
     select: {
@@ -146,7 +146,7 @@ async function fetchDispatchTrucks(
       : {};
 
   return prisma.dispatchTruck.findMany({
-    take: xlsxMode ? 10000 : undefined,
+    take: xlsxMode ? 10000 : 500,
     where: dateFilter,
     orderBy: { gateInTime: 'desc' },
     select: {
@@ -183,7 +183,7 @@ async function fetchDDGSTrucks(
       : {};
 
   return prisma.dDGSDispatchTruck.findMany({
-    take: xlsxMode ? 10000 : undefined,
+    take: xlsxMode ? 10000 : 500,
     where: dateFilter,
     orderBy: { gateInTime: 'desc' },
     select: {

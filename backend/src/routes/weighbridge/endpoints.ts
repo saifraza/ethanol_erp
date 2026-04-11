@@ -115,7 +115,7 @@ export function registerOtherRoutes(router: Router): void {
     const updates = updateWeighmentSchema.parse(req.body);
     const wbMarker = `WB:${wbId}`;
 
-    const [grainTruck, directPurchase, ddgsDispatch, goodsReceipt] = await Promise.all([
+    const [grainTruck, directPurchase, ddgsDispatch, goodsReceipt, ethanolDispatch] = await Promise.all([
       prisma.grainTruck.findFirst({
         where: { remarks: { contains: wbMarker } },
         select: { id: true, remarks: true, weightNet: true },
@@ -132,9 +132,13 @@ export function registerOtherRoutes(router: Router): void {
         where: { remarks: { contains: wbMarker } },
         select: { id: true, remarks: true, poId: true, lines: { select: { id: true, poLineId: true, receivedQty: true, rate: true, unit: true } } },
       }),
+      prisma.dispatchTruck.findFirst({
+        where: { sourceWbId: wbId },
+        select: { id: true, weightGross: true, weightTare: true, weightNet: true },
+      }),
     ]);
 
-    if (!grainTruck && !directPurchase && !ddgsDispatch && !goodsReceipt) {
+    if (!grainTruck && !directPurchase && !ddgsDispatch && !goodsReceipt && !ethanolDispatch) {
       return res.status(404).json({ error: `No cloud record found for weighment ${wbId}` });
     }
 
@@ -237,6 +241,23 @@ export function registerOtherRoutes(router: Router): void {
         });
       }
       results.push({ table: 'DDGSDispatchTruck', id: ddgsDispatch.id, updated: Object.keys(ddgsUpdate).length > 0 });
+    }
+
+    // ── Update DispatchTruck (ethanol outbound) ──
+    if (ethanolDispatch) {
+      const ethUpdate: Record<string, unknown> = {};
+      if (updates.vehicle_no) ethUpdate.vehicleNo = updates.vehicle_no;
+      if (updates.weight_gross != null) ethUpdate.weightGross = updates.weight_gross;
+      if (updates.weight_tare != null) ethUpdate.weightTare = updates.weight_tare;
+      if (updates.weight_net != null) ethUpdate.weightNet = updates.weight_net;
+
+      if (Object.keys(ethUpdate).length > 0) {
+        await prisma.dispatchTruck.update({
+          where: { id: ethanolDispatch.id },
+          data: ethUpdate,
+        });
+      }
+      results.push({ table: 'DispatchTruck', id: ethanolDispatch.id, updated: Object.keys(ethUpdate).length > 0 });
     }
 
     // ── Update GoodsReceipt (GRN) ──

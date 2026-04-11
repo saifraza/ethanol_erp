@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, AuthRequest, authorize } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
+import { ValidationError } from '../shared/errors';
 import { onStockMovement } from '../services/autoJournal';
 import multer from 'multer';
 import path from 'path';
@@ -512,13 +513,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       }
     }
 
-    // NF-4 FIX: Check truck cap for FIXED TRUCKS deals
-    if (po.truckCap) {
-      const grnCount = await prisma.goodsReceipt.count({ where: { poId: po.id } });
-      if (grnCount >= po.truckCap) {
-        return res.status(400).json({ error: `Truck cap (${po.truckCap}) reached for this deal` });
-      }
-    }
+    // NF-4 FIX: Truck cap check moved inside $transaction (C2 race fix)
 
     // Process lines
     const processedLines = (b.lines || []).map((line: any) => {
@@ -577,6 +572,14 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
 
     // Create GRN, update PO lines, and update PO status in a single transaction
     const { grn, poStatus } = await prisma.$transaction(async (tx) => {
+      // C2 FIX: Truck cap check INSIDE transaction to prevent race condition
+      if (po.truckCap) {
+        const grnCount = await tx.goodsReceipt.count({ where: { poId: po.id } });
+        if (grnCount >= po.truckCap) {
+          throw new ValidationError(`Truck cap (${po.truckCap}) reached for this deal`);
+        }
+      }
+
       // Step 1: Create GRN with lines
       const grn = await tx.goodsReceipt.create({
         data: {
@@ -603,31 +606,24 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         include: { lines: true },
       });
 
-      // Step 2: Update PO lines — guard against over-receive
+      // Step 2: Update PO lines — C1 FIX: atomic increment/decrement (no stale read)
       for (const line of processedLines) {
         if (line.poLineId) {
-          const poLine = await tx.pOLine.findUnique({
+          await tx.pOLine.update({
             where: { id: line.poLineId },
+            data: {
+              receivedQty: { increment: line.acceptedQty },
+              pendingQty: { decrement: line.acceptedQty },
+            },
           });
-          if (poLine) {
-            const newReceivedQty = poLine.receivedQty + line.acceptedQty;
-            const newPendingQty = poLine.quantity - newReceivedQty;
-
-            // Warn but don't block if over-receiving (common for weighbridge variance)
-            if (newPendingQty < 0) {
-              console.warn(`[GRN] Over-receive on PO line ${line.poLineId}: ordered=${poLine.quantity}, now received=${newReceivedQty}`);
-            }
-
-            await tx.pOLine.update({
-              where: { id: line.poLineId },
-              data: {
-                receivedQty: newReceivedQty,
-                pendingQty: Math.max(0, newPendingQty), // Clamp to 0, never negative
-              },
-            });
-          }
         }
       }
+
+      // Clamp any pendingQty that went negative (overage) back to 0
+      await tx.pOLine.updateMany({
+        where: { poId: b.poId, pendingQty: { lt: 0 } },
+        data: { pendingQty: 0 },
+      });
 
       // Step 3: Check and update PO status
       let poStatus = 'unchanged';

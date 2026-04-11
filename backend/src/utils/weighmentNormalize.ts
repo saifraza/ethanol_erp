@@ -3,7 +3,7 @@
  * into a single UnifiedWeighmentRow shape used by the weighment-history report.
  */
 
-export type WeighmentSource = 'GRAIN_TRUCK' | 'DISPATCH_TRUCK' | 'DDGS_TRUCK';
+export type WeighmentSource = 'GRAIN_TRUCK' | 'DISPATCH_TRUCK' | 'DDGS_TRUCK' | 'SHIPMENT';
 export type WeighmentDirection = 'INBOUND' | 'OUTBOUND';
 export type WeighmentMaterialType = 'ETHANOL' | 'DDGS' | 'RAW_MATERIAL' | 'FUEL' | 'OTHER';
 export type WeighmentStatus = 'PENDING' | 'PARTIAL' | 'COMPLETE' | 'CANCELLED';
@@ -173,9 +173,9 @@ export function normalizeGrainTruck(row: GrainTruckRecord): UnifiedWeighmentRow 
     firstWeightAt: null,
     secondWeightAt,
     releaseAt: null,
-    grossWeight: row.weightGross || null,
-    tareWeight: row.weightTare || null,
-    netWeight: row.weightNet || null,
+    grossWeight: row.weightGross ? row.weightGross * 1000 : null,
+    tareWeight: row.weightTare ? row.weightTare * 1000 : null,
+    netWeight: row.weightNet ? row.weightNet * 1000 : null,
     status,
     ...durations,
   };
@@ -370,7 +370,11 @@ export function normalizeMirror(row: WeighmentMirrorRecord): UnifiedWeighmentRow
 
   return {
     id: row.id,
-    source: 'GRAIN_TRUCK', // Closest generic label; frontend treats source as informational
+    source: direction === 'OUTBOUND'
+      ? ((row.materialCategory ?? '').toUpperCase().includes('ETHANOL') ? 'DISPATCH_TRUCK'
+        : (row.materialCategory ?? '').toUpperCase().includes('DDGS') ? 'DDGS_TRUCK'
+        : 'SHIPMENT')
+      : 'GRAIN_TRUCK',
     ticketNo: row.ticketNo,
     direction,
     materialType,
