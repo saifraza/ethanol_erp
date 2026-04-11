@@ -136,9 +136,28 @@ export default function AutoGoodsReceipts() {
       params.set('offset', String(page * PAGE_SIZE));
       const res = await api.get(`/goods-receipts/auto?${params.toString()}`);
       const data = res.data;
-      const list = Array.isArray(data)
-        ? (data as AutoGRNRow[])
-        : ((data as ListResponse)?.items ?? []);
+      const raw = Array.isArray(data)
+        ? (data as any[])
+        : ((data as ListResponse)?.items ?? []) as any[];
+      // Backend returns nested vendor/po/lines — flatten for display
+      const list: AutoGRNRow[] = raw.map((r: any) => ({
+        id: r.id,
+        grnNo: r.grnNo,
+        date: r.grnDate || r.date,
+        createdAt: r.createdAt,
+        status: r.status,
+        poId: r.po?.id || r.poId,
+        poNo: r.po?.poNo || r.poNo,
+        vendorId: r.vendor?.id || r.vendorId,
+        vendorName: r.vendor?.name || r.vendorName,
+        totalAmount: r.totalAmount,
+        remarks: r.remarks,
+        vehicleNo: r.vehicleNo,
+        ticketNo: r.ticketNo || r.remarks?.match(/Ticket #(\d+)/)?.[1] || null,
+        materialName: (r.lines?.[0]?.description || r.materialName || '').split('|')[0].trim() || null,
+        quantity: r.lines?.[0]?.receivedQty ?? r.totalQty ?? r.quantity,
+        unit: r.lines?.[0]?.unit || r.unit,
+      }));
       setRows(list);
       setTotal(
         Array.isArray(data)
@@ -355,7 +374,7 @@ export default function AutoGoodsReceipts() {
                       {ticket ? `T-${ticket}` : '--'}
                     </td>
                     <td className="px-3 py-1.5 text-slate-700 border-r border-slate-100">{r.vendorName || '--'}</td>
-                    <td className="px-3 py-1.5 text-slate-700 border-r border-slate-100 font-mono">{r.poNo || '--'}</td>
+                    <td className="px-3 py-1.5 text-slate-700 border-r border-slate-100 font-mono">{r.poNo ? `PO-${r.poNo}` : '--'}</td>
                     <td className="px-3 py-1.5 text-slate-700 border-r border-slate-100">{r.materialName || '--'}</td>
                     <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-700 border-r border-slate-100">
                       {fmtQty(r.quantity, r.unit)}
