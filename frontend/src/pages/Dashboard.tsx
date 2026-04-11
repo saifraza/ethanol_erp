@@ -151,6 +151,12 @@ export default function Dashboard() {
     [95, 798.10], [94, 800.60], [93, 803.40], [92, 806.30], [91, 809.50],
     [90, 812.90], [88, 820.10], [85, 831.30], [80, 848.90],
   ];
+  // Reverse table: density at 20°C → strength % v/v (ascending density)
+  const DENSITY_TO_STRENGTH: [number, number][] = [
+    [789.24, 100], [790.50, 99], [792.00, 98], [793.80, 97], [795.80, 96],
+    [798.10, 95], [800.60, 94], [803.40, 93], [806.30, 92], [809.50, 91],
+    [812.90, 90], [820.10, 88], [831.30, 85], [848.90, 80],
+  ];
   // Thermal expansion coeff (per °C from 20°C) by approx strength
   const ALPHA_TABLE: [number, number][] = [
     [100, 0.00108], [96, 0.00103], [93, 0.00098], [90, 0.00093], [85, 0.00087], [80, 0.00082],
@@ -173,8 +179,8 @@ export default function Dashboard() {
     for (let i = 0; i < 8; i++) {
       const alpha = lerp(ALPHA_TABLE, strength);
       const rho20 = densityKgM3 / (1 - alpha * (tempC - 20));
-      // Lookup strength from density at 20°C (table is descending % → ascending density)
-      strength = lerp(DENSITY_TABLE_20C, rho20);
+      // Lookup strength from density at 20°C (ascending density → descending strength)
+      strength = lerp(DENSITY_TO_STRENGTH, rho20);
     }
     return Math.round(strength * 100) / 100;
   }
