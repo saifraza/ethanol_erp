@@ -226,8 +226,8 @@ export function buildIRNPayload(invoice: any): IRNPayload {
     ItemList: [
       {
         SlNo: '1',
-        IsServc: getHsnCode(invoice.productName || 'DDGS').startsWith('99') ? 'Y' : 'N',
-        HsnCd: getHsnCode(invoice.productName || 'DDGS'),
+        IsServc: ((invoice as any).hsnCode || getHsnCode(invoice.productName || 'DDGS')).startsWith('99') ? 'Y' : 'N',
+        HsnCd: (invoice as any).hsnCode || getHsnCode(invoice.productName || 'DDGS'),
         Qty: invoice.quantity || 0,
         Unit: getIRNUnit(invoice.unit || 'KL'),
         UnitPrice: invoice.rate || 0,
@@ -272,6 +272,18 @@ function getHsnCode(productName: string): string {
     'CO2': '28112100',          // Ch 28: Carbon dioxide
     'MAIZE': '10059000',        // Ch 10: Maize (corn) other
     'RICE': '10063090',         // Ch 10: Rice (broken/other)
+    // Scrap / Miscellaneous
+    'SCRAP IRON': '72044900',   // Ch 72: Ferrous waste & scrap — iron
+    'SCRAP COPPER': '74040000', // Ch 74: Copper waste & scrap
+    'SCRAP SS': '72042900',     // Ch 72: Ferrous waste & scrap — stainless steel
+    'EMPTY DRUMS': '73101000',  // Ch 73: Iron/steel tanks, drums
+    'GUNNY BAGS': '63053200',   // Ch 63: Used jute sacks
+    'COAL ASH': '26219090',     // Ch 26: Slag, ash — other
+    'WASTE OIL': '27109900',    // Ch 27: Waste oils
+    'SPENT WASH': '23099090',   // Ch 23: Animal feed preparations
+    'PRESS MUD': '23031000',    // Ch 23: Residues of starch
+    'FLY ASH': '26219000',      // Ch 26: Slag, ash
+    'SUGAR': '17019990',        // Ch 17: Cane sugar
   };
   return hsnMap[upper] || '99999999';
 }
