@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Share2, X } from 'lucide-react';
+import { Share2, X, Download } from 'lucide-react';
 import api from '../../services/api';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -55,6 +55,14 @@ function fmtTime(d: string | null) {
   return dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
 }
 
+function fmtDateTime(d: string | null) {
+  if (!d) return '--';
+  const dt = new Date(d);
+  const date = dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+  const time = dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+  return `${date} ${time}`;
+}
+
 function fmtNum(n: number) {
   return n === 0 ? '--' : n.toLocaleString('en-IN', { maximumFractionDigits: 1 });
 }
@@ -107,6 +115,40 @@ export default function EthanolDispatch() {
     setTimeout(() => setMsg(null), 3000);
   }
 
+  const downloadCSV = () => {
+    if (dispatches.length === 0) return;
+    const headers = ['Date', 'Vehicle', 'Party', 'Destination', 'Qty (BL)', 'Strength %', 'Status', 'Gate In', 'Released', 'Contract', 'Seal No', 'RST No', 'Driver', 'Transporter', 'Gate Pass', 'Challan'];
+    const rows = dispatches.map(d => [
+      fmtDate(d.date),
+      d.vehicleNo || '',
+      d.contract?.buyerName || d.partyName || '',
+      d.destination || '',
+      d.quantityBL || 0,
+      d.strength?.toFixed(1) || '',
+      d.status?.replace(/_/g, ' ') || '',
+      d.gateInTime ? `${fmtDate(d.gateInTime)} ${fmtTime(d.gateInTime)}` : '',
+      d.releaseTime ? `${fmtDate(d.releaseTime)} ${fmtTime(d.releaseTime)}` : '',
+      d.contract?.contractNo || '',
+      d.sealNo || '',
+      d.rstNo || '',
+      d.driverName || '',
+      d.transporterName || '',
+      d.gatePassNo || '',
+      d.challanNo || '',
+    ]);
+    rows.push([]);
+    rows.push(['TOTAL', '', '', '', summary.totalBL, '', `${summary.totalTrucks} trucks`]);
+    const esc = (v: any) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+    const csv = [headers, ...rows].map(r => r.map(esc).join(',')).join('\r\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ethanol-dispatch-${from}-to-${to}.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   if (loading && dispatches.length === 0) return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center">
       <div className="text-xs text-slate-400 uppercase tracking-widest">Loading...</div>
@@ -126,10 +168,16 @@ export default function EthanolDispatch() {
           <div className="flex items-center gap-2">
             {msg && <span className={`text-[10px] ${msg.type === 'ok' ? 'text-green-400' : 'text-red-400'}`}>{msg.text}</span>}
             {dispatches.length > 0 && (
-              <button onClick={shareTelegram}
-                className="px-3 py-1 bg-green-600 text-white text-[11px] font-medium hover:bg-green-700 flex items-center gap-1">
-                <Share2 size={12} /> Telegram
-              </button>
+              <>
+                <button onClick={downloadCSV}
+                  className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 flex items-center gap-1">
+                  <Download size={12} /> CSV
+                </button>
+                <button onClick={shareTelegram}
+                  className="px-3 py-1 bg-green-600 text-white text-[11px] font-medium hover:bg-green-700 flex items-center gap-1">
+                  <Share2 size={12} /> Telegram
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -221,8 +269,8 @@ export default function EthanolDispatch() {
                       {d.status?.replace(/_/g, ' ')}
                     </span>
                   </td>
-                  <td className="px-3 py-1.5 text-center text-slate-500 border-r border-slate-100 whitespace-nowrap">{fmtTime(d.gateInTime)}</td>
-                  <td className="px-3 py-1.5 text-center text-slate-500 border-r border-slate-100 whitespace-nowrap">{fmtTime(d.releaseTime)}</td>
+                  <td className="px-3 py-1.5 text-center text-slate-500 border-r border-slate-100 whitespace-nowrap text-[10px]">{fmtDateTime(d.gateInTime)}</td>
+                  <td className="px-3 py-1.5 text-center text-slate-500 border-r border-slate-100 whitespace-nowrap text-[10px]">{fmtDateTime(d.releaseTime)}</td>
                   <td className="px-3 py-1.5 text-slate-500">{d.contract?.contractNo || '--'}</td>
                 </tr>
               ))}

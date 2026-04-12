@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Fuel, Save, ChevronDown, ChevronUp, Eye, X, Share2, Loader2, TrendingUp, Droplets, Gauge, Truck, Clock, Activity, Package, Factory, Pause, Trash2 } from 'lucide-react';
+import { Fuel, Save, ChevronDown, ChevronUp, Eye, X, Share2, Loader2, TrendingUp, Droplets, Gauge, Truck, Clock, Activity, Package, Factory, Pause, Trash2, Download } from 'lucide-react';
 import api from '../../services/api';
 
 const TANKS = [
@@ -219,6 +219,25 @@ export default function EthanolProduct() {
     loadLatest(e.id);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
+
+  const downloadCSV = () => {
+    if (entries.length === 0) return;
+    const headers = ['Reading Date', 'Total Stock', 'Dispatch Qty', 'Tankers', 'Production', 'KLPD', 'Avg Strength %'];
+    const rows = entries.map((e: any) => {
+      const dt = new Date(e.date);
+      const dateStr = dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' });
+      return [dateStr, e.totalStock || 0, e.totalDispatch || 0, e.trucks?.length || 0, e.productionBL || 0, (e.klpd || 0).toFixed(1), (e.avgStrength || 0).toFixed(2)];
+    });
+    const esc = (v: any) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+    const csv = [headers, ...rows].map(r => r.map(esc).join(',')).join('\r\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ethanol-stock-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   const fmtDt = (d: string) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '';
   const fmtDtTime = (d: string) => {
@@ -634,11 +653,18 @@ export default function EthanolProduct() {
 
       {/* History */}
       <div className="border-t pt-4">
-        <button onClick={() => setShowHistory(!showHistory)}
-          className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-800">
-          {showHistory ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-          History ({entries.length} entries)
-        </button>
+        <div className="flex items-center justify-between">
+          <button onClick={() => setShowHistory(!showHistory)}
+            className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-800">
+            {showHistory ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            History ({entries.length} entries)
+          </button>
+          {entries.length > 0 && (
+            <button onClick={downloadCSV} className="flex items-center gap-1 px-3 py-1 bg-green-600 text-white text-[11px] font-medium hover:bg-green-700">
+              <Download size={12} /> Download CSV
+            </button>
+          )}
+        </div>
         {showHistory && (
           <div className="mt-3 space-y-2">
             {entries.map(e => (
