@@ -49,7 +49,8 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'sugar-dispatch', label: 'Sugar Dispatch', to: '/process/sugar-dispatch', icon: Truck, group: 'process' },
   { key: 'water-utility', label: 'Utilities', to: '/process/water-utility', icon: Waves, group: 'process' },
   { key: 'fuel', label: 'Fuel', to: '/process/fuel', icon: Flame, group: 'procurement' },
-  { key: 'opc-live', label: 'OPC Live', to: '/process/opc', icon: Radio, group: 'process' },
+  { key: 'opc-live', label: 'OPC Ethanol', to: '/process/opc-ethanol', icon: Radio, group: 'process' },
+  { key: 'opc-sugar', label: 'OPC Sugar', to: '/process/opc-sugar', icon: Radio, group: 'process' },
   { key: 'plant-indent', label: 'Indent / Request', to: '/purchase-requisition', icon: ShoppingCart, group: 'process' },
 
   // ── SALES (DDGS + Ethanol outward) ──
