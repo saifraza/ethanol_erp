@@ -410,7 +410,7 @@ export default function SiloStock() {
                     </div>
                     <div className="flex items-start gap-2">
                       <span className="w-2 h-2 mt-1 rounded-full bg-purple-500 shrink-0" />
-                      <span><b>Grain %:</b> Configured in Settings (currently {snap ? Math.round(snap.grainPctUsed * 100) : 30}%)</span>
+                      <span><b>Grain %:</b> Configured in Settings (currently {snap ? Math.round(snap.grainPctUsed * 100) : 32}%)</span>
                     </div>
                     <div className="flex items-start gap-2">
                       <span className="w-2 h-2 mt-1 rounded-full bg-blue-500 shrink-0" />
@@ -450,12 +450,8 @@ export default function SiloStock() {
                   <Tooltip contentStyle={{ fontSize: 11 }} formatter={(v: number, name: string) => [Math.abs(v).toFixed(1) + ' MT', name]} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
                   <ReferenceLine y={0} stroke="#334155" />
-                  <Bar dataKey="received" name="Received" stackId="a">
-                    {chartData.map((_, i) => <Cell key={i} fill="#22c55e" />)}
-                  </Bar>
-                  <Bar dataKey="consumed" name="Consumed" stackId="a">
-                    {chartData.map((_, i) => <Cell key={i} fill="#f59e0b" />)}
-                  </Bar>
+                  <Bar dataKey="received" name="Received" stackId="a" fill="#22c55e" />
+                  <Bar dataKey="consumed" name="Consumed" stackId="a" fill="#f59e0b" />
                 </BarChart>
               </ResponsiveContainer>
             </div>

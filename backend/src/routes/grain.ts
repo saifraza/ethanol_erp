@@ -14,7 +14,7 @@ function getCurrentYearStart(): number {
 async function getGrainPcts() {
   const s = await prisma.settings.findFirst();
   return {
-    fermPct: (s?.grainPercent ?? 31) / 100,
+    fermPct: (s?.grainPercent ?? 32) / 100,
     pfPct: (s?.pfGrainPercent ?? 15) / 100,
     millingLossPct: ((s as any)?.millingLossPercent ?? 2.5) / 100,
   };

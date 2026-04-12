@@ -161,13 +161,7 @@ export default function DDGSDispatch() {
         </div>
       </div>
 
-      {/* Add Button */}
-      {!showForm && (
-        <button onClick={() => setShowForm(true)}
-          className="w-full border-2 border-dashed border-amber-300 py-4 text-amber-700 hover:bg-amber-50 flex items-center justify-center gap-2 mb-5 font-medium">
-          <Plus size={20} /> Add Dispatch
-        </button>
-      )}
+      {/* Manual Add hidden — all DDGS dispatch entries come through weighbridge only */}
 
       {/* New Dispatch Form */}
       {showForm && (

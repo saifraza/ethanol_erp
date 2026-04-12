@@ -27,24 +27,30 @@ router.get('/', authenticate, asyncHandler(async (req: AuthRequest, res: Respons
     const maxDate = new Date(snapshots[0].date.getTime() + 24 * 3600 * 1000);
     const ethanolEntries = await prisma.ethanolProductEntry.findMany({
       where: { date: { gte: minDate, lt: maxDate } },
-      select: { date: true, productionAL: true, productionBL: true },
+      select: { date: true, productionAL: true, productionBL: true, washKL: true, grainConsumedMT: true, yieldALperMT: true },
       orderBy: { date: 'asc' },
     });
     // Group ethanol by date string
-    const ethanolByDate = new Map<string, { al: number; bl: number }>();
+    const ethanolByDate = new Map<string, { al: number; bl: number; washKL: number | null; grainMT: number | null; yield: number | null }>();
     for (const e of ethanolEntries) {
       const key = e.date.toISOString().split('T')[0];
-      const existing = ethanolByDate.get(key) || { al: 0, bl: 0 };
+      const existing = ethanolByDate.get(key) || { al: 0, bl: 0, washKL: null, grainMT: null, yield: null };
       existing.al += Math.max(0, e.productionAL || 0);
       existing.bl += Math.max(0, e.productionBL || 0);
+      // Use ethanol entry's own wash/grain if available (OPC-matched time window)
+      if (e.washKL != null) existing.washKL = (existing.washKL ?? 0) + e.washKL;
+      if (e.grainConsumedMT != null) existing.grainMT = (existing.grainMT ?? 0) + e.grainConsumedMT;
+      if (e.yieldALperMT != null) existing.yield = e.yieldALperMT;
       ethanolByDate.set(key, existing);
     }
     const items = snapshots.map(s => {
       const key = s.date.toISOString().split('T')[0];
       const eth = ethanolByDate.get(key);
       const ethanolAL = r2(eth?.al ?? 0);
-      const yieldALPerMT = s.grainConsumed > 0 ? r2(ethanolAL / s.grainConsumed) : 0;
-      return { ...s, ethanolAL, yieldALPerMT };
+      // Prefer ethanol entry's matched grain consumed, fallback to silo snapshot's
+      const grainForYield = eth?.grainMT ?? s.grainConsumed;
+      const yieldALPerMT = grainForYield > 0 ? r2(ethanolAL / grainForYield) : 0;
+      return { ...s, ethanolAL, yieldALPerMT, washKL: eth?.washKL ?? null, grainConsumedMT: eth?.grainMT ?? null };
     });
     return res.json({ items, total });
   }
@@ -99,19 +105,19 @@ router.get('/latest', authenticate, asyncHandler(async (_req: AuthRequest, res: 
     ? ethanolEntries.filter(e => e.avgStrength > 0).reduce((s, e) => s + e.avgStrength, 0) / ethanolEntries.filter(e => e.avgStrength > 0).length
     : 0;
 
-  // Yield = latest ethanol dip's productionAL / latest snapshot's grainConsumed
-  // The latest ethanol entry represents completed 24h production since previous dip
+  // Yield: prefer ethanol entry's OPC-matched grainConsumedMT, fallback to silo snapshot
   let yieldALPerMT = 0;
   let yieldProductionAL = 0;
   let yieldGrainConsumed = 0;
   const latestEthanol = await prisma.ethanolProductEntry.findFirst({
     orderBy: { date: 'desc' },
-    select: { productionAL: true },
+    select: { productionAL: true, grainConsumedMT: true, yieldALperMT: true },
   });
-  if (latestEthanol && latestEthanol.productionAL > 0 && snapshot.grainConsumed > 0) {
+  if (latestEthanol && latestEthanol.productionAL > 0) {
     yieldProductionAL = Math.max(0, latestEthanol.productionAL);
-    yieldGrainConsumed = snapshot.grainConsumed;
-    yieldALPerMT = r2(yieldProductionAL / yieldGrainConsumed);
+    // Prefer OPC-matched grain consumed from ethanol entry
+    yieldGrainConsumed = latestEthanol.grainConsumedMT ?? snapshot.grainConsumed;
+    yieldALPerMT = yieldGrainConsumed > 0 ? r2(yieldProductionAL / yieldGrainConsumed) : 0;
   }
 
   const siloEstimate = r2(snapshot.siloClosing + pendingTrucksMT);
@@ -358,7 +364,7 @@ router.put('/:id', authenticate, validate(overrideSchema), asyncHandler(async (r
 // --- helpers ---
 async function getGrainPct(): Promise<number> {
   const s = await prisma.settings.findFirst();
-  return ((s as any)?.grainPercent ?? 31) / 100;
+  return ((s as any)?.grainPercent ?? 32) / 100;
 }
 
 async function getCapacities(): Promise<Record<string, number>> {

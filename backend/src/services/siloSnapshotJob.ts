@@ -153,7 +153,7 @@ async function getCapacities(): Promise<Record<string, number>> {
 
 async function getGrainPct(): Promise<number> {
   const s = await prisma.settings.findFirst();
-  return ((s as any)?.grainPercent ?? 31) / 100;
+  return ((s as any)?.grainPercent ?? 32) / 100;
 }
 
 function r2(n: number) { return Math.round(n * 100) / 100; }

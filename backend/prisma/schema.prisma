@@ -721,7 +721,10 @@ model DDGSStockEntry {
 }
 
 // ═══════════════════════════════════════════════
-// DDGS DISPATCH TRUCKS (per-truck outgoing)
+// GENERIC OUTBOUND DISPATCH (named DDGSDispatchTruck for historical reasons)
+// Used for: DDGS, Sugar, Scrap, LFO, HFO, Ash, Press Mud, and all other non-ethanol outbound.
+// Ethanol uses DispatchTruck instead (separate flow with gate-pass pre-creation).
+// TODO: Consider renaming to OutboundDispatch in a future migration.
 // ═══════════════════════════════════════════════
 model DDGSDispatchTruck {
   id                   String                @id @default(uuid())
@@ -913,6 +916,11 @@ model EthanolProductEntry {
   productionBL  Float           @default(0) // currentStock - prevStock + dispatch
   productionAL  Float           @default(0) // productionBL × avgStrength / 100
   klpd          Float           @default(0) // kilolitres per day flow rate
+  // Grain consumption — snapshotted from OPC at dip time
+  washKL           Float?  // wash flow totalizer delta between prev dip and this dip
+  grainConsumedMT  Float?  // washKL × grainPct
+  yieldALperMT     Float?  // productionAL / grainConsumedMT
+  grainPctUsed     Float?  // grain% setting at time of calculation
   remarks       String?
   userId        String
   createdAt     DateTime        @default(now())

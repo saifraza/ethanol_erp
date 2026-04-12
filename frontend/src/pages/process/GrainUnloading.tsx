@@ -9,7 +9,7 @@ const DEF_FERM_CAP = 2300;
 const DEF_PF_CAP = 450;
 const DEF_ILT_CAP = 190;
 const DEF_FLT_CAP = 440;
-const DEF_GRAIN_PCT = 0.31;
+const DEF_GRAIN_PCT = 0.32;
 const DEF_PF_PCT = 0.15;
 
 interface GrainForm {

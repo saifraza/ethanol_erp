@@ -4,6 +4,73 @@ import { authenticate, AuthRequest, authorize } from '../middleware/auth';
 
 const router = Router();
 
+// ── OPC wash snapshot helper ───────────────────────────────────
+// Reads wash flow totalizer (MG_140101 PRV_HR) between two timestamps
+// from OPC hourly readings. Returns wash KL in that window.
+const WASH_TAG = 'MG_140101';
+const WASH_FALLBACK = 'FCV_140101';
+
+async function snapshotWashKL(prevCreatedAt: Date | null, currentTime: Date): Promise<{
+  washKL: number | null;
+  grainConsumedMT: number | null;
+  yieldALperMT: number | null;
+  grainPctUsed: number | null;
+} | null> {
+  if (!process.env.DATABASE_URL_OPC || !prevCreatedAt) return null;
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { PrismaClient } = require('@prisma/opc-client');
+    const opc = new PrismaClient();
+
+    try {
+      // Sum PRV_HR (hourly totalizer) between prev dip time and now
+      let readings = await opc.opcHourlyReading.findMany({
+        where: {
+          tag: WASH_TAG,
+          property: 'PRV_HR',
+          hour: { gte: prevCreatedAt, lt: currentTime },
+        },
+        select: { avg: true },
+      });
+
+      if (readings.length === 0) {
+        // Fallback: FCV_140101 PV
+        readings = await opc.opcHourlyReading.findMany({
+          where: {
+            tag: WASH_FALLBACK,
+            property: 'PV',
+            hour: { gte: prevCreatedAt, lt: currentTime },
+          },
+          select: { avg: true },
+        });
+      }
+
+      const washKL = readings.reduce((s: number, r: { avg: number }) => s + r.avg, 0);
+
+      // Get grain% from settings
+      const settings = await prisma.settings.findFirst();
+      const grainPct = ((settings as any)?.grainPercent ?? 32) / 100;
+      const grainConsumedMT = Math.round(washKL * grainPct * 100) / 100;
+
+      await opc.$disconnect();
+
+      return {
+        washKL: Math.round(washKL * 100) / 100,
+        grainConsumedMT,
+        yieldALperMT: null, // filled after productionAL is known
+        grainPctUsed: grainPct,
+      };
+    } catch (err) {
+      console.warn('[EthanolProduct] OPC wash snapshot failed:', (err as Error).message);
+      await opc.$disconnect();
+      return null;
+    }
+  } catch {
+    return null;
+  }
+}
+
 const TANK_KEYS = ['recA','recB','recC','bulkA','bulkB','bulkC','disp'];
 const TANK_FIELDS = TANK_KEYS.flatMap(k => [`${k}Dip`,`${k}Lt`,`${k}Strength`,`${k}Volume`]);
 
@@ -179,6 +246,16 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     }
     const klpd = calcKLPD(summary.productionBL, prevEntry?.date || null, entryDate);
 
+    // Snapshot OPC wash between prev dip and now
+    const wash = await snapshotWashKL(prevEntry?.createdAt || null, new Date());
+    let washData: any = {};
+    if (wash) {
+      const yieldVal = wash.grainConsumedMT && wash.grainConsumedMT > 0 && summary.productionAL > 0
+        ? Math.round((summary.productionAL / wash.grainConsumedMT) * 100) / 100
+        : null;
+      washData = { washKL: wash.washKL, grainConsumedMT: wash.grainConsumedMT, grainPctUsed: wash.grainPctUsed, yieldALperMT: yieldVal };
+    }
+
     const entry = await prisma.ethanolProductEntry.create({
       data: {
         date: entryDate,
@@ -186,6 +263,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
         ...tankData,
         ...summary,
         klpd,
+        ...washData,
         remarks: remarks || null,
         userId: req.user!.id,
         trucks: {
@@ -239,6 +317,16 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
     }
     const klpd = calcKLPD(summary.productionBL, prevEntry?.date || null, entryDate);
 
+    // Re-snapshot OPC wash
+    const wash = await snapshotWashKL(prevEntry?.createdAt || null, existing.createdAt);
+    let washData: any = {};
+    if (wash) {
+      const yieldVal = wash.grainConsumedMT && wash.grainConsumedMT > 0 && summary.productionAL > 0
+        ? Math.round((summary.productionAL / wash.grainConsumedMT) * 100) / 100
+        : null;
+      washData = { washKL: wash.washKL, grainConsumedMT: wash.grainConsumedMT, grainPctUsed: wash.grainPctUsed, yieldALperMT: yieldVal };
+    }
+
     // Delete old trucks, recreate
     await prisma.dispatchTruck.deleteMany({ where: { entryId: req.params.id } });
 
@@ -249,6 +337,7 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
         ...tankData,
         ...summary,
         klpd,
+        ...washData,
         remarks: remarks || null,
         trucks: {
           create: truckList.map(t => ({
@@ -282,6 +371,64 @@ router.delete('/:id', authenticate, authorize('ADMIN'), async (req: AuthRequest,
 // so late-arriving trucks don't leave stale production/klpd on the entry
 // whose window they fall in.
 // ─────────────────────────────────────────────────────────────
+// POST /api/ethanol-product/backfill-wash — Recalculate wash/grain/yield for all entries
+// that have valid createdAt timestamps (not bulk-imported)
+router.post('/backfill-wash', authenticate, authorize('ADMIN'), async (_req: AuthRequest, res: Response) => {
+  if (!process.env.DATABASE_URL_OPC) {
+    return res.status(400).json({ error: 'DATABASE_URL_OPC not configured — backfill requires OPC access' });
+  }
+
+  const entries = await prisma.ethanolProductEntry.findMany({
+    orderBy: { date: 'asc' },
+    select: { id: true, date: true, createdAt: true, productionAL: true },
+  });
+
+  // Skip bulk-imported entries (all created within same second on Mar 16)
+  // Use entries where createdAt differs from neighbours by > 1 hour
+  let updated = 0;
+  const results: any[] = [];
+
+  for (let i = 0; i < entries.length; i++) {
+    const cur = entries[i];
+    const prev = i > 0 ? entries[i - 1] : null;
+
+    // Skip if no prev (first entry, no wash window)
+    if (!prev) continue;
+
+    // Skip bulk imports: if createdAt gap < 5 seconds, these were batch-loaded
+    const gapMs = cur.createdAt.getTime() - prev.createdAt.getTime();
+    if (gapMs < 5000) continue;
+
+    const wash = await snapshotWashKL(prev.createdAt, cur.createdAt);
+    if (!wash || !wash.washKL) continue;
+
+    const yieldVal = wash.grainConsumedMT && wash.grainConsumedMT > 0 && cur.productionAL > 0
+      ? Math.round((cur.productionAL / wash.grainConsumedMT) * 100) / 100
+      : null;
+
+    await prisma.ethanolProductEntry.update({
+      where: { id: cur.id },
+      data: {
+        washKL: wash.washKL,
+        grainConsumedMT: wash.grainConsumedMT,
+        grainPctUsed: wash.grainPctUsed,
+        yieldALperMT: yieldVal,
+      },
+    });
+
+    results.push({
+      date: cur.date.toISOString().slice(0, 10),
+      washKL: wash.washKL,
+      grainMT: wash.grainConsumedMT,
+      yield: yieldVal,
+      prodAL: Math.round(cur.productionAL),
+    });
+    updated++;
+  }
+
+  res.json({ message: `Backfilled ${updated} entries`, results });
+});
+
 export async function recomputeEthanolEntryByDate(truckDate: Date): Promise<void> {
   // Find the ethanol entry whose window contains this truck date:
   // the first entry with date >= truckDate (since window is (prev, current])
