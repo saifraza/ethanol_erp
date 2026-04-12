@@ -23,10 +23,8 @@ router.get('/analytics', authenticate, async (req: AuthRequest, res: Response) =
       latestSiloSnapshot, grainTruckAgg,
     ] = await Promise.all([
       prisma.grainEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
-      // Fetch 2 extra days before range — need prev entry's tank volumes for production calc
-      prisma.ethanolProductEntry.findMany({ where: { date: { gte: new Date(from.getTime() - 2 * 24 * 3600 * 1000), lte: now } }, orderBy: { date: 'asc' } }),
-      // Fetch all dispatch trucks (any status) — we count all for production calc
-      prisma.dispatchTruck.findMany({ where: { date: { gte: new Date(from.getTime() - 2 * 24 * 3600 * 1000), lte: now } }, orderBy: { date: 'asc' } }),
+      prisma.ethanolProductEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
+      prisma.dispatchTruck.findMany({ where: { date: { gte: from, lte: now }, status: { notIn: ['GATE_IN', 'TARE_WEIGHED'] } }, orderBy: { date: 'asc' } }),
       prisma.dDGSStockEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
       prisma.dDGSDispatchTruck.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
       prisma.dDGSProductionEntry.findMany({ where: { date: { gte: from, lte: now } }, select: { totalProduction: true, date: true, shiftDate: true } }),
@@ -70,9 +68,7 @@ router.get('/analytics', authenticate, async (req: AuthRequest, res: Response) =
     // These will be recalculated from raw data after ethanolDaily is built
     let totalEthanolBL = 0;
     let totalEthanolAL = 0;
-    // For KPI totals, only count completed dispatches (not GATE_IN/TARE_WEIGHED)
-    const completedDispatches = dispatch.filter((d: any) => !['GATE_IN', 'TARE_WEIGHED'].includes(d.status));
-    const totalDispatchBL = completedDispatches.reduce((s: number, e: any) => s + (e.quantityBL || 0), 0);
+    const totalDispatchBL = dispatch.reduce((s, e) => s + (e.quantityBL || 0), 0);
     const latestEthanol = ethanol.length > 0
       ? ethanol[ethanol.length - 1]
       : await prisma.ethanolProductEntry.findFirst({ orderBy: { date: 'desc' } });
@@ -113,55 +109,45 @@ router.get('/analytics', authenticate, async (req: AuthRequest, res: Response) =
       totalAtPlant: e.totalGrainAtPlant || 0,
     }));
 
-    // Ethanol daily — recalculate production from raw tank volumes + actual truck dispatches
+    // Ethanol daily — use stored DB values (manually entered dispatch is correct per team)
     // Each dip measures previous day's production, so shift date back 1 day
-    const ethanolDaily: { date: string; productionBL: number; productionAL: number; totalStock: number; dispatch: number; klpd: number; avgStrength: number }[] = [];
-    for (let i = 1; i < ethanol.length; i++) {
-      const cur = ethanol[i];
-      const prev = ethanol[i - 1];
-      const prodDay = new Date(cur.date.getTime() - 24 * 3600 * 1000);
-      const dateKey = fmtDate(prodDay);
-
-      // Raw tank volumes
-      const curStock = (cur.recAVolume || 0) + (cur.recBVolume || 0) + (cur.recCVolume || 0)
-        + (cur.bulkAVolume || 0) + (cur.bulkBVolume || 0) + (cur.bulkCVolume || 0)
-        + (cur.dispVolume || 0);
-      const prevStock = (prev.recAVolume || 0) + (prev.recBVolume || 0) + (prev.recCVolume || 0)
-        + (prev.bulkAVolume || 0) + (prev.bulkBVolume || 0) + (prev.bulkCVolume || 0)
-        + (prev.dispVolume || 0);
-
-      // Actual dispatch trucks between prev dip and this dip (all statuses — trucks were dispatched)
-      const trucksInPeriod = dispatch.filter(
-        t => t.date > prev.date && t.date <= cur.date
-      );
-      const actualDispatch = trucksInPeriod.reduce((s, t) => s + (t.quantityBL || 0), 0);
-
-      // Recalculate production from raw data
-      const rawProd = curStock - prevStock + actualDispatch;
-      const productionBL = Math.max(0, rawProd);
-
-      // KLPD from hours between dips
-      const hours = (cur.date.getTime() - prev.date.getTime()) / 3600000;
-      const klpd = hours > 0 && productionBL > 0 ? Math.round((productionBL / hours) * 24 / 1000 * 10) / 10 : 0;
-
-      // AL from strength
-      const avgStrength = cur.avgStrength || 0;
-      const productionAL = productionBL * avgStrength / 100;
-
-      ethanolDaily.push({
-        date: dateKey,
-        productionBL,
-        productionAL,
-        totalStock: curStock,
-        dispatch: actualDispatch,
-        klpd,
-        avgStrength,
-      });
+    const ethanolByDate = new Map<string, { productionBL: number; productionAL: number; totalStock: number; dispatch: number; klpd: number; avgStrength: number; count: number }>();
+    for (const e of ethanol) {
+      const prodDay = new Date(e.date.getTime() - 24 * 3600 * 1000);
+      const key = fmtDate(prodDay);
+      const existing = ethanolByDate.get(key);
+      if (!existing) {
+        ethanolByDate.set(key, {
+          productionBL: Math.max(0, e.productionBL || 0),
+          productionAL: Math.max(0, e.productionAL || 0),
+          totalStock: e.totalStock || 0,
+          dispatch: e.totalDispatch || 0,
+          klpd: Math.round((e.klpd || 0) * 10) / 10,
+          avgStrength: e.avgStrength || 0,
+          count: 1,
+        });
+      } else {
+        existing.productionBL += Math.max(0, e.productionBL || 0);
+        existing.productionAL += Math.max(0, e.productionAL || 0);
+        existing.totalStock = e.totalStock || 0;
+        existing.dispatch += (e.totalDispatch || 0);
+        existing.klpd = Math.round((e.klpd || existing.klpd) * 10) / 10;
+        existing.avgStrength = e.avgStrength || existing.avgStrength;
+        existing.count++;
+      }
     }
-    // Recalculate KPI totals from corrected data
+    const ethanolDaily = Array.from(ethanolByDate.entries()).map(([date, v]) => ({
+      date,
+      productionBL: v.productionBL,
+      productionAL: v.productionAL,
+      totalStock: v.totalStock,
+      dispatch: v.dispatch,
+      klpd: v.klpd,
+      avgStrength: v.avgStrength,
+    }));
+    // KPI totals from DB values
     totalEthanolBL = ethanolDaily.reduce((s, e) => s + e.productionBL, 0);
     totalEthanolAL = ethanolDaily.reduce((s, e) => s + e.productionAL, 0);
-    // Latest KLPD from recalculated data (last entry = yesterday's production)
     const recalcLatestKlpd = ethanolDaily.length > 0 ? ethanolDaily[ethanolDaily.length - 1].klpd : 0;
 
     // Distillation daily
@@ -202,7 +188,7 @@ router.get('/analytics', authenticate, async (req: AuthRequest, res: Response) =
     }));
 
     // Dispatch trucks (for table)
-    const dispatchList = completedDispatches.slice(-50).reverse().map((e: any) => ({
+    const dispatchList = dispatch.slice(-50).reverse().map(e => ({
       date: fmtDate(e.date),
       vehicleNo: e.vehicleNo,
       party: e.partyName,
@@ -251,7 +237,7 @@ router.get('/analytics', authenticate, async (req: AuthRequest, res: Response) =
 
     // Party-wise dispatch summary
     const partyMap: Record<string, { qty: number; count: number }> = {};
-    completedDispatches.forEach((d: any) => {
+    dispatch.forEach(d => {
       const p = d.partyName || 'Unknown';
       if (!partyMap[p]) partyMap[p] = { qty: 0, count: 0 };
       partyMap[p].qty += d.quantityBL || 0;
@@ -277,7 +263,7 @@ router.get('/analytics', authenticate, async (req: AuthRequest, res: Response) =
         avgStrength,
         avgEthanolStrength,
         totalDispatchBL,
-        dispatchTrucks: completedDispatches.length,
+        dispatchTrucks: dispatch.length,
         ddgsProduced: totalDDGSProduced,
         ddgsDispatched: totalDDGSDispatched,
         // Wash: prefer silo snapshot (OPC-computed) over manual GrainEntry
