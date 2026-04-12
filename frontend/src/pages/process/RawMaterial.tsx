@@ -170,7 +170,7 @@ export default function RawMaterial() {
       }
       setMsg({ type: 'ok', text: editId ? 'Updated!' : 'Saved!' }); resetForm(); load();
       if (share) {
-        const text = `*Lab Analysis - ${form.material}*\nRST: ${form.vehicleCode}${form.vehicleNo ? '\nVehicle: ' + form.vehicleNo : ''}\n📅 ${form.date}\n\nMoisture: ${form.moisture || '-'}%\nStarch: ${form.starch || '-'}%\nDamaged: ${form.damaged || '-'}%\nTFM: ${form.tfm || '-'}%\nFungus: ${form.fungus || '-'}%\nImmature: ${form.immature || '-'}%\nWater Dam: ${form.waterDamaged || '-'}%\n*Total Damage: ${totalDamage.toFixed(1)}%*${form.remark ? '\n\nRemark: ' + form.remark : ''}`;
+        const text = `*Lab Analysis - ${form.material}*\nRST: ${form.vehicleCode}${form.vehicleNo ? '\nVehicle: ' + form.vehicleNo : ''}\n${form.date}\n\nMoisture: ${form.moisture || '-'}%\nStarch: ${form.starch || '-'}%\nDamaged: ${form.damaged || '-'}%\nTFM: ${form.tfm || '-'}%\nFungus: ${form.fungus || '-'}%\nImmature: ${form.immature || '-'}%\nWater Dam: ${form.waterDamaged || '-'}%\n*Total Damage: ${totalDamage.toFixed(1)}%*${form.remark ? '\n\nRemark: ' + form.remark : ''}`;
         await doShare(text);
       }
     } catch { setMsg({ type: 'err', text: 'Save failed' }); }
@@ -248,7 +248,7 @@ export default function RawMaterial() {
   };
 
   const shareText = (e: Entry) =>
-    `*Lab Analysis - ${e.material || 'Corn'}*\nRST: ${e.vehicleCode}${e.vehicleNo ? '\nVehicle: ' + e.vehicleNo : ''}\n📅 ${new Date(e.date).toLocaleDateString('en-IN')}\n\nMoisture: ${e.moisture}%\nStarch: ${e.starch}%\nDamaged: ${e.damaged}%\nTFM: ${e.tfm}%\nFungus: ${e.fungus}%\nImmature: ${e.immature}%\nWater Dam: ${e.waterDamaged}%\n*Total Damage: ${entryTotalDamage(e).toFixed(1)}%*${e.remark ? '\n\nRemark: ' + e.remark : ''}`;
+    `*Lab Analysis - ${e.material || 'Corn'}*\nRST: ${e.vehicleCode}${e.vehicleNo ? '\nVehicle: ' + e.vehicleNo : ''}\n${new Date(e.date).toLocaleDateString('en-IN')}\n\nMoisture: ${e.moisture}%\nStarch: ${e.starch}%\nDamaged: ${e.damaged}%\nTFM: ${e.tfm}%\nFungus: ${e.fungus}%\nImmature: ${e.immature}%\nWater Dam: ${e.waterDamaged}%\n*Total Damage: ${entryTotalDamage(e).toFixed(1)}%*${e.remark ? '\n\nRemark: ' + e.remark : ''}`;
 
   return (
     <ProcessPage title="Raw Material Analysis" icon={<FlaskConical size={28} />}
@@ -265,7 +265,7 @@ export default function RawMaterial() {
           { label: 'Starch Avg', value: stats.starchTotal, unit: '%', color: 'bg-amber-50 border-amber-200' },
           { label: 'TFM Avg', value: stats.tfmTotal, unit: '%', color: 'bg-orange-50 border-orange-200' },
         ].map(k => (
-          <div key={k.label} className={`rounded-lg border p-2 md:p-3 ${k.color}`}>
+          <div key={k.label} className={`border p-2 md:p-3 ${k.color}`}>
             <div className="text-[10px] md:text-xs text-gray-500">{k.label}</div>
             <div className="text-lg md:text-xl font-bold">{k.value} <span className="text-[10px] md:text-xs font-normal text-gray-400">{k.unit}</span></div>
           </div>
@@ -506,7 +506,7 @@ export default function RawMaterial() {
       {/* Add Sample Button */}
       {!showForm && (
         <button onClick={() => setShowForm(true)}
-          className="w-full border-2 border-dashed border-indigo-300 rounded-lg py-3 text-indigo-600 hover:bg-indigo-50 flex items-center justify-center gap-2 mb-4 font-medium text-sm">
+          className="w-full border-2 border-dashed border-indigo-300 py-3 text-indigo-600 hover:bg-indigo-50 flex items-center justify-center gap-2 mb-4 font-medium text-sm">
           <Plus size={18} /> New Sample
         </button>
       )}
@@ -516,7 +516,7 @@ export default function RawMaterial() {
         <div className="card mb-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="section-title flex items-center gap-2 !mb-0">
-              <FlaskConical size={16} className="text-indigo-600" /> {editId ? '✏️ Edit Sample' : 'New Lab Sample'}
+              <FlaskConical size={16} className="text-indigo-600" /> {editId ? 'Edit Sample' : 'New Lab Sample'}
             </h3>
             <button onClick={resetForm} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
           </div>
@@ -565,18 +565,18 @@ export default function RawMaterial() {
             ))}
           </div>
           {/* Total Damage auto-sum */}
-          <div className={`rounded-lg border-2 px-3 py-1.5 mb-3 flex items-center justify-between ${totalDamage > 10 ? 'bg-red-50 border-red-300' : totalDamage > 5 ? 'bg-amber-50 border-amber-300' : 'bg-green-50 border-green-300'}`}>
+          <div className={`border-2 px-3 py-1.5 mb-3 flex items-center justify-between ${totalDamage > 10 ? 'bg-red-50 border-red-300' : totalDamage > 5 ? 'bg-amber-50 border-amber-300' : 'bg-green-50 border-green-300'}`}>
             <span className="text-xs font-medium text-gray-600">Total Damage <span className="text-[9px] text-gray-400">(D + TFM + F + I + WD)</span></span>
             <span className={`text-lg font-bold ${totalDamage > 10 ? 'text-red-600' : totalDamage > 5 ? 'text-amber-600' : 'text-green-600'}`}>{totalDamage.toFixed(1)}%</span>
           </div>
 
           <div className="flex items-center gap-2">
             <button onClick={() => setShowPreview(true)}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium text-xs md:text-sm hover:bg-indigo-700 flex items-center gap-1.5">
+              className="px-4 py-2 bg-indigo-600 text-white font-medium text-xs md:text-sm hover:bg-indigo-700 flex items-center gap-1.5">
               <Save size={14} /> Preview & Save
             </button>
             {editId && (
-              <button onClick={resetForm} className="px-4 py-2 bg-gray-200 text-gray-600 rounded-lg text-xs md:text-sm">Cancel</button>
+              <button onClick={resetForm} className="px-4 py-2 bg-gray-200 text-gray-600 text-xs md:text-sm">Cancel</button>
             )}
             {msg && <span className={`text-xs ${msg.type === 'ok' ? 'text-green-600' : 'text-red-600'}`}>{msg.text}</span>}
           </div>
@@ -586,8 +586,8 @@ export default function RawMaterial() {
       {/* Preview Modal */}
       {showPreview && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowPreview(false)}>
-          <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full" onClick={e => e.stopPropagation()}>
-            <div className="bg-indigo-600 text-white p-3 rounded-t-xl flex items-center justify-between">
+          <div className="bg-white shadow-2xl max-w-sm w-full" onClick={e => e.stopPropagation()}>
+            <div className="bg-indigo-600 text-white p-3 flex items-center justify-between">
               <h3 className="font-bold text-sm">Lab Analysis Report</h3>
               <button onClick={() => setShowPreview(false)}><X size={18} /></button>
             </div>
@@ -614,11 +614,11 @@ export default function RawMaterial() {
             </div>
             <div className="p-3 border-t space-y-2">
               <button onClick={() => save(true)} disabled={saving}
-                className="w-full flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-green-700 disabled:opacity-50">
+                className="w-full flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 text-sm font-semibold hover:bg-green-700 disabled:opacity-50">
                 {saving ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />} Save & Share
               </button>
               <button onClick={async () => { await save(); }} disabled={saving}
-                className="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
+                className="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white py-2 text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
                 {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} {editId ? 'Update Only' : 'Save Only'}
               </button>
             </div>
@@ -631,7 +631,7 @@ export default function RawMaterial() {
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
         <input value={search} onChange={e => setSearch(e.target.value)}
           placeholder="Search RST number..."
-          className="w-full border rounded-lg pl-9 pr-3 py-2 text-sm" />
+          className="w-full border pl-9 pr-3 py-2 text-sm" />
       </div>
 
       {/* === History === */}
@@ -652,8 +652,8 @@ export default function RawMaterial() {
               <button onClick={() => setExpandedDate(isExpanded && !isTodayGroup ? null : (isExpanded ? null : dateStr))}
                 className={`w-full flex items-center justify-between px-3 md:px-4 py-2.5 hover:bg-gray-50 transition ${isTodayGroup ? 'bg-indigo-50' : ''}`}>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs md:text-sm font-bold text-gray-800">{isTodayGroup ? '📋 Today' : dateStr}</span>
-                  <span className="text-[10px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded-full font-medium">{items.length}</span>
+                  <span className="text-xs md:text-sm font-bold text-gray-800">{isTodayGroup ? 'Today' : dateStr}</span>
+                  <span className="text-[10px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 font-medium">{items.length}</span>
                 </div>
                 <div className="flex items-center gap-3 text-[10px] md:text-xs text-gray-500">
                   <span>M: <b>{dayAvgM}%</b></span>
@@ -686,16 +686,16 @@ export default function RawMaterial() {
                         {selectedEntry === e.id && (
                           <div className="flex items-center gap-2 mt-2 pt-2 border-t border-dashed">
                             <button onClick={(ev) => { ev.stopPropagation(); editEntry(e); }}
-                              className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-medium">
+                              className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-600 text-[10px] font-medium">
                               <Pencil size={10} /> Edit
                             </button>
                             <button onClick={(ev) => { ev.stopPropagation(); doShare(shareText(e)); }}
-                              className="flex items-center gap-1 px-3 py-1.5 bg-green-50 text-green-600 rounded-lg text-[10px] font-medium">
+                              className="flex items-center gap-1 px-3 py-1.5 bg-green-50 text-green-600 text-[10px] font-medium">
                               <Share2 size={10} /> Share
                             </button>
                             {isAdmin && (
                               <button onClick={(ev) => { ev.stopPropagation(); del(e.id); }}
-                                className="flex items-center gap-1 px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-[10px] font-medium">
+                                className="flex items-center gap-1 px-3 py-1.5 bg-red-50 text-red-600 text-[10px] font-medium">
                                 <Trash2 size={10} /> Delete
                               </button>
                             )}
@@ -775,16 +775,16 @@ export default function RawMaterial() {
                         </div>
                         <div className="flex items-center gap-2">
                           <button onClick={() => editEntry(e)}
-                            className="flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-600 rounded text-[10px]">
+                            className="flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-600 text-[10px]">
                             <Pencil size={9} /> Edit
                           </button>
                           <button onClick={() => doShare(shareText(e))}
-                            className="flex items-center gap-1 px-2 py-1 bg-green-50 text-green-600 rounded text-[10px]">
+                            className="flex items-center gap-1 px-2 py-1 bg-green-50 text-green-600 text-[10px]">
                             <Share2 size={9} /> Share
                           </button>
                           {isAdmin && (
                             <button onClick={() => del(e.id)}
-                              className="flex items-center gap-1 px-2 py-1 bg-red-50 text-red-600 rounded text-[10px]">
+                              className="flex items-center gap-1 px-2 py-1 bg-red-50 text-red-600 text-[10px]">
                               <Trash2 size={9} /> Del
                             </button>
                           )}

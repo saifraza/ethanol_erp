@@ -117,12 +117,12 @@ export default function LabSampling() {
   return (
     <ProcessPage title="Lab Sampling" icon={<FlaskConical size={28} />} description="Enter lab quality data per RST number — auto-links to truck entries" flow={{ from: 'Truck Sample', to: 'Quality Report' }} color="bg-indigo-600">
       {msg && (
-        <div className={`rounded-lg p-3 mb-4 text-sm ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>{msg.text}</div>
+        <div className={`p-3 mb-4 text-sm ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>{msg.text}</div>
       )}
 
       {/* Pending Gate Entries from Weighbridge */}
       {pendingTrucks.length > 0 && (
-        <div className="mb-4 border border-yellow-200 bg-yellow-50 rounded-lg overflow-hidden">
+        <div className="mb-4 border border-yellow-200 bg-yellow-50 overflow-hidden">
           <div className="px-3 py-2 bg-yellow-100 text-yellow-800 text-xs font-bold uppercase tracking-wider">
             Awaiting Lab Test ({pendingTrucks.length})
           </div>
@@ -151,17 +151,17 @@ export default function LabSampling() {
             type="text" value={search} onChange={e => setSearch(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && loadSamples()}
             placeholder="Search by RST number..."
-            className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm"
+            className="w-full pl-9 pr-3 py-2 border text-sm"
           />
         </div>
-        <button onClick={() => { resetForm(); setShowForm(!showForm); }} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-1">
+        <button onClick={() => { resetForm(); setShowForm(!showForm); }} className="bg-indigo-600 text-white px-4 py-2 text-sm flex items-center gap-1">
           <Plus size={16} /> New Sample
         </button>
       </div>
 
       {/* Form */}
       {showForm && (
-        <div className="bg-white border rounded-xl p-4 mb-4 shadow-sm">
+        <div className="bg-white border p-4 mb-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-semibold text-sm">{editId ? 'Edit Sample' : 'New Lab Sample'}</h3>
             <button onClick={() => { setShowForm(false); resetForm(); }}><X size={18} className="text-gray-400" /></button>
@@ -208,7 +208,7 @@ export default function LabSampling() {
           </div>
 
           <button onClick={handleSave} disabled={saving}
-            className="mt-4 bg-indigo-600 text-white px-6 py-2 rounded-lg text-sm font-medium disabled:opacity-50">
+            className="mt-4 bg-indigo-600 text-white px-6 py-2 text-sm font-medium disabled:opacity-50">
             {saving ? 'Saving...' : editId ? 'Update Sample' : 'Save Sample'}
           </button>
         </div>
@@ -218,11 +218,11 @@ export default function LabSampling() {
       <div className="space-y-2">
         {samples.length === 0 && <div className="text-center text-gray-400 py-8 text-sm">No lab samples yet</div>}
         {samples.map(s => (
-          <div key={s.id} className="bg-white border rounded-lg p-3 flex items-start justify-between hover:shadow-sm transition">
+          <div key={s.id} className="bg-white border p-3 flex items-start justify-between hover:bg-blue-50/60 transition">
             <div className="flex-1" onClick={() => editSample(s)} style={{ cursor: 'pointer' }}>
               <div className="flex items-center gap-2 mb-1">
                 <span className="font-bold text-sm">RST #{s.rstNumber}</span>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${RESULT_COLORS[s.result] || 'bg-gray-100'}`}>
+                <span className={`text-[10px] px-2 py-0.5 font-medium ${RESULT_COLORS[s.result] || 'bg-gray-100'}`}>
                   {s.result}
                 </span>
                 <span className="text-[10px] text-gray-400">{fmtTime(s.createdAt)}</span>

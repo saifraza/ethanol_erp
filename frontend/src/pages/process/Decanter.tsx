@@ -156,7 +156,7 @@ export default function Decanter() {
   return (
     <div className="max-w-4xl mx-auto">
       {/* Header */}
-      <div className="rounded-lg p-4 md:p-5 mb-4 md:mb-6 text-white bg-gradient-to-r from-cyan-600 to-cyan-700">
+      <div className="p-4 md:p-5 mb-4 md:mb-6 text-white bg-gradient-to-r from-cyan-600 to-cyan-700">
         <div className="flex items-center gap-3 mb-1">
           <Filter size={24} />
           <h1 className="text-xl md:text-2xl font-bold">Decanter</h1>
@@ -165,28 +165,28 @@ export default function Decanter() {
       </div>
 
       {/* Date/Time */}
-      <div className="bg-white rounded-lg shadow-sm border p-4 mb-4">
+      <div className="bg-white border p-4 mb-4">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div><label className="text-xs text-gray-500">Date</label><input type="date" value={form.date} onChange={e => upd('date', e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+          <div><label className="text-xs text-gray-500">Date</label><input type="date" value={form.date} onChange={e => upd('date', e.target.value)} className="w-full border px-2 py-1.5 text-sm" /></div>
           <div><label className="text-xs text-gray-500">Time</label>
             <div className="flex gap-1">
-              <input type="text" value={form.entryTime} onChange={e => upd('entryTime', e.target.value)} placeholder="HH:MM" className="flex-1 border rounded px-2 py-1.5 text-sm" />
-              <button onClick={setNow} className="px-2 py-1 bg-cyan-100 text-cyan-700 rounded text-xs font-medium hover:bg-cyan-200">Now</button>
+              <input type="text" value={form.entryTime} onChange={e => upd('entryTime', e.target.value)} placeholder="HH:MM" className="flex-1 border px-2 py-1.5 text-sm" />
+              <button onClick={setNow} className="px-2 py-1 bg-cyan-100 text-cyan-700 text-xs font-medium hover:bg-cyan-200">Now</button>
             </div>
           </div>
         </div>
       </div>
 
       {/* Feed — grouped by dryer */}
-      <div className="bg-white rounded-lg shadow-sm border p-4 mb-4">
-        <h3 className="text-sm font-semibold text-cyan-700 mb-3 uppercase tracking-wide">Total Feed (D1–D8)</h3>
+      <div className="bg-white border p-4 mb-4">
+        <h3 className="text-sm font-semibold text-cyan-700 mb-3 uppercase tracking-wide">Total Feed (D1-D8)</h3>
         <div className="space-y-4">
           {DRYER_GROUPS.map(g => {
             const groupFeed = g.decanters.reduce((s, k) => s + (parseFloat(form[k + 'Feed']) || 0), 0);
             return (
               <div key={g.label}>
                 <div className="flex items-center gap-2 mb-2">
-                  <span className={`text-xs font-semibold px-2 py-0.5 rounded bg-${g.color}-100 text-${g.color}-700`}>{g.label}</span>
+                  <span className={`text-xs font-semibold px-2 py-0.5 bg-${g.color}-100 text-${g.color}-700`}>{g.label}</span>
                   <span className="text-xs text-gray-400">({g.decanters.map(k => k.toUpperCase()).join(', ')})</span>
                   <span className="text-xs font-bold ml-auto">{groupFeed.toFixed(2)}</span>
                 </div>
@@ -196,7 +196,7 @@ export default function Decanter() {
                     return (
                       <div key={d.key}>
                         <label className="text-xs text-gray-500">{d.label}</label>
-                        <input type="number" step="0.01" value={form[d.key + 'Feed']} onChange={e => upd(d.key + 'Feed', e.target.value)} placeholder="0" className="w-full border rounded px-2 py-1.5 text-sm" />
+                        <input type="number" step="0.01" value={form[d.key + 'Feed']} onChange={e => upd(d.key + 'Feed', e.target.value)} placeholder="0" className="w-full border px-2 py-1.5 text-sm" />
                       </div>
                     );
                   })}
@@ -212,7 +212,7 @@ export default function Decanter() {
       </div>
 
       {/* Wet Cake + Thin Slop — collapsible */}
-      <div className="bg-white rounded-lg shadow-sm border mb-4">
+      <div className="bg-white border mb-4">
         <button
           onClick={() => setShowExtras(!showExtras)}
           className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition"
@@ -233,7 +233,7 @@ export default function Decanter() {
                 {DECANTERS.map(d => (
                   <div key={d.key + 'wc'}>
                     <label className="text-xs text-gray-500">{d.label}</label>
-                    <input type="number" step="0.01" value={form[d.key + 'WetCake']} onChange={e => upd(d.key + 'WetCake', e.target.value)} placeholder="0" className="w-full border rounded px-2 py-1.5 text-sm" />
+                    <input type="number" step="0.01" value={form[d.key + 'WetCake']} onChange={e => upd(d.key + 'WetCake', e.target.value)} placeholder="0" className="w-full border px-2 py-1.5 text-sm" />
                   </div>
                 ))}
               </div>
@@ -250,7 +250,7 @@ export default function Decanter() {
                 {DECANTERS.map(d => (
                   <div key={d.key + 'ts'}>
                     <label className="text-xs text-gray-500">{d.label}</label>
-                    <input type="number" step="0.001" value={form[d.key + 'ThinSlopGr']} onChange={e => upd(d.key + 'ThinSlopGr', e.target.value)} placeholder="0.000" className="w-full border rounded px-2 py-1.5 text-sm" />
+                    <input type="number" step="0.001" value={form[d.key + 'ThinSlopGr']} onChange={e => upd(d.key + 'ThinSlopGr', e.target.value)} placeholder="0.000" className="w-full border px-2 py-1.5 text-sm" />
                   </div>
                 ))}
               </div>
@@ -264,14 +264,14 @@ export default function Decanter() {
       </div>
 
       {/* Remark */}
-      <div className="bg-white rounded-lg shadow-sm border p-4 mb-4">
+      <div className="bg-white border p-4 mb-4">
         <label className="text-xs text-gray-500">Remark</label>
-        <input type="text" value={form.remark || ''} onChange={e => upd('remark', e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" />
+        <input type="text" value={form.remark || ''} onChange={e => upd('remark', e.target.value)} className="w-full border px-2 py-1.5 text-sm" />
       </div>
 
       {/* Action buttons */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-4">
-        <button onClick={() => setShowPreview(true)} className="flex items-center justify-center gap-2 bg-gray-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-800 transition">
+        <button onClick={() => setShowPreview(true)} className="flex items-center justify-center gap-2 bg-gray-700 text-white px-5 py-2.5 text-sm font-medium hover:bg-gray-800 transition">
           <Eye size={16} /> Preview & Save
         </button>
         {msg && <span className={`text-sm font-medium ${msg.type === 'ok' ? 'text-green-600' : 'text-red-600'}`}>{msg.text}</span>}
@@ -280,10 +280,10 @@ export default function Decanter() {
       {/* Preview Modal */}
       {showPreview && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowPreview(false)}>
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="sticky top-0 bg-cyan-600 text-white p-4 rounded-t-xl flex items-center justify-between">
+          <div className="bg-white shadow-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="sticky top-0 bg-cyan-600 text-white p-4 flex items-center justify-between">
               <h3 className="font-bold text-lg">Decanter Report Preview</h3>
-              <button onClick={() => setShowPreview(false)} className="p-1 hover:bg-cyan-700 rounded"><X size={20} /></button>
+              <button onClick={() => setShowPreview(false)} className="p-1 hover:bg-cyan-700"><X size={20} /></button>
             </div>
             <div className="p-4 space-y-3 text-sm">
               <div className="flex justify-between text-gray-600 border-b pb-2">
@@ -293,7 +293,7 @@ export default function Decanter() {
 
               {/* Feed summary grouped by dryer */}
               <div>
-                <h4 className="font-semibold text-cyan-700 mb-2">Feed (D1–D8)</h4>
+                <h4 className="font-semibold text-cyan-700 mb-2">Feed (D1-D8)</h4>
                 {DRYER_GROUPS.map(g => {
                   const gFeed = g.decanters.reduce((s, k) => s + (parseFloat(form[k + 'Feed']) || 0), 0);
                   return (
@@ -354,11 +354,11 @@ export default function Decanter() {
               {form.remark && <div className="text-gray-600 italic">Remark: {form.remark}</div>}
             </div>
 
-            <div className="sticky bottom-0 bg-gray-50 p-4 rounded-b-xl flex gap-3 border-t">
-              <button onClick={() => handleSave(false)} disabled={saving} className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition">
+            <div className="sticky bottom-0 bg-gray-50 p-4 flex gap-3 border-t">
+              <button onClick={() => handleSave(false)} disabled={saving} className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 text-white px-4 py-2.5 text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition">
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save
               </button>
-              <button onClick={() => handleSave(true)} disabled={saving} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition">
+              <button onClick={() => handleSave(true)} disabled={saving} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2.5 text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition">
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />} Save & Share
               </button>
             </div>
@@ -367,7 +367,7 @@ export default function Decanter() {
       )}
 
       {/* History */}
-      <div className="bg-white rounded-lg shadow-sm border p-4 mb-4">
+      <div className="bg-white border p-4 mb-4">
         <button onClick={() => setShowHistory(!showHistory)} className="flex items-center gap-1 text-sm text-gray-600 hover:text-gray-800 mb-2">
           {showHistory ? <ChevronUp size={14} /> : <ChevronDown size={14} />} {entries.length} entries
         </button>
@@ -394,7 +394,7 @@ export default function Decanter() {
 
       {/* Telegram Auto-Collection */}
       {isAdmin && (
-        <div className="bg-white rounded-lg shadow-sm border mb-4">
+        <div className="bg-white border mb-4">
           <button
             onClick={() => setShowAutoCollect(!showAutoCollect)}
             className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition"
@@ -402,7 +402,7 @@ export default function Decanter() {
             <div className="flex items-center gap-2">
               <MessageCircle size={18} className="text-blue-500" />
               <span className="text-sm font-semibold text-gray-700">Telegram Auto-Collection</span>
-              {acEnabled && <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium">ON</span>}
+              {acEnabled && <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 font-medium">ON</span>}
             </div>
             {showAutoCollect ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
           </button>
@@ -417,12 +417,12 @@ export default function Decanter() {
               <div>
                 <label className="text-[10px] text-gray-500 uppercase mb-1 block">Operator Telegram Chat IDs</label>
                 <input type="text" value={acPhones} onChange={e => { setAcPhones(e.target.value); setAcDirty(true); }}
-                  placeholder="e.g. 123456789, 987654321" className="border rounded px-2 py-1.5 w-full text-sm" />
+                  placeholder="e.g. 123456789, 987654321" className="border px-2 py-1.5 w-full text-sm" />
                 {acPhones ? (
                   <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                     <span className="text-[9px] text-gray-400">Saved:</span>
                     {acPhones.split(',').map(p => p.trim()).filter(Boolean).map((p, i) => (
-                      <span key={i} className="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-medium">{p}</span>
+                      <span key={i} className="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 font-medium">{p}</span>
                     ))}
                   </div>
                 ) : (
@@ -436,7 +436,7 @@ export default function Decanter() {
                 <div className="flex items-center gap-2">
                   <label className="text-[10px] text-gray-500">Interval</label>
                   <input type="number" value={acInterval} onChange={e => { setAcInterval(e.target.value); setAcDirty(true); }}
-                    className="border rounded px-2 py-1 w-20 text-sm" />
+                    className="border px-2 py-1 w-20 text-sm" />
                   <span className="text-[10px] text-gray-400">min</span>
                 </div>
                 <label className="flex items-center gap-2 text-sm cursor-pointer">
@@ -466,8 +466,8 @@ export default function Decanter() {
                     setAcStatus(`Schedule saved (${acEnabled ? 'enabled' : 'disabled'}, ${acInterval}min${acAutoShare ? ', auto-share' : ''})`);
                   } catch { setAcStatus('Failed to save'); }
                   setTimeout(() => setAcStatus(''), 3000);
-                }} className={`px-3 py-1.5 text-white rounded text-xs font-medium ${acDirty ? 'bg-orange-500 hover:bg-orange-600 animate-pulse' : 'bg-cyan-600 hover:bg-cyan-700'}`}>
-                  {acDirty ? '⚠ Save Schedule' : 'Save Schedule'}
+                }} className={`px-3 py-1.5 text-white text-xs font-medium ${acDirty ? 'bg-orange-500 hover:bg-orange-600 animate-pulse' : 'bg-cyan-600 hover:bg-cyan-700'}`}>
+                  {acDirty ? 'Save Schedule' : 'Save Schedule'}
                 </button>
                 <button onClick={async () => {
                   const phoneList = acPhones.split(',').map(p => p.trim()).filter(Boolean);
@@ -477,7 +477,7 @@ export default function Decanter() {
                     setAcStatus(r.data.success ? `Sent to ${phoneList[0]}` : r.data.error);
                   } catch { setAcStatus('Failed to trigger'); }
                   setTimeout(() => setAcStatus(''), 5000);
-                }} disabled={!acPhones.trim()} className="px-3 py-1.5 bg-green-600 text-white rounded text-xs font-medium hover:bg-green-700 disabled:opacity-50">
+                }} disabled={!acPhones.trim()} className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium hover:bg-green-700 disabled:opacity-50">
                   Test Now
                 </button>
               </div>
@@ -493,7 +493,7 @@ export default function Decanter() {
                         setActiveSessions([]);
                         setAcStatus('Sessions cleared');
                       } catch { setAcStatus('Failed to clear'); }
-                    }} className="px-2 py-0.5 text-[10px] text-red-500 hover:bg-red-50 rounded font-semibold">
+                    }} className="px-2 py-0.5 text-[10px] text-red-500 hover:bg-red-50 font-semibold">
                       Reset All
                     </button>
                   </div>

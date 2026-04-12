@@ -140,7 +140,7 @@ export default function DDGSDispatch() {
     <div className="max-w-5xl mx-auto px-3 py-4">
       {/* Header */}
       <div className="flex items-center gap-3 mb-5">
-        <div className="p-2 bg-amber-100 rounded-lg"><Truck size={24} className="text-amber-700" /></div>
+        <div className="p-2 bg-amber-100"><Truck size={24} className="text-amber-700" /></div>
         <div>
           <h1 className="text-xl font-bold text-gray-900">DDGS Dispatch</h1>
           <p className="text-xs text-gray-500">Log DDGS truck dispatches</p>
@@ -152,9 +152,9 @@ export default function DDGSDispatch() {
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
           <input type="date" value={date} onChange={e => setDate(e.target.value)}
-            className="border rounded-lg px-3 py-2.5 text-sm" />
+            className="border px-3 py-2.5 text-sm" />
         </div>
-        <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2">
+        <div className="bg-amber-50 border border-amber-200 px-4 py-2">
           <div className="text-[10px] text-amber-500 uppercase">Total Dispatch</div>
           <div className="text-lg font-bold text-amber-700">{(totalNet * 1000).toFixed(0)} KG <span className="text-xs font-normal text-gray-400">({totalNet.toFixed(2)} MT)</span></div>
           <div className="text-[10px] text-gray-500">{totalBags} bags · {dispatches.length} truck{dispatches.length !== 1 ? 's' : ''}</div>
@@ -164,14 +164,14 @@ export default function DDGSDispatch() {
       {/* Add Button */}
       {!showForm && (
         <button onClick={() => setShowForm(true)}
-          className="w-full border-2 border-dashed border-amber-300 rounded-lg py-4 text-amber-700 hover:bg-amber-50 flex items-center justify-center gap-2 mb-5 font-medium">
+          className="w-full border-2 border-dashed border-amber-300 py-4 text-amber-700 hover:bg-amber-50 flex items-center justify-center gap-2 mb-5 font-medium">
           <Plus size={20} /> Add Dispatch
         </button>
       )}
 
       {/* New Dispatch Form */}
       {showForm && (
-        <div className="border-2 border-amber-300 rounded-lg p-4 bg-white mb-5">
+        <div className="border-2 border-amber-300 p-4 bg-white mb-5">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-semibold text-amber-700">New DDGS Dispatch</h3>
             <button onClick={resetForm} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
@@ -181,32 +181,32 @@ export default function DDGSDispatch() {
             <div>
               <label className="text-[10px] text-gray-400">RST No *</label>
               <input type="number" value={rstNo} onChange={e => setRstNo(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" placeholder="Unique RST number" />
+                className="borderpx-2 py-2 w-full text-sm" placeholder="Unique RST number" />
             </div>
             <div>
               <label className="text-[10px] text-gray-400">Vehicle No *</label>
               <input type="text" value={vehicleNo} onChange={e => setVehicleNo(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" placeholder="MP 20 AB 1234" />
+                className="borderpx-2 py-2 w-full text-sm" placeholder="MP 20 AB 1234" />
             </div>
             <div>
               <label className="text-[10px] text-gray-400">Party Name</label>
               <input type="text" value={partyName} onChange={e => setPartyName(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" />
+                className="borderpx-2 py-2 w-full text-sm" />
             </div>
             <div>
               <label className="text-[10px] text-gray-400">Destination</label>
               <input type="text" value={destination} onChange={e => setDestination(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" />
+                className="borderpx-2 py-2 w-full text-sm" />
             </div>
             <div>
               <label className="text-[10px] text-gray-400">Bags</label>
               <input type="number" value={bags} onChange={e => setBags(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" placeholder="0" />
+                className="borderpx-2 py-2 w-full text-sm" placeholder="0" />
             </div>
             <div>
               <label className="text-[10px] text-gray-400">Wt/Bag (kg)</label>
               <input type="number" step="any" value={weightPerBag} onChange={e => setWeightPerBag(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" />
+                className="borderpx-2 py-2 w-full text-sm" />
             </div>
           </div>
 
@@ -215,16 +215,16 @@ export default function DDGSDispatch() {
             <div>
               <label className="text-[10px] text-gray-400">Tare Wt (KG)</label>
               <input type="number" step="any" value={weightTareKg} onChange={e => setWeightTareKg(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" placeholder="e.g. 12500" />
+                className="borderpx-2 py-2 w-full text-sm" placeholder="e.g. 12500" />
             </div>
             <div>
               <label className="text-[10px] text-gray-400">Gross Wt (KG)</label>
               <input type="number" step="any" value={weightGrossKg} onChange={e => setWeightGrossKg(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" placeholder="e.g. 38000" />
+                className="borderpx-2 py-2 w-full text-sm" placeholder="e.g. 38000" />
             </div>
             <div>
               <label className="text-[10px] text-gray-400">Net Wt (KG)</label>
-              <div className="border rounded px-2 py-2 w-full text-sm bg-gray-50 font-semibold text-amber-700">
+              <div className="borderpx-2 py-2 w-full text-sm bg-gray-50 font-semibold text-amber-700">
                 {netWeightKg > 0 ? `${netWeightKg.toFixed(0)} KG (${(netWeightKg / 1000).toFixed(2)} MT)` : '—'}
               </div>
             </div>
@@ -233,17 +233,17 @@ export default function DDGSDispatch() {
           <div className="mb-3">
             <label className="text-[10px] text-gray-400">Remarks</label>
             <input type="text" value={remarks} onChange={e => setRemarks(e.target.value)}
-              className="border rounded px-2 py-2 w-full text-sm" />
+              className="borderpx-2 py-2 w-full text-sm" />
           </div>
 
           {/* Save */}
           <div className="flex items-center gap-3">
             <button onClick={() => handleSave(false)} disabled={saving}
-              className="px-6 py-2.5 bg-amber-600 text-white rounded-lg font-medium text-sm hover:bg-amber-700 disabled:opacity-50">
+              className="px-6 py-2.5 bg-amber-600 text-white font-medium text-sm hover:bg-amber-700 disabled:opacity-50">
               {saving ? 'Saving...' : 'Save Dispatch'}
             </button>
             <button onClick={() => handleSave(true)} disabled={saving}
-              className="px-6 py-2.5 bg-green-600 text-white rounded-lg font-medium text-sm hover:bg-green-700 disabled:opacity-50 flex items-center gap-2">
+              className="px-6 py-2.5 bg-green-600 text-white font-medium text-sm hover:bg-green-700 disabled:opacity-50 flex items-center gap-2">
               {saving ? 'Saving...' : <><Share2 size={16} /> Save & Share</>}
             </button>
             {msg && <span className={`text-sm ${msg.type === 'ok' ? 'text-green-600' : 'text-red-600'}`}>{msg.text}</span>}
@@ -254,18 +254,18 @@ export default function DDGSDispatch() {
       {/* Today's Dispatches */}
       <div className="space-y-3 mb-5">
         {dispatches.map((d, i) => (
-          <div key={d.id} className="border rounded-lg p-3 bg-white">
+          <div key={d.id} className="border p-3 bg-white">
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className="text-xs font-bold text-gray-400">#{dispatches.length - i}</span>
-                  {d.rstNo && <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">RST {d.rstNo}</span>}
+                  {d.rstNo && <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5font-medium">RST {d.rstNo}</span>}
                   <span className="font-semibold text-sm">{d.vehicleNo}</span>
                   <span className="text-xs text-gray-400">
                     {new Date(d.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
                   </span>
                   {d.invoiceNo && (
-                    <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-medium">
+                    <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5font-medium">
                       {d.invoiceNo}
                     </span>
                   )}
@@ -312,7 +312,7 @@ export default function DDGSDispatch() {
       {/* Telegram share */}
       {dispatches.length > 0 && (
         <button onClick={shareTelegram}
-          className="w-full flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 mb-5">
+          className="w-full flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 text-sm font-medium hover:bg-green-700 mb-5">
           <Share2 size={16} /> Share on Telegram
         </button>
       )}
@@ -331,7 +331,7 @@ export default function DDGSDispatch() {
               const dayNet = items.reduce((s: number, d: DDGSTruck) => s + (d.weightNet || 0), 0);
               const dayBags = items.reduce((s: number, d: DDGSTruck) => s + (d.bags || 0), 0);
               return (
-                <div key={dateKey} className="border rounded-lg p-3 bg-gray-50">
+                <div key={dateKey} className="border p-3 bg-gray-50">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-semibold text-gray-700">{fmtDt(dateKey)}</span>
                     <span className="text-xs font-bold text-amber-600">{(dayNet * 1000).toFixed(0)} KG — {dayBags} bags — {items.length} trucks</span>
@@ -354,7 +354,7 @@ export default function DDGSDispatch() {
       {/* Bill Generation Modal */}
       {billTruck && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setBillTruck(null)}>
-          <div className="bg-white rounded-xl p-5 w-full max-w-sm shadow-xl" onClick={e => e.stopPropagation()}>
+          <div className="bg-white p-5 w-full max-w-sm shadow-xl" onClick={e => e.stopPropagation()}>
             <h3 className="font-bold text-gray-800 mb-3">Generate Bill</h3>
             <div className="text-xs text-gray-500 mb-3">
               {billTruck.vehicleNo} · {billTruck.partyName} · Net: {(billTruck.weightNet * 1000).toFixed(0)} KG ({billTruck.weightNet.toFixed(2)} MT)
@@ -363,10 +363,10 @@ export default function DDGSDispatch() {
               <div>
                 <label className="text-[10px] text-gray-400">Rate (₹/MT) *</label>
                 <input type="number" step="any" value={billRate} onChange={e => setBillRate(e.target.value)}
-                  className="border rounded px-2 py-2 w-full text-sm" autoFocus />
+                  className="borderpx-2 py-2 w-full text-sm" autoFocus />
               </div>
               {parseFloat(billRate) > 0 && (
-                <div className="text-sm text-gray-700 bg-gray-50 rounded p-2">
+                <div className="text-sm text-gray-700 bg-gray-50 p-2">
                   Taxable: ₹{(billTruck.weightNet * parseFloat(billRate)).toFixed(2)} + 5% GST
                   = <span className="font-bold text-green-700">
                     ₹{((billTruck.weightNet * parseFloat(billRate)) * 1.05).toFixed(2)}
@@ -376,15 +376,15 @@ export default function DDGSDispatch() {
               <div>
                 <label className="text-[10px] text-gray-400">Invoice No (auto if blank)</label>
                 <input type="text" value={billInvNo} onChange={e => setBillInvNo(e.target.value)}
-                  className="border rounded px-2 py-2 w-full text-sm" placeholder="GST/25-26/..." />
+                  className="borderpx-2 py-2 w-full text-sm" placeholder="GST/25-26/..." />
               </div>
               <div className="flex gap-2">
                 <button onClick={handleGenerateBill} disabled={!billRate}
-                  className="flex-1 bg-purple-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50">
+                  className="flex-1 bg-purple-600 text-white py-2 text-sm font-medium hover:bg-purple-700 disabled:opacity-50">
                   Generate Bill
                 </button>
                 <button onClick={() => setBillTruck(null)}
-                  className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50">
+                  className="px-4 py-2 border text-sm text-gray-600 hover:bg-gray-50">
                   Cancel
                 </button>
               </div>

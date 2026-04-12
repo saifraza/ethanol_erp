@@ -414,7 +414,7 @@ export default function Milling() {
     <ProcessPage title="Milling" icon={<CogIcon size={28} />} description="Grain milling analysis — sieve distribution, RPM & load for Mill A, B, C" flow={{ from: 'Grain Silo', to: 'Slurry Tank' }} color="bg-stone-600">
 
       {msg && (
-        <div className={`rounded-lg p-3 mb-4 text-sm ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+        <div className={`p-3 mb-4 text-sm ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
           {msg.text}
         </div>
       )}
@@ -434,12 +434,12 @@ export default function Milling() {
         </div>
       )}
 
-      <InputCard title={editId ? '✏️ Edit Entry' : '📝 New Entry'}>
+      <InputCard title={editId ? 'Edit Entry' : 'New Entry'}>
         <Field label="Date" name="date" value={form.date} onChange={(_n: string, v: any) => update('date', v)} unit="" />
         <div className="flex items-center gap-2">
           <label className="text-sm text-gray-600 w-52 shrink-0">Analysis Time</label>
           <input type="time" value={form.analysisTime} onChange={e => update('analysisTime', e.target.value)} className="input-field flex-1" />
-          <button type="button" onClick={() => { const now = new Date(); update('analysisTime', now.toTimeString().slice(0,5)); }} className="px-3 py-2 text-xs font-medium bg-stone-100 hover:bg-stone-200 text-stone-600 rounded-lg border border-stone-300 whitespace-nowrap transition-colors">Now</button>
+          <button type="button" onClick={() => { const now = new Date(); update('analysisTime', now.toTimeString().slice(0,5)); }} className="px-3 py-2 text-xs font-medium bg-stone-100 hover:bg-stone-200 text-stone-600 border border-stone-300 whitespace-nowrap transition-colors">Now</button>
         </div>
       </InputCard>
 
@@ -451,14 +451,14 @@ export default function Milling() {
         <Field label="0.300 mm" name="sieve_300" value={form.sieve_300} onChange={update} unit="%" placeholder="Passing 0.300mm" />
         {/* Summary row */}
         <div className="grid grid-cols-2 gap-3 mt-2 pt-3 border-t border-dashed border-gray-200">
-          <div className="flex items-center justify-between bg-orange-50 border border-orange-200 rounded-lg px-4 py-2.5">
+          <div className="flex items-center justify-between bg-orange-50 border border-orange-200 px-4 py-2.5">
             <div>
               <p className="text-[10px] text-orange-500 font-semibold uppercase tracking-wide">Total Coarse</p>
               <p className="text-xs text-gray-400">&gt;0.85mm (1mm + 850µm)</p>
             </div>
             <p className="text-2xl font-bold text-orange-600">{totalCoarse}<span className="text-sm font-normal ml-0.5">%</span></p>
           </div>
-          <div className="flex items-center justify-between bg-purple-50 border border-purple-200 rounded-lg px-4 py-2.5">
+          <div className="flex items-center justify-between bg-purple-50 border border-purple-200 px-4 py-2.5">
             <div>
               <p className="text-[10px] text-purple-500 font-semibold uppercase tracking-wide">Total Fine</p>
               <p className="text-xs text-gray-400">&lt;0.3mm (passing 300µm)</p>
@@ -510,8 +510,8 @@ export default function Milling() {
       {/* Preview Modal */}
       {showPreview && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowPreview(false)}>
-          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="bg-stone-600 text-white p-4 rounded-t-xl flex items-center justify-between">
+          <div className="bg-white shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="bg-stone-600 text-white p-4 flex items-center justify-between">
               <h3 className="font-bold text-lg">Milling Report Preview</h3>
               <button onClick={() => setShowPreview(false)}><X size={20} /></button>
             </div>
@@ -541,11 +541,11 @@ export default function Milling() {
             </div>
             <div className="p-4 border-t flex gap-2">
               <button onClick={async () => { await handleSave(true); setShowPreview(false); }} disabled={saving}
-                className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
+                className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 text-sm font-medium hover:bg-green-700 disabled:opacity-50">
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />} Save & Share
               </button>
               <button onClick={async () => { await handleSave(false); setShowPreview(false); }} disabled={saving}
-                className="flex-1 flex items-center justify-center gap-2 bg-stone-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-stone-700 disabled:opacity-50">
+                className="flex-1 flex items-center justify-center gap-2 bg-stone-600 text-white py-2.5 text-sm font-medium hover:bg-stone-700 disabled:opacity-50">
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} {editId ? 'Update' : 'Save'}
               </button>
             </div>

@@ -95,22 +95,22 @@ export default function SugarStock() {
 
       {/* KPI strip */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
+        <div className="bg-white border border-slate-200 p-4">
           <div className="text-xs text-slate-500 uppercase">Current Stock</div>
           <div className="text-2xl font-bold text-blue-600 mt-1">{fmtMT(defaults?.openingStock || 0)} MT</div>
         </div>
-        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
+        <div className="bg-white border border-slate-200 p-4">
           <div className="text-xs text-slate-500 uppercase">Cumulative Receipt</div>
           <div className="text-2xl font-bold text-green-600 mt-1">{fmtMT(defaults?.cumulativeReceipt || 0)} MT</div>
         </div>
-        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
+        <div className="bg-white border border-slate-200 p-4">
           <div className="text-xs text-slate-500 uppercase">Cumulative Dispatch</div>
           <div className="text-2xl font-bold text-orange-600 mt-1">{fmtMT(defaults?.cumulativeDispatch || 0)} MT</div>
         </div>
       </div>
 
       {/* Entry form */}
-      <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-5">
+      <div className="bg-white border border-slate-200 p-5">
         <h2 className="text-sm font-bold text-slate-700 mb-3">New Stock Entry</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Field label="Date" type="date" value={form.date} onChange={v => setForm({ ...form, date: v })} />
@@ -121,7 +121,7 @@ export default function SugarStock() {
           <Field label="Wt per Bag (kg)" value={form.weightPerBag} onChange={v => setForm({ ...form, weightPerBag: v })} />
           <div className="col-span-2">
             <label className="block text-xs text-slate-500 mb-1">Remarks</label>
-            <input className="w-full border border-slate-300 rounded px-3 py-2 text-sm"
+            <input className="w-full border border-slate-300 px-3 py-2 text-sm"
               value={form.remarks} onChange={e => setForm({ ...form, remarks: e.target.value })} />
           </div>
         </div>
@@ -131,14 +131,14 @@ export default function SugarStock() {
             <span className="font-bold text-blue-700 text-lg">{fmtMT(closing)} MT</span>
           </div>
           <button onClick={handleSave} disabled={saving}
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 text-sm font-medium">
+            className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 text-sm font-medium">
             {saving ? 'Saving...' : 'Save Entry'}
           </button>
         </div>
       </div>
 
       {/* History */}
-      <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+      <div className="bg-white border border-slate-200 overflow-hidden">
         <div className="px-5 py-3 border-b border-slate-200">
           <h2 className="text-sm font-bold text-slate-700">Stock History</h2>
         </div>
@@ -182,7 +182,7 @@ function Field({ label, value, onChange, type = 'text' }: { label: string; value
       <label className="block text-xs text-slate-500 mb-1">{label}</label>
       <input
         type={type}
-        className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className="w-full border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         value={value}
         onChange={e => onChange(e.target.value)}
       />

@@ -90,7 +90,7 @@ export default function DosingRecipes() {
   return (
     <div className="max-w-3xl mx-auto">
       {/* Header */}
-      <div className="rounded-xl p-5 mb-6 text-white bg-gradient-to-r from-violet-600 to-purple-700">
+      <div className="p-5 mb-6 text-white bg-gradient-to-r from-violet-600 to-purple-700">
         <div className="flex items-center gap-3">
           <Beaker size={28} />
           <div>
@@ -101,11 +101,11 @@ export default function DosingRecipes() {
       </div>
 
       {/* Category Tabs */}
-      <div className="flex gap-1 bg-gray-100 rounded-lg p-1 mb-5">
+      <div className="flex gap-1 bg-gray-100 p-1 mb-5">
         {CATEGORIES.map(cat => (
           <button key={cat} onClick={() => { setActiveTab(cat); setShowAdd(false); setEditing(null); }}
-            className={`flex-1 py-2.5 px-3 rounded-lg text-sm font-medium transition-all ${
-              activeTab === cat ? 'bg-white shadow text-gray-800' : 'text-gray-500 hover:text-gray-700 hover:bg-white/50'
+            className={`flex-1 py-2.5 px-3 text-sm font-medium transition-all ${
+              activeTab === cat ? 'bg-white text-gray-800' : 'text-gray-500 hover:text-gray-700 hover:bg-white/50'
             }`}>
             <span className={activeTab === cat ? CAT_COLORS[cat].text : ''}>{CAT_LABELS[cat]}</span>
             <span className="ml-1.5 text-xs text-gray-400">({recipes.filter(r => r.category === cat).length})</span>
@@ -114,14 +114,14 @@ export default function DosingRecipes() {
       </div>
 
       {/* Recipe List */}
-      <div className={`rounded-xl border-2 ${CAT_COLORS[activeTab].border} ${CAT_COLORS[activeTab].bg} overflow-hidden`}>
+      <div className={`border-2 ${CAT_COLORS[activeTab].border} ${CAT_COLORS[activeTab].bg} overflow-hidden`}>
         <div className={`bg-gradient-to-r ${CAT_COLORS[activeTab].header} text-white p-4 flex items-center justify-between`}>
           <div>
             <h2 className="font-bold text-lg">{CAT_LABELS[activeTab]} Recipe</h2>
             <p className="text-sm opacity-80">{catRecipes.length} chemicals | ~{totalWeight.toFixed(1)} kg total</p>
           </div>
           <button onClick={() => setShowAdd(!showAdd)}
-            className="bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1">
+            className="bg-white/20 hover:bg-white/30 px-3 py-1.5 text-sm font-medium flex items-center gap-1">
             <Plus size={16} /> Add Chemical
           </button>
         </div>
@@ -135,31 +135,31 @@ export default function DosingRecipes() {
                 <div className="flex flex-wrap gap-1.5 mb-2">
                   {COMMON_CHEMICALS.filter(c => !catRecipes.some(r => r.chemicalName === c)).map(c => (
                     <button key={c} onClick={() => setAddForm(f => ({ ...f, chemicalName: c }))}
-                      className={`px-2.5 py-1 rounded text-xs border transition ${
+                      className={`px-2.5 py-1 text-xs border transition ${
                         addForm.chemicalName === c ? 'bg-violet-100 border-violet-400 text-violet-700 font-medium' : 'bg-gray-50 border-gray-200 text-gray-600 hover:border-violet-300'
                       }`}>{c}</button>
                   ))}
                 </div>
                 <input value={addForm.chemicalName} onChange={e => setAddForm(f => ({ ...f, chemicalName: e.target.value }))}
-                  placeholder="Or type custom name..." className="w-full border rounded-lg px-3 py-2 text-sm" />
+                  placeholder="Or type custom name..." className="w-full border px-3 py-2 text-sm" />
               </div>
               <div className="flex gap-3">
                 <div className="flex-1">
                   <label className="text-xs text-gray-500 font-medium">Quantity</label>
                   <input type="number" step="0.1" value={addForm.quantity} onChange={e => setAddForm(f => ({ ...f, quantity: e.target.value }))}
-                    placeholder="0" className="w-full border rounded-lg px-3 py-2 text-sm" />
+                    placeholder="0" className="w-full border px-3 py-2 text-sm" />
                 </div>
                 <div className="w-28">
                   <label className="text-xs text-gray-500 font-medium">Unit</label>
                   <select value={addForm.unit} onChange={e => setAddForm(f => ({ ...f, unit: e.target.value }))}
-                    className="w-full border rounded-lg px-3 py-2 text-sm">{UNITS.map(u => <option key={u} value={u}>{u}</option>)}</select>
+                    className="w-full border px-3 py-2 text-sm">{UNITS.map(u => <option key={u} value={u}>{u}</option>)}</select>
                 </div>
               </div>
               <div className="flex gap-2">
-                <button onClick={addRecipe} className="bg-violet-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-violet-700 flex items-center gap-1.5">
+                <button onClick={addRecipe} className="bg-violet-600 text-white px-4 py-2 text-sm font-medium hover:bg-violet-700 flex items-center gap-1.5">
                   <Plus size={14} /> Add to Recipe
                 </button>
-                <button onClick={() => setShowAdd(false)} className="bg-gray-200 px-4 py-2 rounded-lg text-sm">Cancel</button>
+                <button onClick={() => setShowAdd(false)} className="bg-gray-200 px-4 py-2 text-sm">Cancel</button>
               </div>
             </div>
           </div>
@@ -182,11 +182,11 @@ export default function DosingRecipes() {
                 {editing === r.id ? (
                   <div className="flex-1 flex items-center gap-2 flex-wrap">
                     <input value={editForm.chemicalName} onChange={e => setEditForm(f => ({ ...f, chemicalName: e.target.value }))}
-                      className="flex-1 min-w-[120px] border rounded px-2 py-1.5 text-sm" />
+                      className="flex-1 min-w-[120px] border px-2 py-1.5 text-sm" />
                     <input type="number" step="0.1" value={editForm.quantity} onChange={e => setEditForm(f => ({ ...f, quantity: e.target.value }))}
-                      className="w-20 border rounded px-2 py-1.5 text-sm" />
+                      className="w-20 border px-2 py-1.5 text-sm" />
                     <select value={editForm.unit} onChange={e => setEditForm(f => ({ ...f, unit: e.target.value }))}
-                      className="border rounded px-2 py-1.5 text-sm">{UNITS.map(u => <option key={u} value={u}>{u}</option>)}</select>
+                      className="border px-2 py-1.5 text-sm">{UNITS.map(u => <option key={u} value={u}>{u}</option>)}</select>
                     <button onClick={() => saveEdit(r.id)} className="text-green-600 hover:text-green-700"><Save size={16} /></button>
                     <button onClick={() => setEditing(null)} className="text-gray-400 hover:text-gray-600 text-xs">Cancel</button>
                   </div>
@@ -213,8 +213,8 @@ export default function DosingRecipes() {
 
       {/* Success message */}
       {msg && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-green-600 text-white px-4 py-2 rounded-full text-sm font-medium shadow-lg animate-in">
-          ✓ {msg}
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-green-600 text-white px-4 py-2 text-sm font-medium animate-in">
+          {msg}
         </div>
       )}
 

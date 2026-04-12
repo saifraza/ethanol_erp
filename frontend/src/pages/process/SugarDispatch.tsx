@@ -93,9 +93,9 @@ export default function SugarDispatch() {
         <h1 className="text-xl font-bold text-slate-800">Sugar Dispatch</h1>
         <div className="flex gap-2 items-center">
           <input type="date" value={date} onChange={e => setDate(e.target.value)}
-            className="border border-slate-300 rounded px-3 py-1.5 text-sm" />
+            className="border border-slate-300px-3 py-1.5 text-sm" />
           <button onClick={() => setShowAdd(true)}
-            className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">+ Gate In</button>
+            className="px-3 py-1.5 bg-blue-600 text-whitetext-sm hover:bg-blue-700">+ Gate In</button>
         </div>
       </div>
 
@@ -105,7 +105,7 @@ export default function SugarDispatch() {
         <KPI label="Total Amount" value={fmtINR(totalAmount)} color="purple" />
       </div>
 
-      <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+      <div className="bg-white border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-slate-600">
@@ -129,7 +129,7 @@ export default function SugarDispatch() {
               {trucks.map(t => (
                 <tr key={t.id} className="border-t border-slate-100 hover:bg-slate-50">
                   <td className="px-3 py-2">
-                    <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${STATUS_COLORS[t.status] || 'bg-slate-100 text-slate-600'}`}>
+                    <span className={`text-[10px] font-bold uppercase px-2 py-0.5${STATUS_COLORS[t.status] || 'bg-slate-100 text-slate-600'}`}>
                       {t.status}
                     </span>
                   </td>
@@ -143,15 +143,15 @@ export default function SugarDispatch() {
                   <td className="px-3 py-2">
                     <div className="flex gap-1">
                       {t.status === 'GROSS_WEIGHED' && (
-                        <button onClick={() => handleBill(t.id)} className="text-xs px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700">Bill</button>
+                        <button onClick={() => handleBill(t.id)} className="text-xs px-2 py-1 bg-green-600 text-whitehover:bg-green-700">Bill</button>
                       )}
                       {t.status === 'BILLED' && (
                         <>
                           <a href={`/api/sugar-dispatch/${t.id}/invoice-pdf`} target="_blank" rel="noopener noreferrer"
-                            className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700">Inv PDF</a>
+                            className="text-xs px-2 py-1 bg-blue-600 text-whitehover:bg-blue-700">Inv PDF</a>
                           <a href={`/api/sugar-dispatch/${t.id}/gate-pass-pdf`} target="_blank" rel="noopener noreferrer"
-                            className="text-xs px-2 py-1 bg-purple-600 text-white rounded hover:bg-purple-700">GP PDF</a>
-                          <button onClick={() => handleRelease(t.id)} className="text-xs px-2 py-1 bg-slate-700 text-white rounded hover:bg-slate-800">Release</button>
+                            className="text-xs px-2 py-1 bg-purple-600 text-whitehover:bg-purple-700">GP PDF</a>
+                          <button onClick={() => handleRelease(t.id)} className="text-xs px-2 py-1 bg-slate-700 text-whitehover:bg-slate-800">Release</button>
                         </>
                       )}
                     </div>
@@ -165,7 +165,7 @@ export default function SugarDispatch() {
 
       {showAdd && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white shadow-2xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
             <h2 className="text-lg font-bold text-slate-800 mb-4">Gate In — New Sugar Dispatch</h2>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Vehicle No" value={form.vehicleNo} onChange={v => setForm({ ...form, vehicleNo: v })} />
@@ -180,8 +180,8 @@ export default function SugarDispatch() {
               <Field label="Rate (₹/MT)" value={form.rate} onChange={v => setForm({ ...form, rate: v })} />
             </div>
             <div className="flex justify-end gap-2 mt-5">
-              <button onClick={() => setShowAdd(false)} className="px-4 py-2 border border-slate-300 rounded text-sm hover:bg-slate-50">Cancel</button>
-              <button onClick={handleCreate} className="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">Create</button>
+              <button onClick={() => setShowAdd(false)} className="px-4 py-2 border border-slate-300text-sm hover:bg-slate-50">Cancel</button>
+              <button onClick={handleCreate} className="px-4 py-2 bg-blue-600 text-whitetext-sm hover:bg-blue-700">Create</button>
             </div>
           </div>
         </div>
@@ -193,7 +193,7 @@ export default function SugarDispatch() {
 function KPI({ label, value, color }: { label: string; value: string; color: 'blue' | 'green' | 'purple' }) {
   const colors = { blue: 'text-blue-600', green: 'text-green-600', purple: 'text-purple-600' };
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
+    <div className="bg-white border border-slate-200 p-4">
       <div className="text-xs text-slate-500 uppercase">{label}</div>
       <div className={`text-2xl font-bold ${colors[color]} mt-1`}>{value}</div>
     </div>
@@ -205,7 +205,7 @@ function Field({ label, value, onChange }: { label: string; value: string; onCha
     <div>
       <label className="block text-xs text-slate-500 mb-1">{label}</label>
       <input
-        className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className="w-full border border-slate-300px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         value={value}
         onChange={e => onChange(e.target.value)}
       />

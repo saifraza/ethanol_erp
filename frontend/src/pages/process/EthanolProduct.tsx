@@ -239,7 +239,7 @@ export default function EthanolProduct() {
     <div className="max-w-5xl mx-auto px-3 py-4">
       {/* Header */}
       <div className="flex items-center gap-3 mb-5">
-        <div className="p-2 bg-purple-100 rounded-lg"><Fuel size={24} className="text-purple-600" /></div>
+        <div className="p-2 bg-purple-100"><Fuel size={24} className="text-purple-600" /></div>
         <div>
           <h1 className="text-xl font-bold text-gray-900">Ethanol Stock</h1>
           <p className="text-xs text-gray-500">Daily tank readings & production calculation (9:00 – 11:30 AM)</p>
@@ -248,34 +248,34 @@ export default function EthanolProduct() {
 
       {/* Dashboard Summary */}
       {lastEntry && (
-        <div className="bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-xl p-4 mb-5">
+        <div className="bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 p-4 mb-5">
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-semibold text-purple-600 uppercase">Last — {fmtDtTime(lastEntry.date)}</span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-            <div className="bg-white/80 rounded-lg p-2.5 text-center">
+            <div className="bg-white/80 p-2.5 text-center">
               <Droplets size={16} className="mx-auto text-gray-400 mb-1" />
               <div className="text-lg font-bold text-gray-600">{lastPrevStock?.toFixed(0) ?? '—'}</div>
               <div className="text-[10px] text-gray-400">Prev Stock</div>
               {lastPrevDate && <div className="text-[9px] text-gray-400">{fmtDtTime(lastPrevDate)}</div>}
             </div>
-            <div className="bg-white/80 rounded-lg p-2.5 text-center">
+            <div className="bg-white/80 p-2.5 text-center">
               <Gauge size={16} className="mx-auto text-purple-500 mb-1" />
               <div className="text-lg font-bold text-purple-700">{lastEntry.avgStrength?.toFixed(1) ?? '—'}%</div>
               <div className="text-[10px] text-gray-400">Strength</div>
             </div>
-            <div className="bg-white/80 rounded-lg p-2.5 text-center">
+            <div className="bg-white/80 p-2.5 text-center">
               <TrendingUp size={16} className="mx-auto text-green-500 mb-1" />
               <div className="text-lg font-bold text-green-700">{lastEntry.productionBL?.toFixed(0) ?? '—'}</div>
               <div className="text-[10px] text-gray-400">Prod BL</div>
               {lastPrevDate && <div className="text-[9px] text-gray-400">{fmtDtTime(lastPrevDate)} → {fmtDtTime(lastEntry.date)}</div>}
             </div>
-            <div className="bg-white/80 rounded-lg p-2.5 text-center">
+            <div className="bg-white/80 p-2.5 text-center">
               <Activity size={16} className="mx-auto text-indigo-500 mb-1" />
               <div className="text-lg font-bold text-indigo-700">{lastEntry.klpd?.toFixed(1) ?? '—'}</div>
               <div className="text-[10px] text-gray-400">KLPD</div>
             </div>
-            <div className="bg-white/80 rounded-lg p-2.5 text-center">
+            <div className="bg-white/80 p-2.5 text-center">
               <Truck size={16} className="mx-auto text-red-500 mb-1" />
               <div className="text-lg font-bold text-red-600">{lastEntry.totalDispatch?.toFixed(0) ?? '0'}</div>
               <div className="text-[10px] text-gray-400">Dispatch (in Prod)</div>
@@ -283,20 +283,20 @@ export default function EthanolProduct() {
             </div>
           </div>
           {/* Current stock = last reading minus any new dispatches since */}
-          <div className="mt-2 bg-white/60 rounded-lg p-2 text-center border border-blue-100">
+          <div className="mt-2 bg-white/60 p-2 text-center border border-blue-100">
             <div className="text-[10px] text-gray-400 uppercase">Current Stock{newDispatch > 0 ? ' (after dispatch)' : ''}</div>
             <div className="text-xl font-bold text-blue-800">{((lastEntry.totalStock || 0) - newDispatch).toFixed(0)} BL</div>
             {newDispatch > 0 && <div className="text-[10px] text-gray-400">Stock at reading: {lastEntry.totalStock?.toFixed(0)} − {newDispatch.toFixed(0)} dispatched since</div>}
           </div>
           {/* All-time Totals: Dispatched & Produced */}
           <div className="mt-2 grid grid-cols-2 gap-2">
-            <div className="bg-white/60 rounded-lg p-2 text-center border border-red-100">
+            <div className="bg-white/60 p-2 text-center border border-red-100">
               <Package size={16} className="mx-auto text-red-500 mb-1" />
               <div className="text-[10px] text-gray-400 uppercase">Total Dispatched</div>
               <div className="text-lg font-bold text-red-700">{(allTimeDispatched / 100000).toFixed(2)} L</div>
               <div className="text-[9px] text-gray-400">{allTimeDispatchCount} trucks</div>
             </div>
-            <div className="bg-white/60 rounded-lg p-2 text-center border border-green-100">
+            <div className="bg-white/60 p-2 text-center border border-green-100">
               <Factory size={16} className="mx-auto text-green-600 mb-1" />
               <div className="text-[10px] text-gray-400 uppercase">Total Produced</div>
               <div className="text-lg font-bold text-green-700">{(totalProduced / 100000).toFixed(2)} L</div>
@@ -309,7 +309,7 @@ export default function EthanolProduct() {
             <div className="mt-2 space-y-1">
               <div className="text-[10px] text-gray-400 uppercase px-1">Dispatched since last reading</div>
               {newDispatchList.map((d: any, i: number) => (
-                <div key={d.id} className="flex items-center justify-between text-xs bg-white/60 rounded px-2 py-1">
+                <div key={d.id} className="flex items-center justify-between text-xs bg-white/60 px-2 py-1">
                   <span className="text-gray-600">
                     <span className="font-medium text-gray-800">{d.vehicleNo || `Truck ${i+1}`}</span>
                     {d.partyName && <span className="ml-1 text-gray-400">• {d.partyName}</span>}
@@ -334,7 +334,7 @@ export default function EthanolProduct() {
             } catch (err: any) {
               setMsg({ type: 'err', text: err.response?.data?.error || 'Failed to share' });
             }
-          }} className="mt-3 w-full flex items-center justify-center gap-2 bg-green-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-green-700">
+          }} className="mt-3 w-full flex items-center justify-center gap-2 bg-green-600 text-white py-2 text-sm font-medium hover:bg-green-700">
             <Share2 size={16} /> Share Status
           </button>
         </div>
@@ -345,15 +345,15 @@ export default function EthanolProduct() {
         <div className="flex-1 sm:flex-initial sm:w-48">
           <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
           <input type="date" value={date} onChange={e => setDate(e.target.value)}
-            className="border rounded-lg px-3 py-2.5 w-full text-sm" />
+            className="border px-3 py-2.5 w-full text-sm" />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Time</label>
           <div className="flex gap-1 items-center">
             <input type="time" value={time} onChange={e => setTime(e.target.value)}
-              className="border rounded-lg px-3 py-2.5 w-28 text-sm" />
+              className="border px-3 py-2.5 w-28 text-sm" />
             <button type="button" onClick={() => { setDate(new Date().toISOString().split('T')[0]); setTime(new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })); }}
-              className="px-2 py-2.5 bg-blue-500 text-white text-xs rounded-lg whitespace-nowrap font-medium hover:bg-blue-600">Now</button>
+              className="px-2 py-2.5 bg-blue-500 text-white text-xs whitespace-nowrap font-medium hover:bg-blue-600">Now</button>
           </div>
         </div>
       </div>
@@ -375,7 +375,7 @@ export default function EthanolProduct() {
             f.rsLevel = prev.rsLevel; f.hfoLevel = prev.hfoLevel; f.lfoLevel = prev.lfoLevel;
             setForm(f);
           }
-        }} className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+        }} className={`w-full flex items-center justify-center gap-2 py-2.5 text-sm font-medium transition-colors ${
           plantNotRunning
             ? 'bg-orange-100 border-2 border-orange-400 text-orange-700'
             : 'border-2 border-dashed border-gray-300 text-gray-500 hover:border-orange-400 hover:text-orange-600 hover:bg-orange-50'
@@ -393,7 +393,7 @@ export default function EthanolProduct() {
             }
             f.rsLevel = prev.rsLevel; f.hfoLevel = prev.hfoLevel; f.lfoLevel = prev.lfoLevel;
             setForm(f);
-          }} className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-gray-300 text-gray-500 py-2.5 rounded-lg text-sm font-medium hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+          }} className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-gray-300 text-gray-500 py-2.5 text-sm font-medium hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
             <Clock size={16} /> Copy Previous Values
           </button>
         )}
@@ -410,13 +410,13 @@ export default function EthanolProduct() {
               const curVol = form[`${tank.key}Volume`] || 0;
               const diff = curVol - prevVol;
               return (
-                <div key={tank.key} className={`border rounded-lg p-3 bg-white border-${g.color}-200`}>
+                <div key={tank.key} className={`border p-3 bg-white border-${g.color}-200`}>
                   <div className="flex items-center justify-between mb-2">
                     <span className={`font-semibold text-${g.color}-700`}>{tank.label}</span>
                     <label className="flex items-center gap-1 cursor-pointer">
                       <input type="checkbox" checked={!!form[`${tank.key}Empty`]}
                         onChange={() => toggleEmpty(tank.key)}
-                        className="rounded border-gray-300" />
+                        className="border-gray-300" />
                       <span className="text-[10px] text-gray-400">Empty</span>
                     </label>
                   </div>
@@ -428,25 +428,25 @@ export default function EthanolProduct() {
                       <label className="text-[10px] text-gray-400">DIP (cm)</label>
                       <input type="number" step="0.1" value={form[`${tank.key}Dip`] ?? ''}
                         onChange={e => handleDipChange(tank.key, e.target.value)}
-                        className="border rounded px-2 py-1.5 w-full text-sm" />
+                        className="borderpx-2 py-1.5 w-full text-sm" />
                     </div>
                     <div>
                       <label className="text-[10px] text-gray-400">Volume (Litres)</label>
                       <input type="number" step="any" value={form[`${tank.key}Volume`] ?? ''}
                         readOnly
-                        className="border rounded px-2 py-1.5 w-full text-sm bg-gray-50 font-medium text-blue-700" />
+                        className="borderpx-2 py-1.5 w-full text-sm bg-gray-50 font-medium text-blue-700" />
                     </div>
                     <div>
                       <label className="text-[10px] text-gray-400">Strength %</label>
                       <input type="number" step="any" value={form[`${tank.key}Strength`] ?? ''}
                         onChange={e => numU(`${tank.key}Strength`, e.target.value)}
-                        className="border rounded px-2 py-1.5 w-full text-sm" />
+                        className="borderpx-2 py-1.5 w-full text-sm" />
                     </div>
                     <div>
                       <label className="text-[10px] text-gray-400">LT %</label>
                       <input type="number" step="any" value={form[`${tank.key}Lt`] ?? ''}
                         onChange={e => numU(`${tank.key}Lt`, e.target.value)}
-                        className="border rounded px-2 py-1.5 w-full text-sm" />
+                        className="borderpx-2 py-1.5 w-full text-sm" />
                     </div>
                   </div>
                   )}
@@ -464,7 +464,7 @@ export default function EthanolProduct() {
       ))}
 
       {/* Stock Summary */}
-      <div className="bg-gray-50 border rounded-lg p-4 mb-5">
+      <div className="bg-gray-50 border p-4 mb-5">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
           <div>
             <div className="text-[10px] text-gray-400 uppercase">Prev Stock</div>
@@ -514,7 +514,7 @@ export default function EthanolProduct() {
             const curLvl = form[t.key] || 0;
             const diff = curLvl - prevLvl;
             return (
-              <div key={t.key} className="border rounded-lg p-3 bg-white">
+              <div key={t.key} className="border p-3 bg-white">
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-semibold text-gray-700">{t.label}</span>
                   <span className="text-xs text-gray-500">{(curLvl * 15 / 100).toFixed(2)} M3</span>
@@ -522,7 +522,7 @@ export default function EthanolProduct() {
                 <div className="flex items-center gap-2 mb-2">
                   <input type="number" step="any" value={form[t.key] ?? ''}
                     onChange={e => numU(t.key, e.target.value)}
-                    className="border rounded px-2 py-1.5 flex-1 text-sm" placeholder="Level %" />
+                    className="borderpx-2 py-1.5 flex-1 text-sm" placeholder="Level %" />
                   <span className="text-xs text-gray-400">%</span>
                 </div>
                 <div className="flex justify-between text-[11px]">
@@ -541,7 +541,7 @@ export default function EthanolProduct() {
       <div className="mb-5">
         <label className="block text-xs font-medium text-gray-600 mb-1">Remarks</label>
         <textarea value={remarks} onChange={e => setRemarks(e.target.value)}
-          className="border rounded-lg px-3 py-2 w-full text-sm" rows={2} placeholder="Any remarks..." />
+          className="border px-3 py-2 w-full text-sm" rows={2} placeholder="Any remarks..." />
       </div>
 
       {/* Save */}
@@ -552,10 +552,10 @@ export default function EthanolProduct() {
         <div className="flex gap-2">
           {editId && (
             <button onClick={() => { setEditId(null); setForm({}); setRemarks(''); loadLatest(); }}
-              className="px-4 py-2 text-sm border rounded-lg text-gray-600 hover:bg-gray-50">Cancel</button>
+              className="px-4 py-2 text-sm border text-gray-600 hover:bg-gray-50">Cancel</button>
           )}
           <button onClick={() => setShowPreview(true)}
-            className="px-6 py-2.5 bg-purple-600 text-white rounded-lg font-medium text-sm hover:bg-purple-700 flex items-center gap-2">
+            className="px-6 py-2.5 bg-purple-600 text-white font-medium text-sm hover:bg-purple-700 flex items-center gap-2">
             <Eye size={16} /> Preview & Save
           </button>
         </div>
@@ -564,8 +564,8 @@ export default function EthanolProduct() {
       {/* Preview Modal */}
       {showPreview && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowPreview(false)}>
-          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="bg-purple-600 text-white p-4 rounded-t-xl flex items-center justify-between">
+          <div className="bg-white shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="bg-purple-600 text-white p-4 flex items-center justify-between">
               <h3 className="font-bold text-lg">Ethanol Stock Report</h3>
               <button onClick={() => setShowPreview(false)}><X size={20} /></button>
             </div>
@@ -616,15 +616,15 @@ export default function EthanolProduct() {
                 } catch (err: any) {
                   setMsg({ type: 'err', text: err.response?.data?.error || 'Failed to share' });
                 }
-              }} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700">
+              }} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 text-sm font-medium hover:bg-green-700">
                 <Share2 size={16} /> Telegram
               </button>
               <button onClick={async () => { await handleSave(false); setShowPreview(false); }} disabled={saving}
-                className="flex-1 flex items-center justify-center gap-2 bg-purple-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50">
+                className="flex-1 flex items-center justify-center gap-2 bg-purple-600 text-white py-2.5 text-sm font-medium hover:bg-purple-700 disabled:opacity-50">
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} {editId ? 'Update' : 'Save'}
               </button>
               <button onClick={async () => { await handleSave(true); setShowPreview(false); }} disabled={saving}
-                className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-50">
+                className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 text-white py-2.5 text-sm font-medium hover:bg-emerald-700 disabled:opacity-50">
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />} Save & Share
               </button>
             </div>
@@ -642,7 +642,7 @@ export default function EthanolProduct() {
         {showHistory && (
           <div className="mt-3 space-y-2">
             {entries.map(e => (
-              <div key={e.id} className="border rounded-lg p-3 bg-white flex items-center justify-between">
+              <div key={e.id} className="border p-3 bg-white flex items-center justify-between">
                 <div className="flex-1">
                   <div className="text-sm font-medium">{fmtDtTime(e.date)}</div>
                   <div className="text-xs text-gray-500">

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, BarChart, Bar } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell, ReferenceLine } from 'recharts';
 import api from '../../services/api';
 
 interface SiloSnapshot {
@@ -11,6 +11,8 @@ interface SiloSnapshot {
   f3Level: number;
   f4Level: number;
   beerWellLevel: number;
+  pf1Level: number;
+  pf2Level: number;
   iltLevel: number;
   fltLevel: number;
   totalVolumeKL: number;
@@ -48,6 +50,8 @@ interface EthanolYield {
   productionAL: number;
   avgStrength: number;
   yieldALPerMT: number;
+  yieldProductionAL: number;
+  yieldGrainConsumed: number;
 }
 
 interface HistoryRow extends SiloSnapshot {
@@ -66,8 +70,12 @@ interface LatestResponse {
   } | null;
 }
 
-const fmtNum = (n: number, dec = 1) => n.toLocaleString('en-IN', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+const fmt = (n: number, dec = 1) => n.toLocaleString('en-IN', { minimumFractionDigits: dec, maximumFractionDigits: dec });
 const fmtDate = (iso: string) => {
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+};
+const fmtDateFull = (iso: string) => {
   const d = new Date(iso);
   return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 };
@@ -104,7 +112,6 @@ export default function SiloStock() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  // Poll live tanks every 30s
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
@@ -149,18 +156,24 @@ export default function SiloStock() {
   const live = latest?.live;
   const ethanol = latest?.ethanol;
 
-  // Chart data — exclude today (production is incomplete until next dip)
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const chartData = [...history].reverse()
-    .filter(s => new Date(s.date).toISOString().slice(0, 10) !== todayStr)
-    .map(s => ({
-      date: fmtDate(s.date),
-      siloStock: s.siloClosing,
-      received: s.grainReceivedMT,
-      consumed: s.grainConsumed,
-      ethanolAL: s.ethanolAL ?? 0,
-      yield: s.yieldALPerMT ?? 0,
-    }));
+  // 7-day history for ledger (newest first, but show oldest→newest in table)
+  const last7 = [...history].slice(0, 7).reverse();
+
+  // Totals for 7-day period (excluding baseline rows)
+  const autoRows = last7.filter(s => s.source !== 'BASELINE');
+  const totalReceived = autoRows.reduce((s, r) => s + r.grainReceivedMT, 0);
+  const totalConsumed = autoRows.reduce((s, r) => s + r.grainConsumed, 0);
+  const totalWash = autoRows.reduce((s, r) => s + r.washDistilledKL, 0);
+  const totalTrucks = autoRows.reduce((s, r) => s + r.truckCount, 0);
+  const totalEthanol = autoRows.reduce((s, r) => s + (r.ethanolAL ?? 0), 0);
+
+  // Chart data for bar chart
+  const chartData = last7.filter(s => s.source !== 'BASELINE').map(s => ({
+    date: fmtDate(s.date),
+    received: s.grainReceivedMT,
+    consumed: -s.grainConsumed, // negative so it goes below axis
+    closing: s.siloClosing,
+  }));
 
   if (loading) {
     return (
@@ -171,15 +184,14 @@ export default function SiloStock() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-6 space-y-6">
+    <div className="min-h-screen bg-gray-50 p-4 md:p-6 space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-gray-800">Grain Silo Stock</h1>
           <p className="text-xs text-gray-500 mt-0.5">
             Auto-computed from OPC tank levels + wash flow meter
-            {opcOnline && <span className="ml-2 inline-block w-2 h-2 rounded-full bg-green-500" title="OPC Online" />}
-            {!opcOnline && <span className="ml-2 inline-block w-2 h-2 rounded-full bg-red-500" title="OPC Offline" />}
+            <span className={`ml-2 inline-block w-2 h-2 rounded-full ${opcOnline ? 'bg-green-500' : 'bg-red-500'}`} />
           </p>
         </div>
         <div className="flex gap-2">
@@ -196,7 +208,7 @@ export default function SiloStock() {
       {showBaseline && (
         <div className="bg-white border border-blue-200 rounded-lg p-4 space-y-3">
           <h3 className="text-sm font-semibold text-gray-700">Set Baseline Silo Stock</h3>
-          <p className="text-xs text-gray-500">One-time: enter the current grain in silo (MT). OPC tank levels will be auto-read.</p>
+          <p className="text-xs text-gray-500">Enter the current grain in silo (MT). OPC tank levels will be auto-read.</p>
           <div className="flex gap-3 items-end">
             <div>
               <label className="text-xs text-gray-500 block mb-1">Silo Stock (MT)</label>
@@ -216,7 +228,6 @@ export default function SiloStock() {
         </div>
       )}
 
-      {/* No data state */}
       {!snap && (
         <div className="bg-white rounded-lg p-8 text-center border border-gray-200">
           <p className="text-gray-500 text-sm">No silo snapshots yet. Set a baseline to start tracking.</p>
@@ -225,66 +236,232 @@ export default function SiloStock() {
 
       {snap && (
         <>
-          {/* KPI Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            <KpiCard label="Silo Stock (Live)" value={`${fmtNum(live?.siloEstimate ?? snap.siloClosing)} MT`}
-              sub={live ? `Snapshot + ${live.pendingTruckCount} pending truck${live.pendingTruckCount !== 1 ? 's' : ''}` : ''}
-              color="blue" large />
-            <KpiCard label="24h Grain Consumed" value={`${fmtNum(snap.grainConsumed)} MT`}
-              sub={`Distilled: ${fmtNum(snap.grainDistilled)} MT`} color="amber" />
-            <KpiCard label="24h Grain Received" value={`${fmtNum(snap.grainReceivedMT)} MT`}
-              sub={`${snap.truckCount} truck${snap.truckCount !== 1 ? 's' : ''}`} color="green" />
-            <KpiCard label="Grain In System" value={`${fmtNum(snap.grainInSystem)} MT`}
-              sub={`${fmtNum(snap.totalVolumeKL)} KL @ ${Math.round(snap.grainPctUsed * 100)}%`} color="purple" />
-            <KpiCard label="Ethanol Produced" value={ethanol?.productionAL ? `${fmtNum(ethanol.productionAL)} AL` : '--'}
-              sub={ethanol?.productionBL ? `${fmtNum(ethanol.productionBL)} BL @ ${fmtNum(ethanol.avgStrength)}%` : 'No dip reading'} color="teal" />
-            <KpiCard label="Yield (AL/MT)" value={ethanol?.yieldALPerMT ? fmtNum(ethanol.yieldALPerMT) : '--'}
-              sub={ethanol?.yieldALPerMT ? `${fmtNum(ethanol.yieldProductionAL)} AL / ${fmtNum(ethanol.yieldGrainConsumed)} MT` : 'Need ethanol + grain data'} color="indigo" />
-          </div>
-
-          {/* Calculation Breakdown */}
-          <div className="bg-white rounded-lg border border-gray-200 p-4">
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">Calculation Breakdown (Latest Snapshot)</h3>
-            <div className="grid md:grid-cols-2 gap-4 text-xs">
-              {/* Left: Silo Balance */}
-              <div className="space-y-1.5">
-                <div className="font-semibold text-gray-600 uppercase text-[10px] tracking-wider mb-2">Silo Balance</div>
-                <CalcRow label="Silo Opening" value={snap.siloOpening} unit="MT" />
-                <CalcRow label="+ Grain Received (trucks)" value={snap.grainReceivedMT} unit="MT" color="green" />
-                <CalcRow label="- Grain Consumed" value={snap.grainConsumed} unit="MT" color="red" />
-                <div className="border-t border-gray-200 pt-1.5">
-                  <CalcRow label="= Silo Closing" value={snap.siloClosing} unit="MT" bold />
-                </div>
-                {live && live.pendingTruckCount > 0 && (
-                  <CalcRow label={`+ ${live.pendingTruckCount} pending truck(s)`} value={live.pendingTrucksMT} unit="MT" color="green" />
-                )}
-                {live && <CalcRow label="= Live Estimate" value={live.siloEstimate} unit="MT" bold />}
+          {/* Live Status Strip */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="bg-white rounded-lg border border-gray-200 border-l-4 border-l-blue-600 px-4 py-3">
+              <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Current Silo Stock</div>
+              <div className="text-2xl font-bold text-gray-800 mt-1 font-mono tabular-nums">
+                {fmt(live?.siloEstimate ?? snap.siloClosing, 0)} <span className="text-sm font-normal text-gray-400">MT</span>
               </div>
-              {/* Right: Grain Consumed Breakdown */}
-              <div className="space-y-1.5">
-                <div className="font-semibold text-gray-600 uppercase text-[10px] tracking-wider mb-2">Grain Consumed Breakdown</div>
-                <CalcRow label="Wash Distilled (24h)" value={snap.washDistilledKL} unit="KL" />
-                <CalcRow label={`x Grain % (${Math.round(snap.grainPctUsed * 100)}%)`} value={snap.grainDistilled} unit="MT" sub="= grain distilled" />
-                <CalcRow label="Grain In System (prev)" value={snap.grainInSystem - snap.deltaGrainInSystem} unit="MT" sub="= previous snapshot" />
-                <CalcRow label="Grain In System (now)" value={snap.grainInSystem} unit="MT" sub="= current tanks" />
-                <CalcRow label="Delta Grain In System" value={snap.deltaGrainInSystem} unit="MT" color={snap.deltaGrainInSystem > 0 ? 'red' : 'green'} sub={`= ${fmtNum(snap.grainInSystem)} − ${fmtNum(snap.grainInSystem - snap.deltaGrainInSystem)}`} />
-                {snap.flourTotal > 0 && <CalcRow label="Flour in Silos" value={snap.flourTotal} unit="MT" />}
-                <div className="border-t border-gray-200 pt-1.5">
-                  <CalcRow label="= Grain Consumed" value={snap.grainConsumed} unit="MT" bold />
-                  <p className="text-[10px] text-gray-400 mt-1">
-                    = max(0, distilled + delta_grain + delta_flour)
-                  </p>
-                </div>
-                <div className="border-t border-gray-200 pt-1.5 mt-2">
-                  <div className="font-semibold text-gray-600 uppercase text-[10px] tracking-wider mb-1">Cumulatives (Year)</div>
-                  <CalcRow label="Total Received" value={snap.cumReceived} unit="MT" />
-                  <CalcRow label="Total Consumed" value={snap.cumConsumed} unit="MT" />
-                </div>
+              {live && live.pendingTruckCount > 0 && (
+                <div className="text-[10px] text-blue-600 mt-0.5">{snap.siloClosing > 0 ? fmt(snap.siloClosing, 0) : '--'} closing + {live.pendingTruckCount} pending truck(s)</div>
+              )}
+            </div>
+            <div className="bg-white rounded-lg border border-gray-200 border-l-4 border-l-green-500 px-4 py-3">
+              <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Today Received</div>
+              <div className="text-2xl font-bold text-green-700 mt-1 font-mono tabular-nums">
+                +{fmt(snap.grainReceivedMT, 0)} <span className="text-sm font-normal text-gray-400">MT</span>
               </div>
+              <div className="text-[10px] text-gray-400 mt-0.5">{snap.truckCount} truck{snap.truckCount !== 1 ? 's' : ''}</div>
+            </div>
+            <div className="bg-white rounded-lg border border-gray-200 border-l-4 border-l-amber-500 px-4 py-3">
+              <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Today Consumed</div>
+              <div className="text-2xl font-bold text-amber-700 mt-1 font-mono tabular-nums">
+                -{fmt(snap.grainConsumed, 0)} <span className="text-sm font-normal text-gray-400">MT</span>
+              </div>
+              <div className="text-[10px] text-gray-400 mt-0.5">{fmt(snap.washDistilledKL, 0)} KL wash x {Math.round(snap.grainPctUsed * 100)}%</div>
+            </div>
+            <div className="bg-white rounded-lg border border-gray-200 border-l-4 border-l-purple-500 px-4 py-3">
+              <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Grain In Tanks</div>
+              <div className="text-2xl font-bold text-gray-800 mt-1 font-mono tabular-nums">
+                {fmt(snap.grainInSystem, 0)} <span className="text-sm font-normal text-gray-400">MT</span>
+              </div>
+              <div className="text-[10px] text-gray-400 mt-0.5">{fmt(snap.totalVolumeKL, 0)} KL @ {Math.round(snap.grainPctUsed * 100)}%</div>
             </div>
           </div>
 
-          {/* Tank Level Gauges */}
+          {/* 7-Day Grain Ledger — THE MAIN VIEW */}
+          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+            <div className="px-4 py-3 bg-gray-800 text-white flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold tracking-wide">Daily Grain Ledger</h3>
+                <p className="text-[10px] text-gray-400 mt-0.5">Opening + Received - Consumed = Closing (per 9 AM shift)</p>
+              </div>
+              {last7.length > 0 && (
+                <div className="text-right text-[10px] text-gray-400">
+                  {fmtDateFull(last7[0].date)} to {fmtDateFull(last7[last7.length - 1].date)}
+                </div>
+              )}
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-gray-100 text-gray-500 text-[10px] uppercase tracking-wider">
+                    <th className="text-left px-4 py-2.5 font-bold">Date</th>
+                    <th className="text-right px-3 py-2.5 font-bold">Opening</th>
+                    <th className="text-right px-3 py-2.5 font-bold">
+                      <span className="text-green-600">+ Received</span>
+                    </th>
+                    <th className="text-center px-1 py-2.5 font-bold text-gray-300">Trucks</th>
+                    <th className="text-right px-3 py-2.5 font-bold">Wash (KL)</th>
+                    <th className="text-right px-3 py-2.5 font-bold">Grain %</th>
+                    <th className="text-right px-3 py-2.5 font-bold">
+                      <span className="text-amber-600">- Consumed</span>
+                    </th>
+                    <th className="text-right px-4 py-2.5 font-bold bg-gray-200 text-gray-700">= Closing</th>
+                    <th className="text-right px-3 py-2.5 font-bold text-teal-600">Ethanol (AL)</th>
+                    <th className="text-right px-3 py-2.5 font-bold text-indigo-600">Yield</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {last7.map((s, i) => {
+                    const isBaseline = s.source === 'BASELINE';
+                    const isToday = i === last7.length - 1;
+                    return (
+                      <tr key={s.id} className={`border-b border-gray-100 hover:bg-blue-50/40 ${isToday ? 'bg-blue-50/30' : i % 2 ? 'bg-gray-50/50' : ''}`}>
+                        <td className="px-4 py-2 text-gray-800 font-medium whitespace-nowrap">
+                          {fmtDate(s.date)}
+                          {isBaseline && <span className="ml-1.5 text-[8px] font-bold uppercase px-1 py-0.5 rounded bg-blue-100 text-blue-700">Baseline</span>}
+                          {isToday && !isBaseline && <span className="ml-1.5 text-[8px] font-bold uppercase px-1 py-0.5 rounded bg-green-100 text-green-700">Today</span>}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono tabular-nums text-gray-600">
+                          {isBaseline ? '--' : fmt(s.siloOpening, 1)}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono tabular-nums text-green-700 font-medium">
+                          {isBaseline ? '--' : s.grainReceivedMT > 0 ? `+${fmt(s.grainReceivedMT, 1)}` : '0.0'}
+                        </td>
+                        <td className="px-1 py-2 text-center text-gray-400 text-[10px]">
+                          {isBaseline ? '' : s.truckCount > 0 ? `(${s.truckCount})` : ''}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono tabular-nums text-gray-500">
+                          {isBaseline ? '--' : fmt(s.washDistilledKL, 0)}
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-400 text-[10px]">
+                          {isBaseline ? '--' : `${Math.round(s.grainPctUsed * 100)}%`}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono tabular-nums text-amber-700 font-medium">
+                          {isBaseline ? '--' : s.grainConsumed > 0 ? `-${fmt(s.grainConsumed, 1)}` : '0.0'}
+                        </td>
+                        <td className={`px-4 py-2 text-right font-mono tabular-nums font-bold bg-gray-50 ${s.siloClosing < 0 ? 'text-red-600' : 'text-gray-800'}`}>
+                          {fmt(s.siloClosing, 1)}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono tabular-nums text-teal-700">
+                          {s.ethanolAL ? fmt(s.ethanolAL, 0) : '--'}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono tabular-nums font-semibold text-indigo-700">
+                          {s.yieldALPerMT ? fmt(s.yieldALPerMT, 1) : '--'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                {/* Totals row */}
+                {autoRows.length > 0 && (
+                  <tfoot>
+                    <tr className="bg-gray-800 text-white font-semibold">
+                      <td className="px-4 py-2.5 text-[10px] uppercase tracking-wider">{autoRows.length}-Day Total</td>
+                      <td className="px-3 py-2.5 text-right font-mono tabular-nums text-gray-400">
+                        {last7.length > 0 ? fmt(last7[0].siloOpening || last7[0].siloClosing, 0) : '--'}
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-mono tabular-nums text-green-400">
+                        +{fmt(totalReceived, 0)}
+                      </td>
+                      <td className="px-1 py-2.5 text-center text-gray-400 text-[10px]">({totalTrucks})</td>
+                      <td className="px-3 py-2.5 text-right font-mono tabular-nums text-gray-400">
+                        {fmt(totalWash, 0)}
+                      </td>
+                      <td className="px-3 py-2.5"></td>
+                      <td className="px-3 py-2.5 text-right font-mono tabular-nums text-amber-400">
+                        -{fmt(totalConsumed, 0)}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono tabular-nums font-bold text-white bg-gray-700">
+                        {last7.length > 0 ? fmt(last7[last7.length - 1].siloClosing, 0) : '--'}
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-mono tabular-nums text-teal-400">
+                        {totalEthanol > 0 ? fmt(totalEthanol, 0) : '--'}
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-mono tabular-nums text-indigo-400">
+                        {totalConsumed > 0 && totalEthanol > 0 ? fmt(totalEthanol / totalConsumed, 1) : '--'}
+                      </td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          </div>
+
+          {/* How the Math Works — collapsible explainer */}
+          <details className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+            <summary className="px-4 py-3 cursor-pointer hover:bg-gray-50 text-sm font-semibold text-gray-700 select-none">
+              How is this calculated?
+            </summary>
+            <div className="px-4 py-3 border-t border-gray-200 text-xs text-gray-600 space-y-3">
+              <div className="grid md:grid-cols-2 gap-6">
+                <div>
+                  <div className="font-bold text-gray-700 mb-2 uppercase text-[10px] tracking-wider">Silo Balance (Daily)</div>
+                  <div className="bg-gray-50 rounded-lg p-3 font-mono text-[11px] space-y-1">
+                    <div>Silo Closing = Opening + Received - Consumed</div>
+                    <div className="mt-2 text-gray-400">Where:</div>
+                    <div className="pl-3">Opening = Previous day's Closing</div>
+                    <div className="pl-3 text-green-700">Received = Grain trucks weighed (net MT)</div>
+                    <div className="pl-3 text-amber-700">Consumed = Wash Distilled (KL) x Grain %</div>
+                  </div>
+                </div>
+                <div>
+                  <div className="font-bold text-gray-700 mb-2 uppercase text-[10px] tracking-wider">Data Sources</div>
+                  <div className="space-y-1.5 text-[11px]">
+                    <div className="flex items-start gap-2">
+                      <span className="w-2 h-2 mt-1 rounded-full bg-green-500 shrink-0" />
+                      <span><b>Grain Received:</b> Weighbridge net weight (automatic)</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="w-2 h-2 mt-1 rounded-full bg-amber-500 shrink-0" />
+                      <span><b>Wash Distilled:</b> OPC flow meter MG_140101 (DCS totalizer, 24h sum)</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="w-2 h-2 mt-1 rounded-full bg-purple-500 shrink-0" />
+                      <span><b>Grain %:</b> Configured in Settings (currently {snap ? Math.round(snap.grainPctUsed * 100) : 30}%)</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="w-2 h-2 mt-1 rounded-full bg-blue-500 shrink-0" />
+                      <span><b>Shift:</b> 9:00 AM to 9:00 AM IST (auto-snapshot daily)</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {snap && (
+                <div className="border-t border-gray-200 pt-3 mt-3">
+                  <div className="font-bold text-gray-700 mb-2 uppercase text-[10px] tracking-wider">Today's Breakdown</div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[11px]">
+                    <CalcItem label="Silo Opening" value={`${fmt(snap.siloOpening)} MT`} />
+                    <CalcItem label="+ Grain Received" value={`+${fmt(snap.grainReceivedMT)} MT`} sub={`${snap.truckCount} trucks`} color="green" />
+                    <CalcItem label="Wash Distilled" value={`${fmt(snap.washDistilledKL)} KL`} sub={`x ${Math.round(snap.grainPctUsed * 100)}% = ${fmt(snap.grainDistilled)} MT`} />
+                    <CalcItem label="= Silo Closing" value={`${fmt(snap.siloClosing)} MT`} bold />
+                  </div>
+                  {snap.deltaGrainInSystem !== 0 && (
+                    <p className="text-[10px] text-gray-400 mt-2">
+                      Grain in tanks delta: {fmt(snap.deltaGrainInSystem)} MT (included in consumed)
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </details>
+
+          {/* Chart: Daily In vs Out (waterfall-style) */}
+          {chartData.length > 1 && (
+            <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">Daily Grain In vs Out</h3>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={chartData} stackOffset="sign">
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} />
+                  <Tooltip contentStyle={{ fontSize: 11 }} formatter={(v: number, name: string) => [Math.abs(v).toFixed(1) + ' MT', name]} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <ReferenceLine y={0} stroke="#334155" />
+                  <Bar dataKey="received" name="Received" stackId="a">
+                    {chartData.map((_, i) => <Cell key={i} fill="#22c55e" />)}
+                  </Bar>
+                  <Bar dataKey="consumed" name="Consumed" stackId="a">
+                    {chartData.map((_, i) => <Cell key={i} fill="#f59e0b" />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Live Tank Levels */}
           <div className="bg-white rounded-lg border border-gray-200 p-4">
             <h3 className="text-sm font-semibold text-gray-700 mb-3">Live Tank Levels</h3>
             <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-3">
@@ -299,149 +476,28 @@ export default function SiloStock() {
               </p>
             )}
           </div>
-
-          {/* Charts */}
-          {chartData.length > 1 && (
-            <div className="space-y-4">
-              {/* Yield Trend — most important */}
-              <div className="bg-white rounded-lg border border-gray-200 p-4">
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">
-                  Ethanol Yield Trend (AL per MT Grain)
-                </h3>
-                <ResponsiveContainer width="100%" height={220}>
-                  <LineChart data={chartData.filter(d => d.yield > 0)}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                    <YAxis yAxisId="left" tick={{ fontSize: 10 }} domain={['auto', 'auto']} />
-                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} />
-                    <Tooltip contentStyle={{ fontSize: 11 }}
-                      formatter={(v: number, name: string) => [v.toFixed(1), name]} />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Line type="monotone" dataKey="yield" name="Yield (AL/MT)" stroke="#6366f1" strokeWidth={2} dot={{ r: 3 }} yAxisId="left" />
-                    <Line type="monotone" dataKey="ethanolAL" name="Ethanol (AL)" stroke="#14b8a6" strokeWidth={1.5} dot={{ r: 2 }} yAxisId="right" />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="grid md:grid-cols-2 gap-4">
-                <div className="bg-white rounded-lg border border-gray-200 p-4">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Silo Stock Trend</h3>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <LineChart data={chartData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                      <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                      <YAxis tick={{ fontSize: 10 }} />
-                      <Tooltip contentStyle={{ fontSize: 11 }} />
-                      <Line type="monotone" dataKey="siloStock" name="Silo (MT)" stroke="#2563eb" strokeWidth={2} dot={{ r: 3 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="bg-white rounded-lg border border-gray-200 p-4">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Daily In vs Out</h3>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <BarChart data={chartData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                      <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                      <YAxis tick={{ fontSize: 10 }} />
-                      <Tooltip contentStyle={{ fontSize: 11 }} />
-                      <Legend wrapperStyle={{ fontSize: 11 }} />
-                      <Bar dataKey="received" name="Received (MT)" fill="#22c55e" />
-                      <Bar dataKey="consumed" name="Consumed (MT)" fill="#f59e0b" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* History Table */}
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-gray-200 bg-gray-50">
-              <h3 className="text-sm font-semibold text-gray-700">Snapshot History</h3>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="bg-gray-100 text-gray-600">
-                    <th className="text-left px-3 py-2 font-semibold">Date</th>
-                    <th className="text-right px-3 py-2 font-semibold">Opening</th>
-                    <th className="text-right px-3 py-2 font-semibold">Received</th>
-                    <th className="text-right px-3 py-2 font-semibold">Consumed</th>
-                    <th className="text-right px-3 py-2 font-semibold">Closing</th>
-                    <th className="text-right px-3 py-2 font-semibold">Wash (KL)</th>
-                    <th className="text-right px-3 py-2 font-semibold">Ethanol (AL)</th>
-                    <th className="text-right px-3 py-2 font-semibold">Yield</th>
-                    <th className="text-center px-3 py-2 font-semibold">Source</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {history.map((s, i) => (
-                    <tr key={s.id} className={`border-b border-gray-100 hover:bg-blue-50/40 ${i % 2 ? 'bg-gray-50/50' : ''}`}>
-                      <td className="px-3 py-1.5 text-gray-800 font-medium">{fmtDate(s.date)}</td>
-                      <td className="px-3 py-1.5 text-right font-mono">{fmtNum(s.siloOpening)}</td>
-                      <td className="px-3 py-1.5 text-right font-mono text-green-700">{s.grainReceivedMT > 0 ? `+${fmtNum(s.grainReceivedMT)}` : '--'}</td>
-                      <td className="px-3 py-1.5 text-right font-mono text-amber-700">{s.grainConsumed > 0 ? `-${fmtNum(s.grainConsumed)}` : '--'}</td>
-                      <td className="px-3 py-1.5 text-right font-mono font-semibold text-gray-800">{fmtNum(s.siloClosing)}</td>
-                      <td className="px-3 py-1.5 text-right font-mono text-gray-500">{fmtNum(s.washDistilledKL, 0)}</td>
-                      <td className="px-3 py-1.5 text-right font-mono text-teal-700">{s.ethanolAL ? fmtNum(s.ethanolAL) : '--'}</td>
-                      <td className="px-3 py-1.5 text-right font-mono font-semibold text-indigo-700">{s.yieldALPerMT ? fmtNum(s.yieldALPerMT) : '--'}</td>
-                      <td className="px-3 py-1.5 text-center">
-                        <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
-                          s.source === 'BASELINE' ? 'bg-blue-100 text-blue-700' :
-                          s.source === 'OVERRIDE' ? 'bg-orange-100 text-orange-700' :
-                          'bg-gray-100 text-gray-600'
-                        }`}>{s.source}</span>
-                      </td>
-                    </tr>
-                  ))}
-                  {history.length === 0 && (
-                    <tr><td colSpan={10} className="px-3 py-6 text-center text-gray-400">No snapshots yet</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
         </>
       )}
     </div>
   );
 }
 
-function KpiCard({ label, value, sub, color, large }: { label: string; value: string; sub?: string; color: string; large?: boolean }) {
-  const colors: Record<string, string> = {
-    blue: 'border-l-blue-500',
-    green: 'border-l-green-500',
-    amber: 'border-l-amber-500',
-    purple: 'border-l-purple-500',
-    teal: 'border-l-teal-500',
-    indigo: 'border-l-indigo-500',
-  };
+function CalcItem({ label, value, sub, color, bold }: {
+  label: string; value: string; sub?: string; color?: string; bold?: boolean;
+}) {
+  const textColor = color === 'green' ? 'text-green-700' : color === 'amber' ? 'text-amber-700' : 'text-gray-800';
   return (
-    <div className={`bg-white rounded-lg border border-gray-200 border-l-4 ${colors[color] || 'border-l-gray-400'} px-4 py-3`}>
+    <div className="bg-gray-50 rounded-lg px-3 py-2">
       <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">{label}</div>
-      <div className={`${large ? 'text-2xl' : 'text-lg'} font-bold text-gray-800 mt-1 font-mono tabular-nums`}>{value}</div>
+      <div className={`font-mono tabular-nums mt-0.5 ${bold ? 'font-bold text-base' : 'text-sm'} ${textColor}`}>
+        {value}
+      </div>
       {sub && <div className="text-[10px] text-gray-400 mt-0.5">{sub}</div>}
     </div>
   );
 }
 
-function CalcRow({ label, value, unit, color, bold, sub }: {
-  label: string; value: number; unit: string; color?: string; bold?: boolean; sub?: string;
-}) {
-  const colorClass = color === 'green' ? 'text-green-700' : color === 'red' ? 'text-red-700' : 'text-gray-700';
-  return (
-    <div className="flex justify-between items-baseline">
-      <span className={`text-gray-600 ${bold ? 'font-semibold' : ''}`}>{label}</span>
-      <div className="text-right">
-        <span className={`font-mono tabular-nums ${colorClass} ${bold ? 'font-bold text-sm' : ''}`}>
-          {value >= 0 && color === 'green' ? '+' : ''}{value.toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} {unit}
-        </span>
-        {sub && <span className="text-[9px] text-gray-400 ml-1">{sub}</span>}
-      </div>
-    </div>
-  );
-}
-
-function TankGauge({ label, pct, kl, capacityKL }: { label: string; pct: number; kl: number; capacityKL: number }) {
+function TankGauge({ label, pct, kl }: { label: string; pct: number; kl: number; capacityKL: number }) {
   const fillColor = pct > 90 ? 'bg-red-500' : pct > 70 ? 'bg-amber-500' : pct > 10 ? 'bg-blue-500' : 'bg-gray-300';
   return (
     <div className="text-center">

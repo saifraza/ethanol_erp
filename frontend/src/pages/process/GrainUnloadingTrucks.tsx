@@ -230,7 +230,7 @@ export default function GrainUnloadingTrucks() {
     <div className="max-w-5xl mx-auto px-3 py-4">
       {/* Header */}
       <div className="flex items-center gap-3 mb-5">
-        <div className="p-2 bg-amber-100 rounded-lg"><Wheat size={24} className="text-amber-600" /></div>
+        <div className="p-2 bg-amber-100"><Wheat size={24} className="text-amber-600" /></div>
         <div>
           <h1 className="text-xl font-bold text-gray-900">Grain Unloading</h1>
           <p className="text-xs text-gray-500">Log each truck as it arrives — real time</p>
@@ -242,15 +242,15 @@ export default function GrainUnloadingTrucks() {
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
           <input type="date" value={date} onChange={e => setDate(e.target.value)}
-            className="border rounded-lg px-3 py-2.5 text-sm" />
+            className="border px-3 py-2.5 text-sm" />
         </div>
-        <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2">
+        <div className="bg-amber-50 border border-amber-200 px-4 py-2">
           <div className="text-[10px] text-amber-400 uppercase">To Silo</div>
           <div className="text-lg font-bold text-amber-700">{totalNet.toFixed(1)} Ton</div>
           <div className="text-[10px] text-gray-500">{truckCount} truck{truckCount !== 1 ? 's' : ''}</div>
         </div>
         {quarantineTotal > 0 && (
-          <div className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-2">
+          <div className="bg-orange-50 border border-orange-200 px-4 py-2">
             <div className="text-[10px] text-orange-400 uppercase flex items-center gap-1"><AlertTriangle size={10} /> Quarantine</div>
             <div className="text-lg font-bold text-orange-700">{quarantineTotal.toFixed(1)} Ton</div>
           </div>
@@ -261,17 +261,17 @@ export default function GrainUnloadingTrucks() {
           Keeping the code path so we can re-enable if needed, but the UI is hidden. */}
       {false && !showForm && (
         <button onClick={() => setShowForm(true)}
-          className="w-full border-2 border-dashed border-amber-300 rounded-lg py-4 text-amber-600 hover:bg-amber-50 flex items-center justify-center gap-2 mb-5 font-medium">
+          className="w-full border-2 border-dashed border-amber-300 py-4 text-amber-600 hover:bg-amber-50 flex items-center justify-center gap-2 mb-5 font-medium">
           <Plus size={20} /> Add Truck
         </button>
       )}
-      <div className="w-full border-2 border-dashed border-slate-300 bg-slate-50 rounded-lg py-4 text-slate-500 text-center mb-5 text-sm">
+      <div className="w-full border-2 border-dashed border-slate-300 bg-slate-50 py-4 text-slate-500 text-center mb-5 text-sm">
         Manual entry is disabled. All grain trucks are now recorded via the weighbridge.
       </div>
 
       {/* New Truck Form */}
       {showForm && (
-        <div className="border-2 border-amber-300 rounded-lg p-4 bg-white mb-5">
+        <div className="border-2 border-amber-300 p-4 bg-white mb-5">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-semibold text-amber-700">New Truck</h3>
             <button onClick={resetForm} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
@@ -281,36 +281,36 @@ export default function GrainUnloadingTrucks() {
               <label className="text-[10px] text-gray-400">UID/RST No</label>
               <input type="text" value={uidRst} onChange={e => setUidRst(e.target.value)}
                 onBlur={() => fetchLabData(uidRst)}
-                className="border rounded px-2 py-2 w-full text-sm" placeholder="Tracking number" />
+                className="borderpx-2 py-2 w-full text-sm" placeholder="Tracking number" />
               {labData && (
                 <div className="text-[10px] text-indigo-600 mt-0.5 flex items-center gap-1">
-                  ✓ Lab data loaded
+                  Lab data loaded
                 </div>
               )}
             </div>
             <div>
               <label className="text-[10px] text-gray-400">Vehicle No</label>
               <input type="text" value={vehicleNo} onChange={e => setVehicleNo(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" placeholder="MH 12 AB 1234" />
+                className="borderpx-2 py-2 w-full text-sm" placeholder="MH 12 AB 1234" />
             </div>
             <div>
               <label className="text-[10px] text-gray-400">Supplier</label>
               <input type="text" value={supplier} onChange={e => setSupplier(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" />
+                className="borderpx-2 py-2 w-full text-sm" />
             </div>
             <div>
               <label className="text-[10px] text-gray-400">Gross Weight (Ton)</label>
               <input type="number" step="any" min="0" value={weightGross} onChange={e => setWeightGross(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" />
+                className="borderpx-2 py-2 w-full text-sm" />
             </div>
             <div>
               <label className="text-[10px] text-gray-400">Tare Weight (Ton)</label>
               <input type="number" step="any" min="0" value={weightTare} onChange={e => setWeightTare(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" />
+                className="borderpx-2 py-2 w-full text-sm" />
             </div>
             <div>
               <label className="text-[10px] text-gray-400">Net Weight (Ton)</label>
-              <div className="border rounded px-2 py-2 w-full text-sm bg-gray-50 font-semibold text-amber-700">
+              <div className="borderpx-2 py-2 w-full text-sm bg-gray-50 font-semibold text-amber-700">
                 {net > 0 ? net.toFixed(2) : '—'}
               </div>
             </div>
@@ -321,7 +321,7 @@ export default function GrainUnloadingTrucks() {
             <div>
               <label className="text-[10px] text-gray-400">No. of Bags</label>
               <input type="number" step="1" min="0" value={bags} onChange={e => setBags(e.target.value)}
-                className="border rounded px-2 py-2 w-full text-sm" placeholder="0" />
+                className="borderpx-2 py-2 w-full text-sm" placeholder="0" />
             </div>
           </div>
 
@@ -330,14 +330,14 @@ export default function GrainUnloadingTrucks() {
             <div>
               <label className="text-[10px] text-orange-500 font-medium flex items-center gap-1"><AlertTriangle size={10} /> Rejected/Quarantine (Ton)</label>
               <input type="number" step="any" min="0" value={quarantineWeight} onChange={e => setQuarantineWeight(e.target.value)}
-                className="border border-orange-200 rounded px-2 py-2 w-full text-sm bg-orange-50" placeholder="0 = none" />
+                className="border border-orange-200px-2 py-2 w-full text-sm bg-orange-50" placeholder="0 = none" />
               {validationError && (
                 <div className="text-[10px] text-red-600 mt-1">{validationError}</div>
               )}
             </div>
             <div>
               <label className="text-[10px] text-green-600 font-medium">To Silo (Ton)</label>
-              <div className="border rounded px-2 py-2 w-full text-sm bg-green-50 font-semibold text-green-700">
+              <div className="borderpx-2 py-2 w-full text-sm bg-green-50 font-semibold text-green-700">
                 {toSilo > 0 ? toSilo.toFixed(2) : '—'}
               </div>
             </div>
@@ -345,7 +345,7 @@ export default function GrainUnloadingTrucks() {
               <div>
                 <label className="text-[10px] text-gray-400">Quarantine Reason</label>
                 <input type="text" value={quarantineReason} onChange={e => setQuarantineReason(e.target.value)}
-                  className="border rounded px-2 py-2 w-full text-sm" placeholder="e.g. High moisture" />
+                  className="borderpx-2 py-2 w-full text-sm" placeholder="e.g. High moisture" />
               </div>
             )}
           </div>
@@ -358,22 +358,22 @@ export default function GrainUnloadingTrucks() {
             <div>
               <label className="text-[10px] text-gray-400">Moisture %</label>
               <input type="number" step="any" min="0" max="100" value={moisture} onChange={e => setMoisture(e.target.value)}
-                className={`border rounded px-2 py-2 w-full text-sm ${labData?.moisture ? 'bg-indigo-50 border-indigo-200' : ''}`} />
+                className={`borderpx-2 py-2 w-full text-sm ${labData?.moisture ? 'bg-indigo-50 border-indigo-200' : ''}`} />
             </div>
             <div>
               <label className="text-[10px] text-gray-400">Starch %</label>
               <input type="number" step="any" min="0" max="100" value={starchPercent} onChange={e => setStarchPercent(e.target.value)}
-                className={`border rounded px-2 py-2 w-full text-sm ${labData?.starch ? 'bg-indigo-50 border-indigo-200' : ''}`} />
+                className={`borderpx-2 py-2 w-full text-sm ${labData?.starch ? 'bg-indigo-50 border-indigo-200' : ''}`} />
             </div>
             <div>
               <label className="text-[10px] text-gray-400">Damaged %</label>
               <input type="number" step="any" min="0" max="100" value={damagedPercent} onChange={e => setDamagedPercent(e.target.value)}
-                className={`border rounded px-2 py-2 w-full text-sm ${labData?.damaged ? 'bg-indigo-50 border-indigo-200' : ''}`} />
+                className={`borderpx-2 py-2 w-full text-sm ${labData?.damaged ? 'bg-indigo-50 border-indigo-200' : ''}`} />
             </div>
             <div>
               <label className="text-[10px] text-gray-400">Foreign Matter %</label>
               <input type="number" step="any" min="0" max="100" value={foreignMatter} onChange={e => setForeignMatter(e.target.value)}
-                className={`border rounded px-2 py-2 w-full text-sm ${labData?.tfm ? 'bg-indigo-50 border-indigo-200' : ''}`} />
+                className={`borderpx-2 py-2 w-full text-sm ${labData?.tfm ? 'bg-indigo-50 border-indigo-200' : ''}`} />
             </div>
           </div>
 
@@ -381,7 +381,7 @@ export default function GrainUnloadingTrucks() {
           <div className="mb-3">
             <label className="text-[10px] text-gray-400">Remarks</label>
             <input type="text" value={remarks} onChange={e => setRemarks(e.target.value)}
-              className="border rounded px-2 py-2 w-full text-sm" />
+              className="borderpx-2 py-2 w-full text-sm" />
           </div>
 
           {/* Photo */}
@@ -391,7 +391,7 @@ export default function GrainUnloadingTrucks() {
             {photo ? (
               <div className="flex items-center gap-3">
                 <img src={URL.createObjectURL(photo)} alt="Preview"
-                  className="w-20 h-20 object-cover rounded-lg border" />
+                  className="w-20 h-20 object-cover border" />
                 <div>
                   <p className="text-xs text-gray-500">{photo.name}</p>
                   <button onClick={() => setPhoto(null)} className="text-xs text-red-500 hover:underline">Remove</button>
@@ -399,7 +399,7 @@ export default function GrainUnloadingTrucks() {
               </div>
             ) : (
               <button onClick={() => fileRef.current?.click()}
-                className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 border border-blue-200 rounded-lg px-3 py-2">
+                className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 border border-blue-200 px-3 py-2">
                 <Camera size={16} /> Take / Upload Photo
               </button>
             )}
@@ -408,7 +408,7 @@ export default function GrainUnloadingTrucks() {
           {/* Save */}
           <div className="flex items-center gap-3">
             <button onClick={handleSave} disabled={saving}
-              className="px-6 py-2.5 bg-amber-600 text-white rounded-lg font-medium text-sm hover:bg-amber-700 disabled:opacity-50">
+              className="px-6 py-2.5 bg-amber-600 text-white font-medium text-sm hover:bg-amber-700 disabled:opacity-50">
               {saving ? 'Saving...' : 'Save Truck'}
             </button>
             {msg && <span className={`text-sm ${msg.type === 'ok' ? 'text-green-600' : 'text-red-600'}`}>{msg.text}</span>}
@@ -421,15 +421,15 @@ export default function GrainUnloadingTrucks() {
         {trucks.map((t, i) => {
           const tToSilo = t.weightNet - (t.quarantineWeight || 0);
           return (
-          <div key={t.id} className={`border rounded-lg p-3 bg-white ${t.quarantineWeight > 0 ? 'border-orange-300 bg-orange-50/50' : ''}`}>
+          <div key={t.id} className={`border p-3 bg-white ${t.quarantineWeight > 0 ? 'border-orange-300 bg-orange-50/50' : ''}`}>
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className="text-xs font-bold text-gray-400">#{trucks.length - i}</span>
-                  {t.uidRst && <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">{t.uidRst}</span>}
+                  {t.uidRst && <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5font-medium">{t.uidRst}</span>}
                   <span className="font-semibold text-sm">{t.vehicleNo}</span>
                   {t.quarantineWeight > 0 && (
-                    <span className="text-[10px] bg-orange-200 text-orange-700 px-1.5 py-0.5 rounded font-medium flex items-center gap-0.5">
+                    <span className="text-[10px] bg-orange-200 text-orange-700 px-1.5 py-0.5font-medium flex items-center gap-0.5">
                       <AlertTriangle size={10} /> Q: {t.quarantineWeight.toFixed(1)}T
                     </span>
                   )}
@@ -477,7 +477,7 @@ export default function GrainUnloadingTrucks() {
       {/* Telegram share */}
       {trucks.length > 0 && (
         <button onClick={shareTelegram}
-          className="w-full flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 mb-5">
+          className="w-full flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 text-sm font-medium hover:bg-green-700 mb-5">
           <Share2 size={16} /> Share on Telegram
         </button>
       )}
@@ -496,7 +496,7 @@ export default function GrainUnloadingTrucks() {
               const dayTotal = items.reduce((s: number, t: any) => s + (t.weightNet - (t.quarantineWeight || 0)), 0);
               const dayQ = items.reduce((s: number, t: any) => s + (t.quarantineWeight || 0), 0);
               return (
-                <div key={dateKey} className="border rounded-lg p-3 bg-gray-50">
+                <div key={dateKey} className="border p-3 bg-gray-50">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-semibold text-gray-700">{fmtDt(dateKey)}</span>
                     <span className="text-xs font-bold text-amber-600">
@@ -507,7 +507,7 @@ export default function GrainUnloadingTrucks() {
                   <div className="space-y-1">
                     {items.map((t: any) => (
                       <div key={t.id} className="text-xs text-gray-600 flex justify-between items-center">
-                        <span>{t.vehicleNo} → {t.supplier || '-'}{t.quarantine ? ' ⚠️' : ''}</span>
+                        <span>{t.vehicleNo} → {t.supplier || '-'}{t.quarantine ? ' [Q]' : ''}</span>
                         <span className="flex items-center gap-2">
                           <span className="font-medium">{t.weightNet.toFixed(1)} Ton</span>
                           {isAdmin && <button onClick={() => handleDelete(t.id)}
@@ -529,7 +529,7 @@ export default function GrainUnloadingTrucks() {
           <div className="relative max-w-2xl w-full">
             <button onClick={() => setPhotoPreview(null)}
               className="absolute -top-10 right-0 text-white"><X size={24} /></button>
-            <img src={photoPreview} alt="Truck photo" className="w-full rounded-lg" />
+            <img src={photoPreview} alt="Truck photo" className="w-full" />
           </div>
         </div>
       )}

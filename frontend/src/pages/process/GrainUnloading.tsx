@@ -563,8 +563,8 @@ export default function GrainUnloading() {
   );
 
   const Bar = ({ p }: { p: number }) => (
-    <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
-      <div className={`h-full rounded-full transition-all ${p > 80 ? 'bg-red-400' : p > 50 ? 'bg-amber-400' : 'bg-green-400'}`}
+    <div className="w-full h-2 bg-gray-200 overflow-hidden">
+      <div className={`h-full transition-all ${p > 80 ? 'bg-red-400' : p > 50 ? 'bg-amber-400' : 'bg-green-400'}`}
         style={{ width: `${Math.min(100, p)}%` }} />
     </div>
   );
@@ -596,11 +596,11 @@ export default function GrainUnloading() {
             </>
           );
           return (k as any).action ? (
-            <button key={k.label} type="button" onClick={() => (k as any).action()} className={`rounded-lg border p-2 md:p-3 text-left transition hover:shadow-sm hover:-translate-y-px ${k.color}`}>
+            <button key={k.label} type="button" onClick={() => (k as any).action()} className={`border p-2 md:p-3 text-left transition hover:bg-slate-50 ${k.color}`}>
               {content}
             </button>
           ) : (
-            <div key={k.label} className={`rounded-lg border p-2 md:p-3 ${k.color}`}>
+            <div key={k.label} className={`border p-2 md:p-3 ${k.color}`}>
               {content}
             </div>
           );
@@ -608,13 +608,13 @@ export default function GrainUnloading() {
       </div>
 
       {msg && (
-        <div className={`rounded-lg p-3 mb-4 text-sm ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>{msg.text}</div>
+        <div className={` p-3 mb-4 text-sm ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>{msg.text}</div>
       )}
 
       {/* === 1. GRAIN RECEIVED (from Grain Unloading page) === */}
-      <InputCard title={editId ? '✏️ Edit — Grain Stock' : 'Grain Received (from trucks)'}>
+      <InputCard title={editId ? 'Edit — Grain Stock' : 'Grain Received (from trucks)'}>
         <Field label="Date" name="date" value={form.date} onChange={(_n: string, v: any) => { u('date', v); }} unit="" />
-        <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 mb-2">
+        <div className="p-3  bg-amber-50 border border-amber-200 mb-2">
           <div className="flex items-center justify-between mb-1">
             <span className="text-xs text-amber-600 font-medium">Auto-fetched from Grain Unloading page</span>
             <button onClick={loadTruckSummary} className="text-xs text-blue-600 hover:underline">Refresh</button>
@@ -663,7 +663,7 @@ export default function GrainUnloading() {
             <span className="text-red-500 font-medium">≈ {millingLoss.toFixed(1)} T</span>
           </div>
         )}
-        <div className="mt-2 p-3 rounded-lg bg-orange-50 border border-orange-200">
+        <div className="mt-2 p-3  bg-orange-50 border border-orange-200">
           <label className="text-xs text-orange-600 font-medium mb-1 block">Quarantine Stock (not in silo)</label>
           <div className="flex items-center gap-2">
             <input type="number" value={form.quarantineStock ?? ''} onChange={e => u('quarantineStock', e.target.value ? parseFloat(e.target.value) : null)}
@@ -674,12 +674,12 @@ export default function GrainUnloading() {
         </div>
 
         {/* Flour Silos */}
-        <div className="mt-3 p-3 rounded-lg bg-yellow-50 border border-yellow-200">
+        <div className="mt-3 p-3  bg-yellow-50 border border-yellow-200">
           <label className="text-xs text-yellow-700 font-medium mb-2 block">Flour Silos ({FLOUR_SILO_CAP} T each) — enter level %</label>
           <div className="grid grid-cols-2 gap-3">
             {([{ key: 'flourSilo1Pct' as const, label: 'Flour Silo 1', t: flourSilo1T },
               { key: 'flourSilo2Pct' as const, label: 'Flour Silo 2', t: flourSilo2T }]).map(s => (
-              <div key={s.key} className="border rounded-lg p-3 bg-white border-yellow-200">
+              <div key={s.key} className="border  p-3 bg-white border-yellow-200">
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-semibold text-yellow-700">{s.label}</span>
                   <span className="text-xs text-gray-500">{s.t.toFixed(1)} T</span>
@@ -720,7 +720,7 @@ export default function GrainUnloading() {
           const flowRateKLH = washElapsed > 0 ? washDiff / (washElapsed / 3600000) : 0;
           const flowRateTPH = flowRateKLH * FERM_GRAIN_PCT;
           return (
-            <div className="mt-3 p-2.5 rounded bg-gray-50 space-y-1.5 text-sm">
+            <div className="mt-3 p-2.5bg-gray-50 space-y-1.5 text-sm">
               <div className="flex items-center justify-between">
                 <span className="text-gray-500">New wash (flow diff):</span>
                 <span>
@@ -760,7 +760,7 @@ export default function GrainUnloading() {
             const curKL = pctToKl(form[key], FERM_CAPACITY);
             const prvPctVal = prevPct(`f${i + 1}Level`, FERM_CAPACITY);
             return (
-              <div key={key} className="border rounded-lg p-3 bg-white">
+              <div key={key} className="border  p-3 bg-white">
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-semibold text-gray-700">F{i + 1}</span>
                   <span className="text-xs text-gray-500">{curKL.toFixed(0)} KL</span>
@@ -788,7 +788,7 @@ export default function GrainUnloading() {
             const curKL = beerWellKL;
             const prvPctVal = prevPct('beerWellLevel', FERM_CAPACITY);
             return (
-              <div className="border rounded-lg p-3 bg-white border-purple-200">
+              <div className="border  p-3 bg-white border-purple-200">
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-semibold text-purple-700">Beer Well</span>
                   <span className="text-xs text-gray-500">{curKL.toFixed(0)} KL</span>
@@ -824,7 +824,7 @@ export default function GrainUnloading() {
             const curKL = pctToKl(form[key], PF_CAPACITY);
             const prvPctVal = prevPct(`pf${i + 1}Level`, PF_CAPACITY);
             return (
-              <div key={key} className="border rounded-lg p-3 bg-white">
+              <div key={key} className="border  p-3 bg-white">
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-semibold text-gray-700">PF{i + 1}</span>
                   <span className="text-xs text-gray-500">{curKL.toFixed(0)} KL</span>
@@ -858,7 +858,7 @@ export default function GrainUnloading() {
             const curPct = form[t.key] || 0;
             const prvPctVal = prev ? Math.round(((prev[t.prevKey] || 0) / t.cap) * 10000) / 100 : 0;
             return (
-              <div key={t.key} className="border rounded-lg p-3 bg-white border-teal-200">
+              <div key={t.key} className="border  p-3 bg-white border-teal-200">
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-semibold text-teal-700">{t.label}</span>
                   <span className="text-xs text-gray-500">{t.kl.toFixed(0)} KL <span className="text-gray-400">/ {t.cap}</span></span>
@@ -886,7 +886,7 @@ export default function GrainUnloading() {
         </div>
 
         {prev && (
-          <div className="mt-4 p-2.5 rounded bg-amber-50 border border-amber-200 flex items-center justify-between text-sm">
+          <div className="mt-4 p-2.5bg-amber-50 border border-amber-200 flex items-center justify-between text-sm">
             <span className="text-amber-800">Total grain in process:</span>
             <span>
               <span className="text-gray-500">{pGIP.toFixed(1)} T → </span>
@@ -909,7 +909,7 @@ export default function GrainUnloading() {
           return (
           <div className="text-sm divide-y divide-gray-100">
             {isOpeningSnapshot && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 mb-2">
+              <div className=" border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 mb-2">
                 This is an opening snapshot. Wash distilled, process delta, flour delta, and grain consumed start from zero until the next entry.
               </div>
             )}
@@ -922,7 +922,7 @@ export default function GrainUnloading() {
               { label: 'Δ Flour Silos', value: `${deltaFlour >= 0 ? '+' : ''}${deltaFlour.toFixed(2)} T`, sub: 'after milling' },
               { label: 'Grain Consumed (Silo)', value: `${grainConsumed.toFixed(2)} T`, sub: 'max(0, distilled+Δprocess+Δflour)', highlight: true },
             ].map((r, i) => (
-              <div key={i} className={`flex justify-between items-center py-2 px-1 ${(r as any).highlight ? 'bg-red-50 rounded px-2' : ''}`}>
+              <div key={i} className={`flex justify-between items-center py-2 px-1 ${(r as any).highlight ? 'bg-red-50px-2' : ''}`}>
                 <span className="text-gray-600 text-xs">{r.label}{r.sub && <span className="hidden md:inline text-gray-400 ml-1">({r.sub})</span>}</span>
                 <span className={`font-semibold ${(r as any).highlight ? 'text-red-700 font-bold' : ''}`}>{r.value}</span>
               </div>
@@ -965,7 +965,7 @@ export default function GrainUnloading() {
             </div>
 
             {/* Highlighted totals */}
-            <div className="flex justify-between items-center py-2 px-2 bg-amber-50 rounded">
+            <div className="flex justify-between items-center py-2 px-2 bg-amber-50 ">
               <span className="text-amber-800 font-medium text-xs">Grain in Process</span>
               <span className="font-bold text-amber-700">{grainInProcess.toFixed(2)} T</span>
             </div>
@@ -991,18 +991,18 @@ export default function GrainUnloading() {
               <span className="text-gray-600 text-xs">Silo Closing</span>
               <span className="font-bold">{siloClosing.toFixed(2)} T</span>
             </div>
-            <div className="flex justify-between items-center py-2 px-2 bg-green-50 rounded">
+            <div className="flex justify-between items-center py-2 px-2 bg-green-50 ">
               <span className="text-green-800 font-medium text-xs">Total Grain at Plant</span>
               <span className="font-bold text-green-700">{totalAtPlant.toFixed(2)} T</span>
             </div>
             {(form.quarantineStock ?? 0) > 0 && (
-              <div className="flex justify-between items-center py-2 px-2 bg-orange-50 rounded">
+              <div className="flex justify-between items-center py-2 px-2 bg-orange-50 ">
                 <span className="text-orange-800 font-medium text-xs">Quarantine (separate)</span>
                 <span className="font-bold text-orange-700">{(form.quarantineStock ?? 0).toFixed(2)} T</span>
               </div>
             )}
             {flourSiloTotal > 0 && (
-              <div className="flex justify-between items-center py-2 px-2 bg-yellow-50 rounded">
+              <div className="flex justify-between items-center py-2 px-2 bg-yellow-50 ">
                 <span className="text-yellow-800 font-medium text-xs">Flour Silos (S1: {flourSilo1T.toFixed(1)}T + S2: {flourSilo2T.toFixed(1)}T)</span>
                 <span className="font-bold text-yellow-700">{flourSiloTotal.toFixed(2)} T</span>
               </div>
@@ -1040,7 +1040,7 @@ export default function GrainUnloading() {
 
       <div className="flex flex-col md:flex-row md:justify-end gap-2 md:gap-3 mt-4 mb-6">
         {editId && <button onClick={() => { setEditId(null); setForm({ ...emptyForm }); loadLatest(); }} className="btn-secondary w-full md:w-auto">Cancel Edit</button>}
-        <button onClick={() => setShowPreview(true)} className="flex items-center justify-center gap-2 bg-gray-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-800 transition w-full md:w-auto">
+        <button onClick={() => setShowPreview(true)} className="flex items-center justify-center gap-2 bg-gray-700 text-white px-5 py-2.5  text-sm font-medium hover:bg-gray-800 transition w-full md:w-auto">
           <Eye size={16} /> Preview & Save
         </button>
         {msg && <span className={`text-sm font-medium self-center ${msg.type === 'ok' ? 'text-green-600' : 'text-red-600'}`}>{msg.text}</span>}
@@ -1048,10 +1048,10 @@ export default function GrainUnloading() {
 
       {showPreview && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowPreview(false)}>
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="sticky top-0 bg-amber-600 text-white p-4 rounded-t-xl flex items-center justify-between">
+          <div className="bg-white  shadow-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="sticky top-0 bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
               <h3 className="font-bold text-lg">Grain Stock Report</h3>
-              <button onClick={() => setShowPreview(false)} className="p-1 hover:bg-amber-700 rounded"><X size={20} /></button>
+              <button onClick={() => setShowPreview(false)} className="p-1 hover:bg-amber-700 "><X size={20} /></button>
             </div>
             <div className="p-4 space-y-3 text-sm">
               <div className="flex justify-between text-gray-600 border-b pb-2">
@@ -1060,13 +1060,13 @@ export default function GrainUnloading() {
               </div>
               {/* Wash diffs */}
               <div className="grid grid-cols-2 gap-2">
-                <div className="bg-blue-50 rounded p-2 text-center">
+                <div className="bg-blue-50p-2 text-center">
                   <div className="text-xs text-gray-500">Process Wash Now</div>
                   <div className="font-bold text-lg">{totalProcessWash.toFixed(1)} KL</div>
                   {prev && <div className="text-[10px] text-gray-400">Δ process {deltaProcessWash >= 0 ? '+' : ''}{deltaProcessWash.toFixed(1)} KL</div>}
                   {fermElapsed > 0 && <div className="text-[10px] text-blue-500">levels over {fmtHrs(fermElapsed)}</div>}
                 </div>
-                <div className="bg-purple-50 rounded p-2 text-center">
+                <div className="bg-purple-50p-2 text-center">
                   <div className="text-xs text-gray-500">Wash Distilled</div>
                   <div className="font-bold text-lg">{washDiff.toFixed(1)} KL</div>
                   {prev && <div className="text-[10px] text-gray-400">meter: {currentWashMeter.toFixed(1)} (prev {pW.toFixed(1)})</div>}
@@ -1075,16 +1075,16 @@ export default function GrainUnloading() {
               </div>
               {/* Grain + Trucks */}
               <div className="grid grid-cols-3 gap-2">
-                <div className="bg-amber-50 rounded p-2 text-center">
+                <div className="bg-amber-50p-2 text-center">
                   <div className="text-xs text-gray-500">Grain Unloaded</div>
                   <div className="font-bold text-lg">{form.grainUnloaded ?? '—'} MT</div>
                 </div>
-                <div className="bg-red-50 rounded p-2 text-center">
+                <div className="bg-red-50p-2 text-center">
                   <div className="text-xs text-gray-500">Grain Consumed</div>
                   <div className="font-bold text-lg">{grainConsumed.toFixed(2)} T</div>
                   <div className="text-[10px] text-gray-400">silo mass balance</div>
                 </div>
-                <div className="bg-green-50 rounded p-2 text-center">
+                <div className="bg-green-50p-2 text-center">
                   <div className="text-xs text-gray-500">Trucks</div>
                   <div className="font-bold text-lg">{truckSummary.truckCount}</div>
                   {truckSummary.truckCount > 0 && <div className="text-[10px] text-gray-400">net {truckSummary.totalNet.toFixed(1)} T{prevElapsed > 0 ? ` in ${fmtHrs(prevElapsed)}` : ''}</div>}
@@ -1094,7 +1094,7 @@ export default function GrainUnloading() {
                 <h4 className="font-semibold text-gray-700 mb-1">Fermenter Levels (%)</h4>
                 <div className="grid grid-cols-5 gap-2">
                   {[{l:'F1',v:form.f1Pct},{l:'F2',v:form.f2Pct},{l:'F3',v:form.f3Pct},{l:'F4',v:form.f4Pct},{l:'BW',v:form.beerWellPct}].map(f=>
-                    <div key={f.l} className="bg-blue-50 rounded p-2 text-center"><div className="text-xs text-gray-500">{f.l}</div><div className="font-semibold">{f.v ?? '—'}%</div></div>
+                    <div key={f.l} className="bg-blue-50p-2 text-center"><div className="text-xs text-gray-500">{f.l}</div><div className="font-semibold">{f.v ?? '—'}%</div></div>
                   )}
                 </div>
               </div>
@@ -1102,7 +1102,7 @@ export default function GrainUnloading() {
                 <h4 className="font-semibold text-gray-700 mb-1">PF Levels (%)</h4>
                 <div className="grid grid-cols-2 gap-2">
                   {[{l:'PF1',v:form.pf1Pct},{l:'PF2',v:form.pf2Pct}].map(f=>
-                    <div key={f.l} className="bg-green-50 rounded p-2 text-center"><div className="text-xs text-gray-500">{f.l}</div><div className="font-semibold">{f.v ?? '—'}%</div></div>
+                    <div key={f.l} className="bg-green-50p-2 text-center"><div className="text-xs text-gray-500">{f.l}</div><div className="font-semibold">{f.v ?? '—'}%</div></div>
                   )}
                 </div>
               </div>
@@ -1110,13 +1110,13 @@ export default function GrainUnloading() {
                 <h4 className="font-semibold text-gray-700 mb-1">ILT & FLT (%)</h4>
                 <div className="grid grid-cols-2 gap-2">
                   {[{l:'ILT',v:form.iltPct},{l:'FLT',v:form.fltPct}].map(f=>
-                    <div key={f.l} className="bg-teal-50 rounded p-2 text-center"><div className="text-xs text-gray-500">{f.l}</div><div className="font-semibold">{f.v ?? '—'}%</div></div>
+                    <div key={f.l} className="bg-teal-50p-2 text-center"><div className="text-xs text-gray-500">{f.l}</div><div className="font-semibold">{f.v ?? '—'}%</div></div>
                   )}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <div className="bg-gray-50 rounded p-2 text-center"><div className="text-xs text-gray-500">Moisture</div><div className="font-semibold">{form.moisture ?? '—'}%</div></div>
-                <div className="bg-gray-50 rounded p-2 text-center"><div className="text-xs text-gray-500">Starch</div><div className="font-semibold">{form.starchPercent ?? '—'}%</div></div>
+                <div className="bg-gray-50p-2 text-center"><div className="text-xs text-gray-500">Moisture</div><div className="font-semibold">{form.moisture ?? '—'}%</div></div>
+                <div className="bg-gray-50p-2 text-center"><div className="text-xs text-gray-500">Starch</div><div className="font-semibold">{form.starchPercent ?? '—'}%</div></div>
               </div>
               {/* truck count already shown above */}
               {(form.quarantineStock ?? 0) > 0 && <div className="text-orange-600 font-medium">Quarantine Stock: <strong>{(form.quarantineStock ?? 0).toFixed(1)} T</strong> (not in silo)</div>}
@@ -1125,14 +1125,14 @@ export default function GrainUnloading() {
               )}
               {form.remarks && <div className="text-gray-600 italic">Remarks: {form.remarks}</div>}
             </div>
-            <div className="sticky bottom-0 bg-gray-50 p-4 rounded-b-xl flex gap-3 border-t">
-              <button onClick={async () => { await handleSave(); setShowPreview(false); }} disabled={saving} className="flex-1 flex items-center justify-center gap-2 bg-amber-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-amber-700 disabled:opacity-50 transition">
+            <div className="sticky bottom-0 bg-gray-50 p-4  flex gap-3 border-t">
+              <button onClick={async () => { await handleSave(); setShowPreview(false); }} disabled={saving} className="flex-1 flex items-center justify-center gap-2 bg-amber-600 text-white px-4 py-2.5  text-sm font-medium hover:bg-amber-700 disabled:opacity-50 transition">
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} {editId ? 'Update' : 'Save'} Entry
               </button>
               <button onClick={() => {
                 const t = `*GRAIN STOCK REPORT*\nDate: ${form.date}${prevElapsed > 0 ? ` (last entry ${fmtHrs(prevElapsed)} ago)` : ''}\nGrain to Silo: ${form.grainUnloaded ?? '—'} T (${truckSummary.truckCount} trucks, net ${truckSummary.totalNet.toFixed(1)} T)${(form.quarantineStock ?? 0) > 0 ? `\nQuarantine: ${(form.quarantineStock ?? 0).toFixed(1)} T (not in silo)` : ''}${flourSiloTotal > 0 ? `\nFlour Silos: S1: ${flourSilo1T.toFixed(1)} T (${form.flourSilo1Pct ?? 0}%) | S2: ${flourSilo2T.toFixed(1)} T (${form.flourSilo2Pct ?? 0}%)` : ''}\nCurrent Process Wash: ${totalProcessWash.toFixed(1)} KL (Δprocess ${deltaProcessWash >= 0 ? '+' : ''}${deltaProcessWash.toFixed(1)} KL)${fermElapsed > 0 ? ' over ' + fmtHrs(fermElapsed) : ''}\nWash Distilled: ${washDiff.toFixed(1)} KL${washElapsed > 0 ? ' in ' + fmtHrs(washElapsed) : ''}\nGrain Consumed: ${grainConsumed.toFixed(2)} T (distilled ${grainDistilled.toFixed(2)} + Δprocess ${deltaGrainInProcess.toFixed(2)} + Δflour ${deltaFlour.toFixed(2)})\nF1: ${form.f1Pct ?? '—'}% | F2: ${form.f2Pct ?? '—'}% | F3: ${form.f3Pct ?? '—'}% | F4: ${form.f4Pct ?? '—'}%\nBeer Well: ${form.beerWellPct ?? '—'}%\nPF1: ${form.pf1Pct ?? '—'}% | PF2: ${form.pf2Pct ?? '—'}%\nILT: ${form.iltPct ?? '—'}% | FLT: ${form.fltPct ?? '—'}%\nSilo Closing: ${siloClosing.toFixed(1)} T | Total@Plant: ${totalAtPlant.toFixed(1)} T${form.remarks ? '\nRemarks: ' + form.remarks : ''}`;
                 api.post('/telegram/send-report', { message: t, module: 'grain' }).catch(() => {});
-              }} className="flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 transition">
+              }} className="flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2.5  text-sm font-medium hover:bg-green-700 transition">
                 <Share2 size={16} /> Share
               </button>
             </div>
@@ -1142,27 +1142,27 @@ export default function GrainUnloading() {
 
       {showReceivedReport && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowReceivedReport(false)}>
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="sticky top-0 bg-purple-700 text-white p-4 rounded-t-xl flex items-center justify-between">
+          <div className="bg-white  shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="sticky top-0 bg-purple-700 text-white p-4  flex items-center justify-between">
               <div>
                 <h3 className="font-bold text-lg">Year Received Report</h3>
                 <div className="text-xs text-purple-100">From baseline opening through truck unloads, with filters and analytics</div>
               </div>
-              <button onClick={() => setShowReceivedReport(false)} className="p-1 hover:bg-purple-800 rounded"><X size={20} /></button>
+              <button onClick={() => setShowReceivedReport(false)} className="p-1 hover:bg-purple-800 "><X size={20} /></button>
             </div>
 
             <div className="p-4 space-y-4">
               {receivedReportError && (
-                <div className="rounded-lg border border-red-200 bg-red-50 text-red-700 px-3 py-2 text-sm">{receivedReportError}</div>
+                <div className=" border border-red-200 bg-red-50 text-red-700 px-3 py-2 text-sm">{receivedReportError}</div>
               )}
 
               {!receivedReport && receivedReportLoading && (
-                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-6 text-sm text-gray-500 flex items-center justify-center gap-2">
+                <div className=" border border-gray-200 bg-gray-50 px-3 py-6 text-sm text-gray-500 flex items-center justify-center gap-2">
                   <Loader2 size={16} className="animate-spin" /> Loading report…
                 </div>
               )}
 
-              <div className="rounded-lg border border-purple-200 bg-purple-50 p-3">
+              <div className=" border border-purple-200 bg-purple-50 p-3">
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
                   <div>
                     <label className="text-xs text-gray-500 mb-1 block">From Shift</label>
@@ -1195,13 +1195,13 @@ export default function GrainUnloading() {
                   </div>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2 mt-3">
-                  <button type="button" onClick={() => loadReceivedReport()} className="bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-800 transition">
+                  <button type="button" onClick={() => loadReceivedReport()} className="bg-purple-700 text-white px-4 py-2  text-sm font-medium hover:bg-purple-800 transition">
                     Apply Filters
                   </button>
-                  <button type="button" onClick={resetReceivedReportFilters} className="bg-white border border-purple-200 text-purple-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-50 transition">
+                  <button type="button" onClick={resetReceivedReportFilters} className="bg-white border border-purple-200 text-purple-700 px-4 py-2  text-sm font-medium hover:bg-purple-50 transition">
                     Reset
                   </button>
-                  <button type="button" onClick={downloadReceivedReportCsv} disabled={!receivedReport || receivedReport.trucks.length === 0} className="bg-white border border-purple-200 text-purple-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-50 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+                  <button type="button" onClick={downloadReceivedReportCsv} disabled={!receivedReport || receivedReport.trucks.length === 0} className="bg-white border border-purple-200 text-purple-700 px-4 py-2  text-sm font-medium hover:bg-purple-50 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
                     <Download size={14} /> Export CSV
                   </button>
                   {receivedReportLoading && <span className="text-sm text-gray-500 flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Loading report…</span>}
@@ -1218,7 +1218,7 @@ export default function GrainUnloading() {
                   </div>
 
                   {receivedReport.summary.invalidCount > 0 && (
-                    <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-700">
+                    <div className=" border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-700">
                       {receivedReport.summary.invalidCount} truck row(s) in this filtered view have quarantine greater than net weight. Those rows should be corrected in unloading history.
                     </div>
                   )}
@@ -1235,7 +1235,7 @@ export default function GrainUnloading() {
                       { label: 'Invalid Rows', value: receivedReport.summary.invalidCount, color: 'bg-red-50 border-red-200', unit: '' },
                       { label: 'Avg Truck Weight', value: receivedReport.summary.avgTruckWeight, color: 'bg-blue-50 border-blue-200' },
                     ].map(card => (
-                      <div key={card.label} className={`rounded-lg border p-3 ${card.color}`}>
+                      <div key={card.label} className={` border p-3 ${card.color}`}>
                         <div className="text-[10px] uppercase text-gray-500">{card.label}</div>
                         <div className="text-lg font-bold">
                           {typeof card.value === 'number' ? card.value.toFixed(card.unit === '' ? 0 : 2) : card.value}
@@ -1246,7 +1246,7 @@ export default function GrainUnloading() {
                   </div>
 
                   <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                    <div className="rounded-lg border border-gray-200 overflow-hidden">
+                    <div className=" border border-gray-200 overflow-hidden">
                       <div className="px-4 py-3 bg-gray-50 border-b font-semibold text-gray-700">Daily Breakdown</div>
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm">
@@ -1277,7 +1277,7 @@ export default function GrainUnloading() {
                       </div>
                     </div>
 
-                    <div className="rounded-lg border border-gray-200 overflow-hidden">
+                    <div className=" border border-gray-200 overflow-hidden">
                       <div className="px-4 py-3 bg-gray-50 border-b font-semibold text-gray-700">Supplier Analytics</div>
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm">
@@ -1307,7 +1307,7 @@ export default function GrainUnloading() {
                     </div>
                   </div>
 
-                  <div className="rounded-lg border border-gray-200 overflow-hidden">
+                  <div className=" border border-gray-200 overflow-hidden">
                     <div className="px-4 py-3 bg-gray-50 border-b font-semibold text-gray-700">Truck Details</div>
                     <div className="overflow-x-auto max-h-[45vh]">
                       <table className="w-full text-sm">
@@ -1368,13 +1368,13 @@ export default function GrainUnloading() {
 
       {historyDetailEntry && historyDetail && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setHistoryDetailEntry(null)}>
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="sticky top-0 bg-slate-800 text-white p-4 rounded-t-xl flex items-center justify-between">
+          <div className="bg-white  shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="sticky top-0 bg-slate-800 text-white p-4  flex items-center justify-between">
               <div>
                 <h3 className="font-bold text-lg">Stock Movement Breakdown</h3>
                 <div className="text-xs text-slate-200">{historyDetailEntry.date.split('T')[0]}{historyDetail.isOpeningSnapshot ? ' • opening snapshot' : ''}</div>
               </div>
-              <button onClick={() => setHistoryDetailEntry(null)} className="p-1 hover:bg-slate-700 rounded"><X size={20} /></button>
+              <button onClick={() => setHistoryDetailEntry(null)} className="p-1 hover:bg-slate-700 "><X size={20} /></button>
             </div>
 
             <div className="p-4 space-y-4">
@@ -1385,7 +1385,7 @@ export default function GrainUnloading() {
               </div>
 
               {(Math.abs(historyDetail.processMismatch) > 0.05 || Math.abs(historyDetail.consumedMismatch) > 0.05 || Math.abs(historyDetail.totalAtPlantMismatch) > 0.05) && (
-                <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-800">
+                <div className=" border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-800">
                   This saved row does not fully match the current rule. That usually means it was created under an older formula or older settings.
                 </div>
               )}
@@ -1397,7 +1397,7 @@ export default function GrainUnloading() {
                   { label: 'Stored Consumed', value: historyDetail.storedConsumed, unit: 'T', color: 'bg-red-50 border-red-200' },
                   { label: 'Stored Silo Close', value: historyDetail.storedSiloClosing, unit: 'T', color: 'bg-green-50 border-green-200' },
                 ].map(card => (
-                  <div key={card.label} className={`rounded-lg border p-3 ${card.color}`}>
+                  <div key={card.label} className={` border p-3 ${card.color}`}>
                     <div className="text-[10px] uppercase text-slate-500">{card.label}</div>
                     <div className="text-lg font-bold">{card.value.toFixed(2)} <span className="text-xs font-normal text-slate-400">{card.unit}</span></div>
                   </div>
@@ -1405,7 +1405,7 @@ export default function GrainUnloading() {
               </div>
 
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                <div className="rounded-lg border border-slate-200 overflow-hidden">
+                <div className=" border border-slate-200 overflow-hidden">
                   <div className="px-4 py-3 bg-slate-50 border-b font-semibold text-slate-700">Wash Snapshot</div>
                   <div className="p-4 space-y-2 text-sm">
                     <div className="flex justify-between"><span className="text-slate-500">Fermentation Wash</span><span className="font-semibold">{historyDetail.fermWash.toFixed(2)} KL</span></div>
@@ -1417,7 +1417,7 @@ export default function GrainUnloading() {
                   </div>
                 </div>
 
-                <div className="rounded-lg border border-slate-200 overflow-hidden">
+                <div className=" border border-slate-200 overflow-hidden">
                   <div className="px-4 py-3 bg-slate-50 border-b font-semibold text-slate-700">Grain Movement</div>
                   <div className="p-4 space-y-2 text-sm">
                     <div className="flex justify-between"><span className="text-slate-500">Stored Grain In Process</span><span className="font-semibold">{historyDetail.storedGrainInProcess.toFixed(2)} T</span></div>
@@ -1431,15 +1431,15 @@ export default function GrainUnloading() {
                 </div>
               </div>
 
-              <div className="rounded-lg border border-slate-200 overflow-hidden">
+              <div className=" border border-slate-200 overflow-hidden">
                 <div className="px-4 py-3 bg-slate-50 border-b font-semibold text-slate-700">Checks</div>
                 <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                  <div className="rounded-lg bg-slate-50 p-3">
+                  <div className=" bg-slate-50 p-3">
                     <div className="text-xs uppercase text-slate-500 mb-1">Silo Closing Check</div>
                     <div className="text-slate-700">{Number(historyDetailEntry.siloOpeningStock || 0).toFixed(2)} + {historyDetail.receivedToSilo.toFixed(2)} - {historyDetail.storedConsumed.toFixed(2)} = <span className="font-bold">{historyDetail.expectedSiloClosing.toFixed(2)} T</span></div>
                     <div className="text-xs text-slate-500 mt-1">Stored: {historyDetail.storedSiloClosing.toFixed(2)} T {Math.abs(historyDetail.siloClosingMismatch) > 0.05 ? `(mismatch ${historyDetail.siloClosingMismatch.toFixed(2)} T)` : ''}</div>
                   </div>
-                  <div className="rounded-lg bg-slate-50 p-3">
+                  <div className=" bg-slate-50 p-3">
                     <div className="text-xs uppercase text-slate-500 mb-1">Plant Grain Check</div>
                     <div className="text-slate-700">{historyDetail.grainInProcessCalc.toFixed(2)} + {historyDetail.flourTotal.toFixed(2)} = <span className="font-bold">{historyDetail.expectedTotalAtPlant.toFixed(2)} T</span></div>
                     <div className="text-xs text-slate-500 mt-1">Stored: {historyDetail.storedTotalAtPlant.toFixed(2)} T {Math.abs(historyDetail.totalAtPlantMismatch) > 0.05 ? `(mismatch ${historyDetail.totalAtPlantMismatch.toFixed(2)} T)` : ''}</div>

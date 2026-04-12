@@ -223,7 +223,7 @@ export default function DDGSStock() {
           { label: 'Total Production', value: totalProduction.toFixed(1), unit: 'MT', color: 'bg-purple-50 border-purple-200' },
           { label: 'Total Dispatch', value: totalDispatch.toFixed(1), unit: 'MT', color: 'bg-orange-50 border-orange-200' },
         ].map(k => (
-          <div key={k.label} className={`rounded-lg border p-2 md:p-3 ${k.color}`}>
+          <div key={k.label} className={`border p-2 md:p-3 ${k.color}`}>
             <div className="text-[10px] md:text-xs text-gray-500">{k.label}</div>
             <div className={`text-lg md:text-xl ${k.bold ? 'font-bold' : 'font-semibold'}`}>
               {k.value} <span className="text-[10px] md:text-xs font-normal text-gray-400">{k.unit}</span>
@@ -233,7 +233,7 @@ export default function DDGSStock() {
       </div>
 
       {msg && (
-        <div className={`rounded-lg p-3 mb-3 text-sm ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>{msg.text}</div>
+        <div className={`p-3 mb-3 text-sm ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>{msg.text}</div>
       )}
 
       {/* Add Bags Form */}
@@ -275,7 +275,7 @@ export default function DDGSStock() {
 
         <div className="flex items-center gap-3 mt-3">
           <button onClick={handleAdd} disabled={saving}
-            className="px-5 py-2 bg-green-600 text-white rounded-lg font-medium text-sm hover:bg-green-700 flex items-center gap-2 disabled:opacity-50">
+            className="px-5 py-2 bg-green-600 text-white font-medium text-sm hover:bg-green-700 flex items-center gap-2 disabled:opacity-50">
             <Plus size={16} /> Add Entry
           </button>
           <span className="text-xs text-gray-400">
@@ -361,7 +361,7 @@ export default function DDGSStock() {
       {/* Preview & Save button */}
       <div className="flex items-center gap-3 mt-4">
         <button onClick={() => setShowPreview(true)}
-          className="px-5 py-2.5 bg-amber-600 text-white rounded-lg font-medium text-sm hover:bg-amber-700 flex items-center gap-2">
+          className="px-5 py-2.5 bg-amber-600 text-white font-medium text-sm hover:bg-amber-700 flex items-center gap-2">
           <Eye size={16} /> Preview & Save
         </button>
       </div>
@@ -369,8 +369,8 @@ export default function DDGSStock() {
       {/* Preview Modal — Share + Save like Liquefaction */}
       {showPreview && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowPreview(false)}>
-          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="bg-amber-600 text-white p-4 rounded-t-xl flex items-center justify-between">
+          <div className="bg-white shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="bg-amber-600 text-white p-4 flex items-center justify-between">
               <h3 className="font-bold text-lg">DDGS Production Report</h3>
               <button onClick={() => setShowPreview(false)}><X size={20} /></button>
             </div>
@@ -413,7 +413,7 @@ export default function DDGSStock() {
             </div>
             <div className="p-4 border-t flex gap-2">
               <button onClick={async () => { await saveDailyStock(); setShowPreview(false); }} disabled={saving}
-                className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+                className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white py-2.5 text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save
               </button>
               <button onClick={async () => {
@@ -422,7 +422,7 @@ export default function DDGSStock() {
                 setMsg({ type: 'ok', text: 'Saved & shared on Telegram' });
                 setShowPreview(false);
               }} disabled={saving}
-                className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
+                className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 text-sm font-medium hover:bg-green-700 disabled:opacity-50">
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />} Save & Share
               </button>
             </div>
@@ -432,13 +432,13 @@ export default function DDGSStock() {
 
       {/* Telegram Auto-Collection */}
       {isAdmin && (
-        <div className="bg-white rounded-lg shadow-sm border mb-4">
+        <div className="bg-white border mb-4">
           <button onClick={() => setShowAutoCollect(!showAutoCollect)}
             className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition">
             <div className="flex items-center gap-2">
               <MessageCircle size={18} className="text-blue-500" />
               <span className="text-sm font-semibold text-gray-700">Telegram Auto-Collection</span>
-              {acEnabled && <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium">ON</span>}
+              {acEnabled && <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 font-medium">ON</span>}
             </div>
             {showAutoCollect ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
           </button>
@@ -452,12 +452,12 @@ export default function DDGSStock() {
               <div>
                 <label className="text-[10px] text-gray-500 uppercase mb-1 block">Operator Telegram Chat IDs</label>
                 <input type="text" value={acPhones} onChange={e => { setAcPhones(e.target.value); setAcDirty(true); }}
-                  placeholder="e.g. 123456789, 987654321" className="border rounded px-2 py-1.5 w-full text-sm" />
+                  placeholder="e.g. 123456789, 987654321" className="border px-2 py-1.5 w-full text-sm" />
                 {acPhones ? (
                   <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                     <span className="text-[9px] text-gray-400">Saved:</span>
                     {acPhones.split(',').map(p => p.trim()).filter(Boolean).map((p, i) => (
-                      <span key={i} className="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-medium">{p}</span>
+                      <span key={i} className="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 font-medium">{p}</span>
                     ))}
                   </div>
                 ) : (
@@ -471,13 +471,13 @@ export default function DDGSStock() {
                 <div className="flex items-center gap-2">
                   <label className="text-[10px] text-gray-500">Interval</label>
                   <input type="number" value={acInterval} onChange={e => { setAcInterval(e.target.value); setAcDirty(true); }}
-                    className="border rounded px-2 py-1 w-20 text-sm" />
+                    className="border px-2 py-1 w-20 text-sm" />
                   <span className="text-[10px] text-gray-400">min</span>
                 </div>
                 <div className="flex items-center gap-1">
                   <span className="text-[10px] text-gray-400">Bag</span>
                   <input type="number" value={acBagWeight} onChange={e => { setAcBagWeight(e.target.value); setAcDirty(true); }}
-                    className="w-12 border border-gray-300 rounded px-1.5 py-0.5 text-xs text-center" />
+                    className="w-12 border border-gray-300 px-1.5 py-0.5 text-xs text-center" />
                   <span className="text-[10px] text-gray-400">kg</span>
                 </div>
                 <label className="flex items-center gap-2 text-sm cursor-pointer">
@@ -495,7 +495,7 @@ export default function DDGSStock() {
                 <div className="flex items-center gap-1">
                   <span className="text-[10px] text-gray-400">Prompt:</span>
                   <button onClick={() => { setAcLang(acLang === 'hi' ? 'en' : 'hi'); setAcDirty(true); }}
-                    className={`px-2 py-0.5 rounded text-[10px] font-bold ${acLang === 'hi' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                    className={`px-2 py-0.5 text-[10px] font-bold ${acLang === 'hi' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
                     {acLang === 'hi' ? 'हिंदी' : 'English'}
                   </button>
                 </div>
@@ -515,8 +515,8 @@ export default function DDGSStock() {
                     loadAutoCollect(); // Reload to confirm saved values
                   } catch { setAcStatus('Failed to save'); }
                   setTimeout(() => setAcStatus(''), 3000);
-                }} className={`px-3 py-1.5 text-white rounded text-xs font-medium ${acDirty ? 'bg-orange-500 hover:bg-orange-600 animate-pulse' : 'bg-cyan-600 hover:bg-cyan-700'}`}>
-                  {acDirty ? '⚠ Save Schedule' : 'Save Schedule'}
+                }} className={`px-3 py-1.5 text-white text-xs font-medium ${acDirty ? 'bg-orange-500 hover:bg-orange-600 animate-pulse' : 'bg-cyan-600 hover:bg-cyan-700'}`}>
+                  {acDirty ? 'Save Schedule *' : 'Save Schedule'}
                 </button>
                 <button onClick={async () => {
                   const phoneList = acPhones.split(',').map(p => p.trim()).filter(Boolean);
@@ -527,7 +527,7 @@ export default function DDGSStock() {
                     loadAutoCollect();
                   } catch { setAcStatus('Failed to trigger'); }
                   setTimeout(() => setAcStatus(''), 5000);
-                }} disabled={!acPhones.trim()} className="px-3 py-1.5 bg-green-600 text-white rounded text-xs font-medium hover:bg-green-700 disabled:opacity-50">
+                }} disabled={!acPhones.trim()} className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium hover:bg-green-700 disabled:opacity-50">
                   Test Now
                 </button>
               </div>
@@ -544,7 +544,7 @@ export default function DDGSStock() {
                     }} className="text-[10px] text-red-500 hover:text-red-700 font-medium">Reset All</button>
                   </div>
                   {activeSessions.map(s => (
-                    <div key={s.chatId || s.phone} className="flex items-center gap-2 text-xs bg-blue-50 rounded p-1.5">
+                    <div key={s.chatId || s.phone} className="flex items-center gap-2 text-xs bg-blue-50 p-1.5">
                       <Loader2 size={12} className="animate-spin text-blue-600" />
                       <span>{s.chatId || s.phone} — step {s.step}/{s.totalSteps}</span>
                     </div>

@@ -156,8 +156,8 @@ export default function PlantIssues() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium">#{issue.issueNo} {issue.title}</span>
-                      <span className={`px-2 py-0.5 rounded-full text-xs ${SEV_COLORS[issue.severity]}`}>{issue.severity}</span>
-                      <span className={`px-2 py-0.5 rounded-full text-xs ${STATUS_COLORS[issue.status]}`}>{issue.status.replace('_', ' ')}</span>
+                      <span className={`px-2 py-0.5 text-xs ${SEV_COLORS[issue.severity]}`}>{issue.severity}</span>
+                      <span className={`px-2 py-0.5 text-xs ${STATUS_COLORS[issue.status]}`}>{issue.status.replace('_', ' ')}</span>
                     </div>
                     <div className="text-xs text-gray-500 mt-1">
                       {issue.equipment && <span>{issue.equipment} · </span>}
@@ -201,7 +201,7 @@ export default function PlantIssues() {
                     </div>
 
                     {issue.resolution && (
-                      <div className="text-sm bg-green-50 p-2 rounded">
+                      <div className="text-sm bg-green-50 p-2">
                         <strong className="text-green-700">Resolution:</strong> {issue.resolution}
                         {issue.downtimeHours && <span className="text-xs text-gray-500 ml-2">({issue.downtimeHours}h downtime)</span>}
                       </div>
@@ -211,7 +211,7 @@ export default function PlantIssues() {
                     {issue.comments && issue.comments.length > 0 && (
                       <div className="space-y-1">
                         {issue.comments.map((c: any) => (
-                          <div key={c.id} className="text-xs bg-white p-2 rounded border">
+                          <div key={c.id} className="text-xs bg-white p-2 border">
                             <strong>{c.userName}</strong> · {new Date(c.createdAt).toLocaleString()}
                             <p className="mt-1 text-gray-700">{c.message}</p>
                           </div>

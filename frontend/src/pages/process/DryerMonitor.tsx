@@ -82,7 +82,7 @@ export default function DryerMonitor() {
   return (
     <div className="max-w-4xl mx-auto">
       {/* Header */}
-      <div className="rounded-lg p-4 md:p-5 mb-4 md:mb-6 text-white bg-gradient-to-r from-red-600 to-red-700">
+      <div className="p-4 md:p-5 mb-4 md:mb-6 text-white bg-gradient-to-r from-red-600 to-red-700">
         <div className="flex items-center gap-3 mb-1">
           <Flame size={24} />
           <h1 className="text-xl md:text-2xl font-bold">Dryer</h1>
@@ -91,13 +91,13 @@ export default function DryerMonitor() {
       </div>
 
       {/* Date/Time */}
-      <div className="bg-white rounded-lg shadow-sm border p-4 mb-4">
+      <div className="bg-white border p-4 mb-4">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div><label className="text-xs text-gray-500">Date</label><input type="date" value={form.date} onChange={e => upd('date', e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+          <div><label className="text-xs text-gray-500">Date</label><input type="date" value={form.date} onChange={e => upd('date', e.target.value)} className="w-full border px-2 py-1.5 text-sm" /></div>
           <div><label className="text-xs text-gray-500">Time</label>
             <div className="flex gap-1">
-              <input type="text" value={form.entryTime} onChange={e => upd('entryTime', e.target.value)} placeholder="HH:MM" className="flex-1 border rounded px-2 py-1.5 text-sm" />
-              <button onClick={setNow} className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-medium hover:bg-red-200">Now</button>
+              <input type="text" value={form.entryTime} onChange={e => upd('entryTime', e.target.value)} placeholder="HH:MM" className="flex-1 border px-2 py-1.5 text-sm" />
+              <button onClick={setNow} className="px-2 py-1 bg-red-100 text-red-700 text-xs font-medium hover:bg-red-200">Now</button>
             </div>
           </div>
         </div>
@@ -105,7 +105,7 @@ export default function DryerMonitor() {
 
       {/* 3 Dryer Cards */}
       {DRYERS.map(n => (
-        <div key={n} className="bg-white rounded-lg shadow-sm border p-4 mb-4">
+        <div key={n} className="bg-white border p-4 mb-4">
           <h3 className="text-sm font-semibold text-red-700 mb-3 uppercase tracking-wide">Dryer {n}</h3>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {FIELDS.map(fd => (
@@ -116,7 +116,7 @@ export default function DryerMonitor() {
                   value={form[`dr${n}${fd.key}`]}
                   onChange={e => upd(`dr${n}${fd.key}`, e.target.value)}
                   placeholder="0"
-                  className="w-full border rounded px-2 py-1.5 text-sm"
+                  className="w-full border px-2 py-1.5 text-sm"
                 />
               </div>
             ))}
@@ -125,22 +125,22 @@ export default function DryerMonitor() {
       ))}
 
       {/* Final Moisture + Remark */}
-      <div className="bg-white rounded-lg shadow-sm border p-4 mb-4">
+      <div className="bg-white border p-4 mb-4">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div>
             <label className="text-xs text-gray-500">Final Moisture (%)</label>
-            <input type="number" step="0.01" value={form.finalMoisture} onChange={e => upd('finalMoisture', e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm font-semibold" />
+            <input type="number" step="0.01" value={form.finalMoisture} onChange={e => upd('finalMoisture', e.target.value)} className="w-full border px-2 py-1.5 text-sm font-semibold" />
           </div>
           <div className="col-span-1 sm:col-span-3">
             <label className="text-xs text-gray-500">Remark</label>
-            <input type="text" value={form.remark || ''} onChange={e => upd('remark', e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm" />
+            <input type="text" value={form.remark || ''} onChange={e => upd('remark', e.target.value)} className="w-full border px-2 py-1.5 text-sm" />
           </div>
         </div>
       </div>
 
       {/* Action buttons */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-4">
-        <button onClick={() => setShowPreview(true)} className="flex items-center justify-center gap-2 bg-gray-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-800 transition">
+        <button onClick={() => setShowPreview(true)} className="flex items-center justify-center gap-2 bg-gray-700 text-white px-5 py-2.5 text-sm font-medium hover:bg-gray-800 transition">
           <Eye size={16} /> Preview & Save
         </button>
         {msg && <span className={`text-sm font-medium ${msg.type === 'ok' ? 'text-green-600' : 'text-red-600'}`}>{msg.text}</span>}
@@ -149,10 +149,10 @@ export default function DryerMonitor() {
       {/* Preview Modal */}
       {showPreview && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowPreview(false)}>
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="sticky top-0 bg-red-600 text-white p-4 rounded-t-xl flex items-center justify-between">
+          <div className="bg-white shadow-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="sticky top-0 bg-red-600 text-white p-4 flex items-center justify-between">
               <h3 className="font-bold text-lg">Dryer Report Preview</h3>
-              <button onClick={() => setShowPreview(false)} className="p-1 hover:bg-red-700 rounded"><X size={20} /></button>
+              <button onClick={() => setShowPreview(false)} className="p-1 hover:bg-red-700"><X size={20} /></button>
             </div>
             <div className="p-4 space-y-3 text-sm">
               <div className="flex justify-between text-gray-600 border-b pb-2">
@@ -171,7 +171,7 @@ export default function DryerMonitor() {
                         const v = form[`dr${n}${fd.key}`];
                         if (!v) return null;
                         return (
-                          <div key={fd.key} className="bg-red-50 rounded p-1.5 text-center">
+                          <div key={fd.key} className="bg-red-50 p-1.5 text-center">
                             <div className="text-gray-500 truncate">{fd.label.replace(' (°C)', '')}</div>
                             <div className="font-semibold">{v}</div>
                           </div>
@@ -183,7 +183,7 @@ export default function DryerMonitor() {
               })}
 
               {form.finalMoisture && (
-                <div className="bg-red-100 rounded p-3 text-center">
+                <div className="bg-red-100 p-3 text-center">
                   <div className="text-xs text-gray-600">Final Moisture</div>
                   <div className="text-lg font-bold text-red-700">{form.finalMoisture}%</div>
                 </div>
@@ -192,11 +192,11 @@ export default function DryerMonitor() {
               {form.remark && <div className="text-gray-600 italic">Remark: {form.remark}</div>}
             </div>
 
-            <div className="sticky bottom-0 bg-gray-50 p-4 rounded-b-xl flex gap-3 border-t">
-              <button onClick={() => handleSave(false)} disabled={saving} className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition">
+            <div className="sticky bottom-0 bg-gray-50 p-4 flex gap-3 border-t">
+              <button onClick={() => handleSave(false)} disabled={saving} className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2.5 text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition">
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save
               </button>
-              <button onClick={() => handleSave(true)} disabled={saving} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition">
+              <button onClick={() => handleSave(true)} disabled={saving} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2.5 text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition">
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />} Save & Share
               </button>
             </div>
@@ -205,7 +205,7 @@ export default function DryerMonitor() {
       )}
 
       {/* History */}
-      <div className="bg-white rounded-lg shadow-sm border p-4 mb-4">
+      <div className="bg-white border p-4 mb-4">
         <button onClick={() => setShowHistory(!showHistory)} className="flex items-center gap-1 text-sm text-gray-600 hover:text-gray-800 mb-2">
           {showHistory ? <ChevronUp size={14} /> : <ChevronDown size={14} />} {entries.length} entries
         </button>

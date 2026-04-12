@@ -220,7 +220,7 @@ export default function GateRegister() {
       {/* Header */}
       <div className="mb-4">
         <div className="flex items-center gap-2 mb-2">
-          <div className="p-2 bg-amber-600 rounded-lg">
+          <div className="p-2 bg-amber-600">
             <DoorOpen size={20} className="text-white" />
           </div>
           <div>
@@ -237,7 +237,7 @@ export default function GateRegister() {
           type="date"
           value={date}
           onChange={e => setDate(e.target.value)}
-          className="w-full px-3 py-2 border rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+          className="w-full px-3 py-2 border text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
         />
       </div>
 
@@ -249,7 +249,7 @@ export default function GateRegister() {
           { key: 'LOADED', label: 'Loaded', color: 'bg-green-50 border-green-200 text-green-700' },
           { key: 'DISPATCHED', label: 'Dispatched', color: 'bg-gray-50 border-gray-200 text-gray-700' },
         ].map(s => (
-          <div key={s.key} className={`border rounded-lg p-2 md:p-3 ${s.color}`}>
+          <div key={s.key} className={`border p-2 md:p-3 ${s.color}`}>
             <div className="text-[10px] md:text-xs text-gray-500">{s.label}</div>
             <div className="text-lg md:text-2xl font-bold">{statusCounts[s.key as keyof typeof statusCounts]}</div>
           </div>
@@ -259,7 +259,7 @@ export default function GateRegister() {
       {/* Messages */}
       {msg && (
         <div
-          className={`rounded-lg p-3 mb-3 text-sm ${
+          className={`p-3 mb-3 text-sm ${
             msg.type === 'ok'
               ? 'bg-green-50 text-green-700 border border-green-200'
               : 'bg-red-50 text-red-700 border border-red-200'
@@ -273,7 +273,7 @@ export default function GateRegister() {
       {!showForm && (
         <button
           onClick={() => setShowForm(true)}
-          className="w-full border-2 border-dashed border-amber-300 rounded-lg py-3 text-amber-600 hover:bg-amber-50 flex items-center justify-center gap-2 mb-4 font-medium text-sm"
+          className="w-full border-2 border-dashed border-amber-300 py-3 text-amber-600 hover:bg-amber-50 flex items-center justify-center gap-2 mb-4 font-medium text-sm"
         >
           <Plus size={18} /> Add Vehicle
         </button>
@@ -281,7 +281,7 @@ export default function GateRegister() {
 
       {/* Add Vehicle Form */}
       {showForm && (
-        <div className="bg-white border rounded-xl p-3 md:p-4 shadow-sm mb-4">
+        <div className="bg-white border p-3 md:p-4 mb-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-semibold text-sm flex items-center gap-2">
               <DoorOpen size={16} className="text-amber-600" /> New Vehicle Entry
@@ -297,7 +297,7 @@ export default function GateRegister() {
               <input
                 value={vehicleNo}
                 onChange={e => setVehicleNo(e.target.value)}
-                className="w-full px-2 py-1.5 border rounded text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full px-2 py-1.5 bordertext-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                 placeholder="MP 00 XX 0000"
                 autoFocus
               />
@@ -309,7 +309,7 @@ export default function GateRegister() {
                 step="0.1"
                 value={capacityTon}
                 onChange={e => setCapacityTon(e.target.value)}
-                className="w-full px-2 py-1.5 border rounded text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full px-2 py-1.5 bordertext-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                 placeholder="0.00"
               />
             </div>
@@ -321,7 +321,7 @@ export default function GateRegister() {
               <input
                 value={vendor}
                 onChange={e => setVendor(e.target.value)}
-                className="w-full px-2 py-1.5 border rounded text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full px-2 py-1.5 bordertext-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                 placeholder="Supplier name"
               />
             </div>
@@ -330,7 +330,7 @@ export default function GateRegister() {
               <input
                 value={transporterName}
                 onChange={e => setTransporterName(e.target.value)}
-                className="w-full px-2 py-1.5 border rounded text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full px-2 py-1.5 bordertext-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                 placeholder="Transport name"
               />
             </div>
@@ -342,7 +342,7 @@ export default function GateRegister() {
               <select
                 value={material}
                 onChange={e => setMaterial(e.target.value as GateEntry['material'])}
-                className="w-full px-2 py-1.5 border rounded text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full px-2 py-1.5 bordertext-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
               >
                 {materialOptions.map(m => (
                   <option key={m} value={m}>
@@ -357,7 +357,7 @@ export default function GateRegister() {
                 type="time"
                 value={entryTime}
                 onChange={e => setEntryTime(e.target.value)}
-                className="w-full px-2 py-1.5 border rounded text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full px-2 py-1.5 bordertext-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
               />
             </div>
           </div>
@@ -368,7 +368,7 @@ export default function GateRegister() {
               <input
                 value={driverMobile}
                 onChange={e => setDriverMobile(e.target.value)}
-                className="w-full px-2 py-1.5 border rounded text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full px-2 py-1.5 bordertext-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                 placeholder="+91 XXXXX XXXXX"
               />
             </div>
@@ -377,7 +377,7 @@ export default function GateRegister() {
               <input
                 value={rstNo}
                 onChange={e => setRstNo(e.target.value)}
-                className="w-full px-2 py-1.5 border rounded text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full px-2 py-1.5 bordertext-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                 placeholder="RST number"
               />
             </div>
@@ -388,7 +388,7 @@ export default function GateRegister() {
             <input
               value={remarks}
               onChange={e => setRemarks(e.target.value)}
-              className="w-full px-2 py-1.5 border rounded text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+              className="w-full px-2 py-1.5 bordertext-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
               placeholder="Optional notes"
             />
           </div>
@@ -396,7 +396,7 @@ export default function GateRegister() {
           <button
             onClick={saveEntry}
             disabled={saving}
-            className="w-full py-2.5 bg-amber-600 text-white rounded-lg font-medium text-sm hover:bg-amber-700 disabled:opacity-50"
+            className="w-full py-2.5 bg-amber-600 text-white font-medium text-sm hover:bg-amber-700 disabled:opacity-50"
           >
             {saving ? 'Saving...' : 'Register Vehicle'}
           </button>
@@ -413,7 +413,7 @@ export default function GateRegister() {
             {entries.length > 0 && (
               <button
                 onClick={shareAll}
-                className="text-xs bg-green-600 text-white px-2.5 py-1 rounded flex items-center gap-1 font-medium"
+                className="text-xs bg-green-600 text-white px-2.5 py-1flex items-center gap-1 font-medium"
               >
                 <Share2 size={11} /> Share All
               </button>
@@ -424,13 +424,13 @@ export default function GateRegister() {
             const colors = statusColors[e.status];
             const next = nextStatus(e.status);
             return (
-              <div key={e.id} className="bg-white border rounded-xl p-3 shadow-sm">
+              <div key={e.id} className="bg-white border p-3">
                 {/* Header */}
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex-1">
                     <div className="font-bold text-sm mb-1">{e.vehicleNo}</div>
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`text-[10px] px-2 py-0.5 rounded font-medium ${colors.badge}`}>
+                      <span className={`text-[10px] px-2 py-0.5font-medium ${colors.badge}`}>
                         {e.status}
                       </span>
                       <span className="text-[10px] text-gray-500">{e.material}</span>
@@ -483,7 +483,7 @@ export default function GateRegister() {
 
                 {/* Weights (if dispatched) */}
                 {e.status === 'DISPATCHED' && (
-                  <div className="grid grid-cols-2 gap-2 mb-2 text-[10px] text-gray-500 bg-gray-50 rounded p-1.5">
+                  <div className="grid grid-cols-2 gap-2 mb-2 text-[10px] text-gray-500 bg-gray-50p-1.5">
                     {e.grossWeight && (
                       <div>Gross: <span className="font-medium text-gray-700">{e.grossWeight}T</span></div>
                     )}
@@ -502,7 +502,7 @@ export default function GateRegister() {
                   {next && (
                     <button
                       onClick={() => updateStatus(e.id, next)}
-                      className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-amber-100 text-amber-700 rounded text-xs font-medium hover:bg-amber-200"
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-amber-100 text-amber-700text-xs font-medium hover:bg-amber-200"
                     >
                       <ChevronDown size={13} /> {next}
                     </button>
@@ -527,7 +527,7 @@ export default function GateRegister() {
                       <select
                         value={editStatus}
                         onChange={e => setEditStatus(e.target.value)}
-                        className="flex-1 px-2 py-1 border rounded text-xs bg-white"
+                        className="flex-1 px-2 py-1 bordertext-xs bg-white"
                       >
                         <option value="INSIDE">INSIDE</option>
                         <option value="LOADING">LOADING</option>
@@ -572,7 +572,7 @@ export default function GateRegister() {
       {/* Dispatch Modal */}
       {showDispatchModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end z-50">
-          <div className="w-full bg-white rounded-t-2xl p-4 md:p-6 max-h-[80vh] overflow-y-auto">
+          <div className="w-full bg-white p-4 md:p-6 max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-lg">Dispatch Vehicle</h3>
               <button
@@ -593,7 +593,7 @@ export default function GateRegister() {
                   type="time"
                   value={exitTime}
                   onChange={e => setExitTime(e.target.value)}
-                  className="w-full px-3 py-2 border rounded text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  className="w-full px-3 py-2 bordertext-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                 />
               </div>
 
@@ -604,7 +604,7 @@ export default function GateRegister() {
                   step="0.01"
                   value={grossWeight}
                   onChange={e => setGrossWeight(e.target.value)}
-                  className="w-full px-3 py-2 border rounded text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  className="w-full px-3 py-2 bordertext-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                   placeholder="0.00"
                 />
               </div>
@@ -616,14 +616,14 @@ export default function GateRegister() {
                   step="0.01"
                   value={netWeight}
                   onChange={e => setNetWeight(e.target.value)}
-                  className="w-full px-3 py-2 border rounded text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  className="w-full px-3 py-2 bordertext-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                   placeholder="0.00"
                 />
               </div>
 
               <button
                 onClick={confirmDispatch}
-                className="w-full py-3 bg-amber-600 text-white rounded-lg font-medium text-sm hover:bg-amber-700"
+                className="w-full py-3 bg-amber-600 text-white font-medium text-sm hover:bg-amber-700"
               >
                 Confirm Dispatch
               </button>

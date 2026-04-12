@@ -349,7 +349,7 @@ export default function Liquefaction() {
     const ageMs = Date.now() - new Date(opc.updatedAt).getTime();
     const fresh = ageMs < 15 * 60 * 1000;
     return (
-      <span className={`ml-1 text-[9px] font-bold px-1 py-0.5 rounded ${fresh ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}
+      <span className={`ml-1 text-[9px] font-bold px-1 py-0.5 ${fresh ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}
         title={`OPC: ${opc.value} (${fmtOpcAgo(opc.updatedAt)})`}>
         OPC {opc.value} <span className="font-normal">{fmtOpcAgo(opc.updatedAt)}</span>
       </span>
@@ -361,14 +361,14 @@ export default function Liquefaction() {
       <label className="block text-xs font-medium text-gray-500 mb-1">{label}{opcBadge(field)}</label>
       <input type="number" step={step} value={form[field]}
         onChange={e => upd(field, e.target.value)}
-        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition" />
+        className="w-full border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition" />
     </div>
   );
 
   return (
     <div className="max-w-6xl mx-auto space-y-5">
       {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-cyan-600 rounded-xl p-5 text-white">
+      <div className="bg-gradient-to-r from-blue-600 to-cyan-600 p-5 text-white">
         <div className="flex items-center gap-3">
           <Droplets size={28} />
           <div>
@@ -425,10 +425,10 @@ export default function Liquefaction() {
               const iconColor = t.color === 'blue' ? 'text-blue-500' : 'text-green-500';
 
               return (
-                <div key={t.id} className={`${bgGrad} border-2 ${borderColor} rounded-xl p-3 relative`}>
+                <div key={t.id} className={`${bgGrad} border-2 ${borderColor} p-3 relative`}>
                   {/* Tank Header */}
                   <div className="flex items-center gap-2 mb-2">
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${t.color === 'blue' ? 'bg-blue-200' : 'bg-green-200'}`}>
+                    <div className={`w-8 h-8 flex items-center justify-center ${t.color === 'blue' ? 'bg-blue-200' : 'bg-green-200'}`}>
                       <t.Icon size={16} className={iconColor} />
                     </div>
                     <div>
@@ -516,7 +516,7 @@ export default function Liquefaction() {
                       {/* Iodine Test Badge (FLT only) */}
                       {'iodine' in t && t.iodine && (
                         <div className="mt-1">
-                          <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-md ${
+                          <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase px-1.5 py-0.5 ${
                             t.iodine === 'NEGATIVE' ? 'bg-green-100 text-green-700 border border-green-300' : 'bg-red-100 text-red-700 border border-red-300'
                           }`}>
                             {t.iodine === 'NEGATIVE' ? <CheckCircle size={10} /> : <XCircle size={10} />}
@@ -556,7 +556,7 @@ export default function Liquefaction() {
         return (
           <div className="flex gap-2 flex-wrap">
             {flows.map(f => (
-              <div key={f.label} className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-center flex-1 min-w-[100px]">
+              <div key={f.label} className="bg-white border border-gray-200 px-3 py-2 text-center flex-1 min-w-[100px]">
                 <div className="text-[9px] text-gray-500 font-bold uppercase tracking-wider">{f.label}</div>
                 <div className="text-sm font-bold text-gray-800 mt-0.5">{typeof f.val === 'number' ? f.val.toFixed(1) : f.val} <span className="text-[9px] text-gray-400">{f.unit}</span></div>
               </div>
@@ -575,7 +575,7 @@ export default function Liquefaction() {
           { label: 'ILT RS%', val: fmt(stats.iltR, 2), sub: 'avg', color: 'red' },
           { label: 'FLT RS%', val: fmt(stats.fltR, 2), sub: 'avg', color: 'cyan' },
         ].map(k => (
-          <div key={k.label} className="bg-white rounded-xl border border-gray-200 p-3 text-center shadow-sm">
+          <div key={k.label} className="bg-white border border-gray-200 p-3 text-center">
             <div className="text-xs text-gray-500 mb-1">{k.label}</div>
             <div className="text-xl font-bold text-gray-800">{k.val}</div>
             <div className="text-[10px] text-gray-400">{k.sub}</div>
@@ -584,7 +584,7 @@ export default function Liquefaction() {
       </div>
 
       {/* New Reading Form */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+      <div className="bg-white border border-gray-200 p-5">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
             <Save size={18} className="text-blue-600" /> New Reading
@@ -607,7 +607,7 @@ export default function Liquefaction() {
             }).finally(() => setOpcLoading(false));
           }}
             disabled={opcLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 text-green-700 border border-green-300 rounded-lg text-xs font-semibold hover:bg-green-100 transition disabled:opacity-50">
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 text-green-700 border border-green-300 text-xs font-semibold hover:bg-green-100 transition disabled:opacity-50">
             {opcLoading ? <Loader2 size={12} className="animate-spin" /> : <Radio size={12} />}
             Fill from OPC
           </button>
@@ -618,14 +618,14 @@ export default function Liquefaction() {
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Date</label>
             <input type="date" value={form.date} onChange={e => upd('date', e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" />
+              className="w-full border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Time</label>
             <div className="flex gap-1">
               <input type="time" value={form.analysisTime} onChange={e => upd('analysisTime', e.target.value)}
-                className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" />
-              <button onClick={setNow} className="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-xs font-semibold hover:bg-blue-100 transition flex items-center gap-1">
+                className="flex-1 border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" />
+              <button onClick={setNow} className="px-3 py-2 bg-blue-50 text-blue-600 text-xs font-semibold hover:bg-blue-100 transition flex items-center gap-1">
                 <Clock size={12} /> Now
               </button>
             </div>
@@ -678,21 +678,21 @@ export default function Liquefaction() {
           </div>
 
           {/* Iodine Test */}
-          <div className="mt-3 p-3 border border-indigo-200 rounded-lg bg-indigo-50/30">
+          <div className="mt-3 p-3 border border-indigo-200 bg-indigo-50/30">
             <label className="block text-xs font-semibold text-indigo-700 mb-2">Iodine Test</label>
             <div className="flex items-center gap-3 flex-wrap">
               <button type="button" onClick={() => upd('fltIodineTest', 'POSITIVE')}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition border ${form.fltIodineTest === 'POSITIVE' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-red-600 border-red-300 hover:bg-red-50'}`}>
+                className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium transition border ${form.fltIodineTest === 'POSITIVE' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-red-600 border-red-300 hover:bg-red-50'}`}>
                 <XCircle size={16} /> Positive
               </button>
               <button type="button" onClick={() => upd('fltIodineTest', 'NEGATIVE')}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition border ${form.fltIodineTest === 'NEGATIVE' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-green-600 border-green-300 hover:bg-green-50'}`}>
+                className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium transition border ${form.fltIodineTest === 'NEGATIVE' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-green-600 border-green-300 hover:bg-green-50'}`}>
                 <CheckCircle size={16} /> Negative
               </button>
               <input ref={iodineInputRef} type="file" accept="image/*" capture="environment" className="hidden"
                 onChange={e => { const f = e.target.files?.[0]; if (f) { setIodinePhoto(f); setIodinePreview(URL.createObjectURL(f)); } }} />
               <button type="button" onClick={() => iodineInputRef.current?.click()}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-white text-indigo-600 border border-indigo-300 hover:bg-indigo-50 transition">
+                className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-white text-indigo-600 border border-indigo-300 hover:bg-indigo-50 transition">
                 <Camera size={16} /> {iodinePhoto ? 'Change Photo' : 'Take Photo'}
               </button>
               {form.fltIodineTest && (
@@ -702,7 +702,7 @@ export default function Liquefaction() {
             </div>
             {iodinePreview && (
               <div className="mt-2">
-                <img src={iodinePreview} alt="Iodine test" className="w-32 h-32 object-cover rounded-lg border" />
+                <img src={iodinePreview} alt="Iodine test" className="w-32 h-32 object-cover border" />
               </div>
             )}
           </div>
@@ -717,7 +717,7 @@ export default function Liquefaction() {
             {showExtra ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </button>
           {showExtra && (
-            <div className="border border-amber-200 rounded-lg bg-amber-50/30 p-4 space-y-3">
+            <div className="border border-amber-200 bg-amber-50/30 p-4 space-y-3">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 {numInput("Slurry Flow (ILT→JC)", "slurryFlow", "0.1")}
                 {numInput("Steam Flow", "steamFlow", "0.1")}
@@ -747,16 +747,16 @@ export default function Liquefaction() {
           <div className="flex-1">
             <label className="block text-xs font-medium text-gray-500 mb-1">Remark</label>
             <input type="text" value={form.remark} onChange={e => upd('remark', e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" />
+              className="w-full border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" />
           </div>
           <button onClick={() => setShowPreview(true)}
-            className="flex items-center justify-center gap-2 bg-blue-600 text-white px-6 py-2.5 min-h-[44px] rounded-lg text-sm font-semibold hover:bg-blue-700 transition shadow-sm w-full sm:w-auto">
+            className="flex items-center justify-center gap-2 bg-blue-600 text-white px-6 py-2.5 min-h-[44px] text-sm font-semibold hover:bg-blue-700 transition w-full sm:w-auto">
             <Eye size={16} /> Preview & Save
           </button>
         </div>
         {msg && (
-          <div className={`mt-3 px-4 py-3 rounded-lg text-sm font-semibold flex items-center gap-2 ${msg.type === 'ok' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
-            {msg.type === 'ok' ? '✅' : '❌'} {msg.text}
+          <div className={`mt-3 px-4 py-3 text-sm font-semibold flex items-center gap-2 ${msg.type === 'ok' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
+            {msg.text}
           </div>
         )}
       </div>
@@ -764,8 +764,8 @@ export default function Liquefaction() {
       {/* Preview Modal */}
       {showPreview && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowPreview(false)}>
-          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="bg-blue-600 text-white p-4 rounded-t-xl flex items-center justify-between">
+          <div className="bg-white shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="bg-blue-600 text-white p-4 flex items-center justify-between">
               <h3 className="font-bold text-lg">Liquefaction Report Preview</h3>
               <button onClick={() => setShowPreview(false)}><X size={20} /></button>
             </div>
@@ -812,22 +812,22 @@ export default function Liquefaction() {
                 {form.fltIodineTest && (
                   <div className="mt-2 flex items-center gap-2">
                     <span className="text-gray-500">Iodine:</span>
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold ${form.fltIodineTest === 'NEGATIVE' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-bold ${form.fltIodineTest === 'NEGATIVE' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                       {form.fltIodineTest === 'NEGATIVE' ? <CheckCircle size={12} /> : <XCircle size={12} />} {form.fltIodineTest}
                     </span>
                   </div>
                 )}
-                {iodinePreview && <img src={iodinePreview} alt="Iodine" className="mt-1 w-20 h-20 object-cover rounded border" />}
+                {iodinePreview && <img src={iodinePreview} alt="Iodine" className="mt-1 w-20 h-20 object-cover border" />}
               </div>
               {form.remark && <div className="border-t pt-2"><span className="text-gray-500">Remark:</span> {form.remark}</div>}
             </div>
             <div className="p-4 border-t flex gap-2">
               <button onClick={async () => { await handleSave(false); setShowPreview(false); }} disabled={saving}
-                className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+                className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white py-2.5 text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save
               </button>
               <button onClick={async () => { await handleSave(true); setShowPreview(false); }} disabled={saving}
-                className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
+                className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 text-sm font-medium hover:bg-green-700 disabled:opacity-50">
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />} Save & Share
               </button>
             </div>
@@ -970,7 +970,7 @@ export default function Liquefaction() {
       )}
 
       {/* Entry History Table */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+      <div className="bg-white border border-gray-200 p-5">
         <h2 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2">
           <Database size={18} className="text-gray-600" /> Entry History
           <span className="text-sm font-normal text-gray-400">({entries.length} entries)</span>
@@ -1023,8 +1023,8 @@ export default function Liquefaction() {
                   <td className="px-2 py-1.5 text-right font-mono text-amber-700">{fmt(e.flowToFermenter, 1)}</td>
                   <td className="px-2 py-1.5 text-center">
                     {e.fltIodineTest ? (
-                      <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${e.fltIodineTest === 'NEGATIVE' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                        {e.fltIodineTest === 'NEGATIVE' ? '✅' : '❌'} {e.fltIodineTest.slice(0, 3)}
+                      <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-bold ${e.fltIodineTest === 'NEGATIVE' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                        {e.fltIodineTest.slice(0, 3)}
                       </span>
                     ) : '—'}
                   </td>
@@ -1051,12 +1051,12 @@ export default function Liquefaction() {
       {/* Edit Modal */}
       {editEntry && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setEditEntry(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-5 py-3 flex items-center justify-between rounded-t-2xl z-10">
+          <div className="bg-white shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-5 py-3 flex items-center justify-between z-10">
               <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
                 <Pencil size={16} className="text-blue-600" /> Edit Entry — {fmtDate(editEntry.date)} {editEntry.analysisTime || ''}
               </h3>
-              <button onClick={() => setEditEntry(null)} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} /></button>
+              <button onClick={() => setEditEntry(null)} className="p-1 hover:bg-gray-100"><X size={18} /></button>
             </div>
             <div className="p-5 space-y-4">
               {/* Date & Time */}
@@ -1064,18 +1064,18 @@ export default function Liquefaction() {
                 <div>
                   <label className="block text-[10px] font-semibold text-gray-500 mb-1">Date</label>
                   <input type="date" value={editForm.date} onChange={e => setEditForm(f => ({ ...f, date: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-300" />
+                    className="w-full border border-gray-300 px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-300" />
                 </div>
                 <div>
                   <label className="block text-[10px] font-semibold text-gray-500 mb-1">Time</label>
                   <input type="time" value={editForm.analysisTime} onChange={e => setEditForm(f => ({ ...f, analysisTime: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-300" />
+                    className="w-full border border-gray-300 px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-300" />
                 </div>
                 {[{ k: 'jetCookerTemp', l: 'JC Temp °C' }, { k: 'jetCookerFlow', l: 'JC Flow' }].map(f => (
                   <div key={f.k}>
                     <label className="block text-[10px] font-semibold text-gray-500 mb-1">{f.l}</label>
                     <input type="number" step="0.1" value={(editForm as any)[f.k]} onChange={e => setEditForm(ef => ({ ...ef, [f.k]: e.target.value }))}
-                      className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-300" />
+                      className="w-full border border-gray-300 px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-300" />
                   </div>
                 ))}
               </div>
@@ -1086,7 +1086,7 @@ export default function Liquefaction() {
                   <div key={f.k}>
                     <label className="block text-[10px] font-semibold text-gray-500 mb-1">{f.l}</label>
                     <input type="number" step="0.1" value={(editForm as any)[f.k]} onChange={e => setEditForm(ef => ({ ...ef, [f.k]: e.target.value }))}
-                      className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-300" />
+                      className="w-full border border-gray-300 px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-300" />
                   </div>
                 ))}
               </div>
@@ -1099,7 +1099,7 @@ export default function Liquefaction() {
                     <div key={f.k}>
                       <label className="block text-[10px] font-semibold text-gray-500 mb-1">{f.l}</label>
                       <input type="number" step="0.001" value={(editForm as any)[f.k]} onChange={e => setEditForm(ef => ({ ...ef, [f.k]: e.target.value }))}
-                        className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-300" />
+                        className="w-full border border-gray-300 px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-300" />
                     </div>
                   ))}
                 </div>
@@ -1113,7 +1113,7 @@ export default function Liquefaction() {
                     <div key={f.k}>
                       <label className="block text-[10px] font-semibold text-gray-500 mb-1">{f.l}</label>
                       <input type="number" step="0.001" value={(editForm as any)[f.k]} onChange={e => setEditForm(ef => ({ ...ef, [f.k]: e.target.value }))}
-                        className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-300" />
+                        className="w-full border border-gray-300 px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-300" />
                     </div>
                   ))}
                 </div>
@@ -1127,7 +1127,7 @@ export default function Liquefaction() {
                     <div key={f.k}>
                       <label className="block text-[10px] font-semibold text-gray-500 mb-1">{f.l}</label>
                       <input type="number" step="0.001" value={(editForm as any)[f.k]} onChange={e => setEditForm(ef => ({ ...ef, [f.k]: e.target.value }))}
-                        className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-300" />
+                        className="w-full border border-gray-300 px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-300" />
                     </div>
                   ))}
                 </div>
@@ -1138,7 +1138,7 @@ export default function Liquefaction() {
                 <div>
                   <label className="block text-[10px] font-semibold text-gray-500 mb-1">Iodine Test</label>
                   <select value={editForm.fltIodineTest} onChange={e => setEditForm(f => ({ ...f, fltIodineTest: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-300">
+                    className="w-full border border-gray-300 px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-300">
                     <option value="">—</option>
                     <option value="POSITIVE">Positive</option>
                     <option value="NEGATIVE">Negative</option>
@@ -1147,18 +1147,18 @@ export default function Liquefaction() {
                 <div>
                   <label className="block text-[10px] font-semibold text-gray-500 mb-1">Remark</label>
                   <input type="text" value={editForm.remark} onChange={e => setEditForm(f => ({ ...f, remark: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-300" />
+                    className="w-full border border-gray-300 px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-300" />
                 </div>
               </div>
             </div>
 
             {/* Save / Cancel */}
-            <div className="sticky bottom-0 bg-white border-t border-gray-200 px-5 py-3 flex gap-3 rounded-b-2xl">
+            <div className="sticky bottom-0 bg-white border-t border-gray-200 px-5 py-3 flex gap-3">
               <button onClick={handleEditSave} disabled={editSaving}
-                className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2 hover:bg-blue-700 transition">
+                className="flex-1 py-2.5 bg-blue-600 text-white text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2 hover:bg-blue-700 transition">
                 {editSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save Changes
               </button>
-              <button onClick={() => setEditEntry(null)} className="px-6 py-2.5 bg-gray-100 text-gray-600 rounded-xl text-sm font-semibold hover:bg-gray-200 transition">
+              <button onClick={() => setEditEntry(null)} className="px-6 py-2.5 bg-gray-100 text-gray-600 text-sm font-semibold hover:bg-gray-200 transition">
                 Cancel
               </button>
             </div>
