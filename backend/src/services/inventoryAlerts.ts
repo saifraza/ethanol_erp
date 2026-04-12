@@ -10,12 +10,41 @@ import { broadcastToGroup } from './messagingGateway';
 
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // Every 6 hours
 let alertInterval: NodeJS.Timeout | null = null;
+let alertsEnabled = true;
+
+export function isInventoryAlertsEnabled(): boolean { return alertsEnabled; }
+
+export async function toggleInventoryAlerts(): Promise<boolean> {
+  alertsEnabled = !alertsEnabled;
+  // Persist to Settings
+  try {
+    const s = await prisma.settings.findFirst();
+    if (s) {
+      await prisma.settings.update({
+        where: { id: s.id },
+        data: { inventoryAlertsEnabled: alertsEnabled },
+      });
+    }
+  } catch { /* non-critical */ }
+  console.log(`[Inventory] Alerts ${alertsEnabled ? 'ENABLED' : 'DISABLED'}`);
+  return alertsEnabled;
+}
+
+async function loadAlertState(): Promise<void> {
+  try {
+    const s = await prisma.settings.findFirst();
+    if (s && s.inventoryAlertsEnabled !== undefined) {
+      alertsEnabled = s.inventoryAlertsEnabled;
+    }
+  } catch { /* use default */ }
+}
 
 function nowIST(): Date {
   return new Date(Date.now() + 5.5 * 60 * 60 * 1000);
 }
 
 async function checkLowStock(): Promise<void> {
+  if (!alertsEnabled) return;
   try {
     const items = await prisma.inventoryItem.findMany({
       where: { isActive: true, minStock: { gt: 0 } },
@@ -26,7 +55,7 @@ async function checkLowStock(): Promise<void> {
     if (lowStock.length === 0) return;
 
     const settings = await prisma.settings.findFirst();
-    const groupChatId = (settings as any)?.telegramGroupChatId;
+    const groupChatId = settings?.telegramGroupChatId;
     if (!groupChatId) return;
 
     const ist = nowIST();
@@ -49,6 +78,8 @@ async function checkLowStock(): Promise<void> {
 
 export function startInventoryAlerts(): void {
   if (alertInterval) return;
+  // Load persisted state
+  loadAlertState().catch(() => {});
   // First check after 5 minutes (let server warm up)
   setTimeout(() => {
     checkLowStock().catch(() => {});

@@ -3,6 +3,7 @@ import prisma from '../config/prisma';
 import { authenticate, AuthRequest, authorize } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { searchHSN } from '../data/hsnDatabase';
+import { isInventoryAlertsEnabled, toggleInventoryAlerts } from '../services/inventoryAlerts';
 
 const router = Router();
 router.use(authenticate as any);
@@ -451,6 +452,16 @@ router.get('/summary', asyncHandler(async (_req: AuthRequest, res: Response) => 
     if (item.currentStock <= item.minStock && item.minStock > 0) categories[item.category].lowStock++;
   }
   res.json({ summary: categories, totalItems: items.length });
+}));
+
+// ── Stock Alert Toggle ──
+router.get('/alerts/status', asyncHandler(async (_req: AuthRequest, res: Response) => {
+  res.json({ enabled: isInventoryAlertsEnabled() });
+}));
+
+router.post('/alerts/toggle', asyncHandler(async (_req: AuthRequest, res: Response) => {
+  const enabled = await toggleInventoryAlerts();
+  res.json({ enabled });
 }));
 
 export default router;
