@@ -108,10 +108,12 @@ router.get('/analytics', authenticate, async (req: AuthRequest, res: Response) =
       totalAtPlant: e.totalGrainAtPlant || 0,
     }));
 
-    // Ethanol daily — aggregate multiple entries per day (take last entry's stock, sum production/dispatch)
+    // Ethanol daily — each dip entry's production represents the PREVIOUS day's 24h output
+    // Shift date back by 1 day so production aligns with the day it was produced
     const ethanolByDate = new Map<string, { productionBL: number; productionAL: number; totalStock: number; dispatch: number; klpd: number; avgStrength: number; count: number }>();
     for (const e of ethanol) {
-      const key = fmtDate(e.date);
+      const prevDay = new Date(e.date.getTime() - 24 * 3600 * 1000);
+      const key = fmtDate(prevDay);
       const existing = ethanolByDate.get(key);
       if (!existing) {
         ethanolByDate.set(key, {
@@ -146,7 +148,7 @@ router.get('/analytics', authenticate, async (req: AuthRequest, res: Response) =
       productionAL: v.productionAL,
       totalStock: v.totalStock,
       dispatch: truckDispatchByDate.get(date) ?? v.dispatch, // prefer actual truck data
-      klpd: v.klpd, // use last entry's KLPD (already set to last non-zero at aggregation)
+      klpd: Math.round(v.klpd * 10) / 10, // round to 1 decimal
       avgStrength: v.avgStrength,
     }));
 
