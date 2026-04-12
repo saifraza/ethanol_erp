@@ -17,6 +17,7 @@ model OpcMonitoredTag {
   tagType     String   @default("analog")
   label       String   @default("")
   description String   @default("")
+  source      String   @default("ETHANOL")  // ETHANOL (ABB 800xA) or SUGAR (Fuji DCS)
   hhAlarm     Float?   // High-High alarm limit
   llAlarm     Float?   // Low-Low alarm limit
   pushToCloud Boolean  @default(true)  // true=push readings to cloud, false=local alarm only
@@ -26,6 +27,7 @@ model OpcMonitoredTag {
 
   @@index([area])
   @@index([active])
+  @@index([source])
 }
 
 // Raw readings pushed every scan (keep 24h, auto-purge older)
@@ -34,12 +36,14 @@ model OpcReading {
   tag        String
   property   String   // PV, SP, OP, IO_VALUE
   value      Float
+  source     String   @default("ETHANOL")
   scannedAt  DateTime
   receivedAt DateTime @default(now())
 
   @@index([tag, scannedAt])
   @@index([scannedAt])
   @@index([tag, property, scannedAt])
+  @@index([source, scannedAt])
 }
 
 // Hourly averages — permanent storage
@@ -48,15 +52,17 @@ model OpcHourlyReading {
   tag       String
   property  String
   hour      DateTime
+  source    String   @default("ETHANOL")
   avg       Float
   min       Float
   max       Float
   count     Int      @default(0)
   createdAt DateTime @default(now())
 
-  @@unique([tag, property, hour])
+  @@unique([tag, property, hour, source])
   @@index([tag, hour])
   @@index([hour])
+  @@index([source, hour])
 }
 
 // Sync tracking — last successful push from Windows
@@ -79,9 +85,11 @@ model OpcAlarmLog {
   value        Float
   limit        Float
   alarmType    String   // 'HH' or 'LL'
+  source       String   @default("ETHANOL")
   acknowledged Boolean  @default(false)
   sentAt       DateTime @default(now())
 
   @@index([tag, sentAt])
   @@index([sentAt])
+  @@index([source, sentAt])
 }

@@ -87,13 +87,13 @@ loadAlarmState().catch(() => {});
 const _lastAlarmSent: Record<string, number> = {};
 const ALARM_COOLDOWN_MS = 15 * 60 * 1000;
 
-async function checkAlarms(opc: any, readings: { tag: string; property: string; value: number }[]) {
-  // Get tags with alarm limits set (skip if columns don't exist yet)
+async function checkAlarms(opc: any, readings: { tag: string; property: string; value: number }[], source: string = 'ETHANOL') {
+  // Get tags with alarm limits set — FILTERED BY SOURCE to prevent cross-plant alarm triggers
   let tagsWithAlarms: any[];
   try {
     tagsWithAlarms = await opc.opcMonitoredTag.findMany({
-      where: { active: true, OR: [{ hhAlarm: { not: null } }, { llAlarm: { not: null } }] },
-      select: { tag: true, label: true, description: true, hhAlarm: true, llAlarm: true, tagType: true },
+      where: { active: true, source, OR: [{ hhAlarm: { not: null } }, { llAlarm: { not: null } }] },
+      select: { tag: true, label: true, description: true, hhAlarm: true, llAlarm: true, tagType: true, source: true },
     });
   } catch {
     return; // New columns not migrated yet
@@ -173,6 +173,7 @@ async function checkAlarms(opc: any, readings: { tag: string; property: string; 
 // ==========================================================================
 
 const pushReadingsSchema = z.object({
+  source: z.enum(['ETHANOL', 'SUGAR']).optional().default('ETHANOL'),
   readings: z.array(z.object({
     tag: z.string(),
     property: z.string(),
@@ -192,7 +193,8 @@ const pushReadingsSchema = z.object({
 router.post('/push', validate(pushReadingsSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!checkPushKey(req, res)) return;
   const opc = getOpcPrisma();
-  const { readings, tags } = req.body;
+  const { readings, tags, source } = req.body;
+  const src = source || 'ETHANOL';
 
   // Upsert monitored tags if provided (non-blocking — don't fail the push if tag sync fails)
   if (tags && tags.length > 0) {
@@ -204,8 +206,8 @@ router.post('/push', validate(pushReadingsSchema), asyncHandler(async (req: Auth
 
         await opc.opcMonitoredTag.upsert({
           where: { tag: t.tag },
-          create: { tag: t.tag, area: t.area, folder: t.folder, tagType: t.tagType, label: t.label || t.tag },
-          update: { area: t.area, folder: t.folder, tagType: t.tagType, label: t.label || t.tag },
+          create: { tag: t.tag, area: t.area, folder: t.folder, tagType: t.tagType, label: t.label || t.tag, source: src },
+          update: { area: t.area, folder: t.folder, tagType: t.tagType, label: t.label || t.tag, source: src },
         });
       }
     } catch (tagErr) {
@@ -220,6 +222,7 @@ router.post('/push', validate(pushReadingsSchema), asyncHandler(async (req: Auth
         tag: r.tag,
         property: r.property,
         value: r.value,
+        source: src,
         scannedAt: new Date(r.scannedAt),
       })),
     });
@@ -227,19 +230,21 @@ router.post('/push', validate(pushReadingsSchema), asyncHandler(async (req: Auth
 
   // Log sync
   await opc.opcSyncLog.create({
-    data: { syncType: 'readings', tagCount: tags?.length || 0, readingCount: readings.length },
+    data: { syncType: 'readings', tagCount: tags?.length || 0, readingCount: readings.length, batchId: src },
   });
 
   // Check alarms — compare readings against HH/LL limits (skip if disabled)
+  // Pass source so sugar readings don't trigger ethanol alarm rules
   await loadAlarmState();
   if (alarmsEnabled) {
-    checkAlarms(opc, readings).catch(err => console.error('[OPC] Alarm check failed:', err));
+    checkAlarms(opc, readings, src).catch(err => console.error('[OPC] Alarm check failed:', err));
   }
 
   res.json({ ok: true, received: readings.length });
 }));
 
 const pushHourlySchema = z.object({
+  source: z.enum(['ETHANOL', 'SUGAR']).optional().default('ETHANOL'),
   hourly: z.array(z.object({
     tag: z.string(),
     property: z.string(),
@@ -255,18 +260,19 @@ const pushHourlySchema = z.object({
 router.post('/push-hourly', validate(pushHourlySchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!checkPushKey(req, res)) return;
   const opc = getOpcPrisma();
-  const { hourly } = req.body;
+  const { hourly, source } = req.body;
+  const src = source || 'ETHANOL';
 
   for (const h of hourly) {
     await opc.opcHourlyReading.upsert({
-      where: { tag_property_hour: { tag: h.tag, property: h.property, hour: new Date(h.hour) } },
-      create: { tag: h.tag, property: h.property, hour: new Date(h.hour), avg: h.avg, min: h.min, max: h.max, count: h.count },
+      where: { tag_property_hour_source: { tag: h.tag, property: h.property, hour: new Date(h.hour), source: src } },
+      create: { tag: h.tag, property: h.property, hour: new Date(h.hour), source: src, avg: h.avg, min: h.min, max: h.max, count: h.count },
       update: { avg: h.avg, min: h.min, max: h.max, count: h.count },
     });
   }
 
   await opc.opcSyncLog.create({
-    data: { syncType: 'hourly', readingCount: hourly.length },
+    data: { syncType: 'hourly', readingCount: hourly.length, batchId: src },
   });
 
   res.json({ ok: true, received: hourly.length });
@@ -279,9 +285,11 @@ router.post('/push-hourly', validate(pushHourlySchema), asyncHandler(async (req:
 
 // GET /api/opc/monitor/pull — Factory pulls tag list from cloud (cloud-as-master)
 // Includes alarm limits + pushToCloud flag so bridge knows what to monitor locally
+// ?source=ETHANOL|SUGAR filters to that plant (default: ETHANOL for backwards compat)
 router.get('/monitor/pull', asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!checkPushKey(req, res)) return;
   const opc = getOpcPrisma();
+  const source = (req.query.source as string) || 'ETHANOL';
 
   // One-time fix: Evap_ANALOG → ANALOG (wrong folder name from UI catalog)
   try {
@@ -294,13 +302,13 @@ router.get('/monitor/pull', asyncHandler(async (req: AuthRequest, res: Response)
   let tags: Array<Record<string, unknown>>;
   try {
     tags = await opc.opcMonitoredTag.findMany({
-      where: { active: true },
+      where: { active: true, source },
       orderBy: { area: 'asc' },
       take: 500,
-      select: { tag: true, area: true, folder: true, tagType: true, label: true, hhAlarm: true, llAlarm: true, pushToCloud: true },
+      select: { tag: true, area: true, folder: true, tagType: true, label: true, hhAlarm: true, llAlarm: true, pushToCloud: true, source: true },
     });
   } catch {
-    // Fallback if pushToCloud column doesn't exist yet
+    // Fallback if source/pushToCloud columns don't exist yet
     tags = await opc.opcMonitoredTag.findMany({
       where: { active: true },
       orderBy: { area: 'asc' },
@@ -318,24 +326,26 @@ const alarmNotifySchema = z.object({
   value: z.number(),
   limit: z.number(),
   alarmType: z.enum(['HH', 'LL']),
+  source: z.enum(['ETHANOL', 'SUGAR']).optional().default('ETHANOL'),
   scannedAt: z.string().optional(),
 });
 
 router.post('/alarm-notify', validate(alarmNotifySchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!checkPushKey(req, res)) return;
   const opc = getOpcPrisma();
-  const { tag, label, value, limit, alarmType } = req.body;
+  const { tag, label, value, limit, alarmType, source } = req.body;
+  const src = source || 'ETHANOL';
 
   // Log alarm to OpcAlarmLog
   try {
     await opc.opcAlarmLog.create({
-      data: { tag, label, value, limit, alarmType },
+      data: { tag, label, value, limit, alarmType, source: src },
     });
   } catch {
     // Table may not exist in Prisma client yet — use raw SQL
     await opc.$executeRawUnsafe(
-      `INSERT INTO "OpcAlarmLog" (id, tag, label, value, "limit", "alarmType", "sentAt") VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, NOW())`,
-      tag, label, value, limit, alarmType
+      `INSERT INTO "OpcAlarmLog" (id, tag, label, value, "limit", "alarmType", source, "sentAt") VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, NOW())`,
+      tag, label, value, limit, alarmType, src
     );
   }
 
@@ -849,10 +859,12 @@ router.get('/gaps', authenticate, asyncHandler(async (req: AuthRequest, res: Res
 // BRIDGE HEARTBEAT — Factory PC phones home every 60s (no Tailscale needed)
 // ==========================================================================
 
-// In-memory store for latest heartbeat (fast access, no DB needed)
-let _latestHeartbeat: {
+// In-memory store for latest heartbeat PER SOURCE (fast access, no DB needed)
+// Keyed by source (ETHANOL, SUGAR) to prevent cross-bridge overwrite
+interface BridgeHeartbeat {
   timestamp: string;
   receivedAt: Date;
+  source: string;
   uptimeSeconds: number;
   opcConnected: boolean;
   queueDepth: number;
@@ -860,13 +872,16 @@ let _latestHeartbeat: {
   health: { scannerAlive: boolean; syncAlive: boolean; apiAlive: boolean; threadRestarts: Record<string, number> };
   system: { cpuPercent: number; memoryMb: number; diskFreeGb: number; sleepDisabled: boolean };
   version: string;
-  // 2026-04-08 hardening: liveness proof from scanner thread itself (not just is_alive())
   lastScanCompletedAt?: string | null;
   lastScanAgeSeconds?: number | null;
-} | null = null;
+}
+const _heartbeats: Map<string, BridgeHeartbeat> = new Map();
+// Backwards compat: single heartbeat reference (points to most recent)
+let _latestHeartbeat: BridgeHeartbeat | null = null;
 
 const heartbeatSchema = z.object({
   timestamp: z.string(),
+  source: z.enum(['ETHANOL', 'SUGAR']).optional().default('ETHANOL'),
   uptimeSeconds: z.number(),
   opcConnected: z.boolean(),
   queueDepth: z.number().default(0),
@@ -884,7 +899,6 @@ const heartbeatSchema = z.object({
     sleepDisabled: z.boolean(),
   }),
   version: z.string().default('unknown'),
-  // Optional, older bridges won't send these
   lastScanCompletedAt: z.string().nullable().optional(),
   lastScanAgeSeconds: z.number().nullable().optional(),
 });
@@ -896,8 +910,11 @@ let _queueAlertSent = false;
 router.post('/heartbeat', validate(heartbeatSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!checkPushKey(req, res)) return;
   const data = req.body;
+  const src = data.source || 'ETHANOL';
 
-  _latestHeartbeat = { ...data, receivedAt: new Date() };
+  const hb: BridgeHeartbeat = { ...data, source: src, receivedAt: new Date() };
+  _heartbeats.set(src, hb);
+  _latestHeartbeat = hb; // backwards compat
 
   // Alert if sleep got re-enabled
   if (!data.system.sleepDisabled && !_sleepAlertSent) {
@@ -933,24 +950,33 @@ router.post('/heartbeat', validate(heartbeatSchema), asyncHandler(async (req: Au
 }));
 
 // GET /api/opc/bridge-status — Frontend reads latest heartbeat
-router.get('/bridge-status', authenticate, asyncHandler(async (_req: AuthRequest, res: Response) => {
-  if (!_latestHeartbeat) {
-    res.json({ online: false, heartbeat: null, message: 'No heartbeat received yet' });
+// ?source=ETHANOL|SUGAR (default: ETHANOL for backwards compat)
+router.get('/bridge-status', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const source = (req.query.source as string) || 'ETHANOL';
+  const hb = _heartbeats.get(source);
+
+  if (!hb) {
+    res.json({ online: false, heartbeat: null, source, message: `No heartbeat received from ${source} bridge` });
     return;
   }
 
-  const ageMs = Date.now() - _latestHeartbeat.receivedAt.getTime();
-  const online = ageMs < 3 * 60 * 1000; // Online if heartbeat within last 3 min
+  const ageMs = Date.now() - hb.receivedAt.getTime();
+  const online = ageMs < 3 * 60 * 1000;
 
   res.json({
     online,
     ageSeconds: Math.round(ageMs / 1000),
-    heartbeat: _latestHeartbeat,
+    source,
+    heartbeat: hb,
   });
 }));
 
-// Export heartbeat for watchdog to use
-export function getLatestHeartbeat() { return _latestHeartbeat; }
+// Export heartbeat for watchdog to use — returns per-source or latest
+export function getLatestHeartbeat(source?: string) {
+  if (source) return _heartbeats.get(source) || null;
+  return _latestHeartbeat;
+}
+export function getAllHeartbeats() { return _heartbeats; }
 
 // ==========================================================================
 // ALARM TOGGLE ENDPOINTS
