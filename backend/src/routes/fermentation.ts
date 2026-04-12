@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import prisma from '../config/prisma';
 import { authenticate, authorize } from '../middleware/auth';
+import { broadcast } from '../services/messagingGateway';
 
 const router = Router();
 
@@ -425,6 +426,16 @@ router.post('/lab-reading', async (req: Request, res: Response) => {
       const readyToTransfer = gravity !== null && gravity <= target;
 
       res.status(201).json({ reading, batchNo: pfBatch.batchNo, readyToTransfer, gravityTarget: target });
+
+      // Telegram notify
+      const pfLines = [
+        `🧪 *PF-${vesselNo} Lab Reading* (#${pfBatch.batchNo})`,
+        b.spGravity ? `SG: ${b.spGravity}` : '', b.ph ? `pH: ${b.ph}` : '',
+        b.alcohol ? `Alcohol: ${b.alcohol}%` : '', b.temp ? `Temp: ${b.temp}°C` : '',
+        readyToTransfer ? `⚡ Ready to transfer (SG ≤ ${target})` : '',
+      ].filter(Boolean).join('\n');
+      broadcast('fermentation', pfLines).catch(() => {});
+
     } else {
       // Fermenter lab reading
       const fermBatch = await prisma.fermentationBatch.findFirst({
@@ -499,6 +510,17 @@ router.post('/lab-reading', async (req: Request, res: Response) => {
       }
 
       res.status(201).json({ entry, batchNo: fermBatch.batchNo, autoAdvanced, autoAdvancedTo: autoAdvanced ? 'REACTION' : undefined, fermentationFinished });
+
+      // Telegram notify
+      const fLines = [
+        `🧪 *F-${vesselNo} Lab Reading* (#${fermBatch.batchNo})`,
+        b.spGravity ? `SG: ${b.spGravity}` : '', b.ph ? `pH: ${b.ph}` : '',
+        b.alcohol ? `Alcohol: ${b.alcohol}%` : '', b.temp ? `Temp: ${b.temp}°C` : '',
+        autoAdvanced ? `⚡ Auto-advanced to REACTION` : '',
+        fermentationFinished ? `✅ Fermentation complete (SG ≤ 1.0)` : '',
+      ].filter(Boolean).join('\n');
+      broadcast('fermentation', fLines).catch(() => {});
+
     }
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });

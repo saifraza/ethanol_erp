@@ -8,7 +8,10 @@
  */
 
 import axios from 'axios';
+import fs from 'fs';
+import path from 'path';
 import { registerPhotoHandler, downloadTelegramFile, sendTelegramMessage } from './telegramBot';
+import prisma from '../config/prisma';
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
 
@@ -38,7 +41,65 @@ async function analyzeImage(imageBuffer: Buffer, prompt: string): Promise<string
   }
 }
 
+/** Save a tagged photo (#iodine, etc.) to disk and link to the latest DB entry */
+async function handleTaggedPhoto(chatId: string, fileId: string, tag: string): Promise<boolean> {
+  const imageBuffer = await downloadTelegramFile(fileId);
+  if (!imageBuffer) {
+    await sendTelegramMessage(chatId, '❌ Could not download image.', 'image');
+    return true;
+  }
+
+  if (tag === 'iodine') {
+    // Save to uploads/iodine/
+    const uploadsDir = path.join(__dirname, '../../uploads/iodine');
+    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+    const filename = `tg_iodine_${Date.now()}.jpg`;
+    const filePath = path.join(uploadsDir, filename);
+    fs.writeFileSync(filePath, imageBuffer);
+
+    const photoUrl = `/uploads/iodine/${filename}`;
+
+    // Find latest liquefaction entry (today or most recent)
+    const latest = await prisma.liquefactionEntry.findFirst({
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, analysisTime: true },
+    });
+
+    if (latest) {
+      await prisma.liquefactionEntry.update({
+        where: { id: latest.id },
+        data: { fltIodinePhotoUrl: photoUrl },
+      });
+      await sendTelegramMessage(chatId, `✅ Iodine test photo saved to latest liquefaction entry (${latest.analysisTime || 'recent'})`, 'image');
+    } else {
+      await sendTelegramMessage(chatId, `✅ Iodine photo saved as ${filename}. No liquefaction entry found to attach to — will be available when next entry is created.`, 'image');
+    }
+
+    // Also run Gemini analysis if available
+    if (GEMINI_KEY) {
+      const result = await analyzeImage(imageBuffer, 'This is an iodine test image from a distillery liquefaction process. Analyze the iodine test result: is it POSITIVE (blue/dark = starch present, incomplete conversion) or NEGATIVE (yellow/amber = no starch, good conversion)? Be brief.');
+      if (result) {
+        await sendTelegramMessage(chatId, `🔬 *Iodine Analysis:* ${result}`, 'image');
+      }
+    }
+    return true;
+  }
+
+  return false; // tag not handled
+}
+
 async function handlePhoto(chatId: string, fileId: string, caption: string | null, _name: string | null): Promise<boolean> {
+  // Check for tagged photos first (#iodine, #lab, etc.)
+  if (caption) {
+    const tagMatch = caption.match(/#(\w+)/);
+    if (tagMatch) {
+      const tag = tagMatch[1].toLowerCase();
+      const handled = await handleTaggedPhoto(chatId, fileId, tag);
+      if (handled) return true;
+    }
+  }
+
   // Download image from Telegram
   const imageBuffer = await downloadTelegramFile(fileId);
   if (!imageBuffer) {
@@ -73,10 +134,10 @@ async function handlePhoto(chatId: string, fileId: string, caption: string | nul
 }
 
 export function initImageHandler(): void {
-  if (!GEMINI_KEY) {
-    console.log('[ImageHandler] No GEMINI_API_KEY — image recognition disabled');
-    return;
-  }
   registerPhotoHandler(handlePhoto);
-  console.log('[ImageHandler] Telegram image recognition enabled (Gemini Vision)');
+  if (!GEMINI_KEY) {
+    console.log('[ImageHandler] No GEMINI_API_KEY — image analysis disabled, tagged photo saving still works (#iodine)');
+  } else {
+    console.log('[ImageHandler] Telegram image handler enabled (Gemini Vision + tagged photo saving)');
+  }
 }

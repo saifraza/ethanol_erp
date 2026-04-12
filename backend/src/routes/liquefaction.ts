@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import prisma from '../config/prisma';
 import { authenticate, authorize } from '../middleware/auth';
+import { broadcast } from '../services/messagingGateway';
 
 const router = Router();
 router.use(authenticate as any);
@@ -67,6 +68,21 @@ router.post('/', upload.single('iodinePhoto'), async (req: Request, res: Respons
       }
     });
     res.status(201).json(entry);
+
+    // Telegram notify
+    const lqLines = [
+      `🧪 *Liquefaction Lab Entry*`,
+      b.analysisTime ? `Time: ${b.analysisTime}` : '',
+      entry.iltSpGravity != null ? `ILT SG: ${entry.iltSpGravity}` : '',
+      entry.fltSpGravity != null ? `FLT SG: ${entry.fltSpGravity}` : '',
+      entry.iltPh != null ? `ILT pH: ${entry.iltPh}` : '',
+      entry.fltPh != null ? `FLT pH: ${entry.fltPh}` : '',
+      entry.jetCookerTemp != null ? `Jet Cooker: ${entry.jetCookerTemp}°C` : '',
+      entry.fltIodineTest ? `Iodine: ${entry.fltIodineTest}` : '',
+      entry.remark ? `Remark: ${entry.remark}` : '',
+    ].filter(Boolean).join('\n');
+    broadcast('liquefaction', lqLines).catch(() => {});
+
   } catch (err: any) {
     console.error('Liquefaction POST error:', err.message);
     res.status(500).json({ error: err.message });

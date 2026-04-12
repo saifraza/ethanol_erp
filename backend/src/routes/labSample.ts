@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth';
+import { broadcast } from '../services/messagingGateway';
 
 const router = Router();
 
@@ -88,6 +89,21 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     }
 
     res.status(201).json(sample);
+
+    // Fire-and-forget Telegram notification
+    const emoji = result === 'ACCEPTED' ? '✅' : result === 'REJECTED' ? '❌' : '🔬';
+    const lines = [
+      `${emoji} *Lab Sample — ${rstNumber.trim()}*`,
+      `Result: *${result || 'PENDING'}*`,
+      moisture != null ? `Moisture: ${moisture}%` : '',
+      starchPercent != null ? `Starch: ${starchPercent}%` : '',
+      damagedPercent != null ? `Damaged: ${damagedPercent}%` : '',
+      foreignMatter != null ? `Foreign Matter: ${foreignMatter}%` : '',
+      tfm != null ? `TFM: ${tfm}%` : '',
+      remarks ? `Remarks: ${remarks}` : '',
+    ].filter(Boolean).join('\n');
+    broadcast('grain', lines).catch(() => {});
+
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
@@ -136,6 +152,20 @@ router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
     }
 
     res.json(sample);
+
+    // Notify on result change
+    if (result === 'ACCEPTED' || result === 'REJECTED') {
+      const emoji = result === 'ACCEPTED' ? '✅' : '❌';
+      const lines = [
+        `${emoji} *Lab Result Updated — ${sample.rstNumber}*`,
+        `Result: *${result}*`,
+        sample.moisture != null ? `Moisture: ${sample.moisture}%` : '',
+        sample.starchPercent != null ? `Starch: ${sample.starchPercent}%` : '',
+        remarks ? `Remarks: ${remarks}` : '',
+      ].filter(Boolean).join('\n');
+      broadcast('grain', lines).catch(() => {});
+    }
+
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 

@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, authorize } from '../middleware/auth';
+import { broadcast } from '../services/messagingGateway';
 
 const router = Router();
 
@@ -46,6 +47,19 @@ router.post('/', async (req: Request, res: Response) => {
       }
     });
     res.status(201).json(entry);
+
+    // Telegram notify
+    const lines = [
+      `🧪 *Evaporation Lab Entry*`,
+      b.analysisTime ? `Time: ${b.analysisTime}` : '',
+      entry.syrupConcentration != null ? `Syrup: ${entry.syrupConcentration}%` : '',
+      entry.thinSlopGravity != null ? `Thin Slop SG: ${entry.thinSlopGravity}` : '',
+      entry.spentWashGravity != null ? `Spent Wash SG: ${entry.spentWashGravity}` : '',
+      entry.vacuum != null ? `Vacuum: ${entry.vacuum}` : '',
+      entry.remark ? `Remark: ${entry.remark}` : '',
+    ].filter(Boolean).join('\n');
+    broadcast('evaporation', lines).catch(() => {});
+
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 

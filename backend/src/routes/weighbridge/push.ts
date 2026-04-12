@@ -11,6 +11,7 @@ import {
   PushHandler,
   PushResultEntry,
 } from './shared';
+import { broadcastToGroup } from '../../services/messagingGateway';
 import { runPrePhase } from './pre-phase';
 import { handlePoInbound } from './handlers/poInbound';
 import { handleSpotInbound } from './handlers/spotInbound';
@@ -41,7 +42,7 @@ function detectHandler(w: WeighmentInput, ctx: PushContext): PushHandler {
     switch (w.handler_key) {
       case 'ETHANOL_OUTBOUND': return handleEthanolOutbound;
       case 'DDGS_OUTBOUND': return handleDDGSOutbound;
-      case 'SUGAR_OUTBOUND': return handleSugarOutbound;
+      // case 'SUGAR_OUTBOUND': return handleSugarOutbound; // DISABLED — separate weighbridge
       case 'PO_INBOUND': return handlePoInbound;
       case 'SPOT_INBOUND': return handleSpotInbound;
       // Unknown handlerKey → fall through to auto-detect rather than crash
@@ -55,9 +56,11 @@ function detectHandler(w: WeighmentInput, ctx: PushContext): PushHandler {
     const isEthanol = lower.includes('ethanol') || !!hasValidGatePassId;
     if (isEthanol) return handleEthanolOutbound;
 
-    // Sugar — checked BEFORE DDGS so 'sugar' material doesn't fall through to non-ethanol catch-all
-    const isSugar = w.material_category === 'SUGAR' || /sugar/i.test(w.material || '');
-    if (isSugar) return handleSugarOutbound;
+    // Sugar — DISABLED: sugar will use a separate weighbridge system.
+    // Handler and import kept for when sugar WB is ready. If sugar accidentally
+    // comes through this WB, it falls to nonEthanolOutbound (safe — no data loss).
+    // const isSugar = w.material_category === 'SUGAR' || /sugar/i.test(w.material || '');
+    // if (isSugar) return handleSugarOutbound;
 
     // DDGS family includes both dried (DDGS) and wet (WDGS) variants
     const isDDGS = w.material_category === 'DDGS' ||
@@ -188,6 +191,25 @@ export function registerPushRoutes(router: Router): void {
         const outcome = await handler(w, ctx);
         ids.push(...outcome.ids);
         results.push(...outcome.results);
+
+        // Fire-and-forget weighbridge notification to Group 2
+        const dirEmoji = w.direction === 'IN' ? '🟢' : '🔴';
+        const netTon = w.weight_net ? (w.weight_net / 1000).toFixed(2) : '?';
+        const wbLines = [
+          `${dirEmoji} *${w.direction === 'IN' ? 'Inbound' : 'Outbound'}* — ${w.vehicle_no}`,
+          `Material: ${w.material || 'N/A'}`,
+          `Gross: ${w.weight_gross} kg | Tare: ${w.weight_tare} kg | *Net: ${netTon} MT*`,
+          w.supplier_name ? `Party: ${w.supplier_name}` : '',
+          outcome.results[0]?.type ? `Type: ${outcome.results[0].type}` : '',
+        ].filter(Boolean).join('\n');
+
+        // Send to Group 2 (weighbridge group) — read chatId from settings
+        prisma.settings.findFirst({ select: { telegramGroup2ChatId: true } }).then(s => {
+          if (s?.telegramGroup2ChatId) {
+            broadcastToGroup(s.telegramGroup2ChatId, wbLines, 'weighbridge').catch(() => {});
+          }
+        }).catch(() => {});
+
       } catch (err: any) {
         // Per-item error isolation — one bad record doesn't fail the whole batch.
         //

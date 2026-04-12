@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, authorize } from '../middleware/auth';
+import { broadcast } from '../services/messagingGateway';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -52,6 +53,20 @@ router.post('/', upload.fields([
       }
     });
     res.status(201).json(entry);
+
+    // Telegram notify
+    const lines = [
+      `🧪 *Distillation Lab Entry*`,
+      b.analysisTime ? `Time: ${b.analysisTime}` : '',
+      entry.spentWashLoss != null ? `Spent Wash Loss: ${entry.spentWashLoss}%` : '',
+      entry.rcLessLoss != null ? `RC Less Loss: ${entry.rcLessLoss}%` : '',
+      entry.ethanolStrength != null ? `Ethanol: ${entry.ethanolStrength}%` : '',
+      entry.rcStrength != null ? `RC: ${entry.rcStrength}%` : '',
+      entry.actStrength != null ? `ACT: ${entry.actStrength}%` : '',
+      entry.remark ? `Remark: ${entry.remark}` : '',
+    ].filter(Boolean).join('\n');
+    broadcast('distillation', lines).catch(() => {});
+
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 

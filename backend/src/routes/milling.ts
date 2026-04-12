@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, AuthRequest, authorize } from '../middleware/auth';
+import { broadcast } from '../services/messagingGateway';
 
 const router = Router();
 
@@ -83,6 +84,17 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
       },
     });
     res.status(201).json(entry);
+
+    // Telegram notify
+    const mLines = [
+      `🧪 *Milling Lab Entry*`,
+      analysisTime ? `Time: ${analysisTime}` : '',
+      `Sieve: 1mm=${s1}% | 850μ=${s8}% | 600μ=${s6}% | 300μ=${s3}%`,
+      `Total Fine: ${entry.totalFine}%`,
+      remarks ? `Remarks: ${remarks}` : '',
+    ].filter(Boolean).join('\n');
+    broadcast('milling', mLines).catch(() => {});
+
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
