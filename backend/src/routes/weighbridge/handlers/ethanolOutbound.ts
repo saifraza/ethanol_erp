@@ -126,6 +126,7 @@ async function handleEthanolOutboundInner(w: WeighmentInput, _ctx: PushContext):
           vehicleNo: w.vehicle_no.toUpperCase(),
           partyName: partyName,
           destination: '',
+          quantityBL: w.quantity_bl ?? 40000, // Default 40,000 BL for ethanol tankers
           driverName: w.driver_name || null,
           driverPhone: w.driver_mobile || null,
           transporterName: w.transporter || null,
