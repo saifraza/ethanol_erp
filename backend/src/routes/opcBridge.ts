@@ -483,11 +483,12 @@ const updateMonitorSchema = z.object({
   tagType: z.string().optional(),
   hhAlarm: z.number().nullable().optional(),
   llAlarm: z.number().nullable().optional(),
+  source: z.enum(['ETHANOL', 'SUGAR']).optional(),
 });
 
-router.patch('/monitor/:tag', authenticate, validate(updateMonitorSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.patch('/monitor/:tag(*)', authenticate, validate(updateMonitorSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const opc = getOpcPrisma();
-  const tag = req.params.tag;
+  const tag = decodeURIComponent(req.params.tag);
   const data: Record<string, unknown> = {};
   if (req.body.label !== undefined) data.label = req.body.label;
   if (req.body.description !== undefined) data.description = req.body.description;
@@ -496,6 +497,7 @@ router.patch('/monitor/:tag', authenticate, validate(updateMonitorSchema), async
   if (req.body.tagType) data.tagType = req.body.tagType;
   if (req.body.hhAlarm !== undefined) data.hhAlarm = req.body.hhAlarm;
   if (req.body.llAlarm !== undefined) data.llAlarm = req.body.llAlarm;
+  if (req.body.source) data.source = req.body.source;
 
   if (Object.keys(data).length === 0) {
     res.status(400).json({ error: 'No fields to update' });
@@ -528,7 +530,7 @@ router.patch('/monitor/:tag', authenticate, validate(updateMonitorSchema), async
 }));
 
 // DELETE /api/opc/monitor/:tag — Remove tag from monitoring (soft-delete: set active=false)
-router.delete('/monitor/:tag', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete('/monitor/:tag(*)', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const opc = getOpcPrisma();
   const tag = req.params.tag;
 
@@ -560,13 +562,13 @@ router.get('/live', authenticate, asyncHandler(async (req: AuthRequest, res: Res
     tags = await opc.opcMonitoredTag.findMany({
       where: tagWhere,
       take: 500,
-      select: { tag: true, area: true, folder: true, tagType: true, label: true, description: true, hhAlarm: true, llAlarm: true },
+      select: { tag: true, area: true, folder: true, tagType: true, label: true, description: true, hhAlarm: true, llAlarm: true, source: true },
     });
   } catch {
     tags = await opc.opcMonitoredTag.findMany({
       where: tagWhere,
       take: 500,
-      select: { tag: true, area: true, folder: true, tagType: true, label: true },
+      select: { tag: true, area: true, folder: true, tagType: true, label: true, source: true },
     });
   }
 
@@ -611,7 +613,7 @@ router.get('/live', authenticate, asyncHandler(async (req: AuthRequest, res: Res
 }));
 
 // GET /api/opc/live/:tag — Latest readings for one tag
-router.get('/live/:tag', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get('/live/:tag(*)', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const opc = getOpcPrisma();
   const tag = req.params.tag;
 
@@ -642,9 +644,9 @@ router.get('/live/:tag', authenticate, asyncHandler(async (req: AuthRequest, res
 // GET /api/opc/history/:tag?hours=24&property=PV
 // For <=6h: returns raw readings (~every 2 min) for sharp graphs
 // For >6h: returns hourly aggregates (avg/min/max)
-router.get('/history/:tag', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get('/history/:tag(*)', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const opc = getOpcPrisma();
-  const tag = req.params.tag;
+  const tag = decodeURIComponent(req.params.tag);
   const hours = Math.min(parseInt(req.query.hours as string) || 24, 168);
   const property = (req.query.property as string) || 'PV';
   const source = req.query.source as string | undefined;

@@ -130,6 +130,7 @@ interface LiveTag {
   description: string;
   hhAlarm: number | null;
   llAlarm: number | null;
+  source: string;
   updatedAt: string | null;
   values: Record<string, number>;
 }
@@ -197,7 +198,7 @@ export default function OPCTagManager({ source }: { source?: 'ETHANOL' | 'SUGAR'
 
   // Edit state
   const [editingTag, setEditingTag] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({ description: '', hhAlarm: '', llAlarm: '' });
+  const [editForm, setEditForm] = useState({ description: '', hhAlarm: '', llAlarm: '', source: 'ETHANOL' as string });
   const [saving, setSaving] = useState(false);
 
   // Detail/history state
@@ -344,7 +345,7 @@ export default function OPCTagManager({ source }: { source?: 'ETHANOL' | 'SUGAR'
   async function removeTag(tag: string) {
     setRemoving(prev => new Set(prev).add(tag));
     try {
-      await api.delete(`/opc/monitor/${tag}`);
+      await api.delete(`/opc/monitor/${encodeURIComponent(tag)}`);
       setSuccess(`Removed ${tag}`);
       setTimeout(() => setSuccess(''), 3000);
       setLiveTags(prev => prev.filter(t => t.tag !== tag));
@@ -363,7 +364,8 @@ export default function OPCTagManager({ source }: { source?: 'ETHANOL' | 'SUGAR'
       if (editForm.description !== undefined) data.description = editForm.description;
       data.hhAlarm = editForm.hhAlarm ? parseFloat(editForm.hhAlarm) : null;
       data.llAlarm = editForm.llAlarm ? parseFloat(editForm.llAlarm) : null;
-      await api.patch(`/opc/monitor/${tag}`, data);
+      if (editForm.source) data.source = editForm.source;
+      await api.patch(`/opc/monitor/${encodeURIComponent(tag)}`, data);
       setSuccess(`Updated ${tag}`);
       setTimeout(() => setSuccess(''), 3000);
       setEditingTag(null);
@@ -580,8 +582,15 @@ export default function OPCTagManager({ source }: { source?: 'ETHANOL' | 'SUGAR'
                         <tr key={t.tag} className="border-b border-slate-100 bg-blue-50/30">
                           <td className="px-3 py-1.5 font-mono text-slate-800 border-r border-slate-100">{t.tag}</td>
                           <td className="px-1 py-1 border-r border-slate-100">
-                            <input value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))}
-                              className="border border-slate-300 px-2 py-1 text-xs w-full focus:outline-none focus:ring-1 focus:ring-blue-400" placeholder="e.g. Fermenter 1A Level" />
+                            <div className="flex gap-1">
+                              <input value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))}
+                                className="border border-slate-300 px-2 py-1 text-xs flex-1 focus:outline-none focus:ring-1 focus:ring-blue-400" placeholder="e.g. Fermenter 1A Level" />
+                              <select value={editForm.source} onChange={e => setEditForm(f => ({ ...f, source: e.target.value }))}
+                                className="border border-slate-300 px-1 py-1 text-[10px] focus:outline-none focus:ring-1 focus:ring-blue-400">
+                                <option value="ETHANOL">ETH</option>
+                                <option value="SUGAR">SUG</option>
+                              </select>
+                            </div>
                           </td>
                           <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-800 border-r border-slate-100 font-bold">{fmtVal(val)}</td>
                           <td className="px-1 py-1 border-r border-slate-100">
@@ -636,7 +645,7 @@ export default function OPCTagManager({ source }: { source?: 'ETHANOL' | 'SUGAR'
                             {fmtAgo(t.updatedAt)}
                           </td>
                           <td className="px-2 py-1.5 text-center whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                            <button onClick={() => { setEditingTag(t.tag); setEditForm({ description: t.description || '', hhAlarm: t.hhAlarm != null ? String(t.hhAlarm) : '', llAlarm: t.llAlarm != null ? String(t.llAlarm) : '' }); }}
+                            <button onClick={() => { setEditingTag(t.tag); setEditForm({ description: t.description || '', hhAlarm: t.hhAlarm != null ? String(t.hhAlarm) : '', llAlarm: t.llAlarm != null ? String(t.llAlarm) : '', source: t.source || 'ETHANOL' }); }}
                               className="px-2 py-0.5 bg-white border border-slate-300 text-slate-600 text-[10px] font-bold uppercase hover:bg-slate-50 mr-1">
                               Edit
                             </button>
