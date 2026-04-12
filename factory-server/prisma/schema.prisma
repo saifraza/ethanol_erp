@@ -288,6 +288,21 @@ model BusinessRule {
   @@index([enabled])
 }
 
+// --- WASH TOTALIZER ---
+// Factory-side backup totalizer for wash flow (MG_140101).
+// Accumulates PRV_HR readings independently of cloud OPC DB.
+// Gap-proof: even if cloud OPC bridge is down, factory can compute wash delta.
+model WashTotalizer {
+  id              String   @id @default(uuid())
+  hour            DateTime @unique // Hour bucket (truncated to hour)
+  prvHrValue      Float    // PRV_HR reading for this hour (KL)
+  accumulatedKL   Float    // Running total since first reading
+  source          String   @default("OPC_BRIDGE") // OPC_BRIDGE, MANUAL
+  createdAt       DateTime @default(now())
+
+  @@index([hour])
+}
+
 // --- WEIGHMENT CORRECTION LOG ---
 // Local mirror of cloud-initiated corrections. Cloud is the master for
 // admin edits (see .claude/skills/weighment-corrections.md). Factory receives

@@ -917,7 +917,8 @@ model EthanolProductEntry {
   productionAL  Float           @default(0) // productionBL × avgStrength / 100
   klpd          Float           @default(0) // kilolitres per day flow rate
   // Grain consumption — snapshotted from OPC at dip time
-  washKL           Float?  // wash flow totalizer delta between prev dip and this dip
+  washTotalizer    Float?  // DCS cumulative totalizer (MG_140101 CURRENT) at dip time
+  washKL           Float?  // wash flow delta between prev dip and this dip
   grainConsumedMT  Float?  // washKL × grainPct
   yieldALperMT     Float?  // productionAL / grainConsumedMT
   grainPctUsed     Float?  // grain% setting at time of calculation

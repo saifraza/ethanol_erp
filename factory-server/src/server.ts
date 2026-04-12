@@ -11,6 +11,7 @@ import syncRoutes from './routes/sync';
 import authRoutes from './routes/auth';
 import cloudProxyRoutes from './routes/cloudProxy';
 import settingsRoutes from './routes/settings';
+import washTotalizerRoutes from './routes/washTotalizer';
 import { startPCMonitor, getAllPCStatus } from './services/pcMonitor';
 import { getCameraStatus } from './services/cameraCapture';
 import { startSyncWorker, getSyncWorkerStatus } from './services/syncWorker';
@@ -51,6 +52,7 @@ app.use('/api/master-data', masterDataRoutes);
 app.use('/api/sync', syncRoutes);
 app.use('/api/cloud', cloudProxyRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/wash-totalizer', washTotalizerRoutes);
 
 // LAN PC status endpoint — factory server polls all PCs
 app.get('/api/factory-pcs', (_req, res) => {

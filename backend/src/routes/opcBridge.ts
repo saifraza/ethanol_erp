@@ -275,6 +275,23 @@ router.post('/push-hourly', validate(pushHourlySchema), asyncHandler(async (req:
     data: { syncType: 'hourly', readingCount: hourly.length, batchId: src },
   });
 
+  // Fire-and-forget: push MG_140101 PRV_HR to factory wash totalizer
+  const washReading = hourly.find((h: any) => h.tag === 'MG_140101' && h.property === 'PRV_HR');
+  if (washReading) {
+    const factoryUrl = process.env.FACTORY_API_URL || 'http://100.126.101.7:5000';
+    const factoryKey = process.env.WB_PUSH_KEY || '';
+    import('axios').then(({ default: axios }) => {
+      axios.post(`${factoryUrl}/api/wash-totalizer/record`, {
+        prvHrValue: washReading.avg,
+        hour: washReading.hour,
+        source: 'OPC_BRIDGE',
+      }, {
+        headers: { Authorization: `Bearer ${factoryKey}` },
+        timeout: 5000,
+      }).catch(() => { /* silent — factory might be unreachable */ });
+    }).catch(() => {});
+  }
+
   res.json({ ok: true, received: hourly.length });
 }));
 
