@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, authorize } from '../middleware/auth';
+import { authenticate, authorize, AuthRequest, getCompanyFilter } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import PDFDocument from 'pdfkit';
 import { sendEmail } from '../services/messaging';
@@ -105,12 +105,12 @@ If a field is not found, use null for strings and 0 for numbers. Return ONLY the
 }));
 
 // GET / — list with filters (vendorId, status)
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', async (req: AuthRequest, res: Response) => {
   try {
     const vendorId = req.query.vendorId as string | undefined;
     const status = req.query.status as string | undefined;
 
-    const where: any = {};
+    const where: any = { ...getCompanyFilter(req) };
     if (vendorId) where.vendorId = vendorId;
     if (status) where.status = status;
 
@@ -204,7 +204,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 });
 
 // POST / — create vendor invoice
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', async (req: AuthRequest, res: Response) => {
   try {
     const b = req.body;
 
@@ -306,7 +306,8 @@ router.post('/', async (req: Request, res: Response) => {
         status: b.status || 'PENDING',
         filePath: b.filePath || null,
         remarks: b.remarks || null,
-        userId: (req as any).user.id,
+        userId: req.user!.id,
+        companyId: req.user?.companyId || null,
       },
     });
 

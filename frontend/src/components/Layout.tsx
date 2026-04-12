@@ -5,9 +5,14 @@ import api from '../services/api';
 import AIChatWidget from './AIChatWidget';
 import {
   LayoutDashboard, LogOut, ChevronDown, ChevronRight,
-  WifiOff, Menu, X, Bell
+  WifiOff, Menu, X, Bell, Building2
 } from 'lucide-react';
 import { processNav, salesNav, procurementNav, tradeNav, accountsNav, booksNav, inventoryNav, complianceNav, taxNav, hrNav, adminNav } from '../config/modules';
+
+// Admin-section items that only make sense for the plant company (MSPIL)
+const plantOnlyAdminKeys = new Set([
+  'plant-issues', 'weighment-system', 'weighment-history-report', 'weighment-corrections',
+]);
 
 function hasModuleAccess(user: any, moduleKey: string): boolean {
   if (!user) return false;
@@ -28,6 +33,8 @@ export default function Layout() {
   const { user, logout } = useAuth();
   const location = useLocation();
   const p = location.pathname;
+  const isPlantCompany = !user?.companyCode || user.companyCode === 'MSPIL';
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
   const [processOpen, setProcessOpen] = useState(p.startsWith('/process') || p.startsWith('/purchase-requisition'));
   const [salesOpen, setSalesOpen] = useState(p.startsWith('/sales'));
   const [procurementOpen, setProcurementOpen] = useState(p.startsWith('/procurement') || p.startsWith('/fuel'));
@@ -117,7 +124,7 @@ export default function Layout() {
         <div className="p-4 border-b border-gray-700 flex items-center justify-between">
           <div>
             <h1 className="text-base font-bold tracking-wide">DISTILLERY ERP</h1>
-            <p className="text-[11px] text-gray-400 mt-0.5">Mahakaushal Sugar & Power</p>
+            <p className="text-[11px] text-gray-400 mt-0.5">{user?.companyName || 'Mahakaushal Sugar & Power'}</p>
           </div>
           <button onClick={closeSidebar} className="md:hidden text-gray-400 hover:text-white p-1">
             <X size={20} />
@@ -125,10 +132,11 @@ export default function Layout() {
         </div>
 
         <nav className="flex-1 p-2 space-y-1">
-          {hasModuleAccess(user, 'dashboard') && (
+          {isPlantCompany && hasModuleAccess(user, 'dashboard') && (
             <NavLink to="/dashboard" label="Dashboard" icon={LayoutDashboard} active={location.pathname === '/dashboard'} onClick={closeSidebar} />
           )}
 
+          {isPlantCompany && (<>
           <button onClick={() => setProcessOpen(!processOpen)} className="flex items-center justify-between w-full px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mt-3 hover:text-gray-200">
             <span>Plant</span>
             {processOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -140,6 +148,7 @@ export default function Layout() {
               ))}
             </div>
           )}
+          </>)}
 
           {salesNav.some(n => hasModuleAccess(user, n.moduleKey)) && (<>
           <button onClick={() => setSalesOpen(!salesOpen)} className="flex items-center justify-between w-full px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mt-3 hover:text-gray-200">
@@ -169,7 +178,7 @@ export default function Layout() {
           )}
           </>)}
 
-          {tradeNav.some(n => hasModuleAccess(user, n.moduleKey)) && (<>
+          {isPlantCompany && tradeNav.some(n => hasModuleAccess(user, n.moduleKey)) && (<>
           <button onClick={() => setTradeOpen(!tradeOpen)} className="flex items-center justify-between w-full px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mt-3 hover:text-gray-200">
             <span>Spot Trade</span>
             {tradeOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -225,7 +234,7 @@ export default function Layout() {
           )}
           </>)}
 
-          {complianceNav.some(n => hasModuleAccess(user, n.moduleKey)) && (<>
+          {isPlantCompany && complianceNav.some(n => hasModuleAccess(user, n.moduleKey)) && (<>
           <button onClick={() => setComplianceOpen(!complianceOpen)} className="flex items-center justify-between w-full px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mt-3 hover:text-gray-200">
             <span>Compliance</span>
             {complianceOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -267,16 +276,19 @@ export default function Layout() {
           )}
           </>)}
 
-          {adminNav.some(n => (!n.adminOnly || user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') && hasModuleAccess(user, n.moduleKey)) && (<>
+          {adminNav.some(n => (!n.adminOnly || isAdmin) && hasModuleAccess(user, n.moduleKey) && (isPlantCompany || !plantOnlyAdminKeys.has(n.moduleKey))) && (<>
           <button onClick={() => setAdminOpen(!adminOpen)} className="flex items-center justify-between w-full px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mt-3 hover:text-gray-200">
             <span>Admin</span>
             {adminOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           </button>
           {adminOpen && (
             <div className="space-y-0.5 ml-1 border-l border-gray-700 pl-2">
-              {adminNav.filter(n => (!n.adminOnly || user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') && hasModuleAccess(user, n.moduleKey)).map(n => (
+              {adminNav.filter(n => (!n.adminOnly || isAdmin) && hasModuleAccess(user, n.moduleKey) && (isPlantCompany || !plantOnlyAdminKeys.has(n.moduleKey))).map(n => (
                 <NavLink key={n.to} {...n} active={location.pathname === n.to} onClick={closeSidebar} />
               ))}
+              {isPlantCompany && isAdmin && (
+                <NavLink to="/admin/companies" label="Companies" icon={Building2} active={location.pathname === '/admin/companies'} onClick={closeSidebar} />
+              )}
             </div>
           )}
           </>)}

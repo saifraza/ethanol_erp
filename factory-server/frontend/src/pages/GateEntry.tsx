@@ -4,7 +4,8 @@ import { useAuth } from '../context/AuthContext';
 
 interface Supplier { id: string; name: string }
 interface Material { id: string; name: string; category?: string }
-interface PO { id: string; po_no: number; vendor_name: string; vendor_id?: string; status: string; deal_type?: string; lines: POLine[] }
+interface PO { id: string; po_no: number; vendor_name: string; vendor_id?: string; status: string; deal_type?: string; company_id?: string | null; lines: POLine[] }
+interface Company { id: string; code: string; name: string; shortName: string | null }
 interface POLine { id: string; description: string; quantity: number; received_qty: number; pending_qty: number; rate: number; unit: string }
 interface Customer { id: string; name: string; gstNo?: string | null; address?: string | null; state?: string | null; pincode?: string | null }
 interface Trader { id: string; name: string; phone?: string; productTypes?: string; category?: string }
@@ -39,8 +40,11 @@ export default function GateEntry() {
   const [pos, setPos] = useState<PO[]>([]);
   const [traders, setTraders] = useState<Trader[]>([]);
   const [vehicles, setVehicles] = useState<string[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
 
   // Form state
+  const [selectedCompanyId, setSelectedCompanyId] = useState('');
+  const [selectedCompanyCode, setSelectedCompanyCode] = useState('');
   const [direction, setDirection] = useState<'INBOUND' | 'OUTBOUND'>('INBOUND');
   const [purchaseType, setPurchaseType] = useState<'PO' | 'SPOT' | 'TRADER' | 'JOB_WORK'>('PO');
   const [selectedTraderId, setSelectedTraderId] = useState('');
@@ -108,6 +112,13 @@ export default function GateEntry() {
       setEthContracts(data.ethContracts || []);
       setDdgsContracts(data.ddgsContracts || []);
       setScrapOrders(data.scrapOrders || []);
+      const cos = data.companies || [];
+      setCompanies(cos);
+      // Auto-select first company if none selected yet
+      if (cos.length > 0) {
+        setSelectedCompanyId(prev => prev || cos[0].id);
+        setSelectedCompanyCode(prev => prev || cos[0].code);
+      }
       // Check staleness from /api/master-data/status (separate call, cheap)
       try {
         const stat = await api.get('/master-data/status');
@@ -146,6 +157,11 @@ export default function GateEntry() {
   const filteredPOs = pos.filter(p => {
     // Hide trader POs from PO and JOB_WORK modes — traders use TRADER mode
     if (purchaseType === 'PO' || purchaseType === 'JOB_WORK') return !p.vendor_id || !traderIds.has(p.vendor_id);
+    return true;
+  }).filter(p => {
+    // Filter by selected company (if companies exist and one is selected)
+    if (selectedCompanyId && p.company_id) return p.company_id === selectedCompanyId;
+    // Show POs with no company (legacy) regardless of selection
     return true;
   }).filter(p => !supplierName || p.vendor_name.toLowerCase().includes(supplierName.toLowerCase()));
   const selectedPO = pos.find(p => p.id === selectedPoId);
@@ -217,6 +233,8 @@ export default function GateEntry() {
         bags: bags ? parseInt(bags) : undefined,
         remarks,
         operatorName: user?.name || user?.username,
+        companyId: selectedCompanyId || undefined,
+        companyCode: selectedCompanyCode || undefined,
       };
       // Outbound: Ship-To (only when "different party" picked)
       if (direction === 'OUTBOUND' && shipToMode === 'DIFFERENT' && shipToCustomerId) {
@@ -354,6 +372,19 @@ export default function GateEntry() {
           </>
         )}
       </div>
+
+      {/* Company Selector */}
+      {companies.length > 1 && (
+        <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 bg-slate-50 px-4 py-2 flex items-center gap-3">
+          <span className="text-xs font-bold text-slate-700 uppercase tracking-widest">Company:</span>
+          {companies.map(c => (
+            <button key={c.id} onClick={() => { setSelectedCompanyId(c.id); setSelectedCompanyCode(c.code); setSelectedPoId(''); }}
+              className={`px-3 py-1.5 text-sm font-bold uppercase ${selectedCompanyId === c.id ? 'bg-indigo-600 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+              {c.shortName || c.name} ({c.code})
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Form */}
       <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 bg-white p-4">

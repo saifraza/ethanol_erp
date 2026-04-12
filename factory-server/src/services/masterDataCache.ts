@@ -20,12 +20,13 @@ let syncTimer: ReturnType<typeof setInterval> | null = null;
 interface Supplier { id: string; name: string; gstin: string | null; phone: string | null }
 interface Material { id: string; name: string; unit: string | null; category: string | null; hsnCode: string | null; gstPercent: number; division: string | null; aliases: string[]; handlerKey: string | null; isContractBased: boolean; needsLabTest: boolean }
 interface POLine { id: string; inventory_item_id: string | null; material_id: string | null; description: string; quantity: number; received_qty: number; pending_qty: number; rate: number; unit: string; hsn_code: string; gst_percent: number }
-interface PO { id: string; po_no: number; vendor_name: string; vendor_id: string; status: string; deal_type: string; lines: POLine[] }
+interface PO { id: string; po_no: number; vendor_name: string; vendor_id: string; status: string; deal_type: string; company_id: string | null; lines: POLine[] }
 interface Trader { id: string; name: string; phone: string | null; productTypes: string | null; category: string | null }
 interface Customer { id: string; name: string; shortName: string | null; gstNo: string | null; address: string | null; state: string | null; pincode: string | null }
 interface EthContract { id: string; contractNo: string; contractType: string; buyerName: string; buyerGst: string | null; buyerAddress: string | null; conversionRate: number | null; ethanolRate: number | null; gstPercent: number | null; paymentTermsDays: number | null; omcDepot: string | null }
 interface DdgsContract { id: string; contractNo: string; status: string; dealType: string; buyerName: string; buyerGstin: string | null; buyerAddress: string | null; buyerState: string | null; principalName: string | null; rate: number | null; processingChargePerMT: number | null; gstPercent: number | null; contractQtyMT: number | null; totalSuppliedMT: number | null; startDate: string | null; endDate: string | null }
 interface ScrapSalesOrder { id: string; entryNo: number; buyerName: string; productName: string; rate: number; unit: string; validFrom: string | null; validTo: string | null; status: string; quantity: number; totalSuppliedQty: number }
+interface Company { id: string; code: string; name: string; shortName: string | null }
 
 interface MasterCache {
   suppliers: Supplier[];
@@ -37,6 +38,7 @@ interface MasterCache {
   ethContracts: EthContract[];
   ddgsContracts: DdgsContract[];
   scrapOrders: ScrapSalesOrder[];
+  companies: Company[];
   lastCloudSync: string | null;
   lastCloudCheck: string | null;
   cloudTimestamp: string | null;
@@ -44,7 +46,7 @@ interface MasterCache {
 }
 
 const EMPTY_CACHE: MasterCache = {
-  suppliers: [], materials: [], pos: [], traders: [], customers: [], vehicles: [], ethContracts: [], ddgsContracts: [], scrapOrders: [],
+  suppliers: [], materials: [], pos: [], traders: [], customers: [], vehicles: [], ethContracts: [], ddgsContracts: [], scrapOrders: [], companies: [],
   lastCloudSync: null, lastCloudCheck: null, cloudTimestamp: null, source: 'empty',
 };
 
@@ -132,6 +134,7 @@ function loadFromDisk(): boolean {
       data.ethContracts = data.ethContracts || [];
       data.ddgsContracts = data.ddgsContracts || [];
       data.scrapOrders = data.scrapOrders || [];
+      data.companies = data.companies || [];
       // Stage 2 schema evolution: backfill new Material fields on cached entries
       data.materials = (data.materials || []).map(m => ({
         ...m,
@@ -201,7 +204,7 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
           OR: [{ deliveryDate: null }, { deliveryDate: { gte: new Date() } }],
         },
         select: {
-          id: true, poNo: true, vendorId: true, status: true, dealType: true,
+          id: true, poNo: true, vendorId: true, status: true, dealType: true, companyId: true,
           vendor: { select: { id: true, name: true } },
           lines: {
             select: {
@@ -303,6 +306,21 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
       console.error('[CACHE] Scrap orders sync failed:', err instanceof Error ? err.message : err);
     }
 
+    // Companies — separate query with own error handling
+    let companies: Company[] = cache.companies;
+    try {
+      const rows = await cloud.company.findMany({
+        where: { isActive: true },
+        select: { id: true, code: true, name: true, shortName: true },
+        orderBy: { code: 'asc' },
+        take: 50,
+      });
+      companies = rows.map(r => ({ id: r.id, code: r.code, name: r.name, shortName: r.shortName }));
+      console.log(`[CACHE] Companies: ${companies.length}`);
+    } catch (err) {
+      console.error('[CACHE] Companies sync failed:', err instanceof Error ? err.message : err);
+    }
+
     // Get recent vehicles from local DB
     let vehicles: string[] = cache.vehicles; // Keep existing if local query fails
     try {
@@ -340,6 +358,7 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
         vendor_id: po.vendorId,
         status: po.status,
         deal_type: po.dealType,
+        company_id: po.companyId || null,
         lines: po.lines.map((l: any) => ({
           id: l.id,
           inventory_item_id: l.inventoryItemId,
@@ -359,6 +378,7 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
       ethContracts: ethContracts.map(c => ({ id: c.id, contractNo: c.contractNo, contractType: c.contractType, buyerName: c.buyerName, buyerGst: c.buyerGst, buyerAddress: c.buyerAddress, conversionRate: c.conversionRate, ethanolRate: c.ethanolRate, gstPercent: c.gstPercent, paymentTermsDays: c.paymentTermsDays, omcDepot: c.omcDepot })),
       ddgsContracts,
       scrapOrders,
+      companies,
       vehicles,
       lastCloudSync: now,
       lastCloudCheck: now,

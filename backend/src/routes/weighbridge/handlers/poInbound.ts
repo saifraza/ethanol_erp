@@ -110,6 +110,7 @@ export async function handlePoInbound(w: WeighmentInput, ctx: PushContext): Prom
       transporterName: w.transporter || undefined,
       materialType: w.material || undefined,
       ticketNo: w.ticket_no || undefined,
+      companyId: w.company_id || po.companyId || undefined,
     };
     const truck = existingTruck
       ? await prisma.grainTruck.update({
@@ -207,6 +208,7 @@ export async function handlePoInbound(w: WeighmentInput, ctx: PushContext): Prom
             driverName: w.driver_name || null,
             driverMobile: w.driver_mobile || null,
             transporterName: w.transporter || null,
+            companyId: w.company_id || po.companyId || null,
           },
           include: { lines: true },
         });
@@ -232,6 +234,7 @@ export async function handlePoInbound(w: WeighmentInput, ctx: PushContext): Prom
           driverName: w.driver_name || null,
           driverMobile: w.driver_mobile || null,
           transporterName: w.transporter || null,
+          companyId: w.company_id || po.companyId || null,
           status: 'CONFIRMED',
           userId: 'system-weighbridge',
           lines: {
@@ -334,6 +337,7 @@ export async function handlePoInbound(w: WeighmentInput, ctx: PushContext): Prom
       transporterName: w.transporter || undefined,
       materialType: w.material || undefined,
       ticketNo: w.ticket_no || undefined,
+      companyId: w.company_id || po.companyId || undefined,
     };
     const persistTruck = existingTruck
       ? prisma.grainTruck.update({

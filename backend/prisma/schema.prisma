@@ -7,6 +7,35 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ── Company (Multi-Tenant) ──
+// MSPIL + sister concern companies. Each company gets its own vendors, POs, GRNs, accounts.
+model Company {
+  id            String   @id @default(uuid())
+  code          String   @unique // "MSPIL", "SC-A", "SC-B"
+  name          String // full legal name
+  shortName     String? // display name
+  gstin         String?
+  pan           String?
+  gstState      String? // 2-digit state code
+  address       String?
+  city          String?
+  state         String?
+  pincode       String?
+  contactPerson String?
+  phone         String?
+  email         String?
+  bankName      String?
+  bankBranch    String?
+  bankAccount   String?
+  bankIfsc      String?
+  isDefault     Boolean  @default(false) // true = MSPIL (primary company)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  users User[]
+}
+
 model User {
   id             String       @id @default(cuid())
   email          String       @unique
@@ -18,12 +47,15 @@ model User {
   phone          String?      // for mobile app PIN login
   mobilePin      String?      // hashed PIN for mobile app
   pushToken      String?      // Expo push notification token
+  companyId      String? // FK → Company (null = MSPIL default for backwards compat)
+  company        Company?     @relation(fields: [companyId], references: [id])
   isActive       Boolean      @default(true)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   grainEntries   GrainEntry[]
 
   @@index([phone])
+  @@index([companyId])
 }
 
 model DailyEntry {
@@ -1003,6 +1035,7 @@ model GrainTruck {
   releaseAt        DateTime? // when the truck was released (future — factory doesn't track yet)
 
   division    String?               @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  companyId   String? // FK → Company (null = MSPIL default)
   corrections WeighmentCorrection[]
 
   @@index([date])
@@ -1011,6 +1044,7 @@ model GrainTruck {
   @@index([ticketNo])
   @@index([division])
   @@index([gateEntryAt])
+  @@index([companyId])
   @@index([firstWeightAt])
 }
 
@@ -2001,7 +2035,9 @@ model Vendor {
 
   divisions String[] @default([]) // empty = available to all divisions
 
+  companyId String? // FK → Company (null = MSPIL default)
   @@index([isAgent])
+  @@index([companyId])
 }
 
 // ── Vendor-Item Pricing (what items a vendor supplies + negotiated rates) ──
@@ -2107,13 +2143,15 @@ model PurchaseOrder {
   vendorInvoices VendorInvoice[]
   grainTrucks    GrainTruck[]
 
-  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division  String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  companyId String? // FK → Company (null = MSPIL default)
 
   @@index([vendorId])
   @@index([status])
   @@index([vendorId, dealType, status])
   @@index([requisitionId])
   @@index([division])
+  @@index([companyId])
 }
 
 // ── PO Line Item ──
@@ -2212,12 +2250,14 @@ model GoodsReceipt {
   vendorInvoices VendorInvoice[]
   grainTrucks    GrainTruck[]
 
-  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division  String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  companyId String? // FK → Company (null = MSPIL default)
 
   @@index([poId])
   @@index([vendorId])
   @@index([ticketNo])
   @@index([division])
+  @@index([companyId])
 }
 
 // ── GRN Line Item ──
@@ -2316,13 +2356,15 @@ model VendorInvoice {
 
   payments VendorPayment[]
 
-  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division  String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  companyId String? // FK → Company (null = MSPIL default)
 
   @@index([vendorId])
   @@index([poId])
   @@index([status])
   @@index([invoiceDate])
   @@index([division])
+  @@index([companyId])
 }
 
 // ── Vendor Payment ──
@@ -2355,7 +2397,8 @@ model VendorPayment {
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
-  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division  String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  companyId String? // FK → Company (null = MSPIL default)
 
   @@index([vendorId])
   @@index([invoiceId])
@@ -2363,6 +2406,7 @@ model VendorPayment {
   @@index([paymentStatus])
   @@index([bankFileBatch])
   @@index([division])
+  @@index([companyId])
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -2808,11 +2852,13 @@ model Account {
   openingBalance   Float             @default(0)
   journalLines     JournalLine[]
   bankTransactions BankTransaction[]
+  companyId        String? // FK → Company (null = MSPIL default)
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
   @@index([type])
   @@index([parentId])
+  @@index([companyId])
 }
 
 model JournalEntry {
@@ -2830,12 +2876,14 @@ model JournalEntry {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division  String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  companyId String? // FK → Company (null = MSPIL default)
 
   @@index([date])
   @@index([refType, refId])
   @@index([userId])
   @@index([division])
+  @@index([companyId])
 }
 
 model JournalLine {

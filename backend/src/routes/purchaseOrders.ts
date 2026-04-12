@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest, authorize } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize, getCompanyFilter } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { generatePOPdf } from '../utils/pdfGenerator';
 // RAG indexing removed — only compliance docs go to RAG
@@ -18,7 +18,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const page = parseInt(req.query.page as string) || 1;
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 500);
 
-    const where: any = {};
+    const where: any = { ...getCompanyFilter(req) };
     if (status) {
       const statuses = status.split(',').map(s => s.trim()).filter(Boolean);
       where.status = statuses.length === 1 ? statuses[0] : { in: statuses };
@@ -292,6 +292,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         tdsAmount,
         status: 'DRAFT',
         userId: req.user!.id,
+        companyId: req.user?.companyId || null,
         lines: {
           create: processedLines,
         },

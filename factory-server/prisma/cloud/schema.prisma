@@ -17,6 +17,15 @@ datasource db {
   url      = env("CLOUD_DATABASE_URL")
 }
 
+// ── Company (cloud: Company table) ──
+model Company {
+  id        String  @id @default(uuid())
+  code      String  @unique
+  name      String
+  shortName String?
+  isActive  Boolean @default(true)
+}
+
 // ── Vendor (cloud: Vendor table) ──
 model Vendor {
   id              String   @id @default(uuid())
@@ -150,6 +159,7 @@ model PurchaseOrder {
   transportBy     String?
   dealType        String   @default("STANDARD")
   status          String   @default("DRAFT")
+  companyId       String?
   approvedBy      String?
   approvedAt      DateTime?
   remarks         String?

@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest, authorize } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize, getCompanyFilter } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { ValidationError } from '../shared/errors';
 import { onStockMovement } from '../services/autoJournal';
@@ -131,7 +131,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
 
     const archived = req.query.archived === 'true';
     const grnType = req.query.grnType as string | undefined;
-    const where: any = { archived };
+    const where: any = { archived, ...getCompanyFilter(req) };
     if (poId) where.poId = poId;
     if (vendorId) where.vendorId = vendorId;
     if (status) where.status = status;
@@ -599,6 +599,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
           totalQty,
           status: 'DRAFT',
           userId: req.user!.id,
+          companyId: req.user?.companyId || null,
           lines: {
             create: processedLines,
           },

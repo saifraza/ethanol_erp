@@ -111,6 +111,9 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
     rst_no: w.rstNo || undefined,
     driver_license: w.driverLicense || undefined,
     peso_date: w.pesoDate || undefined,
+    // Multi-company tenancy
+    company_id: w.companyId || undefined,
+    company_code: w.companyCode || undefined,
     // Ship-To snapshot (outbound only; null = same as Bill-To)
     ship_to_customer_id: w.shipToCustomerId || undefined,
     ship_to_name: w.shipToName || undefined,

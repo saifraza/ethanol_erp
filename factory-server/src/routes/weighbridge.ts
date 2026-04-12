@@ -277,6 +277,8 @@ router.post('/gate-entry', requireAuth, requireRole('GATE_ENTRY', 'ADMIN'), asyn
     cloudContractId,
     // Ship-To (outbound only; omit = Bill-To == Ship-To)
     shipToCustomerId, shipToName, shipToGstin, shipToAddress, shipToState, shipToPincode,
+    // Multi-company tenancy
+    companyId, companyCode,
   } = req.body;
 
   if (!vehicleNo) {
@@ -461,6 +463,9 @@ router.post('/gate-entry', requireAuth, requireRole('GATE_ENTRY', 'ADMIN'), asyn
       cloudGatePassId: cloudGatePassId || null,
       // DDGS outbound: link to cloud DDGSContract picked at gate entry
       cloudContractId: cloudContractId || null,
+      // Multi-company tenancy
+      companyId: companyId || null,
+      companyCode: companyCode || null,
       // Ship-To (outbound; null = Bill-To == Ship-To)
       shipToCustomerId: !isInbound ? (shipToCustomerId || null) : null,
       shipToName: !isInbound ? resolvedShipToName : null,
@@ -597,7 +602,7 @@ router.post('/:id/gross', requireAuth, requireRole('GROSS_WB', 'ADMIN'), asyncHa
 // POST /api/weighbridge/:id/tare — Capture tare weight (empty truck)
 // Outbound: this is the 1st weighment. Inbound: this is the 2nd weighment.
 router.post('/:id/tare', requireAuth, requireRole('TARE_WB', 'ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
-  const { weight, weightSource, pcId, quantityBL, strength, sealNo } = req.body;
+  const { weight, weightSource, pcId, quantityBL, strength, sealNo, rstNo, driverLicense, pesoDate } = req.body;
 
   if (!weight || typeof weight !== 'number' || weight <= 0) {
     res.status(400).json({ error: 'weight must be a positive number (KG)' });
@@ -663,6 +668,9 @@ router.post('/:id/tare', requireAuth, requireRole('TARE_WB', 'ADMIN'), asyncHand
     if (quantityBL != null) updateData.quantityBL = parseFloat(quantityBL);
     if (strength != null) updateData.strength = parseFloat(strength);
     if (sealNo) updateData.sealNo = sealNo;
+    if (rstNo) updateData.rstNo = rstNo;
+    if (driverLicense) updateData.driverLicense = driverLicense;
+    if (pesoDate) updateData.pesoDate = pesoDate;
   }
 
   const result = await prisma.weighment.updateMany({

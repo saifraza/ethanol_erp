@@ -65,6 +65,7 @@ router.post('/login', async (req: AuthRequest, res: Response) => {
           { email: { equals: username, mode: 'insensitive' } },
         ],
       },
+      include: { company: { select: { id: true, code: true, name: true, shortName: true } } },
     });
     if (!user || !user.isActive) {
       res.status(401).json({ error: 'Invalid credentials' });
@@ -78,7 +79,7 @@ router.post('/login', async (req: AuthRequest, res: Response) => {
     }
 
     const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role, name: user.name, allowedModules: user.allowedModules, paymentRole: user.paymentRole },
+      { id: user.id, email: user.email, role: user.role, name: user.name, allowedModules: user.allowedModules, paymentRole: user.paymentRole, companyId: user.companyId, companyCode: user.company?.code || 'MSPIL' },
       config.jwtSecret,
       { expiresIn: '7d' }
     );
@@ -92,6 +93,9 @@ router.post('/login', async (req: AuthRequest, res: Response) => {
         role: user.role,
         allowedModules: user.allowedModules,
         paymentRole: user.paymentRole,
+        companyId: user.companyId,
+        companyCode: user.company?.code || 'MSPIL',
+        companyName: user.company?.shortName || user.company?.name || 'MSPIL',
       },
     });
   } catch (err: any) {
@@ -107,9 +111,9 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
     }
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
-      select: { id: true, email: true, name: true, role: true, allowedModules: true, paymentRole: true, isActive: true, createdAt: true },
+      select: { id: true, email: true, name: true, role: true, allowedModules: true, paymentRole: true, isActive: true, createdAt: true, companyId: true, company: { select: { id: true, code: true, name: true, shortName: true } } },
     });
-    res.json(user);
+    res.json({ ...user, companyCode: user?.company?.code || 'MSPIL', companyName: user?.company?.shortName || user?.company?.name || 'MSPIL' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

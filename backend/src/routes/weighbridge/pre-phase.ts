@@ -61,6 +61,7 @@ export async function runPrePhase(w: WeighmentInput, ctx: PushContext): Promise<
       const netTon = (w.weight_net || 0) / 1000;
       const updateData: Record<string, unknown> = {
         remarks: `WB:${w.id} | Ticket #${w.ticket_no} | COMPLETE | ${w.remarks || ''}`.trim(),
+        companyId: w.company_id || undefined,
       };
       // Update weights if they were missing (gate entry stub had 0)
       if (dupGrain.weightNet === 0 || dupGrain.weightNet === null) {
@@ -141,6 +142,7 @@ async function createOrUpdateGrainTruckStub(w: WeighmentInput, _ctx: PushContext
         transporterName: w.transporter || undefined,
         materialType: w.material || undefined,
         ticketNo: w.ticket_no || undefined,
+        companyId: w.company_id || undefined,
         factoryLocalId: w.id,
       },
     });
@@ -173,6 +175,7 @@ async function createOrUpdateGrainTruckStub(w: WeighmentInput, _ctx: PushContext
       materialType: w.material || undefined,
       ticketNo: w.ticket_no || undefined,
       supplier: w.supplier_name || undefined,
+      companyId: w.company_id || undefined,
     },
   });
   return {

@@ -139,6 +139,8 @@ import weighmentSyncRoutes from './routes/weighmentSync';
 import weighmentAuditRoutes from './routes/weighmentAudit';
 // Mobile App (field data collection)
 import mobileRoutes from './routes/mobile';
+// Company management (multi-company / sister concerns)
+import companyRoutes from './routes/companies';
 import { authenticate } from './middleware/auth';
 import { errorHandler } from './shared/middleware/errorHandler';
 
@@ -310,6 +312,8 @@ app.use('/api/weighment/sync', weighmentSyncRoutes);
 app.use('/api/weighment/audit', weighmentAuditRoutes);
 // Silo Stock (auto-computed grain stock from OPC)
 app.use('/api/silo-stock', siloSnapshotRoutes);
+// Company management (multi-company / sister concerns)
+app.use('/api/companies', authenticate, companyRoutes);
 // Mobile app (PIN auth + field data submission)
 app.use('/api/mobile', mobileRoutes);
 

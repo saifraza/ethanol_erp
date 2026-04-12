@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest, authorize } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize, getCompanyFilter } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { getGSTINDetails } from '../services/eInvoice';
 
@@ -53,7 +53,7 @@ router.get('/gstin-lookup/:gstin', asyncHandler(async (req: AuthRequest, res: Re
 // ?isAgent=true — filter to procurement agents/traders only
 // ?isAgent=false — exclude traders (formal vendors only)
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
-    const where: Record<string, unknown> = { isActive: true };
+    const where: Record<string, unknown> = { isActive: true, ...getCompanyFilter(req) };
     if (req.query.isAgent === 'true') where.isAgent = true;
     if (req.query.isAgent === 'false') where.isAgent = false;
     if (req.query.category) {
@@ -207,6 +207,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         isAgent: b.isAgent || false,
         aadhaarNo: b.aadhaarNo || null,
         isActive: true,
+        companyId: req.user?.companyId || null,
       },
     });
     res.status(201).json(vendor);

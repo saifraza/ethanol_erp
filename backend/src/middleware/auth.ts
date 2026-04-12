@@ -9,7 +9,19 @@ export interface AuthRequest extends Request {
     role: string;
     name: string;
     allowedModules: string | null;
+    companyId: string | null;
+    companyCode: string | null;
   };
+}
+
+/**
+ * Returns a Prisma `where` filter for company scoping.
+ * MSPIL users (default company or null) see all data.
+ * Sister concern users see only their company's data.
+ */
+export function getCompanyFilter(req: AuthRequest): { companyId?: string } {
+  if (!req.user?.companyId || req.user.companyCode === 'MSPIL') return {};
+  return { companyId: req.user.companyId };
 }
 
 export const authenticate = (req: AuthRequest, res: Response, next: NextFunction) => {

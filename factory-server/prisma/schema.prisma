@@ -109,6 +109,9 @@ model Weighment {
   // Camera snapshots (comma-separated relative paths)
   grossPhotos   String?  // e.g. "{id}/gross_cam1.jpg,{id}/gross_cam2.jpg"
   tarePhotos    String?
+  // Company (multi-tenant: which company this truck belongs to)
+  companyId     String?  // Cloud Company UUID — set at gate entry
+  companyCode   String?  // "MSPIL", "SC-A" — for display
   // Status
   status        String   @default("GATE_ENTRY") // GATE_ENTRY, FIRST_DONE, COMPLETE, CANCELLED
   // Timestamps
