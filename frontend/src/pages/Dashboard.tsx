@@ -269,10 +269,9 @@ export default function Dashboard() {
 
   const k = data.kpis;
   const t = data.trends;
-  // Exclude today from ethanol charts — today's dip will show tomorrow
-  const istNow = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
-  const todayStr = istNow.toISOString().slice(0, 10);
-  const ethanolChartData = t.ethanol.filter((e: any) => e.date !== todayStr);
+  // Dates already shifted in backend (each dip = previous day's production)
+  // Today's dip shows as yesterday — no exclusion needed
+  const ethanolChartData = t.ethanol;
   // KLPD KPI: latest entry (today's dip = yesterday's completed production)
   const prevKlpd = k.latestKlpd;
 

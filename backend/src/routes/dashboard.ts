@@ -108,10 +108,12 @@ router.get('/analytics', authenticate, async (req: AuthRequest, res: Response) =
       totalAtPlant: e.totalGrainAtPlant || 0,
     }));
 
-    // Ethanol daily — group by entry date (dip date = production date in user's workflow)
+    // Ethanol daily — each dip measures the PREVIOUS day's production
+    // Apr 12 dip (209K BL) = Apr 11's production, so label it as Apr 11
     const ethanolByDate = new Map<string, { productionBL: number; productionAL: number; totalStock: number; dispatch: number; klpd: number; avgStrength: number; count: number }>();
     for (const e of ethanol) {
-      const key = fmtDate(e.date);
+      const prodDay = new Date(e.date.getTime() - 24 * 3600 * 1000);
+      const key = fmtDate(prodDay);
       const existing = ethanolByDate.get(key);
       if (!existing) {
         ethanolByDate.set(key, {
