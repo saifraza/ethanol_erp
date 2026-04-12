@@ -346,6 +346,13 @@ function mapMirrorStatus(status: string, cancelled: boolean): WeighmentStatus {
   return 'PARTIAL';
 }
 
+/** Strip vehicle-no suffix that traderInbound appends: "Rice Husk | UP22BT0181" → "Rice Husk" */
+function cleanMaterialName(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const idx = raw.indexOf(' | ');
+  return idx > 0 ? raw.slice(0, idx).trim() : raw;
+}
+
 export function normalizeMirror(row: WeighmentMirrorRecord): UnifiedWeighmentRow {
   const direction: WeighmentDirection =
     row.direction.toUpperCase() === 'OUTBOUND' ? 'OUTBOUND' : 'INBOUND';
@@ -378,7 +385,7 @@ export function normalizeMirror(row: WeighmentMirrorRecord): UnifiedWeighmentRow
     ticketNo: row.ticketNo,
     direction,
     materialType,
-    materialName: row.materialName ?? null,
+    materialName: cleanMaterialName(row.materialName),
     vehicleNo: row.vehicleNo,
     partyName,
     partyId,

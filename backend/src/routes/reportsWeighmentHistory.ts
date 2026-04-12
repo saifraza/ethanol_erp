@@ -372,17 +372,40 @@ function applyFilters(rows: UnifiedWeighmentRow[], params: QueryParams): Unified
 // xlsx column definition
 // ──────────────────────────────────────────────────────────
 
+// ── IST date/time formatters for Excel ────────────────────
+const IST_MS = 5.5 * 60 * 60 * 1000;
+
+function fmtDateIST(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(new Date(iso).getTime() + IST_MS);
+  const dd = d.getUTCDate().toString().padStart(2, '0');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const mmm = months[d.getUTCMonth()];
+  const yyyy = d.getUTCFullYear();
+  return `${dd}-${mmm}-${yyyy}`;
+}
+
+function fmtTimeIST(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(new Date(iso).getTime() + IST_MS);
+  let h = d.getUTCHours();
+  const m = d.getUTCMinutes().toString().padStart(2, '0');
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${h}:${m} ${ampm}`;
+}
+
 const XLSX_COLUMNS = [
-  { header: 'Date', key: 'gateEntryAt', width: 20, type: 'string' as const },
+  { header: 'Date', key: 'date', width: 14 },
   { header: 'Ticket', key: 'ticketNo', width: 10, type: 'number' as const },
   { header: 'Vehicle No', key: 'vehicleNo', width: 14 },
   { header: 'Party', key: 'partyName', width: 28 },
   { header: 'Direction', key: 'direction', width: 11 },
   { header: 'Material', key: 'materialType', width: 14 },
   { header: 'Item Name', key: 'materialName', width: 20 },
-  { header: 'Gate In', key: 'gateEntryAt_fmt', width: 20 },
-  { header: '1st Wt Time', key: 'firstWeightAt', width: 20 },
-  { header: '2nd Wt Time', key: 'secondWeightAt', width: 20 },
+  { header: 'Gate In', key: 'gateInTime', width: 12 },
+  { header: '1st Wt Time', key: 'firstWtTime', width: 12 },
+  { header: '2nd Wt Time', key: 'secondWtTime', width: 12 },
   { header: 'Gross (kg)', key: 'grossWeight', width: 12, type: 'number' as const, numFmt: '#,##0' },
   { header: 'Tare (kg)', key: 'tareWeight', width: 12, type: 'number' as const, numFmt: '#,##0' },
   { header: 'Net (kg)', key: 'netWeight', width: 12, type: 'number' as const, numFmt: '#,##0' },
@@ -394,16 +417,16 @@ const XLSX_COLUMNS = [
 
 function toXlsxRow(r: UnifiedWeighmentRow): Record<string, unknown> {
   return {
-    gateEntryAt: r.gateEntryAt ?? '',
+    date: fmtDateIST(r.gateEntryAt),
     ticketNo: r.ticketNo ?? '',
     vehicleNo: r.vehicleNo,
     partyName: r.partyName,
     direction: r.direction,
     materialType: r.materialType,
     materialName: r.materialName ?? '',
-    gateEntryAt_fmt: r.gateEntryAt ?? '',
-    firstWeightAt: r.firstWeightAt ?? '',
-    secondWeightAt: r.secondWeightAt ?? '',
+    gateInTime: fmtTimeIST(r.gateEntryAt),
+    firstWtTime: fmtTimeIST(r.firstWeightAt),
+    secondWtTime: fmtTimeIST(r.secondWeightAt),
     grossWeight: r.grossWeight ?? '',
     tareWeight: r.tareWeight ?? '',
     netWeight: r.netWeight ?? '',
