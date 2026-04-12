@@ -24,7 +24,7 @@ router.get('/analytics', authenticate, async (req: AuthRequest, res: Response) =
     ] = await Promise.all([
       prisma.grainEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
       prisma.ethanolProductEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
-      prisma.dispatchTruck.findMany({ where: { date: { gte: from, lte: now }, status: { in: ['GROSS_WEIGHED', 'RELEASED'] } }, orderBy: { date: 'asc' } }),
+      prisma.dispatchTruck.findMany({ where: { date: { gte: from, lte: now }, status: { notIn: ['GATE_IN', 'TARE_WEIGHED'] } }, orderBy: { date: 'asc' } }),
       prisma.dDGSStockEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
       prisma.dDGSDispatchTruck.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
       prisma.dDGSProductionEntry.findMany({ where: { date: { gte: from, lte: now } }, select: { totalProduction: true, date: true, shiftDate: true } }),
