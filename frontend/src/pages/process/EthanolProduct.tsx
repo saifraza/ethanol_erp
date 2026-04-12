@@ -14,7 +14,7 @@ const TANKS = [
 
 export default function EthanolProduct() {
   const [form, setForm] = useState<any>({});
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(() => { const ist = new Date(Date.now() + 5.5 * 60 * 60 * 1000); return ist.toISOString().split('T')[0]; });
   const [time, setTime] = useState(new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
   const [prev, setPrev] = useState<any>(null);
   const [saving, setSaving] = useState(false);
@@ -352,7 +352,7 @@ export default function EthanolProduct() {
           <div className="flex gap-1 items-center">
             <input type="time" value={time} onChange={e => setTime(e.target.value)}
               className="border px-3 py-2.5 w-28 text-sm" />
-            <button type="button" onClick={() => { setDate(new Date().toISOString().split('T')[0]); setTime(new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })); }}
+            <button type="button" onClick={() => { const ist = new Date(Date.now() + 5.5 * 60 * 60 * 1000); setDate(ist.toISOString().split('T')[0]); setTime(new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })); }}
               className="px-2 py-2.5 bg-blue-500 text-white text-xs whitespace-nowrap font-medium hover:bg-blue-600">Now</button>
           </div>
         </div>
@@ -403,16 +403,16 @@ export default function EthanolProduct() {
       {groups.map(g => (
         <div key={g.label} className="mb-5">
           <h3 className={`text-sm font-semibold text-${g.color}-600 mb-2 uppercase tracking-wide`}>{g.label}</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className={`grid ${g.tanks.length > 1 ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-3'} gap-2 sm:gap-3`}>
             {g.tanks.map(tank => {
               const prevVol = prev?.[`${tank.key}Volume`] || 0;
               const prevStr = prev?.[`${tank.key}Strength`] || 0;
               const curVol = form[`${tank.key}Volume`] || 0;
               const diff = curVol - prevVol;
               return (
-                <div key={tank.key} className={`border p-3 bg-white border-${g.color}-200`}>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className={`font-semibold text-${g.color}-700`}>{tank.label}</span>
+                <div key={tank.key} className={`border p-2 sm:p-3 bg-white border-${g.color}-200`}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className={`text-sm font-semibold text-${g.color}-700`}>{tank.label}</span>
                     <label className="flex items-center gap-1 cursor-pointer">
                       <input type="checkbox" checked={!!form[`${tank.key}Empty`]}
                         onChange={() => toggleEmpty(tank.key)}
@@ -421,39 +421,39 @@ export default function EthanolProduct() {
                     </label>
                   </div>
                   {form[`${tank.key}Empty`] ? (
-                    <div className="text-center py-3 text-sm text-gray-400 italic">Tank empty — 0 BL</div>
+                    <div className="text-center py-2 text-xs text-gray-400 italic">Empty — 0 BL</div>
                   ) : (
-                  <div className="grid grid-cols-2 gap-2 mb-2">
+                  <div className="grid grid-cols-2 gap-1.5 mb-1.5">
                     <div>
-                      <label className="text-[10px] text-gray-400">DIP (cm)</label>
-                      <input type="number" step="0.1" value={form[`${tank.key}Dip`] ?? ''}
+                      <label className="text-[9px] text-gray-400 uppercase">DIP (cm)</label>
+                      <input type="number" step="0.1" inputMode="decimal" value={form[`${tank.key}Dip`] ?? ''}
                         onChange={e => handleDipChange(tank.key, e.target.value)}
-                        className="borderpx-2 py-1.5 w-full text-sm" />
+                        className="border px-2 py-2 w-full text-sm" />
                     </div>
                     <div>
-                      <label className="text-[10px] text-gray-400">Volume (Litres)</label>
+                      <label className="text-[9px] text-gray-400 uppercase">Vol (L)</label>
                       <input type="number" step="any" value={form[`${tank.key}Volume`] ?? ''}
                         readOnly
-                        className="borderpx-2 py-1.5 w-full text-sm bg-gray-50 font-medium text-blue-700" />
+                        className="border px-2 py-2 w-full text-sm bg-gray-50 font-medium text-blue-700" />
                     </div>
                     <div>
-                      <label className="text-[10px] text-gray-400">Strength %</label>
-                      <input type="number" step="any" value={form[`${tank.key}Strength`] ?? ''}
+                      <label className="text-[9px] text-gray-400 uppercase">Str %</label>
+                      <input type="number" step="any" inputMode="decimal" value={form[`${tank.key}Strength`] ?? ''}
                         onChange={e => numU(`${tank.key}Strength`, e.target.value)}
-                        className="borderpx-2 py-1.5 w-full text-sm" />
+                        className="border px-2 py-2 w-full text-sm" />
                     </div>
                     <div>
-                      <label className="text-[10px] text-gray-400">LT %</label>
-                      <input type="number" step="any" value={form[`${tank.key}Lt`] ?? ''}
+                      <label className="text-[9px] text-gray-400 uppercase">LT %</label>
+                      <input type="number" step="any" inputMode="decimal" value={form[`${tank.key}Lt`] ?? ''}
                         onChange={e => numU(`${tank.key}Lt`, e.target.value)}
-                        className="borderpx-2 py-1.5 w-full text-sm" />
+                        className="border px-2 py-2 w-full text-sm" />
                     </div>
                   </div>
                   )}
-                  <div className="flex justify-between text-[11px]">
-                    <span className="text-gray-400">Prev: {prevVol.toFixed(1)} BL ({prevStr.toFixed(1)}%)</span>
-                    <span className={diff >= 0 ? 'text-green-600' : 'text-red-500'}>
-                      {diff >= 0 ? '+' : ''}{diff.toFixed(1)} BL
+                  <div className="flex justify-between text-[10px]">
+                    <span className="text-gray-400 truncate">P: {prevVol.toFixed(0)} ({prevStr.toFixed(1)}%)</span>
+                    <span className={`font-medium ${diff >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                      {diff >= 0 ? '+' : ''}{diff.toFixed(0)}
                     </span>
                   </div>
                 </div>
@@ -522,7 +522,7 @@ export default function EthanolProduct() {
                 <div className="flex items-center gap-2 mb-2">
                   <input type="number" step="any" value={form[t.key] ?? ''}
                     onChange={e => numU(t.key, e.target.value)}
-                    className="borderpx-2 py-1.5 flex-1 text-sm" placeholder="Level %" />
+                    className="border px-2 py-1.5 flex-1 text-sm" placeholder="Level %" />
                   <span className="text-xs text-gray-400">%</span>
                 </div>
                 <div className="flex justify-between text-[11px]">

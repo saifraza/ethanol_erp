@@ -99,27 +99,19 @@ router.get('/latest', authenticate, asyncHandler(async (_req: AuthRequest, res: 
     ? ethanolEntries.filter(e => e.avgStrength > 0).reduce((s, e) => s + e.avgStrength, 0) / ethanolEntries.filter(e => e.avgStrength > 0).length
     : 0;
 
-  // Yield always uses previous day's data — today's production is incomplete
-  // until tomorrow's dip reading is entered
+  // Yield = latest ethanol dip's productionAL / latest snapshot's grainConsumed
+  // The latest ethanol entry represents completed 24h production since previous dip
   let yieldALPerMT = 0;
   let yieldProductionAL = 0;
   let yieldGrainConsumed = 0;
-  if (prevSnapshot && prevSnapshot.grainConsumed > 0) {
-    const prevEthanol = await prisma.ethanolProductEntry.findMany({
-      where: {
-        date: {
-          gte: prevSnapshot.date,
-          lt: new Date(prevSnapshot.date.getTime() + 24 * 3600 * 1000),
-        },
-      },
-      select: { productionAL: true },
-    });
-    const prevAL = prevEthanol.reduce((s, e) => s + Math.max(0, e.productionAL || 0), 0);
-    if (prevAL > 0) {
-      yieldALPerMT = r2(prevAL / prevSnapshot.grainConsumed);
-      yieldProductionAL = prevAL;
-      yieldGrainConsumed = prevSnapshot.grainConsumed;
-    }
+  const latestEthanol = await prisma.ethanolProductEntry.findFirst({
+    orderBy: { date: 'desc' },
+    select: { productionAL: true },
+  });
+  if (latestEthanol && latestEthanol.productionAL > 0 && snapshot.grainConsumed > 0) {
+    yieldProductionAL = Math.max(0, latestEthanol.productionAL);
+    yieldGrainConsumed = snapshot.grainConsumed;
+    yieldALPerMT = r2(yieldProductionAL / yieldGrainConsumed);
   }
 
   const siloEstimate = r2(snapshot.siloClosing + pendingTrucksMT);
