@@ -269,11 +269,12 @@ export default function Dashboard() {
 
   const k = data.kpis;
   const t = data.trends;
-  // Today's ethanol production is incomplete (next dip not entered yet) — exclude from charts
-  const todayStr = new Date().toISOString().slice(0, 10);
+  // Today's ethanol chart point excluded (partial day) — but KLPD KPI uses latest dip (completed production)
+  const istNow = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+  const todayStr = istNow.toISOString().slice(0, 10);
   const ethanolExToday = t.ethanol.filter((e: any) => e.date !== todayStr);
-  // KLPD KPI: use yesterday's (last complete) instead of today's incomplete
-  const prevKlpd = ethanolExToday.length > 0 ? ethanolExToday[ethanolExToday.length - 1].klpd : k.latestKlpd;
+  // KLPD KPI: latest entry's KLPD represents completed 24h production since previous dip
+  const prevKlpd = k.latestKlpd;
 
   return (
     <div className="space-y-4 pb-8">
@@ -319,7 +320,7 @@ export default function Dashboard() {
             <KPI label="Ethanol Prod" value={fmtNum(k.ethanolProductionBL)} unit="BL" icon={Fuel} color="bg-blue-600" sub={`AL: ${fmtNum(k.ethanolProductionAL)}`} />
             <KPI label="Current Stock" value={fmtNum(k.ethanolStock)} unit="BL" icon={Droplets} color="bg-cyan-600" sub={`Avg: ${k.avgStrength.toFixed(1)}%`} />
             <KPI label="Dispatched" value={fmtNum(k.totalDispatchBL)} unit="BL" icon={Truck} color="bg-green-600" sub={`${k.dispatchTrucks} trucks`} />
-            <KPI label="KLPD" value={prevKlpd.toFixed(1)} unit="" icon={TrendingUp} color="bg-indigo-600" sub="Last complete day" />
+            <KPI label="KLPD" value={prevKlpd.toFixed(1)} unit="" icon={TrendingUp} color="bg-indigo-600" sub="Latest dip" />
           </div>
 
           {/* KPI Grid — Row 2: Quality, DDGS, Distillation */}

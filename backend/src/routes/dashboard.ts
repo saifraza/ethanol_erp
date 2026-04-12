@@ -24,7 +24,7 @@ router.get('/analytics', authenticate, async (req: AuthRequest, res: Response) =
     ] = await Promise.all([
       prisma.grainEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
       prisma.ethanolProductEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
-      prisma.dispatchTruck.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
+      prisma.dispatchTruck.findMany({ where: { date: { gte: from, lte: now }, status: { in: ['GROSS_WEIGHED', 'RELEASED'] } }, orderBy: { date: 'asc' } }),
       prisma.dDGSStockEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
       prisma.dDGSDispatchTruck.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
       prisma.dDGSProductionEntry.findMany({ where: { date: { gte: from, lte: now } }, select: { totalProduction: true, date: true, shiftDate: true } }),
@@ -97,7 +97,7 @@ router.get('/analytics', authenticate, async (req: AuthRequest, res: Response) =
       ? distWithStrength.reduce((s, e) => s + (e.ethanolStrength || 0), 0) / distWithStrength.length : 0;
 
     // ─── Daily trends (grouped by date) ───
-    const fmtDate = (d: Date) => d.toISOString().split('T')[0];
+    const fmtDate = (d: Date) => { const ist = new Date(d.getTime() + 5.5 * 60 * 60 * 1000); return ist.toISOString().split('T')[0]; };
 
     // Grain daily
     const grainDaily = grain.map(e => ({
@@ -140,7 +140,7 @@ router.get('/analytics', authenticate, async (req: AuthRequest, res: Response) =
       productionAL: v.productionAL,
       totalStock: v.totalStock,
       dispatch: v.dispatch,
-      klpd: v.count > 1 ? (v.productionBL / 1000) : v.klpd, // recalculate KLPD if multiple entries
+      klpd: v.klpd, // use last entry's KLPD (already set to last non-zero at aggregation)
       avgStrength: v.avgStrength,
     }));
 
@@ -299,7 +299,7 @@ router.get('/fermentation-deep', authenticate, async (req: AuthRequest, res: Res
     const from = new Date(now);
     from.setDate(from.getDate() - days);
     from.setHours(0, 0, 0, 0);
-    const fmtDate = (d: Date) => d.toISOString().split('T')[0];
+    const fmtDate = (d: Date) => { const ist = new Date(d.getTime() + 5.5 * 60 * 60 * 1000); return ist.toISOString().split('T')[0]; };
 
     const [
       allFermBatches, allPFBatches, allFermEntries, allPFReadings,
