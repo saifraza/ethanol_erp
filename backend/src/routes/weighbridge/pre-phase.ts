@@ -55,28 +55,39 @@ export async function runPrePhase(w: WeighmentInput, ctx: PushContext): Promise<
       select: { id: true, weightNet: true },
     });
     if (dupGrain) {
-      // Update existing stub with weights (gate entry created it with 0 weights)
+      // Always update stub on COMPLETE — weights, lab data, and remarks
+      const grossTon = (w.weight_gross || 0) / 1000;
+      const tareTon = (w.weight_tare || 0) / 1000;
+      const netTon = (w.weight_net || 0) / 1000;
+      const updateData: Record<string, unknown> = {
+        remarks: `WB:${w.id} | Ticket #${w.ticket_no} | COMPLETE | ${w.remarks || ''}`.trim(),
+      };
+      // Update weights if they were missing (gate entry stub had 0)
       if (dupGrain.weightNet === 0 || dupGrain.weightNet === null) {
-        const grossTon = (w.weight_gross || 0) / 1000;
-        const tareTon = (w.weight_tare || 0) / 1000;
-        const netTon = (w.weight_net || 0) / 1000;
-        await prisma.grainTruck.update({
-          where: { id: dupGrain.id },
-          data: {
-            weightGross: grossTon,
-            weightTare: tareTon,
-            weightNet: netTon,
-            moisture: w.lab_moisture ?? w.moisture ?? undefined,
-            starchPercent: w.lab_starch ?? undefined,
-            damagedPercent: w.lab_damaged ?? undefined,
-            foreignMatter: w.lab_foreign_matter ?? undefined,
-            quarantine: w.lab_status === 'FAIL' ? true : w.lab_status === 'PASS' ? false : undefined,
-            quarantineWeight: w.lab_status === 'FAIL' ? netTon : w.lab_status === 'PASS' ? 0 : undefined,
-            quarantineReason: w.lab_status === 'FAIL' ? (w.lab_remarks || 'Failed lab test') : w.lab_status === 'PASS' ? '' : undefined,
-            remarks: `WB:${w.id} | Ticket #${w.ticket_no} | COMPLETE | ${w.remarks || ''}`.trim(),
-          },
-        });
+        updateData.weightGross = grossTon;
+        updateData.weightTare = tareTon;
+        updateData.weightNet = netTon;
       }
+      // Always update lab data if factory sent it (even if weights were already set)
+      if (w.lab_moisture != null || w.lab_starch != null || w.moisture != null) {
+        updateData.moisture = w.lab_moisture ?? w.moisture ?? undefined;
+        updateData.starchPercent = w.lab_starch ?? undefined;
+        updateData.damagedPercent = w.lab_damaged ?? undefined;
+        updateData.foreignMatter = w.lab_foreign_matter ?? undefined;
+      }
+      if (w.lab_status === 'FAIL') {
+        updateData.quarantine = true;
+        updateData.quarantineWeight = netTon;
+        updateData.quarantineReason = w.lab_remarks || 'Failed lab test';
+      } else if (w.lab_status === 'PASS') {
+        updateData.quarantine = false;
+        updateData.quarantineWeight = 0;
+        updateData.quarantineReason = '';
+      }
+      await prisma.grainTruck.update({
+        where: { id: dupGrain.id },
+        data: updateData,
+      });
 
       // NF-1 FIX: Only short-circuit if there's no PO/SPOT/TRADER work to do.
       // Otherwise the stub gets reported but downstream handler still runs.

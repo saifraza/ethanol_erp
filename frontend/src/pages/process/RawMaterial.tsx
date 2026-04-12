@@ -28,6 +28,8 @@ interface GrainTruck {
   date: string;
   remarks: string | null;
   uidRst: string;
+  materialType: string | null;
+  grnId: string | null;
 }
 
 const FUEL_KEYWORDS = ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'firewood', 'biomass'];
@@ -466,6 +468,7 @@ export default function RawMaterial() {
                 </thead>
                 <tbody>
                   {labHistory.map((t, i) => {
+                    const factoryTested = !t.quarantine && t.moisture === null && t.grnId;
                     const passed = !t.quarantine && t.moisture !== null;
                     const failed = t.quarantine;
                     return (
@@ -480,6 +483,8 @@ export default function RawMaterial() {
                         <td className="px-3 py-1.5 text-center border-r border-slate-100">
                           {failed ? (
                             <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-red-300 bg-red-50 text-red-700">FAIL</span>
+                          ) : factoryTested ? (
+                            <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-teal-300 bg-teal-50 text-teal-700">FACTORY PASS</span>
                           ) : passed ? (
                             <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-300 bg-green-50 text-green-700">PASS</span>
                           ) : (

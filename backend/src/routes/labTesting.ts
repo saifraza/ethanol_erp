@@ -29,6 +29,7 @@ router.get('/pending', authenticate, asyncHandler(async (req: AuthRequest, res: 
       date: { gte: sevenDaysAgo },
       moisture: null,
       quarantine: false,
+      grnId: null, // exclude trucks already processed into GRN (lab done at factory)
     },
     orderBy: { date: 'desc' },
     take: 50,
@@ -47,18 +48,21 @@ router.get('/pending', authenticate, asyncHandler(async (req: AuthRequest, res: 
       date: true,
       remarks: true,
       uidRst: true,
+      materialType: true,
+      grnId: true,
     },
   });
   res.json(trucks);
 }));
 
-// GET /lab-testing/history — recently tested trucks
+// GET /lab-testing/history — recently tested trucks (includes factory-tested with GRN)
 router.get('/history', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const trucks = await prisma.grainTruck.findMany({
     where: {
       OR: [
         { moisture: { not: null } },
         { quarantine: true },
+        { grnId: { not: null }, moisture: null }, // factory-tested: GRN created but no cloud lab
       ],
     },
     orderBy: { date: 'desc' },
@@ -80,6 +84,8 @@ router.get('/history', authenticate, asyncHandler(async (req: AuthRequest, res: 
       date: true,
       remarks: true,
       uidRst: true,
+      grnId: true,
+      materialType: true,
     },
   });
   res.json(trucks);
@@ -96,6 +102,7 @@ router.get('/stats', authenticate, asyncHandler(async (req: AuthRequest, res: Re
         date: { gte: sevenDaysAgo },
         moisture: null,
         quarantine: false,
+        grnId: null,
       },
     }),
     prisma.grainTruck.count({
