@@ -784,11 +784,14 @@ router.post('/:id/liftings/:liftingId/create-invoice', asyncHandler(async (req: 
     res.json({ invoice });
 }));
 
-// ── GET /:id/liftings/:liftingId/delivery-challan-pdf ── Challan from lifting data (no DispatchTruck needed)
+// ── GET /:id/liftings/:liftingId/delivery-challan-pdf ── Challan from lifting data
 router.get('/:id/liftings/:liftingId/delivery-challan-pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
     const lifting = await prisma.ethanolLifting.findFirst({
       where: { id: req.params.liftingId, contractId: req.params.id },
-      include: { contract: { select: { buyerName: true, buyerAddress: true, buyerGst: true, contractType: true, ethanolRate: true } } },
+      include: {
+        contract: { select: { buyerName: true, buyerAddress: true, buyerGst: true, contractType: true, ethanolRate: true } },
+        dispatchTruck: { select: { sealNo: true } },
+      },
     });
     if (!lifting) return res.status(404).json({ error: 'Lifting not found' });
 
@@ -811,7 +814,7 @@ router.get('/:id/liftings/:liftingId/delivery-challan-pdf', asyncHandler(async (
         transporterName: lifting.transporterName,
         destination: lifting.destination,
         rstNo: lifting.rstNo,
-        sealNo: null,
+        sealNo: lifting.dispatchTruck?.sealNo || null,
         isJobWork,
         buyerName: lifting.contract.buyerName,
         buyerAddress: lifting.contract.buyerAddress || '',
@@ -834,7 +837,10 @@ router.get('/:id/liftings/:liftingId/delivery-challan-pdf', asyncHandler(async (
 router.get('/:id/liftings/:liftingId/gate-pass-pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
     const lifting = await prisma.ethanolLifting.findFirst({
       where: { id: req.params.liftingId, contractId: req.params.id },
-      include: { contract: { select: { contractNo: true, contractType: true, buyerName: true, buyerAddress: true, buyerGst: true, conversionRate: true, ethanolRate: true } } },
+      include: {
+        contract: { select: { contractNo: true, contractType: true, buyerName: true, buyerAddress: true, buyerGst: true, conversionRate: true, ethanolRate: true } },
+        dispatchTruck: { select: { weightGross: true, weightTare: true, weightNet: true, sealNo: true, gatePassNo: true } },
+      },
     });
     if (!lifting) return res.status(404).json({ error: 'Lifting not found' });
 
@@ -846,7 +852,7 @@ router.get('/:id/liftings/:liftingId/gate-pass-pdf', asyncHandler(async (req: Au
     const pdfBuffer = await renderDocumentPdf({
       docType: 'ETHANOL_GATE_PASS',
       data: {
-        gatePassNo: lifting.challanNo || lifting.rstNo || '-',
+        gatePassNo: lifting.dispatchTruck?.gatePassNo || lifting.challanNo || lifting.rstNo || '-',
         date: lifting.liftingDate,
         vehicleNo: lifting.vehicleNo,
         driverName: lifting.driverName,
@@ -855,7 +861,7 @@ router.get('/:id/liftings/:liftingId/gate-pass-pdf', asyncHandler(async (req: Au
         destination: lifting.destination,
         contractNo: lifting.contract.contractNo,
         rstNo: lifting.rstNo,
-        sealNo: null,
+        sealNo: lifting.dispatchTruck?.sealNo || null,
         isJobWork,
         buyerName: lifting.contract.buyerName,
         buyerAddress: lifting.contract.buyerAddress || '',
@@ -866,9 +872,9 @@ router.get('/:id/liftings/:liftingId/gate-pass-pdf', asyncHandler(async (req: Au
         rate,
         amount,
         strength: lifting.strength,
-        weightGross: null,
-        weightTare: null,
-        weightNet: null,
+        weightGross: lifting.dispatchTruck?.weightGross || null,
+        weightTare: lifting.dispatchTruck?.weightTare || null,
+        weightNet: lifting.dispatchTruck?.weightNet || null,
       },
       verifyId: lifting.id,
     });
