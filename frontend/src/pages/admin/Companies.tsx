@@ -59,6 +59,35 @@ export default function Companies() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<CompanyForm>(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [gstLoading, setGstLoading] = useState(false);
+
+  const lookupGSTIN = async () => {
+    const g = form.gstin.trim().toUpperCase();
+    if (g.length !== 15) return;
+    setGstLoading(true);
+    try {
+      const res = await api.get(`/vendors/gstin-lookup/${g}`);
+      const d = res.data;
+      if (d.success) {
+        setForm(prev => ({
+          ...prev,
+          gstin: d.gstin || prev.gstin,
+          name: d.tradeName || d.legalName || prev.name,
+          shortName: prev.shortName || (d.tradeName ? d.tradeName.split(' ').map((w: string) => w[0]).join('').slice(0, 6) : ''),
+          pan: d.pan || prev.pan,
+          gstState: d.stateCode ? `${d.stateCode}` : prev.gstState,
+          address: d.address || prev.address,
+          city: d.city || prev.city,
+          state: d.state || prev.state,
+          pincode: d.pincode || prev.pincode,
+        }));
+      }
+    } catch {
+      // silently fail — user can fill manually
+    } finally {
+      setGstLoading(false);
+    }
+  };
 
   const fetchData = useCallback(async () => {
     try {
@@ -245,7 +274,15 @@ export default function Companies() {
                   <FormField label="Code" value={form.code} onChange={v => updateField('code', v)} placeholder="e.g. MSPIL" />
                   <FormField label="Name" value={form.name} onChange={v => updateField('name', v)} placeholder="Full company name" />
                   <FormField label="Short Name" value={form.shortName} onChange={v => updateField('shortName', v)} placeholder="Abbreviation" />
-                  <FormField label="GSTIN" value={form.gstin} onChange={v => updateField('gstin', v)} placeholder="22AAAAA0000A1Z5" />
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">GSTIN</label>
+                    <div className="flex gap-1">
+                      <input value={form.gstin} onChange={e => updateField('gstin', e.target.value.toUpperCase())} maxLength={15} placeholder="22AAAAA0000A1Z5" className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                      <button type="button" onClick={lookupGSTIN} disabled={gstLoading || form.gstin.length !== 15} title="Lookup GSTIN online" className="px-2 py-1.5 bg-blue-600 text-white text-[11px] hover:bg-blue-700 disabled:opacity-40 flex-shrink-0">
+                        {gstLoading ? '...' : 'Fetch'}
+                      </button>
+                    </div>
+                  </div>
                   <FormField label="PAN" value={form.pan} onChange={v => updateField('pan', v)} placeholder="AAAAA0000A" />
                   <FormField label="GST State" value={form.gstState} onChange={v => updateField('gstState', v)} placeholder="e.g. 23-Madhya Pradesh" />
                 </div>
