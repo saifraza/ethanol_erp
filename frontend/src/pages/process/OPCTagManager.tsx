@@ -164,7 +164,7 @@ type Tab = 'live' | 'browse' | 'stats';
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
-export default function OPCTagManager() {
+export default function OPCTagManager({ source }: { source?: 'ETHANOL' | 'SUGAR' }) {
   const [tab, setTab] = useState<Tab>('live');
   const [health, setHealth] = useState<HealthData | null>(null);
   const [liveTags, setLiveTags] = useState<LiveTag[]>([]);
@@ -210,7 +210,8 @@ export default function OPCTagManager() {
 
   const checkHealth = useCallback(async () => {
     try {
-      const res = await api.get('/opc/health');
+      const sq = source ? `?source=${source}` : '';
+      const res = await api.get(`/opc/health${sq}`);
       setHealth(res.data);
       setError('');
     } catch (err: unknown) {
@@ -219,9 +220,10 @@ export default function OPCTagManager() {
       setError(e?.response?.data?.error || 'OPC service unavailable');
     }
     // Bridge status via phone-home heartbeat (no Tailscale needed)
-    api.get('/opc/bridge-status').then(r => setBridgeStatus(r.data)).catch(() => {});
+    const sq = source ? `?source=${source}` : '';
+    api.get(`/opc/bridge-status${sq}`).then(r => setBridgeStatus(r.data)).catch(() => {});
     // Gap detection
-    api.get('/opc/gaps?hours=24').then(r => setGapData(r.data)).catch(() => {});
+    api.get(`/opc/gaps?hours=24${source ? `&source=${source}` : ''}`).then(r => setGapData(r.data)).catch(() => {});
     // Fetch alarm status (non-blocking)
     api.get('/opc/alarms/status').then(r => setAlarmsEnabled(r.data.enabled)).catch(() => {});
   }, []);
@@ -240,7 +242,7 @@ export default function OPCTagManager() {
     }
   }, []);
 
-  useEffect(() => { checkHealth(); }, [checkHealth]);
+  useEffect(() => { checkHealth(); }, [checkHealth, source]);
 
   useEffect(() => {
     if (tab !== 'live') return;
@@ -256,7 +258,7 @@ export default function OPCTagManager() {
   async function fetchLive() {
     try {
       setLiveLoading(true);
-      const res = await api.get('/opc/live');
+      const res = await api.get(`/opc/live${source ? `?source=${source}` : ''}`);
       setLiveTags(res.data.tags || []);
     } catch (err: unknown) {
       const e = err as { response?: { data?: { error?: string } } };
@@ -271,7 +273,7 @@ export default function OPCTagManager() {
     try {
       const t = liveTags.find(lt => lt.tag === tag);
       const prop = t?.type === 'pid' ? 'PV' : t?.type === 'totalizer' ? 'PRV_HR' : 'IO_VALUE';
-      const res = await api.get(`/opc/history/${tag}?hours=${hours}&property=${prop}`);
+      const res = await api.get(`/opc/history/${tag}?hours=${hours}&property=${prop}${source ? `&source=${source}` : ''}`);
       const data: HourlyReading[] = res.data.readings || [];
       setHistoryData(data);
 
@@ -314,7 +316,7 @@ export default function OPCTagManager() {
 
   async function fetchStats() {
     try {
-      const res = await api.get('/opc/stats');
+      const res = await api.get(`/opc/stats${source ? `?source=${source}` : ''}`);
       setStats(res.data);
     } catch (err: unknown) {
       const e = err as { response?: { data?: { error?: string } } };
@@ -327,7 +329,7 @@ export default function OPCTagManager() {
   async function addTag(tag: string, area: string, folder: string, tagType: string, label: string) {
     setAdding(prev => new Set(prev).add(tag));
     try {
-      await api.post('/opc/monitor', { tag, area, folder, tagType, label });
+      await api.post('/opc/monitor', { tag, area, folder, tagType, label, source });
       setSuccess(`Added ${tag}`);
       setTimeout(() => setSuccess(''), 3000);
       fetchLive();
@@ -420,9 +422,9 @@ export default function OPCTagManager() {
         {/* Toolbar */}
         <div className="bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <h1 className="text-sm font-bold tracking-wide uppercase">OPC Live</h1>
+            <h1 className="text-sm font-bold tracking-wide uppercase">{source === 'SUGAR' ? 'OPC Live — Sugar Plant' : 'OPC Live — Ethanol Plant'}</h1>
             <span className="text-[10px] text-slate-400">|</span>
-            <span className="text-[10px] text-slate-400">ABB 800xA Plant Automation</span>
+            <span className="text-[10px] text-slate-400">{source === 'SUGAR' ? 'Fuji DCS Plant Automation' : 'ABB 800xA Plant Automation'}</span>
           </div>
           <div className="flex items-center gap-3">
             <span className={`inline-block w-2 h-2 ${online ? 'bg-green-400' : health ? 'bg-red-400' : 'bg-yellow-400'}`} />

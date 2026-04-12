@@ -29,6 +29,8 @@ const DryerMonitor = React.lazy(() => import('./pages/process/DryerMonitor'));
 const Decanter = React.lazy(() => import('./pages/process/Decanter'));
 const FuelManagement = React.lazy(() => import('./pages/process/FuelManagement'));
 const OPCTagManager = React.lazy(() => import('./pages/process/OPCTagManager'));
+const OPCEthanol = React.lazy(() => import('./pages/process/OPCEthanol'));
+const OPCSugar = React.lazy(() => import('./pages/process/OPCSugar'));
 const Evaporation = React.lazy(() => import('./pages/process/Evaporation'));
 const EthanolProduct = React.lazy(() => import('./pages/process/EthanolProduct'));
 const EthanolDispatch = React.lazy(() => import('./pages/process/EthanolDispatch'));
@@ -181,6 +183,8 @@ export default function App() {
         <Route path="process/decanter" element={<Decanter />} />
         <Route path="process/fuel" element={<FuelManagement />} />
         <Route path="process/opc" element={<OPCTagManager />} />
+        <Route path="process/opc-ethanol" element={<OPCEthanol />} />
+        <Route path="process/opc-sugar" element={<OPCSugar />} />
         <Route path="process/ethanol-product" element={<EthanolProduct />} />
         <Route path="process/ethanol-stock" element={<EthanolProduct />} />
         <Route path="process/ethanol-dispatch" element={<EthanolDispatch />} />

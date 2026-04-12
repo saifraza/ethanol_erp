@@ -362,11 +362,15 @@ router.post('/alarm-notify', validate(alarmNotifySchema), asyncHandler(async (re
 // ==========================================================================
 
 // GET /api/opc/health
-router.get('/health', authenticate, asyncHandler(async (_req: AuthRequest, res: Response) => {
+router.get('/health', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const opc = getOpcPrisma();
+  const source = req.query.source as string | undefined;
+  const tagWhere: any = { active: true };
+  const readingWhere: any = {};
+  if (source) { tagWhere.source = source; readingWhere.source = source; }
   const [monitoredCount, latestReading, latestSync] = await Promise.all([
-    opc.opcMonitoredTag.count({ where: { active: true } }),
-    opc.opcReading.findFirst({ orderBy: { scannedAt: 'desc' }, select: { scannedAt: true } }),
+    opc.opcMonitoredTag.count({ where: tagWhere }),
+    opc.opcReading.findFirst({ where: readingWhere, orderBy: { scannedAt: 'desc' }, select: { scannedAt: true } }),
     opc.opcSyncLog.findFirst({ orderBy: { syncedAt: 'desc' }, select: { syncedAt: true, readingCount: true } }),
   ]);
 
@@ -399,17 +403,20 @@ router.get('/bridge-health', authenticate, asyncHandler(async (_req: AuthRequest
 }));
 
 // GET /api/opc/monitor — List monitored tags
-router.get('/monitor', authenticate, asyncHandler(async (_req: AuthRequest, res: Response) => {
+router.get('/monitor', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const opc = getOpcPrisma();
+  const source = req.query.source as string | undefined;
+  const where: any = { active: true };
+  if (source) where.source = source;
   let tags: any[];
   try {
     tags = await opc.opcMonitoredTag.findMany({
-      where: { active: true }, orderBy: { area: 'asc' }, take: 500,
-      select: { id: true, tag: true, area: true, folder: true, tagType: true, label: true, description: true, hhAlarm: true, llAlarm: true, active: true },
+      where, orderBy: { area: 'asc' }, take: 500,
+      select: { id: true, tag: true, area: true, folder: true, tagType: true, label: true, description: true, hhAlarm: true, llAlarm: true, active: true, source: true },
     });
   } catch {
     tags = await opc.opcMonitoredTag.findMany({
-      where: { active: true }, orderBy: { area: 'asc' }, take: 500,
+      where, orderBy: { area: 'asc' }, take: 500,
       select: { id: true, tag: true, area: true, folder: true, tagType: true, label: true, active: true },
     });
   }
@@ -423,17 +430,19 @@ const addMonitorSchema = z.object({
   folder: z.string().min(1),
   tagType: z.string().default('analog'),
   label: z.string().optional(),
+  source: z.enum(['ETHANOL', 'SUGAR']).optional().default('ETHANOL'),
 });
 
 router.post('/monitor', authenticate, validate(addMonitorSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const opc = getOpcPrisma();
-  const { tag, area, folder, tagType, label } = req.body;
+  const { tag, area, folder, tagType, label, source } = req.body;
+  const src = source || 'ETHANOL';
 
   try {
     const result = await opc.opcMonitoredTag.upsert({
       where: { tag },
-      create: { tag, area, folder, tagType, label: label || tag, active: true },
-      update: { area, folder, tagType, label: label || tag, active: true },
+      create: { tag, area, folder, tagType, label: label || tag, source: src, active: true },
+      update: { area, folder, tagType, label: label || tag, source: src, active: true },
     });
     res.status(201).json({ ok: true, tag: result });
   } catch {
@@ -524,18 +533,21 @@ router.delete('/monitor/:tag', authenticate, asyncHandler(async (req: AuthReques
 
 // GET /api/opc/live — Latest readings for all monitored tags
 // Optimized: batch-fetch latest readings instead of N+1 per-tag queries
-router.get('/live', authenticate, asyncHandler(async (_req: AuthRequest, res: Response) => {
+router.get('/live', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const opc = getOpcPrisma();
+  const source = req.query.source as string | undefined;
+  const tagWhere: any = { active: true };
+  if (source) tagWhere.source = source;
   let tags: any[];
   try {
     tags = await opc.opcMonitoredTag.findMany({
-      where: { active: true },
+      where: tagWhere,
       take: 500,
       select: { tag: true, area: true, folder: true, tagType: true, label: true, description: true, hhAlarm: true, llAlarm: true },
     });
   } catch {
     tags = await opc.opcMonitoredTag.findMany({
-      where: { active: true },
+      where: tagWhere,
       take: 500,
       select: { tag: true, area: true, folder: true, tagType: true, label: true },
     });
@@ -618,12 +630,15 @@ router.get('/history/:tag', authenticate, asyncHandler(async (req: AuthRequest, 
   const tag = req.params.tag;
   const hours = Math.min(parseInt(req.query.hours as string) || 24, 168);
   const property = (req.query.property as string) || 'PV';
+  const source = req.query.source as string | undefined;
   const cutoff = new Date(Date.now() - hours * 3600 * 1000);
 
   if (hours <= 6) {
     // Raw readings for short ranges — much sharper graphs
+    const rawWhere: any = { tag, property, scannedAt: { gte: cutoff } };
+    if (source) rawWhere.source = source;
     const raw = await opc.opcReading.findMany({
-      where: { tag, property, scannedAt: { gte: cutoff } },
+      where: rawWhere,
       orderBy: { scannedAt: 'asc' },
       take: 500,
       select: { scannedAt: true, value: true },
@@ -639,8 +654,10 @@ router.get('/history/:tag', authenticate, asyncHandler(async (req: AuthRequest, 
     res.json({ tag, property, hours, readings, count: readings.length, resolution: 'raw' });
   } else {
     // Hourly aggregates for longer ranges
+    const hourlyWhere: any = { tag, property, hour: { gte: cutoff } };
+    if (source) hourlyWhere.source = source;
     const readings = await opc.opcHourlyReading.findMany({
-      where: { tag, property, hour: { gte: cutoff } },
+      where: hourlyWhere,
       orderBy: { hour: 'asc' },
       take: 500,
       select: { hour: true, avg: true, min: true, max: true, count: true },
@@ -765,12 +782,17 @@ router.get('/wash-summary', authenticate, asyncHandler(async (_req: AuthRequest,
 }));
 
 // GET /api/opc/stats
-router.get('/stats', authenticate, asyncHandler(async (_req: AuthRequest, res: Response) => {
+router.get('/stats', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const opc = getOpcPrisma();
+  const source = req.query.source as string | undefined;
+  const tagWhere: any = { active: true };
+  const readingWhere: any = {};
+  const hourlyWhere: any = {};
+  if (source) { tagWhere.source = source; readingWhere.source = source; hourlyWhere.source = source; }
   const [tags, readings, hourly, syncs] = await Promise.all([
-    opc.opcMonitoredTag.count({ where: { active: true } }),
-    opc.opcReading.count(),
-    opc.opcHourlyReading.count(),
+    opc.opcMonitoredTag.count({ where: tagWhere }),
+    opc.opcReading.count({ where: readingWhere }),
+    opc.opcHourlyReading.count({ where: hourlyWhere }),
     opc.opcSyncLog.count(),
   ]);
   res.json({ monitoredTags: tags, rawReadings: readings, hourlyReadings: hourly, totalSyncs: syncs });
@@ -783,6 +805,10 @@ router.get('/stats', authenticate, asyncHandler(async (_req: AuthRequest, res: R
 router.get('/gaps', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const opc = getOpcPrisma();
   const hours = Math.min(parseInt(req.query.hours as string) || 24, 168);
+  const source = req.query.source as string | undefined;
+  const tagWhere: any = { active: true };
+  const readingWhere: any = {};
+  if (source) { tagWhere.source = source; readingWhere.source = source; }
 
   const now = new Date();
   const startTime = new Date(now.getTime() - hours * 60 * 60 * 1000);
@@ -797,11 +823,13 @@ router.get('/gaps', authenticate, asyncHandler(async (req: AuthRequest, res: Res
   }
 
   // Get active tag count for coverage threshold
-  const activeTagCount = await opc.opcMonitoredTag.count({ where: { active: true } });
+  const activeTagCount = await opc.opcMonitoredTag.count({ where: tagWhere });
 
   // Get hours that have data — count distinct tags per hour to detect partial uploads
+  const hourlyGapWhere: any = { hour: { gte: startTime, lte: now } };
+  if (source) hourlyGapWhere.source = source;
   const hourlyReadings = await opc.opcHourlyReading.findMany({
-    where: { hour: { gte: startTime, lte: now } },
+    where: hourlyGapWhere,
     select: { hour: true, tag: true },
   });
 
@@ -835,12 +863,17 @@ router.get('/gaps', authenticate, asyncHandler(async (req: AuthRequest, res: Res
 
   // Check if currently gapped (no raw reading in last 15 min)
   const recentCutoff = new Date(now.getTime() - 15 * 60 * 1000);
+  const recentWhere: any = { scannedAt: { gte: recentCutoff } };
+  if (source) recentWhere.source = source;
   const recentReading = await opc.opcReading.findFirst({
-    where: { scannedAt: { gte: recentCutoff } },
+    where: recentWhere,
     select: { scannedAt: true },
     orderBy: { scannedAt: 'desc' },
   });
+  const lastWhere: any = {};
+  if (source) lastWhere.source = source;
   const lastReading = await opc.opcReading.findFirst({
+    where: lastWhere,
     select: { scannedAt: true },
     orderBy: { scannedAt: 'desc' },
   });
