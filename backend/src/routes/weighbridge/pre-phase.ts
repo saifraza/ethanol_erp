@@ -33,12 +33,17 @@ export async function runPrePhase(w: WeighmentInput, ctx: PushContext): Promise<
     return await createOrUpdateGrainTruckStub(w, ctx);
   }
 
-  // ── 2b. OUTBOUND DDGS partial-state stub ──
+  // ── 2b. OUTBOUND ETHANOL partial-state (tare update on FIRST_DONE) ──
+  if (isGateOrPending && !isInbound && isEthanolOutbound(w, ctx)) {
+    return await updateEthanolDispatchTare(w, ctx);
+  }
+
+  // ── 2c. OUTBOUND DDGS partial-state stub ──
   if (isGateOrPending && !isInbound && isDdgsOutbound(w, ctx)) {
     return await createOrUpdateDdgsTruckStub(w, ctx);
   }
 
-  // ── 2c. OUTBOUND SCRAP partial-state stub ──
+  // ── 2d. OUTBOUND SCRAP partial-state stub ──
   if (isGateOrPending && !isInbound && isScrapOutbound(w, ctx)) {
     return await createOrUpdateScrapShipmentStub(w, ctx);
   }
@@ -162,6 +167,89 @@ async function createOrUpdateGrainTruckStub(w: WeighmentInput, _ctx: PushContext
   return {
     ids: [dupGrain.id],
     results: [{ id: dupGrain.id, type: 'GrainTruck', refNo: `UPDATED-${dupGrain.id.slice(0, 8)}`, sourceWbId: w.id }],
+    shortCircuit: true,
+  };
+}
+
+// ==========================================================================
+//  OUTBOUND ETHANOL — update DispatchTruck tare on FIRST_DONE
+// ==========================================================================
+
+/** Same ethanol detection as the dispatcher in push.ts — keep in sync. */
+function isEthanolOutbound(w: WeighmentInput, _ctx: PushContext): boolean {
+  if (w.direction !== 'OUT') return false;
+  const hasValidGatePassId = w.cloud_gate_pass_id && /^[0-9a-f-]{36}$/i.test(w.cloud_gate_pass_id);
+  if (hasValidGatePassId) return true;
+  const lower = (w.material || '').toLowerCase();
+  return lower.includes('ethanol');
+}
+
+/**
+ * Update an existing DispatchTruck with tare weight when FIRST_DONE arrives.
+ * Unlike DDGS/scrap, ethanol DispatchTruck is already created by cloud ERP
+ * (operator adds it on the dispatch page), so we only UPDATE — never create.
+ * If no matching DispatchTruck found, just ack so factory doesn't retry.
+ */
+async function updateEthanolDispatchTare(w: WeighmentInput, _ctx: PushContext): Promise<PrePhaseResult> {
+  const tareKg = w.weight_tare || 0;
+  const tareTimeVal = w.first_weight_at ? new Date(w.first_weight_at) : undefined;
+  const hasValidGatePassId = w.cloud_gate_pass_id && /^[0-9a-f-]{36}$/i.test(w.cloud_gate_pass_id);
+
+  // Find DispatchTruck: cloud_gate_pass_id → sourceWbId → vehicleNo+date
+  let truck = hasValidGatePassId
+    ? await prisma.dispatchTruck.findUnique({ where: { id: w.cloud_gate_pass_id! } })
+    : null;
+
+  if (!truck) {
+    truck = await prisma.dispatchTruck.findFirst({ where: { sourceWbId: w.id } });
+  }
+
+  if (!truck) {
+    const dateVal = w.created_at ? new Date(w.created_at) : new Date();
+    const IST_MS = 5.5 * 60 * 60 * 1000;
+    const istDate = new Date(dateVal.getTime() + IST_MS);
+    const todayStart = new Date(istDate);
+    todayStart.setUTCHours(0, 0, 0, 0);
+    todayStart.setTime(todayStart.getTime() - IST_MS);
+    const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000 - 1);
+    truck = await prisma.dispatchTruck.findFirst({
+      where: {
+        vehicleNo: w.vehicle_no.toUpperCase(),
+        date: { gte: todayStart, lte: todayEnd },
+        status: 'GATE_IN',
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  if (!truck) {
+    // No DispatchTruck found — ack anyway to prevent retry loop
+    return {
+      ids: [w.id],
+      results: [{ id: w.id, type: 'EthanolDispatch_NO_MATCH', refNo: w.vehicle_no, sourceWbId: w.id }],
+      shortCircuit: true,
+    };
+  }
+
+  // Only update if still GATE_IN (don't regress TARE_WEIGHED/GROSS_WEIGHED/RELEASED)
+  if (truck.status === 'GATE_IN' && tareKg > 0) {
+    await prisma.dispatchTruck.update({
+      where: { id: truck.id },
+      data: {
+        weightTare: tareKg,
+        tareTime: tareTimeVal,
+        status: 'TARE_WEIGHED',
+        ...(truck.sourceWbId == null ? { sourceWbId: w.id } : {}),
+        ...(w.driver_name && !truck.driverName ? { driverName: w.driver_name } : {}),
+        ...(w.driver_mobile && !truck.driverPhone ? { driverPhone: w.driver_mobile } : {}),
+        ...(w.transporter && !truck.transporterName ? { transporterName: w.transporter } : {}),
+      },
+    });
+  }
+
+  return {
+    ids: [truck.id],
+    results: [{ id: truck.id, type: 'EthanolDispatch', refNo: `TARE-${truck.id.slice(0, 8)}`, sourceWbId: w.id }],
     shortCircuit: true,
   };
 }
