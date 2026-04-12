@@ -279,6 +279,7 @@ export default function EthanolProduct() {
               <Truck size={16} className="mx-auto text-red-500 mb-1" />
               <div className="text-lg font-bold text-red-600">{lastEntry.totalDispatch?.toFixed(0) ?? '0'}</div>
               <div className="text-[10px] text-gray-400">Dispatch (in Prod)</div>
+              {lastPrevDate && <div className="text-[9px] text-gray-400">{fmtDtTime(lastPrevDate)} → {fmtDtTime(lastEntry.date)}</div>}
             </div>
           </div>
           {/* Current stock = last reading minus any new dispatches since */}
