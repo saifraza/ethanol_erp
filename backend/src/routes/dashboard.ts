@@ -134,12 +134,18 @@ router.get('/analytics', authenticate, async (req: AuthRequest, res: Response) =
         existing.count++;
       }
     }
+    // Aggregate actual dispatch trucks by date (more reliable than ethanolEntry.totalDispatch)
+    const truckDispatchByDate = new Map<string, number>();
+    for (const d of dispatch) {
+      const key = fmtDate(d.date);
+      truckDispatchByDate.set(key, (truckDispatchByDate.get(key) || 0) + (d.quantityBL || 0));
+    }
     const ethanolDaily = Array.from(ethanolByDate.entries()).map(([date, v]) => ({
       date,
       productionBL: v.productionBL,
       productionAL: v.productionAL,
       totalStock: v.totalStock,
-      dispatch: v.dispatch,
+      dispatch: truckDispatchByDate.get(date) ?? v.dispatch, // prefer actual truck data
       klpd: v.klpd, // use last entry's KLPD (already set to last non-zero at aggregation)
       avgStrength: v.avgStrength,
     }));
