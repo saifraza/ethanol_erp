@@ -32,13 +32,9 @@ export function getCompanyFilter(req: AuthRequest): { companyId?: string } {
   }
 
   // Fallback: JWT-based filtering
-  const MSPIL_ID = 'b499264a-8c73-4595-ab9b-7dc58f58c4d2';
+  // ALL MSPIL users (admin or operator) see all data — don't break running system
   const isMspil = !req.user?.companyId || req.user.companyCode === 'MSPIL';
-  if (isMspil) {
-    // Only ADMIN/SUPER_ADMIN get unscoped access; operators see MSPIL only
-    if (req.user?.role === 'ADMIN' || req.user?.role === 'SUPER_ADMIN') return {};
-    return { companyId: req.user?.companyId ?? MSPIL_ID };
-  }
+  if (isMspil) return {};
   return { companyId: req.user!.companyId! };
 }
 
@@ -52,7 +48,9 @@ export function getActiveCompanyId(req: AuthRequest): string | null {
     if (isMspilAdmin) return headerCompanyId;
     if (headerCompanyId === req.user?.companyId) return headerCompanyId;
   }
-  return req.user?.companyId || null;
+  // Always return a companyId — default to MSPIL so records never have null
+  const MSPIL_ID = 'b499264a-8c73-4595-ab9b-7dc58f58c4d2';
+  return req.user?.companyId || MSPIL_ID;
 }
 
 export const authenticate = (req: AuthRequest, res: Response, next: NextFunction) => {

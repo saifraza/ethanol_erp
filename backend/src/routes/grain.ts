@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest, authorize } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize, getActiveCompanyId } from '../middleware/auth';
 
 const router = Router();
 const DEFAULT_SILO = 0;
@@ -382,6 +382,7 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
               refNo: `GRAIN-${dateStr}`,
               narration: 'Daily grain consumption',
               userId: req.user!.id,
+              companyId: getActiveCompanyId(req),
             },
           });
           await prisma.inventoryItem.update({
@@ -500,6 +501,7 @@ router.put('/:id', authenticate, authorize('ADMIN'), async (req: AuthRequest, re
               refNo: `GRAIN-${dateStr}`,
               narration: 'Daily grain consumption (admin edit)',
               userId: req.user!.id,
+              companyId: getActiveCompanyId(req),
             },
           });
           await prisma.inventoryItem.update({

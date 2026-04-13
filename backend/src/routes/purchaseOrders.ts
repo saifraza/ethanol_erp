@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest, authorize, getCompanyFilter } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { generatePOPdf } from '../utils/pdfGenerator';
 // RAG indexing removed — only compliance docs go to RAG
@@ -813,6 +813,7 @@ router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => 
         authorizedBy: req.user!.name || 'Admin',
         status: 'ACTIVE',
         userId: req.user!.id,
+        companyId: getActiveCompanyId(req),
       },
     });
 
@@ -856,6 +857,7 @@ router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => 
       isAdvance: false,
       remarks: `Payment against PO-${po.poNo}${userRemarks ? ' | ' + userRemarks : ''}`,
       userId: req.user!.id,
+      companyId: getActiveCompanyId(req),
     },
   });
 

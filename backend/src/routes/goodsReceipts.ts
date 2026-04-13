@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest, authorize, getCompanyFilter } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { ValidationError } from '../shared/errors';
 import { onStockMovement } from '../services/autoJournal';
@@ -713,6 +713,7 @@ router.post('/expected/:poId', asyncHandler(async (req: AuthRequest, res: Respon
         status: 'DRAFT',
         qualityStatus: 'PENDING',
         userId: req.user!.id,
+        companyId: getActiveCompanyId(req),
         totalQty: 0,
         totalAmount: 0,
         lines: {
@@ -771,6 +772,7 @@ router.post('/partial/:poId', asyncHandler(async (req: AuthRequest, res: Respons
       status: 'PARTIAL',
       qualityStatus: 'PENDING',
       userId: req.user!.id,
+      companyId: getActiveCompanyId(req),
       totalQty: 0,
       totalAmount: 0,
       lines: {

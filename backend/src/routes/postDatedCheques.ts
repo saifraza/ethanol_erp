@@ -191,6 +191,7 @@ router.put('/:id/clear', asyncHandler(async (req: AuthRequest, res: Response) =>
           reference: existing.chequeNumber,
           paymentDate: updated.clearDate || new Date(),
           userId: req.user!.id,
+          companyId: getActiveCompanyId(req),
         },
       });
       // Update invoice balance
@@ -222,6 +223,7 @@ router.put('/:id/clear', asyncHandler(async (req: AuthRequest, res: Response) =>
           reference: existing.chequeNumber,
           paymentDate: updated.clearDate || new Date(),
           userId: req.user!.id,
+          companyId: getActiveCompanyId(req),
         },
       });
       // Update customer invoice balance

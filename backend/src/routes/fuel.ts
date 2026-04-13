@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError } from '../shared/errors';
 import { z } from 'zod';
@@ -320,6 +320,7 @@ router.post('/consumption', authenticate, asyncHandler(async (req: AuthRequest, 
                 refNo: `FUEL-${dateStr}`,
                 narration: `Daily fuel consumption`,
                 userId: req.user!.id,
+                companyId: getActiveCompanyId(req),
               },
             });
             await prisma.inventoryItem.update({

@@ -39,6 +39,7 @@ export async function handleFallbackInbound(w: WeighmentInput, ctx: PushContext)
       materialType: w.material || undefined,
       ticketNo: w.ticket_no || undefined,
       factoryLocalId: w.id,
+      companyId: w.company_id || undefined,
     },
   });
 

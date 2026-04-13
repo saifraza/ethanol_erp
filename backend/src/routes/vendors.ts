@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest, authorize, getCompanyFilter } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { getGSTINDetails } from '../services/eInvoice';
 
@@ -323,6 +323,7 @@ router.delete('/:id/items/:itemId', asyncHandler(async (req: AuthRequest, res: R
 
 // POST /seed — seed default vendors
 router.post('/seed', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+    const companyId = getActiveCompanyId(req);
     const vendors = await prisma.vendor.createMany({
       data: [
         {
@@ -331,6 +332,7 @@ router.post('/seed', authorize('ADMIN') as any, asyncHandler(async (req: AuthReq
           paymentTerms: 'NET7',
           creditDays: 7,
           isActive: true,
+          companyId,
         },
         {
           name: 'Chemical Supplier',
@@ -338,6 +340,7 @@ router.post('/seed', authorize('ADMIN') as any, asyncHandler(async (req: AuthReq
           paymentTerms: 'NET15',
           creditDays: 15,
           isActive: true,
+          companyId,
         },
       ],
       skipDuplicates: true,

@@ -11,7 +11,7 @@
 // sync on confirm, reversal on delete) mirrors backend/src/routes/goodsReceipts.ts.
 import { Router, Response } from 'express';
 import { z } from 'zod';
-import { authenticate, AuthRequest, authorize } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError, ValidationError, ForbiddenError, ConflictError } from '../shared/errors';
 import { onStockMovement } from '../services/autoJournal';
@@ -540,6 +540,7 @@ router.post('/', storeWriteAuth, validate(createSchema), asyncHandler(async (req
       totalQty,
       status: 'DRAFT',
       userId: req.user!.id,
+      companyId: getActiveCompanyId(req),
       lines: { create: processedLines },
     },
     include: { lines: true, po: true, vendor: true },

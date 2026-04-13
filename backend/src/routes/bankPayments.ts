@@ -734,6 +734,7 @@ router.post('/check-status', asyncHandler(async (req: AuthRequest, res: Response
                 bankFileBatch: `BATCH-${batch.batchNo}`,
                 bankFileSentAt: batch.sentAt,
                 userId: batch.createdBy,
+                companyId: getActiveCompanyId(req),
                 paymentDate: new Date(),
               },
             });
