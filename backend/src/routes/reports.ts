@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import { sendDailyWeighmentReport } from '../services/dailyWeighmentReport';
 
 const router = Router();
 
@@ -59,6 +60,16 @@ router.get('/csv', authenticate, async (req: AuthRequest, res: Response) => {
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="report.csv"');
     res.send(csv);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/reports/send-weighment-daily — manual trigger for daily weighment email
+router.post('/send-weighment-daily', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await sendDailyWeighmentReport();
+    res.json(result);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

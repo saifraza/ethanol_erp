@@ -8,6 +8,7 @@ import { initImageHandler } from './services/telegramImageHandler';
 import { startInventoryAlerts } from './services/inventoryAlerts';
 import { startComplianceAlerts } from './services/complianceAlerts';
 import { startWebhookProcessor } from './services/webhookDelivery';
+import { startDailyWeighmentReport } from './services/dailyWeighmentReport';
 
 // Prevent crashes from killing the server
 process.on('uncaughtException', (err) => {
@@ -104,6 +105,9 @@ const server = app.listen(PORT, HOST, async () => {
 
   // Compliance alerts via Telegram
   startComplianceAlerts();
+
+  // Daily weighment report email at 9:05 AM IST
+  startDailyWeighmentReport();
 
   // Webhook delivery processor (cloud → factory server)
   startWebhookProcessor();
