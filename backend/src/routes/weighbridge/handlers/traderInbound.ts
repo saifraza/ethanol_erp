@@ -17,18 +17,25 @@ export async function handleTraderInbound(w: WeighmentInput, _ctx: PushContext):
   const materialName = w.material || 'Unknown';
   const wbRef = _ctx.wbRef;
 
-  // Validate rate — if missing, try fallback from existing monthly PO, else proceed with 0
+  // Validate rate — if missing, try fallback from existing monthly PO for SAME material, else proceed with 0
   if (!rate || rate <= 0) {
     const now = new Date();
     const firstOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    // Find matching inventory item early for rate fallback
+    const fallbackInvItem = await prisma.inventoryItem.findFirst({
+      where: { name: { equals: materialName, mode: 'insensitive' }, isActive: true },
+      select: { id: true },
+    });
     const existingPO = w.supplier_id ? await prisma.purchaseOrder.findFirst({
       where: {
         vendorId: w.supplier_id,
         dealType: 'OPEN',
         status: { in: ['APPROVED', 'PARTIAL_RECEIVED'] },
         poDate: { gte: firstOfMonth },
+        // Match same material for rate fallback
+        ...(fallbackInvItem?.id ? { lines: { some: { inventoryItemId: fallbackInvItem.id } } } : {}),
       },
-      include: { lines: { orderBy: { createdAt: 'desc' }, take: 1 } },
+      include: { lines: { orderBy: { createdAt: 'desc' }, take: 1, where: fallbackInvItem?.id ? { inventoryItemId: fallbackInvItem.id } : undefined } },
     }) : null;
 
     const fallbackLine = existingPO?.lines?.[0];
@@ -116,6 +123,7 @@ export async function handleTraderInbound(w: WeighmentInput, _ctx: PushContext):
   });
 
   // RACE FIX 3: Read existingPO INSIDE transaction to prevent concurrent first-delivery races
+  // Split POs by material + rate: BAGASSE@3000 and RICE_HUSK@3000 get separate POs
   const { po, grn } = await prisma.$transaction(async (tx) => {
     const existingPO = await tx.purchaseOrder.findFirst({
       where: {
@@ -123,6 +131,11 @@ export async function handleTraderInbound(w: WeighmentInput, _ctx: PushContext):
         dealType: 'OPEN',
         status: { in: ['APPROVED', 'PARTIAL_RECEIVED'] },
         poDate: { gte: firstOfMonth },
+        // Match same material + rate — different material or rate → new PO
+        lines: { some: {
+          ...(invItem?.id ? { inventoryItemId: invItem.id } : {}),
+          rate: unitRate,
+        } },
       },
       orderBy: { poDate: 'desc' },
       include: { lines: { select: { id: true, lineNo: true } } },
@@ -168,7 +181,7 @@ export async function handleTraderInbound(w: WeighmentInput, _ctx: PushContext):
           totalGst: { increment: gstAmount },
           grandTotal: { increment: lineGrandTotal },
           status: 'PARTIAL_RECEIVED',
-          remarks: `Running PO | ${existingPO.lines.length + 1} deliveries | ${trader.name}`,
+          remarks: `Running PO | ${materialName} @ ₹${unitRate}/${unit} | ${existingPO.lines.length + 1} deliveries | ${trader.name}`,
         },
       });
 
@@ -215,7 +228,7 @@ export async function handleTraderInbound(w: WeighmentInput, _ctx: PushContext):
           totalSgst: sgst,
           totalGst: gstAmount,
           grandTotal: lineGrandTotal,
-          remarks: `Running PO | 1 delivery | ${trader.name}`,
+          remarks: `Running PO | ${materialName} @ ₹${unitRate}/${unit} | 1 delivery | ${trader.name}`,
           userId: 'system-weighbridge',
           lines: {
             create: [{

@@ -328,8 +328,9 @@ router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Re
     const totalValue = linesToSum.reduce((s, l) => s + (l.receivedQty || 0) * (l.rate || 0), 0);
 
     // Self-heal stale PO status: if all lines are fully received but status stuck at PARTIAL_RECEIVED
-    if (deal.status === 'PARTIAL_RECEIVED' && deal.dealType !== 'OPEN') {
-      const allDone = deal.lines.every(l => (l.pendingQty ?? 0) <= 0);
+    // Skip for OPEN deals and truck-cap deals (qty=0 makes allDone always true)
+    if (deal.status === 'PARTIAL_RECEIVED' && deal.dealType !== 'OPEN' && !(deal as any).truckCap) {
+      const allDone = deal.lines.every(l => (l.pendingQty ?? 0) <= 0 && l.quantity > 0);
       if (allDone && totalReceived > 0) {
         prisma.purchaseOrder.update({ where: { id: deal.id }, data: { status: 'RECEIVED' } })
           .catch(() => {}); // fire-and-forget
@@ -442,7 +443,8 @@ router.post('/deals', authenticate, validate(dealSchema), asyncHandler(async (re
     return res.status(400).json({ error: 'Fixed deals require a positive quantity' });
   }
 
-  const qty = isOpen ? 999999 : (isTrucks ? 999999 : (b.quantity || 0));
+  // For truck-based deals: qty=0 (actual qty determined by received weight), tracked by truckCap
+  const qty = isOpen ? 999999 : (isTrucks ? 0 : (b.quantity || 0));
   const creditDaysMap: Record<string, number> = { ADVANCE: 0, COD: 0, NET2: 2, NET7: 7, NET10: 10, NET15: 15, NET30: 30 };
   const creditDays = creditDaysMap[b.paymentTerms || 'NET15'] ?? 15;
 

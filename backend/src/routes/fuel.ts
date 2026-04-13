@@ -4,6 +4,7 @@ import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError } from '../shared/errors';
 import { z } from 'zod';
 import prisma from '../config/prisma';
+import { writeAudit } from '../utils/auditLog';
 
 const router = Router();
 
@@ -595,7 +596,8 @@ router.post('/deals', authenticate, validate(openDealSchema), asyncHandler(async
   // For TRUCKS deals: store the truck count in remarks (PO line qty stays in MT/KG for GRN compatibility)
   // An open deal uses 999999 as "unlimited"; a fixed TRUCKS deal also uses 999999 qty
   // because the limit is on truck count, not weight (tracked via grns._count)
-  const qty = isOpen ? 999999 : (isTrucks ? 999999 : (b.quantity || 0));
+  // For truck-based deals: qty=0 (actual qty determined by received weight), tracked by truckCap
+  const qty = isOpen ? 999999 : (isTrucks ? 0 : (b.quantity || 0));
   const creditDaysMap: Record<string, number> = { ADVANCE: 0, COD: 0, NET2: 2, NET7: 7, NET10: 10, NET15: 15, NET30: 30 };
   const creditDays = creditDaysMap[b.paymentTerms || 'NET15'] ?? 15;
 
@@ -697,10 +699,12 @@ router.put('/deals/:id', authenticate, asyncHandler(async (req: AuthRequest, res
         }
         const qty = Number(b.quantity);
         if (!qty || qty <= 0) return res.status(400).json({ error: 'Enter a valid fixed quantity' });
-        lineUpdate.quantity = qty;
-        lineUpdate.pendingQty = qty;
+        const isTrucks = b.quantityUnit === 'TRUCKS';
+        // Truck-based: line qty=0 (tracked by truckCap), weight-based: line qty=actual
+        lineUpdate.quantity = isTrucks ? 0 : qty;
+        lineUpdate.pendingQty = isTrucks ? 0 : qty;
       }
-    } else if (b.quantity !== undefined) {
+    } else if (b.quantity !== undefined && b.quantityUnit !== 'TRUCKS') {
       const qty = Number(b.quantity);
       if (qty > 0) { lineUpdate.quantity = qty; lineUpdate.pendingQty = qty; }
     }
@@ -765,11 +769,18 @@ router.put('/deals/:id', authenticate, asyncHandler(async (req: AuthRequest, res
   if (b.quantityType === 'OPEN') { poUpdate.dealType = 'OPEN'; poUpdate.subtotal = 0; poUpdate.totalGst = 0; poUpdate.grandTotal = 0; }
   else if (b.quantityType === 'FIXED') {
     poUpdate.dealType = 'STANDARD';
-    const qty = Number(b.quantity) || 0;
-    const rate = Number(b.rate) || deal.lines[0]?.rate || 0;
-    const base = qty * rate;
-    const gst = base * ((deal.lines[0]?.gstPercent || 0) / 100);
-    poUpdate.subtotal = base; poUpdate.totalGst = gst; poUpdate.grandTotal = base + gst;
+    const isTrucks = b.quantityUnit === 'TRUCKS';
+    if (isTrucks) {
+      // Truck-based: totals calculated from received weight, not ordered trucks
+      poUpdate.subtotal = 0; poUpdate.totalGst = 0; poUpdate.grandTotal = 0;
+      poUpdate.truckCap = Number(b.quantity) || null;
+    } else {
+      const qty = Number(b.quantity) || 0;
+      const rate = Number(b.rate) || deal.lines[0]?.rate || 0;
+      const base = qty * rate;
+      const gst = base * ((deal.lines[0]?.gstPercent || 0) / 100);
+      poUpdate.subtotal = base; poUpdate.totalGst = gst; poUpdate.grandTotal = base + gst;
+    }
   } else if (b.rate !== undefined && deal.dealType === 'STANDARD') {
     // Rate changed on a FIXED deal without quantityType switch — recalculate PO header
     const qty = deal.lines[0]?.quantity || 0;
@@ -796,6 +807,12 @@ router.put('/deals/:id', authenticate, asyncHandler(async (req: AuthRequest, res
 
   if (Object.keys(poUpdate).length > 0) {
     await prisma.purchaseOrder.update({ where: { id: req.params.id }, data: poUpdate });
+    // Audit: log each changed field
+    const changes: Record<string, { from: unknown; to: unknown }> = {};
+    for (const [k, v] of Object.entries(poUpdate)) {
+      changes[k] = { from: (deal as any)[k], to: v };
+    }
+    writeAudit('PurchaseOrder', deal.id, 'FUEL_DEAL_EDIT', changes, req.user!.id);
   }
 
   res.json({ ok: true });

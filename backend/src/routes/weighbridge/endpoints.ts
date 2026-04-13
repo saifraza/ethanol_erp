@@ -229,8 +229,9 @@ export function registerOtherRoutes(router: Router): void {
       const ddgsUpdate: Record<string, unknown> = {};
       if (updates.vehicle_no) ddgsUpdate.vehicleNo = updates.vehicle_no;
       if (updates.supplier_name) ddgsUpdate.partyName = updates.supplier_name;
-      if (updates.weight_gross != null) ddgsUpdate.weightGross = updates.weight_gross;
-      if (updates.weight_tare != null) ddgsUpdate.weightTare = updates.weight_tare;
+      // DDGSDispatchTruck stores ALL weights in MT; correction input arrives in KG from factory
+      if (updates.weight_gross != null) ddgsUpdate.weightGross = updates.weight_gross / 1000;
+      if (updates.weight_tare != null) ddgsUpdate.weightTare = updates.weight_tare / 1000;
       if (updates.weight_net != null) ddgsUpdate.weightNet = updates.weight_net / 1000;
       if (updates.bags != null) ddgsUpdate.bags = updates.bags;
 
@@ -323,17 +324,24 @@ export function registerOtherRoutes(router: Router): void {
             if (goodsReceipt.poId) {
               const po = await tx.purchaseOrder.findUnique({
                 where: { id: goodsReceipt.poId },
-                select: { status: true },
+                select: { status: true, dealType: true, truckCap: true },
               });
               const frozenStatuses = ['CLOSED', 'CANCELLED', 'INVOICED'];
               if (po && !frozenStatuses.includes(po.status)) {
-                const allLines = await tx.pOLine.findMany({ where: { poId: goodsReceipt.poId } });
-                const allDone = allLines.every(l => l.pendingQty <= 0);
-                const anyPartial = allLines.some(l => l.receivedQty > 0 && l.pendingQty > 0);
-                if (allDone) {
-                  await tx.purchaseOrder.update({ where: { id: goodsReceipt.poId }, data: { status: 'RECEIVED' } });
-                } else if (anyPartial) {
-                  await tx.purchaseOrder.update({ where: { id: goodsReceipt.poId }, data: { status: 'PARTIAL_RECEIVED' } });
+                if (po.truckCap) {
+                  // Truck-based: use GRN count
+                  const grnCount = await tx.goodsReceipt.count({ where: { poId: goodsReceipt.poId, status: 'CONFIRMED' } });
+                  const newStatus = grnCount >= po.truckCap ? 'RECEIVED' : 'PARTIAL_RECEIVED';
+                  await tx.purchaseOrder.update({ where: { id: goodsReceipt.poId }, data: { status: newStatus } });
+                } else if (po.dealType !== 'OPEN') {
+                  const allLines = await tx.pOLine.findMany({ where: { poId: goodsReceipt.poId } });
+                  const allDone = allLines.every(l => l.pendingQty <= 0 && l.quantity > 0);
+                  const anyPartial = allLines.some(l => l.receivedQty > 0 && l.pendingQty > 0);
+                  if (allDone) {
+                    await tx.purchaseOrder.update({ where: { id: goodsReceipt.poId }, data: { status: 'RECEIVED' } });
+                  } else if (anyPartial) {
+                    await tx.purchaseOrder.update({ where: { id: goodsReceipt.poId }, data: { status: 'PARTIAL_RECEIVED' } });
+                  }
                 }
               }
             }

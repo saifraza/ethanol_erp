@@ -144,7 +144,7 @@ export async function handlePoInbound(w: WeighmentInput, ctx: PushContext): Prom
     grn = await prisma.$transaction(async (tx) => {
       // RACE FIX 1: Truck cap check INSIDE transaction
       if (po.truckCap) {
-        const grnCount = await tx.goodsReceipt.count({ where: { poId: po.id } });
+        const grnCount = await tx.goodsReceipt.count({ where: { poId: po.id, status: 'CONFIRMED' } });
         if (grnCount >= po.truckCap) {
           throw new Error(`TRUCK_CAP_REACHED:${po.truckCap}`);
         }
@@ -271,14 +271,23 @@ export async function handlePoInbound(w: WeighmentInput, ctx: PushContext): Prom
       });
 
       // Re-fetch all PO lines to compute status from current values
-      const allLines = await tx.pOLine.findMany({ where: { poId: po.id } });
-      // Clamp negative pendingQty (overage) to 0 for status check
-      const allDone = allLines.every(l => l.pendingQty <= 0);
-      const anyPartial = allLines.some(l => l.receivedQty > 0 && l.pendingQty > 0);
-      if (allDone && po.dealType !== 'OPEN') {
-        await tx.purchaseOrder.update({ where: { id: po.id }, data: { status: 'RECEIVED' } });
-      } else if (anyPartial) {
-        await tx.purchaseOrder.update({ where: { id: po.id }, data: { status: 'PARTIAL_RECEIVED' } });
+      if (po.truckCap) {
+        // Truck-based PO: completion by GRN count
+        const grnCount = await tx.goodsReceipt.count({ where: { poId: po.id, status: 'CONFIRMED' } });
+        if (grnCount >= po.truckCap) {
+          await tx.purchaseOrder.update({ where: { id: po.id }, data: { status: 'RECEIVED' } });
+        } else {
+          await tx.purchaseOrder.update({ where: { id: po.id }, data: { status: 'PARTIAL_RECEIVED' } });
+        }
+      } else {
+        const allLines = await tx.pOLine.findMany({ where: { poId: po.id } });
+        const allDone = allLines.every(l => l.pendingQty <= 0);
+        const anyPartial = allLines.some(l => l.receivedQty > 0 && l.pendingQty > 0);
+        if (allDone && po.dealType !== 'OPEN') {
+          await tx.purchaseOrder.update({ where: { id: po.id }, data: { status: 'RECEIVED' } });
+        } else if (anyPartial) {
+          await tx.purchaseOrder.update({ where: { id: po.id }, data: { status: 'PARTIAL_RECEIVED' } });
+        }
       }
 
       // Clamp any pendingQty that went negative (overage) back to 0

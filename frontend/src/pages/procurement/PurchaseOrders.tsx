@@ -19,6 +19,7 @@ import {
   Check,
   Lock,
   Archive,
+  MoreVertical,
 } from 'lucide-react';
 import api from '../../services/api';
 
@@ -138,6 +139,8 @@ const PurchaseOrders: React.FC = () => {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [selectedPOId, setSelectedPOId] = useState<string | null>(null);
   const [poDetail, setPODetail] = useState<any>(null);
+  const [actionMenuId, setActionMenuId] = useState<string | null>(null);
+  const [auditLogs, setAuditLogs] = useState<Array<{ id: string; action: string; changes: Record<string, { from: unknown; to: unknown }>; userName: string; createdAt: string }>>([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const toggleSort = (field: string) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -271,10 +274,19 @@ const PurchaseOrders: React.FC = () => {
 
   useEffect(() => { fetchData(); }, [categoryFilter]);
 
-  // Fetch PO detail when selected
+  // Close action menu on outside click
   useEffect(() => {
-    if (!selectedPOId) { setPODetail(null); return; }
+    if (!actionMenuId) return;
+    const handler = () => setActionMenuId(null);
+    document.addEventListener('click', handler);
+    return () => document.removeEventListener('click', handler);
+  }, [actionMenuId]);
+
+  // Fetch PO detail + audit when selected
+  useEffect(() => {
+    if (!selectedPOId) { setPODetail(null); setAuditLogs([]); return; }
     setDetailLoading(true);
+    api.get(`/purchase-orders/${selectedPOId}/audit`).then(r => setAuditLogs(r.data || [])).catch(() => setAuditLogs([]));
     api.get(`/purchase-orders/${selectedPOId}`).then(r => {
       setPODetail(r.data);
       // If editing, populate the form
@@ -470,6 +482,10 @@ const PurchaseOrders: React.FC = () => {
 
     if (!formData.vendorId || formData.lines.length === 0) {
       setError('Please select vendor and add line items');
+      return;
+    }
+    if (!formData.deliveryDate) {
+      setError('PO expiry / delivery date is required');
       return;
     }
 
@@ -725,7 +741,7 @@ const PurchaseOrders: React.FC = () => {
                     <input type="date" value={formData.poDate} onChange={(e) => setFormData({ ...formData, poDate: e.target.value })} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Delivery Date *</label>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">PO Expiry Date *</label>
                     <input type="date" value={formData.deliveryDate} onChange={(e) => setFormData({ ...formData, deliveryDate: e.target.value })} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                   </div>
                   <div>
@@ -1028,7 +1044,7 @@ const PurchaseOrders: React.FC = () => {
                     { key: 'vendor', label: 'Vendor', align: 'text-left' },
                     { key: 'status', label: 'Status', align: 'text-left' },
                     { key: 'poDate', label: 'PO Date', align: 'text-left' },
-                    { key: 'deliveryDate', label: 'Delivery', align: 'text-left' },
+                    { key: 'deliveryDate', label: 'Expiry', align: 'text-left' },
                     { key: '', label: 'Items', align: 'text-center' },
                     { key: 'grandTotal', label: 'Grand Total', align: 'text-right' },
                     { key: '', label: 'Payment', align: 'text-center' },
@@ -1061,9 +1077,9 @@ const PurchaseOrders: React.FC = () => {
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100">{new Date(po.poDate).toLocaleDateString('en-IN')}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100">{po.deliveryDate ? new Date(po.deliveryDate).toLocaleDateString('en-IN') : '--'}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-center">{po.linesCount}</td>
-                    <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums font-bold" title={`Ordered: ₹${po.grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}>
-                      {(po.receivedValue ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                      {po.receivedValue !== undefined && po.receivedValue < po.grandTotal && (
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums font-bold" title={po.dealType === 'OPEN' ? `Running total` : `Ordered: ₹${po.grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}>
+                      {(po.receivedValue ?? po.grandTotal).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                      {po.dealType !== 'OPEN' && po.receivedValue !== undefined && po.receivedValue < po.grandTotal && (
                         <div className="text-[9px] font-normal text-slate-400 font-mono">of ₹{po.grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
                       )}
                     </td>
@@ -1084,8 +1100,8 @@ const PurchaseOrders: React.FC = () => {
                       {po.paymentStatus === 'NO_INVOICE' && <span className="text-[9px] text-slate-400">--</span>}
                     </td>
                     <td className="px-3 py-1.5 text-xs">
-                      <div className="flex items-center justify-end gap-1 flex-wrap">
-                        {/* PDF — always */}
+                      <div className="flex items-center justify-end gap-1">
+                        {/* PDF — always visible */}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -1097,28 +1113,8 @@ const PurchaseOrders: React.FC = () => {
                         >
                           <FileText size={10} /> PDF
                         </button>
-                        {/* Email — green if has email, dashed red if not */}
-                        {po.vendor?.email ? (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleSendEmail(po.id, po.vendor?.email || undefined); }}
-                            disabled={emailSending === po.id}
-                            title={`Send to ${po.vendor.email}`}
-                            className="px-2 py-0.5 text-[10px] bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 font-medium flex items-center gap-0.5 disabled:opacity-50"
-                          >
-                            {emailSending === po.id ? <Loader size={10} className="animate-spin" /> : <Mail size={10} />} Email
-                          </button>
-                        ) : (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleSendEmail(po.id, undefined); }}
-                            disabled={emailSending === po.id}
-                            title="No vendor email — click to enter"
-                            className="px-2 py-0.5 text-[10px] bg-red-50 text-red-600 border border-dashed border-red-300 hover:bg-red-100 font-medium flex items-center gap-0.5 disabled:opacity-50"
-                          >
-                            {emailSending === po.id ? <Loader size={10} className="animate-spin" /> : <Mail size={10} />} Email
-                          </button>
-                        )}
 
-                        {/* NEXT STEP — one clear action per status */}
+                        {/* Primary workflow action per status */}
                         {po.status === 'DRAFT' && (
                           <>
                             <button onClick={(e) => { e.stopPropagation(); setEditingPoId(po.id); setSelectedPOId(po.id); setShowCreateForm(true); }}
@@ -1134,63 +1130,13 @@ const PurchaseOrders: React.FC = () => {
                         {po.status === 'APPROVED' && (
                           <button onClick={(e) => { e.stopPropagation(); handleSendEmail(po.id, po.vendor?.email || undefined); }} disabled={emailSending === po.id}
                             className="px-2 py-0.5 text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 font-medium flex items-center gap-0.5 disabled:opacity-50">
-                            <Send size={10} /> Send to Vendor
+                            <Send size={10} /> Send
                           </button>
                         )}
-                        {['APPROVED', 'SENT', 'PARTIAL_RECEIVED'].includes(po.status) && (
-                          <button onClick={async (e) => {
-                            e.stopPropagation();
-                            const d = prompt(`Expected arrival date for PO-${po.poNo} (YYYY-MM-DD), leave blank if unknown:`) || '';
-                            try {
-                              await api.post(`/goods-receipts/expected/${po.id}`, { expectedDate: d || null });
-                              alert('Expected GRN created. Open in GRN page when material arrives.');
-                              fetchData();
-                            } catch (e: any) {
-                              alert(e?.response?.data?.error || 'Failed to create expected GRN');
-                            }
-                          }} className="px-2 py-0.5 text-[10px] bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 font-medium flex items-center gap-0.5">
-                            <Package size={10} /> Expected GRN
-                          </button>
-                        )}
-                        {['APPROVED', 'SENT', 'PARTIAL_RECEIVED', 'DRAFT'].includes(po.status) && (
-                          <button onClick={async (e) => {
-                            e.stopPropagation();
-                            const options = ['Advance 100%', 'Advance 50% + Balance on Delivery', 'Against Delivery', 'Net 7', 'Net 15', 'Net 30', 'Net 45', 'Net 60', 'Net 90'];
-                            const choice = prompt(`Change payment terms for PO-${po.poNo}. Current: ${po.paymentTerms || '—'}\n\nType one:\n${options.map((o, i) => `${i + 1}. ${o}`).join('\n')}\n\nEnter number (1-${options.length}):`);
-                            if (!choice) return;
-                            const idx = parseInt(choice, 10) - 1;
-                            if (isNaN(idx) || idx < 0 || idx >= options.length) { alert('Invalid choice'); return; }
-                            try {
-                              await api.patch(`/purchase-orders/${po.id}/payment-terms`, { paymentTerms: options[idx] });
-                              fetchData();
-                            } catch (e: any) {
-                              alert(e?.response?.data?.error || 'Failed to update terms');
-                            }
-                          }} className="px-2 py-0.5 text-[10px] bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100 font-medium flex items-center gap-0.5">
-                            <CreditCard size={10} /> Terms
-                          </button>
-                        )}
-                        {po.status === 'SENT' && (
-                          po.grnCount > 0
-                            ? <button onClick={(e) => { e.stopPropagation(); handleStatusChange(po.id, 'RECEIVED'); }}
-                                className="px-2 py-0.5 text-[10px] bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 font-medium flex items-center gap-0.5">
-                                <Check size={10} /> Mark Received
-                              </button>
-                            : <a href="/procurement/goods-receipts" onClick={(e) => e.stopPropagation()}
-                                className="px-2 py-0.5 text-[10px] bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 font-medium flex items-center gap-0.5 no-underline">
-                                <Package size={10} /> Create GRN
-                              </a>
-                        )}
-                        {po.status === 'PARTIAL_RECEIVED' && (
-                          <a href="/procurement/goods-receipts" onClick={(e) => e.stopPropagation()}
-                            className="px-2 py-0.5 text-[10px] bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 font-medium flex items-center gap-0.5 no-underline">
-                            <Package size={10} /> GRN (Partial)
-                          </a>
-                        )}
-                        {['APPROVED', 'SENT', 'PARTIAL_RECEIVED', 'RECEIVED'].includes(po.status) && (
-                          <button onClick={(e) => { e.stopPropagation(); if (po.status !== 'RECEIVED' && !confirm(`PO-${po.poNo} is not fully received. Close anyway?`)) return; handleStatusChange(po.id, 'CLOSED'); }}
-                            className="px-2 py-0.5 text-[10px] bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100 font-medium flex items-center gap-0.5">
-                            <Lock size={10} /> Close
+                        {po.status === 'SENT' && po.grnCount > 0 && (
+                          <button onClick={(e) => { e.stopPropagation(); handleStatusChange(po.id, 'RECEIVED'); }}
+                            className="px-2 py-0.5 text-[10px] bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 font-medium flex items-center gap-0.5">
+                            <Check size={10} /> Received
                           </button>
                         )}
                         {(po.status === 'CLOSED' || po.status === 'CANCELLED') && (
@@ -1203,35 +1149,46 @@ const PurchaseOrders: React.FC = () => {
                           <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest px-1">Archived</span>
                         )}
 
-                        {/* Delete — DRAFT only */}
-                        {po.status === 'DRAFT' && (
-                          <button
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              if (!confirm(`Delete PO-${po.poNo}?`)) return;
-                              try { await api.delete(`/purchase-orders/${po.id}`); fetchData(); } catch { /* */ }
-                            }}
-                            title="Delete PO"
-                            className="px-1.5 py-0.5 text-[10px] bg-red-50 text-red-600 border border-red-200 hover:bg-red-100"
-                          >
-                            <Trash2 size={10} />
-                          </button>
-                        )}
-                        {po.status === 'ARCHIVED' && (
-                          <button onClick={async (e) => { e.stopPropagation(); if (!confirm(`Delete PO-${po.poNo} permanently?`)) return; try { await api.delete(`/purchase-orders/${po.id}`); fetchData(); } catch { alert('Cannot delete'); } }}
-                            title="Delete permanently"
-                            className="px-1.5 py-0.5 text-[10px] bg-red-50 text-red-600 border border-red-200 hover:bg-red-100">
-                            <Trash2 size={10} />
-                          </button>
-                        )}
-
-                        {/* Cancel — only if active */}
-                        {!['CLOSED', 'CANCELLED', 'DRAFT', 'ARCHIVED'].includes(po.status) && (
-                          <button onClick={(e) => { e.stopPropagation(); if (confirm(`Cancel PO-${po.poNo}?`)) handleStatusChange(po.id, 'CANCELLED'); }}
-                            title="Cancel PO"
-                            className="px-1.5 py-0.5 text-[10px] bg-red-50 text-red-600 border border-red-200 hover:bg-red-100">
-                            <X size={10} />
-                          </button>
+                        {/* Overflow menu for secondary actions */}
+                        {!['ARCHIVED'].includes(po.status) && (
+                          <div className="relative">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setActionMenuId(actionMenuId === po.id ? null : po.id); }}
+                              className="px-1 py-0.5 text-[10px] bg-slate-50 text-slate-500 border border-slate-200 hover:bg-slate-100"
+                              title="More actions"
+                            >
+                              <MoreVertical size={12} />
+                            </button>
+                            {actionMenuId === po.id && (
+                              <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-slate-200 shadow-lg min-w-[160px]"
+                                onClick={(e) => e.stopPropagation()}>
+                                {/* Email */}
+                                <button onClick={() => { handleSendEmail(po.id, po.vendor?.email || undefined); setActionMenuId(null); }}
+                                  disabled={emailSending === po.id}
+                                  className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-slate-50 flex items-center gap-2 border-b border-slate-100">
+                                  <Mail size={11} className={po.vendor?.email ? 'text-green-600' : 'text-red-400'} /> {po.vendor?.email ? 'Email to Vendor' : 'Email (no address)'}
+                                </button>
+                                {/* Close */}
+                                {['APPROVED', 'SENT', 'PARTIAL_RECEIVED', 'RECEIVED'].includes(po.status) && (
+                                  <button onClick={() => {
+                                    if (po.status !== 'RECEIVED' && !confirm(`PO-${po.poNo} is not fully received. Close anyway?`)) { setActionMenuId(null); return; }
+                                    handleStatusChange(po.id, 'CLOSED'); setActionMenuId(null);
+                                  }} className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-slate-50 flex items-center gap-2 border-b border-slate-100">
+                                    <Lock size={11} className="text-slate-500" /> Close PO
+                                  </button>
+                                )}
+                                {/* Cancel */}
+                                {!['CLOSED', 'CANCELLED', 'DRAFT'].includes(po.status) && (
+                                  <button onClick={() => {
+                                    if (confirm(`Cancel PO-${po.poNo}?`)) handleStatusChange(po.id, 'CANCELLED');
+                                    setActionMenuId(null);
+                                  }} className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-slate-50 flex items-center gap-2 text-red-600">
+                                    <X size={11} /> Cancel PO
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
                     </td>
@@ -1262,7 +1219,7 @@ const PurchaseOrders: React.FC = () => {
                             {/* Pipeline Steps */}
                             <div className="flex items-center gap-0 mb-4">
                               {[
-                                { label: 'Received Value', done: (poDetail.pipeline.received.amount || 0) > 0, value: `₹${(poDetail.pipeline.received.amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, sub: `Ordered ₹${(poDetail.pipeline.ordered.amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` },
+                                { label: 'Received Value', done: (poDetail.pipeline.received.amount || 0) > 0, value: `₹${(poDetail.pipeline.received.amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, sub: (poDetail.pipeline.received.amount || 0) > (poDetail.pipeline.ordered.amount || 0) ? `Over-delivered (PO ₹${(poDetail.pipeline.ordered.amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })})` : `Ordered ₹${(poDetail.pipeline.ordered.amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` },
                                 { label: 'Received', done: poDetail.pipeline.received.grnCount > 0, value: `${poDetail.pipeline.received.qty} qty`, sub: `${poDetail.pipeline.received.grnCount} GRN${poDetail.pipeline.received.grnCount !== 1 ? 's' : ''} · ${poDetail.pipeline.received.pending} pending` },
                                 { label: 'Invoiced', done: poDetail.pipeline.invoiced.count > 0, value: poDetail.pipeline.invoiced.count > 0 ? `₹${poDetail.pipeline.invoiced.amount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '--', sub: `${poDetail.pipeline.invoiced.count} invoice${poDetail.pipeline.invoiced.count !== 1 ? 's' : ''}` },
                                 { label: 'Paid', done: poDetail.pipeline.paid.amount > 0, value: poDetail.pipeline.paid.amount > 0 ? `₹${poDetail.pipeline.paid.amount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '--', sub: poDetail.pipeline.paid.balance > 0 ? `₹${poDetail.pipeline.paid.balance.toLocaleString('en-IN', { maximumFractionDigits: 0 })} due` : 'Cleared' },
@@ -1436,6 +1393,29 @@ const PurchaseOrders: React.FC = () => {
                 })()}
               </tfoot>
             </table>
+          </div>
+        )}
+
+        {/* Audit Trail */}
+        {auditLogs.length > 0 && (
+          <div className="mt-4 border-t border-slate-200 pt-3">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Change History</div>
+            <div className="space-y-1 max-h-[200px] overflow-y-auto">
+              {auditLogs.map(log => (
+                <div key={log.id} className="flex items-start gap-3 text-[11px] py-1 border-b border-slate-50">
+                  <div className="text-[10px] text-slate-400 whitespace-nowrap font-mono">{new Date(log.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} {new Date(log.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}</div>
+                  <div className="text-[10px] text-slate-500 font-medium min-w-[60px]">{log.userName}</div>
+                  <div className="flex-1">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mr-1">{log.action.replace(/_/g, ' ')}</span>
+                    {Object.entries(log.changes).map(([field, val]) => (
+                      <span key={field} className="text-[10px] text-slate-600">
+                        {field}: <span className="text-red-500 line-through">{String(val.from ?? '--')}</span> <span className="text-green-600">{String(val.to ?? '--')}</span>{' '}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>

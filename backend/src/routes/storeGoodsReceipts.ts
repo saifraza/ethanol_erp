@@ -681,15 +681,18 @@ router.post('/:id/approve', storeWriteAuth, asyncHandler(async (req: AuthRequest
       }
     }
 
-    // Roll up PO status
+    // Roll up PO status (skip OPEN deal POs — trader running POs stay open)
     if (grn.poId) {
-      const poLines = await tx.pOLine.findMany({ where: { poId: grn.poId } });
-      const allReceived = poLines.every((l: any) => l.pendingQty === 0);
-      const anyPartial = poLines.some((l: any) => l.receivedQty > 0 && l.pendingQty > 0);
-      if (allReceived) {
-        await tx.purchaseOrder.update({ where: { id: grn.poId }, data: { status: 'RECEIVED' } });
-      } else if (anyPartial) {
-        await tx.purchaseOrder.update({ where: { id: grn.poId }, data: { status: 'PARTIAL_RECEIVED' } });
+      const parentPO = await tx.purchaseOrder.findUnique({ where: { id: grn.poId }, select: { dealType: true } });
+      if (parentPO?.dealType !== 'OPEN') {
+        const poLines = await tx.pOLine.findMany({ where: { poId: grn.poId } });
+        const allReceived = poLines.every((l: any) => l.pendingQty === 0);
+        const anyPartial = poLines.some((l: any) => l.receivedQty > 0 && l.pendingQty > 0);
+        if (allReceived) {
+          await tx.purchaseOrder.update({ where: { id: grn.poId }, data: { status: 'RECEIVED' } });
+        } else if (anyPartial) {
+          await tx.purchaseOrder.update({ where: { id: grn.poId }, data: { status: 'PARTIAL_RECEIVED' } });
+        }
       }
     }
 

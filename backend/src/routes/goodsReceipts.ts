@@ -576,7 +576,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { grn, poStatus } = await prisma.$transaction(async (tx) => {
       // C2 FIX: Truck cap check INSIDE transaction to prevent race condition
       if (po.truckCap) {
-        const grnCount = await tx.goodsReceipt.count({ where: { poId: po.id } });
+        const grnCount = await tx.goodsReceipt.count({ where: { poId: po.id, status: 'CONFIRMED' } });
         if (grnCount >= po.truckCap) {
           throw new ValidationError(`Truck cap (${po.truckCap}) reached for this deal`);
         }
@@ -629,25 +629,40 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       });
 
       // Step 3: Check and update PO status
+      // Skip auto-close for OPEN deal POs (trader running POs) — they stay open until manually closed
       let poStatus = 'unchanged';
-      const updatedPoLines = await tx.pOLine.findMany({
-        where: { poId: b.poId },
-      });
-      const allFullyReceived = updatedPoLines.every((line: any) => line.pendingQty === 0);
-      const anyPartialReceived = updatedPoLines.some((line: any) => line.receivedQty > 0 && line.pendingQty > 0);
+      const parentPO = await tx.purchaseOrder.findUnique({ where: { id: b.poId }, select: { dealType: true, truckCap: true } });
 
-      if (allFullyReceived) {
-        await tx.purchaseOrder.update({
-          where: { id: b.poId },
-          data: { status: 'RECEIVED' },
+      if (parentPO?.truckCap) {
+        // Truck-based PO: completion by GRN count, not by weight
+        const grnCount = await tx.goodsReceipt.count({ where: { poId: b.poId, status: 'CONFIRMED' } });
+        if (grnCount >= parentPO.truckCap) {
+          await tx.purchaseOrder.update({ where: { id: b.poId }, data: { status: 'RECEIVED' } });
+          poStatus = 'RECEIVED';
+        } else {
+          await tx.purchaseOrder.update({ where: { id: b.poId }, data: { status: 'PARTIAL_RECEIVED' } });
+          poStatus = 'PARTIAL_RECEIVED';
+        }
+      } else if (parentPO?.dealType !== 'OPEN') {
+        const updatedPoLines = await tx.pOLine.findMany({
+          where: { poId: b.poId },
         });
-        poStatus = 'RECEIVED';
-      } else if (anyPartialReceived) {
-        await tx.purchaseOrder.update({
-          where: { id: b.poId },
-          data: { status: 'PARTIAL_RECEIVED' },
-        });
-        poStatus = 'PARTIAL_RECEIVED';
+        const allFullyReceived = updatedPoLines.every((line: any) => line.pendingQty === 0);
+        const anyPartialReceived = updatedPoLines.some((line: any) => line.receivedQty > 0 && line.pendingQty > 0);
+
+        if (allFullyReceived) {
+          await tx.purchaseOrder.update({
+            where: { id: b.poId },
+            data: { status: 'RECEIVED' },
+          });
+          poStatus = 'RECEIVED';
+        } else if (anyPartialReceived) {
+          await tx.purchaseOrder.update({
+            where: { id: b.poId },
+            data: { status: 'PARTIAL_RECEIVED' },
+          });
+          poStatus = 'PARTIAL_RECEIVED';
+        }
       }
 
       return { grn, poStatus };
@@ -899,20 +914,23 @@ router.delete('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
               },
             });
 
-            // Recalculate PO status from actual line state
-            const allLines = await tx.pOLine.findMany({ where: { poId: grn.poId! } });
-            const anyReceived = allLines.some((l: any) => l.receivedQty > 0 || (l.id === line.poLineId && newReceivedQty > 0));
-            if (!anyReceived) {
-              await tx.purchaseOrder.update({
-                where: { id: grn.poId! },
-                data: { status: 'APPROVED' },
-              });
-            } else {
-              const allDone = allLines.every((l: any) => l.pendingQty <= 0);
-              await tx.purchaseOrder.update({
-                where: { id: grn.poId! },
-                data: { status: allDone ? 'RECEIVED' : 'PARTIAL_RECEIVED' },
-              });
+            // Recalculate PO status from actual line state (skip OPEN deals — trader running POs)
+            const parentPOForReverse = await tx.purchaseOrder.findUnique({ where: { id: grn.poId! }, select: { dealType: true } });
+            if (parentPOForReverse?.dealType !== 'OPEN') {
+              const allLines = await tx.pOLine.findMany({ where: { poId: grn.poId! } });
+              const anyReceived = allLines.some((l: any) => l.receivedQty > 0 || (l.id === line.poLineId && newReceivedQty > 0));
+              if (!anyReceived) {
+                await tx.purchaseOrder.update({
+                  where: { id: grn.poId! },
+                  data: { status: 'APPROVED' },
+                });
+              } else {
+                const allDone = allLines.every((l: any) => l.pendingQty <= 0);
+                await tx.purchaseOrder.update({
+                  where: { id: grn.poId! },
+                  data: { status: allDone ? 'RECEIVED' : 'PARTIAL_RECEIVED' },
+                });
+              }
             }
           }
         }

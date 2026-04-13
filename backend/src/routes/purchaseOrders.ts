@@ -8,6 +8,7 @@ import { renderDocumentPdf } from '../services/documentRenderer';
 import { sendEmail } from '../services/messaging';
 import { nextDocNo } from '../utils/docSequence';
 import { getCompanyForPdf } from '../utils/pdfCompanyHelper';
+import { writeAudit, auditDiff } from '../utils/auditLog';
 
 const router = Router();
 router.use(authenticate as any);
@@ -146,31 +147,19 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     });
     const pendingCashTotal = pendingCashVouchers.reduce((s, v) => s + v.amount, 0);
 
-    // For OPEN/fuel deals: grandTotal is 0, compute from PO line rate * received qty
-    const isOpenDeal = (po as any).dealType === 'OPEN';
-    let effectiveAmount = po.grandTotal;
-    if (isOpenDeal && po.grandTotal === 0) {
-      // Use PO line rate * received qty as effective ordered value
-      const lineValue = po.lines.reduce((s: number, l: any) => {
-        const base = (l.receivedQty || 0) * (l.rate || 0);
-        return s + base + base * (l.gstPercent || 0) / 100;
-      }, 0);
-      // Fallback to GRN totals if line-level calc is 0
-      const grnTotalValue = lineValue || po.grns.reduce((s: number, g: any) => s + (g.totalAmount || 0), 0);
-      effectiveAmount = grnTotalValue;
-    }
-    // Compute received value (rate * received qty + GST) for money-first pipeline
+    // PO amount is ALWAYS based on received weight — not ordered qty
     const receivedValue = Math.round(po.lines.reduce((s: number, l: any) => {
       const base = (l.receivedQty || 0) * (l.rate || 0);
       return s + base + base * (l.gstPercent || 0) / 100;
     }, 0) * 100) / 100;
+    const orderedAmount = po.grandTotal || 0; // keep for reference only
 
-    // Balance: use invoice balance when invoices exist, else effective amount minus direct payments
+    // Balance: invoice balance when invoices exist, else received value minus payments
     const invoiceBalance = totalInvoiced - totalPaid - totalTDS;
-    const effectiveBalance = totalInvoiced > 0 ? invoiceBalance : Math.max(0, effectiveAmount - totalPaid);
+    const effectiveBalance = totalInvoiced > 0 ? invoiceBalance : Math.max(0, receivedValue - totalPaid);
 
     const pipeline = {
-      ordered: { qty: totalOrdered, amount: effectiveAmount },
+      ordered: { qty: totalOrdered, amount: orderedAmount },
       received: { qty: totalReceived, pending: totalPending, grnCount: po.grns.length, amount: receivedValue },
       invoiced: { amount: totalInvoiced, count: (po.vendorInvoices || []).length },
       paid: { amount: totalPaid, tds: totalTDS, balance: effectiveBalance, directPayments, pendingCash: pendingCashTotal, pendingCashVouchers },
@@ -182,6 +171,13 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 // POST / — create PO with lines in a transaction
 router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
+
+    // Validate every line has an inventory item linked
+    const missingItem = (b.lines || []).some((l: any) => !l.inventoryItemId && !l.materialId);
+    if (missingItem) {
+      res.status(400).json({ error: 'Every PO line must have an inventory item selected' });
+      return;
+    }
 
     // Look up items for auto-fill (unified material master = InventoryItem)
     const itemIds = (b.lines || []).map((l: any) => l.materialId || l.inventoryItemId).filter(Boolean);
@@ -343,6 +339,7 @@ router.put('/:id/status', asyncHandler(async (req: AuthRequest, res: Response) =
       include: { lines: true },
     });
 
+    writeAudit('PurchaseOrder', po.id, 'STATUS_CHANGE', { status: { from: po.status, to: newStatus } }, req.user!.id);
     res.json(updated);
 }));
 
@@ -356,14 +353,17 @@ router.patch('/:id/payment-terms', asyncHandler(async (req: AuthRequest, res: Re
       return res.status(400).json({ error: `Cannot update payment terms on ${po.status} PO` });
     }
     const termDays: Record<string, number> = { 'Advance 100%': 0, 'Advance 50% + Balance on Delivery': 0, 'Against Delivery': 0, 'Net 7': 7, 'Net 15': 15, 'Net 30': 30, 'Net 45': 45, 'Net 60': 60, 'Net 90': 90 };
+    const newTerms = paymentTerms ?? po.paymentTerms;
+    const newDays = creditDays ?? (paymentTerms && termDays[paymentTerms] !== undefined ? termDays[paymentTerms] : po.creditDays);
     const updated = await prisma.purchaseOrder.update({
       where: { id: po.id },
-      data: {
-        paymentTerms: paymentTerms ?? po.paymentTerms,
-        creditDays: creditDays ?? (paymentTerms && termDays[paymentTerms] !== undefined ? termDays[paymentTerms] : po.creditDays),
-      },
+      data: { paymentTerms: newTerms, creditDays: newDays },
       select: { id: true, poNo: true, paymentTerms: true, creditDays: true, status: true },
     });
+    writeAudit('PurchaseOrder', po.id, 'PAYMENT_TERMS', {
+      paymentTerms: { from: po.paymentTerms, to: newTerms },
+      creditDays: { from: po.creditDays, to: newDays },
+    }, req.user!.id);
     res.json(updated);
 }));
 
@@ -463,6 +463,7 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
           include: { lines: true },
         });
       });
+      auditDiff('PurchaseOrder', po.id, 'EDIT', po as any, { vendorId: b.vendorId || po.vendorId, subtotal, grandTotal, remarks: b.remarks ?? po.remarks, paymentTerms: b.paymentTerms ?? po.paymentTerms, linesCount: processedLines.length }, ['vendorId', 'subtotal', 'grandTotal', 'remarks', 'paymentTerms', 'linesCount'], req.user!.id);
       return res.json(updated);
     }
 
@@ -484,6 +485,7 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
       },
       include: { lines: true },
     });
+    auditDiff('PurchaseOrder', po.id, 'EDIT', po as any, updated as any, ['vendorId', 'paymentTerms', 'remarks', 'deliveryAddress', 'transportMode'], req.user!.id);
 
     res.json(updated);
 }));
@@ -503,6 +505,20 @@ router.delete('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     });
 
     res.json({ ok: true });
+}));
+
+// GET /:id/audit — audit trail for a PO
+router.get('/:id/audit', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const logs = await prisma.auditLog.findMany({
+    where: { entity: 'PurchaseOrder', entityId: req.params.id },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+  });
+  // Resolve user names
+  const userIds = [...new Set(logs.map(l => l.userId))];
+  const users = userIds.length > 0 ? await prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true } }) : [];
+  const userMap = Object.fromEntries(users.map(u => [u.id, u.name]));
+  res.json(logs.map(l => ({ ...l, userName: userMap[l.userId] || l.userId, changes: JSON.parse(l.changes) })));
 }));
 
 // GET /:id/pdf — Generate PO PDF with letterhead
@@ -543,15 +559,15 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
       transportMode: po.transportMode,
       remarks: po.remarks,
       lines: po.lines.map((l: any) => {
-        // For open fuel deals (qty=999999), use receivedQty for PDF display
-        // For open/truck deals (qty=999999), show receivedQty. If no receipts yet, show 0 (not 999999)
-        const displayQty = l.quantity >= 900000 ? (l.receivedQty || 0) : l.quantity;
+        // For open deals (qty=999999) or truck-based deals (qty=0), use receivedQty for PDF display
+        const isOpenOrTruck = l.quantity >= 900000 || (l.quantity === 0 && (l.receivedQty || 0) > 0);
+        const displayQty = isOpenOrTruck ? (l.receivedQty || 0) : l.quantity;
         const lineAmount = l.amount && l.amount > 0 ? l.amount : displayQty * l.rate;
         const taxable = l.taxableAmount && l.taxableAmount > 0 ? l.taxableAmount : lineAmount * (1 - (l.discountPercent || 0) / 100);
         const gstAmt = taxable * (l.gstPercent || 0) / 100;
         const isIntra = po.supplyType !== 'INTER_STATE';
         const agg = grnAgg[l.id] || { received: 0, accepted: 0, rejected: 0 };
-        const orderedQty = l.quantity >= 900000 ? 0 : l.quantity;
+        const orderedQty = (l.quantity >= 900000 || isOpenOrTruck) ? 0 : l.quantity;
         const overDelivered = agg.received > orderedQty && orderedQty > 0;
         return {
           description: l.description,
@@ -575,29 +591,30 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
           lineTotal: l.lineTotal && l.lineTotal > 0 ? l.lineTotal : Math.round((taxable + gstAmt) * 100) / 100,
         };
       }),
-      // Calculate totals from lines if DB values are 0 (e.g., open fuel deals)
-      // For open deals (sentinel qty), use receivedQty (0 if nothing delivered yet)
-      subtotal: po.subtotal > 0 ? po.subtotal : (() => {
-        return Math.round(po.lines.reduce((s: number, l: any) => {
-          const qty = l.quantity >= 900000 ? (l.receivedQty || 0) : l.quantity;
+      // Always recalculate totals from lines — DB values can be stale (e.g., GST% changed after PO creation)
+      subtotal: (() => {
+        const calc = Math.round(po.lines.reduce((s: number, l: any) => {
+          const qty = (l.quantity >= 900000 || (l.quantity === 0 && (l.receivedQty || 0) > 0)) ? (l.receivedQty || 0) : l.quantity;
           return s + qty * l.rate;
         }, 0) * 100) / 100;
+        return calc > 0 ? calc : (po.subtotal || 0);
       })(),
-      totalGst: po.totalGst > 0 ? po.totalGst : (() => {
+      totalGst: (() => {
         return Math.round(po.lines.reduce((s: number, l: any) => {
-          const qty = l.quantity >= 900000 ? (l.receivedQty || 0) : l.quantity;
+          const qty = (l.quantity >= 900000 || (l.quantity === 0 && (l.receivedQty || 0) > 0)) ? (l.receivedQty || 0) : l.quantity;
           return s + qty * l.rate * (l.gstPercent || 0) / 100;
         }, 0) * 100) / 100;
       })(),
       freightCharge: po.freightCharge,
       otherCharges: po.otherCharges,
       roundOff: po.roundOff,
-      grandTotal: po.grandTotal > 0 ? po.grandTotal : (() => {
-        return Math.round(po.lines.reduce((s: number, l: any) => {
-          const qty = l.quantity >= 900000 ? (l.receivedQty || 0) : l.quantity;
+      grandTotal: (() => {
+        const calc = Math.round(po.lines.reduce((s: number, l: any) => {
+          const qty = (l.quantity >= 900000 || (l.quantity === 0 && (l.receivedQty || 0) > 0)) ? (l.receivedQty || 0) : l.quantity;
           const base = qty * l.rate;
           return s + base + base * (l.gstPercent || 0) / 100;
         }, 0) * 100) / 100;
+        return calc > 0 ? calc : (po.grandTotal || 0);
       })(),
       preparedBy: 'Purchase Department',
       approvedBy: 'Sibtay Hasnain Zaidi',
