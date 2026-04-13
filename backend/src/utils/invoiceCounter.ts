@@ -1,28 +1,25 @@
 /**
  * Custom invoice number generator using AppConfig as counter store.
- * Series: INV/ETH/001, INV/DDGS/001, etc.
+ * Single global series: INV/ETH/001, INV/ETH/002, ...
+ * All products (ethanol, DDGS, scrap, etc.) share ONE counter.
  * Must be called inside a prisma.$transaction to prevent duplicates.
  */
 
-type InvoiceSeries = 'ETH' | 'DDGS' | 'LFO' | 'HFO' | 'RS' | 'ENA' | 'SUG' | 'SCRAP';
-
-const COUNTER_PREFIX = 'counter:INV/';
+const COUNTER_KEY = 'counter:INV/ETH';
 
 /**
  * Get next invoice number, atomically incrementing the counter.
  * Uses a single PostgreSQL INSERT ... ON CONFLICT DO UPDATE RETURNING,
  * which is atomic at the DB level — safe under concurrent transactions.
  * Can be called with tx or prisma client; both work.
- * Returns formatted string like "INV/ETH/001"
+ * Returns formatted string like "INV/ETH/053"
+ *
+ * @param _series — IGNORED. Kept for backward compat; all invoices use ETH counter.
  */
-export async function nextInvoiceNo(tx: any, series: InvoiceSeries): Promise<string> {
-  const key = `${COUNTER_PREFIX}${series}`;
-
-  // Atomic increment: single statement, PostgreSQL guarantees serialization
-  // on the conflict target (the "key" primary key).
+export async function nextInvoiceNo(tx: any, _series?: string): Promise<string> {
   const rows = await tx.$queryRaw<Array<{ value: string }>>`
     INSERT INTO "AppConfig" ("key", "value", "updatedAt")
-    VALUES (${key}, '1', NOW())
+    VALUES (${COUNTER_KEY}, '1', NOW())
     ON CONFLICT ("key") DO UPDATE
       SET "value" = (COALESCE(NULLIF("AppConfig"."value", '')::int, 0) + 1)::text,
           "updatedAt" = NOW()
@@ -30,32 +27,20 @@ export async function nextInvoiceNo(tx: any, series: InvoiceSeries): Promise<str
   `;
   const counter = parseInt(rows[0]?.value || '1', 10);
 
-  return `INV/${series}/${String(counter).padStart(3, '0')}`;
+  return `INV/ETH/${String(counter).padStart(3, '0')}`;
 }
 
 /**
  * Get current counter value without incrementing
  */
-export async function currentCounter(prisma: any, series: InvoiceSeries): Promise<number> {
-  const key = `${COUNTER_PREFIX}${series}`;
-  const config = await prisma.appConfig.findUnique({ where: { key } });
+export async function currentCounter(prisma: any, _series?: string): Promise<number> {
+  const config = await prisma.appConfig.findUnique({ where: { key: COUNTER_KEY } });
   return config ? parseInt(config.value, 10) : 0;
 }
 
 /**
- * Determine invoice series from contract type and product.
- * - Ethanol (any contract type) → ETH
- * - DDGS (any deal type, incl. job work) → DDGS — series MSPIL/DDGS/NNN
- * - Sugar → SUG
- * - Falls back to ETH for unknown.
+ * @deprecated All invoices use a single global ETH series. Always returns 'ETH'.
  */
-export function getInvoiceSeries(contractType?: string, productName?: string): InvoiceSeries {
-  const p = (productName || '').toUpperCase();
-  if (p.includes('DDGS') || p.includes('DISTILLERS') || p.includes('DRIED GRAIN') || p.includes('WET GRAIN')) return 'DDGS';
-  if (p.includes('SUGAR')) return 'SUG';
-  if (p.includes('LFO')) return 'LFO';
-  if (p.includes('HFO')) return 'HFO';
-  if (p.includes('RECTIFIED')) return 'RS';
-  if (p.includes('ENA')) return 'ENA';
+export function getInvoiceSeries(_contractType?: string, _productName?: string): 'ETH' {
   return 'ETH';
 }

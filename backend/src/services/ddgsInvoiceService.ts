@@ -53,7 +53,7 @@ export async function createDDGSInvoiceFromTruck(truckId: string): Promise<strin
     });
     if (existingLink?.invoiceId) return existingLink.invoiceId;
 
-    const customInvNo = await nextInvoiceNo(tx, 'DDGS');
+    const customInvNo = await nextInvoiceNo(tx);
     const dispatchDate = truck.grossTime || truck.date || new Date();
 
     const invoice = await tx.invoice.create({
@@ -101,8 +101,10 @@ export async function createDDGSInvoiceFromTruck(truckId: string): Promise<strin
           destination: truck.destination || null,
           bags: truck.bags || 0,
           weightPerBag: truck.weightPerBag || 50,
-          weightGrossMT: (truck.weightGross || 0) / 1000,
-          weightTareMT: (truck.weightTare || 0) / 1000,
+          // DDGSDispatchTruck stores weights in MT. Old weighbridge rows (pre-2026-04-12)
+          // stored gross/tare in KG — detect by threshold (no truck > 100 MT = 100,000 KG).
+          weightGrossMT: (truck.weightGross || 0) > 100 ? (truck.weightGross || 0) / 1000 : (truck.weightGross || 0),
+          weightTareMT: (truck.weightTare || 0) > 100 ? (truck.weightTare || 0) / 1000 : (truck.weightTare || 0),
           weightNetMT: netMT,
           rate,
           amount,
