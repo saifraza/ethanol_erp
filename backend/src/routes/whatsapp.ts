@@ -6,7 +6,7 @@
  */
 
 import { Router, Response } from 'express';
-import { AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import prisma from '../config/prisma';
 import { z } from 'zod';
@@ -14,6 +14,7 @@ import { waStatus, waQr, waSend, waSendGroup, resetWaConfig } from '../services/
 import { resetGatewayCache } from '../services/messagingGateway';
 
 const router = Router();
+router.use(authenticate as any);
 
 // ── Status ──
 

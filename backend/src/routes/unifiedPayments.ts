@@ -1,9 +1,10 @@
 import { Router, Response } from 'express';
-import { AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
+import { authenticate, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import prisma from '../config/prisma';
 
 const router = Router();
+router.use(authenticate as any);
 
 // ═══════════════════════════════════════════════
 // Shared types

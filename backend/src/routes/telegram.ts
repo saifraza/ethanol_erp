@@ -6,7 +6,7 @@
  */
 
 import { Router, Response } from 'express';
-import { AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import prisma from '../config/prisma';
 import { z } from 'zod';
@@ -15,6 +15,7 @@ import { initTelegram, stopPolling } from '../services/telegramBot';
 import { broadcast } from '../services/messagingGateway';
 
 const router = Router();
+router.use(authenticate as any);
 
 const ALL_MODULES = [
   'liquefaction', 'fermentation', 'distillation', 'milling',

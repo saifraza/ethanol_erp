@@ -7,7 +7,7 @@
 
 import { Router, Response } from 'express';
 import { z } from 'zod';
-import { AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { ValidationError } from '../shared/errors';
 import prisma from '../config/prisma';
@@ -25,6 +25,7 @@ import {
 import { streamXlsxResponse } from '../utils/xlsxExport';
 
 const router = Router();
+router.use(authenticate as any);
 
 // ──────────────────────────────────────────────────────────
 // Query-param schema (no body — GET only)

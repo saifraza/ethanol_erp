@@ -1,11 +1,12 @@
 import { Router, Response } from 'express';
-import { AuthRequest, authorize, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize, getCompanyFilter, getActiveCompanyId, canAccessCompany } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError, ValidationError } from '../shared/errors';
 import { z } from 'zod';
 import prisma from '../config/prisma';
 
 const router = Router();
+router.use(authenticate as any);
 
 // Types for Prisma results (used when Prisma client types unavailable)
 interface JournalLineResult { debit: number; credit: number }
@@ -218,6 +219,7 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     },
   });
   if (!account) throw new NotFoundError('Account', req.params.id);
+  if (!canAccessCompany(req, account.companyId)) throw new NotFoundError('Account', req.params.id);
   res.json(account);
 }));
 
@@ -265,6 +267,7 @@ router.post('/', validate(createAccountSchema), asyncHandler(async (req: AuthReq
 router.put('/:id', validate(updateAccountSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const account = await prisma.account.findUnique({ where: { id: req.params.id } });
   if (!account) throw new NotFoundError('Account', req.params.id);
+  if (!canAccessCompany(req, account.companyId)) throw new NotFoundError('Account', req.params.id);
 
   // System accounts: only name and active status can change
   if (account.isSystem) {
@@ -287,6 +290,7 @@ router.put('/:id', validate(updateAccountSchema), asyncHandler(async (req: AuthR
 router.delete('/:id', authorize('SUPER_ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
   const account = await prisma.account.findUnique({ where: { id: req.params.id } });
   if (!account) throw new NotFoundError('Account', req.params.id);
+  if (!canAccessCompany(req, account.companyId)) throw new NotFoundError('Account', req.params.id);
 
   if (account.isSystem) {
     throw new ValidationError('Cannot delete system accounts');

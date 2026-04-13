@@ -1,9 +1,10 @@
 import { Router, Response } from 'express';
-import { AuthRequest, authorize, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import prisma from '../config/prisma';
 
 const router = Router();
+router.use(authenticate as any);
 
 // GET / — list departments
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {

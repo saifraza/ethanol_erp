@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
+import { authenticate, AuthRequest, getCompanyFilter, getActiveCompanyId, canAccessCompany } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError, ValidationError } from '../shared/errors';
 import { z } from 'zod';
@@ -7,6 +7,7 @@ import prisma from '../config/prisma';
 import { DIVISIONS } from '../shared/config/divisions';
 
 const router = Router();
+router.use(authenticate as any);
 
 // ── Types (for Prisma results) ──
 interface JL { debit: number; credit: number }
@@ -457,6 +458,7 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     },
   });
   if (!entry) throw new NotFoundError('Journal Entry', req.params.id);
+  if (!canAccessCompany(req, entry.companyId)) throw new NotFoundError('Journal Entry', req.params.id);
   res.json(entry);
 }));
 
@@ -535,6 +537,7 @@ router.post('/:id/reverse', asyncHandler(async (req: AuthRequest, res: Response)
     include: { lines: true },
   });
   if (!original) throw new NotFoundError('Journal Entry', req.params.id);
+  if (!canAccessCompany(req, original.companyId)) throw new NotFoundError('Journal Entry', req.params.id);
 
   if (original.isReversed) {
     throw new ValidationError('This entry has already been reversed');

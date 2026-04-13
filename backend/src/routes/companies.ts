@@ -72,6 +72,11 @@ router.get('/current', asyncHandler(async (req: AuthRequest, res: Response) => {
 
 // GET /:id — Get company detail (all fields)
 router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const isAdmin = req.user?.role === 'ADMIN' || req.user?.role === 'SUPER_ADMIN';
+  // Non-admins can only see their own company
+  if (!isAdmin && req.user?.companyId && req.params.id !== req.user.companyId) {
+    throw new NotFoundError('Company', req.params.id);
+  }
   const company = await prisma.company.findUnique({ where: { id: req.params.id } });
   if (!company) throw new NotFoundError('Company', req.params.id);
   res.json(company);
@@ -114,8 +119,10 @@ router.post('/', validate(createSchema), asyncHandler(async (req: AuthRequest, r
   res.status(201).json(company);
 }));
 
-// PUT /:id — Update company fields
+// PUT /:id — Update company fields (admin only)
 router.put('/:id', validate(updateSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+  const isAdmin = req.user?.role === 'ADMIN' || req.user?.role === 'SUPER_ADMIN';
+  if (!isAdmin) return res.status(403).json({ error: 'Admin access required' });
   const existing = await prisma.company.findUnique({ where: { id: req.params.id }, select: { id: true } });
   if (!existing) throw new NotFoundError('Company', req.params.id);
 

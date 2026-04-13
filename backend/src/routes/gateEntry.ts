@@ -1,10 +1,11 @@
 import { Router, Response } from 'express';
-import { AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { NotFoundError } from '../shared/errors';
 import prisma from '../config/prisma';
 
 const router = Router();
+router.use(authenticate as any);
 
 // GET / — list gate entries for a date
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {

@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
+import { authenticate, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError } from '../shared/errors';
 import { z } from 'zod';
@@ -7,6 +7,7 @@ import prisma from '../config/prisma';
 import { randomUUID } from 'crypto';
 
 const router = Router();
+router.use(authenticate as any);
 
 // ═══════════════════════════════════════════════
 // Zod Schemas

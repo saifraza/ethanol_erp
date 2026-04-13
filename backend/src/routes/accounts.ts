@@ -1,11 +1,12 @@
 import { Router, Response } from 'express';
-import { AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { NotFoundError } from '../shared/errors';
 import prisma from '../config/prisma';
 import { onShipmentPaymentConfirmed } from '../services/autoJournal';
 
 const router = Router();
+router.use(authenticate as any);
 
 // ═══════════════════════════════════════════════
 // GET /pending — Shipments awaiting payment confirmation

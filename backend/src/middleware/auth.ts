@@ -53,6 +53,27 @@ export function getActiveCompanyId(req: AuthRequest): string | null {
   return req.user?.companyId || MSPIL_ID;
 }
 
+/** Checks if the requesting user can access a record with the given companyId.
+ *  MSPIL users (any role) can access all records.
+ *  Non-MSPIL users can only access their own company's records.
+ *  Returns true if access is allowed. */
+export function canAccessCompany(req: AuthRequest, recordCompanyId: string | null): boolean {
+  // No companyId on record = legacy MSPIL data, everyone can access
+  if (!recordCompanyId) return true;
+  // MSPIL users see everything
+  const isMspil = !req.user?.companyId || req.user.companyCode === 'MSPIL';
+  if (isMspil) return true;
+  // Header override for admin company switching
+  const headerCompanyId = req.headers['x-company-id'] as string | undefined;
+  if (headerCompanyId) {
+    const isMspilAdmin = (!req.user?.companyId || req.user.companyCode === 'MSPIL') &&
+      (req.user?.role === 'ADMIN' || req.user?.role === 'SUPER_ADMIN');
+    if (isMspilAdmin) return true;
+  }
+  // Non-MSPIL users: must match their own companyId
+  return recordCompanyId === req.user?.companyId;
+}
+
 export const authenticate = (req: AuthRequest, res: Response, next: NextFunction) => {
   const token = req.headers.authorization?.split(' ')[1] || (req.query.token as string);
 
