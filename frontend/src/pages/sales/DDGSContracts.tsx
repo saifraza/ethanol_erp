@@ -398,7 +398,9 @@ const DDGSContracts: React.FC = () => {
 
   const pctUsed = (c: Contract) => c.contractQtyMT ? Math.round((c.totalSuppliedMT / c.contractQtyMT) * 100) : 0;
   const daysLeft = (c: Contract) => { const d = Math.ceil((new Date(c.endDate).getTime() - Date.now()) / 86400000); return d > 0 ? d : 0; };
-  const fmtMT = (n: number) => n.toFixed(2);
+  // Legacy dispatches stored weights in KG instead of MT. No single truck > 100 MT, so detect and convert.
+  const toMT = (n: number) => n > 100 ? n / 1000 : n;
+  const fmtMT = (n: number) => toMT(n).toFixed(2);
   const fmtINR = (n: number) => '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: n % 1 === 0 ? 0 : 2, maximumFractionDigits: 2 });
 
   const inputCls = "border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400";
@@ -443,7 +445,7 @@ const DDGSContracts: React.FC = () => {
           </div>
           <div className="border-l-4 border-l-green-500 bg-white px-3 py-2.5">
             <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Supplied</div>
-            <div className="text-lg font-bold text-green-700 font-mono tabular-nums">{stats.totalSuppliedMT.toFixed(0)} <span className="text-xs font-normal text-slate-400">MT</span></div>
+            <div className="text-lg font-bold text-green-700 font-mono tabular-nums">{fmtMT(stats.totalSuppliedMT)} <span className="text-xs font-normal text-slate-400">MT</span></div>
           </div>
         </div>
 
@@ -494,8 +496,8 @@ const DDGSContracts: React.FC = () => {
                       <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right hidden md:table-cell">
                         <div className="font-mono tabular-nums">
                           {c.quantityType === 'OPEN'
-                            ? `${c.totalSuppliedMT.toFixed(0)} MT / Open`
-                            : `${c.totalSuppliedMT.toFixed(0)} / ${c.contractQtyMT.toFixed(0)} MT`}
+                            ? `${fmtMT(c.totalSuppliedMT)} MT / Open`
+                            : `${fmtMT(c.totalSuppliedMT)} / ${c.contractQtyMT.toFixed(0)} MT`}
                         </div>
                         {c.quantityType !== 'OPEN' && c.contractQtyMT > 0 && (
                           <div className="w-full h-1.5 bg-slate-200 mt-1 overflow-hidden">
@@ -671,8 +673,8 @@ const DDGSContracts: React.FC = () => {
                                         <td className="px-2 py-1.5 border-r border-orange-100 whitespace-nowrap">{t.gateInTime ? new Date(t.gateInTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '-'}</td>
                                         <td className="px-2 py-1.5 border-r border-orange-100 font-medium">{t.vehicleNo}</td>
                                         <td className="px-2 py-1.5 border-r border-orange-100 text-right font-mono tabular-nums">{t.bags || '-'}</td>
-                                        <td className="px-2 py-1.5 border-r border-orange-100 text-right font-mono tabular-nums">{t.weightNet > 0 ? t.weightNet.toFixed(2) : '-'}</td>
-                                        <td className="px-2 py-1.5 border-r border-orange-100 text-right font-mono tabular-nums">{t.weightNet > 0 ? fmtINR(t.weightNet * c.rate) : '-'}</td>
+                                        <td className="px-2 py-1.5 border-r border-orange-100 text-right font-mono tabular-nums">{t.weightNet > 0 ? fmtMT(t.weightNet) : '-'}</td>
+                                        <td className="px-2 py-1.5 border-r border-orange-100 text-right font-mono tabular-nums">{t.weightNet > 0 ? fmtINR(toMT(t.weightNet) * c.rate) : '-'}</td>
                                         <td className="px-2 py-1.5 border-r border-orange-100 text-center">
                                           <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
                                             t.status === 'GROSS_WEIGHED' ? 'border-green-300 bg-green-100 text-green-700' : 'border-orange-300 bg-orange-100 text-orange-700'
