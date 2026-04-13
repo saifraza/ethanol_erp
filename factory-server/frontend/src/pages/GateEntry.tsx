@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 interface Supplier { id: string; name: string }
 interface Material { id: string; name: string; category?: string }
 interface PO { id: string; po_no: number; vendor_name: string; vendor_id?: string; status: string; deal_type?: string; company_id?: string | null; lines: POLine[] }
-interface Company { id: string; code: string; name: string; shortName: string | null }
+interface Company { id: string; code: string; name: string; shortName: string | null; isDefault?: boolean }
 interface POLine { id: string; description: string; quantity: number; received_qty: number; pending_qty: number; rate: number; unit: string }
 interface Customer { id: string; name: string; gstNo?: string | null; address?: string | null; state?: string | null; pincode?: string | null }
 interface Trader { id: string; name: string; phone?: string; productTypes?: string; category?: string }
@@ -23,9 +23,11 @@ function detectCategory(name: string): string | null {
   return null;
 }
 
-const VEHICLE_TYPES = ['Truck 14 Wheel', 'Truck 10 Wheel', 'Truck 6 Wheel', 'Tractor Trolley', 'Pickup', 'Other'];
+const VEHICLE_TYPES = ['Truck 14 Wheel', 'Truck 12 Wheel', 'Truck 10 Wheel', 'Truck 6 Wheel', 'Tractor Trolley', 'Pickup', 'Other'];
 const TANKER_CAPACITIES = ['10 KL', '20 KL', '30 KL', '40 KL'];
-const OUTBOUND_PRODUCTS = ['DDGS', 'Ethanol', 'Scrap', 'Press Mud', 'LFO', 'HFO', 'Ash', 'Other'];
+// Fallback — used only when master data hasn't loaded yet. Actual list comes from server.
+// Sugar excluded — separate weighbridge system (not routed through this one)
+const OUTBOUND_PRODUCTS_FALLBACK = ['DDGS', 'Ethanol', 'Scrap', 'Press Mud', 'LFO', 'HFO', 'Ash', 'Other'];
 const PAYMENT_MODES = ['CASH', 'UPI', 'BANK_TRANSFER'];
 
 export default function GateEntry() {
@@ -41,6 +43,7 @@ export default function GateEntry() {
   const [traders, setTraders] = useState<Trader[]>([]);
   const [vehicles, setVehicles] = useState<string[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [outboundProducts, setOutboundProducts] = useState<string[]>(OUTBOUND_PRODUCTS_FALLBACK);
 
   // Form state
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
@@ -112,12 +115,21 @@ export default function GateEntry() {
       setEthContracts(data.ethContracts || []);
       setDdgsContracts(data.ddgsContracts || []);
       setScrapOrders(data.scrapOrders || []);
-      const cos = data.companies || [];
+      // Outbound products from master data (falls back to hardcoded if not provided)
+      if (Array.isArray(data.outboundProducts) && data.outboundProducts.length > 0) {
+        setOutboundProducts(data.outboundProducts);
+      }
+      const cos = (data.companies || []).sort((a: Company, b: Company) => {
+        if (a.isDefault && !b.isDefault) return -1;
+        if (!a.isDefault && b.isDefault) return 1;
+        return (a.shortName || a.name).localeCompare(b.shortName || b.name);
+      });
       setCompanies(cos);
-      // Auto-select first company if none selected yet
-      if (cos.length > 0) {
-        setSelectedCompanyId(prev => prev || cos[0].id);
-        setSelectedCompanyCode(prev => prev || cos[0].code);
+      // Auto-select default company (or first) if none selected yet
+      const defaultCo = cos.find((c: Company) => c.isDefault) || cos[0];
+      if (defaultCo) {
+        setSelectedCompanyId(prev => prev || defaultCo.id);
+        setSelectedCompanyCode(prev => prev || defaultCo.code);
       }
       // Check staleness from /api/master-data/status (separate call, cheap)
       try {
@@ -507,7 +519,7 @@ export default function GateEntry() {
               <select value={materialName} onChange={e => setMaterialName(e.target.value)}
                 className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
                 <option value="">-- Select --</option>
-                {OUTBOUND_PRODUCTS.map(p => <option key={p} value={p}>{p}</option>)}
+                {outboundProducts.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
             ) : materials.length > 0 ? (
               <select value={materialName} onChange={e => setMaterialName(e.target.value)}

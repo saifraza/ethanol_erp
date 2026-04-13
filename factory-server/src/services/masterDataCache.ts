@@ -26,7 +26,7 @@ interface Customer { id: string; name: string; shortName: string | null; gstNo: 
 interface EthContract { id: string; contractNo: string; contractType: string; buyerName: string; buyerGst: string | null; buyerAddress: string | null; conversionRate: number | null; ethanolRate: number | null; gstPercent: number | null; paymentTermsDays: number | null; omcDepot: string | null }
 interface DdgsContract { id: string; contractNo: string; status: string; dealType: string; buyerName: string; buyerGstin: string | null; buyerAddress: string | null; buyerState: string | null; principalName: string | null; rate: number | null; processingChargePerMT: number | null; gstPercent: number | null; contractQtyMT: number | null; totalSuppliedMT: number | null; startDate: string | null; endDate: string | null }
 interface ScrapSalesOrder { id: string; entryNo: number; buyerName: string; productName: string; rate: number; unit: string; validFrom: string | null; validTo: string | null; status: string; quantity: number; totalSuppliedQty: number }
-interface Company { id: string; code: string; name: string; shortName: string | null }
+interface Company { id: string; code: string; name: string; shortName: string | null; isDefault: boolean }
 
 interface MasterCache {
   suppliers: Supplier[];
@@ -39,14 +39,21 @@ interface MasterCache {
   ddgsContracts: DdgsContract[];
   scrapOrders: ScrapSalesOrder[];
   companies: Company[];
+  outboundProducts: string[];
   lastCloudSync: string | null;
   lastCloudCheck: string | null;
   cloudTimestamp: string | null;
   source: 'cloud' | 'disk' | 'empty';
 }
 
+// Default outbound product types — used as fallback if cloud doesn't provide them.
+// Single source of truth for the gate entry dropdown (was hardcoded in GateEntry.tsx).
+// Sugar excluded — separate weighbridge system (not routed through this one)
+const DEFAULT_OUTBOUND_PRODUCTS = ['DDGS', 'Ethanol', 'Scrap', 'Press Mud', 'LFO', 'HFO', 'Ash', 'Other'];
+
 const EMPTY_CACHE: MasterCache = {
   suppliers: [], materials: [], pos: [], traders: [], customers: [], vehicles: [], ethContracts: [], ddgsContracts: [], scrapOrders: [], companies: [],
+  outboundProducts: DEFAULT_OUTBOUND_PRODUCTS,
   lastCloudSync: null, lastCloudCheck: null, cloudTimestamp: null, source: 'empty',
 };
 
@@ -135,6 +142,7 @@ function loadFromDisk(): boolean {
       data.ddgsContracts = data.ddgsContracts || [];
       data.scrapOrders = data.scrapOrders || [];
       data.companies = data.companies || [];
+      data.outboundProducts = data.outboundProducts || DEFAULT_OUTBOUND_PRODUCTS;
       // Stage 2 schema evolution: backfill new Material fields on cached entries
       data.materials = (data.materials || []).map(m => ({
         ...m,
@@ -311,11 +319,11 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
     try {
       const rows = await cloud.company.findMany({
         where: { isActive: true },
-        select: { id: true, code: true, name: true, shortName: true },
+        select: { id: true, code: true, name: true, shortName: true, isDefault: true },
         orderBy: { code: 'asc' },
         take: 50,
       });
-      companies = rows.map(r => ({ id: r.id, code: r.code, name: r.name, shortName: r.shortName }));
+      companies = rows.map(r => ({ id: r.id, code: r.code, name: r.name, shortName: r.shortName, isDefault: r.isDefault }));
       console.log(`[CACHE] Companies: ${companies.length}`);
     } catch (err) {
       console.error('[CACHE] Companies sync failed:', err instanceof Error ? err.message : err);
@@ -335,6 +343,15 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
     } catch { /* keep existing */ }
 
     const now = new Date().toISOString();
+
+    // Derive outbound products from InventoryItems that have an outbound handlerKey.
+    // Falls back to DEFAULT_OUTBOUND_PRODUCTS if no items are flagged yet (silent switch).
+    const outboundFromMaster = inventoryItems
+      .filter((m: any) => m.handlerKey && String(m.handlerKey).endsWith('_OUTBOUND'))
+      .map((m: any) => m.name as string);
+    const outboundProducts = outboundFromMaster.length > 0
+      ? [...new Set([...outboundFromMaster, 'Other'])]
+      : DEFAULT_OUTBOUND_PRODUCTS;
 
     cache = {
       suppliers: vendors.map(v => ({ id: v.id, name: v.name, gstin: v.gstin, phone: v.phone })),
@@ -379,6 +396,7 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
       ddgsContracts,
       scrapOrders,
       companies,
+      outboundProducts,
       vehicles,
       lastCloudSync: now,
       lastCloudCheck: now,

@@ -23,6 +23,7 @@ model Company {
   code      String  @unique
   name      String
   shortName String?
+  isDefault Boolean @default(false)
   isActive  Boolean @default(true)
 }
 

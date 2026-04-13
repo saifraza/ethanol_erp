@@ -140,9 +140,12 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 function HomeRedirect() {
   const { user } = useAuth();
-  // If user has dashboard access, go there
+  const isPlantCompany = !user?.companyCode || user.companyCode === 'MSPIL';
+  // If user has dashboard access and is plant company, go there
   const allowed = user?.allowedModules?.split(',') || [];
-  if (user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN' || allowed.includes('dashboard')) return <Navigate to="/dashboard" replace />;
+  if (isPlantCompany && (user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN' || allowed.includes('dashboard'))) return <Navigate to="/dashboard" replace />;
+  // Sister concern users → purchase orders as default landing
+  if (!isPlantCompany) return <Navigate to="/procurement/purchase-orders" replace />;
   // Otherwise redirect to first allowed module
   const firstModule = MODULE_DEFS.find(m => allowed.includes(m.key));
   if (firstModule) return <Navigate to={firstModule.to} replace />;
