@@ -1111,7 +1111,7 @@ export default function PaymentsOut() {
                                           <div className="font-bold text-slate-500 uppercase tracking-widest mb-1">GRNs ({(poDetail.grns || []).length})</div>
                                           <div className="max-h-40 overflow-y-auto space-y-1">
                                             {(poDetail.grns || []).map((g: any) => (
-                                              <a key={g.id} href={`/api/goods-receipts/${g.id}/pdf`} target="_blank" rel="noopener noreferrer" className="block bg-white border border-slate-200 px-2 py-1.5 hover:bg-blue-50 hover:border-blue-300 cursor-pointer">
+                                              <a key={g.id} href={`/api/goods-receipts/${g.id}/pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noopener noreferrer" className="block bg-white border border-slate-200 px-2 py-1.5 hover:bg-blue-50 hover:border-blue-300 cursor-pointer">
                                                 <div className="flex items-center justify-between">
                                                   <span className="font-mono font-medium text-blue-700">GRN-{g.grnNo}</span>
                                                   <span className={`text-[8px] font-bold uppercase px-1 py-0.5 border ${g.status === 'CONFIRMED' ? 'border-green-300 text-green-700' : 'border-slate-300 text-slate-500'}`}>{g.status}</span>
@@ -1329,7 +1329,7 @@ export default function PaymentsOut() {
                           <td className="px-3 py-1.5 text-slate-400 text-[11px] max-w-[200px] truncate">{p.remarks || '--'}</td>
                           <td className="px-3 py-1.5 text-center">
                             {p.payeeType === 'VENDOR' && (
-                              <button onClick={() => window.open(`/api/vendor-payments/${p.id}/pdf`, '_blank')}
+                              <button onClick={() => window.open(`/api/vendor-payments/${p.id}/pdf?token=${localStorage.getItem('token')}`, '_blank')}
                                 className="px-1.5 py-0.5 bg-slate-600 text-white text-[9px] font-bold uppercase hover:bg-slate-700" title="Print Payment Confirmation">
                                 PDF
                               </button>
