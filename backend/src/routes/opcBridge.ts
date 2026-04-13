@@ -28,6 +28,29 @@ if (!process.env.OPC_PUSH_KEY) {
   console.warn('[OPC] WARNING: OPC_PUSH_KEY env var not set — using hardcoded default. Set it in Railway for production.');
 }
 
+// One-time migration: move Fuji DCS tags (sugar plant) from ETHANOL → SUGAR source
+// Fuji tags start with #/ (e.g. #/R1C1I1_M, #/PID_01_M, #/AI_01_M, #/TOT_1_M)
+let _sugarMigrationDone = false;
+async function migrateSugarTags() {
+  if (_sugarMigrationDone) return;
+  _sugarMigrationDone = true;
+  try {
+    const opc = getOpcPrisma();
+    const result = await opc.opcMonitoredTag.updateMany({
+      where: { tag: { startsWith: '#/' }, source: 'ETHANOL' },
+      data: { source: 'SUGAR' },
+    });
+    if (result.count > 0) {
+      console.log(`[OPC] Migrated ${result.count} Fuji DCS tags from ETHANOL → SUGAR source`);
+    }
+    // Also update readings and hourly readings
+    await opc.$executeRawUnsafe(`UPDATE "OpcReading" SET source = 'SUGAR' WHERE tag LIKE '#/%' AND source = 'ETHANOL'`);
+    await opc.$executeRawUnsafe(`UPDATE "OpcHourlyReading" SET source = 'SUGAR' WHERE tag LIKE '#/%' AND source = 'ETHANOL'`);
+  } catch (err) {
+    console.warn('[OPC] Sugar tag migration skipped:', (err as Error).message);
+  }
+}
+
 function checkPushKey(req: AuthRequest, res: Response): boolean {
   const key = req.headers['x-opc-key'] as string;
   if (!key || key.length !== OPC_PUSH_KEY.length) {
@@ -380,6 +403,8 @@ router.post('/alarm-notify', validate(alarmNotifySchema), asyncHandler(async (re
 
 // GET /api/opc/health
 router.get('/health', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+  // Trigger one-time sugar tag migration on first health check
+  migrateSugarTags();
   const opc = getOpcPrisma();
   const source = req.query.source as string | undefined;
   const tagWhere: any = { active: true };
