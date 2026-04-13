@@ -13,14 +13,54 @@ import { prisma, syncToInventory, WeighmentInput, PushContext, PushOutcome, empt
 export async function handleTraderInbound(w: WeighmentInput, _ctx: PushContext): Promise<PushOutcome> {
   const out = emptyOutcome();
   const netKg = w.weight_net || 0;
-  const rate = w.rate || 0;
+  let rate = w.rate || 0;
   const materialName = w.material || 'Unknown';
   const wbRef = _ctx.wbRef;
 
-  // Validate rate and material
+  // Validate rate — if missing, try fallback from existing monthly PO, else proceed with 0
   if (!rate || rate <= 0) {
-    out.results.push({ id: w.id, type: 'SKIPPED', refNo: `Trader weighment missing rate`, sourceWbId: w.id });
-    return out;
+    const now = new Date();
+    const firstOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const existingPO = w.supplier_id ? await prisma.purchaseOrder.findFirst({
+      where: {
+        vendorId: w.supplier_id,
+        dealType: 'OPEN',
+        status: { in: ['APPROVED', 'PARTIAL_RECEIVED'] },
+        poDate: { gte: firstOfMonth },
+      },
+      include: { lines: { orderBy: { createdAt: 'desc' }, take: 1 } },
+    }) : null;
+
+    const fallbackLine = existingPO?.lines?.[0];
+    if (fallbackLine && fallbackLine.rate > 0) {
+      // PO line rate is ₹/unit (MT/QTL/KG). We need ₹/KG for w.rate convention.
+      const unit = fallbackLine.unit?.toUpperCase() || 'KG';
+      if (unit === 'MT') rate = fallbackLine.rate / 1000;
+      else if (unit === 'QUINTAL' || unit === 'QTL') rate = fallbackLine.rate / 100;
+      else rate = fallbackLine.rate;
+    }
+
+    // If still no rate, proceed with 0 and flag — never skip
+    if (!rate || rate <= 0) {
+      rate = 0;
+      setImmediate(async () => {
+        try {
+          await prisma.plantIssue.create({
+            data: {
+              title: `Trader weighment with zero rate: ${w.vehicle_no}`,
+              description: `Vehicle: ${w.vehicle_no}\nTrader: ${w.supplier_name || w.supplier_id}\nMaterial: ${materialName}\nWeight: ${netKg} kg\nWB ID: ${w.id}\nTicket #${w.ticket_no}\n\nRate was null/0 and no fallback PO rate found. GRN created with rate=0 — manual rate correction needed.`,
+              issueType: 'OTHER',
+              severity: 'HIGH',
+              equipment: 'Weighbridge / Cloud Sync',
+              location: 'Cloud ERP',
+              status: 'OPEN',
+              reportedBy: 'system-weighbridge',
+              userId: 'system-weighbridge',
+            },
+          });
+        } catch (_) { /* swallow */ }
+      });
+    }
   }
   if (!materialName || materialName === 'Unknown') {
     out.results.push({ id: w.id, type: 'SKIPPED', refNo: `Trader weighment missing material`, sourceWbId: w.id });

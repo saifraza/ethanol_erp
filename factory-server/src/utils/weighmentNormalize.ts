@@ -22,6 +22,9 @@ export interface RawWeighment {
   firstWeightAt: Date | null;
   secondWeightAt: Date | null;
   status: string;
+  cloudSynced: boolean;
+  cloudError: string | null;
+  syncAttempts: number;
 }
 
 export type UnifiedMaterialType = 'ETHANOL' | 'DDGS' | 'RAW_MATERIAL' | 'FUEL' | 'OTHER';
@@ -49,6 +52,9 @@ export interface UnifiedWeighmentRow {
   durationGateToFirstMin: number | null;
   durationFirstToSecondMin: number | null;
   turnaroundMin: number | null;
+  cloudSynced: boolean;
+  cloudError: string | null;
+  syncAttempts: number;
 }
 
 function mapMaterialCategory(cat: string | null): UnifiedMaterialType {
@@ -124,5 +130,8 @@ export function normalize(w: RawWeighment): UnifiedWeighmentRow {
     durationGateToFirstMin:    gateToFirst,
     durationFirstToSecondMin:  firstToSecond,
     turnaroundMin:             turnaround,
+    cloudSynced:  w.cloudSynced,
+    cloudError:   w.cloudError ?? null,
+    syncAttempts: w.syncAttempts,
   };
 }

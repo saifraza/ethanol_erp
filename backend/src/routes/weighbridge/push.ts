@@ -192,6 +192,45 @@ export function registerPushRoutes(router: Router): void {
         ids.push(...outcome.ids);
         results.push(...outcome.results);
 
+        // ── SAFETY NET: Flag any SKIPPED results as PlantIssue ──
+        // Catches ALL silent skips from ALL handlers — never lose a truck again.
+        const skippedResults = outcome.results.filter(r => r.type === 'SKIPPED');
+        if (skippedResults.length > 0) {
+          setImmediate(async () => {
+            for (const skip of skippedResults) {
+              try {
+                await prisma.plantIssue.create({
+                  data: {
+                    title: `Weighbridge SKIP: ${w.vehicle_no} (${w.direction})`,
+                    description: [
+                      `Vehicle: ${w.vehicle_no}`,
+                      `Direction: ${w.direction}`,
+                      `Material: ${w.material || 'N/A'}`,
+                      `Category: ${w.material_category || 'N/A'}`,
+                      `Purchase type: ${w.purchase_type}`,
+                      `PO ID: ${w.po_id || 'none'}`,
+                      `Supplier: ${w.supplier_name || w.supplier_id || 'none'}`,
+                      `Net weight: ${w.weight_net ? (w.weight_net / 1000).toFixed(2) + ' MT' : 'N/A'}`,
+                      `Weighment ID: ${w.id}`,
+                      `Ticket #: ${w.ticket_no}`,
+                      `Skip reason: ${skip.refNo}`,
+                    ].join('\n'),
+                    issueType: 'OTHER',
+                    severity: 'HIGH',
+                    equipment: 'Weighbridge / Cloud Sync',
+                    location: 'Cloud ERP',
+                    status: 'OPEN',
+                    reportedBy: 'system-weighbridge',
+                    userId: 'system-weighbridge',
+                  },
+                });
+              } catch (logErr) {
+                console.error('[WB-PUSH] Failed to persist SKIP to PlantIssue:', logErr);
+              }
+            }
+          });
+        }
+
         // Fire-and-forget weighbridge notification to Group 2
         const dirEmoji = w.direction === 'IN' ? '🟢' : '🔴';
         const netTon = w.weight_net ? (w.weight_net / 1000).toFixed(2) : '?';

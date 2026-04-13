@@ -29,6 +29,9 @@ interface UnifiedWeighmentRow {
   durationGateToFirstMin: number | null;
   durationFirstToSecondMin: number | null;
   turnaroundMin: number | null;
+  cloudSynced: boolean;
+  cloudError: string | null;
+  syncAttempts: number;
 }
 
 interface ApiResponse {
@@ -113,6 +116,23 @@ function StatusBadge({ status }: { status: WeighmentStatus }) {
       {status}
     </span>
   );
+}
+
+function CloudBadge({ synced, error, attempts }: { synced: boolean; error: string | null; attempts: number }) {
+  if (synced && !error) {
+    return <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-300 bg-green-50 text-green-700">OK</span>;
+  }
+  if (error) {
+    return (
+      <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-red-300 bg-red-50 text-red-700 cursor-help" title={error}>
+        ERR
+      </span>
+    );
+  }
+  if (attempts > 0) {
+    return <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-amber-300 bg-amber-50 text-amber-700">Retry</span>;
+  }
+  return <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-slate-300 bg-slate-50 text-slate-400">--</span>;
 }
 
 function DirBadge({ direction }: { direction: Direction }) {
@@ -540,29 +560,35 @@ export default function WeighmentHistory() {
                 <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 whitespace-nowrap">
                   Turnaround
                 </th>
-                <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest whitespace-nowrap">
+                <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 whitespace-nowrap">
                   Status
+                </th>
+                <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 whitespace-nowrap">
+                  Cloud
+                </th>
+                <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest whitespace-nowrap">
+                  Reprint
                 </th>
               </tr>
             </thead>
             <tbody>
               {loading && (
                 <tr>
-                  <td colSpan={16} className="text-center py-10 text-xs text-slate-400 uppercase tracking-widest">
+                  <td colSpan={18} className="text-center py-10 text-xs text-slate-400 uppercase tracking-widest">
                     Loading...
                   </td>
                 </tr>
               )}
               {!loading && rows.length === 0 && hasFetched && !error && (
                 <tr>
-                  <td colSpan={16} className="text-center py-10 text-xs text-slate-400 uppercase tracking-widest">
+                  <td colSpan={18} className="text-center py-10 text-xs text-slate-400 uppercase tracking-widest">
                     No weighments found for the selected filters
                   </td>
                 </tr>
               )}
               {!loading && !hasFetched && (
                 <tr>
-                  <td colSpan={16} className="text-center py-10 text-xs text-slate-400 uppercase tracking-widest">
+                  <td colSpan={18} className="text-center py-10 text-xs text-slate-400 uppercase tracking-widest">
                     Apply filters to load data
                   </td>
                 </tr>
@@ -570,7 +596,7 @@ export default function WeighmentHistory() {
               {!loading && rows.map((row, i) => (
                 <tr
                   key={row.id}
-                  className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 === 1 ? 'bg-slate-50/70' : ''}`}
+                  className={`border-b border-slate-100 hover:bg-blue-50/60 ${row.cloudError ? 'bg-red-50/40' : i % 2 === 1 ? 'bg-slate-50/70' : ''}`}
                 >
                   {/* Date */}
                   <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100 whitespace-nowrap">
@@ -637,8 +663,42 @@ export default function WeighmentHistory() {
                     {fmtTurnaround(row.turnaroundMin)}
                   </td>
                   {/* Status */}
-                  <td className="px-3 py-1.5 text-center">
+                  <td className="px-3 py-1.5 text-center border-r border-slate-100">
                     <StatusBadge status={row.status} />
+                  </td>
+                  {/* Cloud sync */}
+                  <td className="px-3 py-1.5 text-center border-r border-slate-100">
+                    <CloudBadge synced={row.cloudSynced} error={row.cloudError} attempts={row.syncAttempts} />
+                  </td>
+                  {/* Reprint */}
+                  <td className="px-3 py-1.5 text-center">
+                    <div className="flex items-center justify-center gap-1">
+                      <button
+                        onClick={() => window.open(`/api/weighbridge/print/gate-pass/${row.id}`, '_blank')}
+                        title="Reprint Gate Pass"
+                        className="px-1.5 py-0.5 text-[9px] font-bold uppercase border border-slate-300 text-slate-500 hover:bg-slate-100"
+                      >
+                        Gate
+                      </button>
+                      {(row.grossWeight || row.tareWeight) && (
+                        <button
+                          onClick={() => window.open(`/api/weighbridge/print/gross-slip/${row.id}`, '_blank')}
+                          title="Reprint 1st Weight Slip"
+                          className="px-1.5 py-0.5 text-[9px] font-bold uppercase border border-blue-300 text-blue-600 hover:bg-blue-50"
+                        >
+                          1st
+                        </button>
+                      )}
+                      {row.status === 'COMPLETE' && (
+                        <button
+                          onClick={() => window.open(`/api/weighbridge/print/final-slip/${row.id}`, '_blank')}
+                          title="Reprint Final Slip"
+                          className="px-1.5 py-0.5 text-[9px] font-bold uppercase border border-green-300 text-green-600 hover:bg-green-50"
+                        >
+                          Final
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

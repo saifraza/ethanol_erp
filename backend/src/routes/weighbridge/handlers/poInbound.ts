@@ -31,6 +31,9 @@ export async function handlePoInbound(w: WeighmentInput, ctx: PushContext): Prom
 
   // Validate PO is still receivable
   const receivableStatuses = ['APPROVED', 'SENT', 'PARTIAL_RECEIVED'];
+  // OPEN deals (running accounts) can receive even after RECEIVED status —
+  // their qty is a convention (999999), not a real cap.
+  if (po?.dealType === 'OPEN') receivableStatuses.push('RECEIVED');
   if (!po || !receivableStatuses.includes(po.status)) {
     if (!po) {
       out.results.push({ id: w.id, type: 'SKIPPED', refNo: `PO ${w.po_id} not found`, sourceWbId: w.id });
@@ -272,7 +275,7 @@ export async function handlePoInbound(w: WeighmentInput, ctx: PushContext): Prom
       // Clamp negative pendingQty (overage) to 0 for status check
       const allDone = allLines.every(l => l.pendingQty <= 0);
       const anyPartial = allLines.some(l => l.receivedQty > 0 && l.pendingQty > 0);
-      if (allDone) {
+      if (allDone && po.dealType !== 'OPEN') {
         await tx.purchaseOrder.update({ where: { id: po.id }, data: { status: 'RECEIVED' } });
       } else if (anyPartial) {
         await tx.purchaseOrder.update({ where: { id: po.id }, data: { status: 'PARTIAL_RECEIVED' } });

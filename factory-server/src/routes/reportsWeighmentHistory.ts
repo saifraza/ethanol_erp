@@ -59,6 +59,9 @@ const SELECT_FIELDS = {
   firstWeightAt: true,
   secondWeightAt: true,
   status: true,
+  cloudSynced: true,
+  cloudError: true,
+  syncAttempts: true,
 } as const;
 
 router.get('/', asyncHandler(async (req: Request, res: Response) => {

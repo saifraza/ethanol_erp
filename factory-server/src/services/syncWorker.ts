@@ -1,5 +1,6 @@
 import prisma from '../prisma';
 import { config } from '../config';
+import { getMasterData } from './masterDataCache';
 
 // ==========================================================================
 //  Background sync worker — pushes weighments to cloud, pulls master data
@@ -45,12 +46,29 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
 
   if (unsynced.length === 0) return { synced: 0, failed: 0 };
 
+  // Guard: Don't push COMPLETE PO-type inbound without po_id — the cloud
+  // handler will misroute it to fallback. Hold back until operator assigns PO.
+  const filtered = unsynced.filter(w => {
+    if (w.status === 'COMPLETE' && w.direction === 'INBOUND'
+        && w.purchaseType === 'PO' && !w.poId) {
+      return false;
+    }
+    return true;
+  });
+  if (filtered.length === 0) return { synced: 0, failed: 0 };
+
   let synced = 0;
   let failed = 0;
 
   // Map factory-server DB fields to cloud weighmentSchema
   // Fields not in factory schema are omitted (cloud uses defaults)
-  const cloudPayload = unsynced.map(w => ({
+  // Look up handlerKey from master data cache (silent — falls back to undefined if not found)
+  const masterMaterials = getMasterData().materials;
+  const materialMap = new Map(masterMaterials.map(m => [m.id, m]));
+
+  const cloudPayload = filtered.map(w => {
+    const mat = w.materialId ? materialMap.get(w.materialId) : undefined;
+    return {
     id: w.localId,
     ticket_no: w.ticketNo || 0,
     vehicle_no: w.vehicleNo,
@@ -62,6 +80,8 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
     supplier_id: w.supplierId || null,
     material: w.materialName || '',
     material_category: w.materialCategory || undefined,
+    // Stage 2: explicit handler override from InventoryItem.handlerKey (cloud checks this FIRST)
+    handler_key: mat?.handlerKey || undefined,
     weight_gross: w.grossWeight,
     weight_tare: w.tareWeight,
     weight_net: w.netWeight,
@@ -121,7 +141,8 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
     ship_to_address: w.shipToAddress || undefined,
     ship_to_state: w.shipToState || undefined,
     ship_to_pincode: w.shipToPincode || undefined,
-  }));
+  };
+  });
 
   try {
     const response = await fetch(`${config.cloudErpUrl}/weighbridge/push`, {
@@ -141,7 +162,7 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
         // Ghost-row incident 2026-04-09: empty-array → legacy path marked
         // 155 of 173 weighments as synced even though cloud dropped them.
         const useLegacyBatchAck = result.processedWbIds === undefined;
-        for (const w of unsynced) {
+        for (const w of filtered) {
           // Cloud payload sends id=localId, so processedWbIds contains localIds
           if (useLegacyBatchAck || processedIds.has(w.localId) || processedIds.has(w.id)) {
             await prisma.weighment.update({
@@ -152,40 +173,40 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
           } else {
             await prisma.weighment.update({
               where: { id: w.id },
-              data: { cloudError: `Not in cloud response (${result.count}/${unsynced.length} processed)`, syncAttempts: w.syncAttempts + 1 },
+              data: { cloudError: `Not in cloud response (${result.count}/${filtered.length} processed)`, syncAttempts: w.syncAttempts + 1 },
             });
             failed++;
           }
         }
       } else {
         // Cloud returned ok but processed nothing — mark for retry
-        for (const w of unsynced) {
+        for (const w of filtered) {
           await prisma.weighment.update({
             where: { id: w.id },
-            data: { cloudError: `Cloud processed 0/${unsynced.length}`, syncAttempts: w.syncAttempts + 1 },
+            data: { cloudError: `Cloud processed 0/${filtered.length}`, syncAttempts: w.syncAttempts + 1 },
           });
           failed++;
         }
       }
     } else {
       const errText = await response.text();
-      for (const w of unsynced) {
+      for (const w of filtered) {
         await prisma.weighment.update({
           where: { id: w.id },
           data: { cloudError: errText, syncAttempts: w.syncAttempts + 1 },
         });
       }
-      failed = unsynced.length;
+      failed = filtered.length;
     }
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : 'Unknown error';
-    for (const w of unsynced) {
+    for (const w of filtered) {
       await prisma.weighment.update({
         where: { id: w.id },
         data: { cloudError: errMsg, syncAttempts: w.syncAttempts + 1 },
       });
     }
-    failed = unsynced.length;
+    failed = filtered.length;
   }
 
   return { synced, failed };
