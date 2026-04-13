@@ -416,19 +416,9 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
       // DDGS invoices render quantity in KG and rate in ₹/kg (matches reference Mash invoice).
       // Schema stores MT and ₹/MT — convert at print time. Keep 4 decimals on rate so qty×rate
       // round-trips back to the stored amount (Mash uses ₹4.54/kg = ₹4540/MT, but other rates may need more precision).
-      // LEGACY: some dispatches stored quantity in KG (not MT) — detect by threshold (no single
-      // truck dispatch > 100 MT). Skip conversion when data is already in KG.
-      quantity: isDDGSInvoice
-        ? ((invoice.quantity || 0) > 100
-            ? (invoice.quantity || 0)                                                      // already KG
-            : Math.round((invoice.quantity || 0) * 1000))                                  // MT → KG
-        : invoice.quantity,
+      quantity: isDDGSInvoice ? Math.round((invoice.quantity || 0) * 1000) : invoice.quantity,
       unit: isDDGSInvoice ? 'KG' : invoice.unit,
-      rate: isDDGSInvoice
-        ? ((invoice.quantity || 0) > 100
-            ? Math.round((invoice.rate || 0) * 100) / 100                                  // already ₹/KG
-            : Math.round(((invoice.rate || 0) / 1000) * 10000) / 10000)                    // ₹/MT → ₹/KG
-        : invoice.rate,
+      rate: isDDGSInvoice ? Math.round(((invoice.rate || 0) / 1000) * 10000) / 10000 : invoice.rate,
       amount: invoice.amount,
       gstPercent: invoice.gstPercent,
       gstAmount: invoice.gstAmount,
