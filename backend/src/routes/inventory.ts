@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest, authorize } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { searchHSN } from '../data/hsnDatabase';
 import { isInventoryAlertsEnabled, toggleInventoryAlerts } from '../services/inventoryAlerts';
@@ -34,7 +34,7 @@ router.get('/item-lookup', asyncHandler(async (req: AuthRequest, res: Response) 
 router.get('/items', asyncHandler(async (req: AuthRequest, res: Response) => {
   const category = req.query.category as string | undefined;
   const division = req.query.division as string | undefined;
-  const where: any = {};
+  const where: any = { ...getCompanyFilter(req) };
   if (category) where.category = category;
   if (division) where.division = division;
   const items = await prisma.inventoryItem.findMany({
@@ -158,6 +158,7 @@ router.post('/items', authorize('ADMIN') as any, asyncHandler(async (req: AuthRe
       handlerKey: b.handlerKey || null,
       isContractBased: b.isContractBased === true,
       needsLabTest: b.needsLabTest === true,
+      companyId: getActiveCompanyId(req),
     },
   });
   res.status(201).json(item);

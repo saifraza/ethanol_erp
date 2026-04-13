@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError } from '../shared/errors';
 import { z } from 'zod';
@@ -63,7 +63,7 @@ router.get(
     const take = Math.min(parseInt(req.query.limit as string) || 50, 500);
     const skip = parseInt(req.query.offset as string) || 0;
 
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = { ...getCompanyFilter(req) };
     if (req.query.status) where.status = req.query.status;
     if (req.query.type) where.type = req.query.type;
     if (req.query.category) where.category = req.query.category;
@@ -176,6 +176,7 @@ router.post(
         ...rest,
         date: date ? new Date(date) : new Date(),
         userId: req.user!.id,
+        companyId: getActiveCompanyId(req),
       },
     });
 

@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, authorize } from '../middleware/auth';
+import { authenticate, authorize, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { generateInvoicePdf } from '../utils/pdfGenerator';
 import { renderDocumentPdf } from '../services/documentRenderer';
 // RAG indexing removed — only compliance docs go to RAG
@@ -34,7 +34,7 @@ router.get('/', async (req: Request, res: Response) => {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 50;
 
-    let where: any = {};
+    let where: any = { ...getCompanyFilter(req as AuthRequest) };
 
     if (customerId) where.customerId = customerId;
     if (status) where.status = status;
@@ -137,6 +137,7 @@ router.post('/', async (req: Request, res: Response) => {
     const invoice = await prisma.invoice.create({
       data: {
         customerId: b.customerId, orderId: b.orderId || null, shipmentId: b.shipmentId || null,
+        companyId: getActiveCompanyId(req as AuthRequest),
         invoiceDate: b.invoiceDate ? new Date(b.invoiceDate) : new Date(),
         dueDate: b.dueDate ? new Date(b.dueDate) : null,
         productName: b.productName || '', quantity, unit: b.unit || 'KL', rate, gstPercent, amount,

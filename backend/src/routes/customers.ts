@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, authorize, AuthRequest } from '../middleware/auth';
+import { authenticate, authorize, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { getGSTINDetails } from '../services/eInvoice';
 
@@ -11,7 +11,7 @@ router.use(authenticate as any);
 // GET / — list all active customers
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const customers = await prisma.customer.findMany({
-      where: { isActive: true },
+      where: { isActive: true, ...getCompanyFilter(req) },
       orderBy: { name: 'asc' },
       take: 500,
     });
@@ -167,6 +167,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         defaultTerms: b.defaultTerms || '',
         isActive: true,
         remarks: b.remarks || '',
+        companyId: getActiveCompanyId(req),
       }
     });
     res.status(201).json(customer);

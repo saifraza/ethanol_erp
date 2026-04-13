@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { AuthRequest, authorize } from '../middleware/auth';
+import { AuthRequest, authorize, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError, ValidationError } from '../shared/errors';
 import { z } from 'zod';
@@ -74,7 +74,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const type = req.query.type as string | undefined;
   const active = req.query.active !== 'false'; // default: only active
 
-  const where: Record<string, unknown> = {};
+  const where: Record<string, unknown> = { ...getCompanyFilter(req) };
   if (type) where.type = type;
   if (active) where.isActive = true;
 
@@ -102,7 +102,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
 // ── GET /tree — Hierarchical tree structure ──
 router.get('/tree', asyncHandler(async (req: AuthRequest, res: Response) => {
   const accounts = await prisma.account.findMany({
-    where: { isActive: true },
+    where: { isActive: true, ...getCompanyFilter(req) },
     orderBy: { code: 'asc' },
     take: 500,
     select: {
@@ -157,7 +157,7 @@ router.get('/balances', asyncHandler(async (req: AuthRequest, res: Response) => 
   const to = toStr ? new Date(toStr) : undefined;
 
   const accounts = await prisma.account.findMany({
-    where: { isActive: true },
+    where: { isActive: true, ...getCompanyFilter(req) },
     orderBy: { code: 'asc' },
     take: 500,
     select: {
@@ -250,6 +250,7 @@ router.post('/', validate(createAccountSchema), asyncHandler(async (req: AuthReq
           subType: req.body.subType || null,
           parentId: req.body.parentId || null,
           openingBalance: req.body.openingBalance || 0,
+          companyId: getActiveCompanyId(req),
         },
       });
       return res.status(201).json(account);
@@ -371,9 +372,10 @@ router.post('/seed', asyncHandler(async (req: AuthRequest, res: Response) => {
     { code: '5002', name: 'Retained Earnings', type: 'EQUITY', subType: 'RESERVES', isSystem: true },
   ];
 
+  const companyId = getActiveCompanyId(req);
   const created = await prisma.$transaction(
     defaultAccounts.map((a) =>
-      prisma.account.create({ data: a })
+      prisma.account.create({ data: { ...a, companyId } })
     )
   );
 

@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { AuthRequest } from '../middleware/auth';
+import { AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError } from '../shared/errors';
 import { z } from 'zod';
@@ -44,7 +44,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const from = req.query.from as string | undefined;
   const to = req.query.to as string | undefined;
 
-  const where: Record<string, unknown> = {};
+  const where: Record<string, unknown> = { ...getCompanyFilter(req) };
   if (accountId) where.accountId = accountId;
   if (isReconciled === 'true') where.isReconciled = true;
   if (isReconciled === 'false') where.isReconciled = false;
@@ -141,6 +141,7 @@ router.post('/import', validate(importSchema), asyncHandler(async (req: AuthRequ
 
   const importBatch = randomUUID();
 
+  const companyId = getActiveCompanyId(req);
   const data = transactions.map((t: {
     date: string;
     description: string;
@@ -158,6 +159,7 @@ router.post('/import', validate(importSchema), asyncHandler(async (req: AuthRequ
     balance: t.balance,
     importBatch,
     isReconciled: false,
+    companyId,
   }));
 
   const result = await prisma.bankTransaction.createMany({ data });

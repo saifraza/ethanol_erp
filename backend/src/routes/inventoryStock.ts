@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest, getCompanyFilter } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { NotFoundError } from '../shared/errors';
 import prisma from '../config/prisma';
@@ -15,7 +15,7 @@ router.get('/levels', asyncHandler(async (req: AuthRequest, res: Response) => {
   const category = req.query.category as string | undefined;
   const warehouseId = req.query.warehouseId as string | undefined;
 
-  const itemWhere: Record<string, unknown> = { isActive: true };
+  const itemWhere: Record<string, unknown> = { isActive: true, ...getCompanyFilter(req) };
   if (category) itemWhere.category = category;
 
   const items = await prisma.inventoryItem.findMany({

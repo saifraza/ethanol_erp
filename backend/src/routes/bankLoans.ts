@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError, ValidationError } from '../shared/errors';
 import { z } from 'zod';
@@ -83,7 +83,8 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const skip = parseInt(req.query.offset as string) || 0;
   const status = req.query.status as string | undefined;
 
-  const where = status ? { status } : {};
+  const where: Record<string, unknown> = { ...getCompanyFilter(req) };
+  if (status) where.status = status;
 
   const loans = await prisma.bankLoan.findMany({
     where,
@@ -383,6 +384,7 @@ router.post('/', validate(createLoanSchema), asyncHandler(async (req: AuthReques
         securityDetails: data.securityDetails ?? null,
         remarks: data.remarks ?? null,
         userId: req.user!.id,
+        companyId: getActiveCompanyId(req),
       },
     });
 

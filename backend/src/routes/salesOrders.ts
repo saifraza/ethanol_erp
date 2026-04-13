@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, authorize } from '../middleware/auth';
+import { authenticate, authorize, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import PDFDocument from 'pdfkit';
 import path from 'path';
 // RAG indexing removed — only compliance docs go to RAG
@@ -23,7 +23,7 @@ router.get('/', async (req: Request, res: Response) => {
     const limit = parseInt(req.query.limit as string) || 20;
     const skip = (page - 1) * limit;
 
-    let where: any = {};
+    let where: any = { ...getCompanyFilter(req as AuthRequest) };
     if (status) where.status = status;
     if (customerId) where.customerId = customerId;
 
@@ -156,7 +156,8 @@ router.post('/', async (req: Request, res: Response) => {
     // Create order with lines in transaction
     const order = await prisma.salesOrder.create({
       data: {
-        customer: { connect: { id: b.customerId } },
+        customerId: b.customerId,
+        companyId: getActiveCompanyId(req as AuthRequest),
         orderDate: b.orderDate ? new Date(b.orderDate) : new Date(),
         deliveryDate: b.deliveryDate ? new Date(b.deliveryDate) : null,
         poNumber: b.poNumber || null,

@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest, authorize } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { onSalePaymentReceived } from '../services/autoJournal';
 
@@ -14,7 +14,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const from = req.query.from as string;
   const to = req.query.to as string;
 
-  let where: any = {};
+  let where: any = { ...getCompanyFilter(req) };
 
   if (customerId) where.customerId = customerId;
 
@@ -200,6 +200,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         confirmedBy: b.confirmedBy || '',
         remarks: b.remarks || null,
         userId: req.user!.id,
+        companyId: getActiveCompanyId(req),
       },
     });
 

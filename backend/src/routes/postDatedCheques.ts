@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { AuthRequest, authenticate } from '../middleware/auth';
+import { AuthRequest, authenticate, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
@@ -17,7 +17,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const to = req.query.to as string | undefined;
   const take = Math.min(parseInt(req.query.limit as string) || 100, 500);
 
-  const where: Record<string, unknown> = {};
+  const where: Record<string, unknown> = { ...getCompanyFilter(req) };
   if (direction) where.direction = direction;
   if (status) where.status = status;
   if (partyType) where.partyType = partyType;
@@ -109,6 +109,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       linkedPoId: b.linkedPoId || null,
       remarks: b.remarks || null,
       userId: req.user!.id,
+      companyId: getActiveCompanyId(req),
     },
   });
 

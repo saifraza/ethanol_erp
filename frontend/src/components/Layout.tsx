@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useLocation, Outlet } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useCompany } from '../context/CompanyContext';
 import api from '../services/api';
 import AIChatWidget from './AIChatWidget';
 import {
@@ -31,6 +32,7 @@ function NavLink({ to, label, icon: Icon, active, onClick }: any) {
 
 export default function Layout() {
   const { user, logout } = useAuth();
+  const { companies, activeCompany, setActiveCompany, canSwitchCompany } = useCompany();
   const location = useLocation();
   const p = location.pathname;
   const isPlantCompany = !user?.companyCode || user.companyCode === 'MSPIL';
@@ -124,7 +126,22 @@ export default function Layout() {
         <div className="p-4 border-b border-gray-700 flex items-center justify-between">
           <div>
             <h1 className="text-base font-bold tracking-wide">DISTILLERY ERP</h1>
-            <p className="text-[11px] text-gray-400 mt-0.5">{user?.companyName || 'Mahakaushal Sugar & Power'}</p>
+            {canSwitchCompany && companies.length > 1 ? (
+              <select
+                value={activeCompany?.id || ''}
+                onChange={(e) => {
+                  const co = companies.find(c => c.id === e.target.value);
+                  if (co) { setActiveCompany(co); window.location.reload(); }
+                }}
+                className="bg-gray-800 text-[11px] text-gray-300 border border-gray-600 mt-0.5 w-full px-1 py-0.5 focus:outline-none"
+              >
+                {companies.map(c => (
+                  <option key={c.id} value={c.id}>{c.shortName || c.name}</option>
+                ))}
+              </select>
+            ) : (
+              <p className="text-[11px] text-gray-400 mt-0.5">{activeCompany?.shortName || activeCompany?.name || user?.companyName || 'MSPIL'}</p>
+            )}
           </div>
           <button onClick={closeSidebar} className="md:hidden text-gray-400 hover:text-white p-1">
             <X size={20} />

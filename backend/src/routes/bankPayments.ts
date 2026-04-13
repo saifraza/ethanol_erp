@@ -12,7 +12,7 @@
 
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
@@ -156,6 +156,7 @@ router.post('/batches', validate(createBatchSchema), asyncHandler(async (req: Au
         totalAmount: invoices.reduce((s: number, inv: { balanceAmount: number | null }) => s + (inv.balanceAmount || 0), 0),
         recordCount: invoices.length,
         createdBy: req.user!.id,
+        companyId: getActiveCompanyId(req),
       },
     });
 
@@ -205,7 +206,7 @@ router.get('/batches', asyncHandler(async (req: AuthRequest, res: Response) => {
   const take = Math.min(parseInt(req.query.limit as string) || 50, 200);
   const skip = parseInt(req.query.offset as string) || 0;
 
-  const where: Record<string, unknown> = {};
+  const where: Record<string, unknown> = { ...getCompanyFilter(req) };
   if (status) where.status = status;
 
   const [batches, total] = await Promise.all([

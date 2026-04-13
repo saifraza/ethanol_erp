@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError, ValidationError } from '../shared/errors';
 import { z } from 'zod';
@@ -108,7 +108,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const take = Math.min(parseInt(req.query.limit as string) || 50, 500);
   const skip = parseInt(req.query.offset as string) || 0;
 
-  const where: Record<string, unknown> = {};
+  const where: Record<string, unknown> = { ...getCompanyFilter(req) };
   if (req.query.itemId) where.itemId = req.query.itemId as string;
   if (req.query.warehouseId) where.warehouseId = req.query.warehouseId as string;
   if (req.query.movementType) where.movementType = req.query.movementType as string;

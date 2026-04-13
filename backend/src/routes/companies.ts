@@ -31,12 +31,17 @@ const createSchema = z.object({
 
 const updateSchema = createSchema.partial();
 
-// GET / — List all active companies
+// GET / — List companies (admins see all, others see own company only)
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const take = Math.min(parseInt(req.query.limit as string) || 50, 500);
   const skip = parseInt(req.query.offset as string) || 0;
+  const isAdmin = req.user?.role === 'ADMIN' || req.user?.role === 'SUPER_ADMIN';
+  const where: Record<string, unknown> = { isActive: true };
+  if (!isAdmin && req.user?.companyId) {
+    where.id = req.user.companyId;
+  }
   const companies = await prisma.company.findMany({
-    where: { isActive: true },
+    where,
     take,
     skip,
     orderBy: { name: 'asc' },
