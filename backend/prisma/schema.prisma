@@ -33,7 +33,19 @@ model Company {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  users User[]
+  users             User[]
+  customers         Customer[]
+  salesOrders       SalesOrder[]
+  invoices          Invoice[]
+  payments          Payment[]
+  bankTransactions  BankTransaction[]
+  bankPaymentBatches BankPaymentBatch[]
+  cashVouchers      CashVoucher[]
+  postDatedCheques  PostDatedCheque[]
+  bankLoans         BankLoan[]
+  stockMovements    StockMovement[]
+  stockLevels       StockLevel[]
+  inventoryItems    InventoryItem[]
 }
 
 model User {
@@ -748,6 +760,7 @@ model DDGSDispatchTruck {
   rate                 Float? // ₹ per MT
   invoiceNo            String?
   invoiceAmount        Float?
+  challanNo            String?
   gatePassNo           String?
   ewayBillNo           String?
   hsnCode              String                @default("2303") // DDGS HSN
@@ -1173,9 +1186,12 @@ model InventoryItem {
   rawMaterialConsumptions RawMaterialConsumption[]
 
   division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  companyId String? // FK → Company (null = MSPIL default)
+  company   Company? @relation(fields: [companyId], references: [id])
 
   @@index([category])
   @@index([division])
+  @@index([companyId])
 }
 
 model InventoryTransaction {
@@ -1316,11 +1332,14 @@ model StockLevel {
   quantity    Float         @default(0)
   reservedQty Float         @default(0)
   updatedAt   DateTime      @updatedAt
+  companyId   String? // FK → Company (null = MSPIL default)
+  company     Company?      @relation(fields: [companyId], references: [id])
 
   @@unique([itemId, warehouseId, binId, batchId])
   @@index([itemId])
   @@index([warehouseId])
   @@index([batchId])
+  @@index([companyId])
 }
 
 // ── Stock Movement (every IN/OUT/TRANSFER/ADJUST) ──
@@ -1351,6 +1370,8 @@ model StockMovement {
   createdAt     DateTime      @default(now())
 
   division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  companyId String? // FK → Company (null = MSPIL default)
+  company   Company? @relation(fields: [companyId], references: [id])
 
   @@index([itemId, date])
   @@index([warehouseId])
@@ -1358,6 +1379,7 @@ model StockMovement {
   @@index([refType, refId])
   @@index([date])
   @@index([division])
+  @@index([companyId])
 }
 
 // ── Stock Count / Physical Inventory ──
@@ -1543,8 +1565,12 @@ model Customer {
   sugarContracts           SugarContract[]
   sugarDispatchTrucks      SugarDispatchTruck[]
   directSales              DirectSale[]
+  companyId                String? // FK → Company (null = MSPIL default)
+  company                  Company?             @relation(fields: [companyId], references: [id])
 
   divisions String[] @default([]) // empty = available to all divisions
+
+  @@index([companyId])
 }
 
 // Master: Product catalogue
@@ -1606,10 +1632,13 @@ model SalesOrder {
   invoices         Invoice[]
 
   division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  companyId String? // FK → Company (null = MSPIL default)
+  company   Company? @relation(fields: [companyId], references: [id])
 
   @@index([customerId])
   @@index([status])
   @@index([division])
+  @@index([companyId])
 }
 
 // ── Sales Order Line Items ──
@@ -1944,11 +1973,14 @@ model Invoice {
   sugarContractDispatches SugarContractDispatch[]
 
   division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  companyId String? // FK → Company (null = MSPIL default)
+  company   Company? @relation(fields: [companyId], references: [id])
 
   @@index([customerId])
   @@index([status])
   @@index([shipmentId])
   @@index([division])
+  @@index([companyId])
 }
 
 // ── Payment (against invoices) ──
@@ -1971,8 +2003,11 @@ model Payment {
   updatedAt   DateTime  @updatedAt
 
   division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  companyId String? // FK → Company (null = MSPIL default)
+  company   Company? @relation(fields: [companyId], references: [id])
 
   @@index([division])
+  @@index([companyId])
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2929,10 +2964,13 @@ model BankTransaction {
   createdAt      DateTime @default(now())
 
   division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  companyId String? // FK → Company (null = MSPIL default)
+  company   Company? @relation(fields: [companyId], references: [id])
 
   @@index([accountId, date])
   @@index([isReconciled])
   @@index([division])
+  @@index([companyId])
 }
 
 // ── Gate Entry (Vehicle In/Out Register) ──
@@ -2996,12 +3034,15 @@ model CashVoucher {
   updatedAt       DateTime  @updatedAt
 
   division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  companyId String? // FK → Company (null = MSPIL default)
+  company   Company? @relation(fields: [companyId], references: [id])
 
   @@index([date])
   @@index([status])
   @@index([type])
   @@index([userId])
   @@index([division])
+  @@index([companyId])
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -3031,9 +3072,12 @@ model BankLoan {
   userId            String
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
+  companyId         String? // FK → Company (null = MSPIL default)
+  company           Company?        @relation(fields: [companyId], references: [id])
 
   @@index([status])
   @@index([bankName])
+  @@index([companyId])
 }
 
 model LoanRepayment {
@@ -3114,11 +3158,14 @@ model PostDatedCheque {
   userId          String
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+  companyId       String? // FK → Company (null = MSPIL default)
+  company         Company?  @relation(fields: [companyId], references: [id])
 
   @@index([maturityDate])
   @@index([status])
   @@index([partyId])
   @@index([direction])
+  @@index([companyId])
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -3159,11 +3206,14 @@ model BankPaymentBatch {
   // Relations
   items          BankPaymentItem[]
   audit          BankPaymentAudit[]
+  companyId      String? // FK → Company (null = MSPIL default)
+  company        Company? @relation(fields: [companyId], references: [id])
 
   @@index([status])
   @@index([createdBy])
   @@index([createdAt])
   @@index([batchNo])
+  @@index([companyId])
 }
 
 model BankPaymentItem {

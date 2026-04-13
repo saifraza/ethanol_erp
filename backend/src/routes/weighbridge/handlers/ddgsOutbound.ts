@@ -1,6 +1,6 @@
 import prisma from '../../../config/prisma';
 import { WeighmentInput, PushContext, PushOutcome, emptyOutcome } from '../shared';
-import { nextInvoiceNo } from '../../../utils/invoiceCounter';
+import { nextInvoiceNo, nextCounter } from '../../../utils/invoiceCounter';
 import { onSaleInvoiceCreated } from '../../../services/autoJournal';
 import { generateIRN, generateEWBByIRN } from '../../../services/eInvoice';
 import { calcDDGSGstSplit } from '../../../services/ddgsInvoiceService';
@@ -215,8 +215,10 @@ export async function handleDDGSOutbound(w: WeighmentInput, ctx: PushContext): P
     const gst = calcDDGSGstSplit(amount, gstPercent, customer.state);
     const total = Math.round((amount + gst.gstAmount) * 100) / 100;
 
-    // Global invoice counter (single ETH series for all products)
+    // Global counters (single series for all products)
     const customInvNo = await nextInvoiceNo(tx);
+    const challanNo = await nextCounter(tx, 'DCH/ETH');
+    const gatePassNo = await nextCounter(tx, 'GP/ETH');
 
     // Product line description: job work uses descriptive line; otherwise plain DDGS
     const isJobWork = contract.dealType === 'JOB_WORK';
@@ -259,7 +261,7 @@ export async function handleDDGSOutbound(w: WeighmentInput, ctx: PushContext): P
     if (existingLink) {
       await tx.dDGSContractDispatch.update({
         where: { id: existingLink.id },
-        data: { invoiceId: invoice.id, rate, amount, weightNetMT: netMT },
+        data: { invoiceId: invoice.id, rate, amount, weightNetMT: netMT, challanNo, gatePassNo },
       });
     } else {
       await tx.dDGSContractDispatch.create({
@@ -279,7 +281,8 @@ export async function handleDDGSOutbound(w: WeighmentInput, ctx: PushContext): P
           weightNetMT: netMT,
           rate,
           amount,
-          gatePassNo: dispatch.gatePassNo || null,
+          challanNo,
+          gatePassNo,
           status: 'DISPATCHED',
           invoiceId: invoice.id,
           remarks: `Auto from WB ${w.id.slice(0, 8)}`,
@@ -293,6 +296,8 @@ export async function handleDDGSOutbound(w: WeighmentInput, ctx: PushContext): P
       data: {
         invoiceNo: String(invoice.invoiceNo),
         invoiceAmount: total,
+        challanNo,
+        gatePassNo,
         status: 'BILLED',
       },
     });

@@ -1,5 +1,5 @@
 import prisma from '../config/prisma';
-import { nextInvoiceNo } from '../utils/invoiceCounter';
+import { nextInvoiceNo, nextCounter } from '../utils/invoiceCounter';
 import { onSaleInvoiceCreated } from './autoJournal';
 import { generateIRN, generateEWBByIRN } from './eInvoice';
 
@@ -54,6 +54,8 @@ export async function createDDGSInvoiceFromTruck(truckId: string): Promise<strin
     if (existingLink?.invoiceId) return existingLink.invoiceId;
 
     const customInvNo = await nextInvoiceNo(tx);
+    const challanNo = await nextCounter(tx, 'DCH/ETH');
+    const gatePassNo = await nextCounter(tx, 'GP/ETH');
     const dispatchDate = truck.grossTime || truck.date || new Date();
 
     const invoice = await tx.invoice.create({
@@ -86,7 +88,7 @@ export async function createDDGSInvoiceFromTruck(truckId: string): Promise<strin
     if (existingLink) {
       await tx.dDGSContractDispatch.update({
         where: { id: existingLink.id },
-        data: { invoiceId: invoice.id, rate, amount, weightNetMT: netMT },
+        data: { invoiceId: invoice.id, rate, amount, weightNetMT: netMT, challanNo, gatePassNo },
       });
     } else {
       await tx.dDGSContractDispatch.create({
@@ -108,8 +110,8 @@ export async function createDDGSInvoiceFromTruck(truckId: string): Promise<strin
           weightNetMT: netMT,
           rate,
           amount,
-          challanNo: null,
-          gatePassNo: truck.gatePassNo || null,
+          challanNo,
+          gatePassNo,
           status: 'DISPATCHED',
           invoiceId: invoice.id,
           remarks: `Auto from WB truck ${truck.id.slice(0, 8)}`,
@@ -123,6 +125,8 @@ export async function createDDGSInvoiceFromTruck(truckId: string): Promise<strin
       data: {
         invoiceNo: String(invoice.invoiceNo),
         invoiceAmount: total,
+        challanNo,
+        gatePassNo,
         status: 'BILLED',
       },
     });

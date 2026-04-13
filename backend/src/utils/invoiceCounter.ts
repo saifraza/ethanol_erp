@@ -44,3 +44,16 @@ export async function currentCounter(prisma: any, _series?: string): Promise<num
 export function getInvoiceSeries(_contractType?: string, _productName?: string): 'ETH' {
   return 'ETH';
 }
+
+/**
+ * Generic counter for DCH (delivery challan), GP (gate pass), etc.
+ * Uses AppConfig as store. Must be called inside a transaction.
+ * Returns formatted string like "DCH/ETH/001", "GP/ETH/001".
+ */
+export async function nextCounter(tx: any, prefix: string): Promise<string> {
+  const key = `counter:${prefix}`;
+  const existing = await tx.appConfig.findUnique({ where: { key } });
+  const counter = existing ? parseInt(existing.value, 10) + 1 : 1;
+  await tx.appConfig.upsert({ where: { key }, update: { value: String(counter) }, create: { key, value: String(counter) } });
+  return `${prefix}/${String(counter).padStart(3, '0')}`;
+}

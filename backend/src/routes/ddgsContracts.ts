@@ -5,7 +5,7 @@ import { asyncHandler } from '../shared/middleware';
 import multer from 'multer';
 import { generateIRN, generateEWBByIRN } from '../services/eInvoice';
 import { onSaleInvoiceCreated } from '../services/autoJournal';
-import { nextInvoiceNo } from '../utils/invoiceCounter';
+import { nextInvoiceNo, nextCounter } from '../utils/invoiceCounter';
 import { nextDDGSContractNo } from '../utils/contractNoGenerator';
 
 const COMPANY_STATE = 'Madhya Pradesh';
@@ -388,6 +388,8 @@ router.post('/:id/dispatches', asyncHandler(async (req: AuthRequest, res: Respon
 
         const inv = await prisma.$transaction(async (tx) => {
           const customInvNo = await nextInvoiceNo(tx, 'ETH');
+          const dchNo = await nextCounter(tx, 'DCH/ETH');
+          const gpNo = await nextCounter(tx, 'GP/ETH');
 
           const invoice = await tx.invoice.create({
             data: {
@@ -417,7 +419,7 @@ router.post('/:id/dispatches', asyncHandler(async (req: AuthRequest, res: Respon
 
           await tx.dDGSContractDispatch.update({
             where: { id: dispatch.id },
-            data: { invoiceId: invoice.id },
+            data: { invoiceId: invoice.id, challanNo: dchNo, gatePassNo: gpNo },
           });
 
           return invoice;
@@ -535,6 +537,8 @@ router.post('/:id/release-truck/:truckId', asyncHandler(async (req: AuthRequest,
     if (fresh?.status === 'RELEASED') throw new Error('Already released');
 
     const customInvNo = await nextInvoiceNo(tx, 'ETH');
+    const challanNo = await nextCounter(tx, 'DCH/ETH');
+    const gatePassNo = await nextCounter(tx, 'GP/ETH');
 
     // Create invoice
     const invoice = await tx.invoice.create({
@@ -569,6 +573,8 @@ router.post('/:id/release-truck/:truckId', asyncHandler(async (req: AuthRequest,
         weightTareMT: (truck.weightTare || 0) > 100 ? (truck.weightTare || 0) / 1000 : (truck.weightTare || 0),
         weightNetMT: weightNetMT,
         rate, amount,
+        challanNo,
+        gatePassNo,
         invoiceId: invoice.id,
         ddgsDispatchTruckId: truck.id,
         status: 'DISPATCHED',
@@ -578,7 +584,7 @@ router.post('/:id/release-truck/:truckId', asyncHandler(async (req: AuthRequest,
     // Update truck status
     await tx.dDGSDispatchTruck.update({
       where: { id: truck.id },
-      data: { status: 'RELEASED', releaseTime: new Date() },
+      data: { status: 'RELEASED', releaseTime: new Date(), challanNo, gatePassNo },
     });
 
     // Update contract totals
@@ -635,6 +641,8 @@ router.post('/:id/dispatches/:dispatchId/create-invoice', asyncHandler(async (re
     if (fresh?.invoiceId) throw new Error('Invoice already exists for this dispatch');
 
     const customInvNo = await nextInvoiceNo(tx, 'ETH');
+    const dchNo = await nextCounter(tx, 'DCH/ETH');
+    const gpNo = await nextCounter(tx, 'GP/ETH');
 
     const inv = await tx.invoice.create({
       data: {
@@ -665,7 +673,7 @@ router.post('/:id/dispatches/:dispatchId/create-invoice', asyncHandler(async (re
 
     await tx.dDGSContractDispatch.update({
       where: { id: dispatch.id },
-      data: { invoiceId: inv.id },
+      data: { invoiceId: inv.id, challanNo: dchNo, gatePassNo: gpNo },
     });
 
     return inv;
