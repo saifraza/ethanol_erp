@@ -4,6 +4,7 @@ import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError, ValidationError } from '../shared/errors';
 import { z } from 'zod';
 import prisma from '../config/prisma';
+import { nextDocNo } from '../utils/docSequence';
 import { DIVISIONS } from '../shared/config/divisions';
 
 const router = Router();
@@ -496,15 +497,19 @@ router.post('/', validate(createJournalSchema), asyncHandler(async (req: AuthReq
     throw new ValidationError('One or more account IDs are invalid');
   }
 
+  const companyId = getActiveCompanyId(req);
+  const entryNo = await nextDocNo('JournalEntry', 'entryNo', companyId);
+
   const entry = await prisma.$transaction(async (tx) => {
     const journal = await tx.journalEntry.create({
       data: {
+        entryNo,
         date: new Date(date),
         narration,
         refType: refType || 'JOURNAL',
         refId: refId || null,
         userId: req.user?.id || 'system',
-        companyId: getActiveCompanyId(req),
+        companyId,
         lines: {
           create: lines.map((l: { accountId: string; debit: number; credit: number; narration?: string; costCenter?: string; division?: string }) => ({
             accountId: l.accountId,

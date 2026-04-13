@@ -3,6 +3,8 @@ import prisma from '../config/prisma';
 import { authenticate, AuthRequest, authorize, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { ValidationError } from '../shared/errors';
+import { nextDocNo } from '../utils/docSequence';
+import { getCompanyForPdf } from '../utils/pdfCompanyHelper';
 import { onStockMovement } from '../services/autoJournal';
 import multer from 'multer';
 import path from 'path';
@@ -703,8 +705,12 @@ router.post('/expected/:poId', asyncHandler(async (req: AuthRequest, res: Respon
     });
     if (existing) return res.status(400).json({ error: `Expected GRN already exists: GRN-${existing.grnNo}`, grnId: existing.id });
 
+    const companyId = getActiveCompanyId(req);
+    const grnNo = await nextDocNo('GoodsReceipt', 'grnNo', companyId);
+
     const grn = await prisma.goodsReceipt.create({
       data: {
+        grnNo,
         poId: po.id,
         vendorId: po.vendorId,
         grnDate: new Date(),
@@ -713,7 +719,7 @@ router.post('/expected/:poId', asyncHandler(async (req: AuthRequest, res: Respon
         status: 'DRAFT',
         qualityStatus: 'PENDING',
         userId: req.user!.id,
-        companyId: getActiveCompanyId(req),
+        companyId,
         totalQty: 0,
         totalAmount: 0,
         lines: {
@@ -762,8 +768,12 @@ router.post('/partial/:poId', asyncHandler(async (req: AuthRequest, res: Respons
     });
   }
 
+  const companyId2 = getActiveCompanyId(req);
+  const grnNo2 = await nextDocNo('GoodsReceipt', 'grnNo', companyId2);
+
   const grn = await prisma.goodsReceipt.create({
     data: {
+      grnNo: grnNo2,
       poId: po.id,
       vendorId: po.vendorId,
       grnDate: new Date(),
@@ -772,7 +782,7 @@ router.post('/partial/:poId', asyncHandler(async (req: AuthRequest, res: Respons
       status: 'PARTIAL',
       qualityStatus: 'PENDING',
       userId: req.user!.id,
-      companyId: getActiveCompanyId(req),
+      companyId: companyId2,
       totalQty: 0,
       totalAmount: 0,
       lines: {
@@ -1002,6 +1012,8 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
       receivedBy: 'Store Department',
       authorizedSignatory: 'OP Pandey — Unit Head',
     };
+
+    (grnData as any).company = await getCompanyForPdf(grn.companyId);
 
     const pdfBuffer = await renderDocumentPdf({
       docType: 'GOODS_RECEIPT',

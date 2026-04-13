@@ -1,5 +1,7 @@
 import { Router, Response } from 'express';
 import { authenticate, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
+import { nextDocNo } from '../utils/docSequence';
+import { getCompanyForPdf } from '../utils/pdfCompanyHelper';
 import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError } from '../shared/errors';
 import { z } from 'zod';
@@ -303,7 +305,7 @@ router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Re
       lines: {
         select: {
           id: true, description: true, rate: true, unit: true, inventoryItemId: true,
-          receivedQty: true, quantity: true,
+          receivedQty: true, quantity: true, pendingQty: true,
           inventoryItem: { select: { category: true, name: true } },
         },
       },
@@ -324,6 +326,16 @@ router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Re
     const linesToSum = rawLines.length > 0 ? rawLines : deal.lines;
     const totalReceived = linesToSum.reduce((s, l) => s + (l.receivedQty || 0), 0);
     const totalValue = linesToSum.reduce((s, l) => s + (l.receivedQty || 0) * (l.rate || 0), 0);
+
+    // Self-heal stale PO status: if all lines are fully received but status stuck at PARTIAL_RECEIVED
+    if (deal.status === 'PARTIAL_RECEIVED' && deal.dealType !== 'OPEN') {
+      const allDone = deal.lines.every(l => (l.pendingQty ?? 0) <= 0);
+      if (allDone && totalReceived > 0) {
+        prisma.purchaseOrder.update({ where: { id: deal.id }, data: { status: 'RECEIVED' } })
+          .catch(() => {}); // fire-and-forget
+        (deal as Record<string, unknown>).status = 'RECEIVED';
+      }
+    }
 
     // Direct payments (no invoiceId) referencing this deal
     const directPayments = await prisma.vendorPayment.findMany({
@@ -455,10 +467,13 @@ router.post('/deals', authenticate, validate(dealSchema), asyncHandler(async (re
   const totalGst = isRealQty ? gstAmount : 0;
   const grandTotal = isRealQty ? Math.round((lineAmount + gstAmount) * 100) / 100 : 0;
 
+  const companyId = getActiveCompanyId(req);
+  const poNo = await nextDocNo('PurchaseOrder', 'poNo', companyId);
   const po = await prisma.purchaseOrder.create({
     data: {
+      poNo,
       vendorId,
-      companyId: getActiveCompanyId(req),
+      companyId,
       dealType: isJobWork ? 'JOB_WORK' : (isOpen ? 'OPEN' : 'STANDARD'),
       status: 'APPROVED',
       poDate: new Date(),

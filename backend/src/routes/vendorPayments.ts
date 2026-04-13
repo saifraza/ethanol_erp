@@ -5,6 +5,8 @@ import { asyncHandler } from '../shared/middleware';
 import { onVendorPaymentMade } from '../services/autoJournal';
 import { recomputeGrnPaidStateForPO } from '../services/grnPaidState';
 import { renderDocumentPdf } from '../services/documentRenderer';
+import { nextDocNo } from '../utils/docSequence';
+import { getCompanyForPdf } from '../utils/pdfCompanyHelper';
 import PDFDocument from 'pdfkit';
 import { sendEmail } from '../services/messaging';
 
@@ -107,6 +109,8 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
     authorizedSignatory: '',
     remarks: payment.remarks || '',
   };
+
+  (data as any).company = await getCompanyForPdf(payment.companyId);
 
   const pdf = await renderDocumentPdf({ docType: 'PAYMENT_CONFIRMATION', data, verifyId: payment.id });
   res.setHeader('Content-Type', 'application/pdf');
@@ -272,9 +276,13 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const tdsDeducted = parseFloat(b.tdsDeducted) || 0;
 
     // Wrap in transaction to ensure atomicity
+    const companyId = getActiveCompanyId(req);
+    const paymentNo = await nextDocNo('VendorPayment', 'paymentNo', companyId);
+
     const payment = await prisma.$transaction(async (tx: any) => {
       const newPayment = await tx.vendorPayment.create({
         data: {
+          paymentNo,
           vendorId: b.vendorId,
           invoiceId: b.invoiceId || null,
           amount,
@@ -286,7 +294,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
           remarks: b.remarks || null,
           paymentDate: b.paymentDate ? new Date(b.paymentDate) : new Date(),
           userId: req.user!.id,
-          companyId: getActiveCompanyId(req),
+          companyId,
         },
       });
 

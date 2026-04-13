@@ -9,6 +9,8 @@ import { sendEmail } from '../services/messaging';
 import { drawLetterhead } from '../utils/letterhead';
 import { getTemplate } from '../utils/templateHelper';
 import { renderDocumentPdf } from '../services/documentRenderer';
+import { nextDocNo } from '../utils/docSequence';
+import { getCompanyForPdf } from '../utils/pdfCompanyHelper';
 
 const router = Router();
 
@@ -154,10 +156,14 @@ router.post('/', async (req: Request, res: Response) => {
     const grandTotal = subtotal + totalGst + freight;
 
     // Create order with lines in transaction
+    const companyId = getActiveCompanyId(req as AuthRequest);
+    const orderNo = await nextDocNo('SalesOrder', 'orderNo', companyId);
+
     const order = await prisma.salesOrder.create({
       data: {
+        orderNo,
         customerId: b.customerId,
-        companyId: getActiveCompanyId(req as AuthRequest),
+        companyId,
         orderDate: b.orderDate ? new Date(b.orderDate) : new Date(),
         deliveryDate: b.deliveryDate ? new Date(b.deliveryDate) : null,
         poNumber: b.poNumber || null,
@@ -366,6 +372,8 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
       grandTotal: order.grandTotal,
       remarks: order.remarks,
     };
+
+    (soData as any).company = await getCompanyForPdf(order.companyId);
 
     const pdfBuffer = await renderDocumentPdf({
       docType: 'SALE_ORDER',

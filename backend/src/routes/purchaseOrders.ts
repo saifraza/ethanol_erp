@@ -6,6 +6,8 @@ import { generatePOPdf } from '../utils/pdfGenerator';
 // RAG indexing removed — only compliance docs go to RAG
 import { renderDocumentPdf } from '../services/documentRenderer';
 import { sendEmail } from '../services/messaging';
+import { nextDocNo } from '../utils/docSequence';
+import { getCompanyForPdf } from '../utils/pdfCompanyHelper';
 
 const router = Router();
 router.use(authenticate as any);
@@ -267,8 +269,11 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     }
 
     // Create PO with lines in transaction
+    const companyId = getActiveCompanyId(req);
+    const poNo = await nextDocNo('PurchaseOrder', 'poNo', companyId);
     const po = await prisma.purchaseOrder.create({
       data: {
+        poNo,
         vendorId: b.vendorId,
         poDate: b.poDate ? new Date(b.poDate) : new Date(),
         deliveryDate: b.deliveryDate ? new Date(b.deliveryDate) : null,
@@ -597,6 +602,7 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
       preparedBy: 'Purchase Department',
       approvedBy: 'Sibtay Hasnain Zaidi',
       authorizedSignatory: 'OP Pandey — Unit Head',
+      company: await getCompanyForPdf(po.companyId),
     };
 
     let pdfBuffer: Buffer;

@@ -6,6 +6,8 @@ import PDFDocument from 'pdfkit';
 import { sendEmail } from '../services/messaging';
 import { drawLetterhead } from '../utils/letterhead';
 import { renderDocumentPdf } from '../services/documentRenderer';
+import { nextDocNo } from '../utils/docSequence';
+import { getCompanyForPdf } from '../utils/pdfCompanyHelper';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -266,8 +268,12 @@ router.post('/', async (req: AuthRequest, res: Response) => {
       }
     }
 
+    const companyId = getActiveCompanyId(req);
+    const invoiceNo = await nextDocNo('VendorInvoice', 'invoiceNo', companyId);
+
     const invoice = await prisma.vendorInvoice.create({
       data: {
+        invoiceNo,
         vendorId: b.vendorId,
         poId: b.poId || null,
         grnId: b.grnId || null,
@@ -307,7 +313,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
         filePath: b.filePath || null,
         remarks: b.remarks || null,
         userId: req.user!.id,
-        companyId: getActiveCompanyId(req),
+        companyId,
       },
     });
 
@@ -449,6 +455,8 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
       totalGst: inv.totalGst,
       netPayable: inv.netPayable,
     };
+
+    (viData as any).company = await getCompanyForPdf(inv.companyId);
 
     const pdfBuffer = await renderDocumentPdf({ docType: 'VENDOR_INVOICE', data: viData, verifyId: inv.id });
     res.setHeader('Content-Type', 'application/pdf');

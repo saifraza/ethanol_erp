@@ -1,12 +1,24 @@
 <div class="letterhead">
-  {{#if logoSrc}}<img src="{{logoSrc}}" alt="MSPIL" class="logo">{{/if}}
+  {{#if logoSrc}}<img src="{{logoSrc}}" alt="Logo" class="logo">{{/if}}
   <div class="letterhead-text">
-    <h1>Mahakaushal Sugar and Power Industries Ltd.</h1>
-    <div class="cin">CIN - U01543MP2005PLC017514 &nbsp;|&nbsp; GSTIN - 23AAECM3666P1Z1</div>
+    <h1>{{#if company.name}}{{company.name}}{{else}}Mahakaushal Sugar and Power Industries Ltd.{{/if}}</h1>
+    <div class="cin">
+      {{#if company.isSister}}
+        PAN - {{company.pan}} &nbsp;|&nbsp; GSTIN - {{company.gstin}}
+      {{else}}
+        CIN - U01543MP2005PLC017514 &nbsp;|&nbsp; GSTIN - 23AAECM3666P1Z1
+      {{/if}}
+    </div>
     <div class="addr">
-      Regd off : SF-11, Second Floor, Aakriti Business Center, Aakriti Eco city, Bawadiya Kalan, Bhopal-462039<br>
-      Admin off &amp; Factory : Village Bachai, Dist. Narsinghpur (M.P.) - 487001<br>
-      E-mail : mspil.acc@gmail.com | mspil.power@gmail.com
+      {{#if company.isSister}}
+        Regd off : {{company.fullAddress}}<br>
+        Factory : Village Bachai, Dist. Narsinghpur (M.P.) - 487001
+        {{#if company.email}}<br>E-mail : {{company.email}}{{/if}}
+      {{else}}
+        Regd off : SF-11, Second Floor, Aakriti Business Center, Aakriti Eco city, Bawadiya Kalan, Bhopal-462039<br>
+        Admin off &amp; Factory : Village Bachai, Dist. Narsinghpur (M.P.) - 487001<br>
+        E-mail : mspil.acc@gmail.com | mspil.power@gmail.com
+      {{/if}}
     </div>
   </div>
 </div>

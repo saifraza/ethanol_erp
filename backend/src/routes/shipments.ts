@@ -14,6 +14,8 @@ import fs from 'fs';
 import { drawLetterhead } from '../utils/letterhead';
 import { sendEmail } from '../services/messaging';
 import { renderDocumentPdf } from '../services/documentRenderer';
+import { nextDocNo } from '../utils/docSequence';
+import { getCompanyForPdf } from '../utils/pdfCompanyHelper';
 
 const router = Router();
 
@@ -130,7 +132,11 @@ router.post('/', async (req: Request, res: Response) => {
     const b = req.body;
     const capacityTon = parseFloat(b.capacityTon) || 0;
 
+    const companyId = getActiveCompanyId(req as AuthRequest);
+    const shipmentNo = await nextDocNo('Shipment', 'shipmentNo', companyId);
+
     const data: any = {
+      shipmentNo,
       productName: b.productName || '',
       customerName: b.customerName || '',
       destination: b.destination || '',
@@ -145,7 +151,7 @@ router.post('/', async (req: Request, res: Response) => {
       status: 'GATE_IN',
       remarks: b.remarks || null,
       userId: (req as any).user.id,
-      companyId: getActiveCompanyId(req as AuthRequest),
+      companyId,
     };
 
     // Link to dispatch request if provided (sales flow)
@@ -949,6 +955,8 @@ router.get('/:id/challan-pdf', async (req: Request, res: Response) => {
       })) || [{ productName: shipment.productName, quantity: 0, unit: 'TON', rate: 0, value: 0 }],
     };
 
+    (challanData as any).company = await getCompanyForPdf(shipment.companyId);
+
     const pdfBuffer = await renderDocumentPdf({ docType: 'CHALLAN', data: challanData, verifyId: shipment.id });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename=Challan-${shipment.shipmentNo}.pdf`);
@@ -988,6 +996,8 @@ router.get('/:id/gate-pass-pdf', async (req: Request, res: Response) => {
       coveringNote: shipment.coveringNote,
       purpose: shipment.purpose,
     };
+
+    (gatePassData as any).company = await getCompanyForPdf(shipment.companyId);
 
     const pdfBuffer = await renderDocumentPdf({ docType: 'GATE_PASS', data: gatePassData, verifyId: shipment.id });
     res.setHeader('Content-Type', 'application/pdf');
