@@ -35,7 +35,9 @@ export default function Layout() {
   const { companies, activeCompany, setActiveCompany, canSwitchCompany } = useCompany();
   const location = useLocation();
   const p = location.pathname;
-  const isPlantCompany = !user?.companyCode || user.companyCode === 'MSPIL';
+  const MSPIL_ID = 'b499264a-8c73-4595-ab9b-7dc58f58c4d2';
+  // Plant sections visible only when active company is MSPIL (or no company switcher active)
+  const isPlantCompany = activeCompany ? activeCompany.id === MSPIL_ID : (!user?.companyCode || user.companyCode === 'MSPIL');
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
   const [processOpen, setProcessOpen] = useState(p.startsWith('/process') || p.startsWith('/purchase-requisition'));
   const [salesOpen, setSalesOpen] = useState(p.startsWith('/sales'));

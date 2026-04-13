@@ -374,17 +374,24 @@ router.get('/summary', authenticate, asyncHandler(async (req: AuthRequest, res: 
 
   // Steam requirement = 4 × yesterday's ethanol production (KL)
   // Rule: 1 KL ethanol → 4 MT steam (plant benchmark)
+  // Only show for MSPIL — ethanol production is plant data, not company-scoped
   const STEAM_PER_KL_ETHANOL = 4;
-  const yesterday = new Date(date);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yStart = new Date(yesterday); yStart.setHours(0, 0, 0, 0);
-  const yEnd = new Date(yesterday); yEnd.setHours(23, 59, 59, 999);
-  const yEthanol = await prisma.ethanolProductEntry.findFirst({
-    where: { date: { gte: yStart, lte: yEnd } },
-    select: { productionBL: true },
-    orderBy: { date: 'desc' },
-  });
-  const yesterdayEthanolKL = Math.round(((yEthanol?.productionBL || 0) / 1000) * 100) / 100;
+  const MSPIL_ID = 'b499264a-8c73-4595-ab9b-7dc58f58c4d2';
+  const activeCompany = getActiveCompanyId(req);
+  const isMspilContext = !activeCompany || activeCompany === MSPIL_ID;
+  let yesterdayEthanolKL = 0;
+  if (isMspilContext) {
+    const yesterday = new Date(date);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yStart = new Date(yesterday); yStart.setHours(0, 0, 0, 0);
+    const yEnd = new Date(yesterday); yEnd.setHours(23, 59, 59, 999);
+    const yEthanol = await prisma.ethanolProductEntry.findFirst({
+      where: { date: { gte: yStart, lte: yEnd } },
+      select: { productionBL: true },
+      orderBy: { date: 'desc' },
+    });
+    yesterdayEthanolKL = Math.round(((yEthanol?.productionBL || 0) / 1000) * 100) / 100;
+  }
   const steamRequired = Math.round(yesterdayEthanolKL * STEAM_PER_KL_ETHANOL * 100) / 100;
   const steamBalance = Math.round((totalSteam - steamRequired) * 100) / 100;
 
