@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { authenticate, AuthRequest, getActiveCompanyId } from '../middleware/auth';
+import { authenticate, AuthRequest, getActiveCompanyId, getCompanyFilter } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError } from '../shared/errors';
 import { z } from 'zod';
@@ -29,7 +29,7 @@ const fuelMasterSchema = z.object({
 // GET /master — list all fuel items
 router.get('/master', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const items = await prisma.inventoryItem.findMany({
-    where: { category: 'FUEL', isActive: true },
+    where: { category: 'FUEL', isActive: true, ...getCompanyFilter(req) },
     take: 100,
     orderBy: { name: 'asc' },
     select: {
@@ -51,7 +51,7 @@ router.post('/master', authenticate, validate(fuelMasterSchema), asyncHandler(as
   // Prevent duplicate fuel names (case-insensitive, ignores spaces)
   const normalized = b.name.trim().toLowerCase().replace(/\s+/g, ' ');
   const existing = await prisma.inventoryItem.findFirst({
-    where: { category: 'FUEL', isActive: true, name: { equals: normalized, mode: 'insensitive' } },
+    where: { category: 'FUEL', isActive: true, name: { equals: normalized, mode: 'insensitive' }, ...getCompanyFilter(req) },
     select: { id: true, name: true, code: true },
   });
   if (existing) {
@@ -63,7 +63,7 @@ router.post('/master', authenticate, validate(fuelMasterSchema), asyncHandler(as
   // Auto-generate code if not provided: FUEL-001, FUEL-002, etc.
   let code = b.code;
   if (!code) {
-    const count = await prisma.inventoryItem.count({ where: { category: 'FUEL' } });
+    const count = await prisma.inventoryItem.count({ where: { category: 'FUEL', ...getCompanyFilter(req) } });
     code = `FUEL-${String(count + 1).padStart(3, '0')}`;
   }
 
@@ -116,7 +116,7 @@ router.put('/master/:id', authenticate, asyncHandler(async (req: AuthRequest, re
 // GET /warehouses — for location dropdown
 router.get('/warehouses', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const warehouses = await prisma.warehouse.findMany({
-    where: { isActive: true },
+    where: { isActive: true, ...getCompanyFilter(req) },
     take: 50,
     select: { id: true, code: true, name: true },
     orderBy: { name: 'asc' },
@@ -146,8 +146,9 @@ router.get('/consumption', authenticate, asyncHandler(async (req: AuthRequest, r
   date.setHours(0, 0, 0, 0);
 
   // Get all fuel items
+  const cf = getCompanyFilter(req);
   const fuelItems = await prisma.inventoryItem.findMany({
-    where: { category: 'FUEL', isActive: true },
+    where: { category: 'FUEL', isActive: true, ...cf },
     select: {
       id: true, name: true, code: true, unit: true,
       currentStock: true, steamRate: true, calorificValue: true,
@@ -155,9 +156,10 @@ router.get('/consumption', authenticate, asyncHandler(async (req: AuthRequest, r
     orderBy: { name: 'asc' },
   });
 
-  // Get existing consumption entries for this date
+  // Get existing consumption entries for this date (scoped via fuelItem IDs)
+  const fuelItemIds = fuelItems.map(f => f.id);
   const entries = await prisma.fuelConsumption.findMany({
-    where: { date },
+    where: { date, fuelItemId: { in: fuelItemIds } },
     select: {
       id: true, fuelItemId: true, openingStock: true,
       received: true, consumed: true, closingStock: true,
@@ -171,7 +173,7 @@ router.get('/consumption', authenticate, asyncHandler(async (req: AuthRequest, r
   const prevDate = new Date(date);
   prevDate.setDate(prevDate.getDate() - 1);
   const prevEntries = await prisma.fuelConsumption.findMany({
-    where: { date: prevDate },
+    where: { date: prevDate, fuelItemId: { in: fuelItemIds } },
     select: { fuelItemId: true, closingStock: true },
   });
   const prevMap = new Map(prevEntries.map(e => [e.fuelItemId, e.closingStock]));
@@ -351,16 +353,18 @@ router.get('/summary', authenticate, asyncHandler(async (req: AuthRequest, res: 
   date.setHours(0, 0, 0, 0);
 
   // Fuel items count and total stock
+  const cf = getCompanyFilter(req);
   const fuelItems = await prisma.inventoryItem.findMany({
-    where: { category: 'FUEL', isActive: true },
+    where: { category: 'FUEL', isActive: true, ...cf },
     select: { id: true, name: true, currentStock: true, minStock: true, unit: true },
   });
 
   const lowStock = fuelItems.filter(f => f.currentStock < f.minStock);
 
-  // Today's consumption
+  // Today's consumption (scoped via fuel item IDs)
+  const fuelItemIds = fuelItems.map(f => f.id);
   const todayEntries = await prisma.fuelConsumption.findMany({
-    where: { date },
+    where: { date, fuelItemId: { in: fuelItemIds } },
     select: { consumed: true, steamGenerated: true, received: true },
   });
 
@@ -387,7 +391,7 @@ router.get('/summary', authenticate, asyncHandler(async (req: AuthRequest, res: 
   // Days of fuel left — based on last 7d avg consumption per fuel
   const sevenDaysAgo = new Date(date); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
   const recent = await prisma.fuelConsumption.findMany({
-    where: { date: { gte: sevenDaysAgo, lte: date } },
+    where: { date: { gte: sevenDaysAgo, lte: date }, fuelItemId: { in: fuelItemIds } },
     select: { fuelItemId: true, consumed: true },
   });
   const avgByFuel = new Map<string, number>();
@@ -443,6 +447,7 @@ const openDealSchema = z.object({
 router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const deals = await prisma.purchaseOrder.findMany({
     where: {
+      ...getCompanyFilter(req),
       dealType: { in: ['OPEN', 'STANDARD'] },
       status: { in: ['APPROVED', 'SENT', 'PARTIAL_RECEIVED', 'RECEIVED', 'CLOSED'] },
       // Only fuel deals — check if any line has a fuel inventory item
