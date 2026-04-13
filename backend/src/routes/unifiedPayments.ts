@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { AuthRequest } from '../middleware/auth';
+import { AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import prisma from '../config/prisma';
 
@@ -50,7 +50,7 @@ router.get('/outgoing', asyncHandler(async (req: AuthRequest, res: Response) => 
 
   // 1. Vendor Payments
   if (!type || type === 'VENDOR') {
-    const vendorWhere: Record<string, unknown> = {};
+    const vendorWhere: Record<string, unknown> = { ...getCompanyFilter(req) };
     if (hasDateFilter) vendorWhere.paymentDate = dateFilter;
     if (mode) vendorWhere.mode = mode;
 
@@ -166,6 +166,8 @@ router.get('/outgoing', asyncHandler(async (req: AuthRequest, res: Response) => 
       let cvQuery = `SELECT id, date, amount, "paymentMode", "paymentRef", "payeeName", purpose, category, status, "createdAt" FROM "CashVoucher" WHERE type = 'PAYMENT' AND status <> 'CANCELLED'`;
       const cvParams: unknown[] = [];
       let paramIdx = 1;
+      const cvCompanyFilter = getCompanyFilter(req);
+      if (cvCompanyFilter.companyId) { cvQuery += ` AND "companyId" = $${paramIdx++}`; cvParams.push(cvCompanyFilter.companyId); }
       if (from) { cvQuery += ` AND date >= $${paramIdx++}`; cvParams.push(new Date(from)); }
       if (to) { cvQuery += ` AND date <= $${paramIdx++}`; cvParams.push(new Date(to)); }
       if (mode) { cvQuery += ` AND "paymentMode" = $${paramIdx++}`; cvParams.push(mode); }
@@ -206,13 +208,13 @@ router.get('/outgoing', asyncHandler(async (req: AuthRequest, res: Response) => 
 // ═══════════════════════════════════════════════
 // GET /outgoing/summary — KPIs for outgoing payments
 // ═══════════════════════════════════════════════
-router.get('/outgoing/summary', asyncHandler(async (_req: AuthRequest, res: Response) => {
+router.get('/outgoing/summary', asyncHandler(async (req: AuthRequest, res: Response) => {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
   const [vendorAgg, transporterAgg, contractorAgg, cashAgg] = await Promise.all([
     prisma.vendorPayment.aggregate({
-      where: { paymentDate: { gte: monthStart } },
+      where: { ...getCompanyFilter(req), paymentDate: { gte: monthStart } },
       _sum: { amount: true },
       _count: true,
     }),
@@ -253,7 +255,7 @@ router.get('/outgoing/summary', asyncHandler(async (_req: AuthRequest, res: Resp
 // GET /outgoing/outstanding — Unified payables view
 // Returns vendor invoices + contractor bills with balance > 0
 // ═══════════════════════════════════════════════
-router.get('/outgoing/outstanding', asyncHandler(async (_req: AuthRequest, res: Response) => {
+router.get('/outgoing/outstanding', asyncHandler(async (req: AuthRequest, res: Response) => {
   // Exclude vendor invoices already in active bank batches
   const activeItems = await prisma.bankPaymentItem.findMany({
     where: {
@@ -267,6 +269,7 @@ router.get('/outgoing/outstanding', asyncHandler(async (_req: AuthRequest, res: 
   const [vendorInvoices, contractorBills] = await Promise.all([
     prisma.vendorInvoice.findMany({
       where: {
+        ...getCompanyFilter(req),
         balanceAmount: { gt: 0 },
         ...(excludeInvIds.length > 0 ? { id: { notIn: excludeInvIds } } : {}),
       },
@@ -349,7 +352,7 @@ router.get('/incoming', asyncHandler(async (req: AuthRequest, res: Response) => 
   const from = req.query.from as string | undefined;
   const to = req.query.to as string | undefined;
 
-  const where: Record<string, unknown> = {};
+  const where: Record<string, unknown> = { ...getCompanyFilter(req) };
   if (customerId) where.customerId = customerId;
   if (mode) where.mode = mode;
   if (from || to) {
@@ -394,19 +397,19 @@ router.get('/incoming', asyncHandler(async (req: AuthRequest, res: Response) => 
 // ═══════════════════════════════════════════════
 // GET /incoming/summary — KPIs for incoming payments
 // ═══════════════════════════════════════════════
-router.get('/incoming/summary', asyncHandler(async (_req: AuthRequest, res: Response) => {
+router.get('/incoming/summary', asyncHandler(async (req: AuthRequest, res: Response) => {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
   const [totalAgg, modeBreakdown] = await Promise.all([
     prisma.payment.aggregate({
-      where: { paymentDate: { gte: monthStart } },
+      where: { ...getCompanyFilter(req), paymentDate: { gte: monthStart } },
       _sum: { amount: true },
       _count: true,
     }),
     prisma.payment.groupBy({
       by: ['mode'],
-      where: { paymentDate: { gte: monthStart } },
+      where: { ...getCompanyFilter(req), paymentDate: { gte: monthStart } },
       _sum: { amount: true },
       _count: true,
     }),
@@ -427,9 +430,9 @@ router.get('/incoming/summary', asyncHandler(async (_req: AuthRequest, res: Resp
 // ═══════════════════════════════════════════════
 // GET /incoming/pending — Unpaid invoices (receivables)
 // ═══════════════════════════════════════════════
-router.get('/incoming/pending', asyncHandler(async (_req: AuthRequest, res: Response) => {
+router.get('/incoming/pending', asyncHandler(async (req: AuthRequest, res: Response) => {
   const invoices = await prisma.invoice.findMany({
-    where: { status: { in: ['UNPAID', 'PARTIAL'] } },
+    where: { ...getCompanyFilter(req), status: { in: ['UNPAID', 'PARTIAL'] } },
     take: 500,
     orderBy: { invoiceDate: 'asc' },
     select: {
@@ -486,9 +489,9 @@ router.get('/incoming/pending', asyncHandler(async (_req: AuthRequest, res: Resp
 // ═══════════════════════════════════════════════
 // GET /incoming/pending-summary — Receivables KPIs + aging
 // ═══════════════════════════════════════════════
-router.get('/incoming/pending-summary', asyncHandler(async (_req: AuthRequest, res: Response) => {
+router.get('/incoming/pending-summary', asyncHandler(async (req: AuthRequest, res: Response) => {
   const invoices = await prisma.invoice.findMany({
-    where: { status: { in: ['UNPAID', 'PARTIAL'] } },
+    where: { ...getCompanyFilter(req), status: { in: ['UNPAID', 'PARTIAL'] } },
     take: 500,
     select: {
       invoiceDate: true, dueDate: true, balanceAmount: true,
@@ -730,9 +733,10 @@ function parsePaymentTermsDays(terms: string | null | undefined): number | null 
 // ═══════════════════════════════════════════════
 // GET /outgoing/pending — POs awaiting invoice/payment
 // ═══════════════════════════════════════════════
-router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Response) => {
+router.get('/outgoing/pending', asyncHandler(async (req: AuthRequest, res: Response) => {
   const pos = await prisma.purchaseOrder.findMany({
     where: {
+      ...getCompanyFilter(req),
       status: { in: ['APPROVED', 'SENT', 'PARTIAL_RECEIVED', 'RECEIVED', 'CLOSED'] },
     },
     select: {
@@ -1082,10 +1086,11 @@ router.get('/outgoing/pending', asyncHandler(async (_req: AuthRequest, res: Resp
 // ═══════════════════════════════════════════════
 // GET /outgoing/pending-summary — KPIs + aging for pending payables
 // ═══════════════════════════════════════════════
-router.get('/outgoing/pending-summary', asyncHandler(async (_req: AuthRequest, res: Response) => {
+router.get('/outgoing/pending-summary', asyncHandler(async (req: AuthRequest, res: Response) => {
   // Get pending POs (same logic as above, lighter query)
   const pos = await prisma.purchaseOrder.findMany({
     where: {
+      ...getCompanyFilter(req),
       status: { in: ['PARTIAL_RECEIVED', 'RECEIVED', 'CLOSED'] },
     },
     select: {

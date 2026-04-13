@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { AuthRequest, authenticate } from '../middleware/auth';
+import { AuthRequest, authenticate, getCompanyFilter } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import prisma from '../config/prisma';
 
@@ -36,6 +36,7 @@ router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Re
 
   const deals = await prisma.purchaseOrder.findMany({
     where: {
+      ...getCompanyFilter(req),
       status: { in: statusFilter },
       lines: { some: { inventoryItem: { category: { in: [...STORE_CATEGORIES] } } } },
     },
@@ -131,9 +132,10 @@ router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Re
 }));
 
 // GET /summary — top-line counts for the toolbar KPI strip
-router.get('/summary', authenticate, asyncHandler(async (_req: AuthRequest, res: Response) => {
+router.get('/summary', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const deals = await prisma.purchaseOrder.findMany({
     where: {
+      ...getCompanyFilter(req),
       status: { in: ['APPROVED', 'SENT', 'PARTIAL_RECEIVED', 'RECEIVED'] },
       lines: { some: { inventoryItem: { category: { in: [...STORE_CATEGORIES] } } } },
     },

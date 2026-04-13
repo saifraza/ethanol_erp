@@ -11,7 +11,7 @@
 // sync on confirm, reversal on delete) mirrors backend/src/routes/goodsReceipts.ts.
 import { Router, Response } from 'express';
 import { z } from 'zod';
-import { authenticate, AuthRequest, authorize, getActiveCompanyId } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize, getActiveCompanyId, getCompanyFilter } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError, ValidationError, ForbiddenError, ConflictError } from '../shared/errors';
 import { onStockMovement } from '../services/autoJournal';
@@ -198,9 +198,10 @@ const updateSchema = z.object({
 // Shows APPROVED/SENT/PARTIAL_RECEIVED POs (non-weighbridge) so
 // the store in-charge can see what's expected and quickly receive.
 // ═══════════════════════════════════════════════════════════════════
-router.get('/pending-pos', asyncHandler(async (_req: AuthRequest, res: Response) => {
+router.get('/pending-pos', asyncHandler(async (req: AuthRequest, res: Response) => {
   const pos = await prisma.purchaseOrder.findMany({
     where: {
+      ...getCompanyFilter(req),
       status: { in: ['APPROVED', 'SENT', 'PARTIAL_RECEIVED'] },
     },
     orderBy: { poDate: 'desc' },
@@ -293,6 +294,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const q = (req.query.q as string | undefined)?.trim();
 
   const where: any = {
+    ...getCompanyFilter(req),
     archived: false,
     AND: [STORE_SOURCE_WHERE],
   };

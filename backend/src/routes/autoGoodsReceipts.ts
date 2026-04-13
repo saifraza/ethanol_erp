@@ -7,7 +7,7 @@
 // This route is READ-ONLY. Corrections flow through the weighbridge admin
 // correction endpoints, not through here.
 import { Router, Response } from 'express';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest, getCompanyFilter } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { NotFoundError } from '../shared/errors';
 import prisma from '../config/prisma';
@@ -31,6 +31,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const q = (req.query.q as string | undefined)?.trim();
 
   const where: any = {
+    ...getCompanyFilter(req),
     archived: false,
     AND: [AUTO_SOURCE_WHERE],
   };

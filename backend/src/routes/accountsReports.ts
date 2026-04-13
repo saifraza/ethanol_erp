@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { AuthRequest, authenticate } from '../middleware/auth';
+import { AuthRequest, authenticate, getCompanyFilter } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { NotFoundError } from '../shared/errors';
 import prisma from '../config/prisma';
@@ -118,7 +118,7 @@ function agingBucket(invoiceDate: Date): string {
 // ═══════════════════════════════════════════════
 router.get('/receivables-aging', asyncHandler(async (req: AuthRequest, res: Response) => {
   const invoices = await prisma.invoice.findMany({
-    where: { status: { in: ['UNPAID', 'PARTIAL'] } },
+    where: { ...getCompanyFilter(req), status: { in: ['UNPAID', 'PARTIAL'] } },
     take: 500,
     select: {
       id: true,
@@ -181,7 +181,7 @@ router.get('/receivables-aging', asyncHandler(async (req: AuthRequest, res: Resp
 // ═══════════════════════════════════════════════
 router.get('/payables-aging', asyncHandler(async (req: AuthRequest, res: Response) => {
   const invoices = await prisma.vendorInvoice.findMany({
-    where: { balanceAmount: { gt: 0 } },
+    where: { ...getCompanyFilter(req), balanceAmount: { gt: 0 } },
     take: 500,
     select: {
       id: true,
@@ -616,7 +616,7 @@ router.get('/vendor-ledger/:vendorId', asyncHandler(async (req: AuthRequest, res
 // ═══════════════════════════════════════════════
 router.get('/outstanding-receivables', asyncHandler(async (req: AuthRequest, res: Response) => {
   const invoices = await prisma.invoice.findMany({
-    where: { status: { in: ['UNPAID', 'PARTIAL'] } },
+    where: { ...getCompanyFilter(req), status: { in: ['UNPAID', 'PARTIAL'] } },
     take: 500,
     select: {
       id: true,
@@ -685,7 +685,7 @@ router.get('/outstanding-receivables', asyncHandler(async (req: AuthRequest, res
 // ═══════════════════════════════════════════════
 router.get('/outstanding-payables', asyncHandler(async (req: AuthRequest, res: Response) => {
   const invoices = await prisma.vendorInvoice.findMany({
-    where: { balanceAmount: { gt: 0 } },
+    where: { ...getCompanyFilter(req), balanceAmount: { gt: 0 } },
     take: 500,
     select: {
       id: true,
@@ -756,8 +756,8 @@ router.get('/gst-documents', asyncHandler(async (req: AuthRequest, res: Response
   if (!from || !to) { res.status(400).json({ error: 'from and to required' }); return; }
   const dateFilter = { gte: new Date(from), lte: new Date(to + 'T23:59:59.999Z') };
   const [salesInvoices, vendorInvoices, contractorBills] = await Promise.all([
-    prisma.invoice.findMany({ where: { invoiceDate: dateFilter, status: { not: 'CANCELLED' } }, select: { id: true, invoiceNo: true, invoiceDate: true, productName: true, supplyType: true, amount: true, gstPercent: true, gstAmount: true, cgstAmount: true, sgstAmount: true, igstAmount: true, totalAmount: true, customer: { select: { name: true, gstNo: true, state: true } } }, orderBy: { invoiceDate: 'desc' }, take: 500 }),
-    prisma.vendorInvoice.findMany({ where: { invoiceDate: dateFilter, status: { not: 'CANCELLED' } }, select: { id: true, invoiceNo: true, invoiceDate: true, supplyType: true, subtotal: true, gstPercent: true, totalGst: true, cgstAmount: true, sgstAmount: true, igstAmount: true, isRCM: true, itcEligible: true, itcClaimed: true, vendor: { select: { name: true, gstin: true } } }, orderBy: { invoiceDate: 'desc' }, take: 500 }),
+    prisma.invoice.findMany({ where: { ...getCompanyFilter(req), invoiceDate: dateFilter, status: { not: 'CANCELLED' } }, select: { id: true, invoiceNo: true, invoiceDate: true, productName: true, supplyType: true, amount: true, gstPercent: true, gstAmount: true, cgstAmount: true, sgstAmount: true, igstAmount: true, totalAmount: true, customer: { select: { name: true, gstNo: true, state: true } } }, orderBy: { invoiceDate: 'desc' }, take: 500 }),
+    prisma.vendorInvoice.findMany({ where: { ...getCompanyFilter(req), invoiceDate: dateFilter, status: { not: 'CANCELLED' } }, select: { id: true, invoiceNo: true, invoiceDate: true, supplyType: true, subtotal: true, gstPercent: true, totalGst: true, cgstAmount: true, sgstAmount: true, igstAmount: true, isRCM: true, itcEligible: true, itcClaimed: true, vendor: { select: { name: true, gstin: true } } }, orderBy: { invoiceDate: 'desc' }, take: 500 }),
     prisma.contractorBill.findMany({ where: { billDate: dateFilter, status: { not: 'CANCELLED' } }, select: { id: true, billNo: true, billDate: true, description: true, subtotal: true, cgstAmount: true, sgstAmount: true, igstAmount: true, totalAmount: true, itcEligible: true, itcClaimed: true, contractor: { select: { name: true, gstin: true } } }, orderBy: { billDate: 'desc' }, take: 500 }),
   ]);
   res.json({ salesInvoices, vendorInvoices, contractorBills });
@@ -770,7 +770,7 @@ router.get('/tds-summary', asyncHandler(async (req: AuthRequest, res: Response) 
   if (!from || !to) { res.status(400).json({ error: 'from and to required' }); return; }
   const dateFilter = { gte: new Date(from), lte: new Date(to + 'T23:59:59.999Z') };
   const [vendorPayments, contractorPayments] = await Promise.all([
-    prisma.vendorPayment.findMany({ where: { paymentDate: dateFilter, tdsDeducted: { gt: 0 } }, select: { id: true, paymentDate: true, amount: true, tdsDeducted: true, tdsSection: true, vendor: { select: { name: true, pan: true, gstin: true } } }, orderBy: { paymentDate: 'desc' }, take: 500 }),
+    prisma.vendorPayment.findMany({ where: { ...getCompanyFilter(req), paymentDate: dateFilter, tdsDeducted: { gt: 0 } }, select: { id: true, paymentDate: true, amount: true, tdsDeducted: true, tdsSection: true, vendor: { select: { name: true, pan: true, gstin: true } } }, orderBy: { paymentDate: 'desc' }, take: 500 }),
     prisma.contractorPayment.findMany({ where: { paymentDate: dateFilter, tdsDeducted: { gt: 0 } }, select: { id: true, paymentDate: true, amount: true, tdsDeducted: true, bill: { select: { tdsPercent: true, contractor: { select: { name: true, pan: true, gstin: true, tdsSection: true } } } } }, orderBy: { paymentDate: 'desc' }, take: 500 }),
   ]);
   const sectionTotals: Record<string, { section: string; count: number; totalPayment: number; totalTds: number }> = {};
@@ -797,7 +797,7 @@ router.get('/itc-register', asyncHandler(async (req: AuthRequest, res: Response)
   const status = req.query.status as string;
   if (!from || !to) { res.status(400).json({ error: 'from and to required' }); return; }
   const dateFilter = { gte: new Date(from), lte: new Date(to + 'T23:59:59.999Z') };
-  const viWhere: any = { invoiceDate: dateFilter, status: { not: 'CANCELLED' } };
+  const viWhere: any = { ...getCompanyFilter(req), invoiceDate: dateFilter, status: { not: 'CANCELLED' } };
   if (status === 'eligible') { viWhere.itcEligible = true; viWhere.itcClaimed = false; viWhere.itcReversed = false; }
   else if (status === 'claimed') { viWhere.itcClaimed = true; }
   else if (status === 'reversed') { viWhere.itcReversed = true; }

@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError } from '../shared/errors';
 import { z } from 'zod';
@@ -290,6 +290,7 @@ const dealSchema = z.object({
 router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const deals = await prisma.purchaseOrder.findMany({
     where: {
+      ...getCompanyFilter(req),
       dealType: { in: ['OPEN', 'STANDARD', 'JOB_WORK'] },
       status: { in: ['APPROVED', 'SENT', 'PARTIAL_RECEIVED', 'RECEIVED', 'CLOSED'] },
       lines: { some: { inventoryItem: { category: { in: [...RAW_CATEGORIES] } } } },
@@ -457,6 +458,7 @@ router.post('/deals', authenticate, validate(dealSchema), asyncHandler(async (re
   const po = await prisma.purchaseOrder.create({
     data: {
       vendorId,
+      companyId: getActiveCompanyId(req),
       dealType: isJobWork ? 'JOB_WORK' : (isOpen ? 'OPEN' : 'STANDARD'),
       status: 'APPROVED',
       poDate: new Date(),
@@ -865,6 +867,7 @@ router.get('/summary', authenticate, asyncHandler(async (req: AuthRequest, res: 
   // Active deals count
   const activeDeals = await prisma.purchaseOrder.count({
     where: {
+      ...getCompanyFilter(req),
       status: { in: ['APPROVED', 'PARTIAL_RECEIVED'] },
       lines: { some: { inventoryItem: { category: { in: [...RAW_CATEGORIES] } } } },
     },
@@ -898,6 +901,7 @@ router.get('/summary', authenticate, asyncHandler(async (req: AuthRequest, res: 
   // Total outstanding across active deals (simplified aggregate)
   const activeDealsData = await prisma.purchaseOrder.findMany({
     where: {
+      ...getCompanyFilter(req),
       status: { in: ['APPROVED', 'PARTIAL_RECEIVED'] },
       lines: { some: { inventoryItem: { category: { in: [...RAW_CATEGORIES] } } } },
     },
