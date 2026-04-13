@@ -604,8 +604,6 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
       authorizedSignatory: 'OP Pandey — Unit Head',
       company: await getCompanyForPdf(po.companyId),
     };
-    console.log(`[PO PDF] PO#${po.poNo} companyId=${po.companyId} company=${JSON.stringify(poData.company?.shortName || 'MSPIL-default')}`);
-
     let pdfBuffer: Buffer;
     try {
       pdfBuffer = await renderDocumentPdf({
