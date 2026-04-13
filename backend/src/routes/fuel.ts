@@ -757,6 +757,15 @@ router.put('/deals/:id', authenticate, asyncHandler(async (req: AuthRequest, res
     const base = qty * rate;
     const gst = base * ((deal.lines[0]?.gstPercent || 0) / 100);
     poUpdate.subtotal = base; poUpdate.totalGst = gst; poUpdate.grandTotal = base + gst;
+  } else if (b.rate !== undefined && deal.dealType === 'STANDARD') {
+    // Rate changed on a FIXED deal without quantityType switch — recalculate PO header
+    const qty = deal.lines[0]?.quantity || 0;
+    const rate = Number(b.rate);
+    if (qty < 900000) {
+      const base = qty * rate;
+      const gst = base * ((deal.lines[0]?.gstPercent || 0) / 100);
+      poUpdate.subtotal = base; poUpdate.totalGst = gst; poUpdate.grandTotal = base + gst;
+    }
   }
   if (b.vendorId && b.vendorId !== deal.vendorId) poUpdate.vendorId = b.vendorId;
   if (b.remarks !== undefined) poUpdate.remarks = b.remarks;

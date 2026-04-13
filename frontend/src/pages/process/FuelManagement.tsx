@@ -241,10 +241,9 @@ export default function FuelManagement() {
         } else {
           existing.lineReceived += e.lineReceived;
           existing.lineValue += e.lineValue;
-          // Aggregate ordered quantity and keep weighted-avg rate
+          // Aggregate ordered quantity — keep deal rate from the line (NOT weighted-avg of received value)
           const mergedQty = (existing.line.quantity || 0) + (e.line.quantity || 0);
-          const mergedRate = existing.lineValue / (existing.lineReceived || 1);
-          existing.line = { ...existing.line, quantity: mergedQty, rate: mergedRate, receivedQty: existing.lineReceived };
+          existing.line = { ...existing.line, quantity: mergedQty, receivedQty: existing.lineReceived };
         }
       }
       grp.entries = Array.from(byDeal.values());
