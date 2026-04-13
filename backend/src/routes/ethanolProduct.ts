@@ -216,11 +216,15 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
 // Helper: get standalone dispatch total for a date range (between prev entry and current)
 // Uses gt (exclusive) for start and lte (inclusive) for end — no +24h padding
 async function getStandaloneDispatch(afterDate: Date | null, upToDate: Date): Promise<number> {
+  // Bug fix: auto-created trucks from weighbridge set `date` to midnight UTC (5:30 AM IST)
+  // but ethanol entries are saved ~9:30 AM IST (4:00 UTC). Using `gt: entryDate` on `date`
+  // misses same-day trucks. Fix: filter by `createdAt` (actual timestamp) instead of `date`
+  // (midnight-truncated), so trucks created between two entries are correctly counted.
   const start = afterDate || new Date('2000-01-01');
   const dispatches = await prisma.dispatchTruck.findMany({
     where: {
       entryId: null, // standalone only
-      date: { gt: start, lte: upToDate },
+      createdAt: { gt: start, lte: upToDate },
     },
   });
   return dispatches.reduce((s, d) => s + (d.quantityBL || 0), 0);

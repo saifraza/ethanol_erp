@@ -52,8 +52,13 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
       end.setHours(23, 59, 59, 999);
     }
 
+    // Use createdAt for range queries (not date) — auto-created trucks from weighbridge
+    // have date=midnight UTC which falls before ethanol entry cutoff (~9:30 AM IST)
+    const dateFilter = req.query.from
+      ? { createdAt: { gt: start, lte: end } }  // range mode: match getStandaloneDispatch logic
+      : { date: { gte: start, lte: end } };       // single-date mode: keep as-is
     const dispatches = await prisma.dispatchTruck.findMany({
-      where: { date: { gte: start, lte: end }, entryId: null },
+      where: { ...dateFilter, entryId: null },
       orderBy: { createdAt: 'desc' },
     });
     res.json({ dispatches });
