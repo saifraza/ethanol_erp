@@ -21,7 +21,7 @@ const createSchema = z.object({
   pincode: z.string().optional(),
   contactPerson: z.string().optional(),
   phone: z.string().optional(),
-  email: z.string().email().optional(),
+  email: z.union([z.string().email(), z.literal('')]).optional(),
   bankName: z.string().optional(),
   bankBranch: z.string().optional(),
   bankAccount: z.string().optional(),
