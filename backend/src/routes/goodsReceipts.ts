@@ -599,7 +599,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
           totalQty,
           status: 'DRAFT',
           userId: req.user!.id,
-          companyId: req.user?.companyId || null,
+          companyId: getActiveCompanyId(req),
           lines: {
             create: processedLines,
           },
@@ -889,7 +889,7 @@ router.delete('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
               },
             });
 
-            // Reset PO status if we reversed received qty
+            // Recalculate PO status from actual line state
             const allLines = await tx.pOLine.findMany({ where: { poId: grn.poId! } });
             const anyReceived = allLines.some((l: any) => l.receivedQty > 0 || (l.id === line.poLineId && newReceivedQty > 0));
             if (!anyReceived) {
@@ -898,9 +898,10 @@ router.delete('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
                 data: { status: 'APPROVED' },
               });
             } else {
+              const allDone = allLines.every((l: any) => l.pendingQty <= 0);
               await tx.purchaseOrder.update({
                 where: { id: grn.poId! },
-                data: { status: 'PARTIAL_RECEIVED' },
+                data: { status: allDone ? 'RECEIVED' : 'PARTIAL_RECEIVED' },
               });
             }
           }

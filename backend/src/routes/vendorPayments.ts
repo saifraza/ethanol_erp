@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest, authorize, getCompanyFilter } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { onVendorPaymentMade } from '../services/autoJournal';
 import { recomputeGrnPaidStateForPO } from '../services/grnPaidState';
@@ -286,7 +286,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
           remarks: b.remarks || null,
           paymentDate: b.paymentDate ? new Date(b.paymentDate) : new Date(),
           userId: req.user!.id,
-          companyId: req.user?.companyId || null,
+          companyId: getActiveCompanyId(req),
         },
       });
 

@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, authorize, AuthRequest, getCompanyFilter } from '../middleware/auth';
+import { authenticate, authorize, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import PDFDocument from 'pdfkit';
 import { sendEmail } from '../services/messaging';
@@ -307,7 +307,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
         filePath: b.filePath || null,
         remarks: b.remarks || null,
         userId: req.user!.id,
-        companyId: req.user?.companyId || null,
+        companyId: getActiveCompanyId(req),
       },
     });
 

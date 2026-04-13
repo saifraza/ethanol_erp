@@ -209,7 +209,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         rawMaterialType: b.rawMaterialType || null,
         maanNumber: b.maanNumber || null,
         isActive: true,
-        companyId: req.user?.companyId || null,
+        companyId: getActiveCompanyId(req),
       },
     });
     res.status(201).json(vendor);

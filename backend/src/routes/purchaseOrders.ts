@@ -292,7 +292,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         tdsAmount,
         status: 'DRAFT',
         userId: req.user!.id,
-        companyId: req.user?.companyId || null,
+        companyId: getActiveCompanyId(req),
         lines: {
           create: processedLines,
         },
