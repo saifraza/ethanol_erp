@@ -4,20 +4,31 @@ import * as path from 'path';
 import QRCode from 'qrcode';
 
 const TEMPLATES_DIR = path.join(__dirname, '../templates');
-const LOGO_PATH = path.join(__dirname, '../../assets/MSPIL_logo_transparent.png');
+const ASSETS_DIR = path.join(__dirname, '../../assets');
 
-let logoBase64: string | null = null;
+// Logo cache: shortName → base64 data URI
+const logoCache: Record<string, string> = {};
 
-function getLogoBase64(): string {
-  if (!logoBase64) {
-    try {
-      const buf = fs.readFileSync(LOGO_PATH);
-      logoBase64 = `data:image/png;base64,${buf.toString('base64')}`;
-    } catch {
-      logoBase64 = '';
+function loadLogo(filename: string, mime: string): string {
+  const filepath = path.join(ASSETS_DIR, filename);
+  try {
+    const buf = fs.readFileSync(filepath);
+    return `data:${mime};base64,${buf.toString('base64')}`;
+  } catch {
+    return '';
+  }
+}
+
+function getLogoBase64(companyShortName?: string): string {
+  const key = companyShortName || 'MSPIL';
+  if (!logoCache[key]) {
+    switch (key) {
+      case 'MAEL': logoCache[key] = loadLogo('MAEL_logo.svg', 'image/svg+xml'); break;
+      case 'MGAL': logoCache[key] = loadLogo('MGAL_logo.svg', 'image/svg+xml'); break;
+      default: logoCache[key] = loadLogo('MSPIL_logo_transparent.png', 'image/png'); break;
     }
   }
-  return logoBase64;
+  return logoCache[key];
 }
 
 // ── Handlebars Helpers ──
@@ -152,7 +163,8 @@ export async function generateQRCode(url: string): Promise<string> {
 export async function renderTemplate(templateName: string, data: Record<string, unknown>): Promise<string> {
   ensureInit();
   const template = getCompiledTemplate(templateName);
-  const logoSrc = getLogoBase64();
+  const companyShortName = (data.company as any)?.shortName || undefined;
+  const logoSrc = getLogoBase64(companyShortName);
   const html = template({ ...data, logoSrc });
   return html;
 }
