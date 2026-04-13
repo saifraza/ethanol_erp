@@ -296,7 +296,7 @@ export default function SiloStock() {
                     <th className="text-right px-3 py-2.5 font-bold">Wash (KL)</th>
                     <th className="text-right px-3 py-2.5 font-bold">Grain %</th>
                     <th className="text-right px-3 py-2.5 font-bold">
-                      <span className="text-amber-600">- Consumed</span>
+                      <span className="text-amber-600 cursor-help" title="Grain consumed in production = Wash Distilled (KL) × Grain %. This is the grain equivalent of fermented wash that was distilled through the column.">- Consumed</span>
                     </th>
                     <th className="text-right px-4 py-2.5 font-bold bg-gray-200 text-gray-700">= Closing</th>
                     <th className="text-right px-3 py-2.5 font-bold text-teal-600">Ethanol (AL)</th>
@@ -388,15 +388,23 @@ export default function SiloStock() {
             <div className="px-4 py-3 border-t border-gray-200 text-xs text-gray-600 space-y-3">
               <div className="grid md:grid-cols-2 gap-6">
                 <div>
-                  <div className="font-bold text-gray-700 mb-2 uppercase text-[10px] tracking-wider">Silo Balance (Daily)</div>
+                  <div className="font-bold text-gray-700 mb-2 uppercase text-[10px] tracking-wider">Consumed (Grain Used in Production)</div>
+                  <div className="bg-gray-50 rounded-lg p-3 font-mono text-[11px] space-y-2">
+                    <div className="text-amber-700 font-bold">Consumed = Wash Distilled (KL) x Grain %</div>
+                    <div className="text-gray-500 font-sans text-[10px] leading-relaxed">
+                      Fermented wash (mash) is distilled through the column. The flow meter (MG_140101) measures how many KL of wash were distilled in the 9 AM-to-9 AM shift. Multiplying by grain % gives the MT of grain equivalent that was consumed in production.
+                    </div>
+                  </div>
+                  <div className="font-bold text-gray-700 mb-2 mt-3 uppercase text-[10px] tracking-wider">Silo Closing Balance</div>
                   <div className="bg-gray-50 rounded-lg p-3 font-mono text-[11px] space-y-1">
-                    <div>Consumed = Wash Distilled (KL) x Grain %</div>
-                    <div className="mt-2">Silo Closing = Opening + Received - Silo Outflow</div>
+                    <div>Silo Closing = Opening + Received - Silo Outflow</div>
                     <div className="mt-2 text-gray-400">Where:</div>
                     <div className="pl-3">Opening = Previous day's Closing</div>
                     <div className="pl-3 text-green-700">Received = Grain trucks weighed (net MT)</div>
                     <div className="pl-3 text-amber-700">Silo Outflow = max(0, Consumed + Tank Delta + Flour Delta)</div>
-                    <div className="pl-3 text-gray-400 text-[10px]">Tank delta: if fermenters fill up, more grain left silos; if they drain, less did</div>
+                    <div className="text-gray-500 font-sans text-[10px] mt-1.5 leading-relaxed">
+                      Silo outflow accounts for grain entering fermenters. If fermenters filled up (tank delta positive), more grain left silos than was distilled. If fermenters drained (tank delta negative), distillation used grain already in tanks — so less came from silos.
+                    </div>
                   </div>
                 </div>
                 <div>
