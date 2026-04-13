@@ -399,7 +399,7 @@ const DDGSContracts: React.FC = () => {
   const pctUsed = (c: Contract) => c.contractQtyMT ? Math.round((c.totalSuppliedMT / c.contractQtyMT) * 100) : 0;
   const daysLeft = (c: Contract) => { const d = Math.ceil((new Date(c.endDate).getTime() - Date.now()) / 86400000); return d > 0 ? d : 0; };
   const fmtMT = (n: number) => n.toFixed(2);
-  const fmtINR = (n: number) => '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  const fmtINR = (n: number) => '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: n % 1 === 0 ? 0 : 2, maximumFractionDigits: 2 });
 
   const inputCls = "border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400";
   const labelCls = "text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block";
