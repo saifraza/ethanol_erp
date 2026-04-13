@@ -839,7 +839,10 @@ router.post('/:id/dispatches/:dispatchId/e-invoice', asyncHandler(async (req: Au
 router.get('/:id/dispatches/:dispatchId/challan-pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
   const dispatch = await prisma.dDGSContractDispatch.findFirst({
     where: { id: req.params.dispatchId, contractId: req.params.id },
-    include: { contract: { select: { buyerName: true, buyerAddress: true, buyerGstin: true, dealType: true, rate: true, processingChargePerMT: true, contractNo: true } } },
+    include: {
+      contract: { select: { buyerName: true, buyerAddress: true, buyerGstin: true, dealType: true, rate: true, processingChargePerMT: true, contractNo: true, customerId: true } },
+      invoice: { select: { shipToName: true, shipToGstin: true, shipToAddress: true, shipToState: true, shipToPincode: true, customer: { select: { name: true, address: true, city: true, state: true, pincode: true, gstNo: true } } } },
+    },
   });
   if (!dispatch) return res.status(404).json({ error: 'Dispatch not found' });
 
@@ -864,6 +867,18 @@ router.get('/:id/dispatches/:dispatchId/challan-pdf', asyncHandler(async (req: A
       buyerAddress: dispatch.contract.buyerAddress || '',
       buyerGst: dispatch.contract.buyerGstin || '',
       contractNo: dispatch.contract.contractNo,
+      customer: dispatch.invoice?.customer ? {
+        name: dispatch.invoice.shipToName || dispatch.invoice.customer.name,
+        address: dispatch.invoice.shipToAddress || dispatch.invoice.customer.address,
+        city: dispatch.invoice.customer.city,
+        state: dispatch.invoice.shipToState || dispatch.invoice.customer.state,
+        pincode: dispatch.invoice.shipToPincode || dispatch.invoice.customer.pincode,
+        gstNo: dispatch.invoice.shipToGstin || dispatch.invoice.customer.gstNo,
+      } : {
+        name: dispatch.contract.buyerName,
+        address: dispatch.contract.buyerAddress || '',
+        gstNo: dispatch.contract.buyerGstin || '',
+      },
       productName: isJobWork ? 'JOBWORK CHARGES FOR DDGS PRODUCTION' : 'DDGS',
       hsnCode: isJobWork ? '998817' : '23033000',
       quantity: dispatch.weightNetMT,
