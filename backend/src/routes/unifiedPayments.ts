@@ -473,8 +473,12 @@ router.get('/incoming/pending', asyncHandler(async (_req: AuthRequest, res: Resp
     };
   });
 
-  // Sort by dueDate ascending (most urgent first)
-  items.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+  // Sort by invoice series number (INV/ETH/NNN) — extract trailing digits
+  items.sort((a, b) => {
+    const numA = parseInt((a.invoiceRef.match(/(\d+)$/) || ['0'])[0], 10);
+    const numB = parseInt((b.invoiceRef.match(/(\d+)$/) || ['0'])[0], 10);
+    return numA - numB;
+  });
 
   res.json({ items });
 }));
