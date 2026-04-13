@@ -52,11 +52,42 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
       end.setHours(23, 59, 59, 999);
     }
 
-    // Use createdAt for range queries (not date) — auto-created trucks from weighbridge
-    // have date=midnight UTC which falls before ethanol entry cutoff (~9:30 AM IST)
-    const dateFilter = req.query.from
-      ? { createdAt: { gt: start, lte: end } }  // range mode: match getStandaloneDispatch logic
-      : { date: { gte: start, lte: end } };       // single-date mode: keep as-is
+    if (req.query.from) {
+      // Range mode: use Weighment mirror (matches getStandaloneDispatch in ethanolProduct.ts)
+      // Actual weighment time, not DispatchTruck.createdAt
+      const weighments = await prisma.weighment.findMany({
+        where: {
+          direction: 'OUTBOUND',
+          cancelled: false,
+          status: { in: ['COMPLETE', 'COMPLETED', 'RELEASED'] },
+          secondWeightAt: { gt: start, lte: end },
+          OR: [
+            { materialCategory: 'ETHANOL' },
+            { materialName: { contains: 'Ethanol', mode: 'insensitive' } },
+          ],
+        },
+        select: {
+          id: true, ticketNo: true, vehicleNo: true, materialName: true,
+          grossWeight: true, tareWeight: true, netWeight: true, quantityBL: true,
+          strength: true, sealNo: true, rstNo: true, customerName: true,
+          secondWeightAt: true,
+        },
+        orderBy: { secondWeightAt: 'desc' },
+      });
+      // Map to dispatch-like shape for frontend compatibility
+      const dispatches = weighments.map(w => ({
+        id: w.id, ticketNo: w.ticketNo, vehicleNo: w.vehicleNo,
+        productName: w.materialName, grossWeight: w.grossWeight,
+        tareWeight: w.tareWeight, netWeight: w.netWeight,
+        quantityBL: w.quantityBL, strength: w.strength,
+        sealNo: w.sealNo, rstNo: w.rstNo, customerName: w.customerName,
+        createdAt: w.secondWeightAt,
+      }));
+      return res.json({ dispatches });
+    }
+
+    // Single-date mode: use DispatchTruck (legacy)
+    const dateFilter = { date: { gte: start, lte: end } };
     const dispatches = await prisma.dispatchTruck.findMany({
       where: { ...dateFilter, entryId: null },
       orderBy: { createdAt: 'desc' },
@@ -84,11 +115,21 @@ router.get('/totals', authenticate, async (req: AuthRequest, res: Response) => {
     let standaloneExtra = 0;
     let standaloneCount = 0;
     if (lastEntry) {
-      const standalone = await prisma.dispatchTruck.findMany({
-        where: { entryId: null, date: { gt: lastEntry.date } },
+      // Use Weighment mirror (matches getStandaloneDispatch in ethanolProduct.ts)
+      const standalone = await prisma.weighment.findMany({
+        where: {
+          direction: 'OUTBOUND',
+          cancelled: false,
+          status: { in: ['COMPLETE', 'COMPLETED', 'RELEASED'] },
+          secondWeightAt: { gt: lastEntry.date },
+          OR: [
+            { materialCategory: 'ETHANOL' },
+            { materialName: { contains: 'Ethanol', mode: 'insensitive' } },
+          ],
+        },
         select: { quantityBL: true },
       });
-      standaloneExtra = standalone.reduce((s, d) => s + (d.quantityBL || 0), 0);
+      standaloneExtra = standalone.reduce((s, w) => s + (w.quantityBL || 0), 0);
       standaloneCount = standalone.length;
     }
 

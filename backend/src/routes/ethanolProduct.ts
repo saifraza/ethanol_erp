@@ -213,21 +213,26 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-// Helper: get standalone dispatch total for a date range (between prev entry and current)
-// Uses gt (exclusive) for start and lte (inclusive) for end — no +24h padding
+// Helper: get ethanol dispatch total between two readings using Weighment mirror.
+// Uses actual weighment time (secondWeightAt) — not DispatchTruck.createdAt or date,
+// which can miss trucks weighed in the window but created outside it.
+// Range: (prevReadingTime, currentReadingTime] — exclusive start, inclusive end.
 async function getStandaloneDispatch(afterDate: Date | null, upToDate: Date): Promise<number> {
-  // Bug fix: auto-created trucks from weighbridge set `date` to midnight UTC (5:30 AM IST)
-  // but ethanol entries are saved ~9:30 AM IST (4:00 UTC). Using `gt: entryDate` on `date`
-  // misses same-day trucks. Fix: filter by `createdAt` (actual timestamp) instead of `date`
-  // (midnight-truncated), so trucks created between two entries are correctly counted.
   const start = afterDate || new Date('2000-01-01');
-  const dispatches = await prisma.dispatchTruck.findMany({
+  const weighments = await prisma.weighment.findMany({
     where: {
-      entryId: null, // standalone only
-      createdAt: { gt: start, lte: upToDate },
+      direction: 'OUTBOUND',
+      cancelled: false,
+      status: { in: ['COMPLETE', 'COMPLETED', 'RELEASED'] },
+      secondWeightAt: { gt: start, lte: upToDate },
+      OR: [
+        { materialCategory: 'ETHANOL' },
+        { materialName: { contains: 'Ethanol', mode: 'insensitive' } },
+      ],
     },
+    select: { quantityBL: true },
   });
-  return dispatches.reduce((s, d) => s + (d.quantityBL || 0), 0);
+  return weighments.reduce((s, w) => s + (w.quantityBL || 0), 0);
 }
 
 // POST /api/ethanol-product

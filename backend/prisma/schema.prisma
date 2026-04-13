@@ -3957,6 +3957,7 @@ model Weighment {
   @@index([ticketNo])
   @@index([poId])
   @@index([factoryCreatedAt])
+  @@index([direction, materialCategory, secondWeightAt])
   @@index([syncedAt])
 }
 
