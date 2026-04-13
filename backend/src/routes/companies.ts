@@ -89,7 +89,7 @@ router.get('/:id/summary', asyncHandler(async (req: AuthRequest, res: Response) 
 
 // POST / — Create company (admin only) + auto-create admin user
 router.post('/', validate(createSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
-  if (req.user?.role !== 'ADMIN') {
+  if (req.user?.role !== 'ADMIN' && req.user?.role !== 'SUPER_ADMIN') {
     return res.status(403).json({ error: 'Admin access required' });
   }
 
