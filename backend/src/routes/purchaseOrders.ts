@@ -559,15 +559,18 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
       transportMode: po.transportMode,
       remarks: po.remarks,
       lines: po.lines.map((l: any) => {
-        // For open deals (qty=999999) or truck-based deals (qty=0), use receivedQty for PDF display
-        const isOpenOrTruck = l.quantity >= 900000 || (l.quantity === 0 && (l.receivedQty || 0) > 0);
-        const displayQty = isOpenOrTruck ? (l.receivedQty || 0) : l.quantity;
-        const lineAmount = l.amount && l.amount > 0 ? l.amount : displayQty * l.rate;
-        const taxable = l.taxableAmount && l.taxableAmount > 0 ? l.taxableAmount : lineAmount * (1 - (l.discountPercent || 0) / 100);
+        // PO amounts are ALWAYS based on received qty (user rule: "we always calc PO amount based on what we received")
+        const agg = grnAgg[l.id] || { received: 0, accepted: 0, rejected: 0 };
+        const hasReceipts = (l.receivedQty || 0) > 0 || agg.received > 0;
+        const receivedQty = l.receivedQty || agg.received || 0;
+        // QTY column: show received if any receipts, else show ordered
+        const displayQty = hasReceipts ? receivedQty : (l.quantity >= 900000 ? 0 : l.quantity);
+        // Amounts: always from received qty when receipts exist
+        const lineAmount = hasReceipts ? (receivedQty * l.rate) : (l.quantity < 900000 ? l.quantity * l.rate : 0);
+        const taxable = lineAmount * (1 - (l.discountPercent || 0) / 100);
         const gstAmt = taxable * (l.gstPercent || 0) / 100;
         const isIntra = po.supplyType !== 'INTER_STATE';
-        const agg = grnAgg[l.id] || { received: 0, accepted: 0, rejected: 0 };
-        const orderedQty = (l.quantity >= 900000 || isOpenOrTruck) ? 0 : l.quantity;
+        const orderedQty = l.quantity >= 900000 ? 0 : l.quantity;
         const overDelivered = agg.received > orderedQty && orderedQty > 0;
         return {
           description: l.description,
@@ -591,17 +594,19 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
           lineTotal: l.lineTotal && l.lineTotal > 0 ? l.lineTotal : Math.round((taxable + gstAmt) * 100) / 100,
         };
       }),
-      // Always recalculate totals from lines — DB values can be stale (e.g., GST% changed after PO creation)
+      // Always use received qty for totals — "PO amount = what we received"
       subtotal: (() => {
         const calc = Math.round(po.lines.reduce((s: number, l: any) => {
-          const qty = (l.quantity >= 900000 || (l.quantity === 0 && (l.receivedQty || 0) > 0)) ? (l.receivedQty || 0) : l.quantity;
+          const hasReceipts = (l.receivedQty || 0) > 0;
+          const qty = hasReceipts ? (l.receivedQty || 0) : (l.quantity >= 900000 ? 0 : l.quantity);
           return s + qty * l.rate;
         }, 0) * 100) / 100;
         return calc > 0 ? calc : (po.subtotal || 0);
       })(),
       totalGst: (() => {
         return Math.round(po.lines.reduce((s: number, l: any) => {
-          const qty = (l.quantity >= 900000 || (l.quantity === 0 && (l.receivedQty || 0) > 0)) ? (l.receivedQty || 0) : l.quantity;
+          const hasReceipts = (l.receivedQty || 0) > 0;
+          const qty = hasReceipts ? (l.receivedQty || 0) : (l.quantity >= 900000 ? 0 : l.quantity);
           return s + qty * l.rate * (l.gstPercent || 0) / 100;
         }, 0) * 100) / 100;
       })(),
@@ -610,7 +615,8 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
       roundOff: po.roundOff,
       grandTotal: (() => {
         const calc = Math.round(po.lines.reduce((s: number, l: any) => {
-          const qty = (l.quantity >= 900000 || (l.quantity === 0 && (l.receivedQty || 0) > 0)) ? (l.receivedQty || 0) : l.quantity;
+          const hasReceipts = (l.receivedQty || 0) > 0;
+          const qty = hasReceipts ? (l.receivedQty || 0) : (l.quantity >= 900000 ? 0 : l.quantity);
           const base = qty * l.rate;
           return s + base + base * (l.gstPercent || 0) / 100;
         }, 0) * 100) / 100;
