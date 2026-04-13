@@ -138,6 +138,13 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return user ? <>{children}</> : <Navigate to="/login" />;
 }
 
+function PlantOnly({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  const isPlantCompany = !user?.companyCode || user.companyCode === 'MSPIL';
+  if (!isPlantCompany) return <Navigate to="/procurement/purchase-orders" replace />;
+  return <>{children}</>;
+}
+
 function HomeRedirect() {
   const { user } = useAuth();
   const isPlantCompany = !user?.companyCode || user.companyCode === 'MSPIL';
@@ -168,32 +175,32 @@ export default function App() {
         <Route path="/verify/:docType/:id" element={<VerifyDocument />} />
         <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route index element={<HomeRedirect />} />
-        <Route path="dashboard" element={<Dashboard />} />
-        <Route path="process/raw-material" element={<RawMaterial />} />
-        <Route path="process/grain-stock" element={<SiloStock />} />
-        <Route path="process/grain-stock-old" element={<GrainUnloading />} />
-        <Route path="process/grain-unloading" element={<GrainUnloadingTrucks />} />
-        <Route path="process/milling" element={<Milling />} />
-        <Route path="process/liquefaction" element={<Liquefaction />} />
-        <Route path="process/fermentation" element={<Fermentation />} />
-        <Route path="process/distillation" element={<Distillation />} />
-        <Route path="process/evaporation" element={<Evaporation />} />
-        <Route path="process/ddgs-stock" element={<DDGSStock />} />
-        <Route path="process/ddgs-dispatch" element={<DDGSDispatch />} />
-        <Route path="process/sugar-stock" element={<SugarStock />} />
-        <Route path="process/sugar-dispatch" element={<SugarDispatch />} />
-        <Route path="process/dryer" element={<DryerMonitor />} />
-        <Route path="process/decanter" element={<Decanter />} />
-        <Route path="process/fuel" element={<FuelManagement />} />
-        <Route path="process/opc" element={<OPCTagManager />} />
-        <Route path="process/opc-ethanol" element={<OPCEthanol />} />
-        <Route path="process/opc-sugar" element={<OPCSugar />} />
-        <Route path="process/ethanol-product" element={<EthanolProduct />} />
-        <Route path="process/ethanol-stock" element={<EthanolProduct />} />
-        <Route path="process/ethanol-dispatch" element={<EthanolDispatch />} />
-        <Route path="process/water-utility" element={<WaterUtility />} />
-        <Route path="process/lab-sampling" element={<LabSampling />} />
-        <Route path="process/dosing-recipes" element={<DosingRecipes />} />
+        <Route path="dashboard" element={<PlantOnly><Dashboard /></PlantOnly>} />
+        <Route path="process/raw-material" element={<PlantOnly><RawMaterial /></PlantOnly>} />
+        <Route path="process/grain-stock" element={<PlantOnly><SiloStock /></PlantOnly>} />
+        <Route path="process/grain-stock-old" element={<PlantOnly><GrainUnloading /></PlantOnly>} />
+        <Route path="process/grain-unloading" element={<PlantOnly><GrainUnloadingTrucks /></PlantOnly>} />
+        <Route path="process/milling" element={<PlantOnly><Milling /></PlantOnly>} />
+        <Route path="process/liquefaction" element={<PlantOnly><Liquefaction /></PlantOnly>} />
+        <Route path="process/fermentation" element={<PlantOnly><Fermentation /></PlantOnly>} />
+        <Route path="process/distillation" element={<PlantOnly><Distillation /></PlantOnly>} />
+        <Route path="process/evaporation" element={<PlantOnly><Evaporation /></PlantOnly>} />
+        <Route path="process/ddgs-stock" element={<PlantOnly><DDGSStock /></PlantOnly>} />
+        <Route path="process/ddgs-dispatch" element={<PlantOnly><DDGSDispatch /></PlantOnly>} />
+        <Route path="process/sugar-stock" element={<PlantOnly><SugarStock /></PlantOnly>} />
+        <Route path="process/sugar-dispatch" element={<PlantOnly><SugarDispatch /></PlantOnly>} />
+        <Route path="process/dryer" element={<PlantOnly><DryerMonitor /></PlantOnly>} />
+        <Route path="process/decanter" element={<PlantOnly><Decanter /></PlantOnly>} />
+        <Route path="process/fuel" element={<PlantOnly><FuelManagement /></PlantOnly>} />
+        <Route path="process/opc" element={<PlantOnly><OPCTagManager /></PlantOnly>} />
+        <Route path="process/opc-ethanol" element={<PlantOnly><OPCEthanol /></PlantOnly>} />
+        <Route path="process/opc-sugar" element={<PlantOnly><OPCSugar /></PlantOnly>} />
+        <Route path="process/ethanol-product" element={<PlantOnly><EthanolProduct /></PlantOnly>} />
+        <Route path="process/ethanol-stock" element={<PlantOnly><EthanolProduct /></PlantOnly>} />
+        <Route path="process/ethanol-dispatch" element={<PlantOnly><EthanolDispatch /></PlantOnly>} />
+        <Route path="process/water-utility" element={<PlantOnly><WaterUtility /></PlantOnly>} />
+        <Route path="process/lab-sampling" element={<PlantOnly><LabSampling /></PlantOnly>} />
+        <Route path="process/dosing-recipes" element={<PlantOnly><DosingRecipes /></PlantOnly>} />
         {/* raw-material-testing merged into raw-material */}
         <Route path="inventory" element={<Inventory />} />
         <Route path="inventory/masters" element={<InventoryMasters />} />

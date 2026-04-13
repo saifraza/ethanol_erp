@@ -13,6 +13,7 @@
 - **[logistics-gate-entry-plan.md](logistics-gate-entry-plan.md)** — Gate entry operator UI + truck flow.
 
 ## Business Modules (cloud ERP)
+- **[sister-companies.md](sister-companies.md)** — Multi-company tenancy. MAEL/MGAL sister LLPs buy corn through MSPIL plant. Company selector at gate, companyId scoping, inter-company procurement.
 - **[accounts-module.md](accounts-module.md)** — Full double-entry spec. Chart of accounts, journals, P&L, balance sheet, bank recon, GST.
 - **[sales-module.md](sales-module.md)** — Order-to-cash, e-invoice, e-way bill, dispatch.
 - **[procurement-module.md](procurement-module.md)** — Procure-to-pay, PO lifecycle, GRN.
