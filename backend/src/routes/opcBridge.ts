@@ -713,7 +713,31 @@ router.get('/history/:tag(*)', authenticate, asyncHandler(async (req: AuthReques
       take: 500,
       select: { hour: true, avg: true, min: true, max: true, count: true },
     });
-    res.json({ tag, property, hours, readings, count: readings.length, resolution: 'hourly' });
+
+    if (readings.length > 0) {
+      res.json({ tag, property, hours, readings, count: readings.length, resolution: 'hourly' });
+    } else {
+      // Fallback: compute hourly aggregates on-the-fly from raw readings
+      // This covers bridges that don't push hourly data (e.g., Sugar/Fuji DCS)
+      const sourceFilter = source ? `AND source = '${source.replace(/'/g, "''")}'` : '';
+      const computed: { hour: Date; avg: number; min: number; max: number; count: number }[] = await opc.$queryRawUnsafe(`
+        SELECT date_trunc('hour', "scannedAt") AS hour,
+               AVG(value) AS avg, MIN(value) AS min, MAX(value) AS max, COUNT(*)::int AS count
+        FROM "OpcReading"
+        WHERE tag = $1 AND property = $2 AND "scannedAt" >= $3 ${sourceFilter}
+        GROUP BY date_trunc('hour', "scannedAt")
+        ORDER BY hour ASC
+        LIMIT 500
+      `, tag, property, cutoff);
+      const formatted = computed.map(r => ({
+        hour: r.hour,
+        avg: Number(r.avg),
+        min: Number(r.min),
+        max: Number(r.max),
+        count: Number(r.count),
+      }));
+      res.json({ tag, property, hours, readings: formatted, count: formatted.length, resolution: 'computed' });
+    }
   }
 }));
 

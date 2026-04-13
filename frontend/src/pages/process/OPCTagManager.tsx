@@ -273,7 +273,12 @@ export default function OPCTagManager({ source }: { source?: 'ETHANOL' | 'SUGAR'
     setHistoryLoading(true);
     try {
       const t = liveTags.find(lt => lt.tag === tag);
-      const prop = t?.type === 'pid' ? 'PV' : t?.type === 'totalizer' ? 'PRV_HR' : 'IO_VALUE';
+      // Use actual property from live values (handles Fuji DCS tags that push PV instead of IO_VALUE)
+      const valKeys = t?.values ? Object.keys(t.values) : [];
+      const prop = valKeys.includes('PV') ? 'PV'
+        : valKeys.includes('IO_VALUE') ? 'IO_VALUE'
+        : valKeys.includes('PRV_HR') ? 'PRV_HR'
+        : t?.type === 'pid' ? 'PV' : t?.type === 'totalizer' ? 'PRV_HR' : 'IO_VALUE';
       const res = await api.get(`/opc/history/${encodeURIComponent(tag)}?hours=${hours}&property=${prop}${source ? `&source=${source}` : ''}`);
       const data: HourlyReading[] = res.data.readings || [];
       setHistoryData(data);
