@@ -230,8 +230,12 @@ export async function computeSnapshot(opts?: { force?: boolean }): Promise<void>
       ? existing.grainInSystem  // baseline captured tank levels at time of setting
       : (prev?.grainInSystem ?? grainInSystem); // no prev → assume same → delta=0
     const deltaGrainInSystem = hasPrev ? r2(grainInSystem - prevGrainInSystem) : 0;
-    // grain consumed = distilled + Δ(grain in tanks) + Δ(flour in silos)
-    const grainConsumed = r2(Math.max(0, grainDistilled + deltaGrainInSystem + deltaFlour));
+
+    // Grain consumed = wash distilled × grain% (what was actually used in production).
+    // Tank delta (grain entering/leaving fermenters) adjusts silo closing separately.
+    // Previous formula folded delta into consumed, causing consumed=0 when tanks drained
+    // faster than distillation — confusing for plant managers.
+    const grainConsumed = r2(grainDistilled);
     const siloOpening = baselineOpening ?? prev?.siloClosing ?? 0;
 
     // 6. Grain received from trucks within shift window (avoids double-counting)
@@ -246,8 +250,10 @@ export async function computeSnapshot(opts?: { force?: boolean }): Promise<void>
     const grainReceivedMT = r2((truckAgg._sum?.weightNet) ?? 0); // weightNet already in MT
     const truckCount = truckAgg._count ?? 0;
 
-    // 7. Silo closing
-    const siloClosing = r2(siloOpening + grainReceivedMT - grainConsumed);
+    // 7. Silo closing — uses full mass balance: consumed + tank delta + flour delta
+    // silo_closing = opening + received - (distilled + Δtanks + Δflour), clamped so outflow ≥ 0
+    const siloOutflow = r2(Math.max(0, grainDistilled + deltaGrainInSystem + deltaFlour));
+    const siloClosing = r2(siloOpening + grainReceivedMT - siloOutflow);
 
     // 8. Cumulatives
     const cumReceived = r2((prev?.cumReceived ?? 0) + grainReceivedMT);

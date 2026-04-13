@@ -390,11 +390,13 @@ export default function SiloStock() {
                 <div>
                   <div className="font-bold text-gray-700 mb-2 uppercase text-[10px] tracking-wider">Silo Balance (Daily)</div>
                   <div className="bg-gray-50 rounded-lg p-3 font-mono text-[11px] space-y-1">
-                    <div>Silo Closing = Opening + Received - Consumed</div>
+                    <div>Consumed = Wash Distilled (KL) x Grain %</div>
+                    <div className="mt-2">Silo Closing = Opening + Received - Silo Outflow</div>
                     <div className="mt-2 text-gray-400">Where:</div>
                     <div className="pl-3">Opening = Previous day's Closing</div>
                     <div className="pl-3 text-green-700">Received = Grain trucks weighed (net MT)</div>
-                    <div className="pl-3 text-amber-700">Consumed = Wash Distilled (KL) x Grain %</div>
+                    <div className="pl-3 text-amber-700">Silo Outflow = max(0, Consumed + Tank Delta + Flour Delta)</div>
+                    <div className="pl-3 text-gray-400 text-[10px]">Tank delta: if fermenters fill up, more grain left silos; if they drain, less did</div>
                   </div>
                 </div>
                 <div>
@@ -422,17 +424,13 @@ export default function SiloStock() {
               {snap && (
                 <div className="border-t border-gray-200 pt-3 mt-3">
                   <div className="font-bold text-gray-700 mb-2 uppercase text-[10px] tracking-wider">Today's Breakdown</div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[11px]">
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-[11px]">
                     <CalcItem label="Silo Opening" value={`${fmt(snap.siloOpening)} MT`} />
                     <CalcItem label="+ Grain Received" value={`+${fmt(snap.grainReceivedMT)} MT`} sub={`${snap.truckCount} trucks`} color="green" />
-                    <CalcItem label="Wash Distilled" value={`${fmt(snap.washDistilledKL)} KL`} sub={`x ${Math.round(snap.grainPctUsed * 100)}% = ${fmt(snap.grainDistilled)} MT`} />
+                    <CalcItem label="Consumed (Distilled)" value={`${fmt(snap.grainConsumed)} MT`} sub={`${fmt(snap.washDistilledKL)} KL x ${Math.round(snap.grainPctUsed * 100)}%`} color="amber" />
+                    <CalcItem label="Tank Delta" value={`${snap.deltaGrainInSystem >= 0 ? '+' : ''}${fmt(snap.deltaGrainInSystem)} MT`} sub={`${fmt(snap.grainInSystem)} in tanks now`} color={snap.deltaGrainInSystem >= 0 ? 'blue' : 'gray'} />
                     <CalcItem label="= Silo Closing" value={`${fmt(snap.siloClosing)} MT`} bold />
                   </div>
-                  {snap.deltaGrainInSystem !== 0 && (
-                    <p className="text-[10px] text-gray-400 mt-2">
-                      Grain in tanks delta: {fmt(snap.deltaGrainInSystem)} MT (included in consumed)
-                    </p>
-                  )}
                 </div>
               )}
             </div>
@@ -481,7 +479,7 @@ export default function SiloStock() {
 function CalcItem({ label, value, sub, color, bold }: {
   label: string; value: string; sub?: string; color?: string; bold?: boolean;
 }) {
-  const textColor = color === 'green' ? 'text-green-700' : color === 'amber' ? 'text-amber-700' : 'text-gray-800';
+  const textColor = color === 'green' ? 'text-green-700' : color === 'amber' ? 'text-amber-700' : color === 'blue' ? 'text-blue-700' : 'text-gray-800';
   return (
     <div className="bg-gray-50 rounded-lg px-3 py-2">
       <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">{label}</div>

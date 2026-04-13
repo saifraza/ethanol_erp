@@ -56,19 +56,19 @@ function calcGrain(data: any, opening: number, prevCumUnloaded: number, prevCumC
   const washDiff = isOpeningSnapshot ? 0 : Math.max(0, (data.washConsumed||0) - prevWashConsumed);
   const grainDistilled = washDiff * fermPct;
 
-  // Mass balance: grain consumed from silo
-  // = grain distilled out + net change in all downstream inventory
-  // Clamped to 0: silo can never go UP from processing
-  // Internal transfers (flour→process) cancel out naturally
+  // Grain consumed = wash distilled × grain% (production consumption).
+  // Tank delta adjusts silo closing separately (same as siloSnapshotJob).
   const deltaGrainInProcess = isOpeningSnapshot ? 0 : grainInProcess - prevGrainInProcess;
   const deltaFlour = isOpeningSnapshot ? 0 : flourTotal - prevFlourTotal;
-  const grainConsumed = isOpeningSnapshot ? 0 : Math.max(0, grainDistilled + deltaGrainInProcess + deltaFlour);
+  const grainConsumed = isOpeningSnapshot ? 0 : r2(grainDistilled);
 
   // Milling loss on received grain
   const grainReceived = data.grainUnloaded || 0;  // to silo (excluding quarantine)
   const totalReceived = data.totalReceived || grainReceived;  // all truck net weight (incl quarantine)
 
-  const siloClosingStock = opening + grainReceived - grainConsumed;
+  // Silo closing uses full mass balance with tank/flour delta
+  const siloOutflow = isOpeningSnapshot ? 0 : Math.max(0, grainDistilled + deltaGrainInProcess + deltaFlour);
+  const siloClosingStock = opening + grainReceived - siloOutflow;
   const totalGrainAtPlant = grainInProcess + flourTotal;
   const cumulativeUnloaded = prevCumUnloaded + totalReceived;  // total grain received at factory (incl quarantine)
   const cumulativeConsumed = prevCumConsumed + Math.max(0, grainConsumed);
