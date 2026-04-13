@@ -170,6 +170,10 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     if (b.buyerState !== undefined) buyerState = b.buyerState;
   }
 
+  const newRate = b.rate !== undefined ? (p(b.rate) || 0) : existing.rate;
+  const newGstPct = b.gstPercent !== undefined ? (p(b.gstPercent) ?? DDGS_GST_PCT) : existing.gstPercent;
+  const rateChanged = newRate !== existing.rate || newGstPct !== existing.gstPercent;
+
   const contract = await prisma.dDGSContract.update({
     where: { id: req.params.id },
     data: {
@@ -193,15 +197,93 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
       contractQtyMT: b.quantityType === 'OPEN'
         ? 0
         : (b.contractQtyMT !== undefined ? (p(b.contractQtyMT) || 0) : existing.contractQtyMT),
-      rate: b.rate !== undefined ? (p(b.rate) || 0) : existing.rate,
-      gstPercent: b.gstPercent !== undefined ? (p(b.gstPercent) ?? DDGS_GST_PCT) : existing.gstPercent,
+      rate: newRate,
+      gstPercent: newGstPct,
       paymentTermsDays: b.paymentTermsDays !== undefined ? pInt(b.paymentTermsDays) : existing.paymentTermsDays,
       paymentMode: b.paymentMode !== undefined ? b.paymentMode : existing.paymentMode,
       logisticsBy: b.logisticsBy !== undefined ? b.logisticsBy : existing.logisticsBy,
       remarks: b.remarks !== undefined ? b.remarks : existing.remarks,
     },
   });
-  res.json({ contract });
+
+  // ── Cascade rate change to all dispatches + invoices ──
+  if (rateChanged) {
+    const dispatches = await prisma.dDGSContractDispatch.findMany({
+      where: { contractId: req.params.id },
+      include: { invoice: { select: { id: true, quantity: true, totalAmount: true, balanceAmount: true } } },
+    });
+
+    let totalInvoicedAmt = 0;
+    const customerState = buyerState || existing.buyerState;
+
+    for (const d of dispatches) {
+      const newAmount = Math.round(d.weightNetMT * newRate * 100) / 100;
+
+      // Update dispatch snapshot
+      await prisma.dDGSContractDispatch.update({
+        where: { id: d.id },
+        data: { rate: newRate, amount: newAmount },
+      });
+
+      // Update truck snapshot
+      if (d.ddgsDispatchTruckId) {
+        await prisma.dDGSDispatchTruck.update({
+          where: { id: d.ddgsDispatchTruckId },
+          data: { rate: newRate },
+        });
+      }
+
+      // Recalculate linked invoice
+      if (d.invoiceId && d.invoice) {
+        const inv = d.invoice;
+        const invAmount = Math.round((inv.quantity || 0) * newRate * 100) / 100;
+        const gst = calcGstSplit(invAmount, newGstPct, customerState);
+        const invTotal = Math.round((invAmount + gst.gstAmount) * 100) / 100;
+        // Adjust balance by the delta so payments already received are preserved
+        const oldTotal = inv.totalAmount || 0;
+        const newBalance = Math.max(0, (inv.balanceAmount || 0) + (invTotal - oldTotal));
+
+        await prisma.invoice.update({
+          where: { id: inv.id },
+          data: {
+            rate: newRate,
+            amount: invAmount,
+            gstPercent: newGstPct,
+            gstAmount: gst.gstAmount,
+            supplyType: gst.supplyType,
+            cgstPercent: gst.cgstPercent,
+            cgstAmount: gst.cgstAmount,
+            sgstPercent: gst.sgstPercent,
+            sgstAmount: gst.sgstAmount,
+            igstPercent: gst.igstPercent,
+            igstAmount: gst.igstAmount,
+            totalAmount: invTotal,
+            balanceAmount: newBalance,
+          },
+        });
+
+        // Also update invoiceAmount on the truck
+        if (d.ddgsDispatchTruckId) {
+          await prisma.dDGSDispatchTruck.update({
+            where: { id: d.ddgsDispatchTruckId },
+            data: { invoiceAmount: invTotal },
+          });
+        }
+
+        totalInvoicedAmt += invTotal;
+      }
+    }
+
+    // Refresh contract totals
+    if (dispatches.some(d => d.invoiceId)) {
+      await prisma.dDGSContract.update({
+        where: { id: req.params.id },
+        data: { totalInvoicedAmt },
+      });
+    }
+  }
+
+  res.json({ contract, rateUpdated: rateChanged });
 }));
 
 // ── DELETE contract (only if no dispatches) ──
