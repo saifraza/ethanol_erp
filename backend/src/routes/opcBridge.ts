@@ -22,6 +22,11 @@ function getOpcPrisma() {
   return _opcPrisma;
 }
 
+// Auto-detect source from tag name: Fuji DCS tags (#/) are always SUGAR
+function resolveSource(tag: string, defaultSource: string): string {
+  return tag.startsWith('#/') ? 'SUGAR' : defaultSource;
+}
+
 // Shared API key for Windows service to push data
 const OPC_PUSH_KEY = process.env.OPC_PUSH_KEY || 'mspil-opc-2026';
 if (!process.env.OPC_PUSH_KEY) {
@@ -227,10 +232,11 @@ router.post('/push', validate(pushReadingsSchema), asyncHandler(async (req: Auth
         const existing = await opc.opcMonitoredTag.findUnique({ where: { tag: t.tag }, select: { active: true } });
         if (existing && !existing.active) continue; // Skip — user removed this tag
 
+        const tagSrc = resolveSource(t.tag, src);
         await opc.opcMonitoredTag.upsert({
           where: { tag: t.tag },
-          create: { tag: t.tag, area: t.area, folder: t.folder, tagType: t.tagType, label: t.label || t.tag, source: src },
-          update: { area: t.area, folder: t.folder, tagType: t.tagType, label: t.label || t.tag, source: src },
+          create: { tag: t.tag, area: t.area, folder: t.folder, tagType: t.tagType, label: t.label || t.tag, source: tagSrc },
+          update: { area: t.area, folder: t.folder, tagType: t.tagType, label: t.label || t.tag, source: tagSrc },
         });
       }
     } catch (tagErr) {
@@ -245,7 +251,7 @@ router.post('/push', validate(pushReadingsSchema), asyncHandler(async (req: Auth
         tag: r.tag,
         property: r.property,
         value: r.value,
-        source: src,
+        source: resolveSource(r.tag, src),
         scannedAt: new Date(r.scannedAt),
       })),
     });
@@ -287,9 +293,10 @@ router.post('/push-hourly', validate(pushHourlySchema), asyncHandler(async (req:
   const src = source || 'ETHANOL';
 
   for (const h of hourly) {
+    const hSrc = resolveSource(h.tag, src);
     await opc.opcHourlyReading.upsert({
-      where: { tag_property_hour_source: { tag: h.tag, property: h.property, hour: new Date(h.hour), source: src } },
-      create: { tag: h.tag, property: h.property, hour: new Date(h.hour), source: src, avg: h.avg, min: h.min, max: h.max, count: h.count },
+      where: { tag_property_hour_source: { tag: h.tag, property: h.property, hour: new Date(h.hour), source: hSrc } },
+      create: { tag: h.tag, property: h.property, hour: new Date(h.hour), source: hSrc, avg: h.avg, min: h.min, max: h.max, count: h.count },
       update: { avg: h.avg, min: h.min, max: h.max, count: h.count },
     });
   }
