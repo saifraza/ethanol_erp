@@ -1059,7 +1059,7 @@ const PurchaseOrders: React.FC = () => {
                       <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${getStatusBadge(po.status)}`}>{po.status}</span>
                     </td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100">{new Date(po.poDate).toLocaleDateString('en-IN')}</td>
-                    <td className="px-3 py-1.5 text-xs border-r border-slate-100">{new Date(po.deliveryDate).toLocaleDateString('en-IN')}</td>
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100">{po.deliveryDate ? new Date(po.deliveryDate).toLocaleDateString('en-IN') : '--'}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-center">{po.linesCount}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums font-bold" title={`Ordered: ₹${po.grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}>
                       {(po.receivedValue ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
