@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, authorize } from '../middleware/auth';
+import { authenticate, authorize, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 
 const router = Router();
 router.use(authenticate as any);
@@ -27,7 +27,7 @@ function normalizeUnit(unit: string): string {
 router.get('/', async (req: Request, res: Response) => {
   try {
     const items = await prisma.inventoryItem.findMany({
-      where: { isActive: true },
+      where: { isActive: true, ...getCompanyFilter(req as AuthRequest) },
       orderBy: { name: 'asc' },
       select: {
         id: true, code: true, name: true, category: true, subCategory: true,
@@ -75,6 +75,7 @@ router.post('/', async (req: Request, res: Response) => {
         location: b.storageLocation || b.location || null,
         remarks: b.remarks || null,
         isActive: true,
+        companyId: getActiveCompanyId(req as AuthRequest),
       },
     });
     res.status(201).json({ ...item, storageLocation: item.location });

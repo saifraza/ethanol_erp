@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, authorize } from '../middleware/auth';
+import { authenticate, authorize, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import {
   generateEwayBill, buildEwayBillPayload, MSPIL,
   getStateCode, getHsnCode, getUnitCode, formatDateDDMMYYYY,
@@ -24,7 +24,7 @@ router.get('/', async (req: Request, res: Response) => {
   try {
     const dateStr = req.query.date as string;
     const status = req.query.status as string;
-    let where: any = {};
+    let where: any = { ...getCompanyFilter(req as AuthRequest) };
 
     if (dateStr) {
       const dayStart = new Date(dateStr + 'T00:00:00.000Z');
@@ -145,6 +145,7 @@ router.post('/', async (req: Request, res: Response) => {
       status: 'GATE_IN',
       remarks: b.remarks || null,
       userId: (req as any).user.id,
+      companyId: getActiveCompanyId(req as AuthRequest),
     };
 
     // Link to dispatch request if provided (sales flow)

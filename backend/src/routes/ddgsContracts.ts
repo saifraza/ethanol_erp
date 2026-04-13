@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import multer from 'multer';
 import { generateIRN, generateEWBByIRN } from '../services/eInvoice';
@@ -32,7 +32,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 // ── GET all contracts ──
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const { status } = req.query;
-  const where: any = {};
+  const where: any = { ...getCompanyFilter(req) };
   if (status && status !== 'ALL') where.status = status;
 
   const rows = await prisma.dDGSContract.findMany({
@@ -136,6 +136,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       logisticsBy: b.logisticsBy || 'BUYER',
       remarks: b.remarks || null,
       userId: (req as AuthRequest).user?.id || 'system',
+      companyId: getActiveCompanyId(req),
     },
   });
   res.json({ contract });

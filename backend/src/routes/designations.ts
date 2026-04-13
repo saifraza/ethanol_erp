@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
@@ -9,6 +9,7 @@ router.use(authenticate as any);
 // GET / — list all designations
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const designations = await prisma.designation.findMany({
+    where: { ...getCompanyFilter(req) },
     orderBy: [{ level: 'asc' }, { title: 'asc' }],
     include: { _count: { select: { employees: true } } },
   });
@@ -37,6 +38,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       level: level ? parseInt(level) : 0,
       minSalary: minSalary ? parseFloat(minSalary) : null,
       maxSalary: maxSalary ? parseFloat(maxSalary) : null,
+      companyId: getActiveCompanyId(req),
     },
   });
   res.status(201).json({ designation });

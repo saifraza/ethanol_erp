@@ -43,9 +43,35 @@ model Company {
   cashVouchers      CashVoucher[]
   postDatedCheques  PostDatedCheque[]
   bankLoans         BankLoan[]
-  stockMovements    StockMovement[]
-  stockLevels       StockLevel[]
-  inventoryItems    InventoryItem[]
+  stockMovements       StockMovement[]
+  stockLevels          StockLevel[]
+  inventoryItems       InventoryItem[]
+  employees            Employee[]
+  materials            Material[]
+  products             Product[]
+  transporters         Transporter[]
+  contractors          Contractor[]
+  departments          Department[]
+  designations         Designation[]
+  purchaseRequisitions PurchaseRequisition[]
+  contractorBills      ContractorBill[]
+  contractorPayments   ContractorPayment[]
+  contractorStoreIssues ContractorStoreIssue[]
+  directPurchases      DirectPurchase[]
+  directSales          DirectSale[]
+  approvals            Approval[]
+  freightInquiries     FreightInquiry[]
+  freightQuotations    FreightQuotation[]
+  loanRepayments       LoanRepayment[]
+  invoiceSeries        InvoiceSeries[]
+  fiscalYears          FiscalYear[]
+  payrollRuns          PayrollRun[]
+  shipments            Shipment[]
+  dispatchRequests     DispatchRequest[]
+  ethanolContracts     EthanolContract[]
+  ddgsContracts        DDGSContract[]
+  sugarContracts       SugarContract[]
+  warehouses           Warehouse[]
 }
 
 model User {
@@ -1263,6 +1289,10 @@ model Department {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   employees Employee[]
+  companyId  String?   // FK → Company (null = MSPIL default)
+  company    Company?  @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
 }
 
 // ── Warehouse / Storage Location ──
@@ -1277,6 +1307,10 @@ model Warehouse {
   movements   StockMovement[]
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
+  companyId   String?   // FK → Company (null = MSPIL default)
+  company     Company?  @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
 }
 
 // ── Bin / Rack Location within Warehouse ──
@@ -1514,11 +1548,14 @@ model PurchaseRequisition {
   updatedAt         DateTime  @updatedAt
 
   purchaseOrders PurchaseOrder[] // auto-generated POs from this indent
+  companyId      String?   // FK → Company (null = MSPIL default)
+  company        Company?  @relation(fields: [companyId], references: [id])
 
   @@index([status])
   @@index([urgency])
   @@index([userId])
   @@index([inventoryItemId])
+  @@index([companyId])
 }
 
 // ═══════════════════════════════════════════════
@@ -1584,6 +1621,10 @@ model Product {
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  companyId   String?   // FK → Company (null = MSPIL default)
+  company     Company?  @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
 }
 
 // Master: Transporter
@@ -1602,6 +1643,10 @@ model Transporter {
   updatedAt     DateTime @updatedAt
 
   divisions String[] @default([]) // empty = available to all divisions
+  companyId String?   // FK → Company (null = MSPIL default)
+  company   Company?  @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
 }
 
 // ── Sales Order (HQ creates) ──
@@ -1692,6 +1737,10 @@ model DispatchRequest {
   updatedAt       DateTime        @updatedAt
   shipments       Shipment[]
   freightInquiry  FreightInquiry?
+  companyId       String?   // FK → Company (null = MSPIL default)
+  company         Company?  @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
 }
 
 // ── Shipment (Factory: one truck = one shipment) ──
@@ -1798,7 +1847,9 @@ model Shipment {
   documents           ShipmentDocument[]
   transporterPayments TransporterPayment[]
 
-  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division  String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  companyId String?   // FK → Company (null = MSPIL default)
+  company   Company?  @relation(fields: [companyId], references: [id])
 
   @@index([date])
   @@index([status])
@@ -1806,6 +1857,7 @@ model Shipment {
   @@index([dispatchRequestId])
   @@index([division])
   @@index([directSaleId])
+  @@index([companyId])
 }
 
 // ── Shipment Documents (uploaded files: GR, Bilty, POD, Insurance, etc.) ──
@@ -1851,6 +1903,10 @@ model FreightInquiry {
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
   quotations        FreightQuotation[]
+  companyId         String?   // FK → Company (null = MSPIL default)
+  company           Company?  @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
 }
 
 // ── Freight Quotation (Transporter responds to inquiry) ──
@@ -1874,6 +1930,10 @@ model FreightQuotation {
   remarks         String?
   quotedAt        DateTime       @default(now())
   createdAt       DateTime       @default(now())
+  companyId       String?   // FK → Company (null = MSPIL default)
+  company         Company?  @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
 }
 
 // ── Transporter Payment (50% advance + balance after GR) ──
@@ -2133,6 +2193,10 @@ model Material {
   grnLines GRNLine[]
 
   divisions String[] @default([]) // empty = available to all divisions
+  companyId String?   // FK → Company (null = MSPIL default)
+  company   Company?  @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
 }
 
 // ── Purchase Order (HQ creates, sent to vendor) ──
@@ -2489,10 +2553,13 @@ model Contractor {
   employees   Employee[]
 
   divisions String[] @default([]) // empty = available to all divisions
+  companyId String?   // FK → Company (null = MSPIL default)
+  company   Company?  @relation(fields: [companyId], references: [id])
 
   @@index([pan])
   @@index([isActive])
   @@index([contractorType])
+  @@index([companyId])
 }
 
 model ContractorBill {
@@ -2536,12 +2603,15 @@ model ContractorBill {
   lines    ContractorBillLine[]
   payments ContractorPayment[]
 
-  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division  String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  companyId String?   // FK → Company (null = MSPIL default)
+  company   Company?  @relation(fields: [companyId], references: [id])
 
   @@index([contractorId])
   @@index([status])
   @@index([billDate])
   @@index([division])
+  @@index([companyId])
 }
 
 model ContractorBillLine {
@@ -2575,10 +2645,14 @@ model ContractorPayment {
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
+  companyId     String?   // FK → Company (null = MSPIL default)
+  company       Company?  @relation(fields: [companyId], references: [id])
+
   @@index([contractorId])
   @@index([billId])
   @@index([paymentDate])
   @@index([paymentStatus])
+  @@index([companyId])
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -2610,12 +2684,15 @@ model ContractorStoreIssue {
 
   lines ContractorStoreIssueLine[]
 
-  division String? @default("ETHANOL")
+  division  String? @default("ETHANOL")
+  companyId String?   // FK → Company (null = MSPIL default)
+  company   Company?  @relation(fields: [companyId], references: [id])
 
   @@index([contractorId])
   @@index([status])
   @@index([issueDate])
   @@index([division])
+  @@index([companyId])
 }
 
 model ContractorStoreIssueLine {
@@ -2673,11 +2750,14 @@ model DirectPurchase {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division  String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  companyId String?   // FK → Company (null = MSPIL default)
+  company   Company?  @relation(fields: [companyId], references: [id])
 
   @@index([date])
   @@index([isPaid])
   @@index([division])
+  @@index([companyId])
 }
 
 // Scrap / Misc Sales Orders — open rate contracts with validity period
@@ -2721,6 +2801,8 @@ model DirectSale {
   updatedAt    DateTime @updatedAt
 
   division   String?    @default("ETHANOL")
+  companyId  String?   // FK → Company (null = MSPIL default)
+  company    Company?  @relation(fields: [companyId], references: [id])
   shipments  Shipment[]
 
   @@index([date])
@@ -2729,6 +2811,7 @@ model DirectSale {
   @@index([customerId])
   @@index([validFrom])
   @@index([validTo])
+  @@index([companyId])
 }
 
 // ── ETHANOL SUPPLY / CONTRACTS ──
@@ -2796,8 +2879,11 @@ model EthanolContract {
 
   liftings   EthanolLifting[]
   dispatches DispatchTruck[]
+  companyId  String?   // FK → Company (null = MSPIL default)
+  company    Company?  @relation(fields: [companyId], references: [id])
 
   @@index([buyerCustomerId])
+  @@index([companyId])
 }
 
 model EthanolLifting {
@@ -3099,9 +3185,13 @@ model LoanRepayment {
   userId           String?
   createdAt        DateTime  @default(now())
 
+  companyId        String?   // FK → Company (null = MSPIL default)
+  company          Company?  @relation(fields: [companyId], references: [id])
+
   @@index([loanId])
   @@index([dueDate])
   @@index([status])
+  @@index([companyId])
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -3341,9 +3431,13 @@ model Approval {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  companyId   String?   // FK → Company (null = MSPIL default)
+  company     Company?  @relation(fields: [companyId], references: [id])
+
   @@index([status])
   @@index([type])
   @@index([entityId])
+  @@index([companyId])
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -3576,9 +3670,12 @@ model DDGSContract {
 
   dispatches     DDGSContractDispatch[]
   dispatchTrucks DDGSDispatchTruck[]
+  companyId      String?   // FK → Company (null = MSPIL default)
+  company        Company?  @relation(fields: [companyId], references: [id])
 
   @@index([customerId])
   @@index([status])
+  @@index([companyId])
 }
 
 model DDGSContractDispatch {
@@ -3726,9 +3823,12 @@ model SugarContract {
 
   dispatches     SugarContractDispatch[]
   dispatchTrucks SugarDispatchTruck[]
+  companyId      String?   // FK → Company (null = MSPIL default)
+  company        Company?  @relation(fields: [companyId], references: [id])
 
   @@index([customerId])
   @@index([status])
+  @@index([companyId])
 }
 
 model SugarContractDispatch {
@@ -3809,8 +3909,11 @@ model FiscalYear {
   series    InvoiceSeries[]
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
+  companyId String?   // FK → Company (null = MSPIL default)
+  company   Company?  @relation(fields: [companyId], references: [id])
 
   @@index([isCurrent])
+  @@index([companyId])
 }
 
 // Per-FY per-docType invoice number series with atomic next-number
@@ -3826,8 +3929,12 @@ model InvoiceSeries {
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
 
+  companyId  String?   // FK → Company (null = MSPIL default)
+  company    Company?  @relation(fields: [companyId], references: [id])
+
   @@unique([fyId, docType])
   @@index([fyId])
+  @@index([companyId])
 }
 
 // HSN / SAC code master
@@ -4028,6 +4135,10 @@ model Designation {
   updatedAt DateTime @updatedAt
 
   employees Employee[]
+  companyId String?   // FK → Company (null = MSPIL default)
+  company   Company?  @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
 }
 
 model Employee {
@@ -4132,12 +4243,15 @@ model Employee {
 
   salaryComponents EmployeeSalaryComponent[]
   payrollLines     PayrollLine[]
+  companyId        String?   // FK → Company (null = MSPIL default)
+  company          Company?  @relation(fields: [companyId], references: [id])
 
   @@index([departmentId])
   @@index([designationId])
   @@index([status])
   @@index([reportingToId])
   @@index([contractorId])
+  @@index([companyId])
 }
 
 model SalaryComponent {
@@ -4200,10 +4314,13 @@ model PayrollRun {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  lines PayrollLine[]
+  lines     PayrollLine[]
+  companyId String?   // FK → Company (null = MSPIL default)
+  company   Company?  @relation(fields: [companyId], references: [id])
 
   @@unique([month, year])
   @@index([status])
+  @@index([companyId])
 }
 
 model PayrollLine {

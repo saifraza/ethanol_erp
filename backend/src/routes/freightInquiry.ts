@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate } from '../middleware/auth';
+import { authenticate, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import PDFDocument from 'pdfkit';
 import path from 'path';
 import fs from 'fs';
@@ -15,7 +15,7 @@ router.use(authenticate as any);
 router.get('/', async (req: Request, res: Response) => {
   try {
     const status = req.query.status as string | undefined;
-    const where: any = {};
+    const where: any = { ...getCompanyFilter(req as AuthRequest) };
     if (status) where.status = status;
 
     const inquiries = await prisma.freightInquiry.findMany({
@@ -64,6 +64,7 @@ router.post('/', async (req: Request, res: Response) => {
         validTill: b.validTill ? new Date(b.validTill) : null,
         remarks: b.remarks || null,
         userId: (req as any).user.id,
+        companyId: getActiveCompanyId(req as AuthRequest),
       },
       include: { quotations: true },
     });

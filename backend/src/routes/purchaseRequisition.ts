@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest, authorize } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { createPurchaseOrder } from '../services/purchaseOrderService';
 import { COMPANY } from '../shared/config/company';
@@ -11,7 +11,7 @@ router.use(authenticate as any);
 // GET / — list requisitions (with optional status filter)
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { status, urgency } = req.query;
-    const where: any = {};
+    const where: any = { ...getCompanyFilter(req) };
     if (status) where.status = status;
     if (urgency) where.urgency = urgency;
 
@@ -25,7 +25,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
 
 // GET /stats
 router.get('/stats', asyncHandler(async (_req: AuthRequest, res: Response) => {
-    const reqs = await prisma.purchaseRequisition.findMany();
+    const reqs = await prisma.purchaseRequisition.findMany({ where: { ...getCompanyFilter(_req) } });
     const byStatus: Record<string, number> = {};
     const byUrgency: Record<string, number> = {};
     let totalValue = 0;
@@ -72,6 +72,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         inventoryItemId: b.inventoryItemId || null,
         department: b.department || null,
         requestedByPerson: b.requestedByPerson || null,
+        companyId: getActiveCompanyId(req),
       },
     });
     res.status(201).json(pr);

@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError, ValidationError } from '../shared/errors';
 import { onContractorBillConfirmed, onContractorPaymentMade } from '../services/autoJournal';
@@ -59,7 +59,7 @@ const paySchema = z.object({
 
 // GET / — list bills with filters
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
-  const where: Record<string, unknown> = {};
+  const where: Record<string, unknown> = { ...getCompanyFilter(req) };
   if (req.query.contractorId) where.contractorId = req.query.contractorId;
   if (req.query.status) where.status = req.query.status;
 
@@ -83,7 +83,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
 
   // Stats
   const allBills = await prisma.contractorBill.findMany({
-    where: { status: { not: 'CANCELLED' } },
+    where: { status: { not: 'CANCELLED' }, ...getCompanyFilter(req) },
     select: { status: true, netPayable: true, paidAmount: true, balanceAmount: true },
   });
 
@@ -160,6 +160,7 @@ router.post('/', validate(createBillSchema), asyncHandler(async (req: AuthReques
       vendorBillNo: vendorBillNo || null,
       itcEligible: !!contractor.gstin,
       userId: req.user!.id,
+      companyId: getActiveCompanyId(req),
       lines: billPath === 'CREATED' && lines ? {
         create: lines.map((l: { description: string; quantity: number; unit: string; rate: number }) => ({
           description: l.description,

@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest, authorize } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { resolveNotifications } from '../services/notify';
 
@@ -13,7 +13,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const type = req.query.type as string || undefined;
   const take = Math.min(parseInt(req.query.limit as string) || 50, 200);
 
-  const where: Record<string, unknown> = {};
+  const where: Record<string, unknown> = { ...getCompanyFilter(req) };
   if (status) where.status = status;
   if (type) where.type = type;
 
@@ -28,7 +28,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
 
 // GET /count — pending approval count (for bell badge)
 router.get('/count', asyncHandler(async (req: AuthRequest, res: Response) => {
-  const count = await prisma.approval.count({ where: { status: 'PENDING' } });
+  const count = await prisma.approval.count({ where: { status: 'PENDING', ...getCompanyFilter(req) } });
   res.json({ count });
 }));
 

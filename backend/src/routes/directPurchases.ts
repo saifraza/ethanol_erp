@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest, authorize } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
@@ -11,7 +11,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const from = req.query.from as string | undefined;
   const to = req.query.to as string | undefined;
 
-  const where: any = {};
+  const where: any = { ...getCompanyFilter(req) };
   if (from || to) {
     where.date = {};
     if (from) where.date.gte = new Date(from);
@@ -81,6 +81,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       netPayable,
       remarks: b.remarks || null,
       userId: req.user!.id,
+      companyId: getActiveCompanyId(req),
     },
   });
 

@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest, authorize } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { computeEmployeePayroll, generateEcrFileContent, EcrRow } from '../services/payrollCalculator';
 
@@ -10,6 +10,7 @@ router.use(authenticate as any);
 // GET / — list payroll runs
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const runs = await prisma.payrollRun.findMany({
+    where: { ...getCompanyFilter(req) },
     orderBy: [{ year: 'desc' }, { month: 'desc' }],
     take: 50,
   });
@@ -43,7 +44,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   if (existing) { res.status(400).json({ error: `Payroll for ${month}/${year} already exists (Run #${existing.runNo})` }); return; }
 
   const run = await prisma.payrollRun.create({
-    data: { month: parseInt(month), year: parseInt(year), userId: req.user?.id },
+    data: { month: parseInt(month), year: parseInt(year), userId: req.user?.id, companyId: getActiveCompanyId(req) },
   });
   res.status(201).json({ run });
 }));

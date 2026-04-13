@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, authorize } from '../middleware/auth';
+import { authenticate, authorize, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 
 const router = Router();
 
@@ -10,7 +10,7 @@ router.use(authenticate as any);
 router.get('/', async (req: Request, res: Response) => {
   try {
     const products = await prisma.product.findMany({
-      where: { isActive: true },
+      where: { isActive: true, ...getCompanyFilter(req as AuthRequest) },
       orderBy: { name: 'asc' },
     });
     res.json({ products });
@@ -32,6 +32,7 @@ router.post('/', async (req: Request, res: Response) => {
         defaultRate,
         gstPercent,
         isActive: true,
+        companyId: getActiveCompanyId(req as AuthRequest),
       }
     });
     res.status(201).json(product);

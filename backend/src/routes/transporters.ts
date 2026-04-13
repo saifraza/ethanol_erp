@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, authorize, AuthRequest } from '../middleware/auth';
+import { authenticate, authorize, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { getGSTINDetails } from '../services/eInvoice';
 
@@ -53,7 +53,7 @@ router.get('/gstin-lookup/:gstin', asyncHandler(async (req: AuthRequest, res: Re
 // GET / — list active transporters
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const transporters = await prisma.transporter.findMany({
-      where: { isActive: true },
+      where: { isActive: true, ...getCompanyFilter(req) },
       orderBy: { name: 'asc' },
       take: 500,
     });
@@ -76,6 +76,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         address: b.address || '',
         vehicleCount,
         isActive: true,
+        companyId: getActiveCompanyId(req),
       }
     });
     res.status(201).json(transporter);

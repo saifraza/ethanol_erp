@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import multer from 'multer';
 // RAG indexing removed — only compliance docs go to RAG
@@ -47,7 +47,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 // ── GET all contracts ──
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { type, status } = req.query;
-    const where: any = {};
+    const where: any = { ...getCompanyFilter(req) };
     if (type && type !== 'ALL') where.contractType = type;
     if (status && status !== 'ALL') where.status = status;
 
@@ -141,6 +141,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         logisticsBy: b.logisticsBy || null,
         remarks: b.remarks || null,
         userId: b.userId || 'system',
+        companyId: getActiveCompanyId(req),
       },
     });
     res.json({ contract });

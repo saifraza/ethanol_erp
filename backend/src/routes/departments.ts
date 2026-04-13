@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { AuthRequest, authorize } from '../middleware/auth';
+import { AuthRequest, authorize, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import prisma from '../config/prisma';
 
@@ -8,6 +8,7 @@ const router = Router();
 // GET / — list departments
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const departments = await prisma.department.findMany({
+    where: { ...getCompanyFilter(req) },
     orderBy: { name: 'asc' },
     take: 100,
   });
@@ -19,7 +20,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const { name, code } = req.body;
   if (!name) { res.status(400).json({ error: 'Name is required' }); return; }
   const dept = await prisma.department.create({
-    data: { name, code: code || null },
+    data: { name, code: code || null, companyId: getActiveCompanyId(req) },
   });
   res.status(201).json(dept);
 }));

@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError } from '../shared/errors';
 import { z } from 'zod';
@@ -40,7 +40,7 @@ const updateSchema = createSchema.partial().extend({
 
 // GET / — list contractors
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
-  const where: Record<string, unknown> = {};
+  const where: Record<string, unknown> = { ...getCompanyFilter(req) };
   if (req.query.active === 'true') where.isActive = true;
   if (req.query.type) where.contractorType = req.query.type;
 
@@ -60,7 +60,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   // Compute outstanding per contractor
   const outstanding = await prisma.contractorBill.groupBy({
     by: ['contractorId'],
-    where: { status: { in: ['CONFIRMED', 'PARTIAL_PAID'] } },
+    where: { status: { in: ['CONFIRMED', 'PARTIAL_PAID'] }, ...getCompanyFilter(req) },
     _sum: { balanceAmount: true },
   });
   const outMap = new Map(outstanding.map(o => [o.contractorId, o._sum.balanceAmount || 0]));
@@ -76,7 +76,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
 // GET /outstanding — outstanding grouped by contractor
 router.get('/outstanding', asyncHandler(async (req: AuthRequest, res: Response) => {
   const bills = await prisma.contractorBill.findMany({
-    where: { status: { in: ['CONFIRMED', 'PARTIAL_PAID'] }, balanceAmount: { gt: 0 } },
+    where: { status: { in: ['CONFIRMED', 'PARTIAL_PAID'] }, balanceAmount: { gt: 0 }, ...getCompanyFilter(req) },
     select: {
       id: true, billNo: true, billDate: true, description: true,
       netPayable: true, paidAmount: true, balanceAmount: true, status: true,
@@ -134,6 +134,7 @@ router.post('/', validate(createSchema), asyncHandler(async (req: AuthRequest, r
       panType,
       tdsPercent,
       tdsSection: '194C',
+      companyId: getActiveCompanyId(req),
     },
   });
 

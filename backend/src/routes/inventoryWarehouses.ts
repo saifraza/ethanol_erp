@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { authenticate, authorize, AuthRequest } from '../middleware/auth';
+import { authenticate, authorize, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError } from '../shared/errors';
 import { z } from 'zod';
@@ -41,6 +41,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const skip = parseInt(req.query.offset as string) || 0;
 
   const warehouses = await prisma.warehouse.findMany({
+    where: { ...getCompanyFilter(req) },
     take,
     skip,
     orderBy: { name: 'asc' },
@@ -142,7 +143,7 @@ async function generateWarehouseCode(): Promise<string> {
 
 router.post('/', authorize('ADMIN', 'MANAGER') as any, validate(createWarehouseSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const code = await generateWarehouseCode();
-  const warehouse = await prisma.warehouse.create({ data: { ...req.body, code } });
+  const warehouse = await prisma.warehouse.create({ data: { ...req.body, code, companyId: getActiveCompanyId(req) } });
   res.status(201).json(warehouse);
 }));
 

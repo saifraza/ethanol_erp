@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
@@ -9,7 +9,7 @@ router.use(authenticate as any);
 // GET / — list with filters
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const { search, departmentId, designationId, status, employmentType, contractorId, isActive } = req.query;
-  const where: any = {};
+  const where: any = { ...getCompanyFilter(req) };
 
   if (isActive !== undefined) where.isActive = isActive === 'true';
   else where.isActive = true;
@@ -46,7 +46,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
 // GET /org-chart — tree structure
 router.get('/org-chart', asyncHandler(async (req: AuthRequest, res: Response) => {
   const employees = await prisma.employee.findMany({
-    where: { isActive: true },
+    where: { isActive: true, ...getCompanyFilter(req) },
     select: {
       id: true, empCode: true, firstName: true, lastName: true, photo: true,
       designationId: true, departmentId: true, reportingToId: true,
@@ -170,6 +170,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       rentPaidMonthly: b.rentPaidMonthly ? parseFloat(b.rentPaidMonthly) : 0,
       status: b.status || 'ACTIVE',
       remarks: b.remarks || null,
+      companyId: getActiveCompanyId(req),
     },
   });
   res.status(201).json({ employee });

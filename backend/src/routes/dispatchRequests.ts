@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, authorize, AuthRequest } from '../middleware/auth';
+import { authenticate, authorize, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
@@ -15,7 +15,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const limit = parseInt(req.query.limit as string) || 20;
     const skip = (page - 1) * limit;
 
-    let where: any = {};
+    let where: any = { ...getCompanyFilter(req) };
     if (status) where.status = status;
     if (orderId) where.orderId = orderId;
 
@@ -51,6 +51,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
 router.get('/factory', asyncHandler(async (req: AuthRequest, res: Response) => {
     const drs = await prisma.dispatchRequest.findMany({
       where: {
+        ...getCompanyFilter(req),
         status: {
           notIn: ['COMPLETED', 'CANCELLED'],
         },
@@ -195,6 +196,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         remarks: b.remarks || null,
         status: 'SCHEDULED',
         userId: req.user!.id,
+        ...(getActiveCompanyId(req) ? { company: { connect: { id: getActiveCompanyId(req)! } } } : {}),
       },
       include: {
         order: {
@@ -230,6 +232,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         loadingDate: dr.deliveryDate || null,
         status: 'OPEN',
         userId: req.user!.id,
+        companyId: getActiveCompanyId(req),
       },
     });
 

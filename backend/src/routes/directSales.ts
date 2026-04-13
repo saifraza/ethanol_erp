@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest, authorize } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { generateIRN, generateEWBByIRN } from '../services/eInvoice';
 import { onSaleInvoiceCreated } from '../services/autoJournal';
@@ -42,7 +42,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const status = req.query.status as string | undefined;
   const product = req.query.product as string | undefined;
 
-  const where: any = {};
+  const where: any = { ...getCompanyFilter(req) };
   if (status && status !== 'ALL') where.status = status;
   if (product) where.productName = product;
 
@@ -98,6 +98,7 @@ router.get('/active', asyncHandler(async (req: AuthRequest, res: Response) => {
   const now = new Date();
 
   const where: any = {
+    ...getCompanyFilter(req),
     status: 'ACTIVE',
     validFrom: { lte: now },
     OR: [{ validTo: null }, { validTo: { gte: now } }],
@@ -232,6 +233,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       status: 'ACTIVE',
       remarks: b.remarks || null,
       userId: req.user!.id,
+      companyId: getActiveCompanyId(req),
     },
   });
 

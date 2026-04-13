@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest, authorize } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError } from '../shared/errors';
 import { z } from 'zod';
@@ -47,7 +47,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const skip = parseInt(req.query.offset as string) || 0;
   const { contractorId, status, dateFrom, dateTo, division } = req.query as Record<string, string | undefined>;
 
-  const where: Record<string, unknown> = {};
+  const where: Record<string, unknown> = { ...getCompanyFilter(req) };
   if (contractorId) where.contractorId = contractorId;
   if (status) where.status = status;
   if (division) where.division = division;
@@ -119,6 +119,7 @@ router.post('/', authorize(...WRITE_ROLES), validate(createSchema), asyncHandler
       remarks: remarks ?? null,
       division: division ?? 'ETHANOL',
       userId: req.user!.id,
+      companyId: getActiveCompanyId(req),
       lines: {
         create: lines.map((l: z.infer<typeof lineSchema>) => ({
           description: l.description,
