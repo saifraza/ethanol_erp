@@ -3,6 +3,8 @@ import prisma from '../config/prisma';
 import { authenticate, authorize, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { generateInvoicePdf } from '../utils/pdfGenerator';
 import { renderDocumentPdf } from '../services/documentRenderer';
+import { nextDocNo } from '../utils/docSequence';
+import { getCompanyForPdf } from '../utils/pdfCompanyHelper';
 // RAG indexing removed — only compliance docs go to RAG
 import { sendEmail } from '../services/messaging';
 import { generateIRN, cancelIRN, getIRNDetails } from '../services/eInvoice';
@@ -134,10 +136,14 @@ router.post('/', async (req: Request, res: Response) => {
     const gst = calcGstSplit(amount, gstPercent, cust?.state);
     const totalAmount = amount + gst.gstAmount + freightCharge;
 
+    const companyId = getActiveCompanyId(req as AuthRequest);
+    const invoiceNo = await nextDocNo('Invoice', 'invoiceNo', companyId);
+
     const invoice = await prisma.invoice.create({
       data: {
+        invoiceNo,
         customerId: b.customerId, orderId: b.orderId || null, shipmentId: b.shipmentId || null,
-        companyId: getActiveCompanyId(req as AuthRequest),
+        companyId,
         invoiceDate: b.invoiceDate ? new Date(b.invoiceDate) : new Date(),
         dueDate: b.dueDate ? new Date(b.dueDate) : null,
         productName: b.productName || '', quantity, unit: b.unit || 'KL', rate, gstPercent, amount,
@@ -212,9 +218,14 @@ router.post('/from-shipment/:shipmentId', async (req: Request, res: Response) =>
     const gst2 = calcGstSplit(amount, gstPercent, cust2?.state);
     const totalAmount = amount + gst2.gstAmount + freightCharge;
 
+    const companyId2 = getActiveCompanyId(req as AuthRequest);
+    const invoiceNo2 = await nextDocNo('Invoice', 'invoiceNo', companyId2);
+
     const invoice = await prisma.invoice.create({
       data: {
+        invoiceNo: invoiceNo2,
         customerId: order.customerId, orderId: order.id, shipmentId: shipment.id,
+        companyId: companyId2,
         invoiceDate: new Date(), dueDate: null,
         productName: shipment.productName || orderLine.productName || '',
         quantity, unit: orderLine.unit || 'KL', rate, gstPercent, amount,
@@ -405,9 +416,19 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
       // DDGS invoices render quantity in KG and rate in ₹/kg (matches reference Mash invoice).
       // Schema stores MT and ₹/MT — convert at print time. Keep 4 decimals on rate so qty×rate
       // round-trips back to the stored amount (Mash uses ₹4.54/kg = ₹4540/MT, but other rates may need more precision).
-      quantity: isDDGSInvoice ? Math.round((invoice.quantity || 0) * 1000) : invoice.quantity,
+      // LEGACY: some dispatches stored quantity in KG (not MT) — detect by threshold (no single
+      // truck dispatch > 100 MT). Skip conversion when data is already in KG.
+      quantity: isDDGSInvoice
+        ? ((invoice.quantity || 0) > 100
+            ? (invoice.quantity || 0)                                                      // already KG
+            : Math.round((invoice.quantity || 0) * 1000))                                  // MT → KG
+        : invoice.quantity,
       unit: isDDGSInvoice ? 'KG' : invoice.unit,
-      rate: isDDGSInvoice ? Math.round(((invoice.rate || 0) / 1000) * 10000) / 10000 : invoice.rate,
+      rate: isDDGSInvoice
+        ? ((invoice.quantity || 0) > 100
+            ? Math.round((invoice.rate || 0) * 100) / 100                                  // already ₹/KG
+            : Math.round(((invoice.rate || 0) / 1000) * 10000) / 10000)                    // ₹/MT → ₹/KG
+        : invoice.rate,
       amount: invoice.amount,
       gstPercent: invoice.gstPercent,
       gstAmount: invoice.gstAmount,
@@ -486,6 +507,8 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
         (invData as any).irnQrDataUrl = qrDataUrl;
       } catch { /* non-critical */ }
     }
+
+    (invData as any).company = await getCompanyForPdf(invoice.companyId);
 
     const pdfBuffer = await renderDocumentPdf({
       docType: 'INVOICE',
