@@ -65,6 +65,8 @@ interface Vendor {
   remarks?: string;
   isAgent?: boolean;
   productTypes?: string;
+  rawMaterialType?: string;
+  maanNumber?: string;
 }
 
 export default function Vendors() {
@@ -117,6 +119,8 @@ export default function Vendors() {
   const [tdsSections, setTdsSections] = useState<{ id: string; code: string; oldSection: string | null; nature: string; rateIndividual: number; rateOthers: number }[]>([]);
   const [remarks, setRemarks] = useState('');
   const [productTypes, setProductTypes] = useState<string[]>([]);
+  const [rawMaterialType, setRawMaterialType] = useState('');
+  const [maanNumber, setMaanNumber] = useState('');
 
   // Duplicate detection
   const [dupMatches, setDupMatches] = useState<Array<{ id: string; name: string; tradeName?: string | null; gstin?: string | null; pan?: string | null; phone?: string | null; city?: string | null; category?: string | null; matchReasons: string[] }>>([]);
@@ -242,6 +246,8 @@ export default function Vendors() {
     setTdsPercent('');
     setRemarks('');
     setProductTypes([]);
+    setRawMaterialType('');
+    setMaanNumber('');
     setDupMatches([]);
     setEditId(null);
     setShowForm(false);
@@ -290,6 +296,8 @@ export default function Vendors() {
       setLowerDeductionValidTill(vendor.lowerDeductionValidTill?.slice(0, 10) || '');
       setRemarks(vendor.remarks || '');
       setProductTypes(vendor.productTypes?.split(',').filter(Boolean) || []);
+      setRawMaterialType(vendor.rawMaterialType || '');
+      setMaanNumber(vendor.maanNumber || '');
     }
     setShowForm(true);
     if (vendor) {
@@ -391,6 +399,8 @@ export default function Vendors() {
         lowerDeductionValidFrom: tdsApplicable && lowerDeductionValidFrom ? lowerDeductionValidFrom : null,
         lowerDeductionValidTill: tdsApplicable && lowerDeductionValidTill ? lowerDeductionValidTill : null,
         remarks: remarks || undefined,
+        rawMaterialType: category === 'RAW_MATERIAL_SUPPLIER' ? (rawMaterialType || undefined) : undefined,
+        maanNumber: category === 'RAW_MATERIAL_SUPPLIER' && rawMaterialType === 'CORN' ? (maanNumber || undefined) : undefined,
       };
 
       if (editId) {
@@ -662,6 +672,31 @@ export default function Vendors() {
                     </select>
                   </div>
                 </div>
+
+                {/* Raw Material Type + Maan Number (only when category is RAW_MATERIAL_SUPPLIER) */}
+                {category === 'RAW_MATERIAL_SUPPLIER' && (
+                  <div className="mt-3 grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Raw Material Type</label>
+                      <select value={rawMaterialType} onChange={e => { setRawMaterialType(e.target.value); if (e.target.value !== 'CORN') setMaanNumber(''); }} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                        <option value="">-- Select --</option>
+                        <option value="CORN">Corn (Maize)</option>
+                        <option value="RICE">Rice</option>
+                        <option value="WHEAT">Wheat</option>
+                        <option value="BROKEN_RICE">Broken Rice</option>
+                        <option value="BAJRA">Bajra</option>
+                        <option value="JOWAR">Jowar</option>
+                        <option value="OTHER">Other</option>
+                      </select>
+                    </div>
+                    {rawMaterialType === 'CORN' && (
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Maan Number</label>
+                        <input value={maanNumber} onChange={e => setMaanNumber(e.target.value)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="Enter maan number" />
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Trader Product Types (only when category is TRADER) */}
                 {category === 'TRADER' && (

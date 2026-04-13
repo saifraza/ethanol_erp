@@ -2126,6 +2126,9 @@ model Vendor {
   isAgent                 Boolean     @default(false) // true = informal procurement agent/trader
   aadhaarNo               String? // Aadhaar number for individual traders
   productTypes            String? // Comma-separated: "FUEL,RAW_MATERIAL,CHEMICAL" — what this trader buys
+  // Raw Material sub-type
+  rawMaterialType         String? // CORN, RICE, WHEAT, etc. — only when category = RAW_MATERIAL_SUPPLIER
+  maanNumber              String? // Maan/Mandi license number — required for corn suppliers
   //
   isActive                Boolean     @default(true)
   remarks                 String?

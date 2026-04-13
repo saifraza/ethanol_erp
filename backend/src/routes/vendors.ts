@@ -206,6 +206,8 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         remarks: b.remarks || null,
         isAgent: b.isAgent || false,
         aadhaarNo: b.aadhaarNo || null,
+        rawMaterialType: b.rawMaterialType || null,
+        maanNumber: b.maanNumber || null,
         isActive: true,
         companyId: req.user?.companyId || null,
       },
@@ -256,6 +258,8 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
         remarks: b.remarks !== undefined ? b.remarks : undefined,
         isAgent: b.isAgent !== undefined ? b.isAgent : undefined,
         aadhaarNo: b.aadhaarNo !== undefined ? b.aadhaarNo : undefined,
+        rawMaterialType: b.rawMaterialType !== undefined ? (b.rawMaterialType || null) : undefined,
+        maanNumber: b.maanNumber !== undefined ? (b.maanNumber || null) : undefined,
       },
     });
     res.json(vendor);
