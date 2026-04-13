@@ -151,7 +151,7 @@ function MaterialBadge({ mat }: { mat: MaterialType }) {
 export default function WeighmentHistory() {
   // Filter state (applied on click)
   const defaultFilters: Filters = {
-    from: nDaysAgo(7),
+    from: todayStr(),
     to: todayStr(),
     materialType: 'ALL',
     direction: 'ALL',
