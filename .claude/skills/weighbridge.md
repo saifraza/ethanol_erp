@@ -1642,3 +1642,93 @@ Page structure:
 - **Phase 3**: GRN reversal + re-post so post-GRN weighments become editable
 - **Phase 4**: Outbound DispatchTruck corrections with e-invoice/e-way bill cancellation flow
 - **Phase 5**: Bulk correction (e.g., "all weighments from vendor X in date range Y need supplier renamed")
+
+---
+
+## Part C.5 — CLI Corrections for outbound/non-grain (Saif-only, field-ops)
+
+Until Phase 4 ships, corrections on **DDGS / Ethanol / Sugar / DispatchTruck / non-ethanol outbound** are NOT supported by the cloud admin UI. Do NOT try to use the `/admin/weighment-corrections` page for these — it silently filters them out.
+
+For a direct CLI correction (typical ask: "fix vehicle number on ticket T-XXXX"), use the pattern in `backend/scripts/correct-t0397-vehicle.ts` as the reference template.
+
+### Known constraint — cloud audit table FK
+
+`WeighmentCorrection.weighmentId` has a Postgres FK to `GrainTruck.id` ONLY (even though `weighmentKind` is polymorphic in design). Attempting `prisma.weighmentCorrection.create({ weighmentId: <DDGSDispatchTruck.id> })` throws **P2003 `WeighmentCorrection_grainTruck_fkey`**.
+
+**Workaround for outbound CLI corrections:**
+1. Skip `WeighmentCorrection.create()` on cloud.
+2. Append an audit stamp to the source row's `remarks` field with: timestamp, admin, old→new, reason, correctionId (UUID).
+3. Rely on factory-server's `WeighmentCorrectionLog` (no FK, written automatically on the `/api/weighbridge/correction` push) for the factory-side audit.
+
+This is the only safe way until Phase 4 refactors the FK (make it nullable + add a DispatchTruck FK, or drop the FK and use a view).
+
+### Working end-to-end flow (verified 2026-04-14 on T-0397)
+
+```
+1. Lookup:
+   - Weighment mirror by ticketNo (get id, localId, rawPayload)
+   - DDGSDispatchTruck by sourceWbId = mirror.localId
+   - Invoice by invoiceNo (check IRN, EWB, payment)
+
+2. Guard (hard stop if any):
+   - Payment made (ddgs → invoice → VendorPayment)
+   - IRN generated (invoice.irn != null)
+   - EWB generated (invoice.ewayBill/ewbNo/shipment.ewayBill != null)
+   - Shipment status = DELIVERED/RECEIVED
+
+3. Build auditStamp string with: ISO date, admin name, field, old→new, reason, correctionId
+
+4. $transaction on cloud:
+   - Weighment mirror: update vehicleNo + rawPayload.vehicleNo + mirrorVersion++
+   - DDGSDispatchTruck: update vehicleNo + remarks (append auditStamp)
+
+5. POST factory /api/weighbridge/correction with header x-wb-key:
+   {
+     correctionIds: [uuid],
+     factoryLocalId: mirror.localId,   // NOT mirror.id — factory uses localId
+     ticketNo, vehicleNo: NEW,
+     fields: { vehicleNo: NEW }
+   }
+   Factory updates its local Weighment + writes WeighmentCorrectionLog.
+
+6. Verify: re-read cloud mirror + DDGS + Invoice, confirm values match.
+```
+
+### Reprint behaviour
+
+Factory reprint (`/api/weighbridge/print/gate-pass/:id`, `/print/gross-slip/:id`, `/print/final-slip/:id`) reads `w.vehicleNo` directly from factory `Weighment` table. After step 5 succeeds, operators can hit **Reprint** in factory UI → new slip shows corrected vehicle. No factory restart needed.
+
+### Invoice vehicle field
+
+The cloud `Invoice` model has no direct `vehicleNo` column. Vehicle is inherited by EWB generation from `DDGSDispatchTruck.vehicleNo` at the time EWB is created. So:
+- If EWB NOT yet generated → correcting DDGSDispatchTruck.vehicleNo is enough.
+- If EWB already generated → EWB must be cancelled and regenerated (hard stop, escalate).
+
+### Audit trail locations (DDGS outbound)
+
+| Location | Stores | Queryable by |
+|---|---|---|
+| `DDGSDispatchTruck.remarks` | Full audit stamp (timestamp, admin, old→new, reason, correctionId) | grep/LIKE on remarks |
+| Factory `WeighmentCorrectionLog` | correctionId, ticketNo, vehicleNo, fieldName, newValueJson | factory-server Prisma |
+| `Weighment.mirrorVersion` | Bumped (detects that a change happened) | mirrorVersion != 1 |
+| `Weighment.rawPayload.vehicleNo` | New value | JSON path query |
+
+No `WeighmentCorrection` row on cloud (FK blocker). This is an explicit trade-off — lift in Phase 4.
+
+### Snapshot fields to also update
+
+If the DDGS truck has been invoiced (`status = BILLED` or later), a snapshot of vehicleNo exists in `DDGSContractDispatch.vehicleNo` (set at invoice time in `ddgsInvoiceService.ts:92`). Not used in PDFs but kept for audit. Correction script should also update this row:
+
+```ts
+await prisma.dDGSContractDispatch.update({
+  where: { ddgsDispatchTruckId: truck.id },
+  data: { vehicleNo: NEW_VEH },
+});
+```
+
+### Things you DON'T need to regenerate
+
+- **Invoice PDF** — rendered on-demand from `truck.vehicleNo`, no stored file. Just download again.
+- **Gate-pass/challan PDF** — same, on-demand render.
+- **WB PC local SQLite** — WB PC doesn't receive correction pushes. But WB PC purges synced records, so T-0397 is usually not there anyway. Verify via `SELECT * FROM weighments WHERE ticket_no = X` before attempting any WB PC fix.
+- **IRN/EWB** — if already generated with old vehicle, those are immutable; must be cancelled and re-generated (hard stop).
