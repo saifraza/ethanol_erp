@@ -3,6 +3,7 @@ import prisma from '../config/prisma';
 import { authenticate, authorize, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { getGSTINDetails } from '../services/eInvoice';
+import { validateCustomerTaxIdentity } from '../utils/gstSplit';
 
 const router = Router();
 
@@ -149,16 +150,26 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const creditLimit = parseFloat(b.creditLimit) || 0;
     const cautionDeposit = parseFloat(b.cautionDeposit) || 0;
 
+    // Validate tax identity: GSTIN format, GSTIN↔state match, GSTIN↔PAN match.
+    // Auto-fills state + PAN from GSTIN if those fields are blank.
+    const taxCheck = validateCustomerTaxIdentity({ gstNo: b.gstNo, state: b.state, panNo: b.panNo });
+    if (!taxCheck.valid) {
+      res.status(400).json({ error: taxCheck.errors.join('; '), details: taxCheck.errors });
+      return;
+    }
+    const state = taxCheck.derivedState || b.state || '';
+    const panNo = taxCheck.derivedPan || b.panNo || '';
+
     const customer = await prisma.customer.create({
       data: {
         name: b.name || '',
         shortName: b.shortName || '',
         address: b.address || '',
         city: b.city || '',
-        state: b.state || '',
+        state,
         pincode: b.pincode || '',
-        gstNo: b.gstNo || '',
-        panNo: b.panNo || '',
+        gstNo: (b.gstNo || '').toUpperCase(),
+        panNo: panNo.toUpperCase(),
         contactPerson: b.contactPerson || '',
         phone: b.phone || '',
         email: b.email || '',
@@ -179,6 +190,15 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const creditLimit = parseFloat(b.creditLimit) || 0;
     const cautionDeposit = parseFloat(b.cautionDeposit) || 0;
 
+    // Same tax identity validation as create
+    const taxCheck = validateCustomerTaxIdentity({ gstNo: b.gstNo, state: b.state, panNo: b.panNo });
+    if (!taxCheck.valid) {
+      res.status(400).json({ error: taxCheck.errors.join('; '), details: taxCheck.errors });
+      return;
+    }
+    const state = taxCheck.derivedState || b.state;
+    const panNo = taxCheck.derivedPan || b.panNo;
+
     const customer = await prisma.customer.update({
       where: { id: req.params.id },
       data: {
@@ -186,10 +206,10 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
         shortName: b.shortName,
         address: b.address,
         city: b.city,
-        state: b.state,
+        state,
         pincode: b.pincode,
-        gstNo: b.gstNo,
-        panNo: b.panNo,
+        gstNo: b.gstNo ? b.gstNo.toUpperCase() : b.gstNo,
+        panNo: panNo ? panNo.toUpperCase() : panNo,
         contactPerson: b.contactPerson,
         phone: b.phone,
         email: b.email,
