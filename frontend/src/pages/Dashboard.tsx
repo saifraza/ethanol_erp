@@ -42,9 +42,9 @@ const phaseColors: Record<string, string> = {
 
 function KPI({ label, value, unit, icon: Icon, color, sub, trend }: any) {
   return (
-    <div className="bg-white rounded-xl shadow-sm border p-3 md:p-4">
+    <div className="bg-white border p-3 md:p-4">
       <div className="flex items-center gap-3">
-        <div className={`p-2 rounded-lg ${color}`}><Icon size={18} className="text-white" /></div>
+        <div className={`p-2 ${color}`}><Icon size={18} className="text-white" /></div>
         <div className="min-w-0 flex-1">
           <p className="text-[11px] text-gray-500 truncate">{label}</p>
           <div className="flex items-baseline gap-1.5">
@@ -112,7 +112,7 @@ function HealthBar({ score }: { score: number }) {
 function PipelineStep({ label, value, unit, icon: Icon, color, isLast }: any) {
   return (
     <div className="flex items-center gap-1">
-      <div className={`flex flex-col items-center p-2 rounded-lg ${color} min-w-[80px]`}>
+      <div className={`flex flex-col items-center p-2 ${color} min-w-[80px]`}>
         <Icon size={16} className="text-white mb-1" />
         <span className="text-white font-bold text-sm">{value}</span>
         <span className="text-white/80 text-[9px]">{unit}</span>
@@ -286,24 +286,24 @@ export default function Dashboard() {
         <div className="flex items-center gap-2 flex-wrap">
           {PERIOD_OPTIONS.map(p => (
             <button key={p.days} onClick={() => setDays(p.days)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${days === p.days ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+              className={`px-3 py-1.5 text-xs font-medium transition ${days === p.days ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
               {p.label}
             </button>
           ))}
-          <button onClick={() => { fetchData(days); fetchFermData(days); }} className="p-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 transition" title="Refresh">
+          <button onClick={() => { fetchData(days); fetchFermData(days); }} className="p-1.5 bg-gray-100 hover:bg-gray-200 transition" title="Refresh">
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           </button>
-          <button onClick={handleShare} className="p-1.5 rounded-lg bg-green-100 hover:bg-green-200 transition text-green-700" title="Share">
+          <button onClick={handleShare} className="p-1.5 bg-green-100 hover:bg-green-200 transition text-green-700" title="Share">
             <Share2 size={14} />
           </button>
         </div>
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex gap-1 bg-gray-100 rounded-lg p-1 overflow-x-auto">
+      <div className="flex gap-1 bg-gray-100 p-1 overflow-x-auto">
         {(['overview', 'fermentation', 'production', 'quality', 'dispatch'] as const).map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2 rounded-md text-xs font-medium transition whitespace-nowrap ${activeTab === tab ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}>
+            className={`px-4 py-2 text-xs font-medium transition whitespace-nowrap ${activeTab === tab ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}>
             {tab === 'overview' ? 'Overview' : tab === 'fermentation' ? 'Fermentation' : tab === 'production' ? 'Production' : tab === 'quality' ? 'Quality' : 'Dispatch'}
           </button>
         ))}
@@ -514,7 +514,7 @@ export default function Dashboard() {
               <SectionHeader title="Fermentation Alerts" icon={AlertTriangle} />
               <div className="space-y-2">
                 {fermData.alerts.map((a: any, i: number) => (
-                  <div key={i} className={`flex items-start gap-3 p-3 rounded-lg border ${a.severity === 'critical' ? 'bg-red-50 border-red-200' : a.severity === 'warning' ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200'}`}>
+                  <div key={i} className={`flex items-start gap-3 p-3 border ${a.severity === 'critical' ? 'bg-red-50 border-red-200' : a.severity === 'warning' ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200'}`}>
                     <AlertTriangle size={16} className={a.severity === 'critical' ? 'text-red-500' : a.severity === 'warning' ? 'text-amber-500' : 'text-blue-500'} />
                     <div>
                       <span className="text-sm font-semibold">{a.vessel}</span>
@@ -917,7 +917,7 @@ function FermentationDashboard({ data, loading }: { data: any; loading: boolean 
         <div className="space-y-2">
           <SectionHeader title="Active Alerts & Insights" icon={Brain} />
           {data.alerts.map((a: any, i: number) => (
-            <div key={i} className={`flex items-start gap-3 p-3 rounded-lg border text-sm ${a.severity === 'critical' ? 'bg-red-50 border-red-200' : a.severity === 'warning' ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200'}`}>
+            <div key={i} className={`flex items-start gap-3 p-3 border text-sm ${a.severity === 'critical' ? 'bg-red-50 border-red-200' : a.severity === 'warning' ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200'}`}>
               {a.severity === 'critical' ? <AlertTriangle size={16} className="text-red-500 mt-0.5 flex-shrink-0" /> :
                a.severity === 'warning' ? <AlertTriangle size={16} className="text-amber-500 mt-0.5 flex-shrink-0" /> :
                <Activity size={16} className="text-blue-500 mt-0.5 flex-shrink-0" />}

@@ -2,15 +2,15 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 
-interface Supplier { id: string; name: string }
-interface Material { id: string; name: string; category?: string }
+interface Supplier { id: string; name: string; company_id?: string | null }
+interface Material { id: string; name: string; category?: string; company_id?: string | null }
 interface PO { id: string; po_no: number; vendor_name: string; vendor_id?: string; status: string; deal_type?: string; company_id?: string | null; lines: POLine[] }
 interface Company { id: string; code: string; name: string; shortName: string | null; isDefault?: boolean }
 interface POLine { id: string; description: string; quantity: number; received_qty: number; pending_qty: number; rate: number; unit: string }
-interface Customer { id: string; name: string; gstNo?: string | null; address?: string | null; state?: string | null; pincode?: string | null }
+interface Customer { id: string; name: string; gstNo?: string | null; address?: string | null; state?: string | null; pincode?: string | null; company_id?: string | null }
 interface Trader { id: string; name: string; phone?: string; productTypes?: string; category?: string }
-interface EthContract { id: string; contractNo: string; contractType: string; buyerName: string; buyerAddress?: string; omcDepot?: string }
-interface DdgsContract { id: string; contractNo: string; dealType: string; buyerName: string; buyerGstin?: string | null; buyerAddress?: string | null; principalName?: string | null; rate?: number | null; processingChargePerMT?: number | null; gstPercent?: number | null; contractQtyMT?: number | null; totalSuppliedMT?: number | null; endDate?: string | null }
+interface EthContract { id: string; contractNo: string; contractType: string; buyerName: string; buyerAddress?: string; omcDepot?: string; company_id?: string | null }
+interface DdgsContract { id: string; contractNo: string; dealType: string; buyerName: string; buyerGstin?: string | null; buyerAddress?: string | null; principalName?: string | null; rate?: number | null; processingChargePerMT?: number | null; gstPercent?: number | null; contractQtyMT?: number | null; totalSuppliedMT?: number | null; endDate?: string | null; company_id?: string | null }
 interface ScrapSalesOrder { id: string; entryNo: number; buyerName: string; productName: string; rate: number; unit: string; validFrom?: string | null; validTo?: string | null; status: string; quantity: number; totalSuppliedQty: number }
 
 const FUEL_KEYWORDS = ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'firewood', 'biomass'];
@@ -172,11 +172,44 @@ export default function GateEntry() {
     return true;
   }).filter(p => {
     // Filter by selected company (if companies exist and one is selected)
-    if (selectedCompanyId && p.company_id) return p.company_id === selectedCompanyId;
-    // Show POs with no company (legacy) regardless of selection
-    return true;
+    if (!selectedCompanyId) return true; // no company selected = show all
+    if (p.company_id) return p.company_id === selectedCompanyId;
+    // Legacy POs with no company_id: show only when default/MSPIL company selected
+    const defaultCompany = companies.find(c => c.isDefault);
+    return defaultCompany ? selectedCompanyId === defaultCompany.id : true;
   }).filter(p => !supplierName || p.vendor_name.toLowerCase().includes(supplierName.toLowerCase()));
   const selectedPO = pos.find(p => p.id === selectedPoId);
+
+  // Filter suppliers and materials by selected company
+  const defaultCo = companies.find(c => c.isDefault);
+  const isDefaultSelected = !selectedCompanyId || (defaultCo && selectedCompanyId === defaultCo.id);
+  const filteredSuppliers = suppliers.filter(s => {
+    if (!selectedCompanyId) return true;
+    if (s.company_id) return s.company_id === selectedCompanyId;
+    return !!isDefaultSelected; // legacy null = show for MSPIL only
+  });
+  const filteredMaterials = materials.filter(m => {
+    if (!selectedCompanyId) return true;
+    if (m.company_id) return m.company_id === selectedCompanyId;
+    return !!isDefaultSelected;
+  });
+
+  // Filter customers, ethanol contracts, and DDGS contracts by selected company
+  const filteredCustomers = customers.filter(c => {
+    if (!selectedCompanyId) return true;
+    if (c.company_id) return c.company_id === selectedCompanyId;
+    return !!isDefaultSelected; // legacy null = show for MSPIL only
+  });
+  const filteredEthContracts = ethContracts.filter(c => {
+    if (!selectedCompanyId) return true;
+    if (c.company_id) return c.company_id === selectedCompanyId;
+    return !!isDefaultSelected;
+  });
+  const filteredDdgsContracts = ddgsContracts.filter(c => {
+    if (!selectedCompanyId) return true;
+    if (c.company_id) return c.company_id === selectedCompanyId;
+    return !!isDefaultSelected;
+  });
 
   // Vehicle autocomplete
   const handleVehicleChange = (v: string) => {
@@ -426,11 +459,11 @@ export default function GateEntry() {
                 <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">
                   Bill-To (Customer) {masterLoading && <span className="text-yellow-500 animate-pulse">searching...</span>}
                 </label>
-                {customers.length > 0 ? (
+                {filteredCustomers.length > 0 ? (
                   <select value={customerName} onChange={e => setCustomerName(e.target.value)}
                     className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
                     <option value="">-- Select --</option>
-                    {customers.map(c => <option key={c.id} value={c.name}>{c.name}{c.gstNo ? ` (${c.gstNo})` : ''}</option>)}
+                    {filteredCustomers.map(c => <option key={c.id} value={c.name}>{c.name}{c.gstNo ? ` (${c.gstNo})` : ''}</option>)}
                   </select>
                 ) : (
                   <input value={customerName} onChange={e => setCustomerName(e.target.value)}
@@ -461,10 +494,10 @@ export default function GateEntry() {
                     <select value={shipToCustomerId} onChange={e => setShipToCustomerId(e.target.value)}
                       className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
                       <option value="">-- Select Ship-To Customer --</option>
-                      {customers.map(c => <option key={c.id} value={c.id}>{c.name}{c.gstNo ? ` (${c.gstNo})` : ''}</option>)}
+                      {filteredCustomers.map(c => <option key={c.id} value={c.id}>{c.name}{c.gstNo ? ` (${c.gstNo})` : ''}</option>)}
                     </select>
                     {shipToCustomerId && (() => {
-                      const c = customers.find(x => x.id === shipToCustomerId);
+                      const c = filteredCustomers.find(x => x.id === shipToCustomerId);
                       if (!c) return null;
                       return (
                         <div className="mt-1.5 text-[11px] text-slate-600 bg-slate-50 border border-slate-200 px-2 py-1.5 leading-tight">
@@ -487,11 +520,11 @@ export default function GateEntry() {
               {supplierLocked ? (
                 <input value={supplierName} readOnly disabled
                   className="w-full border border-slate-300 px-3 py-2.5 text-sm bg-slate-100 text-slate-600 cursor-not-allowed" />
-              ) : isPOLike && suppliers.length > 0 ? (
+              ) : isPOLike && filteredSuppliers.length > 0 ? (
                 <select value={supplierName} onChange={e => { setSupplierName(e.target.value); setSelectedPoId(''); }}
                   className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
                   <option value="">-- Select --</option>
-                  {suppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                  {filteredSuppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                 </select>
               ) : (
                 <input value={supplierName} onChange={e => { setSupplierName(e.target.value); setSelectedPoId(''); }}
@@ -521,7 +554,7 @@ export default function GateEntry() {
                 <option value="">-- Select --</option>
                 {outboundProducts.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
-            ) : materials.length > 0 ? (
+            ) : filteredMaterials.length > 0 ? (
               <select value={materialName} onChange={e => setMaterialName(e.target.value)}
                 className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
                 <option value="">-- Select --</option>
@@ -537,8 +570,8 @@ export default function GateEntry() {
                   const vendorTypes = vendor?.productTypes?.split(',').filter(Boolean) || [];
                   const filterTypes = vendorTypes.length > 0 ? vendorTypes : (vendor?.category ? [vendor.category] : []);
                   const filtered = filterTypes.length > 0
-                    ? materials.filter(m => m.category && filterTypes.includes(m.category))
-                    : materials;
+                    ? filteredMaterials.filter(m => m.category && filterTypes.includes(m.category))
+                    : filteredMaterials;
                   return filtered.map(m => <option key={m.id} value={m.name}>{m.name}{m.category ? ` [${m.category}]` : ''}</option>);
                 })()}
               </select>
@@ -641,11 +674,11 @@ export default function GateEntry() {
                 <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">Ethanol Contract *</label>
                 <select value={ethContractId} onChange={e => {
                   setEthContractId(e.target.value);
-                  const c = ethContracts.find(x => x.id === e.target.value);
+                  const c = filteredEthContracts.find(x => x.id === e.target.value);
                   if (c) { setCustomerName(c.buyerName); setDestination(c.omcDepot || c.buyerAddress || ''); }
                 }} className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
                   <option value="">-- Select Contract --</option>
-                  {(ethContracts || []).map(c => <option key={c.id} value={c.id}>{c.contractNo} — {c.buyerName} ({c.contractType})</option>)}
+                  {filteredEthContracts.map(c => <option key={c.id} value={c.id}>{c.contractNo} — {c.buyerName} ({c.contractType})</option>)}
                 </select>
               </div>
               <div>
@@ -673,11 +706,11 @@ export default function GateEntry() {
                 <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">DDGS Contract *</label>
                 <select value={ddgsContractId} onChange={e => {
                   setDdgsContractId(e.target.value);
-                  const c = ddgsContracts.find(x => x.id === e.target.value);
+                  const c = filteredDdgsContracts.find(x => x.id === e.target.value);
                   if (c) setCustomerName(c.buyerName);
                 }} className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
                   <option value="">-- Select Contract --</option>
-                  {(ddgsContracts || []).map(c => {
+                  {filteredDdgsContracts.map(c => {
                     const r = c.dealType === 'JOB_WORK' ? c.processingChargePerMT : c.rate;
                     return <option key={c.id} value={c.id}>{c.contractNo} — {c.buyerName} ({c.dealType === 'JOB_WORK' ? 'JOB WORK' : 'SALE'}) ₹{r ?? '-'}/MT</option>;
                   })}

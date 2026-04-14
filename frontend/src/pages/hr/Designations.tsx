@@ -115,7 +115,7 @@ export default function Designations() {
         <h1 className="text-2xl font-bold text-gray-900">Designations</h1>
         <button
           onClick={() => { resetForm(); setShowForm(true); }}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 text-sm font-medium"
         >
           <Plus size={16} /> Add Designation
         </button>
@@ -123,7 +123,7 @@ export default function Designations() {
 
       {/* Inline Form */}
       {showForm && (
-        <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6 shadow-sm">
+        <div className="bg-white border border-gray-200 p-4 mb-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold text-gray-800">
               {editingId ? 'Edit Designation' : 'New Designation'}
@@ -137,7 +137,7 @@ export default function Designations() {
               <label className="block text-xs font-medium text-gray-600 mb-1">Title *</label>
               <input
                 value={title} onChange={e => setTitle(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 placeholder="e.g. Senior Manager"
               />
             </div>
@@ -145,7 +145,7 @@ export default function Designations() {
               <label className="block text-xs font-medium text-gray-600 mb-1">Grade</label>
               <input
                 value={grade} onChange={e => setGrade(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 placeholder="e.g. M3"
               />
             </div>
@@ -153,7 +153,7 @@ export default function Designations() {
               <label className="block text-xs font-medium text-gray-600 mb-1">Band</label>
               <input
                 value={band} onChange={e => setBand(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 placeholder="e.g. Band-A"
               />
             </div>
@@ -161,7 +161,7 @@ export default function Designations() {
               <label className="block text-xs font-medium text-gray-600 mb-1">Level</label>
               <input
                 type="number" value={level} onChange={e => setLevel(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 placeholder="e.g. 5"
               />
             </div>
@@ -169,7 +169,7 @@ export default function Designations() {
               <label className="block text-xs font-medium text-gray-600 mb-1">Min Salary</label>
               <input
                 type="number" value={minSalary} onChange={e => setMinSalary(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 placeholder="e.g. 300000"
               />
             </div>
@@ -177,7 +177,7 @@ export default function Designations() {
               <label className="block text-xs font-medium text-gray-600 mb-1">Max Salary</label>
               <input
                 type="number" value={maxSalary} onChange={e => setMaxSalary(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 placeholder="e.g. 800000"
               />
             </div>
@@ -185,7 +185,7 @@ export default function Designations() {
               <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
                 <input
                   type="checkbox" checked={isActive} onChange={e => setIsActive(e.target.checked)}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  className="border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
                 Active
               </label>
@@ -193,7 +193,7 @@ export default function Designations() {
             <div className="flex items-end">
               <button
                 onClick={handleSave} disabled={saving || !title.trim()}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
               >
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                 {editingId ? 'Update' : 'Save'}
@@ -208,13 +208,13 @@ export default function Designations() {
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
         <input
           value={search} onChange={e => setSearch(e.target.value)}
-          className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          className="w-full pl-9 pr-4 py-2 border border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           placeholder="Search designations..."
         />
       </div>
 
       {/* Table */}
-      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+      <div className="bg-white border border-gray-200 overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
@@ -253,7 +253,7 @@ export default function Designations() {
                 <td className="px-4 py-3 text-right text-gray-600">{fmt(d.maxSalary)}</td>
                 <td className="px-4 py-3 text-center text-gray-600">{d._count?.employees ?? 0}</td>
                 <td className="px-4 py-3 text-center">
-                  <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${d.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                  <span className={`inline-block px-2 py-0.5 text-xs font-medium ${d.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                     {d.isActive ? 'Active' : 'Inactive'}
                   </span>
                 </td>

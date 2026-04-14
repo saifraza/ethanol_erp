@@ -104,7 +104,7 @@ export default function ABCAnalysis() {
           <BarChart3 className="w-7 h-7 text-indigo-600" />
           <h1 className="text-2xl font-bold text-gray-800">ABC Analysis</h1>
         </div>
-        <div className="bg-white rounded-xl shadow-sm border p-12 text-center text-gray-500">
+        <div className="bg-white border p-12 text-center text-gray-500">
           Loading ABC analysis...
         </div>
       </div>
@@ -118,7 +118,7 @@ export default function ABCAnalysis() {
           <BarChart3 className="w-7 h-7 text-indigo-600" />
           <h1 className="text-2xl font-bold text-gray-800">ABC Analysis</h1>
         </div>
-        <div className="bg-white rounded-xl shadow-sm border p-12 text-center text-gray-400">
+        <div className="bg-white border p-12 text-center text-gray-400">
           <BarChart3 className="w-12 h-12 mx-auto mb-3 opacity-50" />
           <p className="text-lg">No stock data for ABC classification</p>
         </div>
@@ -133,7 +133,7 @@ export default function ABCAnalysis() {
   ) => {
     const config = CLASS_CONFIG[cls];
     return (
-      <div key={cls} className={`bg-white rounded-xl shadow-sm border ${config.border} overflow-hidden`}>
+      <div key={cls} className={`bg-white border ${config.border} overflow-hidden`}>
         <div className={`${config.headerBg} px-6 py-4 text-white`}>
           <div className="flex items-center justify-between">
             <div>
@@ -197,7 +197,7 @@ export default function ABCAnalysis() {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl shadow-sm border p-4">
+        <div className="bg-white border p-4">
           <p className="text-sm text-gray-500">Total Value</p>
           <p className="text-xl font-bold text-gray-800 mt-1">{formatCurrency(totalValue)}</p>
           <p className="text-xs text-gray-400 mt-1">{data.items.length} items</p>
@@ -207,7 +207,7 @@ export default function ABCAnalysis() {
           const summary = cls === 'A' ? summaryA : cls === 'B' ? summaryB : summaryC;
           const pct = totalValue > 0 ? ((summary.value / totalValue) * 100).toFixed(1) : '0';
           return (
-            <div key={cls} className={`rounded-xl shadow-sm border p-4 ${config.bg} ${config.border}`}>
+            <div key={cls} className={`border p-4 ${config.bg} ${config.border}`}>
               <div className="flex items-center justify-between">
                 <p className={`text-sm font-medium ${config.text}`}>{config.label}</p>
                 <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${config.badge}`}>

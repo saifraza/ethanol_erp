@@ -131,7 +131,7 @@ export default function SalaryStructure() {
       </div>
 
       {/* Employee Selector */}
-      <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6 shadow-sm">
+      <div className="bg-white border border-gray-200 p-4 mb-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-2">
             <label className="block text-xs font-medium text-gray-600 mb-1">Select Employee</label>
@@ -141,13 +141,13 @@ export default function SalaryStructure() {
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
                 placeholder="Search by name or code..."
-                className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full pl-9 pr-4 py-2 border border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
             <select
               value={selectedId}
               onChange={e => handleSelect(e.target.value)}
-              className="w-full mt-2 border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full mt-2 border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               size={Math.min(filteredEmployees.length + 1, 6)}
             >
               <option value="">-- Select --</option>
@@ -166,13 +166,13 @@ export default function SalaryStructure() {
                 value={ctcInput}
                 onChange={e => setCtcInput(e.target.value)}
                 placeholder="e.g. 600000"
-                className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="flex-1 border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 disabled={!selectedId}
               />
               <button
                 onClick={handleSaveCTC}
                 disabled={saving || !selectedId || !ctcInput}
-                className="flex items-center gap-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
+                className="flex items-center gap-1 px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
               >
                 {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                 Save
@@ -190,7 +190,7 @@ export default function SalaryStructure() {
                 type="checkbox"
                 checked={selectedEmployee.epfApplicable}
                 onChange={e => handleToggle('epfApplicable', e.target.checked)}
-                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                className="border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               EPF Applicable
             </label>
@@ -199,7 +199,7 @@ export default function SalaryStructure() {
                 type="checkbox"
                 checked={selectedEmployee.esiApplicable}
                 onChange={e => handleToggle('esiApplicable', e.target.checked)}
-                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                className="border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               ESI Applicable
             </label>
@@ -218,7 +218,7 @@ export default function SalaryStructure() {
       {!loading && bd && (
         <div className="space-y-4">
           {/* Earnings */}
-          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+          <div className="bg-white border border-gray-200 overflow-hidden">
             <div className="bg-green-50 px-4 py-2 border-b border-green-100">
               <h3 className="font-semibold text-green-800 text-sm">Earnings</h3>
             </div>
@@ -253,7 +253,7 @@ export default function SalaryStructure() {
           </div>
 
           {/* Deductions */}
-          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+          <div className="bg-white border border-gray-200 overflow-hidden">
             <div className="bg-red-50 px-4 py-2 border-b border-red-100">
               <h3 className="font-semibold text-red-800 text-sm">Employee Deductions</h3>
             </div>
@@ -286,7 +286,7 @@ export default function SalaryStructure() {
           </div>
 
           {/* Employer Cost */}
-          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+          <div className="bg-white border border-gray-200 overflow-hidden">
             <div className="bg-purple-50 px-4 py-2 border-b border-purple-100">
               <h3 className="font-semibold text-purple-800 text-sm">Employer Cost</h3>
             </div>
@@ -327,7 +327,7 @@ export default function SalaryStructure() {
           </div>
 
           {/* Summary */}
-          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+          <div className="bg-white border border-gray-200 overflow-hidden">
             <div className="bg-blue-50 px-4 py-2 border-b border-blue-100">
               <h3 className="font-semibold text-blue-800 text-sm">Summary</h3>
             </div>

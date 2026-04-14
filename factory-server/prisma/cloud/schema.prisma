@@ -64,6 +64,7 @@ model Vendor {
   productTypes    String?
   isActive        Boolean  @default(true)
   remarks         String?
+  companyId       String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -124,6 +125,7 @@ model InventoryItem {
   handlerKey      String?
   isContractBased Boolean  @default(false)
   needsLabTest    Boolean  @default(false)
+  companyId       String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -229,6 +231,7 @@ model Customer {
   defaultTerms    String   @default("ADVANCE")
   isActive        Boolean  @default(true)
   remarks         String?
+  companyId       String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }

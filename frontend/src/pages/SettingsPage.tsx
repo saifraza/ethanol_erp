@@ -260,7 +260,7 @@ export default function SettingsPage() {
                   key={mod}
                   onClick={() => cycleModuleRoute(mod)}
                   disabled={!isAdmin}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium ${colors.bg} ${colors.text} border ${colors.border} hover:opacity-80 transition-all`}
+                  className={`w-full flex items-center justify-between px-3 py-2 text-sm font-medium ${colors.bg} ${colors.text} border ${colors.border} hover:opacity-80 transition-all`}
                 >
                   <span className="flex items-center gap-2">
                     {target === 'private' ? <Lock size={14} /> : <Users size={14} />}
@@ -292,7 +292,7 @@ export default function SettingsPage() {
 
           {/* QR Code */}
           {waQr && !waStatus.connected && (
-            <div className="mb-4 p-3 bg-white border rounded-lg text-center">
+            <div className="mb-4 p-3 bg-white border text-center">
               <img src={waQr} alt="WhatsApp QR" className="mx-auto w-48 h-48" />
               <p className="text-xs text-gray-500 mt-2">Scan with WhatsApp to connect</p>
             </div>
@@ -365,7 +365,7 @@ export default function SettingsPage() {
                     key={mod}
                     onClick={() => cycleWaModuleRoute(mod)}
                     disabled={!isAdmin}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium ${colors.bg} ${colors.text} border ${colors.border} hover:opacity-80 transition-all`}
+                    className={`w-full flex items-center justify-between px-3 py-2 text-sm font-medium ${colors.bg} ${colors.text} border ${colors.border} hover:opacity-80 transition-all`}
                   >
                     <span className="flex items-center gap-2">
                       {target === 'private' ? <Lock size={14} /> : <Users size={14} />}

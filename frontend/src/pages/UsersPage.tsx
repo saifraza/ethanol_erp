@@ -102,13 +102,13 @@ export default function UsersPage() {
     <div className="max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">User Management</h1>
-        <button onClick={() => setShowAdd(!showAdd)} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">
+        <button onClick={() => setShowAdd(!showAdd)} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 text-sm font-medium hover:bg-blue-700">
           <UserPlus size={16} />{showAdd ? 'Cancel' : 'Add User'}
         </button>
       </div>
 
       {msg.text && (
-        <div className={`mb-4 p-3 rounded-lg text-sm flex items-center justify-between ${msg.type === 'error' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'}`}>
+        <div className={`mb-4 p-3 text-sm flex items-center justify-between ${msg.type === 'error' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'}`}>
           {msg.text}
           <button onClick={() => setMsg({ text: '', type: '' })}><X size={14} /></button>
         </div>
@@ -116,12 +116,12 @@ export default function UsersPage() {
 
       {/* Add User Form */}
       {showAdd && (
-        <div className="bg-white border rounded-xl p-5 mb-5 shadow-sm">
+        <div className="bg-white border p-5 mb-5">
           <h3 className="font-semibold text-gray-700 mb-3">New User</h3>
           <div className="grid grid-cols-3 gap-3 mb-4">
-            <input placeholder="Name (used for login)" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm" />
-            <input placeholder="Password" type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm" />
-            <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm">
+            <input placeholder="Name (used for login)" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className="border px-3 py-2 text-sm" />
+            <input placeholder="Password" type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} className="border px-3 py-2 text-sm" />
+            <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))} className="border px-3 py-2 text-sm">
               <option value="OPERATOR">Operator</option>
               <option value="FIELD">Field</option>
               <option value="SUPERVISOR">Supervisor</option>
@@ -173,20 +173,20 @@ export default function UsersPage() {
             </div>
           )}
           {(form.role === 'ADMIN' || form.role === 'SUPER_ADMIN') && <p className="text-xs text-gray-500 mb-3">{form.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin'} — full access to all modules</p>}
-          <button onClick={addUser} className="bg-blue-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">Create User</button>
+          <button onClick={addUser} className="bg-blue-600 text-white px-5 py-2 text-sm font-medium hover:bg-blue-700">Create User</button>
         </div>
       )}
 
       {/* User List */}
       <div className="space-y-3">
         {users.map(u => (
-          <div key={u.id} className={`bg-white border rounded-xl p-4 shadow-sm ${!u.isActive ? 'opacity-60' : ''}`}>
+          <div key={u.id} className={`bg-white border p-4 ${!u.isActive ? 'opacity-60' : ''}`}>
             {/* Header row */}
             <div className="flex items-center justify-between">
               <div className="flex-1">
                 {editingNameId === u.id ? (
                   <div className="flex items-center gap-2">
-                    <input value={editName} onChange={e => setEditName(e.target.value)} className="border rounded px-2 py-1 text-sm font-semibold" autoFocus
+                    <input value={editName} onChange={e => setEditName(e.target.value)} className="border px-2 py-1 text-sm font-semibold" autoFocus
                       onKeyDown={e => e.key === 'Enter' && saveName(u.id)} />
                     <button onClick={() => saveName(u.id)} className="text-green-600 hover:text-green-800"><Check size={16} /></button>
                     <button onClick={() => setEditingNameId(null)} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
@@ -201,14 +201,14 @@ export default function UsersPage() {
               </div>
 
               <div className="flex items-center gap-3">
-                <select value={u.role} onChange={e => changeRole(u.id, e.target.value)} className="text-xs border rounded px-2 py-1"
+                <select value={u.role} onChange={e => changeRole(u.id, e.target.value)} className="text-xs border px-2 py-1"
                   disabled={u.role === 'SUPER_ADMIN' && !isSuperAdmin}>
                   <option value="OPERATOR">Operator</option>
                   <option value="SUPERVISOR">Supervisor</option>
                   <option value="ADMIN">Admin</option>
                   {isSuperAdmin && <option value="SUPER_ADMIN">Super Admin</option>}
                 </select>
-                <select value={u.paymentRole || ''} onChange={e => changePaymentRole(u.id, e.target.value)} className="text-xs border rounded px-2 py-1" title="Bank Payment Role">
+                <select value={u.paymentRole || ''} onChange={e => changePaymentRole(u.id, e.target.value)} className="text-xs border px-2 py-1" title="Bank Payment Role">
                   <option value="">No Bank Role</option>
                   <option value="MAKER">Maker</option>
                   <option value="CHECKER">Checker</option>
@@ -224,7 +224,7 @@ export default function UsersPage() {
                 {confirmDelete === u.id ? (
                   <div className="flex items-center gap-1">
                     <span className="text-xs text-red-600">Sure?</span>
-                    <button onClick={() => deleteUser(u.id)} className="text-xs bg-red-600 text-white px-2 py-0.5 rounded hover:bg-red-700">Yes</button>
+                    <button onClick={() => deleteUser(u.id)} className="text-xs bg-red-600 text-white px-2 py-0.5 hover:bg-red-700">Yes</button>
                     <button onClick={() => setConfirmDelete(null)} className="text-xs text-gray-500 hover:underline">No</button>
                   </div>
                 ) : (
@@ -237,8 +237,8 @@ export default function UsersPage() {
             {changingPwdId === u.id && (
               <div className="mt-3 pt-3 border-t flex items-center gap-2">
                 <input type="password" placeholder="New password (min 4 chars)" value={newPwd} onChange={e => setNewPwd(e.target.value)}
-                  className="border rounded px-3 py-1.5 text-sm flex-1" onKeyDown={e => e.key === 'Enter' && savePassword(u.id)} />
-                <button onClick={() => savePassword(u.id)} className="bg-amber-600 text-white px-3 py-1.5 rounded text-xs font-medium hover:bg-amber-700">Change</button>
+                  className="border px-3 py-1.5 text-sm flex-1" onKeyDown={e => e.key === 'Enter' && savePassword(u.id)} />
+                <button onClick={() => savePassword(u.id)} className="bg-amber-600 text-white px-3 py-1.5 text-xs font-medium hover:bg-amber-700">Change</button>
                 <button onClick={() => { setChangingPwdId(null); setNewPwd(''); }} className="text-xs text-gray-500 hover:underline">Cancel</button>
               </div>
             )}
@@ -285,10 +285,10 @@ export default function UsersPage() {
                       })}
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={() => saveModules(u.id)} className="flex items-center gap-1 bg-blue-600 text-white px-3 py-1.5 rounded text-xs font-medium hover:bg-blue-700">
+                      <button onClick={() => saveModules(u.id)} className="flex items-center gap-1 bg-blue-600 text-white px-3 py-1.5 text-xs font-medium hover:bg-blue-700">
                         <Save size={12} /> Save
                       </button>
-                      <button onClick={() => setEditingModulesId(null)} className="px-3 py-1.5 border rounded text-xs text-gray-600 hover:bg-gray-50">Cancel</button>
+                      <button onClick={() => setEditingModulesId(null)} className="px-3 py-1.5 border text-xs text-gray-600 hover:bg-gray-50">Cancel</button>
                     </div>
                   </div>
                 ) : (
@@ -297,7 +297,7 @@ export default function UsersPage() {
                       {parseModules(u.allowedModules).length > 0 ? (
                         parseModules(u.allowedModules).map(key => {
                           const mod = ALL_MODULES.find(m => m.key === key);
-                          return <span key={key} className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs">{mod?.label || key}</span>;
+                          return <span key={key} className="px-2 py-0.5 bg-blue-50 text-blue-700 text-xs">{mod?.label || key}</span>;
                         })
                       ) : (
                         <span className="text-xs text-amber-600">No modules assigned</span>

@@ -169,20 +169,20 @@ export default function Payroll() {
       <div className="flex items-center gap-2 mb-6 text-xs text-gray-500">
         {STATUS_FLOW.map((s, i) => (
           <span key={s} className="flex items-center gap-2">
-            <span className={`px-2 py-1 rounded-full font-medium ${STATUS_STYLES[s]}`}>{s}</span>
+            <span className={`px-2 py-1 font-medium ${STATUS_STYLES[s]}`}>{s}</span>
             {i < STATUS_FLOW.length - 1 && <ArrowRight size={12} className="text-gray-300" />}
           </span>
         ))}
       </div>
 
       {/* Create Run */}
-      <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6 shadow-sm">
+      <div className="bg-white border border-gray-200 p-4 mb-6">
         <div className="flex items-end gap-4">
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Month</label>
             <select
               value={month} onChange={e => setMonth(Number(e.target.value))}
-              className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
               {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
             </select>
@@ -191,14 +191,14 @@ export default function Payroll() {
             <label className="block text-xs font-medium text-gray-600 mb-1">Year</label>
             <select
               value={year} onChange={e => setYear(Number(e.target.value))}
-              className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
               {[year - 1, year, year + 1].map(y => <option key={y} value={y}>{y}</option>)}
             </select>
           </div>
           <button
             onClick={createRun} disabled={creating}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
           >
             {creating ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
             Create Run
@@ -216,7 +216,7 @@ export default function Payroll() {
       ) : (
         <div className="space-y-3">
           {runs.map(run => (
-            <div key={run.id} className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+            <div key={run.id} className="bg-white border border-gray-200 overflow-hidden">
               {/* Run Header */}
               <div
                 className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-gray-50"
@@ -235,7 +235,7 @@ export default function Payroll() {
                       {run.employeeCount} employees
                     </span>
                   </div>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[run.status]}`}>
+                  <span className={`px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[run.status]}`}>
                     {run.status}
                   </span>
                 </div>
@@ -254,7 +254,7 @@ export default function Payroll() {
                       <button
                         onClick={() => computeRun(run.id)}
                         disabled={processing === run.id}
-                        className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-xs font-medium"
+                        className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 text-xs font-medium"
                       >
                         {processing === run.id ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
                         Compute
@@ -264,7 +264,7 @@ export default function Payroll() {
                       <button
                         onClick={() => approveRun(run.id)}
                         disabled={processing === run.id}
-                        className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 text-xs font-medium"
+                        className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 text-xs font-medium"
                       >
                         {processing === run.id ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
                         Approve
@@ -274,7 +274,7 @@ export default function Payroll() {
                       <button
                         onClick={() => markPaid(run.id)}
                         disabled={processing === run.id}
-                        className="flex items-center gap-1 px-3 py-1.5 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 text-xs font-medium"
+                        className="flex items-center gap-1 px-3 py-1.5 bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 text-xs font-medium"
                       >
                         {processing === run.id ? <Loader2 size={14} className="animate-spin" /> : <IndianRupee size={14} />}
                         Mark Paid
@@ -283,19 +283,19 @@ export default function Payroll() {
                     <div className="flex-1" />
                     <button
                       onClick={() => downloadFile(run.id, 'ecr')}
-                      className="flex items-center gap-1 px-3 py-1.5 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-xs font-medium"
+                      className="flex items-center gap-1 px-3 py-1.5 border border-gray-300 text-gray-700 hover:bg-gray-50 text-xs font-medium"
                     >
                       <Download size={14} /> ECR File
                     </button>
                     <button
                       onClick={() => downloadFile(run.id, 'register')}
-                      className="flex items-center gap-1 px-3 py-1.5 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-xs font-medium"
+                      className="flex items-center gap-1 px-3 py-1.5 border border-gray-300 text-gray-700 hover:bg-gray-50 text-xs font-medium"
                     >
                       <FileText size={14} /> Salary Register
                     </button>
                     <button
                       onClick={() => downloadFile(run.id, 'pf-register')}
-                      className="flex items-center gap-1 px-3 py-1.5 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-xs font-medium"
+                      className="flex items-center gap-1 px-3 py-1.5 border border-gray-300 text-gray-700 hover:bg-gray-50 text-xs font-medium"
                     >
                       <FileText size={14} /> PF Register
                     </button>
@@ -312,7 +312,7 @@ export default function Payroll() {
                       { label: 'Net Pay', value: run.totalNet, color: 'text-green-600' },
                       { label: 'Employees', value: run.employeeCount, color: 'text-purple-600', raw: true },
                     ].map(card => (
-                      <div key={card.label} className="bg-gray-50 rounded-lg p-3 text-center">
+                      <div key={card.label} className="bg-gray-50 p-3 text-center">
                         <p className="text-xs text-gray-500 mb-1">{card.label}</p>
                         <p className={`text-sm font-bold ${card.color}`}>
                           {(card as any).raw ? card.value : fmtINR(card.value as number)}
@@ -327,7 +327,7 @@ export default function Payroll() {
                       <Loader2 size={18} className="animate-spin mr-2" /> Loading slips...
                     </div>
                   ) : slips[run.id] && (
-                    <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <div className="border border-gray-200 overflow-hidden">
                       <table className="w-full text-xs">
                         <thead className="bg-gray-50 border-b border-gray-200">
                           <tr>

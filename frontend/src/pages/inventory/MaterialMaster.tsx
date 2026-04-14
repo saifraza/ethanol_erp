@@ -266,13 +266,13 @@ export default function MaterialMaster() {
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-800">Material Master</h1>
-        <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">
+        <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 text-sm">
           <Plus className="w-4 h-4" /> Add Item
         </button>
       </div>
 
       {msg && (
-        <div className={`p-3 rounded-lg text-sm ${msg.type === 'ok' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+        <div className={`p-3 text-sm ${msg.type === 'ok' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
           {msg.text}
         </div>
       )}
@@ -286,13 +286,13 @@ export default function MaterialMaster() {
             placeholder="Search by code, name, HSN..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            className="w-full pl-10 pr-4 py-2 border text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
           />
         </div>
         <select
           value={categoryFilter}
           onChange={(e) => setCategoryFilter(e.target.value)}
-          className="px-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+          className="px-4 py-2 border text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
         >
           {CATEGORIES.map((c) => (
             <option key={c.value} value={c.value}>{c.label}</option>
@@ -309,7 +309,7 @@ export default function MaterialMaster() {
           <p>No items found</p>
         </div>
       ) : (
-        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+        <div className="bg-white border overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50">
@@ -377,14 +377,14 @@ export default function MaterialMaster() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
                 <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                  className="w-full px-3 py-2 border text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
                   {CATEGORIES.filter(c => c.value).map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
                 <select value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                  className="w-full px-3 py-2 border text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
                   {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
                 </select>
               </div>
@@ -400,7 +400,7 @@ export default function MaterialMaster() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Valuation Method</label>
                 <select value={form.valuationMethod} onChange={(e) => setForm({ ...form, valuationMethod: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                  className="w-full px-3 py-2 border text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
                   {VALUATION_METHODS.map(m => <option key={m} value={m}>{m.replace(/_/g, ' ')}</option>)}
                 </select>
               </div>
@@ -416,7 +416,7 @@ export default function MaterialMaster() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Division</label>
                   <select value={form.division} onChange={(e) => setForm({ ...form, division: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    className="w-full px-3 py-2 border text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
                     {DIVISIONS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
                   </select>
                   <p className="text-xs text-gray-500 mt-1">Which plant division owns this item</p>
@@ -428,7 +428,7 @@ export default function MaterialMaster() {
                 <div className="mt-3">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Handler Override</label>
                   <select value={form.handlerKey} onChange={(e) => setForm({ ...form, handlerKey: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    className="w-full px-3 py-2 border text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
                     {HANDLER_KEYS.map(h => <option key={h.value} value={h.value}>{h.label}</option>)}
                   </select>
                   <p className="text-xs text-gray-500 mt-1">Leave on Auto unless this product needs special weighbridge handling</p>
@@ -446,9 +446,9 @@ export default function MaterialMaster() {
               </div>
             </div>
             <div className="sticky bottom-0 bg-white border-t px-6 py-4 flex justify-end gap-3">
-              <button onClick={() => setShowForm(false)} className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">Cancel</button>
+              <button onClick={() => setShowForm(false)} className="px-4 py-2 border text-sm hover:bg-gray-50">Cancel</button>
               <button onClick={handleSave} disabled={saving}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-50">
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                 {editId ? 'Update' : 'Create'}
               </button>
@@ -469,7 +469,7 @@ function FormField({ label, value, onChange, type = 'text', placeholder }: {
     <div>
       <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
       <input type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
-        className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+        className="w-full px-3 py-2 border text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
     </div>
   );
 }
@@ -499,16 +499,16 @@ function ItemRow({ item, expanded, expandLoading, stockLevels, itemMovements, re
         <td className="px-4 py-3 text-right">{formatCurrency(item.avgCost ?? item.costPerUnit ?? 0)}</td>
         <td className="px-4 py-3 text-right font-medium">{formatCurrency(item.totalValue ?? 0)}</td>
         <td className="px-4 py-3">
-          <span className={`px-2 py-0.5 rounded text-xs font-medium ${item.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+          <span className={`px-2 py-0.5 text-xs font-medium ${item.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
             {item.status}
           </span>
         </td>
         <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-          <button onClick={onEdit} className="p-1 hover:bg-blue-50 rounded" title="Edit">
+          <button onClick={onEdit} className="p-1 hover:bg-blue-50" title="Edit">
             <Edit2 className="w-4 h-4 text-blue-600" />
           </button>
           {item.status === 'ACTIVE' && (
-            <button onClick={onDeactivate} className="p-1 hover:bg-red-50 rounded ml-1" title="Deactivate">
+            <button onClick={onDeactivate} className="p-1 hover:bg-red-50ml-1" title="Deactivate">
               <XCircle className="w-4 h-4 text-red-500" />
             </button>
           )}
@@ -529,7 +529,7 @@ function ItemRow({ item, expanded, expandLoading, stockLevels, itemMovements, re
                   ) : (
                     <div className="space-y-1">
                       {stockLevels.map((sl) => (
-                        <div key={sl.warehouseId} className="flex justify-between text-xs bg-white p-2 rounded">
+                        <div key={sl.warehouseId} className="flex justify-between text-xs bg-white p-2">
                           <span>{sl.warehouseName}</span>
                           <span className="font-medium">{sl.quantity} ({formatCurrency(sl.value)})</span>
                         </div>
@@ -545,7 +545,7 @@ function ItemRow({ item, expanded, expandLoading, stockLevels, itemMovements, re
                   ) : (
                     <div className="space-y-1">
                       {itemMovements.map((m) => (
-                        <div key={m.id} className="flex justify-between text-xs bg-white p-2 rounded">
+                        <div key={m.id} className="flex justify-between text-xs bg-white p-2">
                           <span>{formatDate(m.date)} - {m.type}</span>
                           <span className={m.direction === 'IN' ? 'text-green-600' : 'text-red-600'}>
                             {m.direction === 'IN' ? '+' : '-'}{m.quantity}
@@ -563,15 +563,15 @@ function ItemRow({ item, expanded, expandLoading, stockLevels, itemMovements, re
                       <label className="text-xs text-gray-500">Reorder Point</label>
                       <input type="number" value={reorderRule?.reorderPoint ?? ''}
                         onChange={(e) => onReorderChange({ ...(reorderRule ?? { itemId: item.id, reorderPoint: 0, reorderQty: 0, maxStock: 0 }), reorderPoint: parseFloat(e.target.value) || 0 })}
-                        className="w-full px-2 py-1 border rounded text-sm" />
+                        className="w-full px-2 py-1 border text-sm" />
                     </div>
                     <div>
                       <label className="text-xs text-gray-500">Reorder Qty</label>
                       <input type="number" value={reorderRule?.reorderQty ?? ''}
                         onChange={(e) => onReorderChange({ ...(reorderRule ?? { itemId: item.id, reorderPoint: 0, reorderQty: 0, maxStock: 0 }), reorderQty: parseFloat(e.target.value) || 0 })}
-                        className="w-full px-2 py-1 border rounded text-sm" />
+                        className="w-full px-2 py-1 border text-sm" />
                     </div>
-                    <button onClick={onReorderSave} className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">
+                    <button onClick={onReorderSave} className="px-3 py-1 bg-blue-600 text-white text-xs hover:bg-blue-700">
                       Save Rule
                     </button>
                   </div>
@@ -657,7 +657,7 @@ function ItemLookupSearch({ onSelect }: { onSelect: (result: LookupResult) => vo
 
   return (
     <div ref={containerRef} className="relative">
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-3">
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 p-3">
         <div className="flex items-center gap-2 mb-2">
           <Zap className="w-4 h-4 text-blue-600" />
           <span className="text-xs font-semibold text-blue-700">Smart Lookup</span>
@@ -671,7 +671,7 @@ function ItemLookupSearch({ onSelect }: { onSelect: (result: LookupResult) => vo
             onChange={(e) => { setQuery(e.target.value); setSelected(false); }}
             onFocus={() => { if (results.length > 0 && !selected) setShowResults(true); }}
             placeholder="Type item name... e.g. 'alpha amylase', 'ball bearing', 'caustic soda'"
-            className="w-full pl-10 pr-10 py-2.5 border border-blue-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
+            className="w-full pl-10 pr-10 py-2.5 border border-blue-200 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
           />
           {searching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-blue-500" />}
           {selected && !searching && (
@@ -684,7 +684,7 @@ function ItemLookupSearch({ onSelect }: { onSelect: (result: LookupResult) => vo
 
       {/* Results dropdown */}
       {showResults && results.length > 0 && (
-        <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-72 overflow-y-auto">
+        <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 shadow-lg max-h-72 overflow-y-auto">
           {results.map((r, i) => (
             <button
               key={i}
@@ -693,7 +693,7 @@ function ItemLookupSearch({ onSelect }: { onSelect: (result: LookupResult) => vo
             >
               <div className="flex items-center justify-between">
                 <span className="font-medium text-gray-800 text-sm">{r.name}</span>
-                <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${categoryColor(r.category)}`}>
+                <span className={`px-2 py-0.5 text-[10px] font-medium ${categoryColor(r.category)}`}>
                   {categoryLabel(r.category)}
                 </span>
               </div>
@@ -708,7 +708,7 @@ function ItemLookupSearch({ onSelect }: { onSelect: (result: LookupResult) => vo
       )}
 
       {showResults && results.length === 0 && query.length >= 2 && !searching && (
-        <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg p-4 text-center">
+        <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 shadow-lg p-4 text-center">
           <p className="text-sm text-gray-500">No matches found for "{query}"</p>
           <p className="text-xs text-gray-400 mt-1">Fill the details manually below</p>
         </div>

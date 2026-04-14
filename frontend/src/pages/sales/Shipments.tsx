@@ -20,7 +20,7 @@ interface Shipment {
   gatePassType?: string; purpose?: string; partyName?: string; partyGstin?: string; totalValue?: number;
   gatePassItems?: string;
   paymentTerms?: string;
-  paymentStatus?: string;  // PENDING, CONFIRMED, NOT_REQUIRED
+  paymentStatus?: string; // PENDING, CONFIRMED, NOT_REQUIRED
   paymentMode?: string;
   paymentRef?: string;
   paymentAmount?: number;
@@ -33,12 +33,12 @@ interface Shipment {
 const STATUS_FLOW = ['GATE_IN', 'TARE_WEIGHED', 'LOADING', 'GROSS_WEIGHED', 'RELEASED', 'EXITED'] as const;
 
 const STATUS_CFG: Record<string, { label: string; badge: string }> = {
-  GATE_IN:        { label: 'Gate In',  badge: 'bg-slate-100 text-slate-700' },
-  TARE_WEIGHED:   { label: 'Tared',    badge: 'bg-blue-50 text-blue-700' },
-  LOADING:        { label: 'Loading',  badge: 'bg-amber-50 text-amber-700' },
-  GROSS_WEIGHED:  { label: 'Loaded',   badge: 'bg-orange-50 text-orange-700' },
-  RELEASED:       { label: 'Released', badge: 'bg-emerald-50 text-emerald-700' },
-  EXITED:         { label: 'Exited',   badge: 'bg-green-50 text-green-700' },
+  GATE_IN: { label: 'Gate In', badge: 'bg-slate-100 text-slate-700' },
+  TARE_WEIGHED: { label: 'Tared', badge: 'bg-blue-50 text-blue-700' },
+  LOADING: { label: 'Loading', badge: 'bg-amber-50 text-amber-700' },
+  GROSS_WEIGHED: { label: 'Loaded', badge: 'bg-orange-50 text-orange-700' },
+  RELEASED: { label: 'Released', badge: 'bg-emerald-50 text-emerald-700' },
+  EXITED: { label: 'Exited', badge: 'bg-green-50 text-green-700' },
 };
 
 const DOC_TYPES = [
@@ -349,7 +349,7 @@ export default function Shipments() {
 
   const shareStatus = (s: Shipment) => {
     const net = s.weightNet || (s.weightGross && s.weightTare ? s.weightGross - s.weightTare : null);
-    const text = `🚛 ${s.vehicleNo}\n${s.productName} → ${s.customerName}\n${s.destination}\nStatus: ${STATUS_CFG[s.status]?.label}\n${net ? `Net: ${(net / 1000).toFixed(2)} MT\n` : ''}${s.driverName ? `Driver: ${s.driverName}` : ''}`;
+    const text = `${s.vehicleNo}\n${s.productName} → ${s.customerName}\n${s.destination}\nStatus: ${STATUS_CFG[s.status]?.label}\n${net ? `Net: ${(net / 1000).toFixed(2)} MT\n` : ''}${s.driverName ? `Driver: ${s.driverName}` : ''}`;
     if (navigator.share) navigator.share({ text }).catch(() => {});
     else window.open(`https://t.me/share/url?text=${encodeURIComponent(text)}`, '_blank');
   };
@@ -451,7 +451,7 @@ export default function Shipments() {
       if (isWeighing) return null; // input shown below
       return (
         <button onClick={() => { setWeighing({ id: s.id, type: 'tare' }); setWeighVal(''); }}
-          className="px-2 py-1 bg-slate-700 text-white rounded text-[10px] font-bold flex items-center gap-1 hover:bg-slate-800 active:scale-95">
+          className="px-2 py-1 bg-slate-700 text-white text-[10px] font-bold flex items-center gap-1 hover:bg-slate-800 active:scale-95">
           <Scale size={10} /> Tare
         </button>
       );
@@ -461,7 +461,7 @@ export default function Shipments() {
       return (
         <button onClick={() => doStatus(s.id, 'LOADING', { loadStartTime: new Date().toISOString() })}
           disabled={isSaving}
-          className="px-2 py-1 bg-blue-600 text-white rounded text-[10px] font-bold hover:bg-blue-700 active:scale-95 disabled:opacity-50">
+          className="px-2 py-1 bg-blue-600 text-white text-[10px] font-bold hover:bg-blue-700 active:scale-95 disabled:opacity-50">
           {isSaving ? <Loader2 size={10} className="animate-spin" /> : '▶ Start Load'}
         </button>
       );
@@ -471,7 +471,7 @@ export default function Shipments() {
       if (isWeighing) return null;
       return (
         <button onClick={() => { setWeighing({ id: s.id, type: 'gross' }); setWeighVal(''); }}
-          className="px-2 py-1 bg-amber-600 text-white rounded text-[10px] font-bold flex items-center gap-1 hover:bg-amber-700 active:scale-95">
+          className="px-2 py-1 bg-amber-600 text-white text-[10px] font-bold flex items-center gap-1 hover:bg-amber-700 active:scale-95">
           <Scale size={10} /> Gross
         </button>
       );
@@ -488,25 +488,25 @@ export default function Shipments() {
           {/* ① Bill — always first */}
           {!hasBill && (
             <button onClick={() => openBillForm(s)}
-              className="px-2 py-1 bg-purple-600 text-white rounded text-[10px] font-bold flex items-center gap-0.5 hover:bg-purple-700 active:scale-95">
+              className="px-2 py-1 bg-purple-600 text-white text-[10px] font-bold flex items-center gap-0.5 hover:bg-purple-700 active:scale-95">
               <FileText size={9} /> ① Bill
             </button>
           )}
           {hasBill && (
-            <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[9px] font-bold flex items-center gap-0.5">
+            <span className="px-1.5 py-0.5 bg-green-100 text-green-700 text-[9px] font-bold flex items-center gap-0.5">
               <CheckCircle size={8} /> {s.invoiceRef}
             </span>
           )}
 
           {/* ② Payment gate — after bill, before EWB (ADVANCE/COD only) */}
           {hasBill && needsPayment && (
-            <span className="px-1.5 py-0.5 bg-yellow-100 text-yellow-700 rounded text-[9px] font-bold flex items-center gap-0.5 animate-pulse"
+            <span className="px-1.5 py-0.5 bg-yellow-100 text-yellow-700 text-[9px] font-bold flex items-center gap-0.5 animate-pulse"
               title="Accounts team must confirm payment from Accounts → Payment Desk">
               <Clock size={8} /> ② Awaiting Payment
             </span>
           )}
           {hasBill && s.paymentStatus === 'CONFIRMED' && (
-            <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[9px] font-bold flex items-center gap-0.5">
+            <span className="px-1.5 py-0.5 bg-green-100 text-green-700 text-[9px] font-bold flex items-center gap-0.5">
               <CheckCircle size={8} /> Paid
             </span>
           )}
@@ -514,22 +514,22 @@ export default function Shipments() {
           {/* ③ EWB — only after bill AND payment confirmed */}
           {hasBill && isPaid && !hasEwb && s.dispatchRequestId && (
             <button onClick={() => generateEwb(s)} disabled={ewbLoading === s.id}
-              className="px-2 py-1 bg-indigo-600 text-white rounded text-[10px] font-bold flex items-center gap-0.5 hover:bg-indigo-700 active:scale-95 disabled:opacity-50">
+              className="px-2 py-1 bg-indigo-600 text-white text-[10px] font-bold flex items-center gap-0.5 hover:bg-indigo-700 active:scale-95 disabled:opacity-50">
               {ewbLoading === s.id ? <Loader2 size={9} className="animate-spin" /> : <Truck size={9} />} ③ EWB
             </button>
           )}
           {hasBill && needsPayment && !hasEwb && s.dispatchRequestId && (
-            <span className="px-1.5 py-0.5 bg-gray-100 text-gray-400 rounded text-[9px] font-bold" title="Confirm payment before generating EWB">
+            <span className="px-1.5 py-0.5 bg-gray-100 text-gray-400 text-[9px] font-bold" title="Confirm payment before generating EWB">
               <Truck size={8} /> EWB
             </span>
           )}
           {!hasBill && !hasEwb && s.dispatchRequestId && (
-            <span className="px-1.5 py-0.5 bg-gray-100 text-gray-400 rounded text-[9px] font-bold" title="Create Invoice first">
+            <span className="px-1.5 py-0.5 bg-gray-100 text-gray-400 text-[9px] font-bold" title="Create Invoice first">
               <Truck size={8} /> EWB
             </span>
           )}
           {hasEwb && (
-            <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded text-[9px] font-bold flex items-center gap-0.5">
+            <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-700 text-[9px] font-bold flex items-center gap-0.5">
               <Truck size={8} /> {s.ewayBill}
             </span>
           )}
@@ -538,8 +538,8 @@ export default function Shipments() {
           <button onClick={() => doStatus(s.id, 'RELEASED', { releaseTime: new Date().toISOString() })}
             disabled={isSaving || needsPayment || (!hasEwb && s.gatePassType !== 'RETURNABLE')}
             title={needsPayment ? 'Confirm payment first' : !hasEwb && s.gatePassType !== 'RETURNABLE' ? 'E-Way Bill required before release' : 'Release truck'}
-            className="px-2 py-1 bg-orange-600 text-white rounded text-[10px] font-bold hover:bg-orange-700 active:scale-95 disabled:opacity-50">
-            {isSaving ? <Loader2 size={10} className="animate-spin" /> : '🔓 Release'}
+            className="px-2 py-1 bg-orange-600 text-white text-[10px] font-bold hover:bg-orange-700 active:scale-95 disabled:opacity-50">
+            {isSaving ? <Loader2 size={10} className="animate-spin" /> : 'Release'}
           </button>
         </div>
       );
@@ -549,8 +549,8 @@ export default function Shipments() {
       return (
         <button onClick={() => handleExit(s)}
           disabled={isSaving}
-          className="px-2 py-1 bg-emerald-600 text-white rounded text-[10px] font-bold hover:bg-emerald-700 active:scale-95 disabled:opacity-50">
-          {isSaving ? <Loader2 size={10} className="animate-spin" /> : '🚀 Gate Out'}
+          className="px-2 py-1 bg-emerald-600 text-white text-[10px] font-bold hover:bg-emerald-700 active:scale-95 disabled:opacity-50">
+          {isSaving ? <Loader2 size={10} className="animate-spin" /> : 'Gate Out'}
         </button>
       );
     }
@@ -569,7 +569,7 @@ export default function Shipments() {
           <h1 className="text-base font-bold flex items-center gap-1.5"><Scale size={16} /> Weighbridge</h1>
           <div className="flex items-center gap-2">
             <button onClick={() => setShowGPForm(true)}
-              className="px-2.5 py-1 bg-emerald-600 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 hover:bg-emerald-700 active:scale-95">
+              className="px-2.5 py-1 bg-emerald-600 text-white text-[10px] font-bold flex items-center gap-1 hover:bg-emerald-700 active:scale-95">
               <ClipboardList size={12} /> Gate Pass
             </button>
             <span className="text-[10px] text-slate-400">{new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
@@ -584,7 +584,7 @@ export default function Shipments() {
             { l: 'Out', c: stats.released, bg: 'bg-emerald-600' },
             { l: 'All', c: stats.total, bg: 'bg-white/10' },
           ].map(s => (
-            <div key={s.l} className={`${s.bg} rounded-md px-2.5 py-1 text-center min-w-[44px]`}>
+            <div key={s.l} className={`${s.bg} px-2.5 py-1 text-center min-w-[44px]`}>
               <div className="text-sm font-bold leading-tight">{s.c}</div>
               <div className="text-[8px] text-white/70">{s.l}</div>
             </div>
@@ -594,7 +594,7 @@ export default function Shipments() {
 
       <div className="px-3 py-2">
         {msg && (
-          <div className={`rounded-lg p-2.5 mb-2 text-xs flex items-start gap-1.5 ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+          <div className={` p-2.5 mb-2 text-xs flex items-start gap-1.5 ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
             <span className="mt-0.5 shrink-0">{msg.type === 'ok' ? <CheckCircle size={13} /> : <AlertCircle size={13} />}</span>
             <span className="flex-1 font-medium">{msg.text}</span>
             <button onClick={() => setMsg(null)} className="shrink-0 ml-2 opacity-60 hover:opacity-100"><X size={13} /></button>
@@ -638,13 +638,13 @@ export default function Shipments() {
               const pct = orderQty > 0 ? Math.min(100, (exitedNetMT / orderQty) * 100) : 0;
 
               return (
-                <div key={drId} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                <div key={drId} className="bg-white border border-gray-200 overflow-hidden">
                   {/* Order header */}
                   <div className="px-3 py-1.5 bg-gray-50/80 border-b flex items-center gap-2">
                     {dr?.drNo ? (
-                      <span className="bg-indigo-600 text-white text-[9px] font-bold px-1.5 py-px rounded">#{dr.drNo}</span>
+                      <span className="bg-indigo-600 text-white text-[9px] font-bold px-1.5 py-px">#{dr.drNo}</span>
                     ) : (
-                      <span className="bg-gray-400 text-white text-[9px] font-bold px-1.5 py-px rounded">—</span>
+                      <span className="bg-gray-400 text-white text-[9px] font-bold px-1.5 py-px">—</span>
                     )}
                     <span className="font-semibold text-xs text-gray-800 truncate">{dr?.customerName || 'Unlinked Trucks'}</span>
                     {dr?.productName && <span className="text-[10px] text-gray-400 hidden sm:inline">• {dr.productName}</span>}
@@ -698,9 +698,9 @@ export default function Shipments() {
 
                             {/* Weight chips */}
                             <div className="flex items-center gap-1 shrink-0">
-                              {tareTon && <span className="text-[9px] bg-blue-50 text-blue-600 px-1 py-px rounded font-medium">T:{tareTon}</span>}
-                              {grossTon && <span className="text-[9px] bg-amber-50 text-amber-600 px-1 py-px rounded font-medium">G:{grossTon}</span>}
-                              {netTon && <span className="text-[9px] bg-green-50 text-green-700 px-1.5 py-px rounded font-bold ring-1 ring-green-200">{netTon}T</span>}
+                              {tareTon && <span className="text-[9px] bg-blue-50 text-blue-600 px-1 py-px font-medium">T:{tareTon}</span>}
+                              {grossTon && <span className="text-[9px] bg-amber-50 text-amber-600 px-1 py-px font-medium">G:{grossTon}</span>}
+                              {netTon && <span className="text-[9px] bg-green-50 text-green-700 px-1.5 py-px font-bold ring-1 ring-green-200">{netTon}T</span>}
                             </div>
 
                             {/* Doc badges on main row */}
@@ -708,10 +708,10 @@ export default function Shipments() {
                               {DOC_TYPES.map(dt => {
                                 const has = docs.some(d => d.docType === dt.key);
                                 if (has) return (
-                                  <span key={dt.key} className="text-[7px] font-bold px-1 py-px rounded bg-green-100 text-green-700">{dt.label.split(' ')[0]}</span>
+                                  <span key={dt.key} className="text-[7px] font-bold px-1 py-px bg-green-100 text-green-700">{dt.label.split(' ')[0]}</span>
                                 );
                                 if (dt.mandatory && s.status !== 'GATE_IN' && s.status !== 'TARE_WEIGHED') return (
-                                  <span key={dt.key} className="text-[7px] font-bold px-1 py-px rounded bg-red-50 text-red-400 border border-red-200">{dt.label.split(' ')[0]}</span>
+                                  <span key={dt.key} className="text-[7px] font-bold px-1 py-px bg-red-50 text-red-400 border border-red-200">{dt.label.split(' ')[0]}</span>
                                 );
                                 return null;
                               })}
@@ -730,14 +730,14 @@ export default function Shipments() {
 
                           {/* Inline weigh input */}
                           {isWeighingThis && (
-                            <div className="flex gap-1.5 items-center mt-1.5 bg-blue-50 rounded-lg p-1.5">
+                            <div className="flex gap-1.5 items-center mt-1.5 bg-blue-50 p-1.5">
                               <Scale size={12} className="text-blue-500 shrink-0" />
                               <input ref={weighRef} type="number" step="0.01" value={weighVal} onChange={e => setWeighVal(e.target.value)}
                                 placeholder={`${weighing.type === 'tare' ? 'Tare' : 'Gross'} weight (Tons)`}
-                                className="flex-1 px-2 py-1 text-sm border rounded-md bg-white focus:ring-2 focus:ring-blue-300 outline-none"
+                                className="flex-1 px-2 py-1 text-sm border bg-white focus:ring-2 focus:ring-blue-300 outline-none"
                                 onKeyDown={e => e.key === 'Enter' && doWeigh(s.id, weighing.type)} />
                               <button onClick={() => doWeigh(s.id, weighing.type)} disabled={saving === s.id}
-                                className="px-3 py-1 bg-blue-600 text-white text-xs rounded-md font-semibold hover:bg-blue-700 disabled:opacity-50">
+                                className="px-3 py-1 bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-50">
                                 {saving === s.id ? <Loader2 size={12} className="animate-spin" /> : 'Save'}
                               </button>
                               <button onClick={() => setWeighing(null)} className="text-gray-400 hover:text-gray-600 p-0.5"><X size={14} /></button>
@@ -775,19 +775,19 @@ export default function Shipments() {
 
                             {/* Driver row */}
                             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                              {s.driverName && <span className="text-gray-700 font-medium">🧑 {s.driverName}</span>}
+                              {s.driverName && <span className="text-gray-700 font-medium">{s.driverName}</span>}
                               {s.driverMobile && (
                                 <a href={`tel:${s.driverMobile}`} className="text-blue-600 flex items-center gap-0.5"><Phone size={10} /> {s.driverMobile}</a>
                               )}
-                              {s.transporterName && <span className="text-gray-400">🚚 {s.transporterName}</span>}
+                              {s.transporterName && <span className="text-gray-400">{s.transporterName}</span>}
                               {s.destination && <span className="text-gray-400 flex items-center gap-0.5"><MapPin size={10} /> {s.destination}</span>}
                               <div className="ml-auto flex gap-1">
-                                <button onClick={() => shareStatus(s)} className="px-1.5 py-0.5 bg-gray-200 text-gray-600 rounded text-[9px] font-medium flex items-center gap-0.5 hover:bg-gray-300">
+                                <button onClick={() => shareStatus(s)} className="px-1.5 py-0.5 bg-gray-200 text-gray-600 text-[9px] font-medium flex items-center gap-0.5 hover:bg-gray-300">
                                   <Share2 size={9} /> Share
                                 </button>
                                 {s.driverMobile && (
                                   <a href={`tel:+91${s.driverMobile.replace(/\D/g, '').slice(-10)}`}
-                                    className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[9px] font-medium flex items-center gap-0.5 hover:bg-green-200">
+                                    className="px-1.5 py-0.5 bg-green-100 text-green-700 text-[9px] font-medium flex items-center gap-0.5 hover:bg-green-200">
                                     <MessageCircle size={9} /> Call
                                   </a>
                                 )}
@@ -801,7 +801,7 @@ export default function Shipments() {
                                 { label: 'Gross', val: grossTon, time: s.grossTime, color: 'amber' },
                                 { label: 'Net', val: netTon, time: null, color: netTon ? 'green' : 'gray' },
                               ].map(w => (
-                                <div key={w.label} className={`bg-${w.color}-50 rounded-lg p-1.5 text-center`}>
+                                <div key={w.label} className={`bg-${w.color}-50 p-1.5 text-center`}>
                                   <div className={`text-[8px] text-${w.color}-400 font-bold uppercase`}>{w.label}</div>
                                   <div className={`text-xs font-bold text-${w.color}-700`}>{w.val ? `${w.val} T` : '—'}</div>
                                   {w.time && <div className={`text-[8px] text-${w.color}-300`}>{new Date(w.time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}</div>}
@@ -823,7 +823,7 @@ export default function Shipments() {
                                   { label: 'Released', done: s.status === 'RELEASED' || s.status === 'EXITED' },
                                 ].map((step, i, arr) => (
                                   <span key={step.label} className="flex items-center gap-0.5 whitespace-nowrap">
-                                    <span className={`px-1.5 py-0.5 rounded ${step.done ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>
+                                    <span className={`px-1.5 py-0.5${step.done ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>
                                       {step.done ? '✓' : (i + 1)} {step.label}
                                     </span>
                                     {i < arr.length - 1 && <span className="text-gray-300">→</span>}
@@ -838,28 +838,28 @@ export default function Shipments() {
                                     {/* Invoice */}
                                     {!s.invoiceRef ? (
                                       <button onClick={() => openBillForm(s)}
-                                        className="flex-1 py-1.5 text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 rounded-lg flex items-center justify-center gap-1 hover:bg-purple-100">
+                                        className="flex-1 py-1.5 text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 flex items-center justify-center gap-1 hover:bg-purple-100">
                                         <FileText size={11} /> Generate Invoice
                                       </button>
                                     ) : (
                                       <button onClick={() => { const token = localStorage.getItem('token'); window.open(`/api/invoices/${s.linkedInvoiceId}/pdf?token=${token}`, '_blank'); }}
-                                        className="flex-1 py-1.5 text-[10px] font-semibold bg-green-50 text-green-700 border border-green-200 rounded-lg flex items-center justify-center gap-1 hover:bg-green-100">
+                                        className="flex-1 py-1.5 text-[10px] font-semibold bg-green-50 text-green-700 border border-green-200 flex items-center justify-center gap-1 hover:bg-green-100">
                                         <CheckCircle size={11} /> {s.invoiceRef} — View
                                       </button>
                                     )}
                                     {/* EWB */}
                                     {!s.ewayBill && s.dispatchRequestId && s.invoiceRef ? (
                                       <button onClick={() => generateEwb(s)} disabled={ewbLoading === s.id}
-                                        className="flex-1 py-1.5 text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg flex items-center justify-center gap-1 hover:bg-indigo-100 disabled:opacity-50">
+                                        className="flex-1 py-1.5 text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center justify-center gap-1 hover:bg-indigo-100 disabled:opacity-50">
                                         {ewbLoading === s.id ? <Loader2 size={11} className="animate-spin" /> : <Truck size={11} />}
                                         {ewbLoading === s.id ? 'Generating...' : 'e-Invoice + EWB'}
                                       </button>
                                     ) : !s.ewayBill && s.dispatchRequestId && !s.invoiceRef ? (
-                                      <span className="flex-1 py-1.5 text-[10px] font-semibold bg-gray-50 text-gray-400 border border-gray-200 rounded-lg flex items-center justify-center gap-1">
+                                      <span className="flex-1 py-1.5 text-[10px] font-semibold bg-gray-50 text-gray-400 border border-gray-200 flex items-center justify-center gap-1">
                                         <Truck size={11} /> EWB (needs Invoice)
                                       </span>
                                     ) : s.ewayBill ? (
-                                      <span className="flex-1 py-1.5 text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg flex items-center justify-center gap-1">
+                                      <span className="flex-1 py-1.5 text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center justify-center gap-1">
                                         <CheckCircle size={11} /> EWB: {s.ewayBill}
                                       </span>
                                     ) : null}
@@ -881,7 +881,7 @@ export default function Shipments() {
                                           else flash('err', `Cancel failed: ${d.error}`);
                                         } catch (e: any) { flash('err', e.message); }
                                       }}
-                                        className="flex-1 py-1 text-[10px] font-semibold bg-red-50 text-red-700 border border-red-200 rounded-lg flex items-center justify-center gap-1 hover:bg-red-100">
+                                        className="flex-1 py-1 text-[10px] font-semibold bg-red-50 text-red-700 border border-red-200 flex items-center justify-center gap-1 hover:bg-red-100">
                                         Cancel IRN
                                       </button>
                                     </div>
@@ -894,18 +894,18 @@ export default function Shipments() {
                                   <div className="text-[9px] font-bold text-gray-400 uppercase mt-2">View Documents</div>
                                   <div className="flex gap-1.5 flex-wrap">
                                     <button onClick={() => { const token = localStorage.getItem('token'); window.open(`/api/shipments/${s.id}/challan-pdf?token=${token}`, '_blank'); }}
-                                      className="py-1 px-2.5 text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 rounded-lg flex items-center gap-1 hover:bg-blue-100">
+                                      className="py-1 px-2.5 text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1 hover:bg-blue-100">
                                       <FileText size={10} /> Challan
                                     </button>
                                     {s.gatePassType && (
                                       <button onClick={() => { const token = localStorage.getItem('token'); window.open(`/api/shipments/${s.id}/gate-pass-pdf?token=${token}`, '_blank'); }}
-                                        className="py-1 px-2.5 text-[10px] font-semibold bg-teal-50 text-teal-700 border border-teal-200 rounded-lg flex items-center gap-1 hover:bg-teal-100">
+                                        className="py-1 px-2.5 text-[10px] font-semibold bg-teal-50 text-teal-700 border border-teal-200 flex items-center gap-1 hover:bg-teal-100">
                                         <ClipboardList size={10} /> Gate Pass
                                       </button>
                                     )}
                                     {s.linkedInvoiceId && (
                                       <button onClick={() => { const token = localStorage.getItem('token'); window.open(`/api/invoices/${s.linkedInvoiceId}/pdf?token=${token}`, '_blank'); }}
-                                        className="py-1 px-2.5 text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 rounded-lg flex items-center gap-1 hover:bg-purple-100">
+                                        className="py-1 px-2.5 text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-1 hover:bg-purple-100">
                                         <FileText size={10} /> Invoice
                                       </button>
                                     )}
@@ -916,7 +916,7 @@ export default function Shipments() {
                                         alert('Email sent!');
                                       } catch (err: any) { alert(err.response?.data?.error || 'Failed to send'); }
                                     }}
-                                      className="py-1 px-2.5 text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg flex items-center gap-1 hover:bg-indigo-100">
+                                      className="py-1 px-2.5 text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center gap-1 hover:bg-indigo-100">
                                       <Mail size={10} /> Email
                                     </button>
                                   </div>
@@ -934,7 +934,7 @@ export default function Shipments() {
                                     <div key={dt.key}>
                                       <label className="text-[9px] text-gray-400 font-medium">{dt.label} No</label>
                                       <input defaultValue={fieldVal} placeholder={`${dt.label} No`}
-                                        className="w-full px-2 py-1 text-xs border border-gray-200 rounded bg-white focus:ring-1 focus:ring-blue-200 outline-none"
+                                        className="w-full px-2 py-1 text-xs border border-gray-200 bg-white focus:ring-1 focus:ring-blue-200 outline-none"
                                         onBlur={(e) => { if (e.target.value !== fieldVal) saveField(s.id, dt.field, e.target.value); }}
                                       />
                                     </div>
@@ -944,7 +944,7 @@ export default function Shipments() {
                               {/* GR/Bilty date */}
                               {s.grBiltyNo && (
                                 <input type="date" defaultValue={s.grBiltyDate || ''}
-                                  className="px-2 py-1 text-xs border border-gray-200 rounded bg-white focus:ring-1 focus:ring-blue-200 outline-none"
+                                  className="px-2 py-1 text-xs border border-gray-200 bg-white focus:ring-1 focus:ring-blue-200 outline-none"
                                   onBlur={(e) => { if (e.target.value !== (s.grBiltyDate || '')) saveField(s.id, 'grBiltyDate', e.target.value); }}
                                 />
                               )}
@@ -971,7 +971,7 @@ export default function Shipments() {
                                   const isUploading = uploadingDoc === `${s.id}_${dt.key}`;
                                   const isMandatoryMissing = dt.mandatory && !hasDoc;
                                   return (
-                                    <div key={dt.key} className={`rounded-lg border p-1.5 text-center ${
+                                    <div key={dt.key} className={` border p-1.5 text-center ${
                                       hasDoc ? 'bg-green-50 border-green-300' :
                                       isMandatoryMissing ? 'bg-red-50 border-red-300' :
                                       'bg-white border-gray-200'
@@ -986,16 +986,16 @@ export default function Shipments() {
                                       </div>
                                       <div className="flex gap-0.5">
                                         <button onClick={() => uploadDoc(s.id, dt.key, 'camera')} disabled={isUploading}
-                                          className="flex-1 py-1 rounded text-[8px] font-semibold bg-blue-100 text-blue-700 hover:bg-blue-200 disabled:opacity-50">
-                                          {isUploading ? '...' : '📷'}
+                                          className="flex-1 py-1 text-[8px] font-semibold bg-blue-100 text-blue-700 hover:bg-blue-200 disabled:opacity-50">
+                                          {isUploading ? '...' : <Camera size={10} />}
                                         </button>
                                         <button onClick={() => uploadDoc(s.id, dt.key, 'gallery')} disabled={isUploading}
-                                          className="flex-1 py-1 rounded text-[8px] font-semibold bg-purple-100 text-purple-700 hover:bg-purple-200 disabled:opacity-50">
-                                          🖼
+                                          className="flex-1 py-1 text-[8px] font-semibold bg-purple-100 text-purple-700 hover:bg-purple-200 disabled:opacity-50">
+                                          <Image size={10} />
                                         </button>
                                         <button onClick={() => uploadDoc(s.id, dt.key, 'file')} disabled={isUploading}
-                                          className="flex-1 py-1 rounded text-[8px] font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50">
-                                          📎
+                                          className="flex-1 py-1 text-[8px] font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50">
+                                          <Upload size={10} />
                                         </button>
                                       </div>
                                     </div>
@@ -1026,7 +1026,7 @@ export default function Shipments() {
         const hasMandatoryGap = mandatoryMissing.length > 0;
         return (
           <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-4" onClick={() => setExitConfirm(null)}>
-            <div className="bg-white rounded-xl w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="bg-white w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
               <div className="p-4">
                 <div className="flex items-center gap-2 mb-3">
                   <AlertCircle size={20} className={hasMandatoryGap ? 'text-red-500' : 'text-amber-500'} />
@@ -1060,12 +1060,12 @@ export default function Shipments() {
                 )}
                 <div className="flex gap-2">
                   <button onClick={() => { setExitConfirm(null); setExpandedId(s.id); }}
-                    className="flex-1 py-2 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                    className="flex-1 py-2 text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700">
                     Upload Docs
                   </button>
                   {!hasMandatoryGap && (
                     <button onClick={() => { setExitConfirm(null); doStatus(s.id, 'EXITED', { exitTime: new Date().toISOString() }); }}
-                      className="flex-1 py-2 text-xs font-semibold bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+                      className="flex-1 py-2 text-xs font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200">
                       Exit Anyway
                     </button>
                   )}
@@ -1079,7 +1079,7 @@ export default function Shipments() {
       {/* ── Delete confirm modal ── */}
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-4" onClick={() => setDeleteConfirm(null)}>
-          <div className="bg-white rounded-xl w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div className="bg-white w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="p-4">
               <div className="flex items-center gap-2 mb-3">
                 <Trash2 size={20} className="text-red-500" />
@@ -1090,11 +1090,11 @@ export default function Shipments() {
               </p>
               <div className="flex gap-2">
                 <button onClick={() => setDeleteConfirm(null)}
-                  className="flex-1 py-2 text-xs font-semibold bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+                  className="flex-1 py-2 text-xs font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200">
                   Cancel
                 </button>
                 <button onClick={() => doDelete(deleteConfirm.id)} disabled={saving === deleteConfirm.id}
-                  className="flex-1 py-2 text-xs font-semibold bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50">
+                  className="flex-1 py-2 text-xs font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50">
                   {saving === deleteConfirm.id ? <Loader2 size={14} className="animate-spin mx-auto" /> : 'Delete'}
                 </button>
               </div>
@@ -1114,7 +1114,7 @@ export default function Shipments() {
 
         return (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-2" onClick={() => setBillShipment(null)}>
-            <div className="bg-white rounded-xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="bg-white w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
               <div className="p-4">
                 {/* Header */}
                 <div className="flex items-center justify-between mb-3">
@@ -1131,24 +1131,24 @@ export default function Shipments() {
                     <div>
                       <label className="text-[10px] font-bold text-gray-500 uppercase">Customer</label>
                       <input value={billForm.customerName} onChange={e => setBillForm(f => ({ ...f, customerName: e.target.value }))}
-                        className="w-full px-2 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-purple-200 outline-none" />
+                        className="w-full px-2 py-1.5 text-xs border focus:ring-2 focus:ring-purple-200 outline-none" />
                     </div>
                     <div>
                       <label className="text-[10px] font-bold text-gray-500 uppercase">Product</label>
                       <input value={billForm.productName} onChange={e => setBillForm(f => ({ ...f, productName: e.target.value }))}
-                        className="w-full px-2 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-purple-200 outline-none" />
+                        className="w-full px-2 py-1.5 text-xs border focus:ring-2 focus:ring-purple-200 outline-none" />
                     </div>
                   </div>
                   <div className="grid grid-cols-3 gap-2">
                     <div>
                       <label className="text-[10px] font-bold text-gray-500 uppercase">Quantity</label>
                       <input type="number" step="0.001" value={billForm.quantity} onChange={e => setBillForm(f => ({ ...f, quantity: e.target.value }))}
-                        className="w-full px-2 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-purple-200 outline-none" />
+                        className="w-full px-2 py-1.5 text-xs border focus:ring-2 focus:ring-purple-200 outline-none" />
                     </div>
                     <div>
                       <label className="text-[10px] font-bold text-gray-500 uppercase">Unit</label>
                       <select value={billForm.unit} onChange={e => setBillForm(f => ({ ...f, unit: e.target.value }))}
-                        className="w-full px-2 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-purple-200 outline-none bg-white">
+                        className="w-full px-2 py-1.5 text-xs border focus:ring-2 focus:ring-purple-200 outline-none bg-white">
                         <option>MT</option><option>KL</option><option>BL</option><option>TON</option><option>KG</option><option>BAG</option>
                       </select>
                     </div>
@@ -1156,35 +1156,35 @@ export default function Shipments() {
                       <label className="text-[10px] font-bold text-purple-600 uppercase">Rate (₹)*</label>
                       <input type="number" step="0.01" value={billForm.rate} onChange={e => setBillForm(f => ({ ...f, rate: e.target.value }))}
                         placeholder="Enter rate"
-                        className="w-full px-2 py-1.5 text-xs border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-300 outline-none bg-purple-50" autoFocus />
+                        className="w-full px-2 py-1.5 text-xs border-2 border-purple-300 focus:ring-2 focus:ring-purple-300 outline-none bg-purple-50" autoFocus />
                     </div>
                   </div>
                   <div className="grid grid-cols-3 gap-2">
                     <div>
                       <label className="text-[10px] font-bold text-gray-500 uppercase">GST %</label>
                       <input type="number" step="0.01" value={billForm.gstPercent} onChange={e => setBillForm(f => ({ ...f, gstPercent: e.target.value }))}
-                        className="w-full px-2 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-purple-200 outline-none" />
+                        className="w-full px-2 py-1.5 text-xs border focus:ring-2 focus:ring-purple-200 outline-none" />
                     </div>
                     <div>
                       <label className="text-[10px] font-bold text-gray-500 uppercase">Freight (₹)</label>
                       <input type="number" step="0.01" value={billForm.freightCharge} onChange={e => setBillForm(f => ({ ...f, freightCharge: e.target.value }))}
-                        className="w-full px-2 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-purple-200 outline-none" />
+                        className="w-full px-2 py-1.5 text-xs border focus:ring-2 focus:ring-purple-200 outline-none" />
                     </div>
                     <div>
                       <label className="text-[10px] font-bold text-gray-500 uppercase">Challan No</label>
                       <input value={billForm.challanNo} onChange={e => setBillForm(f => ({ ...f, challanNo: e.target.value }))}
-                        className="w-full px-2 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-purple-200 outline-none" />
+                        className="w-full px-2 py-1.5 text-xs border focus:ring-2 focus:ring-purple-200 outline-none" />
                     </div>
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-gray-500 uppercase">Remarks</label>
                     <input value={billForm.remarks} onChange={e => setBillForm(f => ({ ...f, remarks: e.target.value }))}
-                      className="w-full px-2 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-purple-200 outline-none" />
+                      className="w-full px-2 py-1.5 text-xs border focus:ring-2 focus:ring-purple-200 outline-none" />
                   </div>
                 </div>
 
                 {/* Summary */}
-                <div className="mt-3 bg-gray-50 rounded-lg p-2.5 space-y-1">
+                <div className="mt-3 bg-gray-50 p-2.5 space-y-1">
                   <div className="flex justify-between text-xs text-gray-600">
                     <span>Amount ({qty} × ₹{rate.toLocaleString('en-IN')})</span>
                     <span>₹{amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
@@ -1208,11 +1208,11 @@ export default function Shipments() {
                 {/* Actions */}
                 <div className="flex gap-2 mt-3">
                   <button onClick={() => setBillShipment(null)}
-                    className="flex-1 py-2 text-xs font-semibold bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+                    className="flex-1 py-2 text-xs font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200">
                     Cancel
                   </button>
                   <button onClick={generateBill} disabled={billSaving || !billForm.rate}
-                    className="flex-1 py-2 text-xs font-bold bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center justify-center gap-1">
+                    className="flex-1 py-2 text-xs font-bold bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 flex items-center justify-center gap-1">
                     {billSaving ? <Loader2 size={14} className="animate-spin" /> : <><FileText size={12} /> Generate Bill</>}
                   </button>
                 </div>
@@ -1225,7 +1225,7 @@ export default function Shipments() {
       {/* ── Gate Pass Form modal ── */}
       {showGPForm && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center p-2 pt-8 overflow-y-auto" onClick={() => setShowGPForm(false)}>
-          <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div className="bg-white w-full max-w-lg shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="p-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-bold text-sm flex items-center gap-1.5"><ClipboardList size={16} className="text-emerald-600" /> New Gate Pass</h3>
@@ -1242,7 +1242,7 @@ export default function Shipments() {
                       <div className="flex flex-wrap gap-1.5 mt-1">
                         {noGP.map(s => (
                           <button key={s.id} onClick={() => onGPVehicleChange(s.vehicleNo)}
-                            className={`px-2.5 py-1.5 text-xs font-bold rounded-lg border transition-all ${gpForm.vehicleNo === s.vehicleNo ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-gray-700 border-gray-200 hover:border-emerald-400 hover:bg-emerald-50'}`}>
+                            className={`px-2.5 py-1.5 text-xs font-bold border transition-all ${gpForm.vehicleNo === s.vehicleNo ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-gray-700 border-gray-200 hover:border-emerald-400 hover:bg-emerald-50'}`}>
                             {s.vehicleNo}
                             <span className="ml-1 font-normal text-[10px] opacity-70">{s.customerName?.split(' ')[0] || s.productName}</span>
                           </button>
@@ -1257,7 +1257,7 @@ export default function Shipments() {
                   <div>
                     <label className="text-[10px] font-bold text-gray-500 uppercase">Type</label>
                     <select value={gpForm.gatePassType} onChange={e => setGpForm(f => ({ ...f, gatePassType: e.target.value }))}
-                      className="w-full px-2 py-1.5 text-xs border rounded-lg bg-white focus:ring-2 focus:ring-emerald-200 outline-none">
+                      className="w-full px-2 py-1.5 text-xs border bg-white focus:ring-2 focus:ring-emerald-200 outline-none">
                       <option value="RETURNABLE">Returnable</option>
                       <option value="NON_RETURNABLE">Non-Returnable</option>
                       <option value="JOB_WORK">Job Work</option>
@@ -1268,7 +1268,7 @@ export default function Shipments() {
                     <label className="text-[10px] font-bold text-gray-500 uppercase">Purpose</label>
                     <input value={gpForm.purpose} onChange={e => setGpForm(f => ({ ...f, purpose: e.target.value }))}
                       placeholder="e.g. Deshelling & Reshelling"
-                      className="w-full px-2 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-emerald-200 outline-none" />
+                      className="w-full px-2 py-1.5 text-xs border focus:ring-2 focus:ring-emerald-200 outline-none" />
                   </div>
                 </div>
 
@@ -1277,30 +1277,30 @@ export default function Shipments() {
                   <div>
                     <label className="text-[10px] font-bold text-emerald-600 uppercase">Party Name *</label>
                     <input value={gpForm.partyName} onChange={e => setGpForm(f => ({ ...f, partyName: e.target.value }))}
-                      className="w-full px-2 py-1.5 text-xs border-2 border-emerald-300 rounded-lg focus:ring-2 focus:ring-emerald-200 outline-none bg-emerald-50" autoFocus />
+                      className="w-full px-2 py-1.5 text-xs border-2 border-emerald-300 focus:ring-2 focus:ring-emerald-200 outline-none bg-emerald-50" autoFocus />
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-gray-500 uppercase">GSTIN</label>
                     <input value={gpForm.partyGstin} onChange={e => setGpForm(f => ({ ...f, partyGstin: e.target.value }))}
                       placeholder="e.g. 09AGOPS9267M1Z5"
-                      className="w-full px-2 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-emerald-200 outline-none" />
+                      className="w-full px-2 py-1.5 text-xs border focus:ring-2 focus:ring-emerald-200 outline-none" />
                   </div>
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-gray-500 uppercase">Party Address</label>
                   <input value={gpForm.partyAddress} onChange={e => setGpForm(f => ({ ...f, partyAddress: e.target.value }))}
-                    className="w-full px-2 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-emerald-200 outline-none" />
+                    className="w-full px-2 py-1.5 text-xs border focus:ring-2 focus:ring-emerald-200 outline-none" />
                 </div>
 
                 {/* Linked shipment info */}
                 {gpLinkedShipment && (
-                  <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2 text-xs space-y-1">
+                  <div className="bg-emerald-50 border border-emerald-200 p-2 text-xs space-y-1">
                     <div className="font-bold text-emerald-700 flex items-center gap-1"><CheckCircle size={12} /> Linked to Shipment #{gpLinkedShipment.id.slice(-6)}</div>
                     <div className="flex gap-3 text-gray-600">
-                      {gpLinkedShipment.invoiceRef && <span className="bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-semibold">Bill: {gpLinkedShipment.invoiceRef}</span>}
-                      {gpLinkedShipment.ewayBill && <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-semibold">E-Way: {gpLinkedShipment.ewayBill}</span>}
-                      {gpLinkedShipment.challanNo && <span className="bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded font-semibold">Challan: {gpLinkedShipment.challanNo}</span>}
-                      {!gpLinkedShipment.invoiceRef && !gpLinkedShipment.ewayBill && <span className="text-amber-600">⚠ No bill/e-way yet</span>}
+                      {gpLinkedShipment.invoiceRef && <span className="bg-purple-100 text-purple-700 px-1.5 py-0.5 font-semibold">Bill: {gpLinkedShipment.invoiceRef}</span>}
+                      {gpLinkedShipment.ewayBill && <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 font-semibold">E-Way: {gpLinkedShipment.ewayBill}</span>}
+                      {gpLinkedShipment.challanNo && <span className="bg-gray-100 text-gray-700 px-1.5 py-0.5 font-semibold">Challan: {gpLinkedShipment.challanNo}</span>}
+                      {!gpLinkedShipment.invoiceRef && !gpLinkedShipment.ewayBill && <span className="text-amber-600">No bill/e-way yet</span>}
                     </div>
                     <div className="text-gray-500">{gpLinkedShipment.productName} • {gpLinkedShipment.weightNet ? (gpLinkedShipment.weightNet / 1000).toFixed(3) + ' MT' : '—'} • {gpLinkedShipment.customerName}</div>
                   </div>
@@ -1312,22 +1312,22 @@ export default function Shipments() {
                     <label className="text-[10px] font-bold text-emerald-600 uppercase">Vehicle *</label>
                     <input value={gpForm.vehicleNo} onChange={e => onGPVehicleChange(e.target.value.toUpperCase())}
                       placeholder="e.g. MP09EF34"
-                      className="w-full px-2 py-1.5 text-xs border-2 border-emerald-300 rounded-lg focus:ring-2 focus:ring-emerald-200 outline-none bg-emerald-50" />
+                      className="w-full px-2 py-1.5 text-xs border-2 border-emerald-300 focus:ring-2 focus:ring-emerald-200 outline-none bg-emerald-50" />
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-gray-500 uppercase">Driver</label>
                     <input value={gpForm.driverName} onChange={e => setGpForm(f => ({ ...f, driverName: e.target.value }))}
-                      className="w-full px-2 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-emerald-200 outline-none" />
+                      className="w-full px-2 py-1.5 text-xs border focus:ring-2 focus:ring-emerald-200 outline-none" />
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-gray-500 uppercase">Mobile</label>
                     <input value={gpForm.driverMobile} onChange={e => setGpForm(f => ({ ...f, driverMobile: e.target.value }))}
-                      className="w-full px-2 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-emerald-200 outline-none" />
+                      className="w-full px-2 py-1.5 text-xs border focus:ring-2 focus:ring-emerald-200 outline-none" />
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-gray-500 uppercase">Transporter</label>
                     <input value={gpForm.transporterName} onChange={e => setGpForm(f => ({ ...f, transporterName: e.target.value }))}
-                      className="w-full px-2 py-1.5 text-xs border rounded-lg focus:ring-2 focus:ring-emerald-200 outline-none" />
+                      className="w-full px-2 py-1.5 text-xs border focus:ring-2 focus:ring-emerald-200 outline-none" />
                   </div>
                 </div>
 
@@ -1343,13 +1343,13 @@ export default function Shipments() {
                     {gpForm.items.map((item, i) => (
                       <div key={i} className="flex gap-1 items-start">
                         <input value={item.desc} onChange={e => updateGPItem(i, 'desc', e.target.value)}
-                          placeholder="Description" className="flex-[3] px-2 py-1 text-xs border rounded focus:ring-1 focus:ring-emerald-200 outline-none" />
+                          placeholder="Description" className="flex-[3] px-2 py-1 text-xs border focus:ring-1 focus:ring-emerald-200 outline-none" />
                         <input value={item.hsnCode} onChange={e => updateGPItem(i, 'hsnCode', e.target.value)}
-                          placeholder="HSN" className="flex-1 px-2 py-1 text-xs border rounded focus:ring-1 focus:ring-emerald-200 outline-none" />
+                          placeholder="HSN" className="flex-1 px-2 py-1 text-xs border focus:ring-1 focus:ring-emerald-200 outline-none" />
                         <input type="number" value={item.qty} onChange={e => updateGPItem(i, 'qty', e.target.value)}
-                          placeholder="Qty" className="w-12 px-1 py-1 text-xs border rounded text-center focus:ring-1 focus:ring-emerald-200 outline-none" />
+                          placeholder="Qty" className="w-12 px-1 py-1 text-xs border text-center focus:ring-1 focus:ring-emerald-200 outline-none" />
                         <input type="number" value={item.value} onChange={e => updateGPItem(i, 'value', e.target.value)}
-                          placeholder="Value ₹" className="w-20 px-1 py-1 text-xs border rounded text-right focus:ring-1 focus:ring-emerald-200 outline-none" />
+                          placeholder="Value ₹" className="w-20 px-1 py-1 text-xs border text-right focus:ring-1 focus:ring-emerald-200 outline-none" />
                         {gpForm.items.length > 1 && (
                           <button onClick={() => removeGPItem(i)} className="text-gray-300 hover:text-red-500 mt-0.5"><X size={14} /></button>
                         )}
@@ -1365,11 +1365,11 @@ export default function Shipments() {
               {/* Actions */}
               <div className="flex gap-2 mt-3">
                 <button onClick={() => setShowGPForm(false)}
-                  className="flex-1 py-2 text-xs font-semibold bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+                  className="flex-1 py-2 text-xs font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200">
                   Cancel
                 </button>
                 <button onClick={createGatePass} disabled={gpSaving}
-                  className="flex-1 py-2 text-xs font-bold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-1">
+                  className="flex-1 py-2 text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-1">
                   {gpSaving ? <Loader2 size={14} className="animate-spin" /> : <><ClipboardList size={12} /> Create Gate Pass</>}
                 </button>
               </div>

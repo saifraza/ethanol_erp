@@ -261,8 +261,8 @@ export default function OrgChart() {
         .org-node {
           width: 180px;
           background: #fff;
-          border-radius: 10px;
-          box-shadow: 0 1px 4px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.04);
+          border-radius: 0;
+          box-shadow: none;
           border-left: 3px solid #94a3b8;
           cursor: pointer;
           transition: box-shadow 0.15s, transform 0.15s;
@@ -369,7 +369,7 @@ export default function OrgChart() {
         </div>
 
         {/* Summary bar */}
-        <div className="flex items-center gap-6 bg-white rounded-lg border border-gray-200 px-5 py-3">
+        <div className="flex items-center gap-6 bg-white border border-gray-200 px-5 py-3">
           <div className="flex items-center gap-2">
             <Users size={18} className="text-blue-600" />
             <span className="text-sm text-gray-600">Total Employees</span>
@@ -385,7 +385,7 @@ export default function OrgChart() {
           <div className="org-controls flex items-center gap-1">
             <button
               onClick={() => setZoom((z) => Math.max(0.3, z - 0.1))}
-              className="p-1.5 rounded-md border border-gray-200 hover:bg-gray-50 text-gray-600"
+              className="p-1.5 border border-gray-200 hover:bg-gray-50 text-gray-600"
               title="Zoom out"
             >
               <ZoomOut size={16} />
@@ -395,14 +395,14 @@ export default function OrgChart() {
             </span>
             <button
               onClick={() => setZoom((z) => Math.min(2, z + 0.1))}
-              className="p-1.5 rounded-md border border-gray-200 hover:bg-gray-50 text-gray-600"
+              className="p-1.5 border border-gray-200 hover:bg-gray-50 text-gray-600"
               title="Zoom in"
             >
               <ZoomIn size={16} />
             </button>
             <button
               onClick={() => setZoom(1)}
-              className="ml-1 px-2 py-1 rounded-md border border-gray-200 hover:bg-gray-50 text-xs text-gray-500"
+              className="ml-1 px-2 py-1 border border-gray-200 hover:bg-gray-50 text-xs text-gray-500"
             >
               Reset
             </button>
@@ -410,7 +410,7 @@ export default function OrgChart() {
         </div>
 
         {/* Tree */}
-        <div className="bg-white rounded-lg border border-gray-200 org-tree-wrapper">
+        <div className="bg-white border border-gray-200 org-tree-wrapper">
           <div className="org-tree" style={{ transform: `scale(${zoom})` }}>
             <ul style={{ padding: 0, margin: 0 }}>
               {data?.tree.map((root) => (

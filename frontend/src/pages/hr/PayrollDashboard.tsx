@@ -162,9 +162,9 @@ export default function PayrollDashboard() {
             bg: 'bg-red-50',
           },
         ].map(card => (
-          <div key={card.label} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+          <div key={card.label} className="bg-white border border-gray-200 p-4">
             <div className="flex items-center gap-2 mb-2">
-              <div className={`p-1.5 rounded-md ${card.bg}`}>
+              <div className={`p-1.5 ${card.bg}`}>
                 <card.icon size={16} className={card.color} />
               </div>
               <span className="text-xs text-gray-500">{card.label}</span>
@@ -177,7 +177,7 @@ export default function PayrollDashboard() {
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         {/* Bar Chart - Payroll Trend */}
-        <div className="lg:col-span-2 bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+        <div className="lg:col-span-2 bg-white border border-gray-200 p-4">
           <h3 className="font-semibold text-gray-800 text-sm mb-4">Monthly Payroll Trend</h3>
           {trendData.length === 0 ? (
             <p className="text-center text-gray-400 py-12 text-sm">No payroll data yet</p>
@@ -199,7 +199,7 @@ export default function PayrollDashboard() {
         </div>
 
         {/* Pie Chart - Department Headcount */}
-        <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+        <div className="bg-white border border-gray-200 p-4">
           <h3 className="font-semibold text-gray-800 text-sm mb-4">Department Headcount</h3>
           {deptData.length === 0 ? (
             <p className="text-center text-gray-400 py-12 text-sm">No employee data</p>
@@ -229,7 +229,7 @@ export default function PayrollDashboard() {
       </div>
 
       {/* Upcoming Deadlines */}
-      <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+      <div className="bg-white border border-gray-200 p-4">
         <h3 className="font-semibold text-gray-800 text-sm mb-3 flex items-center gap-2">
           <Clock size={16} className="text-orange-500" />
           Upcoming Compliance Deadlines
@@ -245,7 +245,7 @@ export default function PayrollDashboard() {
             return (
               <div
                 key={item.label}
-                className={`rounded-lg p-3 border ${
+                className={`p-3 border ${
                   isPastDue ? 'border-red-200 bg-red-50' :
                   isDueSoon ? 'border-orange-200 bg-orange-50' :
                   'border-gray-200 bg-gray-50'

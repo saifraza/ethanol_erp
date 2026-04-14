@@ -173,7 +173,7 @@ export default function DocumentTemplates() {
 
       <div className="max-w-4xl mx-auto px-4 py-4">
         {msg && (
-          <div className={`rounded-lg p-3 mb-4 text-sm flex items-center gap-2 ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+          <div className={`p-3 mb-4 text-sm flex items-center gap-2 ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
             {msg.type === 'ok' ? <CheckCircle size={16} /> : <AlertCircle size={16} />} {msg.text}
           </div>
         )}
@@ -190,7 +190,7 @@ export default function DocumentTemplates() {
               const data = editData[template.docType] || template;
 
               return (
-                <div key={template.docType} className="bg-white rounded-lg border shadow-sm">
+                <div key={template.docType} className="bg-white border">
                   {/* Header */}
                   <button
                     onClick={() => setExpanded(isExpanded ? null : template.docType)}
@@ -218,7 +218,7 @@ export default function DocumentTemplates() {
                         <input
                           value={data.title || ''}
                           onChange={e => updateField(template.docType, 'title', e.target.value)}
-                          className="w-full mt-1 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          className="w-full mt-1 px-3 py-2 border text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                           placeholder="e.g. DELIVERY CHALLAN"
                         />
                       </div>
@@ -233,7 +233,7 @@ export default function DocumentTemplates() {
                               <input
                                 value={term}
                                 onChange={e => updateTerm(template.docType, idx, e.target.value)}
-                                className="flex-1 px-3 py-1.5 border rounded text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                className="flex-1 px-3 py-1.5 border text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                                 placeholder={`Term ${idx + 1}`}
                               />
                               <button
@@ -259,7 +259,7 @@ export default function DocumentTemplates() {
                         <input
                           value={data.footer || ''}
                           onChange={e => updateField(template.docType, 'footer', e.target.value)}
-                          className="w-full mt-1 px-3 py-2 border rounded-lg text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                          className="w-full mt-1 px-3 py-2 border text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                           placeholder="Footer shown at bottom of document"
                         />
                       </div>
@@ -271,7 +271,7 @@ export default function DocumentTemplates() {
                           <textarea
                             value={data.bankDetails || ''}
                             onChange={e => updateField(template.docType, 'bankDetails', e.target.value)}
-                            className="w-full mt-1 px-3 py-2 border rounded-lg text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full mt-1 px-3 py-2 border text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                             rows={2}
                             placeholder="Bank: ... | A/c: ... | IFSC: ..."
                           />
@@ -284,7 +284,7 @@ export default function DocumentTemplates() {
                         <input
                           value={data.remarks || ''}
                           onChange={e => updateField(template.docType, 'remarks', e.target.value)}
-                          className="w-full mt-1 px-3 py-2 border rounded-lg text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                          className="w-full mt-1 px-3 py-2 border text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                           placeholder="Optional default remarks"
                         />
                       </div>
@@ -294,20 +294,20 @@ export default function DocumentTemplates() {
                         <button
                           onClick={() => save(template.docType)}
                           disabled={!!saving}
-                          className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+                          className="px-4 py-2 bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
                         >
                           {saving === template.docType ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                           Save Template
                         </button>
                         <button
                           onClick={() => openPreview(template.docType)}
-                          className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 flex items-center gap-2"
+                          className="px-4 py-2 bg-green-600 text-white text-sm font-medium hover:bg-green-700 flex items-center gap-2"
                         >
                           <Eye size={14} /> Preview
                         </button>
                         <button
                           onClick={() => resetTemplate(template.docType)}
-                          className="px-4 py-2 text-gray-600 text-sm font-medium rounded-lg border hover:bg-gray-50 flex items-center gap-2"
+                          className="px-4 py-2 text-gray-600 text-sm font-medium border hover:bg-gray-50 flex items-center gap-2"
                         >
                           <RotateCcw size={14} /> Reset
                         </button>
@@ -324,9 +324,9 @@ export default function DocumentTemplates() {
       {/* Preview Modal */}
       {previewDocType && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col">
+          <div className="bg-white shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col">
             {/* Modal Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50 rounded-t-lg">
+            <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
               <div>
                 <h3 className="font-semibold text-gray-900 text-sm">
                   {DOC_TYPE_LABELS[previewDocType]?.label || previewDocType} Preview
@@ -337,14 +337,14 @@ export default function DocumentTemplates() {
                 <button
                   onClick={downloadPreviewPdf}
                   disabled={downloadingPdf || previewLoading}
-                  className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1.5"
+                  className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1.5"
                 >
                   {downloadingPdf ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
                   Download PDF
                 </button>
                 <button
                   onClick={() => { setPreviewDocType(null); setPreviewHtml(''); }}
-                  className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded"
+                  className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-200"
                 >
                   <X size={18} />
                 </button>

@@ -90,7 +90,7 @@ type Tab = typeof TABS[number];
 const fmtINR = (amount: number | null) =>
   amount ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount) : '--';
 
-const inputCls = 'w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+const inputCls = 'w-full px-3 py-2 border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 const labelCls = 'block text-xs font-medium text-gray-600 mb-1';
 
 const emptyForm = {
@@ -647,14 +647,14 @@ export default function Employees() {
           <h1 className="text-xl font-semibold text-gray-900">Employees</h1>
           <span className="text-sm text-gray-500">({filtered.length})</span>
         </div>
-        <button onClick={startNew} className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm hover:bg-blue-700 flex items-center gap-2">
+        <button onClick={startNew} className="bg-blue-600 text-white px-4 py-2 text-sm hover:bg-blue-700 flex items-center gap-2">
           <Plus className="w-4 h-4" /> Add Employee
         </button>
       </div>
 
       {/* Toast */}
       {msg && (
-        <div className={`mb-4 px-4 py-3 rounded-md text-sm flex items-center justify-between ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+        <div className={`mb-4 px-4 py-3 text-sm flex items-center justify-between ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
           <span>{msg.text}</span>
           <button onClick={() => setMsg(null)}><X className="w-4 h-4" /></button>
         </div>
@@ -664,17 +664,17 @@ export default function Employees() {
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <div className="relative flex-1 min-w-[200px] max-w-xs">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input className="w-full pl-9 pr-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Search by name, code, phone..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+          <input className="w-full pl-9 pr-3 py-2 border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Search by name, code, phone..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
         </div>
-        <select className="border rounded-md px-3 py-2 text-sm" value={filterDept} onChange={e => setFilterDept(e.target.value)}>
+        <select className="border px-3 py-2 text-sm" value={filterDept} onChange={e => setFilterDept(e.target.value)}>
           <option value="">All Departments</option>
           {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
-        <select className="border rounded-md px-3 py-2 text-sm" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+        <select className="border px-3 py-2 text-sm" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
           <option value="">All Status</option>
           {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select className="border rounded-md px-3 py-2 text-sm" value={filterType} onChange={e => setFilterType(e.target.value)}>
+        <select className="border px-3 py-2 text-sm" value={filterType} onChange={e => setFilterType(e.target.value)}>
           <option value="">All Types</option>
           {EMPLOYMENT_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
         </select>
@@ -682,7 +682,7 @@ export default function Employees() {
 
       {/* New Employee Form */}
       {expandedId === '__new__' && (
-        <div className="bg-white border rounded-lg p-5 mb-4 shadow-sm">
+        <div className="bg-white border p-5 mb-4">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold text-gray-800">New Employee</h2>
             <button onClick={resetForm} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
@@ -698,8 +698,8 @@ export default function Employees() {
           </div>
           {renderTabContent()}
           <div className="flex justify-end gap-2 mt-4 pt-4 border-t">
-            <button onClick={resetForm} className="px-4 py-2 text-sm border rounded-md hover:bg-gray-50">Cancel</button>
-            <button onClick={handleSave} disabled={saving} className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50">
+            <button onClick={resetForm} className="px-4 py-2 text-sm border hover:bg-gray-50">Cancel</button>
+            <button onClick={handleSave} disabled={saving} className="bg-blue-600 text-white px-4 py-2 text-sm hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50">
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               {saving ? 'Saving...' : 'Save'}
             </button>
@@ -716,7 +716,7 @@ export default function Employees() {
 
       {/* Table */}
       {!loading && (
-        <div className="bg-white border rounded-lg overflow-hidden">
+        <div className="bg-white border overflow-hidden">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50 border-b text-left">
@@ -749,10 +749,10 @@ export default function Employees() {
                     <td className="px-4 py-3 text-gray-600">{emp.department?.name || '--'}</td>
                     <td className="px-4 py-3 text-gray-600">{emp.designation?.title || '--'}</td>
                     <td className="px-4 py-3">
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">{emp.employmentType.replace(/_/g, ' ')}</span>
+                      <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600">{emp.employmentType.replace(/_/g, ' ')}</span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${emp.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{emp.status}</span>
+                      <span className={`text-xs px-2 py-0.5 ${emp.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{emp.status}</span>
                     </td>
                     <td className="px-4 py-3 text-gray-600">{emp.phone || '--'}</td>
                     <td className="px-4 py-3 text-right text-gray-600">{fmtINR(emp.ctcAnnual)}</td>
@@ -777,8 +777,8 @@ export default function Employees() {
                             <Trash2 className="w-4 h-4" /> Delete
                           </button>
                           <div className="flex gap-2">
-                            <button onClick={resetForm} className="px-4 py-2 text-sm border rounded-md hover:bg-gray-50">Cancel</button>
-                            <button onClick={handleSave} disabled={saving} className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50">
+                            <button onClick={resetForm} className="px-4 py-2 text-sm border hover:bg-gray-50">Cancel</button>
+                            <button onClick={handleSave} disabled={saving} className="bg-blue-600 text-white px-4 py-2 text-sm hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50">
                               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                               {saving ? 'Saving...' : 'Update'}
                             </button>

@@ -17,8 +17,8 @@ const SYNC_INTERVAL_MS = 5000; // 5 seconds
 let syncTimer: ReturnType<typeof setInterval> | null = null;
 
 // ── The Cache ──
-interface Supplier { id: string; name: string; gstin: string | null; phone: string | null }
-interface Material { id: string; name: string; unit: string | null; category: string | null; hsnCode: string | null; gstPercent: number; division: string | null; aliases: string[]; handlerKey: string | null; isContractBased: boolean; needsLabTest: boolean }
+interface Supplier { id: string; name: string; gstin: string | null; phone: string | null; company_id: string | null }
+interface Material { id: string; name: string; unit: string | null; category: string | null; hsnCode: string | null; gstPercent: number; division: string | null; aliases: string[]; handlerKey: string | null; isContractBased: boolean; needsLabTest: boolean; company_id: string | null }
 interface POLine { id: string; inventory_item_id: string | null; material_id: string | null; description: string; quantity: number; received_qty: number; pending_qty: number; rate: number; unit: string; hsn_code: string; gst_percent: number }
 interface PO { id: string; po_no: number; vendor_name: string; vendor_id: string; status: string; deal_type: string; company_id: string | null; lines: POLine[] }
 interface Trader { id: string; name: string; phone: string | null; productTypes: string | null; category: string | null }
@@ -168,7 +168,8 @@ async function getCloudTimestamp(): Promise<string | null> {
   const cloud = getCloudPrisma();
   if (!cloud) return null;
   try {
-    const result = await cloud.$queryRaw<Array<{ max: Date | null }>>`
+    // Include row counts so deletions also trigger a sync
+    const result = await cloud.$queryRaw<Array<{ max: Date | null; cnt: bigint }>>`
       SELECT GREATEST(
         (SELECT MAX("updatedAt") FROM "PurchaseOrder"),
         (SELECT MAX("updatedAt") FROM "Vendor"),
@@ -177,9 +178,15 @@ async function getCloudTimestamp(): Promise<string | null> {
         (SELECT MAX("updatedAt") FROM "EthanolContract"),
         (SELECT MAX("updatedAt") FROM "DDGSContract"),
         (SELECT MAX("updatedAt") FROM "DirectSale")
-      ) as max
+      ) as max,
+      (SELECT COUNT(*) FROM "PurchaseOrder" WHERE status IN ('APPROVED','SENT','PARTIAL_RECEIVED'))
+      + (SELECT COUNT(*) FROM "Vendor" WHERE "isActive" = true)
+      + (SELECT COUNT(*) FROM "InventoryItem" WHERE "isActive" = true)
+      as cnt
     `;
-    return result[0]?.max?.toISOString() || null;
+    const ts = result[0]?.max?.toISOString() || '';
+    const cnt = String(result[0]?.cnt || 0);
+    return `${ts}|${cnt}`;
   } catch {
     return null;
   }
@@ -193,7 +200,7 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
     const [vendors, inventoryItems, purchaseOrders, customers, traderVendors]: [any[], any[], any[], any[], any[]] = await Promise.all([
       cloud.vendor.findMany({
         where: { isActive: true },
-        select: { id: true, name: true, gstin: true, phone: true },
+        select: { id: true, name: true, gstin: true, phone: true, companyId: true },
         orderBy: { name: 'asc' },
         take: 500,
       }),
@@ -201,7 +208,7 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
         where: { isActive: true },
         select: {
           id: true, name: true, unit: true, category: true, hsnCode: true, gstPercent: true,
-          division: true, aliases: true, handlerKey: true, isContractBased: true, needsLabTest: true,
+          division: true, aliases: true, handlerKey: true, isContractBased: true, needsLabTest: true, companyId: true,
         },
         orderBy: { name: 'asc' },
         take: 500,
@@ -227,7 +234,7 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
       }),
       cloud.customer.findMany({
         where: { isActive: true },
-        select: { id: true, name: true, shortName: true, gstNo: true, address: true, state: true, pincode: true },
+        select: { id: true, name: true, shortName: true, gstNo: true, address: true, state: true, pincode: true, companyId: true },
         orderBy: { name: 'asc' },
         take: 500,
       }),
@@ -244,7 +251,7 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
     try {
       ethContracts = await cloud.$queryRawUnsafe<EthContract[]>(
         `SELECT id, "contractNo", "contractType", "buyerName", "buyerGst", "buyerAddress",
-                "conversionRate", "ethanolRate", "gstPercent", "paymentTermsDays", "omcDepot"
+                "conversionRate", "ethanolRate", "gstPercent", "paymentTermsDays", "omcDepot", "companyId"
          FROM "EthanolContract" WHERE status = 'ACTIVE' ORDER BY "contractNo" LIMIT 50`
       );
       console.log(`[CACHE] Ethanol contracts: ${ethContracts.length}`);
@@ -258,7 +265,7 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
       const rows = await cloud.$queryRawUnsafe<any[]>(
         `SELECT id, "contractNo", status, "dealType", "buyerName", "buyerGstin", "buyerAddress", "buyerState",
                 "principalName", rate, "processingChargePerMT", "gstPercent", "contractQtyMT", "totalSuppliedMT",
-                "startDate", "endDate"
+                "startDate", "endDate", "companyId"
          FROM "DDGSContract"
          WHERE status = 'ACTIVE' AND "endDate" >= NOW() AND "startDate" <= NOW()
          ORDER BY "contractNo" LIMIT 50`
@@ -280,6 +287,7 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
         totalSuppliedMT: r.totalSuppliedMT != null ? Number(r.totalSuppliedMT) : null,
         startDate: r.startDate ? new Date(r.startDate).toISOString() : null,
         endDate: r.endDate ? new Date(r.endDate).toISOString() : null,
+        company_id: r.companyId || null,
       }));
       console.log(`[CACHE] DDGS contracts: ${ddgsContracts.length}`);
     } catch (err) {
@@ -354,7 +362,7 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
       : DEFAULT_OUTBOUND_PRODUCTS;
 
     cache = {
-      suppliers: vendors.map(v => ({ id: v.id, name: v.name, gstin: v.gstin, phone: v.phone })),
+      suppliers: vendors.map(v => ({ id: v.id, name: v.name, gstin: v.gstin, phone: v.phone, company_id: v.companyId || null })),
       materials: inventoryItems.map(m => ({
         id: m.id,
         name: m.name,
@@ -367,6 +375,7 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
         handlerKey: m.handlerKey ?? null,
         isContractBased: m.isContractBased ?? false,
         needsLabTest: m.needsLabTest ?? false,
+        company_id: m.companyId || null,
       })),
       pos: purchaseOrders.map(po => ({
         id: po.id,
@@ -391,8 +400,8 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
         })),
       })),
       traders: traderVendors.map(t => ({ id: t.id, name: t.name, phone: t.phone, productTypes: t.productTypes, category: t.category })),
-      customers: customers.map(c => ({ id: c.id, name: c.name, shortName: c.shortName, gstNo: c.gstNo, address: c.address, state: c.state, pincode: c.pincode })),
-      ethContracts: ethContracts.map(c => ({ id: c.id, contractNo: c.contractNo, contractType: c.contractType, buyerName: c.buyerName, buyerGst: c.buyerGst, buyerAddress: c.buyerAddress, conversionRate: c.conversionRate, ethanolRate: c.ethanolRate, gstPercent: c.gstPercent, paymentTermsDays: c.paymentTermsDays, omcDepot: c.omcDepot })),
+      customers: customers.map(c => ({ id: c.id, name: c.name, shortName: c.shortName, gstNo: c.gstNo, address: c.address, state: c.state, pincode: c.pincode, company_id: c.companyId || null })),
+      ethContracts: ethContracts.map(c => ({ id: c.id, contractNo: c.contractNo, contractType: c.contractType, buyerName: c.buyerName, buyerGst: c.buyerGst, buyerAddress: c.buyerAddress, conversionRate: c.conversionRate, ethanolRate: c.ethanolRate, gstPercent: c.gstPercent, paymentTermsDays: c.paymentTermsDays, omcDepot: c.omcDepot, company_id: (c as any).companyId || null })),
       ddgsContracts,
       scrapOrders,
       companies,
