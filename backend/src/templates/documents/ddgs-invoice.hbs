@@ -1,6 +1,30 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"><title>DDGS Tax Invoice</title>{{> base-styles}}</head>
+<head><meta charset="UTF-8"><title>DDGS Tax Invoice</title>{{> base-styles}}
+<style>
+  /* DDGS invoice readability overrides — +1.5px on body text, labels, tables */
+  body { font-size: 10.5px; }
+  .doc-title { font-size: 16px; }
+  .doc-subtitle { font-size: 9.5px; }
+  .detail-label { font-size: 9px; }
+  .detail-value { font-size: 10px; }
+  .box-header { font-size: 8.5px; }
+  .box-body .name { font-size: 10.5px; }
+  .box-body .trade, .box-body .line, .box-body .gstin { font-size: 9px; }
+  .box-body .meta-label { font-size: 8.5px; }
+  .box-body .meta-val { font-size: 9.5px; }
+  .items-table thead th { font-size: 9px; }
+  .items-table tbody td { font-size: 9.5px; }
+  .total-row { font-size: 10px; }
+  .total-row.grand { font-size: 11.5px; }
+  .amount-words .label, .remarks-section .label, .terms-section h3 { font-size: 9px; }
+  .amount-words .text, .remarks-section .text { font-size: 10px; }
+  .terms-section li { font-size: 9px; }
+  .bank-section h3 { font-size: 9.5px; }
+  .bank-section .bank-text { font-size: 9px; }
+  .sig-name, .sig-label { font-size: 9.5px; }
+</style>
+</head>
 <body>
 <div class="page">
   {{> letterhead}}

@@ -2,25 +2,25 @@
 <html lang="en">
 <head><meta charset="UTF-8"><title>Tax Invoice</title>{{> base-styles}}
 <style>
-  .inv-table { width:100%; border-collapse:collapse; font-size:8.5px; }
+  .inv-table { width:100%; border-collapse:collapse; font-size:10px; }
   .inv-table td, .inv-table th { border:1px solid #333; padding:3px 6px; vertical-align:top; }
   .inv-table th { background:#f5f5f5; font-weight:600; text-align:center; }
-  .inv-hdr { font-weight:700; font-size:9px; }
-  .inv-label { font-size:7.5px; color:#555; }
-  .inv-val { font-weight:600; font-size:8.5px; }
+  .inv-hdr { font-weight:700; font-size:9.5px; }
+  .inv-label { font-size:9.5px; color:#555; }
+  .inv-val { font-weight:600; font-size:10px; }
   .inv-right { text-align:right; }
   .inv-center { text-align:center; }
   .inv-mono { font-family:monospace; }
-  .irn-bar { border:1px solid #999; padding:5px 8px; margin-bottom:4px; font-size:8px; display:flex; justify-content:space-between; align-items:flex-start; background:#fafafa; }
+  .irn-bar { border:1px solid #999; padding:5px 8px; margin-bottom:4px; font-size:11px; display:flex; justify-content:space-between; align-items:flex-start; background:#fafafa; }
   .irn-bar .irn-text { flex:1; }
   .irn-bar .qr-img { flex-shrink:0; margin-left:8px; }
   .irn-bar .qr-img img { width:75px; height:75px; }
-  .tax-summary { width:100%; border-collapse:collapse; font-size:8px; margin-top:2px; }
+  .tax-summary { width:100%; border-collapse:collapse; font-size:11px; margin-top:2px; }
   .tax-summary td, .tax-summary th { border:1px solid #333; padding:2px 6px; }
-  .tax-summary th { background:#f5f5f5; font-weight:600; text-align:center; font-size:7.5px; }
+  .tax-summary th { background:#f5f5f5; font-weight:600; text-align:center; font-size:9.5px; }
   .grand-total { font-size:11px; font-weight:700; }
-  .company-block { font-size:8px; line-height:1.4; }
-  .company-block .name { font-weight:700; font-size:9.5px; }
+  .company-block { font-size:11px; line-height:1.4; }
+  .company-block .name { font-weight:700; font-size:11px; }
   .company-block .gstin { font-weight:600; margin-top:2px; }
 </style>
 </head>
@@ -29,7 +29,7 @@
 
   <!-- Header row: Title + e-Invoice label -->
   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-    <div style="font-size:14px; font-weight:700;">Tax Invoice</div>
+    <div style="font-size:16px; font-weight:700;">Tax Invoice</div>
     {{#if irn}}<div style="font-size:11px; font-weight:600; border:1px solid #333; padding:2px 10px;">e-Invoice</div>{{/if}}
   </div>
 
@@ -37,7 +37,7 @@
   {{#if irn}}
   <div class="irn-bar">
     <div class="irn-text">
-      <div><span style="font-weight:600;">IRN</span> : <span style="font-family:monospace; font-size:7px; word-break:break-all;">{{irn}}</span></div>
+      <div><span style="font-weight:600;">IRN</span> : <span style="font-family:monospace; font-size:8.5px; word-break:break-all;">{{irn}}</span></div>
       {{#if ackNo}}<div><span style="font-weight:600;">Ack No.</span> : <span class="inv-mono">{{ackNo}}</span></div>{{/if}}
       {{#if irnDate}}<div><span style="font-weight:600;">Ack Date</span> : {{formatDate irnDate}}</div>{{/if}}
     </div>
@@ -78,7 +78,7 @@
     <!-- Row 2: Consignee (Ship To) + Reference/Dispatch -->
     <tr>
       <td rowspan="4">
-        <div style="font-size:7.5px; color:#555;">Consignee (Ship to)</div>
+        <div style="font-size:9.5px; color:#555;">Consignee (Ship to)</div>
         <div class="company-block">
           {{#if consignee}}
           <div class="name">{{consignee.name}}</div>
@@ -113,7 +113,7 @@
     <!-- Row 3: Buyer (Bill To) + Vehicle/Transport -->
     <tr>
       <td rowspan="4">
-        <div style="font-size:7.5px; color:#555;">Buyer (Bill to)</div>
+        <div style="font-size:9.5px; color:#555;">Buyer (Bill to)</div>
         <div class="company-block">
           <div class="name">{{customer.name}}</div>
           {{#if customer.address}}<div>{{customer.address}}</div>{{/if}}
@@ -156,7 +156,7 @@
     <tbody>
       <tr style="height:40px;">
         <td class="inv-center">1</td>
-        <td style="font-weight:600; font-style:italic;">{{productName}}<br><span style="font-weight:400; font-size:7.5px;">{{formatNum quantity}}{{unit}} @ RS {{formatNum rate}}/{{unit}}</span></td>
+        <td style="font-weight:600; font-style:italic;">{{productName}}<br><span style="font-weight:400; font-size:9.5px;">{{formatNum quantity}}{{unit}} @ RS {{formatNum rate}}/{{unit}}</span></td>
         <td class="inv-center inv-mono">{{hsnCode}}</td>
         <td class="inv-right inv-mono">{{formatNum quantity}}</td>
         <td class="inv-center">{{unit}}</td>
@@ -214,10 +214,10 @@
   </table>
 
   <!-- Amount in words -->
-  <div style="font-size:8.5px; padding:4px 6px; border:1px solid #333; border-top:none; margin-top:-1px;">
-    <span style="font-size:7.5px; color:#555;">Amount Chargeable (in words)</span><br>
+  <div style="font-size:10px; padding:4px 6px; border:1px solid #333; border-top:none; margin-top:-1px;">
+    <span style="font-size:9.5px; color:#555;">Amount Chargeable (in words)</span><br>
     <span style="font-weight:700;">{{numberToWords (default roundedTotalAmount totalAmount)}}</span>
-    <span style="float:right; font-style:italic; font-size:7px;">E. &amp; O.E</span>
+    <span style="float:right; font-style:italic; font-size:8.5px;">E. &amp; O.E</span>
   </div>
 
   <!-- HSN/SAC Tax Summary -->
@@ -273,21 +273,21 @@
   </table>
 
   <!-- Tax amount in words -->
-  <div style="font-size:8px; padding:3px 6px; border:1px solid #333; border-top:none; margin-top:-1px;">
-    <span style="font-size:7px; color:#555;">Tax Amount (in words) :</span>
+  <div style="font-size:11px; padding:3px 6px; border:1px solid #333; border-top:none; margin-top:-1px;">
+    <span style="font-size:8.5px; color:#555;">Tax Amount (in words) :</span>
     <span style="font-weight:600;">{{numberToWords gstAmount}}</span>
   </div>
 
   {{#if remarks}}
-  <div style="font-size:8px; padding:3px 6px; border:1px solid #333; border-top:none; margin-top:-1px;">
-    <span style="font-style:italic; font-size:7.5px; color:#555;">Remarks:</span><br>
+  <div style="font-size:11px; padding:3px 6px; border:1px solid #333; border-top:none; margin-top:-1px;">
+    <span style="font-style:italic; font-size:9.5px; color:#555;">Remarks:</span><br>
     {{remarks}}
   </div>
   {{/if}}
 
   <!-- E-Way Bill info -->
   {{#if ewbNo}}
-  <div style="font-size:8px; padding:3px 6px; border:1px solid #333; border-top:none; margin-top:-1px;">
+  <div style="font-size:11px; padding:3px 6px; border:1px solid #333; border-top:none; margin-top:-1px;">
     <span style="font-weight:600;">E-Way Bill No:</span> {{ewbNo}} &nbsp;|&nbsp;
     {{#if ewbDate}}<span style="font-weight:600;">Date:</span> {{formatDate ewbDate}} &nbsp;|&nbsp;{{/if}}
     {{#if ewbValidTill}}<span style="font-weight:600;">Valid Till:</span> {{formatDate ewbValidTill}}{{/if}}
@@ -297,19 +297,19 @@
   <!-- Declaration + Signature -->
   <table class="inv-table" style="margin-top:6px;">
     <tr>
-      <td style="width:50%; font-size:7.5px; line-height:1.4;">
+      <td style="width:50%; font-size:9.5px; line-height:1.4;">
         <div style="font-weight:600; font-style:italic;">Declaration</div>
         <div>We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.</div>
       </td>
       <td style="text-align:right; vertical-align:bottom; padding-bottom:30px;">
-        <div style="font-weight:600; font-size:8.5px;">for Mahakaushal Sugar And Power Ind (Ethanol Div)</div>
+        <div style="font-weight:600; font-size:10px;">for Mahakaushal Sugar And Power Ind (Ethanol Div)</div>
         <br><br><br>
-        <div style="font-size:8px;">Authorised Signatory</div>
+        <div style="font-size:11px;">Authorised Signatory</div>
       </td>
     </tr>
   </table>
 
-  <div style="text-align:center; font-size:7px; color:#777; margin-top:6px;">This is a Computer Generated Invoice</div>
+  <div style="text-align:center; font-size:8.5px; color:#777; margin-top:6px;">This is a Computer Generated Invoice</div>
 </div>
 </body>
 </html>
