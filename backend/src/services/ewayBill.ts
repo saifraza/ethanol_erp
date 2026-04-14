@@ -69,6 +69,7 @@ export interface EwayBillInput {
   supplierAddress: string;
   supplierState: string;
   supplierPincode: string;
+  supplierCity?: string; // Optional — derived from address if not provided
   // Recipient
   recipientGstin?: string;
   recipientName: string;
@@ -356,7 +357,7 @@ export function buildEwayBillPayload(input: EwayBillInput): any {
     fromTrdName: input.supplierName,
     fromAddr1: input.supplierAddress.substring(0, 120),
     fromAddr2: '',
-    fromPlace: 'Narsinghpur',
+    fromPlace: input.supplierCity || input.supplierAddress.split(',').pop()?.trim() || 'Narsinghpur',
     fromPincode: parseInt(input.supplierPincode) || 487001,
     fromStateCode: parseInt(fromStateCode),
     actFromStateCode: parseInt(fromStateCode),
@@ -909,12 +910,15 @@ export async function getEwayBillDetails(ewayBillNo: string): Promise<any> {
 }
 
 /**
- * MSPIL company details (supplier side)
+ * MSPIL company details (supplier side) — FALLBACK ONLY.
+ * New multi-company code should use getCompanyById() from shared/config/company.ts instead.
+ * This constant is kept for backwards compatibility with existing callers.
  */
 export const MSPIL = {
   gstin: process.env.EWAY_GSTIN || '23AAECM3666P1Z1',
   name: 'Mahakaushal Sugar and Power Industries Ltd.',
   address: 'Village Bachai, Dist. Narsinghpur',
+  city: 'Narsinghpur',
   state: 'Madhya Pradesh',
   pincode: '487001',
 };

@@ -3,7 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import prisma from '../config/prisma';
-import { authenticate, authorize, AuthRequest } from '../middleware/auth';
+import { authenticate, authorize, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 
 const router = Router();
 
@@ -102,6 +102,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
 
     const trucks = await prisma.grainTruck.findMany({
       where: {
+        ...getCompanyFilter(req),
         date: { gte: start, lt: end },
         NOT: { remarks: { contains: '| FUEL |' } },
       },
@@ -124,6 +125,7 @@ router.get('/summary', authenticate, async (req: AuthRequest, res: Response) => 
 
     const trucks = await prisma.grainTruck.findMany({
       where: {
+        ...getCompanyFilter(req),
         date: { gte: start, lt: end },
         NOT: { remarks: { contains: '| FUEL |' } },
       },
@@ -153,6 +155,7 @@ router.get('/report', authenticate, async (req: AuthRequest, res: Response) => {
     const rangeEnd = new Date(Date.UTC(yearStart + 1, 0, 1));
     const rows = await prisma.grainTruck.findMany({
       where: {
+        ...getCompanyFilter(req),
         date: { gt: rangeStart, lt: rangeEnd },
       },
       orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
@@ -268,7 +271,7 @@ router.get('/history', authenticate, async (req: AuthRequest, res: Response) => 
     const today = new Date(todayStr + 'T00:00:00.000+05:30');
 
     const trucks = await prisma.grainTruck.findMany({
-      where: { date: { lt: today } },
+      where: { ...getCompanyFilter(req), date: { lt: today } },
       orderBy: { date: 'desc' },
       take: 200,
     });
@@ -294,7 +297,7 @@ router.get('/by-po/:poId', authenticate, async (req: AuthRequest, res: Response)
 
     // 1. All GRNs for this PO (excludes cancelled)
     const grns = await prisma.goodsReceipt.findMany({
-      where: { poId, status: { not: 'CANCELLED' } },
+      where: { ...getCompanyFilter(req), poId, status: { not: 'CANCELLED' } },
       orderBy: { grnDate: 'desc' },
       select: {
         id: true, grnNo: true, grnDate: true, vehicleNo: true, challanNo: true,
@@ -307,8 +310,9 @@ router.get('/by-po/:poId', authenticate, async (req: AuthRequest, res: Response)
 
     // 2. GrainTrucks linked either by poId or by grnId (covers both paths)
     const grnIds = grns.map(g => g.id);
+    const cf = getCompanyFilter(req);
     const trucks = await prisma.grainTruck.findMany({
-      where: { OR: [{ poId }, ...(grnIds.length ? [{ grnId: { in: grnIds } }] : [])] },
+      where: { ...cf, OR: [{ poId }, ...(grnIds.length ? [{ grnId: { in: grnIds } }] : [])] },
       select: {
         id: true, date: true, ticketNo: true, uidRst: true, vehicleNo: true, vehicleType: true,
         supplier: true, driverName: true, driverMobile: true, transporterName: true,
@@ -434,7 +438,7 @@ router.post('/', authenticate, upload.single('photo'), async (req: AuthRequest, 
 
     // Check for duplicate UID/RST
     if (uidRst && uidRst.trim()) {
-      const existing = await prisma.grainTruck.findFirst({ where: { uidRst: uidRst.trim() } });
+      const existing = await prisma.grainTruck.findFirst({ where: { ...getCompanyFilter(req), uidRst: uidRst.trim() } });
       if (existing) {
         res.status(409).json({ error: `Truck with UID/RST "${uidRst.trim()}" already exists (${existing.vehicleNo}, ${existing.date.toISOString().split('T')[0]})` });
         return;
@@ -487,7 +491,7 @@ router.post('/', authenticate, upload.single('photo'), async (req: AuthRequest, 
     const truck = await prisma.$transaction(async (tx) => {
       const maxManual = await tx.grainTruck.aggregate({
         _max: { ticketNo: true },
-        where: { ticketNo: { gte: MANUAL_TICKET_BASE } },
+        where: { ...getCompanyFilter(req), ticketNo: { gte: MANUAL_TICKET_BASE } },
       });
       const nextTicketNo = (maxManual._max.ticketNo ?? MANUAL_TICKET_BASE - 1) + 1;
       return tx.grainTruck.create({
@@ -511,6 +515,7 @@ router.post('/', authenticate, upload.single('photo'), async (req: AuthRequest, 
           bags: bagsInput.value,
           remarks: remarks || null,
           userId: req.user!.id,
+          companyId: getActiveCompanyId(req),
         },
       });
     });

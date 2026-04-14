@@ -325,12 +325,13 @@ export async function pullMasterData(): Promise<Record<string, number>> {
   if (!response.ok) throw new Error(`Cloud returned ${response.status}`);
 
   const data = await response.json() as {
-    suppliers: Array<{ id: string; name: string }>;
+    suppliers: Array<{ id: string; name: string; companyId?: string | null }>;
     materials: Array<{ id: string; name: string; category?: string }>;
     pos: Array<{
       id: string; po_no: number;
       vendor_id: string; vendor_name: string;
       deal_type: string; status: string;
+      company_id?: string | null; company_code?: string | null;
       lines: Array<{
         id: string; inventory_item_id: string | null;
         description: string; quantity: number;
@@ -345,8 +346,8 @@ export async function pullMasterData(): Promise<Record<string, number>> {
     for (const s of (data.suppliers || [])) {
       await tx.cachedSupplier.upsert({
         where: { id: s.id },
-        create: { id: s.id, name: s.name },
-        update: { name: s.name, updatedAt: new Date() },
+        create: { id: s.id, name: s.name, companyId: s.companyId || null },
+        update: { name: s.name, companyId: s.companyId || null, updatedAt: new Date() },
       });
     }
     for (const m of (data.materials || [])) {
@@ -369,6 +370,8 @@ export async function pullMasterData(): Promise<Record<string, number>> {
           receivedQty: firstLine?.received_qty || 0,
           rate: firstLine?.rate || 0,
           unit: firstLine?.unit || 'KG', status: po.status,
+          companyId: po.company_id || null,
+          companyCode: po.company_code || null,
         },
         update: {
           poNumber: String(po.po_no), supplierName: po.vendor_name, supplierId: po.vendor_id,
@@ -377,7 +380,10 @@ export async function pullMasterData(): Promise<Record<string, number>> {
           quantity: firstLine?.quantity || 0,
           receivedQty: firstLine?.received_qty || 0,
           rate: firstLine?.rate || 0,
-          unit: firstLine?.unit || 'KG', status: po.status, updatedAt: new Date(),
+          unit: firstLine?.unit || 'KG', status: po.status,
+          companyId: po.company_id || null,
+          companyCode: po.company_code || null,
+          updatedAt: new Date(),
         },
       });
     }

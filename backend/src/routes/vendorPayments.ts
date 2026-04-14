@@ -156,9 +156,9 @@ router.get('/ledger/:vendorId', asyncHandler(async (req: AuthRequest, res: Respo
 
     // Get invoices, payments, POs, and cash voucher payments by name
     const [invoices, payments, pos, cashVouchers] = await Promise.all([
-      prisma.vendorInvoice.findMany({ where: { vendorId }, orderBy: { invoiceDate: 'asc' } }),
-      prisma.vendorPayment.findMany({ where: { vendorId }, orderBy: { paymentDate: 'asc' } }),
-      prisma.purchaseOrder.findMany({ where: { vendorId }, orderBy: { poDate: 'asc' } }),
+      prisma.vendorInvoice.findMany({ where: { ...getCompanyFilter(req), vendorId }, orderBy: { invoiceDate: 'asc' } }),
+      prisma.vendorPayment.findMany({ where: { ...getCompanyFilter(req), vendorId }, orderBy: { paymentDate: 'asc' } }),
+      prisma.purchaseOrder.findMany({ where: { ...getCompanyFilter(req), vendorId }, orderBy: { poDate: 'asc' } }),
       prisma.cashVoucher.findMany({
         where: { type: 'PAYMENT', status: { not: 'CANCELLED' }, payeeName: { equals: vendor.name, mode: 'insensitive' } },
         orderBy: { date: 'asc' },
@@ -240,6 +240,7 @@ router.get('/outstanding', asyncHandler(async (req: AuthRequest, res: Response) 
 
     const invoices = await prisma.vendorInvoice.findMany({
       where: {
+        ...getCompanyFilter(req),
         balanceAmount: {
           gt: 0,
         },
@@ -423,6 +424,7 @@ router.post('/split-payment', asyncHandler(async (req: AuthRequest, res: Respons
               remarks: remarkParts.join(' | ') || null,
               paymentDate,
               userId,
+              companyId: getActiveCompanyId(req),
             },
           });
           created.push({ type: 'VendorPayment', id: vp.id, mode: split.mode, amount: amt });
@@ -485,6 +487,7 @@ router.post('/split-payment', asyncHandler(async (req: AuthRequest, res: Respons
 router.get('/tds-report', asyncHandler(async (req: AuthRequest, res: Response) => {
     const payments = await prisma.vendorPayment.findMany({
       where: {
+        ...getCompanyFilter(req),
         tdsDeducted: {
           gt: 0,
         },
@@ -531,6 +534,7 @@ router.post('/generate-bank-file', asyncHandler(async (req: AuthRequest, res: Re
     // Fetch invoices with vendor bank details
     const invoices = await prisma.vendorInvoice.findMany({
       where: {
+        ...getCompanyFilter(req),
         id: { in: invoiceIds },
         balanceAmount: { gt: 0 },
       },

@@ -72,6 +72,19 @@ model Company {
   ddgsContracts        DDGSContract[]
   sugarContracts       SugarContract[]
   warehouses           Warehouse[]
+  // Back-relations for previously orphaned companyId fields
+  grainTrucks          GrainTruck[]
+  vendors              Vendor[]
+  purchaseOrders       PurchaseOrder[]
+  goodsReceipts        GoodsReceipt[]
+  vendorInvoices       VendorInvoice[]
+  vendorPayments       VendorPayment[]
+  accounts             Account[]
+  journalEntries       JournalEntry[]
+  dispatchTrucks       DispatchTruck[]
+  ddgsDispatchTrucks   DDGSDispatchTruck[]
+  sugarDispatchTrucks  SugarDispatchTruck[]
+  transporterPayments  TransporterPayment[]
 }
 
 model User {
@@ -813,7 +826,9 @@ model DDGSDispatchTruck {
   updatedAt            DateTime              @default(now()) @updatedAt
   ddgsContractDispatch DDGSContractDispatch?
 
-  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division  String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  companyId String? // FK → Company (null = MSPIL default)
+  company   Company? @relation(fields: [companyId], references: [id])
 
   @@index([date])
   @@index([customerId])
@@ -1025,7 +1040,9 @@ model DispatchTruck {
   createdAt         DateTime             @default(now())
   updatedAt         DateTime             @default(now()) @updatedAt
 
-  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division  String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  companyId String? // FK → Company (null = MSPIL default)
+  company   Company? @relation(fields: [companyId], references: [id])
 
   @@index([date])
   @@index([entryId])
@@ -1085,6 +1102,7 @@ model GrainTruck {
 
   division    String?               @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   companyId   String? // FK → Company (null = MSPIL default)
+  company     Company? @relation(fields: [companyId], references: [id])
   corrections WeighmentCorrection[]
 
   @@index([date])
@@ -1962,6 +1980,9 @@ model TransporterPayment {
   userId          String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+
+  companyId String? // FK → Company (null = MSPIL default)
+  company   Company? @relation(fields: [companyId], references: [id])
 }
 
 // ── Invoice (auto-generated from shipment) ──
@@ -2144,6 +2165,7 @@ model Vendor {
   divisions String[] @default([]) // empty = available to all divisions
 
   companyId String? // FK → Company (null = MSPIL default)
+  company   Company? @relation(fields: [companyId], references: [id])
   @@index([isAgent])
   @@index([companyId])
 }
@@ -2257,6 +2279,7 @@ model PurchaseOrder {
 
   division  String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   companyId String? // FK → Company (null = MSPIL default)
+  company   Company? @relation(fields: [companyId], references: [id])
 
   @@index([vendorId])
   @@index([status])
@@ -2364,6 +2387,7 @@ model GoodsReceipt {
 
   division  String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   companyId String? // FK → Company (null = MSPIL default)
+  company   Company? @relation(fields: [companyId], references: [id])
 
   @@index([poId])
   @@index([vendorId])
@@ -2470,6 +2494,7 @@ model VendorInvoice {
 
   division  String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   companyId String? // FK → Company (null = MSPIL default)
+  company   Company? @relation(fields: [companyId], references: [id])
 
   @@index([vendorId])
   @@index([poId])
@@ -2511,6 +2536,7 @@ model VendorPayment {
 
   division  String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   companyId String? // FK → Company (null = MSPIL default)
+  company   Company? @relation(fields: [companyId], references: [id])
 
   @@index([vendorId])
   @@index([invoiceId])
@@ -2987,6 +3013,7 @@ model Account {
   journalLines     JournalLine[]
   bankTransactions BankTransaction[]
   companyId        String? // FK → Company (null = MSPIL default)
+  company          Company? @relation(fields: [companyId], references: [id])
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
@@ -3012,6 +3039,7 @@ model JournalEntry {
 
   division  String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   companyId String? // FK → Company (null = MSPIL default)
+  company   Company? @relation(fields: [companyId], references: [id])
 
   @@index([date])
   @@index([refType, refId])
@@ -3779,7 +3807,9 @@ model SugarDispatchTruck {
   updatedAt             DateTime               @default(now()) @updatedAt
   sugarContractDispatch SugarContractDispatch?
 
-  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division  String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  companyId String? // FK → Company (null = MSPIL default)
+  company   Company? @relation(fields: [companyId], references: [id])
 
   @@index([date])
   @@index([customerId])

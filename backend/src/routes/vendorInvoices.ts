@@ -135,6 +135,7 @@ router.get('/outstanding', async (req: Request, res: Response) => {
   try {
     const invoices = await prisma.vendorInvoice.findMany({
       where: {
+        ...getCompanyFilter(req as AuthRequest),
         balanceAmount: {
           gt: 0,
         },
@@ -168,6 +169,7 @@ router.get('/itc-report', async (req: Request, res: Response) => {
   try {
     const invoices = await prisma.vendorInvoice.findMany({
       where: {
+        ...getCompanyFilter(req as AuthRequest),
         status: { in: ['VERIFIED', 'APPROVED', 'PAID'] },
       },
       include: {

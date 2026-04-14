@@ -411,7 +411,7 @@ export function registerOtherRoutes(router: Router): void {
     const vendors = await prisma.vendor.findMany({
       take: 500,
       where: { isActive: true },
-      select: { id: true, name: true, category: true },
+      select: { id: true, name: true, category: true, companyId: true },
       orderBy: { name: 'asc' },
     });
 
@@ -425,13 +425,13 @@ export function registerOtherRoutes(router: Router): void {
       take: 200,
     });
 
-    const supplierMap = new Map<string, { id: string; name: string }>();
+    const supplierMap = new Map<string, { id: string; name: string; companyId: string | null }>();
     for (const v of vendors) {
-      supplierMap.set(v.name.toLowerCase(), { id: v.id, name: v.name });
+      supplierMap.set(v.name.toLowerCase(), { id: v.id, name: v.name, companyId: v.companyId });
     }
     for (const t of recentTrucks) {
       if (t.supplier && !supplierMap.has(t.supplier.toLowerCase())) {
-        supplierMap.set(t.supplier.toLowerCase(), { id: `truck-${t.supplier}`, name: t.supplier });
+        supplierMap.set(t.supplier.toLowerCase(), { id: `truck-${t.supplier}`, name: t.supplier, companyId: null });
       }
     }
 
@@ -467,6 +467,8 @@ export function registerOtherRoutes(router: Router): void {
         vendorId: true,
         vendor: { select: { name: true } },
         status: true,
+        companyId: true,
+        company: { select: { code: true } },
         lines: {
           select: {
             id: true,
@@ -490,6 +492,8 @@ export function registerOtherRoutes(router: Router): void {
       vendor_name: po.vendor.name,
       deal_type: po.dealType || 'STANDARD',
       status: po.status,
+      company_id: po.companyId || null,
+      company_code: po.company?.code || null,
       lines: po.lines.map(l => ({
         id: l.id,
         inventory_item_id: l.inventoryItemId,

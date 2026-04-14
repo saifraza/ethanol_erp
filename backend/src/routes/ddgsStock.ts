@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, authorize } from '../middleware/auth';
+import { authenticate, authorize, AuthRequest, getCompanyFilter } from '../middleware/auth';
 
 const router = Router();
 
@@ -33,7 +33,7 @@ router.get('/latest', async (req: Request, res: Response) => {
     const cumulativeProduction = Math.max(erpProduction, stockProduction);
 
     // Cumulative dispatch from DDGSDispatchTruck
-    const dispAgg = await prisma.dDGSDispatchTruck.aggregate({ _sum: { weightNet: true } });
+    const dispAgg = await prisma.dDGSDispatchTruck.aggregate({ where: { ...getCompanyFilter(req as AuthRequest) }, _sum: { weightNet: true } });
     const cumulativeDispatch = dispAgg._sum.weightNet || 0;
 
     res.json({
@@ -117,7 +117,7 @@ router.post('/', async (req: Request, res: Response) => {
       bags: parseInt(b.bags) || 0,
       weightPerBag: parseFloat(b.weightPerBag) || 50,
       remarks: b.remarks || null,
-      userId: (req as any).user.id,
+      userId: (req as AuthRequest).user!.id,
     };
 
     // Upsert by date+yearStart

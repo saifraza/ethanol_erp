@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest, getCompanyFilter } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import multer from 'multer';
 import path from 'path';
@@ -38,7 +38,7 @@ const upload = multer({
 // GET /shipment/:shipmentId — List documents for a shipment
 router.get('/shipment/:shipmentId', asyncHandler(async (req: AuthRequest, res: Response) => {
     const docs = await prisma.shipmentDocument.findMany({
-      where: { shipmentId: req.params.shipmentId },
+      where: { shipmentId: req.params.shipmentId, shipment: { ...getCompanyFilter(req) } },
       orderBy: { createdAt: 'desc' },
       take: 50,
     });

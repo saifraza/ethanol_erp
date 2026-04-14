@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, authorize, AuthRequest } from '../middleware/auth';
+import { authenticate, authorize, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { z } from 'zod';
 
@@ -32,7 +32,7 @@ const traderUpdateSchema = traderSchema.partial().strict();
 // GET / — list all traders with purchase stats
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const traders = await prisma.vendor.findMany({
-    where: { isAgent: true, isActive: true },
+    where: { isAgent: true, isActive: true, ...getCompanyFilter(req) },
     orderBy: { name: 'asc' },
     take: 200,
     select: {
@@ -48,7 +48,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   // Batch: PO count per trader
   const poCounts = await prisma.purchaseOrder.groupBy({
     by: ['vendorId'],
-    where: { vendorId: { in: traderIds } },
+    where: { vendorId: { in: traderIds }, ...getCompanyFilter(req) },
     _count: true,
   });
   const poCountMap = new Map(poCounts.map(p => [p.vendorId, p._count]));
@@ -56,14 +56,14 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   // Batch: total payments per trader
   const payments = await prisma.vendorPayment.groupBy({
     by: ['vendorId'],
-    where: { vendorId: { in: traderIds } },
+    where: { vendorId: { in: traderIds }, ...getCompanyFilter(req) },
     _sum: { amount: true },
   });
   const paymentMap = new Map(payments.map(p => [p.vendorId, p._sum.amount || 0]));
 
   // Batch: total purchase value from PO lines
   const poLines = await prisma.pOLine.findMany({
-    where: { po: { vendorId: { in: traderIds } } },
+    where: { po: { vendorId: { in: traderIds }, ...getCompanyFilter(req) } },
     select: { po: { select: { vendorId: true } }, receivedQty: true, rate: true },
   });
   const purchaseMap = new Map<string, number>();
@@ -93,7 +93,7 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 // POST / — create trader
 router.post('/', validate(traderSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const b = req.body;
-  const count = await prisma.vendor.count({ where: { isAgent: true } });
+  const count = await prisma.vendor.count({ where: { isAgent: true, ...getCompanyFilter(req) } });
   let vendorCode = `TRD-${String(count + 1).padStart(3, '0')}`;
 
   let trader;
@@ -106,6 +106,7 @@ router.post('/', validate(traderSchema), asyncHandler(async (req: AuthRequest, r
         bankName: b.bankName || null, bankAccount: b.bankAccount || null, bankIfsc: b.bankIfsc || null,
         pan: b.pan || null, productTypes: b.productTypes || null, creditLimit: b.creditLimit || 0, paymentTerms: 'ADVANCE',
         remarks: b.remarks || null, isActive: true,
+        companyId: getActiveCompanyId(req),
       },
     });
   } catch (err: unknown) {
@@ -119,6 +120,7 @@ router.post('/', validate(traderSchema), asyncHandler(async (req: AuthRequest, r
           bankName: b.bankName || null, bankAccount: b.bankAccount || null, bankIfsc: b.bankIfsc || null,
           pan: b.pan || null, productTypes: b.productTypes || null, creditLimit: b.creditLimit || 0, paymentTerms: 'ADVANCE',
           remarks: b.remarks || null, isActive: true,
+          companyId: getActiveCompanyId(req),
         },
       });
     } else throw err;
@@ -168,6 +170,7 @@ router.get('/:id/running-pos', asyncHandler(async (req: AuthRequest, res: Respon
       vendorId: traderId,
       dealType: 'OPEN',
       status: { in: ['APPROVED', 'PARTIAL_RECEIVED'] },
+      ...getCompanyFilter(req),
     },
     orderBy: { poDate: 'desc' },
     take: 20,
@@ -196,7 +199,7 @@ router.get('/:id/ledger', asyncHandler(async (req: AuthRequest, res: Response) =
 
   // Fetch all PO lines (deliveries) for this trader (OPEN running POs + legacy STANDARD)
   const poLines = await prisma.pOLine.findMany({
-    where: { po: { vendorId: traderId } },
+    where: { po: { vendorId: traderId, ...getCompanyFilter(req) } },
     orderBy: { createdAt: 'asc' },
     take: 500,
     select: {
@@ -208,7 +211,7 @@ router.get('/:id/ledger', asyncHandler(async (req: AuthRequest, res: Response) =
 
   // Fetch all payments for this trader
   const payments = await prisma.vendorPayment.findMany({
-    where: { vendorId: traderId },
+    where: { vendorId: traderId, ...getCompanyFilter(req) },
     orderBy: { paymentDate: 'asc' },
     take: 500,
     select: {
@@ -295,6 +298,7 @@ router.post('/:id/close-po/:poId', asyncHandler(async (req: AuthRequest, res: Re
       vendorId: traderId,
       dealType: 'OPEN',
       status: { in: ['APPROVED', 'PARTIAL_RECEIVED'] },
+      ...getCompanyFilter(req),
     },
     include: { lines: { select: { amount: true, cgstAmount: true, sgstAmount: true, lineTotal: true } } },
   });

@@ -1,6 +1,6 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, authorize } from '../middleware/auth';
+import { authenticate, authorize, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { generateEwayBill, MSPIL } from '../services/ewayBill';
 import { renderDocumentPdf } from '../services/documentRenderer';
 
@@ -33,14 +33,14 @@ const SUGAR_HSN = '1701';
 const SUGAR_GST = 5;
 
 // GET /summary?date=YYYY-MM-DD
-router.get('/summary', async (req: Request, res: Response) => {
+router.get('/summary', async (req: AuthRequest, res: Response) => {
   try {
     const dateStr = req.query.date as string;
     if (!dateStr) { res.json({ totalNet: 0, truckCount: 0, totalBags: 0 }); return; }
     const dayStart = new Date(dateStr + 'T00:00:00.000Z');
     const dayEnd = new Date(dateStr + 'T23:59:59.999Z');
     const trucks = await prisma.sugarDispatchTruck.findMany({
-      where: { date: { gte: dayStart, lte: dayEnd } },
+      where: { date: { gte: dayStart, lte: dayEnd }, ...getCompanyFilter(req) },
       orderBy: { createdAt: 'desc' },
       select: { weightNet: true, bags: true },
     });
@@ -51,14 +51,14 @@ router.get('/summary', async (req: Request, res: Response) => {
 });
 
 // GET ?date=YYYY-MM-DD
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', async (req: AuthRequest, res: Response) => {
   try {
     const dateStr = req.query.date as string;
-    let where: any = {};
+    let where: any = { ...getCompanyFilter(req) };
     if (dateStr) {
       const dayStart = new Date(dateStr + 'T00:00:00.000Z');
       const dayEnd = new Date(dateStr + 'T23:59:59.999Z');
-      where = { date: { gte: dayStart, lte: dayEnd } };
+      where = { ...where, date: { gte: dayStart, lte: dayEnd } };
     }
     const trucks = await prisma.sugarDispatchTruck.findMany({
       where,
@@ -70,9 +70,10 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 // GET /history — past dispatches grouped by date
-router.get('/history', async (_req: Request, res: Response) => {
+router.get('/history', async (req: AuthRequest, res: Response) => {
   try {
     const trucks = await prisma.sugarDispatchTruck.findMany({
+      where: { ...getCompanyFilter(req) },
       orderBy: { date: 'desc' },
       take: 500,
       select: {
@@ -95,7 +96,7 @@ router.get('/history', async (_req: Request, res: Response) => {
 });
 
 // POST / — Gate In
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', async (req: AuthRequest, res: Response) => {
   try {
     const b = req.body;
     const bags = parseInt(b.bags) || 0;
@@ -113,6 +114,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     const truck = await prisma.sugarDispatchTruck.create({
       data: {
+        companyId: getActiveCompanyId(req),
         date: new Date(b.date || new Date()), status,
         rstNo: b.rstNo ? parseInt(b.rstNo) : null,
         vehicleNo: b.vehicleNo || '', partyName: b.partyName || '',
@@ -126,7 +128,7 @@ router.post('/', async (req: Request, res: Response) => {
         remarks: b.remarks || null,
         contractId: b.contractId || null,
         customerId: b.customerId || null,
-        userId: (req as any).user.id,
+        userId: req.user!.id,
       },
     });
     res.status(201).json(truck);
@@ -134,7 +136,7 @@ router.post('/', async (req: Request, res: Response) => {
 });
 
 // PUT /:id — Update truck (status guard: cannot edit BILLED/RELEASED via free PUT)
-router.put('/:id', async (req: Request, res: Response) => {
+router.put('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const existing = await prisma.sugarDispatchTruck.findUnique({ where: { id: req.params.id } });
     if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
@@ -164,7 +166,7 @@ router.put('/:id', async (req: Request, res: Response) => {
 });
 
 // POST /:id/weigh
-router.post('/:id/weigh', async (req: Request, res: Response) => {
+router.post('/:id/weigh', async (req: AuthRequest, res: Response) => {
   try {
     const { type, weight } = req.body;
     const w = parseFloat(weight);
@@ -189,7 +191,7 @@ router.post('/:id/weigh', async (req: Request, res: Response) => {
 });
 
 // POST /:id/generate-bill
-router.post('/:id/generate-bill', async (req: Request, res: Response) => {
+router.post('/:id/generate-bill', async (req: AuthRequest, res: Response) => {
   try {
     const truck = await prisma.sugarDispatchTruck.findUnique({ where: { id: req.params.id } });
     if (!truck) { res.status(404).json({ error: 'Not found' }); return; }
@@ -220,7 +222,7 @@ router.post('/:id/generate-bill', async (req: Request, res: Response) => {
 });
 
 // POST /:id/release
-router.post('/:id/release', async (req: Request, res: Response) => {
+router.post('/:id/release', async (req: AuthRequest, res: Response) => {
   try {
     const updated = await prisma.sugarDispatchTruck.update({
       where: { id: req.params.id },
@@ -231,7 +233,7 @@ router.post('/:id/release', async (req: Request, res: Response) => {
 });
 
 // GET /:id/invoice-pdf
-router.get('/:id/invoice-pdf', async (req: Request, res: Response) => {
+router.get('/:id/invoice-pdf', async (req: AuthRequest, res: Response) => {
   try {
     const truck = await prisma.sugarDispatchTruck.findUnique({ where: { id: req.params.id } });
     if (!truck) { res.status(404).json({ error: 'Not found' }); return; }
@@ -273,7 +275,7 @@ router.get('/:id/invoice-pdf', async (req: Request, res: Response) => {
 });
 
 // GET /:id/gate-pass-pdf
-router.get('/:id/gate-pass-pdf', async (req: Request, res: Response) => {
+router.get('/:id/gate-pass-pdf', async (req: AuthRequest, res: Response) => {
   try {
     const truck = await prisma.sugarDispatchTruck.findUnique({ where: { id: req.params.id } });
     if (!truck) { res.status(404).json({ error: 'Not found' }); return; }
@@ -315,7 +317,7 @@ router.get('/:id/gate-pass-pdf', async (req: Request, res: Response) => {
 });
 
 // POST /:id/eway-bill
-router.post('/:id/eway-bill', async (req: Request, res: Response) => {
+router.post('/:id/eway-bill', async (req: AuthRequest, res: Response) => {
   try {
     const truck = await prisma.sugarDispatchTruck.findUnique({ where: { id: req.params.id } });
     if (!truck) { res.status(404).json({ error: 'Not found' }); return; }
@@ -373,7 +375,7 @@ router.post('/:id/eway-bill', async (req: Request, res: Response) => {
 });
 
 // DELETE /:id
-router.delete('/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
+router.delete('/:id', authorize('ADMIN') as any, async (req: AuthRequest, res: Response) => {
   try {
     const truck = await prisma.sugarDispatchTruck.findUnique({ where: { id: req.params.id } });
     if (!truck) { res.status(404).json({ error: 'Not found' }); return; }

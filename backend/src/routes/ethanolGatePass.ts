@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { nextInvoiceNo } from '../utils/invoiceCounter';
 import { onSaleInvoiceCreated } from '../services/autoJournal';
@@ -16,12 +16,12 @@ function authOrWbKey(req: Request, res: Response, next: NextFunction) {
   if (wbKey && wbKey.length === WB_KEY.length) {
     try {
       if (crypto.timingSafeEqual(Buffer.from(wbKey), Buffer.from(WB_KEY))) {
-        (req as any).user = { id: 'factory-server', role: 'ADMIN' };
+        (req as AuthRequest).user = { id: 'factory-server', role: 'ADMIN' } as AuthRequest['user'];
         return next();
       }
     } catch { /* fall through to JWT */ }
   }
-  return authenticate(req as any, res, next);
+  return authenticate(req as AuthRequest, res, next);
 }
 router.use(authOrWbKey);
 
@@ -50,7 +50,7 @@ async function nextCounter(tx: any, prefix: string): Promise<string> {
 // ── GET /active-contracts ── (must be before /:id)
 router.get('/active-contracts', asyncHandler(async (req: AuthRequest, res: Response) => {
   const contracts = await prisma.ethanolContract.findMany({
-    where: { status: 'ACTIVE' },
+    where: { status: 'ACTIVE', ...getCompanyFilter(req) },
     select: { id: true, contractNo: true, contractType: true, buyerName: true, buyerGst: true, buyerAddress: true, conversionRate: true, ethanolRate: true, gstPercent: true, paymentTermsDays: true, omcDepot: true, buyerCustomerId: true },
     take: 50,
   });
@@ -66,7 +66,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const nextDay = new Date(targetDate); nextDay.setUTCDate(nextDay.getUTCDate() + 1);
 
   const trucks = await prisma.dispatchTruck.findMany({
-    where: { date: { gte: targetDate, lt: nextDay }, status: { not: undefined } },
+    where: { date: { gte: targetDate, lt: nextDay }, status: { not: undefined }, ...getCompanyFilter(req) },
     orderBy: { createdAt: 'desc' },
     take: 200,
     include: { contract: { select: { contractNo: true, contractType: true, buyerName: true, gstPercent: true, paymentTermsDays: true, buyerGst: true } } },
@@ -96,6 +96,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       status: 'GATE_IN',
       gateInTime: new Date(),
       userId: req.user?.id || null,
+      companyId: getActiveCompanyId(req as AuthRequest) || undefined,
     },
   });
   res.status(201).json(truck);

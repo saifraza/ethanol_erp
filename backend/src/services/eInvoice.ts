@@ -14,6 +14,7 @@
  */
 
 import { getSaralAuth, clearSaralAuthCache, getStateCode } from './ewayBill';
+import { getCompanyById, CompanyConfig, COMPANY } from '../shared/config/company';
 
 export interface IRNPayload {
   Version: string;
@@ -146,9 +147,10 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-export function buildIRNPayload(invoice: any): IRNPayload {
-  const gstin = process.env.EWAY_GSTIN || '23AAECM3666P1Z1';
-  const stateCode = gstin.substring(0, 2);
+export function buildIRNPayload(invoice: any, seller?: CompanyConfig): IRNPayload {
+  const company = seller || COMPANY;
+  const gstin = company.gstin || process.env.EWAY_GSTIN || '23AAECM3666P1Z1';
+  const stateCode = company.stateCode || gstin.substring(0, 2);
   const buyerStateCode = invoice.customer?.gstin
     ? invoice.customer.gstin.substring(0, 2)
     : '27';
@@ -182,13 +184,13 @@ export function buildIRNPayload(invoice: any): IRNPayload {
     },
     SellerDtls: {
       Gstin: gstin,
-      LglNm: 'Mahakaushal Sugar and Power Industries Ltd.',
-      TrdNm: 'MSPIL',
-      Addr1: 'Village Bachai, Dist. Narsinghpur',
-      Loc: 'Narsinghpur',
-      Pin: 487001,
+      LglNm: company.name,
+      TrdNm: company.shortName,
+      Addr1: company.address.line1 || 'Village Bachai, Dist. Narsinghpur',
+      Loc: company.address.city || 'Narsinghpur',
+      Pin: parseInt(company.address.pincode) || 487001,
       Stcd: stateCode,
-      Ph: '9425154000',
+      Ph: company.contact.phone || '9425154000',
     },
     BuyerDtls: {
       Gstin: invoice.customer?.gstin || undefined,
@@ -329,7 +331,7 @@ function buildEInvoiceHeaders(auth: Awaited<ReturnType<typeof getSaralAuth>>): R
 /** Small delay helper */
 function delay(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 
-export async function generateIRN(invoiceData: any, retryCount = 0): Promise<IRNResponse> {
+export async function generateIRN(invoiceData: any, retryCount = 0, companyId?: string): Promise<IRNResponse> {
   const MAX_RETRIES = 2; // up to 3 total attempts (0, 1, 2)
   try {
     // Force fresh auth on retry, with a small delay to let network settle
@@ -346,7 +348,10 @@ export async function generateIRN(invoiceData: any, retryCount = 0): Promise<IRN
       return { success: false, error: 'API credentials not configured (EWAY_EWB_USERNAME or EWAY_NIC_USERNAME)' };
     }
 
-    const payload = buildIRNPayload(invoiceData);
+    // Resolve seller company from DB (falls back to MSPIL)
+    const cid = companyId || invoiceData.companyId;
+    const seller = cid ? await getCompanyById(cid) : undefined;
+    const payload = buildIRNPayload(invoiceData, seller);
     const url = `${baseUrl}/eicore/v1.03/Invoice`;
     const headers = buildEInvoiceHeaders(auth);
 
@@ -455,7 +460,7 @@ export async function generateIRN(invoiceData: any, retryCount = 0): Promise<IRN
     const hasInvalidToken = errors.some((e: any) => (e.ErrorCode || e.errorCode) === '1005' || (e.ErrorMessage || e.errorMessage || '').includes('Invalid Token'));
     if (hasInvalidToken && retryCount < MAX_RETRIES) {
       console.log(`[E-Invoice] Invalid Token — retrying (${retryCount + 1}/${MAX_RETRIES})...`);
-      return generateIRN(invoiceData, retryCount + 1);
+      return generateIRN(invoiceData, retryCount + 1, companyId);
     }
 
     return { success: false, error: errorMsg, rawResponse: result };
@@ -464,7 +469,7 @@ export async function generateIRN(invoiceData: any, retryCount = 0): Promise<IRN
     // Retry on network errors (socket, timeout, ECONNRESET)
     if (retryCount < MAX_RETRIES && (err.message.includes('Network error') || err.message.includes('socket') || err.message.includes('ECONNRESET') || err.message.includes('timed out'))) {
       console.log(`[E-Invoice] Network error — retrying (${retryCount + 1}/${MAX_RETRIES})...`);
-      return generateIRN(invoiceData, retryCount + 1);
+      return generateIRN(invoiceData, retryCount + 1, companyId);
     }
     if (err.message.includes('auth') || err.message.includes('Auth') || err.message.includes('token')) {
       clearSaralAuthCache();
@@ -572,7 +577,7 @@ export async function getIRNDetails(irn: string): Promise<any> {
   }
 }
 
-export async function generateEWBByIRN(irn: string, ewbData: any, retryCount = 0): Promise<any> {
+export async function generateEWBByIRN(irn: string, ewbData: any, retryCount = 0, companyId?: string): Promise<any> {
   const MAX_RETRIES = 2;
   try {
     if (retryCount > 0) {
@@ -581,7 +586,8 @@ export async function generateEWBByIRN(irn: string, ewbData: any, retryCount = 0
     }
     const auth = await getSaralAuth();
     const baseUrl = (process.env.EWAY_SARAL_URL || 'https://saralgsp.com').replace(/\/+$/, '');
-    const gstin = process.env.EWAY_GSTIN || '23AAECM3666P1Z1';
+    const company = companyId ? await getCompanyById(companyId) : COMPANY;
+    const gstin = company.gstin || process.env.EWAY_GSTIN || '23AAECM3666P1Z1';
     const ewaybillUsername = process.env.EWAY_EWB_USERNAME || process.env.EWAY_NIC_USERNAME || '';
     const ewaybillPassword = process.env.EWAY_EWB_PASSWORD || process.env.EWAY_NIC_PASSWORD || '';
 
@@ -665,7 +671,7 @@ export async function generateEWBByIRN(irn: string, ewbData: any, retryCount = 0
     console.error(`[E-Invoice EWB] Error (attempt ${retryCount + 1}):`, err.message);
     if (retryCount < MAX_RETRIES && (err.message.includes('Network error') || err.message.includes('socket') || err.message.includes('ECONNRESET') || err.message.includes('timed out') || err.message.includes('fetch failed'))) {
       console.log(`[E-Invoice EWB] Network error — retrying (${retryCount + 1}/${MAX_RETRIES})...`);
-      return generateEWBByIRN(irn, ewbData, retryCount + 1);
+      return generateEWBByIRN(irn, ewbData, retryCount + 1, companyId);
     }
     if (err.message.includes('auth') || err.message.includes('Auth') || err.message.includes('token')) {
       clearSaralAuthCache();
@@ -679,7 +685,7 @@ export async function generateEWBByIRN(irn: string, ewbData: any, retryCount = 0
  * Used for job work where SAC codes can't generate EWB from IRN.
  * Uses same auth as e-invoice portal but sends NIC EWB payload format.
  */
-export async function generateStandaloneEWB(ewbPayload: any, retryCount = 0): Promise<any> {
+export async function generateStandaloneEWB(ewbPayload: any, retryCount = 0, companyId?: string): Promise<any> {
   const MAX_RETRIES = 3;
   try {
     if (retryCount > 0) {
@@ -688,7 +694,8 @@ export async function generateStandaloneEWB(ewbPayload: any, retryCount = 0): Pr
     const baseUrl = (process.env.EWAY_SARAL_URL || 'https://saralgsp.com').replace(/\/+$/, '');
     const clientId = process.env.EWAY_NIC_CLIENT_ID || '';
     const clientSecret = process.env.EWAY_NIC_CLIENT_SECRET || '';
-    const gstin = process.env.EWAY_GSTIN || '23AAECM3666P1Z1';
+    const company = companyId ? await getCompanyById(companyId) : COMPANY;
+    const gstin = company.gstin || process.env.EWAY_GSTIN || '23AAECM3666P1Z1';
     const ewaybillUsername = process.env.EWAY_EWB_USERNAME || process.env.EWAY_NIC_USERNAME || '';
     const ewaybillPassword = process.env.EWAY_EWB_PASSWORD || process.env.EWAY_NIC_PASSWORD || '';
 
@@ -786,7 +793,7 @@ export async function generateStandaloneEWB(ewbPayload: any, retryCount = 0): Pr
   } catch (err: any) {
     console.error(`[E-Invoice Standalone EWB] Error (attempt ${retryCount + 1}):`, err.message);
     if (retryCount < MAX_RETRIES && (err.message.includes('Network') || err.message.includes('socket') || err.message.includes('fetch failed'))) {
-      return generateStandaloneEWB(ewbPayload, retryCount + 1);
+      return generateStandaloneEWB(ewbPayload, retryCount + 1, companyId);
     }
     return { success: false, error: `Standalone EWB error: ${err.message}` };
   }

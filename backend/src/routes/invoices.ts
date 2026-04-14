@@ -75,6 +75,7 @@ router.get('/outstanding', async (req: Request, res: Response) => {
     const limit = Math.min(parseInt((req.query.limit as string) || '200'), 1000);
     const outstanding = await prisma.invoice.findMany({
       where: {
+        ...getCompanyFilter(req as AuthRequest),
         status: { in: ['UNPAID', 'PARTIAL'] },
       },
       include: {
@@ -153,7 +154,7 @@ router.post('/', async (req: Request, res: Response) => {
         igstPercent: gst.igstPercent, igstAmount: gst.igstAmount,
         freightCharge, totalAmount, paidAmount: 0, balanceAmount: totalAmount, status: 'UNPAID',
         challanNo: b.challanNo || null, ewayBill: b.ewayBill || null, remarks: b.remarks || null,
-        userId: (req as any).user.id,
+        userId: (req as AuthRequest).user!.id,
       },
       include: { customer: { select: { id: true, name: true, shortName: true, state: true } }, payments: true },
     });
@@ -165,7 +166,7 @@ router.post('/', async (req: Request, res: Response) => {
       igstAmount: invoice.igstAmount, supplyType: invoice.supplyType,
       freightCharge: invoice.freightCharge,
       productName: invoice.productName, customerId: b.customerId,
-      userId: (req as any).user.id, invoiceDate: invoice.invoiceDate,
+      userId: (req as AuthRequest).user!.id, invoiceDate: invoice.invoiceDate,
     }).catch(() => {});
 
     res.status(201).json(invoice);
@@ -235,7 +236,7 @@ router.post('/from-shipment/:shipmentId', async (req: Request, res: Response) =>
         igstPercent: gst2.igstPercent, igstAmount: gst2.igstAmount,
         freightCharge, totalAmount, paidAmount: 0, balanceAmount: totalAmount, status: 'UNPAID',
         challanNo: shipment.challanNo || null, ewayBill: shipment.ewayBill || null, remarks: null,
-        userId: (req as any).user.id,
+        userId: (req as AuthRequest).user!.id,
       },
       include: { customer: { select: { id: true, name: true, shortName: true, state: true } }, payments: true },
     });
@@ -248,7 +249,7 @@ router.post('/from-shipment/:shipmentId', async (req: Request, res: Response) =>
       cgstAmount: invoice.cgstAmount, sgstAmount: invoice.sgstAmount,
       igstAmount: invoice.igstAmount, supplyType: invoice.supplyType,
       productName: invoice.productName, customerId: order.customerId,
-      userId: (req as any).user.id, invoiceDate: invoice.invoiceDate,
+      userId: (req as AuthRequest).user!.id, invoiceDate: invoice.invoiceDate,
     }).catch(() => {});
 
     res.status(201).json(invoice);

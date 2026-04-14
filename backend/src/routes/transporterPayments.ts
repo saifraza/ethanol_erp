@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { onTransporterPaymentMade } from '../services/autoJournal';
 
@@ -11,7 +11,7 @@ router.use(authenticate as any);
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const status = req.query.status as string | undefined;
     const shipmentId = req.query.shipmentId as string | undefined;
-    const where: any = {};
+    const where: any = { ...getCompanyFilter(req) };
     if (status) where.status = status;
     if (shipmentId) where.shipmentId = shipmentId;
 
@@ -31,6 +31,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
 // GET /summary — Payment summary per transporter
 router.get('/summary', asyncHandler(async (req: AuthRequest, res: Response) => {
     const payments = await prisma.transporterPayment.findMany({
+      where: { ...getCompanyFilter(req) },
       select: {
         transporterName: true,
         transporterId: true,
@@ -82,6 +83,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         status,
         remarks: b.remarks || null,
         userId: req.user!.id,
+        companyId: getActiveCompanyId(req),
       },
       include: { shipment: { select: { vehicleNo: true, customerName: true } } },
     });
@@ -114,6 +116,11 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     if (b.approvedBy !== undefined) data.approvedBy = b.approvedBy;
     if (b.status === 'PAID' && !b.paidAt) data.paidAt = new Date();
 
+    const existing = await prisma.transporterPayment.findFirst({
+      where: { id: req.params.id, ...getCompanyFilter(req) },
+    });
+    if (!existing) { res.status(404).json({ error: 'Payment not found' }); return; }
+
     const payment = await prisma.transporterPayment.update({
       where: { id: req.params.id },
       data,
@@ -138,6 +145,10 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 
 // DELETE /:id
 router.delete('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const toDelete = await prisma.transporterPayment.findFirst({
+      where: { id: req.params.id, ...getCompanyFilter(req) },
+    });
+    if (!toDelete) { res.status(404).json({ error: 'Payment not found' }); return; }
     await prisma.transporterPayment.delete({ where: { id: req.params.id } });
     res.json({ ok: true });
 }));

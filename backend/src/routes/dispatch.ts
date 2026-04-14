@@ -3,7 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { recomputeEthanolEntryByDate } from './ethanolProduct';
 
 const router = Router();
@@ -22,7 +22,7 @@ const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } }); // 1
 router.get('/active-contracts', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const contracts = await prisma.ethanolContract.findMany({
-      where: { status: 'ACTIVE' },
+      where: { status: 'ACTIVE', ...getCompanyFilter(req) },
       select: {
         id: true, contractNo: true, contractType: true, buyerName: true,
         ethanolRate: true, conversionRate: true, omcName: true, omcDepot: true,
@@ -89,7 +89,7 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
     // Single-date mode: use DispatchTruck (legacy)
     const dateFilter = { date: { gte: start, lte: end } };
     const dispatches = await prisma.dispatchTruck.findMany({
-      where: { ...dateFilter, entryId: null },
+      where: { ...dateFilter, entryId: null, ...getCompanyFilter(req) },
       orderBy: { createdAt: 'desc' },
     });
     res.json({ dispatches });
@@ -134,7 +134,7 @@ router.get('/totals', authenticate, async (req: AuthRequest, res: Response) => {
     }
 
     // Total truck count (all individual truck records)
-    const truckCount = await prisma.dispatchTruck.count({ where: { entryId: null } });
+    const truckCount = await prisma.dispatchTruck.count({ where: { entryId: null, ...getCompanyFilter(req) } });
 
     res.json({
       totalDispatched: totalFromEntries + standaloneExtra,
@@ -151,7 +151,7 @@ router.get('/history', authenticate, async (req: AuthRequest, res: Response) => 
     today.setHours(0, 0, 0, 0);
 
     const dispatches = await prisma.dispatchTruck.findMany({
-      where: { date: { lt: today }, entryId: null },
+      where: { date: { lt: today }, entryId: null, ...getCompanyFilter(req) },
       orderBy: { date: 'desc' },
       take: 200,
     });
@@ -181,7 +181,7 @@ router.get('/report', authenticate, async (req: AuthRequest, res: Response) => {
     const end = toStr ? new Date(toStr + 'T23:59:59.999Z') : new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
     const start = fromStr ? new Date(fromStr + 'T00:00:00.000Z') : new Date(end.getTime() - 7 * 86400000);
 
-    const where: any = { date: { gte: start, lte: end } };
+    const where: any = { date: { gte: start, lte: end }, ...getCompanyFilter(req) };
     if (status && status !== 'ALL') where.status = status;
     if (search) where.partyName = { contains: search, mode: 'insensitive' };
 
@@ -237,6 +237,7 @@ router.post('/', authenticate, upload.single('photo'), async (req: AuthRequest, 
 
     const dispatch = await prisma.dispatchTruck.create({
       data: {
+        companyId: getActiveCompanyId(req),
         date: dispatchDate,
         batchNo: batchNo || '',
         vehicleNo: vehicleNo || '',
@@ -393,7 +394,7 @@ router.post('/', authenticate, upload.single('photo'), async (req: AuthRequest, 
 // DELETE /api/dispatch/:id
 router.delete('/:id', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const d = await prisma.dispatchTruck.findUnique({ where: { id: req.params.id } });
+    const d = await prisma.dispatchTruck.findFirst({ where: { id: req.params.id, ...getCompanyFilter(req) } });
     if (d?.photoUrl) {
       const filename = path.basename(d.photoUrl.replace(/^\//, ''));
       const filePath = path.join(__dirname, '../../uploads/dispatch', filename);

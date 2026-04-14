@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest, getCompanyFilter } from '../middleware/auth';
 
 const router = Router();
 
@@ -24,9 +24,9 @@ router.get('/analytics', authenticate, async (req: AuthRequest, res: Response) =
     ] = await Promise.all([
       prisma.grainEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
       prisma.ethanolProductEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
-      prisma.dispatchTruck.findMany({ where: { date: { gte: from, lte: now }, status: { notIn: ['GATE_IN', 'TARE_WEIGHED'] } }, orderBy: { date: 'asc' } }),
+      prisma.dispatchTruck.findMany({ where: { date: { gte: from, lte: now }, status: { notIn: ['GATE_IN', 'TARE_WEIGHED'] }, ...getCompanyFilter(req) }, orderBy: { date: 'asc' } }),
       prisma.dDGSStockEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
-      prisma.dDGSDispatchTruck.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
+      prisma.dDGSDispatchTruck.findMany({ where: { date: { gte: from, lte: now }, ...getCompanyFilter(req) }, orderBy: { date: 'asc' } }),
       prisma.dDGSProductionEntry.findMany({ where: { date: { gte: from, lte: now } }, select: { totalProduction: true, date: true, shiftDate: true } }),
       prisma.distillationEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
       prisma.liquefactionEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
@@ -49,7 +49,7 @@ router.get('/analytics', authenticate, async (req: AuthRequest, res: Response) =
       prisma.grainTruck.aggregate({
         _sum: { weightNet: true },
         _count: true,
-        where: { createdAt: { gte: from, lte: now }, cancelled: false },
+        where: { createdAt: { gte: from, lte: now }, cancelled: false, ...getCompanyFilter(req) },
       }),
     ]);
 

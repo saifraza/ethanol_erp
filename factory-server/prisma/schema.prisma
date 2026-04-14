@@ -211,7 +211,10 @@ model CachedSupplier {
   name      String
   gstin     String?
   phone     String?
+  companyId String?  // Cloud Company UUID
   updatedAt DateTime @default(now())
+
+  @@index([companyId])
 }
 
 model CachedMaterial {
@@ -234,10 +237,13 @@ model CachedPurchaseOrder {
   rate           Float    @default(0)
   unit           String
   status         String
+  companyId      String?  // Cloud Company UUID
+  companyCode    String?  // "MSPIL", "MAEL" — for display
   updatedAt      DateTime @default(now())
 
   @@index([status])
   @@index([supplierId])
+  @@index([companyId])
 }
 
 model CachedCustomer {

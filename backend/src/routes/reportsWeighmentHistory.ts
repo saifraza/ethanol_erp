@@ -7,7 +7,7 @@
 
 import { Router, Response } from 'express';
 import { z } from 'zod';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest, getCompanyFilter } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { ValidationError } from '../shared/errors';
 import prisma from '../config/prisma';
@@ -101,6 +101,7 @@ async function fetchGrainTrucks(
   fromDate: Date | undefined,
   toDate: Date | undefined,
   xlsxMode: boolean,
+  companyFilter: { companyId?: string } = {},
 ): Promise<GrainTruckRecord[]> {
   const dateFilter =
     fromDate || toDate
@@ -114,7 +115,7 @@ async function fetchGrainTrucks(
 
   return prisma.grainTruck.findMany({
     take: xlsxMode ? 10000 : 500,
-    where: dateFilter,
+    where: { ...dateFilter, ...companyFilter },
     orderBy: { createdAt: 'desc' },
     select: {
       id: true,
@@ -135,6 +136,7 @@ async function fetchDispatchTrucks(
   fromDate: Date | undefined,
   toDate: Date | undefined,
   xlsxMode: boolean,
+  companyFilter: { companyId?: string } = {},
 ): Promise<DispatchTruckRecord[]> {
   const dateFilter =
     fromDate || toDate
@@ -148,7 +150,7 @@ async function fetchDispatchTrucks(
 
   return prisma.dispatchTruck.findMany({
     take: xlsxMode ? 10000 : 500,
-    where: dateFilter,
+    where: { ...dateFilter, ...companyFilter },
     orderBy: { gateInTime: 'desc' },
     select: {
       id: true,
@@ -172,6 +174,7 @@ async function fetchDDGSTrucks(
   fromDate: Date | undefined,
   toDate: Date | undefined,
   xlsxMode: boolean,
+  companyFilter: { companyId?: string } = {},
 ): Promise<DDGSDispatchTruckRecord[]> {
   const dateFilter =
     fromDate || toDate
@@ -185,7 +188,7 @@ async function fetchDDGSTrucks(
 
   return prisma.dDGSDispatchTruck.findMany({
     take: xlsxMode ? 10000 : 500,
-    where: dateFilter,
+    where: { ...dateFilter, ...companyFilter },
     orderBy: { gateInTime: 'desc' },
     select: {
       id: true,
@@ -513,15 +516,16 @@ router.get(
       params.materialType === 'FUEL' ||
       params.materialType === 'OTHER';
 
+    const companyFilter = getCompanyFilter(req);
     const [grainRaw, dispatchRaw, ddgsRaw] = await Promise.all([
       wantInbound && wantRaw
-        ? fetchGrainTrucks(fromDate, toDate, xlsxMode)
+        ? fetchGrainTrucks(fromDate, toDate, xlsxMode, companyFilter)
         : Promise.resolve([] as GrainTruckRecord[]),
       wantOutbound && wantEthanol
-        ? fetchDispatchTrucks(fromDate, toDate, xlsxMode)
+        ? fetchDispatchTrucks(fromDate, toDate, xlsxMode, companyFilter)
         : Promise.resolve([] as DispatchTruckRecord[]),
       wantOutbound && wantDDGS
-        ? fetchDDGSTrucks(fromDate, toDate, xlsxMode)
+        ? fetchDDGSTrucks(fromDate, toDate, xlsxMode, companyFilter)
         : Promise.resolve([] as DDGSDispatchTruckRecord[]),
     ]);
 

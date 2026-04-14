@@ -382,6 +382,7 @@ router.get('/bank-book', asyncHandler(async (req: AuthRequest, res: Response) =>
 router.get('/bank-accounts', asyncHandler(async (_req: AuthRequest, res: Response) => {
   const accounts = await prisma.account.findMany({
     where: {
+      ...getCompanyFilter(_req),
       OR: [
         { subType: 'BANK' },
         { code: { startsWith: '100' } }, // 1001=Cash, 1002+=Bank accounts
@@ -416,6 +417,7 @@ router.get('/customer-ledger/:customerId', asyncHandler(async (req: AuthRequest,
   // Invoices (debit entries)
   const invoices = await prisma.invoice.findMany({
     where: {
+      ...getCompanyFilter(req),
       customerId,
       ...(Object.keys(dateFilter).length > 0 ? { invoiceDate: dateFilter } : {}),
     },
@@ -436,6 +438,7 @@ router.get('/customer-ledger/:customerId', asyncHandler(async (req: AuthRequest,
   // Payments (credit entries)
   const payments = await prisma.payment.findMany({
     where: {
+      ...getCompanyFilter(req),
       customerId,
       ...(Object.keys(dateFilter).length > 0 ? { paymentDate: dateFilter } : {}),
     },
@@ -525,6 +528,7 @@ router.get('/vendor-ledger/:vendorId', asyncHandler(async (req: AuthRequest, res
   // Vendor invoices (debit entries — we owe them)
   const invoices = await prisma.vendorInvoice.findMany({
     where: {
+      ...getCompanyFilter(req),
       vendorId,
       ...(Object.keys(dateFilter).length > 0 ? { invoiceDate: dateFilter } : {}),
     },
@@ -545,6 +549,7 @@ router.get('/vendor-ledger/:vendorId', asyncHandler(async (req: AuthRequest, res
   // Vendor payments (credit entries — reducing what we owe)
   const payments = await prisma.vendorPayment.findMany({
     where: {
+      ...getCompanyFilter(req),
       vendorId,
       ...(Object.keys(dateFilter).length > 0 ? { paymentDate: dateFilter } : {}),
     },

@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, AuthRequest, authorize, getActiveCompanyId } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize, getActiveCompanyId, getCompanyFilter } from '../middleware/auth';
 
 const router = Router();
 const DEFAULT_SILO = 0;
@@ -95,7 +95,7 @@ async function getLastEntry(yearStart: number, beforeDate?: Date) {
   });
 }
 
-async function getLiveCumulativeUnloaded(yearStart: number) {
+async function getLiveCumulativeUnloaded(yearStart: number, companyFilter: { companyId?: string } = {}) {
   const baseline = await prisma.grainEntry.findFirst({
     where: { yearStart },
     orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
@@ -106,6 +106,7 @@ async function getLiveCumulativeUnloaded(yearStart: number) {
   const trucks = await prisma.grainTruck.aggregate({
     _sum: { weightNet: true },
     where: {
+      ...companyFilter,
       date: {
         gt: baseline.createdAt,
         lt: nextYear,
@@ -116,7 +117,7 @@ async function getLiveCumulativeUnloaded(yearStart: number) {
   return r2((baseline.cumulativeUnloaded ?? DEFAULT_CUM_UNLOADED) + (trucks._sum.weightNet ?? 0));
 }
 
-async function getLiveSiloEstimate(yearStart: number) {
+async function getLiveSiloEstimate(yearStart: number, companyFilter: { companyId?: string } = {}) {
   const latest = await getLastEntry(yearStart);
   if (!latest) {
     return {
@@ -131,6 +132,7 @@ async function getLiveSiloEstimate(yearStart: number) {
   const nextYear = new Date(Date.UTC(yearStart + 1, 0, 1));
   const trucks = await prisma.grainTruck.findMany({
     where: {
+      ...companyFilter,
       date: {
         gt: latest.createdAt,
         lt: nextYear,
@@ -186,8 +188,9 @@ router.get('/latest', authenticate, async (req: AuthRequest, res: Response) => {
       if (editEntry) beforeDate = editEntry.date;
     }
     const latest = await getLastEntry(yearStart, beforeDate);
-    const liveCumulativeUnloaded = await getLiveCumulativeUnloaded(yearStart);
-    const liveSilo = await getLiveSiloEstimate(yearStart);
+    const cf = getCompanyFilter(req);
+    const liveCumulativeUnloaded = await getLiveCumulativeUnloaded(yearStart, cf);
+    const liveSilo = await getLiveSiloEstimate(yearStart, cf);
     res.json({
       latest,
       defaults: {
@@ -248,8 +251,9 @@ router.get('/summary', authenticate, async (req: AuthRequest, res: Response) => 
   try {
     const yearStart = getCurrentYearStart();
     const latest = await getLastEntry(yearStart);
-    const liveCumulativeUnloaded = await getLiveCumulativeUnloaded(yearStart);
-    const liveSilo = await getLiveSiloEstimate(yearStart);
+    const cf = getCompanyFilter(req);
+    const liveCumulativeUnloaded = await getLiveCumulativeUnloaded(yearStart, cf);
+    const liveSilo = await getLiveSiloEstimate(yearStart, cf);
     const recentEntries = await prisma.grainEntry.findMany({
       where: { yearStart },
       orderBy: { date: 'desc' },

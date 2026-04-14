@@ -73,6 +73,7 @@ router.get('/active', async (req: Request, res: Response) => {
     const limit = Math.min(parseInt((req.query.limit as string) || '100'), 500);
     const shipments = await prisma.shipment.findMany({
       where: {
+        ...getCompanyFilter(req as AuthRequest),
         OR: [
           { status: { notIn: ['EXITED', 'CANCELLED'] } },
           { status: 'EXITED', exitTime: { gte: todayStart.toISOString() } },
@@ -150,7 +151,7 @@ router.post('/', async (req: Request, res: Response) => {
       gateInTime: b.gateInTime || null,
       status: 'GATE_IN',
       remarks: b.remarks || null,
-      userId: (req as any).user.id,
+      userId: (req as AuthRequest).user!.id,
       companyId,
     };
 
@@ -294,7 +295,7 @@ router.post('/:id/confirm-payment', async (req: Request, res: Response) => {
         paymentRef: b.paymentRef || null,
         paymentAmount: parseFloat(b.paymentAmount) || null,
         paymentConfirmedAt: new Date(),
-        paymentConfirmedBy: (req as any).user?.id || null,
+        paymentConfirmedBy: (req as AuthRequest).user?.id || null,
       },
       include: { dispatchRequest: { include: { orderLine: true } } },
     });
@@ -447,7 +448,7 @@ router.put('/:id/status', async (req: Request, res: Response) => {
                 weightNet: netMT,  // FIX: KG → MT conversion
                 sourceWbId: existing.sourceWbId || null,
                 remarks: `Auto from shipment #${existing.shipmentNo}`,
-                userId: (req as any).user?.id || null,
+                userId: (req as AuthRequest).user?.id || null,
               },
             });
           }
