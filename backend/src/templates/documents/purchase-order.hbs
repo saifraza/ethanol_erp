@@ -73,6 +73,55 @@
     </tbody>
   </table>
 
+  {{#if grns.length}}
+  <div style="margin-top:8px">
+    <div style="font-size:8px;font-weight:bold;padding:3px 6px;background:#f0f0f0;border:1px solid #d0d0d0;border-bottom:none;">
+      Goods Receipts ({{grnTotals.count}})
+    </div>
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th style="width:22px">#</th>
+          <th style="width:48px">GRN No</th>
+          <th style="width:54px">Date</th>
+          <th style="width:62px">Vehicle</th>
+          <th class="left">Item</th>
+          <th style="width:38px">Recd</th>
+          <th style="width:38px">Accpt</th>
+          <th style="width:38px">Rejct</th>
+          <th style="width:30px">Unit</th>
+          <th class="right" style="width:58px">Rate (Rs.)</th>
+          <th class="right" style="width:72px">Amount (Rs.)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each grns}}
+        <tr>
+          <td class="center">{{inc @index}}</td>
+          <td class="center">{{grnNo}}</td>
+          <td class="center">{{formatDate grnDate}}</td>
+          <td class="center">{{vehicleNo}}</td>
+          <td>{{description}}</td>
+          <td class="center">{{formatNum receivedQty}}</td>
+          <td class="center">{{formatNum acceptedQty}}</td>
+          <td class="center" style="{{#if rejectedQty}}color:#b00;{{/if}}">{{formatNum rejectedQty}}</td>
+          <td class="center">{{unit}}</td>
+          <td class="right">{{formatNum rate}}</td>
+          <td class="right">{{formatNum amount}}</td>
+        </tr>
+        {{/each}}
+        <tr style="font-weight:bold;background:#f7f7f7;">
+          <td class="center" colspan="5">Total — {{grnTotals.count}} receipt(s)</td>
+          <td></td>
+          <td class="center">{{formatNum grnTotals.qty}}</td>
+          <td colspan="3"></td>
+          <td class="right">{{formatINR grnTotals.amount}}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  {{/if}}
+
   <div class="totals-section">
     <div class="totals-box">
       <div class="total-row"><span class="label">Subtotal</span><span class="value">{{formatINR subtotal}}</span></div>

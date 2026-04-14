@@ -777,6 +777,38 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
         .map((k) => termByKey(k))
         .filter((t): t is NonNullable<ReturnType<typeof termByKey>> => !!t)
         .map((t) => ({ group: t.group, label: t.label })),
+      // Flat list of GRN receipts against this PO — same view as OPEN-PO lines, now for all POs
+      grns: (po.grns || [])
+        .filter((g: any) => g.status !== 'CANCELLED')
+        .slice()
+        .sort((a: any, b: any) => new Date(a.grnDate).getTime() - new Date(b.grnDate).getTime())
+        .flatMap((g: any) =>
+          (g.lines || []).map((gl: any) => ({
+            grnNo: g.grnNo,
+            grnDate: g.grnDate,
+            vehicleNo: g.vehicleNo || '',
+            invoiceNo: g.invoiceNo || '',
+            description: gl.description || '',
+            receivedQty: Math.round((gl.receivedQty || 0) * 100) / 100,
+            acceptedQty: Math.round((gl.acceptedQty || 0) * 100) / 100,
+            rejectedQty: Math.round((gl.rejectedQty || 0) * 100) / 100,
+            unit: gl.unit || '',
+            rate: Math.round((gl.rate || 0) * 100) / 100,
+            amount: Math.round((gl.amount || 0) * 100) / 100,
+          }))
+        ),
+      grnTotals: (() => {
+        const nonCancelled = (po.grns || []).filter((g: any) => g.status !== 'CANCELLED');
+        const totalQty = nonCancelled.reduce((s: number, g: any) =>
+          s + (g.lines || []).reduce((ls: number, l: any) => ls + (l.acceptedQty || 0), 0), 0);
+        const totalAmt = nonCancelled.reduce((s: number, g: any) =>
+          s + (g.lines || []).reduce((ls: number, l: any) => ls + (l.amount || 0), 0), 0);
+        return {
+          count: nonCancelled.length,
+          qty: Math.round(totalQty * 100) / 100,
+          amount: Math.round(totalAmt * 100) / 100,
+        };
+      })(),
     };
     let pdfBuffer: Buffer;
     try {
