@@ -270,14 +270,7 @@ const DDGSContracts: React.FC = () => {
     } finally { setDispatchSaving(false); }
   };
 
-  const handleDeleteDispatch = async (dispatchId: string) => {
-    if (!confirm('Delete this dispatch?')) return;
-    try {
-      await api.delete(`/ddgs-contracts/dispatches/${dispatchId}`);
-      fetchData();
-      if (expanded) loadSupplyDetail(expanded);
-    } catch (err: any) { setError(err?.response?.data?.error || 'Failed to delete'); }
-  };
+  // handleDeleteDispatch removed — dispatches should never be deleted
 
   const handlePdfUpload = async (contractId: string) => {
     const input = document.createElement('input');
@@ -820,7 +813,7 @@ const DDGSContracts: React.FC = () => {
                                                 } catch { setError('Failed to load EWB PDF'); }
                                               }} className="text-[8px] font-bold uppercase px-1 py-0.5 border border-green-300 bg-green-50 text-green-600 hover:bg-green-100" title="E-Way Bill PDF">EWB</button>
                                             )}
-                                            {isSuperAdmin && <button onClick={(e) => { e.stopPropagation(); handleDeleteDispatch(d.id); }} className="text-red-300 hover:text-red-600"><Trash2 size={10} /></button>}
+                                            {/* Delete button removed — dispatches should never be deleted */}
                                           </div>
                                         </td>
                                       </tr>
