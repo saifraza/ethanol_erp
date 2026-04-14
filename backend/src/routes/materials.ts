@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, authorize, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
-import { getEffectiveGstRate } from '../services/taxRateLookup';
+import { getEffectiveGstRate, resolveHsnFromString } from '../services/taxRateLookup';
 
 const router = Router();
 router.use(authenticate as any);
@@ -84,10 +84,19 @@ router.post('/', async (req: Request, res: Response) => {
     const code = await generateItemCode();
 
     // If hsnCodeId supplied, lookup code string for legacy cache + use master GST.
+    // If only the free-text hsnCode is given (what the Store usually types),
+    // fuzzy-match it against the HSN master so the FK gets set automatically.
     let hsnCodeStr: string | null = b.hsnCode || null;
-    if (b.hsnCodeId) {
-      const h = await prisma.hsnCode.findUnique({ where: { id: b.hsnCodeId }, select: { code: true } });
+    let resolvedHsnId: string | null = b.hsnCodeId || null;
+    if (resolvedHsnId) {
+      const h = await prisma.hsnCode.findUnique({ where: { id: resolvedHsnId }, select: { code: true } });
       if (h) hsnCodeStr = h.code;
+    } else if (hsnCodeStr) {
+      const auto = await resolveHsnFromString(hsnCodeStr);
+      if (auto.hsnCodeId) {
+        resolvedHsnId = auto.hsnCodeId;
+        hsnCodeStr = auto.matchedCode;
+      }
     }
 
     const overridePercent = b.gstOverridePercent != null ? parseFloat(b.gstOverridePercent) : null;
@@ -97,7 +106,7 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     const resolvedGst = await resolveMaterialGst({
-      hsnCodeId: b.hsnCodeId ?? null,
+      hsnCodeId: resolvedHsnId,
       overridePercent,
       overrideReason,
       legacyGstPercent: b.gstPercent != null ? parseFloat(b.gstPercent) : null,
@@ -110,7 +119,7 @@ router.post('/', async (req: Request, res: Response) => {
         category: b.category || 'RAW_MATERIAL',
         subCategory: b.subCategory || null,
         hsnCode: hsnCodeStr,
-        hsnCodeId: b.hsnCodeId || null,
+        hsnCodeId: resolvedHsnId,
         unit: normalizeUnit(b.unit),
         gstPercent: resolvedGst,
         gstOverridePercent: overridePercent,
@@ -149,11 +158,21 @@ router.put('/:id', async (req: Request, res: Response) => {
     if (b.isActive !== undefined) data.isActive = b.isActive;
 
     // Tax fields — source of truth is HsnCode master; only recompute if inputs changed.
-    const hsnIdChanged = b.hsnCodeId !== undefined && b.hsnCodeId !== existing.hsnCodeId;
+    // Also: if the free-text hsnCode changed but no hsnCodeId supplied, fuzzy-
+    // match against master so the FK gets auto-set on plain string edits.
+    let autoResolvedId: string | null | undefined;
+    const hsnStringChanged = b.hsnCode !== undefined && b.hsnCode !== existing.hsnCode;
+    if (hsnStringChanged && b.hsnCodeId === undefined) {
+      const auto = await resolveHsnFromString(b.hsnCode);
+      if (auto.hsnCodeId) autoResolvedId = auto.hsnCodeId;
+    }
+    const hsnIdChanged =
+      (b.hsnCodeId !== undefined && b.hsnCodeId !== existing.hsnCodeId) ||
+      (autoResolvedId !== undefined && autoResolvedId !== existing.hsnCodeId);
     const overrideChanged = b.gstOverridePercent !== undefined || b.gstOverrideReason !== undefined;
     const legacyChanged = b.gstPercent !== undefined;
     if (hsnIdChanged || overrideChanged || legacyChanged) {
-      const nextHsnId = b.hsnCodeId !== undefined ? b.hsnCodeId : existing.hsnCodeId;
+      const nextHsnId = b.hsnCodeId !== undefined ? b.hsnCodeId : (autoResolvedId ?? existing.hsnCodeId);
       const nextOverride = b.gstOverridePercent !== undefined
         ? (b.gstOverridePercent == null ? null : parseFloat(b.gstOverridePercent))
         : existing.gstOverridePercent;

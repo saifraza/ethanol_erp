@@ -5,7 +5,7 @@ import { NotFoundError } from '../shared/errors';
 import { z } from 'zod';
 import prisma from '../config/prisma';
 import { writeAudit } from '../utils/auditLog';
-import { getEffectiveGstRate } from '../services/taxRateLookup';
+import { getEffectiveGstRate, resolveHsnFromString } from '../services/taxRateLookup';
 
 const router = Router();
 
@@ -75,10 +75,18 @@ router.post('/master', authenticate, validate(fuelMasterSchema), asyncHandler(as
   }
 
   // Resolve authoritative GST — HSN master wins, override is escape-hatch, legacy scalar is fallback.
+  // Auto-match free-text hsnCode → master FK when client didn't pass hsnCodeId.
   let hsnCodeStr: string | null = b.hsnCode || null;
-  if (b.hsnCodeId) {
-    const h = await prisma.hsnCode.findUnique({ where: { id: b.hsnCodeId }, select: { code: true } });
+  let resolvedHsnId: string | null = b.hsnCodeId || null;
+  if (resolvedHsnId) {
+    const h = await prisma.hsnCode.findUnique({ where: { id: resolvedHsnId }, select: { code: true } });
     if (h) hsnCodeStr = h.code;
+  } else if (hsnCodeStr) {
+    const auto = await resolveHsnFromString(hsnCodeStr);
+    if (auto.hsnCodeId) {
+      resolvedHsnId = auto.hsnCodeId;
+      hsnCodeStr = auto.matchedCode;
+    }
   }
   const overridePercent = b.gstOverridePercent != null ? Number(b.gstOverridePercent) : null;
   const overrideReason = b.gstOverrideReason || null;
@@ -86,7 +94,7 @@ router.post('/master', authenticate, validate(fuelMasterSchema), asyncHandler(as
     return res.status(400).json({ error: 'gstOverrideReason is required when gstOverridePercent is set' });
   }
   const resolved = await getEffectiveGstRate({
-    hsnCodeId: b.hsnCodeId ?? null,
+    hsnCodeId: resolvedHsnId,
     itemOverridePercent: overridePercent,
     itemOverrideReason: overrideReason,
     legacyGstPercent: b.gstPercent ?? null,
@@ -104,7 +112,7 @@ router.post('/master', authenticate, validate(fuelMasterSchema), asyncHandler(as
       maxStock: b.maxStock || null,
       defaultRate: b.defaultRate || 0,
       hsnCode: hsnCodeStr,
-      hsnCodeId: b.hsnCodeId || null,
+      hsnCodeId: resolvedHsnId,
       gstPercent: resolved.rate,
       gstOverridePercent: overridePercent,
       gstOverrideReason: overrideReason,
@@ -123,13 +131,22 @@ router.put('/master/:id', authenticate, asyncHandler(async (req: AuthRequest, re
   const b = req.body;
 
   // Tax fields: only recompute if inputs changed. HSN master wins.
-  const hsnIdChanged = b.hsnCodeId !== undefined && b.hsnCodeId !== item.hsnCodeId;
+  // Auto-match free-text hsnCode changes to master FK.
+  let autoResolvedId: string | null | undefined;
+  const hsnStringChanged = b.hsnCode !== undefined && b.hsnCode !== item.hsnCode;
+  if (hsnStringChanged && b.hsnCodeId === undefined) {
+    const auto = await resolveHsnFromString(b.hsnCode);
+    if (auto.hsnCodeId) autoResolvedId = auto.hsnCodeId;
+  }
+  const hsnIdChanged =
+    (b.hsnCodeId !== undefined && b.hsnCodeId !== item.hsnCodeId) ||
+    (autoResolvedId !== undefined && autoResolvedId !== item.hsnCodeId);
   const overrideChanged = b.gstOverridePercent !== undefined || b.gstOverrideReason !== undefined;
   const legacyChanged = b.gstPercent !== undefined;
   let taxPatch: { hsnCode?: string | null; hsnCodeId?: string | null; gstPercent?: number; gstOverridePercent?: number | null; gstOverrideReason?: string | null; } = {};
 
   if (hsnIdChanged || overrideChanged || legacyChanged) {
-    const nextHsnId = b.hsnCodeId !== undefined ? b.hsnCodeId : item.hsnCodeId;
+    const nextHsnId = b.hsnCodeId !== undefined ? b.hsnCodeId : (autoResolvedId ?? item.hsnCodeId);
     const nextOverride = b.gstOverridePercent !== undefined
       ? (b.gstOverridePercent == null ? null : Number(b.gstOverridePercent))
       : item.gstOverridePercent;

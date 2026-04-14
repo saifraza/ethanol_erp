@@ -197,6 +197,38 @@ function round2(n: number) {
 }
 
 /**
+ * Fuzzy-resolve an HSN code string to a master HsnCode.id, so routes that
+ * still accept a free-text `hsnCode` from the client can auto-link to the
+ * master without the client having to know the FK. Single source of truth.
+ *
+ * Strategy:
+ *   1. Exact code match
+ *   2. Forward prefix: item "1005" → master "10059000"
+ *   3. Reverse prefix: item "10059000" → master "1005"
+ *
+ * Returns { hsnCodeId, matchedCode } or both-null if nothing matches.
+ */
+export async function resolveHsnFromString(
+  hsnString: string | null | undefined,
+): Promise<{ hsnCodeId: string | null; matchedCode: string | null }> {
+  if (!hsnString || !hsnString.trim()) return { hsnCodeId: null, matchedCode: null };
+  const q = hsnString.trim();
+  const exact = await prisma.hsnCode.findUnique({ where: { code: q } });
+  if (exact) return { hsnCodeId: exact.id, matchedCode: exact.code };
+  // Prefix scans — active codes only, limit to safe range
+  const candidates = await prisma.hsnCode.findMany({
+    where: { isActive: true },
+    select: { id: true, code: true },
+    take: 500,
+  });
+  const fwd = candidates.find((m) => m.code.startsWith(q));
+  if (fwd) return { hsnCodeId: fwd.id, matchedCode: fwd.code };
+  const rev = candidates.find((m) => q.startsWith(m.code));
+  if (rev) return { hsnCodeId: rev.id, matchedCode: rev.code };
+  return { hsnCodeId: null, matchedCode: null };
+}
+
+/**
  * Returns blast radius for a HsnCode rate change.
  * Used by the HSN master page to warn before saving.
  */
