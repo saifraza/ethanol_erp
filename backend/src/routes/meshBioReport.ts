@@ -106,9 +106,9 @@ router.get('/generate', async (req: AuthRequest, res: Response) => {
     });
     const ddgsStockOpening = latestDDGSStockEntry?.openingStock ?? 0;
 
-    // DDGS: dispatched (SUM of all DDGSDispatchTruck.weightNet all time, in kg, divide by 1000 for tonnes)
+    // DDGS: dispatched (SUM of all DDGSDispatchTruck.weightNet — already in MT/tonnes)
     const ddgsDispatches = await prisma.dDGSDispatchTruck.findMany();
-    const ddgsDispatched = ddgsDispatches.reduce((sum: number, t) => sum + t.weightNet, 0) / 1000;
+    const ddgsDispatched = ddgsDispatches.reduce((sum: number, t) => sum + t.weightNet, 0);
 
     // Jute: bagsFromMaize (SUM of all GrainTruck.bags all time)
     const allGrainTrucks = await prisma.grainTruck.findMany();

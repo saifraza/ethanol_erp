@@ -347,7 +347,8 @@ async function createOrUpdateDdgsTruckStub(w: WeighmentInput, ctx: PushContext):
     update: {
       // Only fill in tare on the partial-state update — never overwrite
       // weights/contract/status that may have been set by a later push.
-      ...(tareKg > 0 ? { weightTare: tareKg, tareTime: tareTimeVal } : {}),
+      // DDGSDispatchTruck stores ALL weights in MT (matching manual entry convention)
+      ...(tareKg > 0 ? { weightTare: Math.round((tareKg / 1000) * 1000) / 1000, tareTime: tareTimeVal } : {}),
     },
     create: {
       sourceWbId: w.id,
@@ -359,8 +360,8 @@ async function createOrUpdateDdgsTruckStub(w: WeighmentInput, ctx: PushContext):
       driverName: w.driver_name || null,
       driverMobile: w.driver_mobile || null,
       transporterName: w.transporter || null,
-      weightGross: grossKg,
-      weightTare: tareKg,
+      weightGross: Math.round((grossKg / 1000) * 1000) / 1000,
+      weightTare: Math.round((tareKg / 1000) * 1000) / 1000,
       weightNet: 0, // not yet billable
       bags: w.bags || 0,
       status: stubStatus,

@@ -215,6 +215,7 @@ export default function GrossWeighment() {
         if (!ethanolBL) missing.push('Volume (BL)');
         if (!ethanolSeal) missing.push('Seal No');
         if (!ethanolPESO) missing.push('PESO Date');
+        if (!ethanolRST) missing.push('RST No');
         if (missing.length > 0) {
           alert(`Cannot save — these fields are required for the invoice/challan:\n\n• ${missing.join('\n• ')}`);
           setCapturing(false);
@@ -708,6 +709,11 @@ export default function GrossWeighment() {
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Seal No</label>
                       <input value={ethanolSeal} onChange={e => setEthanolSeal(e.target.value)}
                         className="w-full border border-slate-300 px-2.5 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-green-400" placeholder="e.g. 0089/0085" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">RST No</label>
+                      <input value={ethanolRST} onChange={e => setEthanolRST(e.target.value)}
+                        className="w-full border border-slate-300 px-2.5 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-green-400" placeholder="e.g. T-0251" />
                     </div>
                     <div>
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-0.5">Driving Licence</label>

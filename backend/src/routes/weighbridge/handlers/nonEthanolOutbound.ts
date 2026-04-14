@@ -12,7 +12,11 @@ export async function handleNonEthanolOutbound(w: WeighmentInput, ctx: PushConte
   const grossKg = w.weight_gross || 0;
   const tareKg = w.weight_tare || 0;
   const netKg = w.weight_net || 0;
-  const netMT = netKg / 1000;
+  // DDGSDispatchTruck stores ALL weights in MT (matching manual entry convention).
+  // Shipment stores in KG (separate convention). See weighbridge.md Part A.5.
+  const grossMT = Math.round((grossKg / 1000) * 1000) / 1000;
+  const tareMT = Math.round((tareKg / 1000) * 1000) / 1000;
+  const netMT = Math.round((netKg / 1000) * 1000) / 1000;
   const partyName = w.customer_name || w.supplier_name || '';
   const dateVal = w.created_at ? new Date(w.created_at) : new Date();
   const gateInVal = w.first_weight_at ? new Date(w.first_weight_at) : dateVal;
@@ -33,8 +37,8 @@ export async function handleNonEthanolOutbound(w: WeighmentInput, ctx: PushConte
     const dispatch = await tx.dDGSDispatchTruck.upsert({
       where: { sourceWbId: w.id },
       update: {
-        ...(tareKg > 0 ? { weightTare: tareKg, tareTime: tareTimeVal } : {}),
-        ...(grossKg > 0 ? { weightGross: grossKg, grossTime: grossTimeVal } : {}),
+        ...(tareKg > 0 ? { weightTare: tareMT, tareTime: tareTimeVal } : {}),
+        ...(grossKg > 0 ? { weightGross: grossMT, grossTime: grossTimeVal } : {}),
         ...(grossKg > 0 && tareKg > 0 ? { weightNet: netMT } : {}),
         status: (grossKg > 0 && tareKg > 0) ? 'GROSS_WEIGHED' : (tareKg > 0 ? 'TARE_WEIGHED' : 'GATE_IN'),
       },
@@ -46,8 +50,8 @@ export async function handleNonEthanolOutbound(w: WeighmentInput, ctx: PushConte
         driverName: w.driver_name || null,
         driverMobile: w.driver_mobile || null,
         transporterName: w.transporter || null,
-        ...(grossKg > 0 ? { weightGross: grossKg } : {}),
-        ...(tareKg > 0 ? { weightTare: tareKg } : {}),
+        ...(grossKg > 0 ? { weightGross: grossMT } : {}),
+        ...(tareKg > 0 ? { weightTare: tareMT } : {}),
         ...(grossKg > 0 && tareKg > 0 ? { weightNet: netMT } : {}),
         bags: w.bags || 0,
         status: (grossKg > 0 && tareKg > 0) ? 'GROSS_WEIGHED' : (tareKg > 0 ? 'TARE_WEIGHED' : 'GATE_IN'),

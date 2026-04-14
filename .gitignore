@@ -18,6 +18,7 @@ backend/loadHistoricalData.ts
 # Weighbridge runtime (local data and logs — not committed)
 weighbridge/data/
 weighbridge/logs/
+graphify-out/
 
 # Test artifacts
 test-*.pdf

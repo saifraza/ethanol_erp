@@ -1,7 +1,8 @@
 # Skills Index — MSPIL ERP
 
-> Single source of truth for which skill covers what. 18 skills, grouped by domain.
+> Single source of truth for which skill covers what. Grouped by domain.
 > Agents in `.claude/agents/` read these on every invocation — keep them accurate.
+> ADRs (architecture decisions) live in `docs/adr/` — 6 recorded so far.
 
 ## Factory & Hardware (safety-critical)
 - **[factory-operations.md](factory-operations.md)** — **READ FIRST before ANY factory work.** Incidents postmortem (Part A) + architecture + deploy runbook (Part B). All 7 factory outages documented.
@@ -34,6 +35,9 @@
 - **[charts-graphs.md](charts-graphs.md)** — Chart design system (Recharts + OPC Live pattern). **All charts must follow this.**
 - **[admin-settings.md](admin-settings.md)** — Auth, users, settings, audit.
 - **[debt-register.md](debt-register.md)** — Known tech debt with severity + fix direction.
+- **[code-templates.md](code-templates.md)** — Backend route + frontend page templates, IST timezone pattern.
+- **[sap-design-tokens.md](sap-design-tokens.md)** — SAP Tier 2 Tailwind classes (exact copy-paste tokens).
+- **[module-index.md](module-index.md)** — All modules: routes, pages, models, Telegram status, maturity tracker.
 
 ---
 
@@ -42,11 +46,11 @@
 |---|---|
 | factory-guardian | factory-operations.md, weighbridge.md |
 | prisma-migrator | weighbridge.md, debt-register.md |
-| deploy-checker | CLAUDE.md pre-push section |
+| deploy-checker | scripts/smoke-test.sh + CLAUDE.md pre-push section |
 | payment-code-reviewer | accounts-module.md, ubi-h2h-banking.md |
-| backend-route-builder | CLAUDE.md code patterns + relevant module skill |
-| sap-page-builder | CLAUDE.md UI design system |
-| sap-ui-linter | CLAUDE.md UI rules |
+| backend-route-builder | code-templates.md + relevant module skill |
+| sap-page-builder | sap-design-tokens.md + code-templates.md |
+| sap-ui-linter | sap-design-tokens.md |
 | telegram-module-adder | backend/src/services/autoCollectModules/_template.ts |
 | rag-vault-wirer | compliance-tax-system.md (RAG section) |
 | debt-fixer | debt-register.md |

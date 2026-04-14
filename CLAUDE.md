@@ -8,655 +8,182 @@
 - **Login**: admin@distillery.com / admin123
 
 ## Deployment — Railway
-- **Auto-deploys** from GitHub `main` branch of `ethanol_erp` repo
-- **DB**: Set via `DATABASE_URL` env var on Railway (never hardcode)
-- **OPC DB**: Separate PostgreSQL for OPC data, set via `DATABASE_URL_OPC` env var
-  - Prisma schema: `backend/prisma/opc/schema.prisma`
-  - Tables: OpcMonitoredTag, OpcReading, OpcHourlyReading, OpcSyncLog
-  - Procfile runs `prisma db push --schema=prisma/opc/schema.prisma` on deploy
-  - If `DATABASE_URL_OPC` is not set, OPC endpoints use fallback raw SQL
+- **Auto-deploys** from GitHub `main` branch — a bad push goes straight to production
+- **DB**: `DATABASE_URL` env var on Railway (never hardcode)
+- **OPC DB**: `DATABASE_URL_OPC` env var, schema at `backend/prisma/opc/schema.prisma`
 - Root build: `cd backend && npm ci && prisma generate && tsc --outDir dist && cp -r src/data dist/ && cd ../frontend && npm ci && vite build`
 - Procfile: `web: cd backend && npx prisma db push --skip-generate && node dist/server.js`
 - Frontend vite outputs to `../backend/public` (not `frontend/dist/`)
-- Any new static data files (like `calibrations.json`) must be copied in the ROOT build script
-
-## Core Design Principles
-
-### Telegram-First Data Collection
-Telegram is a **key feature** of this ERP. Plant operators submit hourly readings via Telegram instead of logging into the web UI. This is critical because:
-- Operators on the plant floor use phones, not desktops
-- Auto-collect bots ask questions on schedule, parse replies, save to DB, and share summary reports to groups
-- Every new module should consider Telegram integration from day one
-
-**Telegram Architecture:**
-- Telegram Bot runs **in-process** on the main ERP server (no separate worker needed)
-- Uses official Telegram Bot API with long-polling (stable, no QR auth)
-- Bot token stored in `Settings.telegramBotToken` or `TELEGRAM_BOT_TOKEN` env var
-
-**Services:**
-- `backend/src/services/telegramBot.ts` — Bot API client (long-polling, send/receive)
-- `backend/src/services/telegramAutoCollect.ts` — Auto-collect conversation engine + scheduler
-- `backend/src/services/telegramClient.ts` — Proxy wrapper
-- `backend/src/services/telegramImageHandler.ts` — Gemini Vision OCR for photos
-- `backend/src/services/autoCollectModules/` — Module-specific bots (one file per module)
-
-**Schedules** are stored in `AutoCollectSchedule` DB table:
-- Each module has one row: `module` (unique key), `phone` (chatId), `intervalMinutes`, `enabled`, etc.
-- Frontend saves via `PUT /api/auto-collect/schedules/:module` on main ERP
-
-**Adding a new Telegram auto-collect module:**
-1. Copy `_template.ts` → `yourModule.ts` in `autoCollectModules/`
-2. Define `STEPS` (field groups), implement `buildPrompt`, `parseReply`, `saveData`
-3. Register in `autoCollectModules/index.ts`
-4. Add schedule via Settings UI or seed data
-5. Set `privateOnly: false` if reports should go to Telegram group
-
-### Telegram Report Sharing
-The ERP supports one-click Telegram sharing from the web UI:
-- Process readings → formatted report shared to configured groups/private chats
-- Dispatch/shipment details → shared to relevant stakeholders
-- Module routing configured in Settings: each module → group1, group2, or private
-
-### IST Timezone (Critical)
-Server runs UTC on Railway. Pattern for IST:
-```typescript
-function nowIST(): Date {
-  return new Date(Date.now() + 5.5 * 60 * 60 * 1000);
-}
-const ist = nowIST();
-const hours = ist.getUTCHours();    // IST hours
-const minutes = ist.getUTCMinutes(); // IST minutes
-```
-**NEVER** use `toLocaleTimeString()` or `toLocaleDateString()` on server — output depends on server locale/location.
-
-### RAG Document Indexing (Critical)
-**RAG is for compliance & company documents ONLY.** Do NOT index ERP transactional data (POs, invoices, GRNs) — those are structured in the DB and better searched via SQL.
-
-**What goes to RAG:**
-- Company documents uploaded via Document Vault (`/admin/documents`)
-- Compliance certificates, licenses, contracts, legal docs, insurance
-- Any unstructured document that can't be queried via normal DB fields
-
-**What does NOT go to RAG:**
-- POs, invoices, GRNs, sales orders (structured DB data)
-- Vendor invoice attachments, shipment docs, contractor bills
-- Plant photos (iodine tests, dispatch, grain truck)
-
-**How it works:**
-- RAG-Anything microservice runs on Railway (`LIGHTRAG_URL` env var)
-- `lightragClient.ts` is the proxy — same pattern as `whatsappClient.ts`
-- `isRagEnabled()` checks if the service is configured
-- Smart routing: text PDFs → fast LightRAG path (seconds), scanned/complex → MinerU (minutes)
-
-**For Obsidian vault** — `vaultWriter.ts` also inserts summaries into RAG via `lightragInsertText()`.
-
-**When adding a new module:**
-1. **If it uploads compliance/company documents** — add `lightragUpload()` fire-and-forget
-2. **If it uploads ERP transactional files** (invoices, bills) — do NOT add RAG, use DB search instead
-3. **Always call** `generateVaultNote()` from `../services/vaultWriter` for Obsidian sync
-
-### Module Build Approach
-When building new modules:
-1. **First create a skill file** in `.claude/skills/` with full spec (models, routes, pages, integration points)
-2. **Build sequentially** — modules are interlinked (accounts hooks into sales/procurement, inventory links to production)
-3. **Always consider Telegram integration** — what readings/reports should be auto-collected or shared?
-4. **Always add RAG indexing** — every uploaded or generated document must go through RAG + Vault
-5. **Follow existing patterns** — use the code templates below
-6. **Use SAP-style UI** for all non-plant modules (see UI Design System below)
-
-### UI Design System — Two Tiers
-
-The ERP has two distinct UI styles:
-
-**Tier 1 — Plant/Process Pages** (existing style, keep as-is):
-- Modules: Grain, Milling, Liquefaction, Fermentation, Distillation, Evaporation, Decanter, Dryer, DDGS, Lab, Dashboard
-- Style: Rounded corners, cards with shadow, colorful badges, emoji icons, relaxed spacing
-- Reason: These are used by plant operators on phones/tablets — friendlier UI is better
-
-**Tier 2 — Enterprise/Back-Office Pages** (SAP-style, use for ALL new modules):
-- Modules: Accounts, Inventory, Sales, Procurement, Trade, Admin, Reports
-- Style: Dense, professional, SAP/Oracle-like — square edges, dark headers, gridlines, compact typography
-- **All new modules MUST use Tier 2 style unless they are plant-floor data entry**
-
-#### Tier 2 SAP Design Tokens (copy-paste these exactly):
-
-| Element | Tailwind Classes |
-|---------|-----------------|
-| **Page wrapper** | `<div className="min-h-screen bg-slate-50"><div className="p-3 md:p-6 space-y-0">` |
-| **Page toolbar** | `bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6` with title: `text-sm font-bold tracking-wide uppercase` |
-| **Toolbar subtitle** | `<span className="text-[10px] text-slate-400">\|</span><span className="text-[10px] text-slate-400">description</span>` |
-| **Filter toolbar** | `bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6` |
-| **KPI strip** | `grid gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6` each card: `bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-{color}-500` |
-| **KPI label** | `text-[10px] font-bold text-slate-400 uppercase tracking-widest` |
-| **KPI value** | `text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums` |
-| **Table container** | `-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-hidden` |
-| **Table header row** | `bg-slate-800 text-white` |
-| **Table header cell** | `px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700` |
-| **Table body row** | `border-b border-slate-100 even:bg-slate-50/70 hover:bg-blue-50/60` |
-| **Table body cell** | `px-3 py-1.5 text-xs border-r border-slate-100` |
-| **Table footer row** | `bg-slate-800 text-white font-semibold` |
-| **Currency** | `font-mono tabular-nums` |
-| **Status badge** | `text-[9px] font-bold uppercase px-1.5 py-0.5 border` (NO rounded) |
-| **Button primary** | `px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700` (NO rounded) |
-| **Button secondary** | `px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50` |
-| **Form label** | `text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5` |
-| **Form input** | `border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400` (NO rounded) |
-| **Modal header** | `bg-slate-800 text-white px-4 py-2.5` with `text-xs font-bold uppercase tracking-widest` |
-| **Modal body** | `bg-white shadow-2xl` (NO rounded) |
-| **Tab active** | `text-[11px] font-bold uppercase tracking-widest border-b-2 border-blue-600` |
-| **Empty/loading** | `text-xs text-slate-400 uppercase tracking-widest` |
-
-#### SAP Design Rules:
-- **NO rounded corners** — everything is square (`rounded`, `rounded-lg`, `rounded-xl` are banned)
-- **NO emojis** in enterprise pages
-- **NO shadow-sm** — use `shadow-2xl` only for modals
-- **Edge-to-edge** tables and KPI strips with `-mx-3 md:-mx-6`
-- **Vertical gridlines** in tables: `border-r border-slate-100` on cells, `border-r border-slate-700` on headers
-- **Row striping**: `even:bg-slate-50/70`
-- **Group headers** in tables: `bg-slate-200 border-b border-slate-300` with `text-[10px] font-bold uppercase tracking-widest`
+- New static data files must be copied in the ROOT build script
 
 ---
 
-## ⚠ Factory Work — Mandatory Pre-Flight
+## PROTECTED FILES — Critical Path
 
-**Before making ANY change that touches `factory-server/`, `weighbridge/`, or anything that will be deployed to the factory PC, you MUST:**
+**These files power the weighbridge → PO → GRN → inventory chain. This is the #1 business-critical flow.**
+**Do NOT modify unless the task specifically requires it. If you must edit, run `./scripts/smoke-test.sh` after.**
 
-1. **Read `.claude/skills/factory-operations.md`** — Part A is the full incident timeline + permanent rules (the factory has been burned 7 times, 2026-03-31 → 2026-04-08, every rule is written in blood). Part B is the architecture + deploy runbook. Do not guess — read the file.
-3. **Never deploy manually.** Always use `./factory-server/scripts/deploy.sh` — the script enforces prisma generate (local + cloud), service safety checks, and startup log scanning. Manual SCP is how incidents happen.
-4. **Check uncommitted state before touching factory files**: `git status factory-server/` — if there are uncommitted changes you don't recognize, investigate before editing, don't assume they're stale.
-5. **If you see Prisma `Unknown argument` or `Unknown field` errors** anywhere — the fix is ALWAYS: kill node → `prisma generate` (both schemas!) → restart via schtasks. Never a code change. This bug has shipped twice in one day (2026-04-08 gate entry + 2026-04-08 master-data cache).
-6. **If adding a field to any Prisma model** (factory, cloud, or weighbridge), grep for where it's referenced across systems — see `.claude/skills/weighbridge.md` Part B for the cross-system field-mirroring contract.
-7. **When in doubt, ask the user before touching factory.** This is production and there are no maintenance windows. A wrong move = trucks piled up at the gate and a phone call from the plant manager.
+```
+# Cloud weighbridge handlers (auto-create GRN, update PO, sync inventory)
+backend/src/routes/weighbridge/**
 
-Routine checks when doing factory work:
-- Oracle + WtService must be RUNNING (deploy.sh verifies this)
-- Factory has TWO Prisma schemas: `prisma/schema.prisma` (local SQLite) + `prisma/cloud/schema.prisma` (cloud Postgres). Both must be kept in sync AND both must be regenerated on deploy.
-- Error handler in `factory-server/src/server.ts` surfaces Prisma error classes with actionable messages — if you find a new error class that operators hit, add a branch for it.
-- `run.bat` writes stdout/stderr to `logs/server-YYYYMMDD_HHMMSS.log` — always tail the newest log before guessing what's broken.
+# PO + GRN (weighbridge handlers write to these models)
+backend/src/routes/purchaseOrders.ts
+backend/src/routes/goodsReceipts.ts
 
-### Factory Connection Cheat Sheet
+# Accounting automation (called by weighbridge handlers)
+backend/src/services/autoJournal.ts
 
-**Factory Server (Windows, Tailscale):**
-- Tailscale IP: `100.126.101.7` | LAN IP: `192.168.0.10`
-- User: `Administrator` | Password: `Mspil@1212`
-- API: `http://100.126.101.7:5000`
-- Path on PC: `C:\mspil\factory-server\`
-- SSH:
-  ```bash
-  sshpass -p 'Mspil@1212' ssh -o StrictHostKeyChecking=no Administrator@100.126.101.7
-  ```
-- SCP:
-  ```bash
-  sshpass -p 'Mspil@1212' scp -o StrictHostKeyChecking=no <local> Administrator@100.126.101.7:C:/mspil/factory-server/<path>
-  ```
-- Health check (no auth):
-  ```bash
-  curl -s http://100.126.101.7:5000/api/health | python3 -m json.tool
-  curl -s http://100.126.101.7:5000/api/master-data/status | python3 -m json.tool
-  ```
-- Tail newest server log:
-  ```bash
-  sshpass -p 'Mspil@1212' ssh Administrator@100.126.101.7 \
-    'powershell -Command "Get-ChildItem C:\mspil\factory-server\logs\server-*.log | Sort LastWriteTime -Descending | Select -First 1 | Get-Content -Tail 100"'
-  ```
-- Restart node only (NEVER touch Oracle/WtService):
-  ```bash
-  sshpass -p 'Mspil@1212' ssh Administrator@100.126.101.7 \
-    'taskkill /F /IM node.exe & timeout /t 3 /nobreak >nul & schtasks /run /tn FactoryServer'
-  ```
+# Factory gate entry + weighment (operator-facing, no downtime allowed)
+factory-server/src/routes/weighbridge.ts
+factory-server/src/routes/gateEntry.ts
 
-**Weighbridge PC (Windows, Tailscale):**
-- Tailscale IP: `100.91.152.57` | LAN IP: `192.168.0.83`
-- User: `abc` | Password: `acer@123`
-- Flask API: `http://100.91.152.57:8098`
-- Path on PC: `C:\mspil\weighbridge\`
-- SSH:
-  ```bash
-  sshpass -p 'acer@123' ssh -o StrictHostKeyChecking=no abc@100.91.152.57
-  ```
-- Live weight check:
-  ```bash
-  curl -s http://100.91.152.57:8098/api/weight
-  ```
-- **NEVER** rapidly retry SSH — 5 wrong passwords = 30-minute account lockout. Slow down on each attempt.
+# Factory sync + cache (cloud connectivity, master data)
+factory-server/src/services/syncWorker.ts
+factory-server/src/services/masterDataCache.ts
+factory-server/src/services/ruleEngine.ts
 
-**Cloud Database (Railway PostgreSQL — used by both ERP and factory cloud puller):**
-- Connection string lives in env var `DATABASE_URL` on Railway. Never hardcode.
-- Local access: read it from `backend/.env` (DATABASE_URL line). DO NOT commit `.env`.
-- Web tools: `npx prisma studio` from `backend/` opens a GUI.
-- Direct query (dev machine):
-  ```bash
-  cd backend && npx prisma db pull   # introspect
-  cd backend && npx prisma studio    # GUI
-  ```
-- Run a one-off SQL:
-  ```bash
-  node scripts/run_sql_on_railway.js "SELECT count(*) FROM \"Weighment\";"
-  ```
+# Shared infrastructure (breaking these breaks EVERYTHING)
+backend/src/middleware/auth.ts
+backend/src/config/prisma.ts
+backend/prisma/schema.prisma
+factory-server/prisma/schema.prisma
+factory-server/prisma/cloud/schema.prisma
+```
 
-**OPC Database (separate Railway Postgres for DCS data):**
-- Connection string in env var `DATABASE_URL_OPC` on Railway
-- Schema: `backend/prisma/opc/schema.prisma`
-- Host (from memory file `reference_opc_db.md`): `gondola.proxy.rlwy.net:12413`
+**Dependency chain**: Weighment → pre-phase (creates stub) → handler (poInbound/traderInbound/ethanolOutbound/etc.) → GRN + PO status update → inventory transaction → GL journal entry.
+Handlers are loosely coupled via Prisma — no direct imports between weighbridge and PO/GRN routes, but they share the same models.
 
-**Oracle ERP on Factory PC (legacy, NOT ours):**
-- We DO NOT touch this. Oracle XE on the factory PC is used by the old plant ERP and the weighbridge desktop reader.
-- Required services: `OracleServiceXE`, `OracleXETNSListener`, `WtService` — must always be `RUNNING`.
-- Verify before any deploy:
-  ```bash
-  sshpass -p 'Mspil@1212' ssh Administrator@100.126.101.7 \
-    'sc query OracleServiceXE & sc query OracleXETNSListener & sc query WtService'
-  ```
-
-**Tailscale gotcha:** if `100.126.101.7` is unreachable, your Tailscale is down (not the factory). Check `tailscale status` on your Mac first before assuming the server is dead.
+---
 
 ## Multi-System Architecture
-
-This ERP runs across 3 systems. When the user mentions a topic, use this table to route to the right codebase.
-
-### Three Systems
 
 | System | Location | Stack | Database | Runs On |
 |--------|----------|-------|----------|---------|
 | **Cloud ERP** | `backend/` + `frontend/` | Express + Prisma + React | Railway PostgreSQL | Railway (app.mspil.in) |
-| **Factory Server** | `factory-server/` | Express + Prisma + React | Same Railway PostgreSQL (via internet) | Windows Server 192.168.0.10:5000 |
+| **Factory Server** | `factory-server/` | Express + Prisma + React | Same Railway PostgreSQL (via internet) | Windows 192.168.0.10:5000 |
 | **Weighbridge PC** | `weighbridge/` | Python Flask + SQLite | Local SQLite per PC | Each WB PC :8098 |
 
 **Data flow**: Weighbridge PC → Factory Server → Cloud ERP (weighments up, master data down).
-Weighbridge can also push directly to cloud (`CLOUD_API_URL` in config.py) — both paths exist.
+
+### Boundary Rules
+- **Factory server** = operator-facing UI + local data + sync to cloud. NO business logic.
+- **Cloud backend** = all business logic, accounting, GST, e-invoicing. Receives weighments via POST /api/weighbridge/push.
+- **Weighbridge PC** = hardware-facing. Reads COM port, Flask UI, local SQLite.
+- **Cross-system auth**: `X-WB-Key` header (timing-safe, key in `WB_PUSH_KEY` env var).
 
 ### AI Routing Table
 
 | When user mentions... | Look in... |
 |---|---|
-| Gate entry operator UI | `factory-server/frontend/src/pages/GateEntry.tsx` + `factory-server/src/routes/gateEntry.ts` |
-| Gross/tare weighment UI | `factory-server/frontend/src/pages/GrossWeighment.tsx`, `TareWeighment.tsx` (being built) |
-| Weighment backend (factory) | `factory-server/src/routes/weighbridge.ts` |
-| Weighment → GRN/inventory sync | `backend/src/routes/weighbridge.ts` (1332 lines — god-route, see debt register) |
-| Cloud sync worker | `factory-server/src/services/syncWorker.ts` |
-| Factory PC monitoring | `factory-server/src/services/pcMonitor.ts` |
-| Live weight from scale | `weighbridge/weight_reader.py` (serial COM1 or file mode) |
-| Print slips (gate pass, weighment) | `weighbridge/templates/` (Flask) or factory-server print endpoints (being built) |
+| Gate entry / weighment UI | `factory-server/frontend/src/pages/` + `factory-server/src/routes/` |
+| Weighment → GRN/inventory | `backend/src/routes/weighbridge/` (handlers/) |
+| Cloud sync / master data cache | `factory-server/src/services/syncWorker.ts`, `masterDataCache.ts` |
+| Live weight from scale | `weighbridge/weight_reader.py` |
+| Factory deploy / safety / incidents | `.claude/skills/factory-operations.md` — **READ FIRST** |
+| Weighbridge hardware / corrections | `.claude/skills/weighbridge.md` |
 | OPC/DCS bridge | `.claude/skills/opc-bridge.md` |
-| Factory deploy / SSH / safety / incidents / postmortems | `.claude/skills/factory-operations.md` — **READ FIRST** before touching factory. Part A = incidents (load-bearing), Part B = architecture + deploy runbook |
-| Weighbridge: serial protocol, hardware, new products, corrections | `.claude/skills/weighbridge.md` — Part A = hardware/protocol, Part B = add-product contract, Part C = corrections |
-| Weighbridge `/push` handlers (cloud-side) | `backend/src/routes/weighbridge/handlers/*.ts` |
-| Weighment corrections (any type — grain/fuel/ethanol/DDGS) | `.claude/skills/correct-weighment.md` — **Saif-only CLI skill.** Read skill first, then execute. |
-| Sales order → dispatch → invoice | `backend/src/routes/salesOrders.ts`, `shipments.ts`, `invoices.ts` |
+| Sales / dispatch / invoice | `backend/src/routes/salesOrders.ts`, `shipments.ts`, `invoices.ts` |
 | Procurement PO → GRN → payment | `backend/src/routes/purchaseOrders.ts`, `goodsReceipts.ts`, `vendorPayments.ts` |
 | Accounts / journal / bank | `backend/src/routes/chartOfAccounts.ts`, `journalEntries.ts`, `bankPayments.ts` |
-| Inventory (SAP-style) | `backend/src/routes/inventory*.ts` (6 route files) |
-| Fuel management | `backend/src/routes/fuel.ts` + `frontend/src/pages/process/FuelManagement.tsx` |
-| Telegram auto-collect | `backend/src/services/telegramAutoCollect.ts` |
-| Telegram bot | `backend/src/services/telegramBot.ts`, `telegramAutoCollect.ts` |
+| Inventory | `backend/src/routes/inventory*.ts` |
+| Fuel | `backend/src/routes/fuel.ts` |
+| Telegram auto-collect | `backend/src/services/telegramAutoCollect.ts`, `autoCollectModules/` |
 | E-invoice / e-way bill | `backend/src/services/eInvoice.ts`, `ewayBill.ts` |
-| UBI bank payments (H2H-STP) | `.claude/skills/ubi-h2h-banking.md` |
-| Known tech debt / what needs cleanup | `.claude/skills/debt-register.md` |
+| UBI bank payments | `.claude/skills/ubi-h2h-banking.md` |
+| Module list / maturity | `.claude/skills/module-index.md` |
+| Code templates | `.claude/skills/code-templates.md` |
+| SAP design tokens | `.claude/skills/sap-design-tokens.md` |
+| Tech debt | `.claude/skills/debt-register.md` |
+| All skills index | `.claude/skills/SKILLS.md` |
 | Any NEW module | `backend/` + `frontend/` (cloud ERP) |
-
-### Boundary Rules
-- **Factory server** = operator-facing UI + local data + sync to cloud. NO business logic (no GRN creation, no accounting).
-- **Cloud backend** = all business logic, accounting, reporting, GST, e-invoicing. Receives weighments via POST /api/weighbridge/push.
-- **Weighbridge PC** = hardware-facing. Reads COM port, Flask UI, local SQLite. Pushes to factory server or cloud.
-- **Cross-system auth**: `X-WB-Key` header (timing-safe comparison, key in `WB_PUSH_KEY` env var).
-
-### Factory App Migration (In Progress)
-The Flask weighbridge app is being replaced by React pages on the factory server. See `.claude/plans/breezy-scribbling-quilt.md` for the full plan. During transition, both systems run in parallel.
 
 ---
 
-## Architecture
+## Factory Work — Mandatory Pre-Flight
 
-### Backend (backend/src/)
-```
-backend/src/
-├── app.ts                    # Express app: middleware + route registration
-├── server.ts                 # HTTP server start
-├── config/
-│   ├── index.ts              # Environment config (JWT secret, port, etc.)
-│   └── prisma.ts             # Prisma client instance
-├── middleware/
-│   ├── auth.ts               # JWT auth + AuthRequest interface
-│   └── authorize.ts          # Module-level authorization
-├── routes/                   # 80 route files
-├── services/
-│   ├── telegramBot.ts        # Telegram Bot API client (long-polling, send/receive)
-│   ├── telegramAutoCollect.ts # Auto-collect engine (scheduler, sessions, prompts)
-│   ├── autoCollectModules/   # Module-specific bots (ddgsProduction, decanter, _template)
-│   ├── eInvoice.ts           # IRN generation via Saral GSP
-│   ├── ewayBill.ts           # E-way bill generation
-│   └── messaging.ts          # Email + Telegram notifications
-├── utils/
-│   ├── letterhead.ts         # PDF letterhead helper
-│   └── pdfGenerator.ts       # PDF generation (POs, challans, invoices)
-├── shared/                   # Enterprise infrastructure
-│   ├── errors/               # AppError, NotFoundError, ValidationError, etc.
-│   ├── middleware/            # asyncHandler, errorHandler, validate (Zod)
-│   └── config/               # company.ts (GSTIN, address), constants.ts (plant params)
-└── data/
-    └── calibrations.json     # Tank calibration data (84K entries, cached 24h)
-```
+**Before ANY change to `factory-server/`, `weighbridge/`, or factory-deployed code:**
 
-### Frontend (frontend/src/)
-```
-frontend/src/
-├── App.tsx                   # Routes (all React.lazy loaded with Suspense)
-├── components/               # Layout, ErrorBoundary, Toast
-├── config/                   # Module config, constants
-├── context/                  # AuthContext (JWT in localStorage)
-├── pages/
-│   ├── process/              # Plant operations (grain → ethanol → DDGS)
-│   ├── sales/                # Sales pipeline (orders → dispatch → shipments → invoices)
-│   ├── procurement/          # Vendor management (POs → GRNs → invoices)
-│   └── trade/                # Direct purchases/sales
-├── services/                 # Axios API client with retry
-└── types/                    # TypeScript interfaces
-```
+1. **Read `.claude/skills/factory-operations.md`** — 7 incidents, every rule is written in blood
+2. **Never deploy manually** — always use `./factory-server/scripts/deploy.sh`
+3. **Check uncommitted state**: `git status factory-server/` — investigate unknown changes before editing
+4. **Prisma `Unknown argument`/`Unknown field`** = always fix with `prisma generate` (both schemas!), never a code change
+5. **Adding a Prisma field** → grep all systems for cross-system references (see `weighbridge.md` Part B)
+6. **When in doubt, ask before touching factory** — no maintenance windows, wrong move = trucks at gate
 
-### Prisma Schema
-- **61 models** in backend/prisma/schema.prisma
-- Key domains: Grain, Fermentation, Distillation, DDGS, Sales, Procurement, Inventory
-- All date/FK/status fields have @@index directives for query performance
+Factory has TWO Prisma schemas: `prisma/schema.prisma` (local) + `prisma/cloud/schema.prisma` (cloud). Both must be synced and regenerated on deploy.
+
+Connection details: see `.claude/skills/factory-operations.md` Part B or global CLAUDE.md.
+
+---
+
+## Core Design Principles
+
+### Telegram-First Data Collection
+Plant operators submit readings via Telegram, not web UI. Bot runs in-process (long-polling). Services: `telegramBot.ts`, `telegramAutoCollect.ts`, `autoCollectModules/`. Adding a new module: copy `_template.ts`, implement STEPS/buildPrompt/parseReply/saveData, register in index.
+
+### IST Timezone
+Server runs UTC. Use `nowIST()` pattern from `.claude/skills/code-templates.md`. **NEVER** use `toLocaleTimeString()` on server.
+
+### RAG Document Indexing
+RAG = compliance/company docs ONLY. NOT for ERP transactional data (POs, invoices, GRNs). Uses RAG-Anything microservice (`LIGHTRAG_URL`). Always call `generateVaultNote()` for Obsidian sync.
+
+### UI Design System — Two Tiers
+- **Tier 1 (Plant/Process)**: Rounded, colorful, emoji-friendly — for operators on phones
+- **Tier 2 (Enterprise/SAP)**: Dense, square, professional — for ALL new modules. Tokens in `.claude/skills/sap-design-tokens.md`
+
+### Module Build Approach
+1. Create skill file in `.claude/skills/` with full spec
+2. Build sequentially (modules interlink)
+3. Consider Telegram integration
+4. Follow code templates from `.claude/skills/code-templates.md`
+5. Use SAP-style UI for non-plant modules
 
 ---
 
 ## Critical Rules
 
 ### NEVER DO
-- **Never hardcode** database URLs, passwords, or API keys — use env vars
-- **Never use** `(req as any).user` — import `AuthRequest` from `../middleware/auth`
-- **Never write** `catch (err: any) { res.status(500).json({ error: err.message }) }` — use `asyncHandler` from `../shared/middleware`
-- **Never use** `parseFloat(req.body.field) || 0` without validation — use Zod `validate()` middleware
-- **Never add** a route file without registering it in `app.ts`
-- **Never add** a page without a lazy-loaded Route in `App.tsx`
-- **Never commit** `console.log` — use structured logging
-- **Never expose** raw error messages to clients (leaks DB schema)
-- **Never use** `: any` type — define proper interfaces
-- **Never write** `findMany()` without `take` limit (default 50, max 500)
-- **Never write** `findMany()` for lists without `select` (don't fetch all columns)
-- **Never use** any charting library except Recharts — no Chart.js, no D3, no custom SVG charts
-- **Never create** charts without following `.claude/skills/charts-graphs.md` (OPC Live pattern)
+- Never hardcode DB URLs, passwords, API keys
+- Never use `(req as any).user` — use `AuthRequest` from `../middleware/auth`
+- Never write `catch (err: any) { res.status(500).json({ error: err.message }) }` — use `asyncHandler`
+- Never add route files without registering in `app.ts`
+- Never add pages without lazy-loaded Route in `App.tsx`
+- Never commit `console.log`
+- Never use `: any` type
+- Never write `findMany()` without `take` limit (default 50, max 500)
+- Never write `findMany()` for lists without `select`
+- Never use any charting library except Recharts (see `.claude/skills/charts-graphs.md`)
+- Never create PDFs outside the HBS template + renderDocumentPdf pipeline
 
 ### ALWAYS DO
-- **Always use** `AuthRequest` type for authenticated route handlers
-- **Always wrap** async handlers with `asyncHandler()` from `../shared/middleware`
-- **Always validate** POST/PUT/PATCH input with Zod schemas via `validate()` middleware
-- **Always add** `@@index` for new date, FK, or status fields in Prisma schema
-- **Always use** `COMPANY` from `shared/config/company.ts` for GSTIN, address, bank
-- **Always use** `PLANT` and `GST` from `shared/config/constants.ts` for magic numbers
-- **Always type** function parameters and return types explicitly
-- **Always add** `take` and `select` on `findMany` calls returning lists
-- **Always use** `$transaction` for multi-step writes that must be atomic
-- **Always follow** the chart design system in `.claude/skills/charts-graphs.md` for any graph/chart work — use OPC Live as reference
+- Always use `asyncHandler()` from `../shared/middleware`
+- Always validate POST/PUT/PATCH with Zod via `validate()` middleware
+- Always add `@@index` for new date, FK, status fields in Prisma
+- Always use `COMPANY` from `shared/config/company.ts` for GSTIN, address, bank
+- Always use `$transaction` for multi-step atomic writes
+- Always run `./scripts/smoke-test.sh` before pushing (or `--quick` for fast check)
 
 ---
 
-## Code Patterns
+## Pre-Push Safety
 
-### New Backend Route (template)
-```typescript
-import { Router, Response } from 'express';
-import { AuthRequest } from '../middleware/auth';
-import { asyncHandler, validate } from '../shared/middleware';
-import { NotFoundError } from '../shared/errors';
-import { z } from 'zod';
-import prisma from '../config/prisma';
-
-const router = Router();
-
-const createSchema = z.object({
-  name: z.string().min(1),
-  quantity: z.number().positive(),
-});
-
-// GET list — always paginated, always select
-router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
-  const take = Math.min(parseInt(req.query.limit as string) || 50, 500);
-  const skip = parseInt(req.query.offset as string) || 0;
-  const items = await prisma.myModel.findMany({
-    take, skip,
-    orderBy: { createdAt: 'desc' },
-    select: { id: true, name: true, status: true, createdAt: true },
-  });
-  res.json(items);
-}));
-
-// POST — always validated
-router.post('/', validate(createSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
-  const item = await prisma.myModel.create({ data: req.body });
-  res.status(201).json(item);
-}));
-
-// GET by ID
-router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
-  const item = await prisma.myModel.findUnique({ where: { id: req.params.id } });
-  if (!item) throw new NotFoundError('Item', req.params.id);
-  res.json(item);
-}));
-
-export default router;
+```bash
+./scripts/smoke-test.sh          # Full check: tsc + vite + prisma + banned patterns + endpoints
+./scripts/smoke-test.sh --quick  # Skip vite build (faster)
 ```
 
-### New Frontend Page (template — SAP Tier 2 style)
-```typescript
-import React, { useState, useEffect, useCallback } from 'react';
-import api from '../../services/api';
-
-interface MyItem {
-  id: string;
-  name: string;
-  status: string;
-  amount: number;
-  // ... type all fields
-}
-
-export default function MyPage() {
-  const [data, setData] = useState<MyItem[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const fetchData = useCallback(async () => {
-    try {
-      setLoading(true);
-      const res = await api.get<MyItem[]>('/my-endpoint');
-      setData(res.data);
-    } catch (err) {
-      console.error('Failed to fetch:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
-
-  const fmtCurrency = (n: number) => n === 0 ? '--' : '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2 });
-
-  if (loading) return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-      <div className="text-xs text-slate-400 uppercase tracking-widest">Loading...</div>
-    </div>
-  );
-
-  return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="p-3 md:p-6 space-y-0">
-        {/* Page Toolbar */}
-        <div className="bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h1 className="text-sm font-bold tracking-wide uppercase">Page Title</h1>
-            <span className="text-[10px] text-slate-400">|</span>
-            <span className="text-[10px] text-slate-400">Brief description</span>
-          </div>
-          <button className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">
-            + New Item
-          </button>
-        </div>
-
-        {/* KPI Strip */}
-        <div className="grid grid-cols-3 border-x border-b border-slate-300 -mx-3 md:-mx-6">
-          <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-blue-500">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total</div>
-            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{data.length}</div>
-          </div>
-          {/* more KPI cards */}
-        </div>
-
-        {/* Data Table */}
-        <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-hidden">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="bg-slate-800 text-white">
-                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Name</th>
-                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Status</th>
-                <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.map((item, i) => (
-                <tr key={item.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
-                  <td className="px-3 py-1.5 text-slate-800 border-r border-slate-100">{item.name}</td>
-                  <td className="px-3 py-1.5 border-r border-slate-100">
-                    <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-slate-300 bg-slate-50 text-slate-600">{item.status}</span>
-                  </td>
-                  <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-700">{fmtCurrency(item.amount)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-}
-```
-
----
-
-## Module Quick Reference
-
-| Module | Backend Routes | Frontend Pages | Key Models |
-|--------|---------------|----------------|------------|
-| **Grain** | grain.ts, grainTruck.ts | GrainUnloading.tsx, GrainUnloadingTrucks.tsx, RawMaterial.tsx | GrainEntry, GrainTruck |
-| **Fermentation** | fermentation.ts, preFermentation.ts, dosingRecipes.ts | Fermentation.tsx, PreFermentation.tsx, DosingRecipes.tsx | FermentationBatch, FermentationEntry, PFBatch, BeerWellReading |
-| **Distillation** | distillation.ts | Distillation.tsx | DistillationEntry |
-| **Ethanol Product** | ethanolProduct.ts, dispatch.ts, calibration.ts | EthanolProduct.tsx, EthanolDispatch.tsx | EthanolProductEntry, DispatchTruck |
-| **DDGS** | ddgsStock.ts, ddgsDispatch.ts, ddgs.ts | DDGSStock.tsx, DDGSDispatch.tsx | DDGSStockEntry, DDGSDispatchTruck |
-| **Milling/Liquefaction** | milling.ts, liquefaction.ts | Milling.tsx, Liquefaction.tsx | MillingEntry, LiquefactionEntry |
-| **Evaporation/Dryer/Decanter** | evaporation.ts, dryer.ts, decanter.ts | Evaporation.tsx, DryerMonitor.tsx, Decanter.tsx | EvaporationEntry, DryerEntry, DecanterEntry |
-| **Lab** | labSample.ts | LabSampling.tsx | LabSample |
-| **Sales** | salesOrders.ts, customers.ts, invoices.ts, payments.ts, shipments.ts, dispatchRequests.ts, ethanolContracts.ts, freightInquiry.ts, transporters.ts, transporterPayments.ts, shipmentDocuments.ts | SalesOrders.tsx, Customers.tsx, Invoices.tsx, Payments.tsx, Shipments.tsx, DispatchRequests.tsx, EthanolContracts.tsx, FreightManagement.tsx, Transporters.tsx, SalesDashboard.tsx | SalesOrder, Customer, Invoice, Shipment, DispatchRequest, EthanolContract |
-| **Procurement** | vendors.ts, materials.ts, purchaseOrders.ts, goodsReceipts.ts, vendorInvoices.ts, vendorPayments.ts, purchaseRequisition.ts | Vendors.tsx, Materials.tsx, PurchaseOrders.tsx, GoodsReceipts.tsx, VendorInvoices.tsx, VendorPayments.tsx, PurchaseRequisition.tsx | Vendor, Material, PurchaseOrder, GoodsReceipt, VendorInvoice |
-| **Trade** | directPurchases.ts, directSales.ts | DirectPurchases.tsx, DirectSales.tsx | DirectPurchase, DirectSale |
-| **Admin** | auth.ts, users.ts, settings.ts, documentTemplates.ts | Login.tsx, UsersPage.tsx, SettingsPage.tsx, DocumentTemplates.tsx | User, Settings, DocumentTemplate |
-| **Analytics** | dashboard.ts, reports.ts | Dashboard.tsx, SalesDashboard.tsx, Reports.tsx | (aggregates from other models) |
-| **Inventory** | inventory.ts, inventoryWarehouses.ts, inventoryMovements.ts, inventoryStock.ts, inventoryCounts.ts, inventoryReorder.ts | StockDashboard.tsx, StockMovements.tsx, StockLedger.tsx, StockCount.tsx, StockValuation.tsx, ABCAnalysis.tsx, Warehouses.tsx | InventoryItem, Warehouse, StorageBin, StockLevel, StockMovement, StockCount, ReorderRule |
-| **Accounts** | accounts.ts, chartOfAccounts.ts, journalEntries.ts, bankReconciliation.ts, bankPayments.ts, accountsReports.ts, cashVouchers.ts, bankLoans.ts, postDatedCheques.ts, unifiedPayments.ts | ChartOfAccounts.tsx, JournalEntry.tsx, Ledger.tsx, TrialBalance.tsx, BankPayments.tsx, PaymentsOut.tsx, PaymentsIn.tsx, CashVouchers.tsx, BankLoans.tsx, BankReconciliation.tsx, ProfitLoss.tsx, BalanceSheet.tsx | Account, JournalEntry, JournalLine, BankTransaction, BankPaymentBatch, CashVoucher, PostDatedCheque, BankLoan |
-| **Fuel** | fuel.ts | FuelManagement.tsx | (uses InventoryItem + PurchaseOrder) |
-| **Plant Issues** | issues.ts | PlantIssues.tsx | PlantIssue, IssueComment |
-| **Factory/Weighbridge** | weighbridge.ts (cloud), gateEntry.ts | (cloud: system-status page; factory-server has its own frontend) | GrainTruck, GateEntry |
-
-## Telegram Integration by Module
-
-| Module | Auto-Collect Bot | Report Sharing | Group? |
-|--------|-----------------|----------------|--------|
-| **Fermentation** | Planned | ✅ Vessel readings shared from UI | Yes |
-| **DDGS Production** | ✅ `ddgsProduction.ts` — hourly production data | ✅ Auto report after collection | Yes |
-| **Decanter** | ✅ `decanter.ts` — dryer/decanter readings | ✅ Auto report after collection | Yes |
-| **Distillation** | Planned | Manual share from UI | — |
-| **Sales/Dispatch** | — | ✅ Dispatch details shared | Private |
-| **Accounts** | Planned (daily outstanding alerts) | ✅ Payment confirmations | Private |
-| **Inventory** | ✅ Low stock alerts | — | Private |
-
-To add Telegram to a new module, see `autoCollectModules/_template.ts`.
-
-## Module Skills
-
-See `.claude/skills/SKILLS.md` for the full index. Quick summary of the 18 skills (post 2026-04-09 consolidation):
-
-**Factory & hardware (safety-critical):**
-- `factory-operations.md` — **READ FIRST.** Part A: all 7 incidents + permanent rules. Part B: architecture + deploy runbook.
-- `weighbridge.md` — Part A: serial/hardware. Part B: add-product contract. Part C: weighment corrections.
-- `opc-bridge.md` — OPC bridge to ABB 800xA DCS.
-
-**Process:**
-- `process-production.md` — Full grain → ethanol → DDGS pipeline (merged with grain/fermentation/distillation detail sections).
-- `logistics-gate-entry-plan.md` — Gate entry operator UI + truck flow.
-
-**Business modules:**
-- `accounts-module.md` — Full double-entry spec (merged).
-- `sales-module.md` — Order-to-cash, e-invoice, e-way bill.
-- `procurement-module.md` — Procure-to-pay, PO, GRN.
-- `inventory-module.md` — SAP-style warehouses, stock, movements.
-- `trade-inventory.md` — Direct trade purchases/sales.
-- `contractors-thakedar.md` — Contractor management.
-- `dashboard-analytics.md` — Dashboard KPIs.
-
-**Compliance, tax, banking:**
-- `compliance-tax-system.md` — 6-phase compliance plan (merged with all phase files).
-- `ubi-h2h-banking.md` — **CRITICAL.** UBI H2H-STP direct bank payments.
-- `ewb-jobwork-issue.md` — E-way bill for job work.
-
-**Reference:**
-- `charts-graphs.md` — Standard chart design system. ALL charts must follow.
-- `admin-settings.md` — Auth, users, settings, audit.
-- `debt-register.md` — Known tech debt with severity + fix direction.
-
-Agents in `.claude/agents/` read these skills on every invocation — see `SKILLS.md` for the agent → skill mapping.
+The smoke test checks: TypeScript compilation, frontend build, all 3 Prisma schemas, banned patterns in changed files, critical path modifications (warns), and endpoint health if dev server running.
 
 ---
 
 ## Codex Integration (GPT-5.4 Second Opinion)
 
-Codex CLI (OpenAI, GPT-5.4) is installed and authenticated in this workspace. Use it as a **second-opinion reviewer and deep auditor** for complex work:
+`/codex:rescue` — delegates investigation, diagnosis, or code review to Codex. Use for deep audits, second opinions on complex logic, root-cause diagnosis, and test coverage gaps. Not for simple one-file edits.
 
-- **`/codex:rescue`** — Primary skill. Delegates investigation, diagnosis, fix requests, or code review to Codex. Use for:
-  - **Deep code audit**: Edge cases, race conditions, security holes, off-by-one errors
-  - **Second opinion**: When stuck or want independent validation of complex logic
-  - **Root-cause diagnosis**: Hard-to-reproduce bugs, multi-file interaction issues
-  - **Test coverage gaps**: Have Codex identify what tests are missing
-- **When to use**: Complex features, multi-file refactors, tricky business logic, payment/financial code, or anything where a second set of eyes adds value
-- **Not for**: Simple one-file edits, typo fixes, or routine CRUD
+## Agent Parallelization
 
-## Agent Parallelization Patterns
-
-When building features that touch multiple files, use parallel agents to speed up development:
-
-### New Module (most common)
-```
-Agent 1: Prisma schema + backend route file + register in app.ts
-Agent 2: Frontend page (can use placeholder API types)
-  → After both complete: register route in App.tsx, align types
-```
-Rule: backend agent goes first or in parallel — frontend can stub types, but route registration in app.ts must happen before testing.
-
-### Bug Investigation
-```
-Agent 1: Explore backend (routes, services, Prisma queries)
-Agent 2: Explore frontend (pages, API calls, state)
-Agent 3: Git history (recent commits, blame on affected files)
-```
-
-### Multi-File Refactor
-```
-Agent per independent file group — e.g., renaming a field:
-Agent 1: Prisma schema + migration
-Agent 2: All backend route files using that field
-Agent 3: All frontend files using that field
-```
-
-### When NOT to Parallelize
-- Dependent work: route must exist before frontend calls it
-- Schema changes: must run `prisma generate` before backend can use new models
-- Single-file fixes: just do it directly, no agent overhead
-
----
-
-## Pre-Push Checklist
-1. `cd backend && npx tsc --noEmit` — Backend compiles
-2. `cd frontend && npx vite build` — Frontend builds
-3. `cd backend && npx prisma validate` — Schema valid
-4. No `any` types in new/changed code
-5. No `console.log` in new/changed code
-6. All new routes use `asyncHandler` + `validate`
-7. All new `findMany` have `take` + `select`
-8. All new Prisma fields have `@@index` where appropriate
-9. Test the feature manually in browser
+**New Module**: Agent 1 (schema + backend + app.ts) || Agent 2 (frontend page) → then align types
+**Bug Investigation**: Agent 1 (backend) || Agent 2 (frontend) || Agent 3 (git history)
+**Multi-File Refactor**: Agent per independent file group
+**Don't parallelize**: dependent work, schema changes (need prisma generate first), single-file fixes

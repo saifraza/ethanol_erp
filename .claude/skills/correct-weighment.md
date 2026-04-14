@@ -4,6 +4,18 @@
 > **Trigger**: User says "correct weighment", "fix ticket X", "edit weighment", or `/correct-weighment`
 > **Risk level**: HIGH — wrong edit breaks accounting, inventory, invoicing, Tally, e-invoice.
 
+## MANDATORY — Update ALL Systems + Audit Trail
+
+**NEVER do a raw DB update on one table.** Every correction MUST update ALL of these:
+
+1. **Source table** (GrainTruck / DDGSDispatchTruck / DispatchTruck / GoodsReceipt)
+2. **Cloud Weighment mirror** (`Weighment` table — `vehicleNo`, `supplierName`, etc.)
+3. **Factory Weighment** (SSH to 100.126.101.7, Prisma `weighment` model, match by `ticketNo`)
+4. **WeighmentCorrection audit row** (one per changed field — oldValue, newValue, reason, timestamp)
+
+If any system is unreachable, proceed with cloud + audit but log `factorySynced: false`.
+**Inconsistent data across systems is worse than the original error.**
+
 ## How To Use
 
 Saif tells you what to fix. Examples:

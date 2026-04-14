@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 interface WeighmentItem {
   id: string;
   localId: string;
+  ticketNo: number | null;
   pcId: string;
   pcName: string;
   vehicleNo: string;
@@ -200,6 +201,7 @@ export default function Weighment() {
         <table className="w-full text-xs">
           <thead>
             <tr className="bg-slate-800 text-white">
+              <th className="text-left px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">#</th>
               <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Vehicle</th>
               <th className="text-center px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Dir</th>
               <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Type</th>
@@ -220,6 +222,9 @@ export default function Weighment() {
               const badge = dateBadge(w.createdAt);
               return (
                 <tr key={w.id} className={`border-b border-slate-100 hover:bg-blue-50/60 border-l-4 ${categoryBorderColor(cat)} ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                  <td className="px-2 py-1.5 border-r border-slate-100 font-mono text-slate-500 text-[10px]">
+                    {w.ticketNo != null ? w.ticketNo : '--'}
+                  </td>
                   <td className="px-3 py-1.5 border-r border-slate-100">
                     <div className="flex items-center gap-1.5">
                       <span className="text-slate-800 font-mono font-bold">{w.vehicleNo}</span>
@@ -279,7 +284,7 @@ export default function Weighment() {
               );
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={12} className="text-center py-8 text-xs text-slate-400 uppercase tracking-widest">No weighments for {date}</td></tr>
+              <tr><td colSpan={13} className="text-center py-8 text-xs text-slate-400 uppercase tracking-widest">No weighments for {date}</td></tr>
             )}
           </tbody>
         </table>

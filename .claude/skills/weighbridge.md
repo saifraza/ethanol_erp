@@ -364,6 +364,45 @@ Response: `{ "results": [{ "weighment_id": "uuid", "lab_status": "PASS", "moistu
 
 ---
 
+## Part A.5 — Product Routing & Table Conventions (added 2026-04-12)
+
+### Weight Column Naming Convention
+Two naming patterns coexist (historical). New code should use `weightGross/weightTare/weightNet`:
+- `weightGross` / `weightTare` / `weightNet` — GrainTruck, DispatchTruck, DDGSDispatchTruck, SugarDispatchTruck
+- `grossWeight` / `tareWeight` / `netWeight` — GoodsReceipt, DirectPurchase, factory Weighment
+
+### Weight Units
+- **Inbound (grain/fuel)**: Converted KG → **MT** at push time (GrainTruck, GoodsReceipt store MT)
+- **Outbound (ethanol/DDGS/sugar/scrap)**: Stored in **KG** (DispatchTruck, DDGSDispatchTruck, Shipment)
+- **Spot farmer**: Stored in **KG** (DirectPurchase)
+- Factory Weighment always stores raw KG from scale
+
+### Product → Table Routing
+
+| Product | Direction | Handler | Destination Table | Weight Unit |
+|---------|-----------|---------|-------------------|-------------|
+| Grain | IN | poInbound | GrainTruck + GoodsReceipt | MT |
+| Fuel | IN | poInbound | GrainTruck + GoodsReceipt | MT |
+| Spot (farmer) | IN | spotInbound | DirectPurchase | KG |
+| Trader | IN | traderInbound | GrainTruck + GoodsReceipt | MT |
+| Ethanol | OUT | ethanolOutbound | DispatchTruck | KG |
+| DDGS | OUT | ddgsOutbound | DDGSDispatchTruck + Shipment | KG |
+| Sugar | OUT | sugarOutbound | SugarDispatchTruck + Shipment | KG |
+| Scrap/LFO/HFO/Ash/PressMud | OUT | nonEthanolOutbound | DDGSDispatchTruck + Shipment | KG |
+
+### Handler Detection Priority (push.ts detectHandler)
+1. `handlerKey` from InventoryItem (explicit override, wins over auto-detect)
+2. Direction-based auto-detect with string matching on material name/category
+3. Fallback to nonEthanolOutbound (outbound) or fallbackInbound (inbound)
+
+### DDGSDispatchTruck Is a Generic Outbound Table
+Despite its name, DDGSDispatchTruck is used for ALL non-ethanol outbound products. The `productName` field in the linked Shipment distinguishes the actual product.
+
+### Outbound Products List
+Configured in factory master data cache (`masterDataCache.ts`). Derived from InventoryItems with `handlerKey` ending in `_OUTBOUND`, with fallback to DEFAULT_OUTBOUND_PRODUCTS constant. Gate entry frontend reads from `/api/master-data` response.
+
+---
+
 ## Part B — Adding a New Product (formerly weighbridge-add-product.md)
 
 > **READ THIS ENTIRELY before adding any new product (scrap, sugar, animal feed, etc.) to the weighbridge pipeline.**
