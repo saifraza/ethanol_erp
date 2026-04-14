@@ -502,76 +502,11 @@ export default function TaxRulesReferencePage() {
                 <ExplanationCard key={e.id} exp={e} />
               ))}
 
-              {/* TDS sections table */}
-              <div className="mt-4">
-                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
-                  TDS Sections (Income-tax Act 2025)
-                </div>
-                <table className="w-full text-xs border border-slate-300">
-                  <thead>
-                    <tr className="bg-slate-800 text-white">
-                      <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">New §</th>
-                      <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Old §</th>
-                      <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Nature</th>
-                      <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Rate Ind</th>
-                      <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Rate Others</th>
-                      <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Single Thr</th>
-                      <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Agg Thr</th>
-                      <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">No-PAN</th>
-                      <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Effective</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {summary.tdsSections?.map((t, i) => (
-                      <tr key={t.id} className={`border-b border-slate-100 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
-                        <td className="px-3 py-1.5 font-mono tabular-nums text-slate-800 border-r border-slate-100">{t.newSection}</td>
-                        <td className="px-3 py-1.5 font-mono tabular-nums text-slate-500 border-r border-slate-100">{t.oldSection || '--'}</td>
-                        <td className="px-3 py-1.5 text-slate-800 border-r border-slate-100">{t.nature}</td>
-                        <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-800 border-r border-slate-100">{t.rateIndividual}%</td>
-                        <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-800 border-r border-slate-100">{t.rateOthers}%</td>
-                        <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-700 border-r border-slate-100">₹{fmtAmount(t.thresholdSingle)}</td>
-                        <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-700 border-r border-slate-100">₹{fmtAmount(t.thresholdAggregate)}</td>
-                        <td className="px-3 py-1.5 text-right font-mono tabular-nums text-red-700 border-r border-slate-100">{t.panMissingRate}%</td>
-                        <td className="px-3 py-1.5 text-slate-500">{fmtDate(t.effectiveFrom)}</td>
-                      </tr>
-                    ))}
-                    {!summary.tdsSections?.length && (
-                      <tr><td colSpan={9} className="px-3 py-4 text-center text-slate-400 text-[10px] uppercase tracking-widest">No TDS sections — run seed</td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* TCS sections table */}
-              <div className="mt-4">
-                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
-                  TCS Sections
-                </div>
-                <table className="w-full text-xs border border-slate-300">
-                  <thead>
-                    <tr className="bg-slate-800 text-white">
-                      <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Code</th>
-                      <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Nature</th>
-                      <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Rate</th>
-                      <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Threshold</th>
-                      <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Effective</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {summary.tcsSections?.map((t, i) => (
-                      <tr key={t.id} className={`border-b border-slate-100 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
-                        <td className="px-3 py-1.5 font-mono tabular-nums text-slate-800 border-r border-slate-100">{t.code}</td>
-                        <td className="px-3 py-1.5 text-slate-800 border-r border-slate-100">{t.nature}</td>
-                        <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-800 border-r border-slate-100">{t.rate}%</td>
-                        <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-700 border-r border-slate-100">₹{fmtAmount(t.threshold)}</td>
-                        <td className="px-3 py-1.5 text-slate-500">{fmtDate(t.effectiveFrom)}</td>
-                      </tr>
-                    ))}
-                    {!summary.tcsSections?.length && (
-                      <tr><td colSpan={5} className="px-3 py-4 text-center text-slate-400 text-[10px] uppercase tracking-widest">No TCS sections — run seed</td></tr>
-                    )}
-                  </tbody>
-                </table>
+              <div className="mt-4 text-[11px] text-slate-500">
+                Full TDS rate & threshold table is managed in{' '}
+                <a href="/admin/tax/tds-sections" className="text-blue-700 hover:underline font-medium">TDS Sections</a>.
+                TCS lives in{' '}
+                <a href="/admin/tax/tcs-sections" className="text-blue-700 hover:underline font-medium">TCS Sections</a>.
               </div>
             </section>
 
@@ -589,93 +524,13 @@ export default function TaxRulesReferencePage() {
                 <ExplanationCard key={e.id} exp={e} />
               ))}
 
-              <div className="mt-4">
-                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
-                  HSN Master — Current Rates
-                </div>
-                <table className="w-full text-xs border border-slate-300">
-                  <thead>
-                    <tr className="bg-slate-800 text-white">
-                      <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">HSN</th>
-                      <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Description</th>
-                      <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">UQC</th>
-                      <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Category</th>
-                      <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">CGST</th>
-                      <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">SGST</th>
-                      <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">IGST</th>
-                      <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Condition</th>
-                      <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Effective</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {summary.hsn?.flatMap((h) =>
-                      (h.rates?.length ? h.rates : [null]).map((r, idx) => (
-                        <tr key={`${h.id}-${idx}`} className={`border-b border-slate-100 ${idx % 2 ? 'bg-slate-50/70' : ''}`}>
-                          <td className="px-3 py-1.5 font-mono tabular-nums text-slate-800 border-r border-slate-100">{idx === 0 ? h.code : ''}</td>
-                          <td className="px-3 py-1.5 text-slate-800 border-r border-slate-100">{idx === 0 ? h.description : ''}</td>
-                          <td className="px-3 py-1.5 text-slate-700 border-r border-slate-100">{idx === 0 ? h.uqc : ''}</td>
-                          <td className="px-3 py-1.5 text-slate-500 text-[10px] border-r border-slate-100">{idx === 0 ? h.category : ''}</td>
-                          {r ? (
-                            <>
-                              <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-800 border-r border-slate-100">
-                                {r.isOutsideGst ? '—' : r.isExempt ? 'Nil' : `${r.cgst}%`}
-                              </td>
-                              <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-800 border-r border-slate-100">
-                                {r.isOutsideGst ? '—' : r.isExempt ? 'Nil' : `${r.sgst}%`}
-                              </td>
-                              <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-800 border-r border-slate-100">
-                                {r.isOutsideGst ? 'Outside GST' : r.isExempt ? 'Nil' : `${r.igst}%`}
-                              </td>
-                              <td className="px-3 py-1.5 text-slate-700 text-[10px] border-r border-slate-100">{r.conditionNote || '--'}</td>
-                              <td className="px-3 py-1.5 text-slate-500">{fmtDate(r.effectiveFrom)}</td>
-                            </>
-                          ) : (
-                            <td colSpan={5} className="px-3 py-1.5 text-[10px] text-slate-400 uppercase tracking-widest">No rate set</td>
-                          )}
-                        </tr>
-                      ))
-                    )}
-                    {!summary.hsn?.length && (
-                      <tr><td colSpan={9} className="px-3 py-4 text-center text-slate-400 text-[10px] uppercase tracking-widest">No HSN master — run seed</td></tr>
-                    )}
-                  </tbody>
-                </table>
+              <div className="mt-4 text-[11px] text-slate-500">
+                Full HSN codes, rates, and effective-dated history are managed in{' '}
+                <a href="/admin/tax/hsn" className="text-blue-700 hover:underline font-medium">HSN Master</a>.
+                Document numbering series is atomic and not user-editable — see{' '}
+                <a href="/admin/tax/invoice-series" className="text-blue-700 hover:underline font-medium">Sell Invoices</a>{' '}
+                for issued invoices.
               </div>
-
-              {/* Invoice series */}
-              {summary.invoiceSeries?.length > 0 && (
-                <div className="mt-4">
-                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
-                    Invoice Series (Current FY)
-                  </div>
-                  <table className="w-full text-xs border border-slate-300">
-                    <thead>
-                      <tr className="bg-slate-800 text-white">
-                        <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Doc Type</th>
-                        <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Prefix</th>
-                        <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Next #</th>
-                        <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Sample</th>
-                        <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Active</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {summary.invoiceSeries.map((s, i) => (
-                        <tr key={s.id} className={`border-b border-slate-100 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
-                          <td className="px-3 py-1.5 text-slate-800 border-r border-slate-100">{s.docType}</td>
-                          <td className="px-3 py-1.5 font-mono tabular-nums text-slate-700 border-r border-slate-100">{s.prefix}</td>
-                          <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-800 border-r border-slate-100">{s.nextNumber}</td>
-                          <td className="px-3 py-1.5 font-mono tabular-nums text-slate-500 border-r border-slate-100">
-                            {s.prefix}{String(s.nextNumber).padStart(s.width, '0')}
-                          </td>
-                          <td className="px-3 py-1.5 text-[10px] uppercase tracking-widest">
-                            {s.isActive ? <span className="text-green-700">Yes</span> : <span className="text-slate-400">No</span>}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
             </section>
 
             {/* 5. Payroll */}

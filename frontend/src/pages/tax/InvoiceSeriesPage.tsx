@@ -6,7 +6,7 @@
  * Route: /admin/tax/invoice-series (kept for sidebar compat)
  */
 import { useEffect, useMemo, useState } from 'react';
-import { FileText, Loader2, Printer, Search } from 'lucide-react';
+import { Download, Eye, FileText, Loader2, Search } from 'lucide-react';
 import api from '../../services/api';
 
 interface Invoice {
@@ -56,7 +56,25 @@ export default function InvoiceSeriesPage() {
   const [to, setTo] = useState('');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [taxSeries, setTaxSeries] = useState<{ prefix: string; width: number } | null>(null);
   const limit = 50;
+
+  // Fetch the TAX_INVOICE series once so we can format invoice numbers like
+  // ETH/26-27/00001 instead of raw autoincrement 1
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await api.get('/tax/invoice-series');
+        const all: Array<{ docType: string; prefix: string; width: number; isActive: boolean }> =
+          Array.isArray(res.data) ? res.data : (res.data.items ?? []);
+        const tax = all.find((s) => s.docType === 'TAX_INVOICE' && s.isActive);
+        if (tax) setTaxSeries({ prefix: tax.prefix, width: tax.width });
+      } catch { /* non-blocking */ }
+    })();
+  }, []);
+
+  const formatInvNo = (n: number): string =>
+    taxSeries ? `${taxSeries.prefix}${String(n).padStart(taxSeries.width, '0')}` : String(n);
 
   const fetchData = async () => {
     setLoading(true);
@@ -107,15 +125,37 @@ export default function InvoiceSeriesPage() {
     return s;
   }, [filtered]);
 
-  const openPdf = async (id: string) => {
+  const fetchPdfBlob = async (id: string) => {
+    const res = await api.get(`/invoices/${id}/pdf`, { responseType: 'blob' });
+    return new Blob([res.data], { type: 'application/pdf' });
+  };
+
+  const viewPdf = async (id: string) => {
     try {
-      const res = await api.get(`/invoices/${id}/pdf`, { responseType: 'blob' });
-      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const blob = await fetchPdfBlob(id);
       const url = URL.createObjectURL(blob);
       window.open(url, '_blank');
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch {
       setError('Failed to open PDF');
+    }
+  };
+
+  const downloadPdf = async (id: string, invoiceNo: number) => {
+    try {
+      const blob = await fetchPdfBlob(id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      // File-name safe version of formatted invoice number (replace slashes)
+      const safeName = formatInvNo(invoiceNo).replace(/[^\w-]/g, '_');
+      a.download = `Invoice-${safeName}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 5_000);
+    } catch {
+      setError('Failed to download PDF');
     }
   };
 
@@ -185,7 +225,7 @@ export default function InvoiceSeriesPage() {
               <th className="px-2 py-1.5 text-right font-bold uppercase tracking-widest">Paid</th>
               <th className="px-2 py-1.5 text-center font-bold uppercase tracking-widest">Status</th>
               <th className="px-2 py-1.5 text-center font-bold uppercase tracking-widest">IRN</th>
-              <th className="px-2 py-1.5 text-center font-bold uppercase tracking-widest">PDF</th>
+              <th className="px-2 py-1.5 text-center font-bold uppercase tracking-widest sticky right-0 bg-slate-100 border-l-2 border-slate-300 shadow-[-4px_0_6px_-4px_rgba(0,0,0,0.1)]">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200">
@@ -202,7 +242,7 @@ export default function InvoiceSeriesPage() {
             )}
             {!loading && filtered.map((inv) => (
               <tr key={inv.id} className="hover:bg-slate-50">
-                <td className="px-2 py-1 font-mono font-bold">{inv.invoiceNo}</td>
+                <td className="px-2 py-1 font-mono font-bold whitespace-nowrap">{formatInvNo(inv.invoiceNo)}</td>
                 <td className="px-2 py-1 whitespace-nowrap">{fmtDate(inv.invoiceDate)}</td>
                 <td className="px-2 py-1 truncate max-w-[180px]" title={inv.customer?.name}>{inv.customer?.shortName || inv.customer?.name || '--'}</td>
                 <td className="px-2 py-1 truncate max-w-[140px]" title={inv.productName}>{inv.productName}</td>
@@ -233,11 +273,17 @@ export default function InvoiceSeriesPage() {
                     <span className="text-[9px] text-slate-400">—</span>
                   )}
                 </td>
-                <td className="px-2 py-1 text-center">
-                  <button
-                    onClick={() => openPdf(inv.id)}
-                    className="text-slate-600 hover:text-blue-600" title="Open PDF"
-                  ><Printer className="w-3.5 h-3.5" /></button>
+                <td className="px-2 py-1 text-center sticky right-0 bg-white border-l-2 border-slate-200 shadow-[-4px_0_6px_-4px_rgba(0,0,0,0.1)]">
+                  <div className="inline-flex gap-1">
+                    <button
+                      onClick={() => viewPdf(inv.id)}
+                      className="text-slate-600 hover:text-blue-600" title="View PDF"
+                    ><Eye className="w-3.5 h-3.5" /></button>
+                    <button
+                      onClick={() => downloadPdf(inv.id, inv.invoiceNo)}
+                      className="text-slate-600 hover:text-green-700" title="Download PDF"
+                    ><Download className="w-3.5 h-3.5" /></button>
+                  </div>
                 </td>
               </tr>
             ))}
