@@ -88,7 +88,7 @@ const HrPayrollDashboard = React.lazy(() => import('./pages/hr/PayrollDashboard'
 const PurchaseRequisition = React.lazy(() => import('./pages/PurchaseRequisition'));
 // Sales & Distribution
 const Customers = React.lazy(() => import('./pages/sales/Customers'));
-const SalesDashboard = React.lazy(() => import('./pages/sales/SalesDashboard'));
+const SalesOrders = React.lazy(() => import('./pages/sales/SalesOrders'));
 const DispatchRequests = React.lazy(() => import('./pages/sales/DispatchRequests'));
 const Transporters = React.lazy(() => import('./pages/sales/Transporters'));
 const Shipments = React.lazy(() => import('./pages/sales/Shipments'));
@@ -246,14 +246,14 @@ export default function App() {
         <Route path="purchase-requisition" element={<PurchaseRequisition />} />
         {/* Sales & Distribution */}
         <Route path="sales/customers" element={<Customers />} />
-        <Route path="sales/pipeline" element={<SalesDashboard />} />
-        <Route path="sales/orders" element={<SalesDashboard />} />
-        <Route path="sales/dispatch-requests" element={<Navigate to="/sales/pipeline" replace />} />
+        <Route path="sales/pipeline" element={<Navigate to="/sales/orders" replace />} />
+        <Route path="sales/orders" element={<SalesOrders />} />
+        <Route path="sales/dispatch-requests" element={<DispatchRequests />} />
         <Route path="sales/transporters" element={<Transporters />} />
         <Route path="sales/shipments" element={<Shipments />} />
         <Route path="sales/invoices" element={<Invoices />} />
         <Route path="sales/payments" element={<Payments />} />
-        <Route path="sales/freight" element={<Navigate to="/sales/pipeline" replace />} />
+        <Route path="sales/freight" element={<FreightManagement />} />
         <Route path="sales/ethanol-contracts" element={<EthanolContracts />} />
         <Route path="sales/ddgs-contracts" element={<DDGSContracts />} />
         <Route path="sales/sugar-contracts" element={<SugarContracts />} />
