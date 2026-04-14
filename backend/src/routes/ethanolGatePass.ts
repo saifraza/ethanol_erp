@@ -6,6 +6,7 @@ import { asyncHandler } from '../shared/middleware';
 import { nextInvoiceNo } from '../utils/invoiceCounter';
 import { onSaleInvoiceCreated } from '../services/autoJournal';
 import { recomputeEthanolEntryByDate } from './ethanolProduct';
+import { calcGstSplit } from '../utils/gstSplit';
 
 const router = Router();
 
@@ -29,15 +30,7 @@ function nowIST(): Date {
   return new Date(Date.now() + 5.5 * 60 * 60 * 1000);
 }
 
-function calcGstSplit(amount: number, gstPercent: number, customerState?: string | null) {
-  const isIntra = customerState?.toLowerCase().includes('madhya pradesh');
-  const gstAmount = Math.round(amount * gstPercent / 100 * 100) / 100;
-  if (isIntra) {
-    const half = Math.round(gstAmount / 2 * 100) / 100;
-    return { gstAmount, supplyType: 'INTRA_STATE' as const, cgstPercent: gstPercent / 2, cgstAmount: half, sgstPercent: gstPercent / 2, sgstAmount: gstAmount - half, igstPercent: 0, igstAmount: 0 };
-  }
-  return { gstAmount, supplyType: 'INTER_STATE' as const, cgstPercent: 0, cgstAmount: 0, sgstPercent: 0, sgstAmount: 0, igstPercent: gstPercent, igstAmount: gstAmount };
-}
+// calcGstSplit imported from ../utils/gstSplit
 
 async function nextCounter(tx: any, prefix: string): Promise<string> {
   const key = `counter:${prefix}`;
@@ -179,7 +172,7 @@ router.post('/:id/release', asyncHandler(async (req: AuthRequest, res: Response)
   const rate = contract.conversionRate || contract.ethanolRate || 0;
   const amount = truck.quantityBL * rate;
   const gstPercent = contract.gstPercent || 18;
-  const gst = calcGstSplit(amount, gstPercent, customer.state);
+  const gst = calcGstSplit(amount, gstPercent, customer.state, customer.gstNo);
   const totalAmount = Math.round(amount + gst.gstAmount);
   const ist = new Date();
 

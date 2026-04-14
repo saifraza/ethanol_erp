@@ -212,7 +212,7 @@ export async function handleDDGSOutbound(w: WeighmentInput, ctx: PushContext): P
 
     const amount = Math.round(netMT * rate * 100) / 100;
     const gstPercent = contract.gstPercent || DDGS_GST_PCT;
-    const gst = calcDDGSGstSplit(amount, gstPercent, customer.state);
+    const gst = calcDDGSGstSplit(amount, gstPercent, customer.state, customer.gstNo);
     const total = Math.round((amount + gst.gstAmount) * 100) / 100;
 
     // Global counters (single series for all products)

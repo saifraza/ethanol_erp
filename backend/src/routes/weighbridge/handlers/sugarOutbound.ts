@@ -156,7 +156,7 @@ export async function handleSugarOutbound(w: WeighmentInput, ctx: PushContext): 
 
     const amount = Math.round(netMT * rate * 100) / 100;
     const gstPercent = contract.gstPercent || SUGAR_GST_PCT;
-    const gst = calcDDGSGstSplit(amount, gstPercent, customer.state);
+    const gst = calcDDGSGstSplit(amount, gstPercent, customer.state, customer.gstNo);
     const total = Math.round((amount + gst.gstAmount) * 100) / 100;
 
     const customInvNo = await nextInvoiceNo(tx, 'SUG');

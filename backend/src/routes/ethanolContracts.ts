@@ -13,32 +13,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
-const COMPANY_STATE = 'Madhya Pradesh';
-
-function calcGstSplit(amount: number, gstPercent: number, customerState: string | null | undefined) {
-  const gstAmount = Math.round((amount * gstPercent) / 100 * 100) / 100;
-  const isInterstate = customerState && customerState !== COMPANY_STATE;
-  if (isInterstate) {
-    return { supplyType: 'INTER_STATE' as const, cgstPercent: 0, cgstAmount: 0, sgstPercent: 0, sgstAmount: 0, igstPercent: gstPercent, igstAmount: gstAmount, gstAmount };
-  }
-  const half = Math.round(gstAmount / 2 * 100) / 100;
-  return { supplyType: 'INTRA_STATE' as const, cgstPercent: gstPercent / 2, cgstAmount: half, sgstPercent: gstPercent / 2, sgstAmount: Math.round((gstAmount - half) * 100) / 100, igstPercent: 0, igstAmount: 0, gstAmount };
-}
-
-/** Derive state name from GSTIN prefix (first 2 digits) */
-function stateFromGstin(gstin: string): string | null {
-  const stateMap: Record<string, string> = {
-    '01': 'Jammu & Kashmir', '02': 'Himachal Pradesh', '03': 'Punjab', '04': 'Chandigarh',
-    '05': 'Uttarakhand', '06': 'Haryana', '07': 'Delhi', '08': 'Rajasthan',
-    '09': 'Uttar Pradesh', '10': 'Bihar', '11': 'Sikkim', '12': 'Arunachal Pradesh',
-    '13': 'Nagaland', '14': 'Manipur', '15': 'Mizoram', '16': 'Tripura', '17': 'Meghalaya',
-    '18': 'Assam', '19': 'West Bengal', '20': 'Jharkhand', '21': 'Odisha', '22': 'Chhattisgarh',
-    '23': 'Madhya Pradesh', '24': 'Gujarat', '26': 'Dadra & Nagar Haveli', '27': 'Maharashtra',
-    '29': 'Karnataka', '30': 'Goa', '32': 'Kerala', '33': 'Tamil Nadu', '34': 'Puducherry',
-    '36': 'Telangana', '37': 'Andhra Pradesh',
-  };
-  return gstin ? stateMap[gstin.substring(0, 2)] || null : null;
-}
+import { calcGstSplit, stateFromGstin } from '../utils/gstSplit';
 
 const router = Router();
 router.use(authenticate as any);
@@ -335,7 +310,7 @@ router.post('/:id/liftings', asyncHandler(async (req: AuthRequest, res: Response
         if (!cust) throw new Error('Customer not found');
 
         // 2. Create invoice + link to lifting in ONE transaction — never orphan
-        const gst = calcGstSplit(amount!, contract.gstPercent || 18, cust.state);
+        const gst = calcGstSplit(amount!, contract.gstPercent || 18, cust.state, cust.gstNo);
         const total = Math.round((amount! + gst.gstAmount) * 100) / 100;
         const inv = await prisma.$transaction(async (tx) => {
           const created = await tx.invoice.create({
@@ -349,7 +324,7 @@ router.post('/:id/liftings', asyncHandler(async (req: AuthRequest, res: Response
               totalAmount: total, balanceAmount: total, status: 'UNPAID', userId: 'system',
             },
           });
-          await tx.ethanolLifting.update({ where: { id: lifting.id }, data: { invoiceId: created.id, invoiceNo: `INV-${created.invoiceNo}` } });
+          await tx.ethanolLifting.update({ where: { id: lifting.id }, data: { invoiceId: created.id, invoiceNo: `INV-${created.invoiceNo}`, status: 'DELIVERED', deliveredQtyKL: qtyBL / 1000 } });
           return created;
         });
         createdInvoice = inv;
@@ -483,7 +458,7 @@ router.patch('/liftings/:liftingId/rate', asyncHandler(async (req: AuthRequest, 
 
   const lifting = await prisma.ethanolLifting.findUnique({
     where: { id: liftingId },
-    include: { contract: true, invoice: { include: { customer: { select: { state: true } } } } },
+    include: { contract: true, invoice: { include: { customer: { select: { state: true, gstNo: true } } } } },
   });
   if (!lifting) return res.status(404).json({ error: 'Lifting not found' });
   if (!lifting.invoice) return res.status(400).json({ error: 'Lifting has no linked invoice' });
@@ -499,7 +474,7 @@ router.patch('/liftings/:liftingId/rate', asyncHandler(async (req: AuthRequest, 
   const qtyBL = lifting.quantityBL;
   const newAmount = Math.round(qtyBL * newRate * 100) / 100;
   const gstPercent = inv.gstPercent || lifting.contract.gstPercent || 18;
-  const gst = calcGstSplit(newAmount, gstPercent, inv.customer?.state);
+  const gst = calcGstSplit(newAmount, gstPercent, inv.customer?.state, inv.customer?.gstNo);
   const newTotal = Math.round((newAmount + gst.gstAmount) * 100) / 100;
 
   const result = await prisma.$transaction(async (tx: any) => {
@@ -724,7 +699,7 @@ router.post('/:id/liftings/:liftingId/create-invoice', asyncHandler(async (req: 
 
     const gstPercent = contract.gstPercent || 18;
     const amount = lifting.amount || (lifting.quantityBL * (lifting.rate || 0));
-    const gst = calcGstSplit(amount, gstPercent, customer.state);
+    const gst = calcGstSplit(amount, gstPercent, customer.state, customer.gstNo);
     const totalAmount = Math.round(amount + gst.gstAmount);
 
     // Atomic: create invoice + link to lifting in transaction to prevent double-create race
@@ -766,7 +741,7 @@ router.post('/:id/liftings/:liftingId/create-invoice', asyncHandler(async (req: 
 
       await tx.ethanolLifting.update({
         where: { id: lifting.id },
-        data: { invoiceId: inv.id, invoiceNo: customInvNo },
+        data: { invoiceId: inv.id, invoiceNo: customInvNo, status: 'DELIVERED', deliveredQtyKL: lifting.quantityKL },
       });
 
       return inv;
@@ -1270,6 +1245,7 @@ router.post('/:id/import-history', asyncHandler(async (req: AuthRequest, res: Re
     const customerId = contract.buyerCustomerId;
     if (!customerId) return res.status(400).json({ error: 'Contract has no buyer customer linked' });
 
+    const buyer = await prisma.customer.findUnique({ where: { id: customerId }, select: { state: true, gstNo: true } });
     const gstPercent = contract.gstPercent || 18;
     let imported = 0, skipped = 0;
 
@@ -1281,7 +1257,7 @@ router.post('/:id/import-history', asyncHandler(async (req: AuthRequest, res: Re
       if (existing) { skipped++; continue; }
 
       const amount = row.quantityBL * row.rate;
-      const gst = calcGstSplit(amount, gstPercent, 'Odisha');
+      const gst = calcGstSplit(amount, gstPercent, buyer?.state, buyer?.gstNo);
       const totalAmount = Math.round(amount + gst.gstAmount);
 
       const invoice = await prisma.invoice.create({

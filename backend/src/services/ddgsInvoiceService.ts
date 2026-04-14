@@ -2,19 +2,12 @@ import prisma from '../config/prisma';
 import { nextInvoiceNo, nextCounter } from '../utils/invoiceCounter';
 import { onSaleInvoiceCreated } from './autoJournal';
 import { generateIRN, generateEWBByIRN } from './eInvoice';
+import { calcGstSplit } from '../utils/gstSplit';
 
-const COMPANY_STATE = 'Madhya Pradesh';
 const DDGS_GST_PCT = 5;
 
-export function calcDDGSGstSplit(amount: number, gstPercent: number, customerState: string | null | undefined) {
-  const gstAmount = Math.round((amount * gstPercent) / 100 * 100) / 100;
-  const isInterstate = customerState && customerState !== COMPANY_STATE;
-  if (isInterstate) {
-    return { supplyType: 'INTER_STATE' as const, cgstPercent: 0, cgstAmount: 0, sgstPercent: 0, sgstAmount: 0, igstPercent: gstPercent, igstAmount: gstAmount, gstAmount };
-  }
-  const half = Math.round(gstAmount / 2 * 100) / 100;
-  return { supplyType: 'INTRA_STATE' as const, cgstPercent: gstPercent / 2, cgstAmount: half, sgstPercent: gstPercent / 2, sgstAmount: Math.round((gstAmount - half) * 100) / 100, igstPercent: 0, igstAmount: 0, gstAmount };
-}
+/** @deprecated Use calcGstSplit from utils/gstSplit — kept for backwards compat */
+export const calcDDGSGstSplit = calcGstSplit;
 
 /**
  * Creates an Invoice + DDGSContractDispatch for a DDGSDispatchTruck that
@@ -42,7 +35,7 @@ export async function createDDGSInvoiceFromTruck(truckId: string): Promise<strin
 
   const amount = Math.round(netMT * rate * 100) / 100;
   const gstPercent = contract.gstPercent || DDGS_GST_PCT;
-  const gst = calcDDGSGstSplit(amount, gstPercent, customer.state);
+  const gst = calcGstSplit(amount, gstPercent, customer.state, customer.gstNo);
   const total = Math.round((amount + gst.gstAmount) * 100) / 100;
 
   const invoiceId = await prisma.$transaction(async (tx) => {

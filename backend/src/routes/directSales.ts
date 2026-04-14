@@ -7,7 +7,6 @@ import { onSaleInvoiceCreated } from '../services/autoJournal';
 import { nextInvoiceNo } from '../utils/invoiceCounter';
 import multer from 'multer';
 
-const COMPANY_STATE = 'Madhya Pradesh';
 const DEFAULT_GST_PCT = 18;
 
 // HSN code map for scrap/miscellaneous products
@@ -23,15 +22,7 @@ const HSN_MAP: Record<string, string> = {
   'Other': '99999999',
 };
 
-function calcGstSplit(amount: number, gstPercent: number, customerState: string | null | undefined) {
-  const gstAmount = Math.round((amount * gstPercent) / 100 * 100) / 100;
-  const isInterstate = customerState && customerState !== COMPANY_STATE;
-  if (isInterstate) {
-    return { supplyType: 'INTER_STATE' as const, cgstPercent: 0, cgstAmount: 0, sgstPercent: 0, sgstAmount: 0, igstPercent: gstPercent, igstAmount: gstAmount, gstAmount };
-  }
-  const half = Math.round(gstAmount / 2 * 100) / 100;
-  return { supplyType: 'INTRA_STATE' as const, cgstPercent: gstPercent / 2, cgstAmount: half, sgstPercent: gstPercent / 2, sgstAmount: Math.round((gstAmount - half) * 100) / 100, igstPercent: 0, igstAmount: 0, gstAmount };
-}
+import { calcGstSplit } from '../utils/gstSplit';
 
 const router = Router();
 router.use(authenticate as any);
@@ -329,6 +320,7 @@ router.post('/:orderId/shipments/:shipmentId/create-invoice', asyncHandler(async
   const hsnCode = HSN_MAP[order.productName] || HSN_MAP['Other'];
   const gstPercent = parseFloat(req.body.gstPercent) || DEFAULT_GST_PCT;
   const customerState = order.customer?.state || null;
+  const customerGstin = order.customer?.gstNo || null;
 
   let invoice: any = null;
   let cashVoucher: any = null;
@@ -336,7 +328,7 @@ router.post('/:orderId/shipments/:shipmentId/create-invoice', asyncHandler(async
   if (invoicePercent > 0) {
     const invAmount = Math.round(totalAmount * invoicePercent / 100 * 100) / 100;
     const invQty = Math.round(netKg * invoicePercent / 100 * 100) / 100;
-    const gst = calcGstSplit(invAmount, gstPercent, customerState);
+    const gst = calcGstSplit(invAmount, gstPercent, customerState, customerGstin);
     // TCS @ 2% u/s 206C(1) on scrap sales (mandatory from 01-Apr-2026)
     const TCS_PERCENT = 2;
     const tcsAmount = Math.round(invAmount * TCS_PERCENT / 100 * 100) / 100;

@@ -8,22 +8,13 @@ import { onSaleInvoiceCreated } from '../services/autoJournal';
 import { nextInvoiceNo, nextCounter } from '../utils/invoiceCounter';
 import { nextDDGSContractNo } from '../utils/contractNoGenerator';
 
-const COMPANY_STATE = 'Madhya Pradesh';
+import { calcGstSplit } from '../utils/gstSplit';
+
 const DDGS_HSN = '2303';
 const DDGS_GST_PCT = 5;
 
 const p = (v: any): number | null => v !== undefined && v !== null && v !== '' ? parseFloat(v) : null;
 const pInt = (v: any): number | null => v !== undefined && v !== null && v !== '' ? parseInt(v) : null;
-
-function calcGstSplit(amount: number, gstPercent: number, customerState: string | null | undefined) {
-  const gstAmount = Math.round((amount * gstPercent) / 100 * 100) / 100;
-  const isInterstate = customerState && customerState !== COMPANY_STATE;
-  if (isInterstate) {
-    return { supplyType: 'INTER_STATE' as const, cgstPercent: 0, cgstAmount: 0, sgstPercent: 0, sgstAmount: 0, igstPercent: gstPercent, igstAmount: gstAmount, gstAmount };
-  }
-  const half = Math.round(gstAmount / 2 * 100) / 100;
-  return { supplyType: 'INTRA_STATE' as const, cgstPercent: gstPercent / 2, cgstAmount: half, sgstPercent: gstPercent / 2, sgstAmount: Math.round((gstAmount - half) * 100) / 100, igstPercent: 0, igstAmount: 0, gstAmount };
-}
 
 const router = Router();
 router.use(authenticate as any);
@@ -215,6 +206,7 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 
     let totalInvoicedAmt = 0;
     const customerState = buyerState || existing.buyerState;
+    const customerGstin = buyerGstin || existing.buyerGstin;
 
     for (const d of dispatches) {
       const newAmount = Math.round(d.weightNetMT * newRate * 100) / 100;
@@ -237,7 +229,7 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
       if (d.invoiceId && d.invoice) {
         const inv = d.invoice;
         const invAmount = Math.round((inv.quantity || 0) * newRate * 100) / 100;
-        const gst = calcGstSplit(invAmount, newGstPct, customerState);
+        const gst = calcGstSplit(invAmount, newGstPct, customerState, customerGstin);
         const invTotal = Math.round((invAmount + gst.gstAmount) * 100) / 100;
         // Adjust balance by the delta so payments already received are preserved
         const oldTotal = inv.totalAmount || 0;
@@ -466,7 +458,7 @@ router.post('/:id/dispatches', asyncHandler(async (req: AuthRequest, res: Respon
 
         // Create invoice
         const gstPercent = contract.gstPercent || DDGS_GST_PCT;
-        const gst = calcGstSplit(amount, gstPercent, customer.state);
+        const gst = calcGstSplit(amount, gstPercent, customer.state, customer.gstNo);
         const total = Math.round((amount + gst.gstAmount) * 100) / 100;
 
         const inv = await prisma.$transaction(async (tx) => {
@@ -611,7 +603,7 @@ router.post('/:id/release-truck/:truckId', asyncHandler(async (req: AuthRequest,
   const rate = contract.rate || 0;
   const amount = Math.round(weightNetMT * rate * 100) / 100;
   const gstPercent = contract.gstPercent || DDGS_GST_PCT;
-  const gst = calcGstSplit(amount, gstPercent, customer.state);
+  const gst = calcGstSplit(amount, gstPercent, customer.state, customer.gstNo);
   const totalAmount = Math.round((amount + gst.gstAmount) * 100) / 100;
 
   const result = await prisma.$transaction(async (tx) => {
@@ -714,7 +706,7 @@ router.post('/:id/dispatches/:dispatchId/create-invoice', asyncHandler(async (re
 
   const gstPercent = contract.gstPercent || DDGS_GST_PCT;
   const amount = dispatch.amount || (dispatch.weightNetMT * dispatch.rate);
-  const gst = calcGstSplit(amount, gstPercent, customer.state);
+  const gst = calcGstSplit(amount, gstPercent, customer.state, customer.gstNo);
   const totalAmount = Math.round((amount + gst.gstAmount) * 100) / 100;
 
   // Atomic: create invoice + link to dispatch in transaction

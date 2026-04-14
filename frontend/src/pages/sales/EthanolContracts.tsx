@@ -898,26 +898,8 @@ const EthanolContracts: React.FC = () => {
                                         {/* Actions */}
                                         <td className="px-2 py-1.5 text-center">
                                           <div className="flex items-center justify-center gap-1 flex-wrap">
-                                            {l.invoice && !l.invoice.irn && !(l.invoice.paidAmount && l.invoice.paidAmount > 0) && (
-                                              <button onClick={async (e) => {
-                                                e.stopPropagation();
-                                                const newRate = window.prompt(`Edit rate for INV-${l.invoice!.invoiceNo}\nQty: ${l.quantityBL} BL\nCurrent rate: ₹${l.rate}/BL\n\nEnter new rate (₹/BL):`, String(l.rate || ''));
-                                                if (!newRate) return;
-                                                const r = parseFloat(newRate);
-                                                if (!r || r <= 0) { setError('Rate must be > 0'); return; }
-                                                if (!confirm(`Re-rate to ₹${r}/BL?\n\nNew amount: ₹${(l.quantityBL * r).toLocaleString('en-IN')}\n\nThis will update the invoice, journal entry, and customer ledger.`)) return;
-                                                try {
-                                                  setActionLoading(l.id);
-                                                  await api.patch(`/ethanol-contracts/liftings/${l.id}/rate`, { rate: r });
-                                                  await fetchContracts();
-                                                  if (expandedContract) await openContract(expandedContract);
-                                                } catch (err: any) {
-                                                  setError(err?.response?.data?.error || 'Failed to re-rate lifting');
-                                                } finally {
-                                                  setActionLoading(null);
-                                                }
-                                              }} className="text-[8px] font-bold uppercase px-1 py-0.5 border border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100" title="Edit rate (cascades to invoice + journal)">RATE</button>
-                                            )}
+                                            {/* Per-row RATE button removed — rate is locked at contract level.
+                                                If a rate change is needed, edit the contract rate (cascades to un-IRN invoices). */}
                                             {l.invoice && (
                                               <button onClick={async (e) => {
                                                 e.stopPropagation();

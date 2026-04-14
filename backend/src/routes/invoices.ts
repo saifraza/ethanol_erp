@@ -42,20 +42,9 @@ import { getCompanyForPdf } from '../utils/pdfCompanyHelper';
 import { sendEmail } from '../services/messaging';
 import { generateIRN, cancelIRN, getIRNDetails } from '../services/eInvoice';
 import { onSaleInvoiceCreated } from '../services/autoJournal';
+import { calcGstSplit } from '../utils/gstSplit';
 
 const router = Router();
-
-const COMPANY_STATE = 'Madhya Pradesh';
-
-function calcGstSplit(amount: number, gstPercent: number, customerState: string | null | undefined) {
-  const gstAmount = Math.round((amount * gstPercent) / 100 * 100) / 100;
-  const isInterstate = customerState && customerState !== COMPANY_STATE;
-  if (isInterstate) {
-    return { supplyType: 'INTER_STATE' as const, cgstPercent: 0, cgstAmount: 0, sgstPercent: 0, sgstAmount: 0, igstPercent: gstPercent, igstAmount: gstAmount, gstAmount };
-  }
-  const half = Math.round(gstAmount / 2 * 100) / 100;
-  return { supplyType: 'INTRA_STATE' as const, cgstPercent: gstPercent / 2, cgstAmount: half, sgstPercent: gstPercent / 2, sgstAmount: Math.round((gstAmount - half) * 100) / 100, igstPercent: 0, igstAmount: 0, gstAmount };
-}
 
 router.use(authenticate as any);
 
@@ -159,8 +148,8 @@ router.post('/', validate(createInvoiceSchema), asyncHandler(async (req: AuthReq
     const freightCharge = parseFloat(b.freightCharge) || 0;
 
     const amount = quantity * rate;
-    const cust = await prisma.customer.findUnique({ where: { id: b.customerId }, select: { state: true } });
-    const gst = calcGstSplit(amount, gstPercent, cust?.state);
+    const cust = await prisma.customer.findUnique({ where: { id: b.customerId }, select: { state: true, gstNo: true } });
+    const gst = calcGstSplit(amount, gstPercent, cust?.state, cust?.gstNo);
     const totalAmount = amount + gst.gstAmount + freightCharge;
 
     const companyId = getActiveCompanyId(req);
@@ -239,8 +228,8 @@ router.post('/from-shipment/:shipmentId', asyncHandler(async (req: AuthRequest, 
     const freightCharge = 0;
 
     const amount = quantity * rate;
-    const cust2 = await prisma.customer.findUnique({ where: { id: order.customerId }, select: { state: true } });
-    const gst2 = calcGstSplit(amount, gstPercent, cust2?.state);
+    const cust2 = await prisma.customer.findUnique({ where: { id: order.customerId }, select: { state: true, gstNo: true } });
+    const gst2 = calcGstSplit(amount, gstPercent, cust2?.state, cust2?.gstNo);
     const totalAmount = amount + gst2.gstAmount + freightCharge;
 
     const companyId2 = getActiveCompanyId(req);
